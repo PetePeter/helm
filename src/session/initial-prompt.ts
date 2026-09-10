@@ -37,14 +37,21 @@ export function scheduleInitialPrompt(
   const executeItem = async (item: SequenceListItem) => {
     if (cancelled || !item.sequence || item.sequence.trim() === '') return;
 
-    await executeSequenceString({
-      sessionId,
-      input: item.sequence,
-      write: writeToPty,
-      deliverText: deliver,
-      submit: submitToPty,
-      isCancelled: () => cancelled,
-    });
+    try {
+      await executeSequenceString({
+        sessionId,
+        input: item.sequence,
+        write: writeToPty,
+        deliverText: deliver,
+        submit: submitToPty,
+        isCancelled: () => cancelled,
+      });
+    } catch (error) {
+      // A failing init sequence must not swallow completion: whatever the
+      // caller queued behind the prompt (a context prompt, a scheduled task's
+      // prompt) is the payload the session actually exists to receive.
+      logger.warn(`[InitialPrompt] Item failed for session ${sessionId}: ${error}`);
+    }
   };
 
   const execute = async () => {

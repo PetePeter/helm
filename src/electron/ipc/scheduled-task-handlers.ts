@@ -80,6 +80,15 @@ export function setupScheduledTaskHandlers(
     }
   });
 
+  ipcMain.handle('scheduled_task:runNow', async (_event, id: string) => {
+    try {
+      return await taskManager.runTaskNow(id);
+    } catch (err) {
+      logger.error(`[scheduled_task:runNow] Failed: ${err}`);
+      return false;
+    }
+  });
+
   ipcMain.handle('scheduled_task:cancel', (_event, id: string) => {
     try {
       return taskManager.cancelTask(id);

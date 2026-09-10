@@ -96,6 +96,20 @@ function onDreamPromptChange(task: ScheduledTask, event: Event): void {
   void updateDream(task, { userPrompt: (event.target as HTMLInputElement).value });
 }
 
+/**
+ * Run a dream immediately as an extra occurrence. The backend leaves nextRunAt
+ * alone, so this is never a way to postpone the scheduled run.
+ */
+async function runDreamNow(task: ScheduledTask): Promise<void> {
+  try {
+    await schedulerClient.scheduledTaskRunNow?.(task.id);
+  } catch {
+    // Nothing to roll back — the next load reflects whatever actually happened.
+  } finally {
+    await loadTasks();
+  }
+}
+
 function dreamTime(task: ScheduledTask): string {
   const nextRun = new Date(task.nextRunAt ?? task.scheduledTime);
   return `${String(nextRun.getHours()).padStart(2, '0')}:${String(nextRun.getMinutes()).padStart(2, '0')}`;
@@ -207,6 +221,15 @@ onUnmounted(() => {
           <div class="scheduler-system-heading">
             <span class="scheduler-title">{{ task.title }}</span>
             <span class="scheduler-time">{{ task.enabled ? timeRemaining(task) : 'off' }}</span>
+            <button
+              class="scheduler-action focusable"
+              :data-focus-id="`scheduler:dream-run:${task.id}`"
+              type="button"
+              title="Run dream now"
+              aria-label="Run dream now"
+              :disabled="!task.cliType || task.status === 'executing'"
+              @click.stop="runDreamNow(task)"
+            >▶</button>
           </div>
           <div class="scheduler-project-name">{{ projectLabel(task) }}</div>
           <div class="scheduler-project-path" :title="projectPath(task)">{{ projectPath(task) }}</div>
@@ -393,6 +416,15 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
 }
+.scheduler-system-heading .scheduler-action {
+  margin-left: auto;
+}
+.scheduler-action:disabled {
+  border-color: var(--border);
+  color: var(--text-secondary);
+  cursor: default;
+  opacity: 0.45;
+}
 .scheduler-project-name {
   overflow: hidden;
   color: var(--accent);
@@ -479,11 +511,11 @@ onUnmounted(() => {
   font-size: 0.75rem;
   line-height: 1;
 }
-.scheduler-action:hover {
+.scheduler-action:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--text-primary);
 }
-.scheduler-action--danger:hover {
+.scheduler-action--danger:hover:not(:disabled) {
   border-color: #ff4444;
   color: #ff6666;
 }

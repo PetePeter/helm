@@ -42,6 +42,7 @@ import { buildNotificationGuide } from './guides/notification-guide.js';
 import { buildTelegramGuide } from './guides/telegram-guide.js';
 import { buildStartupGuide } from './guides/startup-guide.js';
 import { buildMessGuide } from './guides/mess-guide.js';
+import { buildDreamGuide } from './guides/dream-guide.js';
 import type { ProjectStore } from '../session/project-store.js';
 import { CapabilityDetector } from '../session/capability-detector.js';
 import { randomUUID } from 'node:crypto';
@@ -293,6 +294,17 @@ export class HelmControlService extends EventEmitter {
       allProjects: true,
       projectIds: [],
       type: 'mess',
+      source: 'system',
+    });
+    this.skillManager.registerSystemSkill({
+      id: 'sys-dream',
+      name: 'Dreaming Guide',
+      description: 'Memory pruning and consolidation procedure for a scheduled dreaming run. Fetch with skill_get(type: "dreaming").',
+      body: buildDreamGuide(),
+      aiAmendable: false,
+      allProjects: true,
+      projectIds: [],
+      type: 'dreaming',
       source: 'system',
     });
 

@@ -7,7 +7,7 @@ export function buildStartupGuide(): string {
     'Blocking questions: create QUESTION: plan, link to blocked plan via plan_nextplan_link, leave original intact.',
     'Use context_* for durable memory; link context to relevant plan or sequence.',
     'Inter-LLM handoffs: session_send_text then verify receipt via session_read_terminal.',
-    'Just-in-time guidance: skill_get(type:"session-send-text"/"agent-plan"/"notification"/"mess") only when needed.',
+    'Just-in-time guidance: skill_get(type:"session-send-text"/"agent-plan"/"notification"/"mess"/"dreaming") only when needed.',
     'Call skill_list at task start; apply only skills whose description directly matches the task.',
     'After applying a skill: skill_submit_feedback(stars, value_summary).',
   ].join('\n');

@@ -196,6 +196,7 @@ export const PRELOAD_API_DOMAINS = {
     'scheduledTaskList',
     'scheduledTaskGet',
     'scheduledTaskUpdate',
+    'scheduledTaskRunNow',
     'scheduledTaskCancel',
     'scheduledTaskDelete',
     'scheduledTaskListHistory',

@@ -161,6 +161,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 
 | Document | Content |
 |----------|---------|
+| [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — prompt assembly, `dreaming` system skill, scheduling rules, run-now |
 | [docs/directory-plans.md](docs/directory-plans.md) | Directory Plans — DAG work items, lifecycle, canvas, layout, badges |
 | [docs/plans-file-structure.md](docs/plans-file-structure.md) | On-disk plan file layout |
 | [docs/scheduled-task-history.md](docs/scheduled-task-history.md) | 7-day rolling run log of scheduled-task executions |

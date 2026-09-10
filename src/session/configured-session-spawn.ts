@@ -6,6 +6,7 @@ import type { SessionManager } from './manager.js';
 import { scheduleInitialPrompt } from './initial-prompt.js';
 import type { PtyManager, PtyProcess } from './pty-manager.js';
 import { deliverPromptSequenceToSession } from './sequence-delivery.js';
+import type { DeliveryContext } from './delivery-context.js';
 import { logger } from '../utils/logger.js';
 import { toHeaderSafeName } from '../utils/header-safe-name.js';
 import { normalizeProjectPath } from './project-identity.js';
@@ -27,6 +28,8 @@ export interface ConfiguredSessionSpawnParams {
   cwd?: string;
   resumeSessionName?: string;
   contextText?: string;
+  /** Delivery context for contextText; background keeps a scheduled run out of the foreground. */
+  contextDeliveryContext?: DeliveryContext;
   onPromptComplete?: () => void;
   onPromptCancel?: (cancel: () => void) => void;
   fallbackCompleteDelayMs?: number;
@@ -199,6 +202,7 @@ function buildPromptCompleteHandler(
           ptyManager: params.ptyManager,
           sessionManager: params.sessionManager,
           configLoader: params.configLoader,
+          ...(params.contextDeliveryContext ? { deliveryContext: params.contextDeliveryContext } : {}),
         });
       } else {
         void deliverText(params.sessionId, contextText);

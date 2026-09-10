@@ -868,25 +868,32 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('plan:open-external', planId),
 
   // ========================================================================
-  // Renderer-safe durable memories (ownership is derived by the main process)
+  // Renderer-safe durable memories
+  //
+  // The optional trailing sessionId is the session the caller is rendering. Main
+  // still enforces ownership; passing the id only pins the request to the
+  // session the view actually asked about, so a session switch mid-flight cannot
+  // resolve the answer against a different project.
   // ========================================================================
 
-  memoryList: () => ipcRenderer.invoke('memory:list'),
-  memoryGet: (memoryId: string) => ipcRenderer.invoke('memory:get', memoryId),
-  memorySearch: (query: string, options?: { regex?: boolean; graphDepth?: number }) =>
-    ipcRenderer.invoke('memory:search', query, options),
-  memoryGraph: (rootId: string, graphDepth?: number) =>
-    ipcRenderer.invoke('memory:graph', rootId, graphDepth),
+  memoryList: (sessionId?: string) => ipcRenderer.invoke('memory:list', sessionId),
+  memoryGet: (memoryId: string, sessionId?: string) => ipcRenderer.invoke('memory:get', memoryId, sessionId),
+  memorySearch: (query: string, options?: { regex?: boolean; graphDepth?: number }, sessionId?: string) =>
+    ipcRenderer.invoke('memory:search', query, options, sessionId),
+  memoryGraph: (rootId: string, graphDepth?: number, sessionId?: string) =>
+    ipcRenderer.invoke('memory:graph', rootId, graphDepth, sessionId),
   /** Whole owned forest — every memory and edge, including unlinked memories. */
-  memoryGraphAll: () => ipcRenderer.invoke('memory:graph-all'),
-  memoryExport: (format: 'markdown' | 'json', rootId?: string, graphDepth?: number) =>
-    ipcRenderer.invoke('memory:export', format, rootId, graphDepth),
-  memoryDelete: (memoryId: string): Promise<boolean> => ipcRenderer.invoke('memory:delete', memoryId),
-  memoryAttachmentList: (memoryId: string) => ipcRenderer.invoke('memory:attachment-list', memoryId),
-  memoryAttachmentOpen: (memoryId: string, attachmentId: string): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('memory:attachment-open', memoryId, attachmentId),
-  memoryAttachmentDelete: (memoryId: string, attachmentId: string): Promise<boolean> =>
-    ipcRenderer.invoke('memory:attachment-delete', memoryId, attachmentId),
+  memoryGraphAll: (sessionId?: string) => ipcRenderer.invoke('memory:graph-all', sessionId),
+  memoryExport: (format: 'markdown' | 'json', rootId?: string, graphDepth?: number, sessionId?: string) =>
+    ipcRenderer.invoke('memory:export', format, rootId, graphDepth, sessionId),
+  memoryDelete: (memoryId: string, sessionId?: string): Promise<boolean> =>
+    ipcRenderer.invoke('memory:delete', memoryId, sessionId),
+  memoryAttachmentList: (memoryId: string, sessionId?: string) =>
+    ipcRenderer.invoke('memory:attachment-list', memoryId, sessionId),
+  memoryAttachmentOpen: (memoryId: string, attachmentId: string, sessionId?: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('memory:attachment-open', memoryId, attachmentId, sessionId),
+  memoryAttachmentDelete: (memoryId: string, attachmentId: string, sessionId?: string): Promise<boolean> =>
+    ipcRenderer.invoke('memory:attachment-delete', memoryId, attachmentId, sessionId),
 
   /** Read a local file and return its content as a string */
   planReadFile: (filePath: string): Promise<string | null> =>
@@ -1010,6 +1017,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     enabled?: boolean;
     userPrompt?: string;
   }) => ipcRenderer.invoke('scheduled_task:update', id, updates),
+
+  /** Fire a pending scheduled task now as an extra run, leaving its schedule intact */
+  scheduledTaskRunNow: (id: string): Promise<boolean> => ipcRenderer.invoke('scheduled_task:runNow', id),
 
   /** Cancel a pending scheduled task */
   scheduledTaskCancel: (id: string) => ipcRenderer.invoke('scheduled_task:cancel', id),

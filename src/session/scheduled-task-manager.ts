@@ -31,10 +31,17 @@ const MIN_INTERVAL_MS = 60_000;
  * sleep in bounded hops and re-check the due date on each wake.
  */
 export const MAX_TIMER_DELAY_MS = 2_147_483_647;
-const DREAM_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DREAM_DEFAULT_HOUR = 9;
 const DREAM_DEFAULT_MINUTE = 0;
-export const DREAM_BASE_PROMPT = 'Review this project\'s durable memories. Call memory_dream to inspect faded and salient candidates, then use your judgement to prune stale memories with memory_set_dormant or consolidate related knowledge. Do not delete memories merely because they are old; respect the candidate metrics and project scope.';
+/**
+ * The delivered dream prompt is assembled from these four parts, in order:
+ * base → skill cue → user addendum (when non-empty) → mess cue. Detailed
+ * pruning and consolidation guidance lives in the `dreaming` system skill, so
+ * the prompt itself stays short and the guidance stays amendable in one place.
+ */
+export const DREAM_BASE_PROMPT = 'Time to dream: review and maintain this project\'s durable memories.';
+export const DREAM_SKILL_CUE = 'Call skill_get(type:"dreaming") first and follow it — it carries the pruning and consolidation procedure.';
+export const DREAM_MESS_CUE = 'When you are done, call mess_check to pick up anything other sessions left for this project.';
 
 export class ScheduledTaskManager extends EventEmitter {
   private tasks = new Map<string, ScheduledTask>();
@@ -235,7 +242,10 @@ export class ScheduledTaskManager extends EventEmitter {
         if (task.status === 'failed') {
           task.status = 'pending';
           delete task.completedAt;
-          task.nextRunAt = new Date(Date.now() + (task.intervalMs ?? DREAM_INTERVAL_MS));
+          // Healing must not cost the row its configured hour — a dream that
+          // failed at 09:00 belongs at 09:00 tomorrow, not at whatever o'clock
+          // the app happened to start.
+          task.nextRunAt = this.nextDreamRun(task);
         }
         changed = true;
         this.emit('task:changed', task);
@@ -324,7 +334,16 @@ export class ScheduledTaskManager extends EventEmitter {
     if (Object.prototype.hasOwnProperty.call(updates, 'targetSessionId')) task.targetSessionId = updates.targetSessionId;
     if (updates.enabled !== undefined) task.enabled = updates.enabled;
     if (Object.prototype.hasOwnProperty.call(updates, 'userPrompt')) task.userPrompt = updates.userPrompt;
-    task.nextRunAt = this.computeInitialNextRunAt(task.scheduleKind ?? 'once', task.scheduledTime, task.cronExpression, task.endDate);
+    // Only a change to the schedule may move the next run. Recomputing on every
+    // patch pushed a daily task out another whole day per edit — three prompt
+    // tweaks used to mean three days of silence.
+    const scheduleChanged = updates.scheduledTime !== undefined
+      || updates.scheduleKind !== undefined
+      || Object.prototype.hasOwnProperty.call(updates, 'cronExpression')
+      || Object.prototype.hasOwnProperty.call(updates, 'endDate');
+    if (scheduleChanged || !task.nextRunAt) {
+      task.nextRunAt = this.computeInitialNextRunAt(task.scheduleKind ?? 'once', task.scheduledTime, task.cronExpression, task.endDate);
+    }
 
     this.saveTasks();
     if (task.enabled === false) this.clearTimer(task.id);
@@ -332,6 +351,33 @@ export class ScheduledTaskManager extends EventEmitter {
     this.emit('task:changed', task);
     logger.info(`[ScheduledTaskManager] Updated task "${task.title}" (${id})`);
     return task;
+  }
+
+  /**
+   * Fire a pending task right now as an extra, manual occurrence.
+   *
+   * The schedule is deliberately untouched: nextRunAt is restored after the
+   * run starts, so "run now" never doubles as "postpone". A disabled dream can
+   * still be run on demand — the toggle governs the timer, not the button.
+   */
+  async runTaskNow(id: string): Promise<boolean> {
+    const task = this.tasks.get(id);
+    if (!task || task.status !== 'pending') return false;
+
+    const nextRunAt = task.nextRunAt;
+    const scheduledTime = task.scheduledTime;
+    logger.info(`[ScheduledTaskManager] Manual run of task "${task.title}" (${id})`);
+    await this.executeTask(task, { force: true });
+
+    // A one-shot task that ran to completion has legitimately finished; only
+    // restore the schedule of a task that is still on the books.
+    if (task.status === 'pending' || task.status === 'executing') {
+      task.nextRunAt = nextRunAt;
+      task.scheduledTime = scheduledTime;
+      this.saveTasks();
+      this.scheduleTask(task);
+    }
+    return true;
   }
 
   /** Cancel a pending task. Returns false if task already executing. */
@@ -453,10 +499,10 @@ export class ScheduledTaskManager extends EventEmitter {
   }
 
   /** Execute a scheduled task: spawn CLI or send to existing session, set working plan, deliver prompt. */
-  private async executeTask(task: ScheduledTask): Promise<void> {
+  private async executeTask(task: ScheduledTask, options?: { force?: boolean }): Promise<void> {
     this.clearTimer(task.id);
 
-    if (task.status !== 'pending' || task.enabled === false) {
+    if (task.status !== 'pending' || (task.enabled === false && !options?.force)) {
       logger.warn(`[ScheduledTaskManager] Skipping execution of task ${task.id} - status is ${task.status}`);
       return;
     }
@@ -554,11 +600,14 @@ export class ScheduledTaskManager extends EventEmitter {
         sessionName: `[scheduled] ${task.title}`,
         cwd: task.dirPath,
         extraArgs: task.cliParams,
-        // Delivered via onPromptComplete rather than contextText so the prompt
-        // goes out under the background delivery context, as direct mode does.
-        ...(prompt.length > 0
-          ? { onPromptComplete: () => { void this.deliverScheduledPrompt(sessionId, prompt); } }
-          : {}),
+        // Delivered as contextText — the same mechanism a user-created session
+        // uses for its initial prompt. Handing the prompt to the spawn helper
+        // means the helper owns delivery, including its own fallback when a CLI
+        // has no init sequence; the scheduler no longer depends on a completion
+        // callback it cannot guarantee will fire.
+        ...(prompt.length > 0 ? { contextText: prompt } : {}),
+        // Scheduled runs are background work, exactly as direct mode is.
+        contextDeliveryContext: 'background' as const,
         onPromptCancel: (cancel) => this.promptCancellers.set(sessionId, cancel),
         fallbackCompleteDelayMs: cli.config.initialPromptDelay ?? 2000,
       });
@@ -597,7 +646,7 @@ export class ScheduledTaskManager extends EventEmitter {
   /** The task prompt, with plan references appended when the task carries any. */
   private buildTaskPrompt(task: ScheduledTask): string {
     const initialPrompt = task.systemKind === 'dream'
-      ? `${DREAM_BASE_PROMPT}${task.userPrompt?.trim() ? `\n\nUser additions:\n${task.userPrompt.trim()}` : ''}`
+      ? buildDreamPrompt(task.userPrompt)
       : task.initialPrompt;
     if (task.planIds.length === 0) return initialPrompt;
     const planRefs = task.planIds.map(id => `- ${id}`).join('\n');
@@ -608,8 +657,22 @@ export class ScheduledTaskManager extends EventEmitter {
     if (task.systemKind !== 'dream') return;
     task.status = 'pending';
     delete task.completedAt;
-    task.nextRunAt = new Date(Date.now() + (task.intervalMs ?? DREAM_INTERVAL_MS));
+    task.nextRunAt = this.nextDreamRun(task);
     if (task.enabled !== false) this.scheduleTask(task);
+  }
+
+  /**
+   * The next occurrence of a dream's own daily time. A failed or healed row is
+   * put back on its configured hour; adding a flat 24h to "now" instead would
+   * walk the dream a little further off its hour after every hiccup.
+   */
+  private nextDreamRun(task: ScheduledTask): Date {
+    if (task.scheduleKind === 'cron' && task.cronExpression?.trim()) {
+      const next = CronEngine.nextRunTimeBeforeDate(task.cronExpression, new Date(), task.endDate);
+      if (next) return next;
+    }
+    const anchor = task.nextRunAt ?? task.scheduledTime;
+    return nextDailyTime(anchor.getHours(), anchor.getMinutes());
   }
 
   /** Move the task's first plan into 'coding' as the session's working plan. */
@@ -733,6 +796,18 @@ export class ScheduledTaskManager extends EventEmitter {
       deliveryContext: 'background',
     });
   }
+}
+
+/**
+ * Assemble the delivered dream prompt. An empty addendum contributes nothing —
+ * a dangling "User additions:" heading reads as a truncated instruction.
+ */
+export function buildDreamPrompt(userPrompt?: string): string {
+  const addendum = userPrompt?.trim();
+  const sections = [DREAM_BASE_PROMPT, DREAM_SKILL_CUE];
+  if (addendum) sections.push(`User additions:\n${addendum}`);
+  sections.push(DREAM_MESS_CUE);
+  return sections.join('\n\n');
 }
 
 function dailyCronFor(date: Date): string {

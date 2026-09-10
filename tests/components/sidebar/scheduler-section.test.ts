@@ -9,6 +9,7 @@ import SchedulerSection from '../../../renderer/components/sidebar/SchedulerSect
 
 const mockScheduledTaskList = vi.fn();
 const mockScheduledTaskUpdate = vi.fn();
+const mockScheduledTaskRunNow = vi.fn();
 const mockConfigGetCliTypes = vi.fn();
 const mockOffChanged = vi.fn();
 const mockProjectList = vi.fn();
@@ -33,6 +34,7 @@ describe('SchedulerSection', () => {
     vi.setSystemTime(new Date(2026, 4, 4, 9, 0, 0));
     mockScheduledTaskList.mockReset().mockResolvedValue([task]);
     mockScheduledTaskUpdate.mockReset().mockResolvedValue({ ok: true });
+    mockScheduledTaskRunNow.mockReset().mockResolvedValue(true);
     mockConfigGetCliTypes.mockReset().mockResolvedValue(['codex', 'claude']);
     mockOffChanged.mockReset();
     mockProjectList.mockReset().mockResolvedValue([]);
@@ -41,6 +43,7 @@ describe('SchedulerSection', () => {
     (window as any).gamepadCli = {
       scheduledTaskList: mockScheduledTaskList,
       scheduledTaskUpdate: mockScheduledTaskUpdate,
+      scheduledTaskRunNow: mockScheduledTaskRunNow,
       configGetCliTypes: mockConfigGetCliTypes,
       projectList: mockProjectList,
       onScheduledTaskChanged: vi.fn(() => mockOffChanged),
@@ -215,6 +218,31 @@ describe('SchedulerSection', () => {
       cronExpression: '30 22 * * *',
       scheduledTime: expect.any(Date),
     }));
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('fires a dream immediately from the run-now action without touching its schedule', async () => {
+    const dream = { ...task, id: 'dream-1', title: 'Memory Dreaming', systemKind: 'dream', enabled: true, userPrompt: '', cliType: 'codex' };
+    mockScheduledTaskList.mockResolvedValue([dream]);
+    const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
+    await flushPromises();
+
+    await wrapper.find('[aria-label="Run dream now"]').trigger('click');
+    await flushPromises();
+
+    expect(mockScheduledTaskRunNow).toHaveBeenCalledWith('dream-1');
+    expect(mockScheduledTaskUpdate).not.toHaveBeenCalled();
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('cannot run a dream that has no CLI selected', async () => {
+    mockScheduledTaskList.mockResolvedValue([{ ...task, id: 'dream-2', systemKind: 'dream', enabled: false, userPrompt: '', cliType: '' }]);
+    const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
+    await flushPromises();
+
+    expect(wrapper.find('[aria-label="Run dream now"]').attributes('disabled')).toBeDefined();
     wrapper.unmount();
     vi.useRealTimers();
   });

@@ -3,7 +3,7 @@
  * access from reactive state shims (and future Vue component tests) works.
  */
 
-import { afterAll, beforeEach } from 'vitest';
+import { beforeEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,9 +16,10 @@ import { join } from 'node:path';
 const testAppData = mkdtempSync(join(tmpdir(), 'helm-vitest-appdata-'));
 process.env.APPDATA = testAppData;
 
-afterAll(() => {
-  rmSync(testAppData, { recursive: true, force: true });
-});
+// Cleanup runs on worker exit, not in afterAll: Vitest 4 rejects a top-level
+// afterAll in a setup file ("failed to find the current suite") because there
+// is no suite to attach it to, which failed every test file in the repo.
+process.on('exit', () => { rmSync(testAppData, { recursive: true, force: true }); });
 
 beforeEach(() => {
   setActivePinia(createPinia());
