@@ -34,6 +34,13 @@ object HelmPairing {
     private var pipe: HelmLinkPipe? = null
     private var started = false
 
+    /**
+     * What the app talks to once the handshake is done. It sends through [send],
+     * so it inherits the rule that nothing leaves the phone before the link is
+     * authenticated — there is no second way out.
+     */
+    val client = HelmClient(send = ::send)
+
     /** What the pairing screen renders. Idle until the first link comes up. */
     val state: StateFlow<PairingState>
         get() = requireController().state
@@ -46,8 +53,7 @@ object HelmPairing {
             store = DeviceKeyStore(context),
             machineId = PhoneIdentity.machineId(context),
             scheduler = CoroutineScheduler(scope),
-            // P-0743 replaces this with the envelope parser and the chat surface.
-            onInbound = { },
+            onInbound = client::onInbound,
         )
 
         // A handshake belongs to ONE link. The phone cannot initiate, so every
@@ -74,6 +80,8 @@ object HelmPairing {
     private fun detach() {
         pipe?.close()
         pipe = null
+        // Anything still waiting on the old link will never be answered over it.
+        client.onLinkLost()
     }
 
     private fun requireController(): PairingController =

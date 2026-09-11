@@ -247,10 +247,11 @@ Two auth models:
 
 ## AIAGENT State Machine Integration
 
-Helm tracks three independent state systems. Keep them aligned when useful, but do not treat them as aliases:
+Helm tracks four independent state systems. Keep them aligned when useful, but do not treat them as aliases:
 
 | System | Owner | Purpose |
 | --- | --- | --- |
+| `activityLevel` | `StateDetector`, from PTY I/O timing alone | What the activity DOT shows: `active`, `inactive`, `idle` (invariant 8). Carried on `session_list` / `session_get` so a remote surface — the paired phone — can draw the same dot. Never derive a dot from `sessionState`: it answers a different question. |
 | `aiagentState` | External agents via `session_set_aiagent_state` | Durable agent-declared phase shown on session rows: planning, implementing, completed, or idle. |
 | `sessionState` | Helm UI and pipeline controls | Runtime pipeline state for manual state overrides and handoff queue coordination. |
 | `planState` | Helm plan tools | Durable lifecycle for a plan item: planning, ready, coding, review, blocked, or done. |

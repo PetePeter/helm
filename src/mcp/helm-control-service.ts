@@ -107,6 +107,13 @@ export interface SessionSummary {
   lastActiveAtEpochMs?: number;
   /** ISO-8601 rendering of lastActiveAtEpochMs (convenience). */
   lastActiveAtIso?: string;
+  /**
+   * Activity-dot level, derived purely from PTY I/O timing (invariant 8).
+   * This is what a status dot must be drawn from — `state` is pipeline state and
+   * means something else entirely. Exposed for remote surfaces (the paired
+   * phone) that cannot see the renderer's own activity mirror.
+   */
+  activityLevel?: 'active' | 'inactive' | 'idle';
   /** AIAGENT phase state (planning, implementing, completed, idle). */
   aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */

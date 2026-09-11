@@ -17,6 +17,16 @@
     <string name="pairing_reject">Reject</string>
     <string name="pairing_handshaking">Verifying…</string>
 
+    <string name="sessions_none">No sessions are running on this desktop.</string>
+    <string name="sessions_no_link">Waiting for your desktop. Sessions appear as soon as the link is up.</string>
+
+    <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
+    <string name="chat_placeholder">Reply…</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_sending">Sending…</string>
+    <string name="chat_failed">Not delivered</string>
+    <string name="chat_attachment">Attachment</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>

@@ -118,4 +118,25 @@ describe('HelmSessionService session times', () => {
     const summary = service.getSession('s1')!;
     expect(summary.lastActiveAtEpochMs).toBe(1700000000000);
   });
+
+  // The activity dot is the phone's only honest source for session state
+  // (invariant 8). Without this field a mobile client can only read `state`,
+  // which is pipeline state and would render the wrong thing.
+  it('exposes activityLevel on the summary so a remote client can draw the dot', () => {
+    const sessionManager = makeSessionManager([
+      { id: 's1', name: 'A', cliType: 'claude-code', activityLevel: 'inactive' } as any,
+    ]);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);
+
+    expect(service.getSession('s1')!.activityLevel).toBe('inactive');
+  });
+
+  it('omits activityLevel when the session has never reported one', () => {
+    const sessionManager = makeSessionManager([
+      { id: 's1', name: 'A', cliType: 'claude-code' } as any,
+    ]);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);
+
+    expect(service.getSession('s1')!.activityLevel).toBeUndefined();
+  });
 });
