@@ -1,0 +1,123 @@
+{
+  "format": {
+    "version": 1,
+    "encoding": "utf8-json",
+    "maxEnvelopeBytes": 1048576,
+    "recordTypes": [
+      "call",
+      "result",
+      "error",
+      "chat"
+    ]
+  },
+  "cases": [
+    {
+      "name": "call with no params",
+      "direction": "phone-to-helm",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a226331222c226d6574686f64223a2273657373696f6e5f6c697374227d",
+      "json": "{\"v\":1,\"t\":\"call\",\"id\":\"c1\",\"method\":\"session_list\"}"
+    },
+    {
+      "name": "call with params",
+      "direction": "phone-to-helm",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a226332222c226d6574686f64223a2273657373696f6e5f73656e645f74657874222c22706172616d73223a7b2273657373696f6e4964223a2231313131313131312d323232322d333333332d343434342d353535353535353535353535222c2274657874223a226361727279206f6e227d7d",
+      "json": "{\"v\":1,\"t\":\"call\",\"id\":\"c2\",\"method\":\"session_send_text\",\"params\":{\"sessionId\":\"11111111-2222-3333-4444-555555555555\",\"text\":\"carry on\"}}"
+    },
+    {
+      "name": "call with a non-ASCII argument",
+      "direction": "phone-to-helm",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a226333222c226d6574686f64223a2273657373696f6e5f72656e616d65222c22706172616d73223a7b2273657373696f6e4964223a227331222c226e616d65223a22c3b16fc3b16f20e2809420e5ae8ce4ba86227d7d",
+      "json": "{\"v\":1,\"t\":\"call\",\"id\":\"c3\",\"method\":\"session_rename\",\"params\":{\"sessionId\":\"s1\",\"name\":\"ñoño — 完了\"}}"
+    },
+    {
+      "name": "permitted-tools discovery call",
+      "direction": "phone-to-helm",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a226334222c226d6574686f64223a225f5f6d6f62696c655f746f6f6c735f5f227d",
+      "json": "{\"v\":1,\"t\":\"call\",\"id\":\"c4\",\"method\":\"__mobile_tools__\"}"
+    },
+    {
+      "name": "result carrying an object",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a22726573756c74222c226964223a226331222c22726573756c74223a7b2273657373696f6e73223a5b7b226964223a227331222c226e616d65223a22776f726b227d5d7d7d",
+      "json": "{\"v\":1,\"t\":\"result\",\"id\":\"c1\",\"result\":{\"sessions\":[{\"id\":\"s1\",\"name\":\"work\"}]}}"
+    },
+    {
+      "name": "result carrying null",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a22726573756c74222c226964223a226335222c22726573756c74223a6e756c6c7d",
+      "json": "{\"v\":1,\"t\":\"result\",\"id\":\"c5\",\"result\":null}"
+    },
+    {
+      "name": "uniform denial error",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a226572726f72222c226964223a226332222c226572726f72223a7b22636f6465223a2d33323030302c226d657373616765223a22546f6f6c206e6f74207065726d6974746564227d7d",
+      "json": "{\"v\":1,\"t\":\"error\",\"id\":\"c2\",\"error\":{\"code\":-32000,\"message\":\"Tool not permitted\"}}"
+    },
+    {
+      "name": "rate limit error",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a226572726f72222c226964223a226333222c226572726f72223a7b22636f6465223a2d33323030302c226d657373616765223a2252617465206c696d6974206578636565646564227d7d",
+      "json": "{\"v\":1,\"t\":\"error\",\"id\":\"c3\",\"error\":{\"code\":-32000,\"message\":\"Rate limit exceeded\"}}"
+    },
+    {
+      "name": "plain chat message",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a227331222c2273657373696f6e4e616d65223a22776f726b222c2274657874223a22746865206275696c6420697320677265656e222c226174223a313730303030303030303030307d",
+      "json": "{\"v\":1,\"t\":\"chat\",\"sessionId\":\"s1\",\"sessionName\":\"work\",\"text\":\"the build is green\",\"at\":1700000000000}"
+    },
+    {
+      "name": "chat message with a non-ASCII body",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a227331222c2273657373696f6e4e616d65223a22c3b16fc3b16f222c2274657874223a226275696c6420e29c8520e2809420e5ae8ce4ba86222c226174223a313730303030303030303030317d",
+      "json": "{\"v\":1,\"t\":\"chat\",\"sessionId\":\"s1\",\"sessionName\":\"ñoño\",\"text\":\"build ✅ — 完了\",\"at\":1700000000001}"
+    },
+    {
+      "name": "chat message with a voice attachment",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a227331222c2273657373696f6e4e616d65223a22776f726b222c2274657874223a22222c226174223a313730303030303030303030322c2266696c6550617468223a22433a5c5c55736572735c5c68656c6d5c5c417070446174615c5c526f616d696e675c5c48656c6d5c5c746d705c5c6e6f74652e6f6767222c22766f696365223a747275657d",
+      "json": "{\"v\":1,\"t\":\"chat\",\"sessionId\":\"s1\",\"sessionName\":\"work\",\"text\":\"\",\"at\":1700000000002,\"filePath\":\"C:\\\\Users\\\\helm\\\\AppData\\\\Roaming\\\\Helm\\\\tmp\\\\note.ogg\",\"voice\":true}"
+    }
+  ],
+  "rejects": [
+    {
+      "name": "not JSON",
+      "bytesHex": "6e6f74206a736f6e20617420616c6c",
+      "reason": "payload does not parse"
+    },
+    {
+      "name": "a JSON array",
+      "bytesHex": "5b312c322c335d",
+      "reason": "a record must be an object"
+    },
+    {
+      "name": "unknown record type",
+      "bytesHex": "7b2276223a312c2274223a2265786563222c226964223a226331227d",
+      "reason": "unrecognised record type"
+    },
+    {
+      "name": "future protocol version",
+      "bytesHex": "7b2276223a39392c2274223a2263616c6c222c226964223a226331222c226d6574686f64223a2278227d",
+      "reason": "version is not understood"
+    },
+    {
+      "name": "call with no method",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a226331227d",
+      "reason": "method is required on a call"
+    },
+    {
+      "name": "call with a numeric id",
+      "bytesHex": "7b2276223a312c2274223a2263616c6c222c226964223a372c226d6574686f64223a2278227d",
+      "reason": "id must be a string"
+    },
+    {
+      "name": "error with no code",
+      "bytesHex": "7b2276223a312c2274223a226572726f72222c226964223a226331222c226572726f72223a7b226d657373616765223a2278227d7d",
+      "reason": "error.code is required"
+    },
+    {
+      "name": "chat with no text",
+      "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a2273222c2273657373696f6e4e616d65223a226e222c226174223a317d",
+      "reason": "text is required on a chat record"
+    }
+  ]
+}

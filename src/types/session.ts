@@ -40,8 +40,14 @@ export interface SessionInfo {
   cliSessionName?: string;
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
-  /** Telegram forum topic ID for this session's topic thread */
+  /** Telegram forum topic ID for this session's topic thread. The typed view of
+   *  `chatBindings.telegram` — see src/session/chat/chat-bindings.ts, which owns
+   *  the mirroring in both directions. */
   topicId?: number;
+  /** Where this session lives on each chat surface, keyed by provider. Generic
+   *  so a third surface is a new key, not a new field; an unrecognised key is
+   *  preserved across a load/save round-trip rather than dropped. */
+  chatBindings?: Record<string, string | number>;
   /** Last real PTY output or session/input activity timestamp for elapsed timers. */
   lastOutputAt?: number;
   /** Wall-clock epoch MILLISECONDS when this hub session was first spawned. Persists across restarts. */

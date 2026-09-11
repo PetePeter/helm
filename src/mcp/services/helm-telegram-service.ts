@@ -8,9 +8,10 @@ import type { SessionInfo } from '../../types/session.js';
 import type {
   TelegramBridge,
   TelegramChannel,
-  TelegramSendToUserResult,
   TelegramStatus,
 } from '../../types/telegram-channel.js';
+import type { ChatBroker } from '../../session/chat/chat-broker.js';
+import type { ChatOutboundMessage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
@@ -26,6 +27,7 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
 export class HelmTelegramService {
   private telegramBridge: TelegramBridge | null = null;
   private notificationManager: NotificationManager | null = null;
+  private chatBroker: ChatBroker | null = null;
 
   constructor(
     private readonly configLoader: ConfigLoader,
@@ -39,6 +41,16 @@ export class HelmTelegramService {
 
   setNotificationManager(nm: NotificationManager): void {
     this.notificationManager = nm;
+  }
+
+  /**
+   * Wire the fan-out. Once a broker is set, `telegram_chat` and
+   * `telegram_send_voice` reach EVERY registered chat surface, not just
+   * Telegram. The MCP tool names are unchanged on purpose — a CLI keeps calling
+   * what it always called and the extra surfaces appear behind it.
+   */
+  setChatBroker(broker: ChatBroker | null): void {
+    this.chatBroker = broker;
   }
 
   getTelegramStatus(): TelegramStatus {
@@ -72,9 +84,8 @@ export class HelmTelegramService {
    * not-ready cases so callers get actionable feedback.
    */
   async sendTelegramVoice(sessionRef: string, text: string): Promise<{ sent: boolean; reason?: string }> {
-    if (!this.telegramBridge?.isRunning()) {
-      return { sent: false, reason: 'Telegram bot is not running' };
-    }
+    const unreachable = this.noChatSurface();
+    if (unreachable) return unreachable;
     const caps = this.capabilityDetector.getCapabilities();
     if (!caps.piper) return { sent: false, reason: 'piper (text-to-speech) is not configured' };
     if (!caps.ffmpeg) return { sent: false, reason: 'ffmpeg (audio conversion) is not configured' };
@@ -99,13 +110,7 @@ export class HelmTelegramService {
     }
 
     try {
-      const sendResult = await this.telegramBridge.sendToUser({
-        sessionId: session.id,
-        text: '',
-        filePath: oggPath,
-        asVoice: true,
-      });
-      return { sent: sendResult.sent, ...(sendResult.reason ? { reason: sendResult.reason } : {}) };
+      return await this.fanOut({ sessionId: session.id, text: '', filePath: oggPath, asVoice: true });
     } finally {
       fs.promises.unlink(oggPath).catch(() => {});
     }
@@ -125,9 +130,8 @@ export class HelmTelegramService {
     message: string,
     filePath?: string,
   ): Promise<{ sent: boolean; reason?: string }> {
-    if (!this.telegramBridge?.isRunning()) {
-      return { sent: false, reason: 'Telegram bot is not running' };
-    }
+    const unreachable = this.noChatSurface();
+    if (unreachable) return unreachable;
     if (filePath) {
       if (!path.isAbsolute(filePath)) {
         return { sent: false, reason: 'File path must be absolute' };
@@ -155,7 +159,53 @@ export class HelmTelegramService {
     // name-resolution fallback that could mis-route a reply to the wrong topic.
     const session = this.sessionManager.getSession(sessionRef);
     if (!session) return { sent: false, reason: `Session not found by ID: ${sessionRef}` };
-    return this.telegramBridge.sendToUser({ sessionId: session.id, text: message, filePath });
+    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}) });
+  }
+
+  /**
+   * Deliver to every registered chat surface. Fan-out is UNCONDITIONAL: the
+   * phone still gets the message when Telegram is down, and Telegram still gets
+   * it when the phone is linked — Telegram is the only out-of-BLE-range path, so
+   * suppressing it would make "was I told?" depend on link state.
+   *
+   * The single reported outcome is "did it reach anyone": the caller is an LLM
+   * deciding whether to try something else, and a surface-by-surface breakdown
+   * is not something it can act on.
+   */
+  private async fanOut(message: ChatOutboundMessage): Promise<{ sent: boolean; reason?: string }> {
+    if (!this.chatBroker) {
+      const result = await this.telegramBridge!.sendToUser({
+        sessionId: message.sessionId,
+        text: message.text,
+        filePath: message.filePath,
+        asVoice: message.asVoice,
+      });
+      return { sent: result.sent, ...(result.reason ? { reason: result.reason } : {}) };
+    }
+
+    const results = await this.chatBroker.send(message);
+    if (results.some(result => result.sent)) return { sent: true };
+    const reason = results
+      .map(result => `${result.provider}: ${result.reason ?? 'not sent'}`)
+      .join('; ');
+    return { sent: false, reason: reason || 'No chat surface is registered' };
+  }
+
+  /**
+   * The one precondition shared by every chat send: SOMETHING can carry it.
+   * With a broker wired that means any available surface — a running Telegram
+   * bot is no longer required, because a linked phone is a complete channel on
+   * its own. Returns the refusal to hand back, or undefined to proceed.
+   */
+  private noChatSurface(): { sent: boolean; reason: string } | undefined {
+    if (this.chatBroker) {
+      return this.chatBroker.list().some(bridge => bridge.isAvailable())
+        ? undefined
+        : { sent: false, reason: 'No chat surface is available (Telegram is not running and no phone is linked)' };
+    }
+    return this.telegramBridge?.isRunning()
+      ? undefined
+      : { sent: false, reason: 'Telegram bot is not running' };
   }
 
   notifyUser(sessionRef: string, title: string, content: string): { delivered: 'toast' | 'bubble' | 'telegram' | 'taskbar_flash' | 'none' } {
@@ -190,14 +240,6 @@ export class HelmTelegramService {
   private requireTelegramBridge(): void {
     if (!this.telegramBridge) {
       throw new Error('Telegram bridge is not available');
-    }
-  }
-
-  private requireTelegramAvailable(): void {
-    this.requireTelegramBridge();
-    const status = this.getTelegramStatus();
-    if (!status.available) {
-      throw new Error('Telegram is not available: enable Telegram, configure chat and allowed users, and start the bot first');
     }
   }
 }

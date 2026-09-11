@@ -21,6 +21,7 @@ import { SkillAnalyticsManager } from '../../session/skill-analytics-manager.js'
 import { PatternMatcher } from '../../session/pattern-matcher.js';
 import { HandoverDelivery } from '../../session/handover-delivery.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
+import { ChatBroker } from '../../session/chat/chat-broker.js';
 import { setupHandoverHandlers } from './handover-handlers.js';
 import { ScheduledTaskManager } from '../../session/scheduled-task-manager.js';
 import { ScheduledTaskHistoryManager } from '../../session/scheduled-task-history-manager.js';
@@ -83,6 +84,7 @@ import { MobileLinkManager } from '../../mobile/mobile-link-manager.js';
 import { BleLinkClient } from '../../mobile/ble/ble-link-client.js';
 import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
+import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
 import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
 
 /**
@@ -233,6 +235,29 @@ export function registerIPCHandlers(
     telegramBot, topicManager, telegramNotifier,
     sessionManager, ptyManager, configLoader, helmControlService, draftManager, projectStore,
   );
+
+  // The chat broker: Telegram and the phone are two registrations in an
+  // UNBOUNDED registry, never a hardcoded pair — a LAN surface is wanted later
+  // and must be one more `register()` call, nothing else. Fan-out through it is
+  // unconditional; see src/session/chat/chat-broker.ts for why.
+  const chatBroker = new ChatBroker({
+    deliver: async (message) => {
+      const target = sessionManager.getSession(message.sessionId);
+      if (!target) {
+        logger.warn(`[chat] Dropped an inbound ${message.provider} message for unknown session ${message.sessionId}`);
+        return;
+      }
+      await deliverPromptSequenceToSession({
+        sessionId: target.id,
+        text: message.text,
+        ptyManager,
+        sessionManager,
+        configLoader,
+      });
+    },
+  });
+  chatBroker.register(telegramModules.relayService);
+  helmControlService.setChatBroker(chatBroker);
 
   // Restore sessions persisted from previous run
   const restored = sessionManager.restoreSessions();
@@ -673,6 +698,23 @@ export function registerIPCHandlers(
     sessionLookup: sessionManager,
   });
 
+  // The phone as a chat surface, and the ONE path an inbound phone call takes to
+  // a tool. The gate is resolved through getMobileGate() rather than captured, so
+  // there is a single instance and no way for a second one to appear.
+  const mobileChatBridge = new MobileChatBridge({
+    links: mobileLinkManager,
+    deviceStore: mobileDeviceStore,
+    gate: () => getMobileGate(),
+    sessions: {
+      getSession: (sessionId) => {
+        const session = sessionManager.getSession(sessionId);
+        return session ? { id: session.id, name: session.name } : null;
+      },
+    },
+  });
+  mobileChatBridge.start();
+  chatBroker.register(mobileChatBridge);
+
   // Apply the persisted config now (starts the stack iff enabled).
   void fleetController.start()
     .catch((err) => logger.error(`[fleet] Failed to start peer transport: ${err}`));
@@ -704,6 +746,9 @@ export function registerIPCHandlers(
       disposePairing();
       disposePeerManagement();
       disposeMobile();
+      mobileChatBridge.stop();
+      chatBroker.unregister(mobileChatBridge.provider);
+      chatBroker.unregister(telegramModules.relayService.provider);
       await mobileLinkManager.stop();
       await fleetController?.stop();
       logger.info('[IPC] Cleanup complete');

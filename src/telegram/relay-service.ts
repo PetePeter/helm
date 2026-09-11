@@ -29,6 +29,8 @@ import { OpenWhisprTranscriber, type AudioTranscriber, type AudioTranscriptionRe
 import { resolveFfmpegPath } from './ffmpeg.js';
 import { buildFrameSeekHint, extractVideoFrames } from './video-frames.js';
 import type { SessionInfo } from '../types/session.js';
+import { TELEGRAM_CHAT_PROVIDER } from '../session/chat/chat-bindings.js';
+import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import type {
   TelegramBridge,
   TelegramChannel,
@@ -78,7 +80,10 @@ function detectMimeType(filePath: string): string {
   return mimeMap[ext] || 'application/octet-stream';
 }
 
-export class TelegramRelayService extends EventEmitter implements TelegramBridge {
+export class TelegramRelayService extends EventEmitter implements TelegramBridge, ChatBridge {
+  /** Telegram's key in the ChatBroker registry and in `chatBindings`. */
+  readonly provider = TELEGRAM_CHAT_PROVIDER;
+
   private channels = new Map<string, TelegramChannel>();
 
   constructor(
@@ -200,6 +205,25 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     this.channels.set(updated.id, updated);
     this.emit('message:sent_to_user', { channel: updated, messageId });
     return { sent: true, channel: updated, messageId };
+  }
+
+  /**
+   * The generic ChatBridge send. Telegram's own richer entry point (keyboards,
+   * explicit channel ids) stays `sendToUser`; this is the transport-agnostic
+   * subset the broker fans out, delegating rather than duplicating it.
+   *
+   * Inbound is NOT surfaced through the broker: Telegram already resolves its
+   * own topic → session mapping and injects into the PTY itself, and routing it
+   * twice would deliver the user's message twice.
+   */
+  async sendToSession(message: ChatOutboundMessage): Promise<ChatSendResult> {
+    const { sent, reason } = await this.sendToUser({
+      sessionId: message.sessionId,
+      text: message.text,
+      ...(message.filePath ? { filePath: message.filePath } : {}),
+      ...(message.asVoice ? { asVoice: true } : {}),
+    });
+    return { sent, ...(reason ? { reason } : {}) };
   }
 
   async handleIncomingTelegramMessage(msg: TelegramBot.Message): Promise<boolean> {

@@ -5,6 +5,7 @@ import type { SessionInfo } from '../types/session.js';
 import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
+import { hydrateChatBindings, serializeChatBindings } from './chat/chat-bindings.js';
 
 function serializeSession(s: SessionInfo): Record<string, unknown> {
   return {
@@ -17,7 +18,13 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.projectPath ? { projectPath: s.projectPath } : {}),
     ...(s.cliSessionName ? { cliSessionName: s.cliSessionName } : {}),
     ...(s.currentPlanId ? { currentPlanId: s.currentPlanId } : {}),
-    ...(s.topicId != null ? { topicId: s.topicId } : {}),
+    // Generic per-provider chat bindings REPLACE the old Telegram-only topicId
+    // on disk. serializeChatBindings derives the Telegram entry from topicId and
+    // carries through any provider key this version does not recognise.
+    ...((): Record<string, unknown> => {
+      const chatBindings = serializeChatBindings(s);
+      return chatBindings ? { chatBindings } : {};
+    })(),
     ...(s.aiagentState ? { aiagentState: s.aiagentState } : {}),
     ...(s.createdAt != null ? { createdAt: s.createdAt } : {}),
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
@@ -56,7 +63,8 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       if (session.projectPath) {
         session.projectPath = normalizeProjectPath(session.projectPath);
       }
-      return session;
+      // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
+      return hydrateChatBindings(session);
     });
   } catch (err) {
     logger.error(`Failed to load sessions: ${err}`);

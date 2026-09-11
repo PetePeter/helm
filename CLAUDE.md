@@ -170,6 +170,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 
 | Document | Content |
 |----------|---------|
+| [docs/chat-fan-out.md](docs/chat-fan-out.md) | Transport-agnostic chat — ChatBroker fan-out, ChatBridge, `chatBindings`, the mobile chat surface and its wire records |
 | [docs/mobile-ble-transport.md](docs/mobile-ble-transport.md) | Phone ↔ Helm BLE link — Helm as central, GATT characteristics, chunk framing, link ownership and online state, cross-language vectors |
 | [docs/mobile-secure-channel.md](docs/mobile-secure-channel.md) | Phone ↔ Helm app-layer encryption — X25519 + SAS handshake, AEAD framing, cross-language vectors |
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |

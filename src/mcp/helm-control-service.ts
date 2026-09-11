@@ -338,6 +338,11 @@ export class HelmControlService extends EventEmitter {
     this.telegramService.setNotificationManager(nm);
   }
 
+  /** Wire chat fan-out so `telegram_chat` reaches every registered surface. */
+  setChatBroker(broker: import('../session/chat/chat-broker.js').ChatBroker | null): void {
+    this.telegramService.setChatBroker(broker);
+  }
+
   /** Wire the RuntimeGroupManager so session_create can place into runtime groups. */
   setRuntimeGroupManager(manager: import('../session/runtime-group-manager.js').RuntimeGroupManager): void {
     this.sessionService.setRuntimeGroupManager(manager);
