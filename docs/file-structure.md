@@ -22,7 +22,8 @@ src/
 │       ├── draft-handlers.ts   # 5 IPC channels (draft:create/update/delete/list/count) wired to DraftManager
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
-│       └── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
+│       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
+│       └── mobile-handlers.ts  # 9 IPC channels (mobile:list/setEnabled/setAllowList/revoke/startPairing/confirmPairing/cancelPairing/pairingState/apkRelease). Secrets never cross this boundary
 ├── input/
 │   └── sequence-parser.ts      # {Enter}, {Ctrl+C}, {Wait 500}, {Mod Down/Up}, {{/}} — used by bindings + initialPrompt
 ├── output/
@@ -44,6 +45,11 @@ src/
 │   ├── mess-persistence.ts     # Per-project JSONL log plus atomic cursor metadata, retention pruning, compaction recovery, and corruption diagnostics
 │   ├── mess-notifier.ts        # Best-effort idle reminders with append-while-idle detection, cooldown, retry, and system delivery verification
 │   ├── persistence-paths.ts    # Stable per-user app-data paths, including the UUID-keyed Mess directory and log/cursor files
+│   ├── session-alert.ts        # States ONCE which session transitions are worth a buzz, and the `kind` each maps to. Read by both Telegram and the phone
+│   ├── chat/
+│   │   ├── chat-bridge.ts      # The interface one chat surface implements, whatever transport is underneath
+│   │   ├── chat-broker.ts      # The registry surfaces plug into; fan-out is unconditional and the registry is unbounded
+│   │   └── chat-bindings.ts    # Provider-keyed map of where a session lives on each surface; unknown keys survive a round-trip
 │   ├── prompt-template-types.ts        # PromptFolder / PromptTemplate / PromptNode model + isFolder type guard
 │   ├── prompt-template-manager.ts      # Global nested prompt-template tree CRUD (EventEmitter, emits prompt-template:changed; folders nest, templates are leaves)
 │   ├── prompt-template-persistence.ts  # YAML load/save to config/prompt-templates.yaml (global)
@@ -56,12 +62,37 @@ src/
 │   │   └── mess-guide.ts       # Agent-facing Mess tool rules and local-only/social-coordination constraints
 │   └── services/
 │       └── helm-mess-service.ts # Authenticated mess_post/check/history facade and compact wire-shape conversion
+├── mobile/                      # The Helm half of the phone link. See docs/mobile-app.md
+│   ├── ble/
+│   │   ├── characteristics.ts  # GATT UUIDs, directions stated from HELM's POV (so they invert on the phone). CTL is declared and RESERVED-BUT-UNUSED
+│   │   ├── ble-framing.ts      # The only layer that knows a GATT write is not a stream — chunk/reassemble, seq detects a dropped notification
+│   │   ├── ble-link-client.ts  # Helm's BLE central; the only file that talks to noble. Emits a BleLink (identity + BytePipe); no GATT type escapes
+│   │   ├── noble-adapter.ts    # The single lazy load of the real radio, behind the NobleApi interface that keeps the client testable
+│   │   └── framing-vectors.ts  # Generates tests/fixtures/ble-framing-vectors.json — regenerating is a WIRE BREAK
+│   ├── secure-channel.ts       # Authenticated encrypted channel over ANY BytePipe; zero BLE awareness. Reuses mcp/peer/pairing-crypto.ts verbatim
+│   ├── aead.ts                 # AES-256-GCM framing; per-direction keys, counter nonce never transmitted, refuse at exhaustion, no resync
+│   ├── protocol-version.ts     # Range negotiation, decoupled from product versions. A breaking change bumps PROTOCOL_MAX + adds a history row
+│   ├── test-vectors.ts         # Generates tests/fixtures/secure-channel-vectors.json — regenerating is a WIRE BREAK
+│   ├── mobile-pairing.ts       # Drives start → offerLink → SAS → confirm → persisted. NOT a second crypto exchange, by design
+│   ├── mobile-device-store.ts  # Paired-phone registry + per-device allow list. Keyed on machineId, never the rotating BLE address. Holds no secrets
+│   ├── mobile-device-sanitize.ts   # The ONE sanitizer shared by the loader and importAll, so machineId can never be silently dropped
+│   ├── mobile-device-persistence.ts # The ONE reader/writer of mobile-devices.yaml + mobile-secrets.yaml (PSKs, mode 0600)
+│   ├── mobile-link-manager.ts  # Owns the BLE lifecycle — scan, authenticate with a STORED PSK, identify, keep or drop, report online state
+│   ├── mobile-gate.ts          # The security boundary for a phone's MCP calls: deny by default, no impersonation, rate limited, audited
+│   ├── mobile-identity.ts      # Synthesizes the mobile:<deviceId> proxy AuthContext. The prefix is not part of any UUID, so it cannot impersonate
+│   ├── mobile-audit-log.ts     # 7-day rolling decision trail — argument KEY NAMES and error TYPES only, never values
+│   ├── mobile-audit-persistence.ts # The ONE reader/writer of mobile-audit.yaml, atomic at mode 0600, defensive prune on load
+│   ├── mobile-envelope.ts      # The four application records (call/result/error/chat). Deterministic encoding; a field or key-order change is a wire break
+│   ├── mobile-envelope-vectors.ts  # Generates tests/fixtures/mobile-envelope-vectors.json — regenerating is a WIRE BREAK
+│   ├── mobile-chat-bridge.ts   # The phone as a ChatBridge, and the ONE inbound path from a phone into Helm's tools (always via MobileGate)
+│   ├── mobile-alert-notifier.ts    # Session state / notify_user / flash_attention → a kind-bearing chat record over the open link. No dedup, deliberately
+│   └── apk-release.ts          # Resolves the GitHub release asset URL for the RUNNING version, never `latest`. Availability is three-valued
 ├── telegram/
 │   ├── bot.ts                  # TelegramBotCore — bot lifecycle (start/stop), long-polling, user-ID whitelist, message helpers, deleteForumTopic
 │   ├── callback-handler.ts     # Inline keyboard callback routing — session controls, spawn wizard, close all, text input
 │   ├── commands.ts             # Slash command handlers (/status, /switch, /send, /close, /spawn, /output)
 │   ├── keyboards.ts            # Inline keyboard layout builders (session list, controls, commands, spawn wizard)
-│   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards
+│   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards. NOTE: `handleStateChange` has no production caller — orchestrator.ts takes the notifier as `_notifier`, so Telegram's state-change notifications have never fired. The live path is session-alert.ts → MobileAlertNotifier
 │   ├── openwhispr-transcriber.ts # OpenWhispr-backed audio attachment transcription, writes transcript files beside downloads
 │   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, notifier, terminal mirror, dashboard
 │   ├── output-summarizer.ts    # PTY buffer → 3-5 line smart summary
@@ -75,7 +106,8 @@ src/
 ├── types/
 │   ├── session.ts              # SessionInfo (includes cliSessionName for resume), DraftPrompt, SessionChangeEvent, AnalogEvent types
 │   ├── plan.ts                 # PlanItem, PlanDependency, PlanStatus ('planning'|'ready'|'coding'|'review'|'blocked'|'done'), DirectoryPlan, PlanSequence types
-│   └── mess.ts                 # Durable project Mess Entry and ordered Cursor wire/domain types
+│   ├── mess.ts                 # Durable project Mess Entry and ordered Cursor wire/domain types
+│   └── mobile-device.ts        # Persisted paired-phone record + pairing-state wire types. Carries pskRef only, never a PSK
 └── utils/
     └── logger.ts               # Winston logger (daily rotation, used everywhere)
 ```
@@ -110,7 +142,8 @@ renderer/
 │   │   ├── ContextMenu.vue
 │   │   ├── DraftSubmenu.vue
 │   │   ├── FormModal.vue
-│   │   └── BindingEditorModal.vue
+│   │   ├── BindingEditorModal.vue
+│   │   └── MobilePairingDialog.vue    # SAS 6-digit compare for a pairing phone; the digits are a KDF output, safe to display
 │   ├── sidebar/
 │   │   ├── index.ts
 │   │   ├── SessionCard.vue     # Session card (activity dot, badges, timer, rename, close)
@@ -123,7 +156,8 @@ renderer/
 │   │   ├── ProfilesTab.vue     # Profile list CRUD
 │   │   ├── BindingsTab.vue     # Per-CLI binding list
 │   │   ├── ToolsTab.vue        # CLI type management
-│   │   └── TelegramTab.vue     # Telegram bot configuration
+│   │   ├── TelegramTab.vue     # Telegram bot configuration
+│   │   └── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
 │   ├── dock/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
@@ -155,7 +189,8 @@ renderer/
 │   ├── usePromptApplyFlow.ts   # Shared prompt-template apply flow (picker tree → prefill Prompt Editor → deliverPromptSequence). Used by main + popout windows
 │   ├── useTerminals.ts         # Terminal create/switch/destroy lifecycle
 │   ├── useNavigation.ts        # Navigation routing: sandwich → modal stack → view → screen → config binding
-│   └── useMessPane.ts          # Project-following Mess history, filters, append subscription, labels, and bounded backscroll
+│   ├── useMessPane.ts          # Project-following Mess history, filters, append subscription, labels, and bounded backscroll
+│   └── useMobileDevices.ts     # Module-singleton mirror for Settings → Mobile (paired phones, pairing state, APK release). Displays SAS digits — a KDF output; no PSK ever reaches the renderer
 ├── drafts/
 │   ├── draft-strip.ts          # Draft strip above terminal — draft pills (click opens editor) + plan chips + right-aligned chip-bar action buttons (renderActionButtons, invalidateChipActionCache, resolveTemplates)
 │   └── draft-editor.ts         # Slide-down draft editor panel (title + content, Save/Apply/Delete/Cancel buttons)
@@ -258,6 +293,9 @@ config/
 ├── plans/                      # Individual per-plan JSON files (auto-managed, folder-level not per-profile)
 ├── plan-dependencies.json      # Directory plan dependency registry
 ├── plans/incoming/             # Inbox for importable ready plan JSON artifacts
+├── mobile-devices.yaml         # Paired-phone registry — non-secret, holds pskRef references only
+├── mobile-secrets.yaml         # Mobile pairing PSKs, base64, mode 0600. Never logged, never sent to the renderer
+├── mobile-audit.yaml           # 7-day rolling trail of phone call decisions — argument key names and error types only
 └── profiles/
     └── default.yaml            # Self-contained: tools + workingDirectories + bindings + sticks + dpad
 ```
