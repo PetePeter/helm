@@ -59,7 +59,11 @@ export interface MobilePairingOptions {
   secretStore: SecretStore;
   /** This hub's stable machine id, bound into the handshake transcript. */
   machineId: string;
-  /** Force-disconnect a device's live link (used by revoke). */
+  /**
+   * Force-disconnect a device's live link (used by revoke). Usually supplied
+   * later via `setDropLink`: the link owner is constructed after this
+   * coordinator, because it needs it.
+   */
   dropLink?: (machineId: string) => void;
   now?: () => number;
   ttlMs?: number;
@@ -101,6 +105,14 @@ export class MobilePairing extends EventEmitter {
         machineId,
         sessionId: `mobile-${link.deviceId}-${this.now()}`,
       }));
+  }
+
+  /**
+   * Supply the link owner's disconnect hook after construction. MobileLinkManager
+   * depends on this coordinator, so it cannot be passed in through the options.
+   */
+  setDropLink(dropLink: (machineId: string) => void): void {
+    this.opts.dropLink = dropLink;
   }
 
   /** Arm pairing mode. The user has put the phone into advertising mode. */
@@ -242,7 +254,10 @@ export class MobilePairing extends EventEmitter {
 
       this.active = null;
       this.setState({ status: 'paired', deviceName: device.name });
-      this.emit('paired', { id: device.id, machineId });
+      // The link and the channel ride along so the link owner can adopt the
+      // connection that pairing just established, instead of dropping it and
+      // making the phone reconnect from scratch.
+      this.emit('paired', { id: device.id, machineId, link, channel });
       logger.info(`[MobilePairing] Paired "${device.name}" (${device.id})`);
     } catch (err) {
       // ROLLBACK — undo everything this attempt wrote.

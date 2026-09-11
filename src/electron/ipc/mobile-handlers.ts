@@ -28,6 +28,14 @@ export interface MobileHandlerDeps {
   isOnline?: (machineId: string) => boolean;
   /** Force-disconnect a device's live link (disable takes effect immediately). */
   dropLink?: (machineId: string) => void;
+  /**
+   * Link up/down notifications. Online state is not part of the registry, so
+   * without this the tab would keep showing whatever it saw when it last loaded.
+   */
+  links?: {
+    on(event: 'online' | 'offline', handler: () => void): unknown;
+    off(event: 'online' | 'offline', handler: () => void): unknown;
+  };
 }
 
 /** A paired phone as the settings tab renders it. */
@@ -114,6 +122,9 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     broadcast((win) => win.webContents.send('mobile-pairing:state', state));
 
   deps.deviceStore.on('mobile-devices:changed', onDevicesChanged);
+  // An online/offline flip changes what the list renders, not what it stores.
+  deps.links?.on('online', onDevicesChanged);
+  deps.links?.on('offline', onDevicesChanged);
 
   // The coordinator appears/disappears with the BLE transport, so attach to
   // whichever one is live, exactly as peer-management does for the link manager.
@@ -136,6 +147,8 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
       ipcMain.removeHandler(channel);
     }
     deps.deviceStore.off('mobile-devices:changed', onDevicesChanged);
+    deps.links?.off('online', onDevicesChanged);
+    deps.links?.off('offline', onDevicesChanged);
     pairingAttached?.off('state', onPairingState);
     clearInterval(attachTimer);
   };

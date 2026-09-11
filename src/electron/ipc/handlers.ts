@@ -79,6 +79,9 @@ import { setupPeerManagementHandlers } from './peer-management-handlers.js';
 import { setupMobileHandlers } from './mobile-handlers.js';
 import { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import { MobilePairing } from '../../mobile/mobile-pairing.js';
+import { MobileLinkManager } from '../../mobile/mobile-link-manager.js';
+import { BleLinkClient } from '../../mobile/ble/ble-link-client.js';
+import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
 
@@ -621,8 +624,7 @@ export function registerIPCHandlers(
   // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
   // own secret store, kept separate from the fleet's: a revoked phone must never
   // be able to take a peer's trust with it, and the two files have different
-  // lifetimes. The BLE transport itself is wired by a later plan, so `dropLink`
-  // and `isOnline` are absent for now — a device simply reads as offline.
+  // lifetimes.
   const mobileDeviceStore = new MobileDeviceStore((devices) => saveMobileDevices(devices));
   mobileDeviceStore.importAll(loadMobileDevices());
   const mobileSecretStore = new SecretStore((secrets) => saveMobileSecrets(secrets));
@@ -632,9 +634,29 @@ export function registerIPCHandlers(
     secretStore: mobileSecretStore,
     machineId: hostname(),
   });
+  // The owner of the BLE transport: it scans, identifies a phone by its
+  // machineId over a PSK handshake, and is the only thing that can say whether a
+  // device is genuinely online. The radio itself is loaded lazily, and only once
+  // there is a paired phone to reach or a pairing under way.
+  const mobileLinkManager = new MobileLinkManager({
+    createTransport: () => new BleLinkClient({
+      noble: loadNoble(),
+      logger: (message, error) =>
+        error ? logger.warn(`${message}: ${error}`) : logger.info(message),
+    }),
+    deviceStore: mobileDeviceStore,
+    secretStore: mobileSecretStore,
+    pairing: mobilePairing,
+    machineId: hostname(),
+  });
+  void mobileLinkManager.start()
+    .catch((err) => logger.error(`[mobile] Failed to start the BLE link manager: ${err}`));
   const disposeMobile = setupMobileHandlers({
     deviceStore: mobileDeviceStore,
     getPairing: () => mobilePairing,
+    isOnline: (machineId) => mobileLinkManager.isOnline(machineId),
+    dropLink: (machineId) => mobileLinkManager.dropLink(machineId),
+    links: mobileLinkManager,
   });
   // The security boundary in front of every inbound phone call (P-0737). Built
   // here because this scope owns the registry, the session manager and the
@@ -682,6 +704,7 @@ export function registerIPCHandlers(
       disposePairing();
       disposePeerManagement();
       disposeMobile();
+      await mobileLinkManager.stop();
       await fleetController?.stop();
       logger.info('[IPC] Cleanup complete');
     },

@@ -234,6 +234,58 @@ describe('BleLinkClient lifecycle', () => {
   });
 });
 
+describe('BleLinkClient rejection', () => {
+  /**
+   * Identity is only knowable after a handshake, so the layer above has to
+   * connect before it can refuse. What matters is that a refusal ends the
+   * connection AND stops that advertiser being picked straight back up.
+   */
+  async function connected() {
+    const noble = new FakeNoble();
+    const client = new BleLinkClient({
+      noble, reconnectBaseMs: 1000, reconnectMaxMs: 8000, rejectIgnoreMs: 60_000, logger: () => {},
+    });
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = nextLink(client);
+    const phone = new FakePeripheral();
+    noble.discover(phone);
+    return { noble, client, phone, link: await pending };
+  }
+
+  it('disconnects a rejected link and goes back to scanning', async () => {
+    const { noble, client, phone, link } = await connected();
+    let closed = false;
+    link.pipe.onClose(() => { closed = true; });
+
+    await client.reject(link, 'not a paired device');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(phone.connected).toBe(false);
+    expect(closed).toBe(true);
+    expect(noble.scanning).toBe(true);
+  });
+
+  it('skips a rejected advertiser until its ignore window lapses', async () => {
+    const { noble, client, phone, link } = await connected();
+    await client.reject(link, 'not a paired device');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const ignored = nextLink(client);
+    let relinked = false;
+    void ignored.then(() => { relinked = true; });
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(relinked).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(31_000);
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(relinked).toBe(true);
+  });
+});
+
 describe('BleLinkClient with SecureChannel', () => {
   it('carries a full handshake over two BLE pipes with zero SecureChannel changes', async () => {
     // Two clients, each connected to a fake peripheral, wired phone-to-phone:

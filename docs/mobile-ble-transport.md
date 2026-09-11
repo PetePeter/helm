@@ -90,6 +90,53 @@ asserts against the same file. **Regenerating it is a wire break.**
 The equivalent for the handshake and AEAD layer is
 [mobile-secure-channel.md](mobile-secure-channel.md).
 
+## Link ownership — who scans, who decides
+
+`BleLinkClient` connects; it does not decide. `MobileLinkManager`
+(`src/mobile/mobile-link-manager.ts`) owns the lifecycle and is the only object
+that can answer "is this phone online".
+
+**Identity is the `machineId`, never the BLE address.** Android rotates the
+advertised peripheral address, so the scan filter cannot be an address
+allow-list. Helm connects to any Helm-service advertiser and only learns who it
+is from the `SecureChannel` handshake, which is bound to the stored pairing PSK.
+`MobileDevice.deviceId` records the last-seen address as a *hint* so the
+likeliest PSK is tried first, and is updated in place on the existing record —
+a rotated address must never fork a registry entry or orphan a PSK.
+
+Because the PSK is bound into the handshake, identification is "try a candidate
+and see", and a failure closes the pipe: exactly one candidate per connection. A
+per-address cursor walks the remaining paired devices across reconnects.
+
+```mermaid
+graph TD
+    S[scan: Helm service UUID] --> C[connect + discover]
+    C --> P{pairing armed?}
+    P -->|yes| PAIR[MobilePairing.offerLink<br/>SAS on both screens]
+    P -->|no| K[next candidate device<br/>address hint first]
+    K -->|none| R[reject: disconnect,<br/>ignore 60s, rescan]
+    K --> H[SecureChannel with stored PSK]
+    H -->|handshake fails| R
+    H --> M{peerMachine is a<br/>trusted, enabled device?}
+    M -->|no| R
+    M -->|yes| L[link registered · online<br/>deviceId + lastSeenAt updated]
+    PAIR -->|paired| L
+    L -->|disconnect / revoke / disable| OFF[offline → rescan]
+```
+
+A refused advertiser is skipped for 60s (`rejectIgnoreMs`). Without that window
+a neighbour's phone would be reconnected on every rescan forever, since the
+refusal can only happen *after* connecting.
+
+The manager runs the radio only when there is something to reach: at least one
+paired device, or an armed pairing. `noble` is therefore never loaded on a
+machine that has never paired a phone.
+
+Revoke and disable both reach the radio: `MobilePairing.setDropLink` is wired to
+`MobileLinkManager.dropLink`, so "off" means off now, not at next reconnect.
+Pairing hands the established link and channel to the manager on its `paired`
+event, so a freshly paired phone is online without reconnecting.
+
 ## Error posture
 
 Per invariant 7's spirit, a misbehaving radio must not take a session with it:

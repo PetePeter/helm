@@ -34,6 +34,13 @@ const DEFAULT_ATT_MTU = 23;
 const DEFAULT_RECONNECT_BASE_MS = 1_000;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
 
+/**
+ * How long a refused advertiser is skipped. Identity is only known after a
+ * handshake, so the layer above has to connect before it can say no — without
+ * this window a neighbour's phone would be reconnected on every rescan forever.
+ */
+const DEFAULT_REJECT_IGNORE_MS = 60_000;
+
 /* ------------------------------------------------------------------ *
  * The narrow slice of @stoprocent/noble this client uses. Declared here
  * rather than imported so the module stays testable against a fake and
@@ -85,6 +92,9 @@ export interface BleLinkClientOptions {
   serviceUuid?: string;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
+  /** How long a rejected peripheral is skipped before it is tried again. */
+  rejectIgnoreMs?: number;
+  now?: () => number;
   logger?: (message: string, error?: unknown) => void;
 }
 
@@ -98,6 +108,8 @@ export class BleLinkClient extends EventEmitter {
   private readonly serviceUuid: string;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly rejectIgnoreMs: number;
+  private readonly now: () => number;
   private readonly log: (message: string, error?: unknown) => void;
 
   private started = false;
@@ -105,6 +117,8 @@ export class BleLinkClient extends EventEmitter {
   private active: BleLinkPipe | null = null;
   private attempts = 0;
   private rescanTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Peripheral id → epoch ms until which it is skipped. */
+  private readonly ignored = new Map<string, number>();
 
   constructor(options: BleLinkClientOptions) {
     super();
@@ -112,6 +126,8 @@ export class BleLinkClient extends EventEmitter {
     this.serviceUuid = normaliseUuid(options.serviceUuid ?? HELM_SERVICE_UUID_SHORT);
     this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
+    this.rejectIgnoreMs = options.rejectIgnoreMs ?? DEFAULT_REJECT_IGNORE_MS;
+    this.now = options.now ?? Date.now;
     this.log = options.logger ?? (() => {});
   }
 
@@ -141,6 +157,27 @@ export class BleLinkClient extends EventEmitter {
     await this.safely('stopScanning', () => this.noble.stopScanningAsync());
   }
 
+  /**
+   * Refuse a link the layer above would not keep: disconnect it, skip that
+   * advertiser for a while, and go back to scanning. Identity is only knowable
+   * after a handshake, so refusing AFTER connecting is the only filter possible
+   * — see the identity note in mobile-link-manager.ts.
+   */
+  async reject(link: BleLink, reason: string): Promise<void> {
+    this.ignored.set(link.deviceId, this.now() + this.rejectIgnoreMs);
+    this.log(`BLE rejecting ${link.deviceId}: ${reason}`);
+
+    const active = this.active;
+    if (!active || active.deviceId !== link.deviceId) return;
+    await active.disconnect();
+    // A peripheral that never fires 'disconnect' would otherwise wedge the
+    // client with a dead active link and no scheduled rescan.
+    if (this.active !== active) return;
+    this.active = null;
+    this.emit('disconnected', active.deviceId);
+    this.scheduleRescan();
+  }
+
   private async scan(): Promise<void> {
     if (!this.started || this.active || this.busy) return;
     await this.safely('startScanning', () => this.noble.startScanningAsync([this.serviceUuid], false));
@@ -148,6 +185,7 @@ export class BleLinkClient extends EventEmitter {
 
   private async onDiscover(peripheral: NoblePeripheral): Promise<void> {
     if (!this.started || this.active || this.busy) return;
+    if (this.isIgnored(peripheral.id)) return;
     this.busy = true;
     try {
       await this.noble.stopScanningAsync();
@@ -198,6 +236,15 @@ export class BleLinkClient extends EventEmitter {
       this.rescanTimer = null;
       void this.scan();
     }, delay);
+  }
+
+  /** Whether this advertiser is still inside its rejection window. */
+  private isIgnored(peripheralId: string): boolean {
+    const until = this.ignored.get(peripheralId);
+    if (until === undefined) return false;
+    if (this.now() < until) return true;
+    this.ignored.delete(peripheralId);
+    return false;
   }
 
   private clearRescan(): void {
