@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,7 +76,7 @@ fun SpawnScreen(
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
 
-    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg).imePadding()) {
+    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
             title = stringResource(R.string.spawn_title),
             linkState = linkState,
@@ -129,7 +127,6 @@ fun SpawnScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(HelmColors.Surface)
-                .navigationBarsPadding()
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {

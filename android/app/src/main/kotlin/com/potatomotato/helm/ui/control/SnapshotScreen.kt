@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -131,7 +130,6 @@ private fun LineCountBar(selected: Int?, onPick: (Int) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .background(HelmColors.Surface)
-            .navigationBarsPadding()
             .padding(HelmSpacing.Md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),

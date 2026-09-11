@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -84,7 +82,7 @@ fun ChatScreen(
         if (messages.isNotEmpty() && wasAtBottom) listState.scrollToItem(messages.lastIndex)
     }
 
-    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg).imePadding()) {
+    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
 
         if (messages.isEmpty()) {
@@ -183,7 +181,6 @@ private fun Composer(
         modifier = Modifier
             .fillMaxWidth()
             .background(HelmColors.Surface)
-            .navigationBarsPadding()
             .padding(HelmSpacing.Md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),

@@ -3,6 +3,7 @@ package com.potatomotato.helm
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,11 @@ import com.potatomotato.helm.ui.theme.HelmTheme
  */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Declared, not inherited. API 35 forces edge-to-edge on regardless of
+        // this call, so saying it out loud is the difference between a layout
+        // contract and a silent platform default that a targetSdk bump changes
+        // underneath us. HelmTheme consumes the insets it opens up.
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // A cold start from a notification tap: the extra is on the launch intent
         // and there is no composition yet to hand it to, so it is parked.
