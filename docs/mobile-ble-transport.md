@@ -150,6 +150,49 @@ Per invariant 7's spirit, a misbehaving radio must not take a session with it:
 - Disconnect and reconnect are **events** (`link`, `disconnected`, `error`), not
   exceptions.
 
+## The phone side (`android/app/src/main/kotlin/com/potatomotato/helm/ble/`)
+
+The peripheral half mirrors this document from the other end. Directions keep
+**Helm's** vocabulary in both languages — one name per characteristic, however
+confusing it looks locally — so on the phone RX is *written to* and TX *notifies*.
+
+| File | Role |
+|------|------|
+| `BleFraming.kt` | `BleChunker` / `BleReassembler` — a byte-for-byte port of `ble-framing.ts` |
+| `HelmGatt.kt` | The UUIDs, mirroring `characteristics.ts`, including the reserved CTL |
+| `BleLinkSession.kt` | Ownership, backpressure, state and the advertising retry curve |
+| `GattServer.kt` | `BluetoothGattServer` + `BluetoothLeAdvertiser`; decides nothing |
+| `HelmLinkService.kt` | Foreground service, type `connectedDevice` |
+| `HelmLink.kt` | The process-scoped duplex seam the layers above use |
+
+```mermaid
+graph LR
+    ADV[Advertising] -->|central connects| CON[Connecting]
+    CON -->|subscribes TX| LNK[Linked]
+    LNK -->|unsubscribes| CON
+    CON -->|disconnect| ADV
+    LNK -->|disconnect / range loss| ADV
+    ADV -->|advertise failed| OFF[Disconnected]
+    OFF -->|backoff 1s..30s| ADV
+```
+
+Three things that shape the Kotlin:
+
+- **The phone never initiates.** "Reconnect" on this side is just returning to
+  advertising and waiting, which is also what the status line says.
+- **One central at a time.** A second connection is disconnected on arrival —
+  two byte streams into one reassembler would corrupt both.
+- **One notification in flight.** GATT gives no second slot until
+  `onNotificationSent`, so outbound chunks queue and drain on the ack. A refusal
+  discards the rest of that message rather than sending a hole; `SecureChannel`
+  above notices the absence.
+
+Advertising is `ADVERTISE_MODE_BALANCED`, never `LOW_LATENCY` — this advertises
+all day. The 31-byte advertisement carries only the 128-bit service UUID; the
+device name rides in the scan response, and is dropped entirely if the user's
+device name overflows it. Nothing identifying is advertised, because identity is
+established by the handshake, not by the advert.
+
 ## Testing without hardware
 
 `BleLinkClient` takes a `NobleApi` — a narrow interface declared in
@@ -160,3 +203,11 @@ bytes. The real radio is loaded in exactly one place, `noble-adapter.ts`, lazily
 `tests/mobile-ble-link-client.test.ts` cross-wires two fake peripherals and runs
 a complete `SecureChannel` handshake over the resulting pipes, which is the
 proof that BLE satisfies `BytePipe` with zero changes to SecureChannel.
+
+The Kotlin side is tested the same way, on the JVM, with no device:
+`android/app/src/test/.../BleLinkSessionTest.kt` drives the session through a
+`FakeGattPeripheral`, and `BleFramingVectorsTest.kt` asserts the chunker and
+reassembler against `tests/fixtures/ble-framing-vectors.json` **in place** —
+Gradle passes its path as `helm.fixtures.dir` rather than copying it, because a
+copy is a second source of truth waiting to drift. That test, not inspection, is
+what proves the two languages agree.

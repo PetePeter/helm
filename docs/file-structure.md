@@ -208,12 +208,22 @@ android/
 └── app/
     ├── build.gradle.kts         # applicationId, versionCode derived from ../package.json, signing
     ├── proguard-rules.pro
-    └── src/main/
-        ├── AndroidManifest.xml  # BLUETOOTH_ADVERTISE (the phone is the peripheral), CONNECT, foreground-service, notifications, audio
-        ├── kotlin/com/potatomotato/helm/
-        │   ├── HelmApp.kt       # Application — process-scoped singletons land here
-        │   └── MainActivity.kt  # Compose shell placeholder (real UI: P-0740+)
-        └── res/values/          # strings.xml, themes.xml (true-black window chrome)
+    ├── src/main/
+    │   ├── AndroidManifest.xml  # BLUETOOTH_ADVERTISE (the phone is the peripheral), CONNECT, foreground-service, notifications, audio
+    │   ├── kotlin/com/potatomotato/helm/
+    │   │   ├── HelmApp.kt       # Application — process-scoped singletons land here
+    │   │   ├── MainActivity.kt  # Compose shell placeholder + permission gate (real UI: P-0740+)
+    │   │   └── ble/
+    │   │       ├── BleFraming.kt      # Chunker/reassembler — byte-for-byte port of ble-framing.ts
+    │   │       ├── HelmGatt.kt        # Service/characteristic UUIDs, mirroring characteristics.ts
+    │   │       ├── LinkState.kt       # Advertising / Connecting / Linked / Disconnected
+    │   │       ├── BleLinkSession.kt  # All link decisions; no Android types, JVM-testable
+    │   │       ├── GattServer.kt      # BluetoothGattServer + BluetoothLeAdvertiser adapter
+    │   │       ├── HelmLinkService.kt # Foreground service, type connectedDevice
+    │   │       ├── HelmLink.kt        # The duplex byte-stream seam for the layers above
+    │   │       └── BlePermissions.kt  # Runtime permissions (no BLUETOOTH_SCAN, by design)
+    │   └── res/values/          # strings.xml, themes.xml (true-black window chrome)
+    └── src/test/kotlin/…/ble/   # JVM unit tests, incl. the shared-fixture conformance test
 ```
 
 ## Config (`config/`)

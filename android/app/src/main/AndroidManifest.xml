@@ -44,6 +44,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          The advertiser lives here so it survives screen-off and backgrounding:
+          being reachable from the kitchen is the whole point of the app.
+          connectedDevice is the sanctioned foreground type for holding a BLE link.
+        -->
+        <service
+            android:name=".ble.HelmLinkService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
     </application>
 
 </manifest>

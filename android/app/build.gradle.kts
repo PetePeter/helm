@@ -112,6 +112,16 @@ android {
     }
 }
 
+/**
+ * The BLE wire format is shared with the desktop, and a mismatch fails silently
+ * as "pairing just never works". The Kotlin unit tests therefore assert against
+ * the SAME committed vectors the TypeScript side asserts against, read in place
+ * rather than copied — a copy is a second source of truth waiting to drift.
+ */
+tasks.withType<Test>().configureEach {
+    systemProperty("helm.fixtures.dir", rootProject.file("../tests/fixtures").absolutePath)
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -122,4 +132,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.json)
 }

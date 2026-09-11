@@ -51,8 +51,15 @@ cd android
 ./gradlew assembleRelease     # -> app/build/outputs/apk/release/app-release.apk
 ./gradlew assembleDebug
 ./gradlew installDebug        # build + install onto the attached device
+./gradlew test                # JVM unit tests — no device, no emulator
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
+
+The unit tests read the BLE conformance vectors straight out of
+`../tests/fixtures/`, whose path Gradle passes as the `helm.fixtures.dir` system
+property. They are shared with the TypeScript suite on purpose: the two
+languages must agree byte for byte, and a copy would drift silently. See
+[../docs/mobile-ble-transport.md](../docs/mobile-ble-transport.md).
 
 ## Versioning
 
