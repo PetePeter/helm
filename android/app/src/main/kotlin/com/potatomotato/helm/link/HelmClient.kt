@@ -1,6 +1,10 @@
 package com.potatomotato.helm.link
 
+import com.potatomotato.helm.data.ActionOutcome
+import com.potatomotato.helm.data.CapabilityCache
 import com.potatomotato.helm.data.ChatRepository
+import com.potatomotato.helm.data.ControlRepository
+import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
 import com.potatomotato.helm.wire.MobileEnvelope
@@ -35,6 +39,8 @@ class HelmClient(
     private val now: () -> Long = System::currentTimeMillis,
     val sessions: SessionRepository = SessionRepository(),
     val chats: ChatRepository = ChatRepository(),
+    val capabilities: CapabilityCache = CapabilityCache(),
+    val control: ControlRepository = ControlRepository(),
 ) {
     /** Outstanding calls, oldest first. */
     private val pending = LinkedHashMap<String, (Outcome) -> Unit>()
@@ -69,6 +75,74 @@ class HelmClient(
         return issued
     }
 
+    /**
+     * Ask the gate what this device may do. The answer drives the greying on the
+     * control sheet, so it is asked for rather than assumed — a hardcoded list
+     * would eventually claim a permission the desktop had revoked.
+     */
+    fun refreshCapabilities(): Boolean = call(METHOD_MOBILE_TOOLS) { outcome ->
+        // A refused or unanswered discovery leaves the surface UNKNOWN rather
+        // than empty: "we could not ask" must not render as "you may not".
+        if (outcome is Outcome.Ok) capabilities.apply(outcome.result) else capabilities.forget()
+    }
+
+    /** Directories Helm knows about, for the spawn form. */
+    fun refreshDirectories(): Boolean = call(METHOD_DIRECTORY_LIST) { outcome ->
+        if (outcome is Outcome.Ok) control.directoriesArrived(outcome.result)
+    }
+
+    /**
+     * Pull the terminal tail on demand — never a stream. [lines] is bounded HERE,
+     * before any bytes reach the radio: the desktop buffer holds at most
+     * [MAX_SNAPSHOT_LINES], and asking for more would spend the link's budget on
+     * text that does not exist.
+     *
+     * The tail is requested `stripped`, so the ANSI cleaning is the desktop's own
+     * and this app never grows a second escape-code parser.
+     */
+    fun readTerminal(sessionId: String, lines: Int): Boolean {
+        if (lines !in 1..MAX_SNAPSHOT_LINES) {
+            control.snapshotFailed("Ask for 1 to $MAX_SNAPSHOT_LINES lines")
+            return false
+        }
+        control.snapshotRequested(lines)
+        val params = linkedMapOf<String, Any>(
+            "sessionId" to sessionId,
+            // A NUMBER on the wire. The desktop reads it with a typeof check and
+            // silently ignores a quoted one, which would answer the default tail
+            // while this screen said otherwise.
+            "lines" to lines,
+            "mode" to SNAPSHOT_MODE,
+            "stripBlankLines" to true,
+        )
+        val issued = call(METHOD_READ_TERMINAL, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> control.snapshotArrived(outcome.result, lines)
+                is Outcome.Failed -> control.snapshotFailed(outcome.message)
+            }
+        }
+        return issued
+    }
+
+    /** Compact a session. Nothing to show but the outcome. */
+    fun compact(sessionId: String): Boolean =
+        act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
+
+    /**
+     * Close a session. Expect a refusal for anything this phone did not create:
+     * the gate lets a device close only its own sessions, and the permitted-tools
+     * cache cannot see that rule. The refusal is reported as a rule, not a fault.
+     */
+    fun closeSession(sessionId: String): Boolean =
+        act(SessionAction.Close, METHOD_SESSION_CLOSE, linkedMapOf("sessionId" to sessionId))
+
+    /** Spawn a session. The one CREATING action, and the only one this phone will then own. */
+    fun spawn(dirPath: String, cliType: String, name: String): Boolean = act(
+        SessionAction.Spawn,
+        METHOD_SESSION_CREATE,
+        linkedMapOf("dirPath" to dirPath, "cliType" to cliType, "name" to name),
+    )
+
     /** One decrypted application message. Never throws: the link outlives its payloads. */
     fun onInbound(payload: ByteArray) {
         when (val record = MobileEnvelope.decode(payload)) {
@@ -89,11 +163,33 @@ class HelmClient(
         val abandoned = pending.values.toList()
         pending.clear()
         abandoned.forEach { it(Outcome.Failed(LINK_LOST)) }
+        // The permitted surface is forgotten with the link so a reconnect re-asks.
+        // An allow-list edited on the desktop while the phone was away must not
+        // keep a revoked action looking available.
+        capabilities.forget()
     }
+
+    /**
+     * Issue one control action and record how it ended, so every outcome is
+     * something the user can read. A refusal is told apart from a dead link
+     * because they mean opposite things: one is a rule that will hold, the other
+     * is a radio that may come back.
+     */
+    private fun act(action: SessionAction, method: String, params: Map<String, Any>): Boolean =
+        call(method, params) { outcome ->
+            control.noticed(
+                action,
+                when {
+                    outcome is Outcome.Ok -> ActionOutcome.Done
+                    (outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE -> ActionOutcome.Refused
+                    else -> ActionOutcome.Failed(outcome.message)
+                },
+            )
+        }
 
     private fun call(
         method: String,
-        params: Map<String, String>? = null,
+        params: Map<String, Any>? = null,
         onOutcome: (Outcome) -> Unit,
     ): Boolean {
         val id = "p${sequence++}"
@@ -121,9 +217,33 @@ class HelmClient(
         }
     }
 
-    private companion object {
-        const val METHOD_SESSION_LIST = "session_list"
-        const val METHOD_SESSION_SEND_TEXT = "session_send_text"
+    companion object {
+        /**
+         * The desktop buffer holds this many lines; asking for more spends the
+         * link on text that does not exist. The chips on screen 7 sit under it.
+         */
+        const val MAX_SNAPSHOT_LINES = 500
+
+        /**
+         * Every deny path answers with this exact text, by desktop design, so a
+         * stolen phone cannot tell a hard-deny from an unknown tool. The app can
+         * therefore recognise A refusal, and must never claim to know WHICH.
+         */
+        const val MOBILE_DENY_MESSAGE = "Tool not permitted"
+
+        private const val METHOD_SESSION_LIST = "session_list"
+        private const val METHOD_SESSION_SEND_TEXT = "session_send_text"
+
+        /** The gate's reserved meta-method — answered in-gate, never dispatched. */
+        private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
+        private const val METHOD_DIRECTORY_LIST = "directory_list"
+        private const val METHOD_READ_TERMINAL = "session_read_terminal"
+        private const val METHOD_SESSION_COMPACT = "session_compact"
+        private const val METHOD_SESSION_CLOSE = "session_close"
+        private const val METHOD_SESSION_CREATE = "session_create"
+
+        /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
+        private const val SNAPSHOT_MODE = "stripped"
 
         /** Comfortably more than a screen can issue before the first answers. */
         const val MAX_PENDING = 32

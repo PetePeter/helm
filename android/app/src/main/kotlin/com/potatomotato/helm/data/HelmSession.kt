@@ -13,6 +13,13 @@ data class HelmSession(
     val name: String,
     /** Absolute project or working directory. The grouping KEY, not the label. */
     val projectPath: String,
+    /**
+     * The CLI's wire id (`claudecode`, `codex`, …), as opposed to its label.
+     * Carried because the spawn form needs a cliType to send and there is no
+     * phone-callable tool that enumerates them — the CLIs already running are the
+     * only honest source, so a phone can only spawn a kind of session it can see.
+     */
+    val cliType: String,
     val cliTypeName: String,
     val activity: SessionState,
 ) {
@@ -21,8 +28,7 @@ data class HelmSession(
      * can share a last segment — but a phone screen has no room for it.
      */
     val projectLabel: String
-        get() = projectPath.trimEnd('/', '\\').substringAfterLast('/').substringAfterLast('\\')
-            .ifEmpty { projectPath }
+        get() = lastPathSegment(projectPath)
 }
 
 /**
@@ -49,6 +55,7 @@ object SessionWire {
             projectPath = summary.opt("projectPath") as? String
                 ?: summary.opt("workingDir") as? String
                 ?: "",
+            cliType = summary.opt("cliType") as? String ?: "",
             cliTypeName = summary.opt("cliTypeName") as? String ?: "",
             activity = activityOf(summary.opt("activityLevel")),
         )

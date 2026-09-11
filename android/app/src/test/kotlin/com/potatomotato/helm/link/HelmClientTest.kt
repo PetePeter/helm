@@ -1,6 +1,11 @@
 package com.potatomotato.helm.link
 
+import com.potatomotato.helm.data.ActionNotice
+import com.potatomotato.helm.data.ActionOutcome
+import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.data.SessionAction
+import com.potatomotato.helm.data.Snapshot
 import com.potatomotato.helm.ui.components.SessionState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -141,6 +146,112 @@ class HelmClientTest {
         val thread = client.chats.thread("s1")
         assertEquals(Delivery.Failed, thread.first().delivery)
         assertEquals(Delivery.Sending, thread.last().delivery)
+    }
+
+    @Test
+    fun `the permitted surface is asked for, never assumed`() {
+        client.refreshCapabilities()
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("__mobile_tools__", record.getString("method"))
+
+        client.onInbound(resultFor(lastCallId(), """{"tools":[{"name":"session_compact"}]}"""))
+        assertTrue(client.capabilities.allows("session_compact"))
+        assertFalse(client.capabilities.allows("session_create"))
+    }
+
+    @Test
+    fun `a discovery that is refused leaves the surface unknown, not empty`() {
+        client.refreshCapabilities()
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        // "We could not ask" must not render as "you may not": the sheet greys
+        // either way, but only one of them may claim a permission verdict.
+        assertEquals(Capabilities.Unknown, client.capabilities.state.value)
+    }
+
+    @Test
+    fun `the surface is forgotten with the link so a reconnect re-asks`() {
+        client.refreshCapabilities()
+        client.onInbound(resultFor(lastCallId(), """{"tools":[{"name":"session_close"}]}"""))
+
+        client.onLinkLost()
+
+        assertEquals(Capabilities.Unknown, client.capabilities.state.value)
+    }
+
+    @Test
+    fun `a snapshot asks for a numeric line count and the desktop's own cleaning`() {
+        assertTrue(client.readTerminal("s1", 200))
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        // A NUMBER, not "200": the desktop reads lines with a typeof check and
+        // silently answers the default tail for a quoted one.
+        assertEquals(200, params.get("lines"))
+        assertEquals("stripped", params.getString("mode"))
+        assertTrue(params.getBoolean("stripBlankLines"))
+    }
+
+    @Test
+    fun `a snapshot past the buffer never reaches the radio`() {
+        assertFalse(client.readTerminal("s1", HelmClient.MAX_SNAPSHOT_LINES + 1))
+        assertFalse(client.readTerminal("s1", 0))
+
+        assertTrue(sent.isEmpty())
+        assertTrue(client.control.snapshot.value is Snapshot.Failed)
+    }
+
+    @Test
+    fun `a snapshot result lands as lines and a refusal lands as a failure`() {
+        client.readTerminal("s1", 50)
+        client.onInbound(resultFor(lastCallId(), """{"stripped":["$ ls","a.txt"]}"""))
+        assertEquals(Snapshot.Lines(listOf("$ ls", "a.txt"), 50), client.control.snapshot.value)
+
+        client.readTerminal("s1", 50)
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+        assertTrue(client.control.snapshot.value is Snapshot.Failed)
+    }
+
+    @Test
+    fun `a refusal for a permitted-looking action is a rule, not a dropped link`() {
+        // The capability cache says yes — the gate is still the authority, and it
+        // can refuse for a reason the cache cannot see (an allow-list edited since,
+        // a disabled device). That outcome must be READABLE, not a crash and not
+        // silence, and it must not be confused with the link going.
+        client.capabilities.apply(JSONObject("""{"tools":[{"name":"session_close"}]}"""))
+
+        client.closeSession("s1")
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(
+            ActionNotice(SessionAction.Close, ActionOutcome.Refused),
+            client.control.notice.value,
+        )
+    }
+
+    @Test
+    fun `a control action with no link to carry it reports the link, not a refusal`() {
+        linked = false
+
+        assertFalse(client.compact("s1"))
+
+        val notice = client.control.notice.value!!
+        assertEquals(SessionAction.Compact, notice.action)
+        assertTrue(notice.outcome is ActionOutcome.Failed)
+    }
+
+    @Test
+    fun `spawn sends the three arguments session_create needs and reports success`() {
+        client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("x:\\coding\\gamepad-cli-hub", params.getString("dirPath"))
+        assertEquals("claudecode", params.getString("cliType"))
+        assertEquals("kitchen", params.getString("name"))
+
+        client.onInbound(resultFor(lastCallId(), """{"sessionId":"s9"}"""))
+        assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */

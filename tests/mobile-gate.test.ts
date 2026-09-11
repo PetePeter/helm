@@ -14,6 +14,8 @@ import {
   RESERVED_MOBILE_TOOLS_METHOD,
   stripCallerIdentityOverrides,
   MOBILE_DENY_MESSAGE,
+  isMobileUnreachableTool,
+  MOBILE_UNREACHABLE_TOOL_PREFIXES,
 } from '../src/mobile/mobile-gate.js';
 import { HARD_DENY_TOOLS } from '../src/mcp/peer/inbound-call-gate.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
@@ -124,6 +126,33 @@ describe('MobileGate — hard deny', () => {
     }
     expect(calls).toHaveLength(0);
   });
+
+  it('refuses the structurally unreachable families rather than answering emptily', async () => {
+    const { gate, deviceId, calls } = build(['*']);
+
+    // Every one of these resolves its subject from authContext.sessionId and
+    // takes no session argument, so from the mobile: proxy they address nothing
+    // the user meant. Refusing is the honest answer; dispatching would return an
+    // empty artifact list that reads as "your artifacts are gone".
+    for (const tool of ['artifact_list', 'artifact_show', 'memory_search', 'mess_check']) {
+      expect(isMobileUnreachableTool(tool)).toBe(true);
+      await expect(gate.handle(deviceId, tool, { id: 'a1' })).rejects.toThrow(MOBILE_DENY_MESSAGE);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('leaves tools that take an explicit session reference alone', async () => {
+    const { gate, deviceId, calls } = build(['*']);
+
+    // The rule is "cannot address anything but itself", not "touches a session".
+    // session_* and scheduler_* take their target as an argument, so a phone can
+    // aim them, and pulling them would break the whole control surface.
+    for (const tool of ['session_list', 'session_read_terminal', 'session_compact', 'scheduler_list']) {
+      expect(MOBILE_UNREACHABLE_TOOL_PREFIXES.some(p => tool.startsWith(p))).toBe(false);
+      await gate.handle(deviceId, tool, { sessionId: 's1' });
+    }
+    expect(calls).toHaveLength(4);
+  });
 });
 
 describe('MobileGate — impersonation defence', () => {
@@ -161,39 +190,30 @@ describe('MobileGate — session ownership', () => {
     findByName: (name: string) => sessions[name],
   });
 
-  it('allows closing a session the device created', async () => {
-    // The store mints the device id, so the session fixture is patched after build.
-    const sessions: Record<string, { createdByMobileDeviceId?: string }> = { s1: {} };
-    const { gate, deviceId, calls } = build(['session_close'], { sessionLookup: lookup(sessions) });
-    sessions.s1.createdByMobileDeviceId = deviceId;
+  it('lets an allowed phone close a session it did not create', async () => {
+    // RULED: closing from the kitchen is the point of the app. The peer rule
+    // ("only what you created") was removed for phones because a SAS-paired phone
+    // is the user's own device — and because ownership is invisible to
+    // __mobile_tools__, so the control sheet would have shown a permitted-looking
+    // Close row that was refused every single time.
+    const { gate, deviceId, calls } = build(['session_close'], {
+      sessionLookup: lookup({ s1: {} }),
+    });
 
     await expect(gate.handle(deviceId, 'session_close', { sessionId: 's1' })).resolves.toEqual({ ok: true });
     expect(calls.map(c => c.method)).toEqual(['session_close']);
   });
 
-  it('denies closing a locally-created session', async () => {
-    const { gate, deviceId } = build(['session_close'], {
+  it('still closes under the allow-list, not around it', async () => {
+    // Permissive about WHICH session, unchanged about WHETHER: a device without
+    // session_close on its allow-list is refused exactly as before.
+    const { gate, deviceId, calls } = build(['session_list'], {
       sessionLookup: lookup({ s1: {} }),
     });
     await expect(gate.handle(deviceId, 'session_close', { sessionId: 's1' })).rejects.toThrow(
       MOBILE_DENY_MESSAGE,
     );
-  });
-
-  it('denies with the same message whether the session is missing or foreign', async () => {
-    const { gate, deviceId } = build(['session_close'], {
-      sessionLookup: lookup({ foreign: { createdByMobileDeviceId: 'another-device' } }),
-    });
-    const missing = await gate.handle(deviceId, 'session_close', { sessionId: 'nope' }).catch(e => e.message);
-    const foreign = await gate.handle(deviceId, 'session_close', { sessionId: 'foreign' }).catch(e => e.message);
-    expect(missing).toBe(foreign);
-  });
-
-  it('denies ownership-gated tools when no session lookup is wired', async () => {
-    const { gate, deviceId } = build(['session_close']);
-    await expect(gate.handle(deviceId, 'session_close', { sessionId: 's1' })).rejects.toThrow(
-      MOBILE_DENY_MESSAGE,
-    );
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -281,8 +301,23 @@ describe('MobileGate — permitted-tool discovery', () => {
       tools: Array<{ name: string }>;
     };
     const names = result.tools.map(t => t.name);
-    expect(names.length).toBe(MCP_TOOLS.length - HARD_DENY_TOOLS.size);
+    const unreachable = MCP_TOOLS.filter(t => isMobileUnreachableTool(t.name)).length;
+    expect(names.length).toBe(MCP_TOOLS.length - HARD_DENY_TOOLS.size - unreachable);
     for (const denied of HARD_DENY_TOOLS) expect(names).not.toContain(denied);
+  });
+
+  it('never lists a tool that could only return the proxy\'s own empty data', async () => {
+    const { gate, deviceId } = build(['*']);
+    const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {
+      tools: Array<{ name: string }>;
+    };
+
+    // The permitted surface must mean "this will do something". artifact_list is
+    // the case that proved it: scoped to the CALLER'S session, it answers a phone
+    // with an empty array rather than a denial, so a UI built from this list would
+    // offer a working-looking row that silently shows nothing.
+    expect(result.tools.map(t => t.name)).not.toContain('artifact_list');
+    expect(result.tools.some(t => isMobileUnreachableTool(t.name))).toBe(false);
   });
 
   it('denies discovery to a disabled device with the uniform message', async () => {

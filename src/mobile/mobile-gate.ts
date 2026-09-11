@@ -6,7 +6,8 @@
  * no impersonation, rate limited, audited. For every inbound call it, IN ORDER:
  *   1. rejects explicitly disabled devices,
  *   2. answers (never dispatches) the reserved permitted-tools meta-method,
- *   3. rejects hard-denied tools — even under a wildcard `*` allow-list,
+ *   3. rejects hard-denied and structurally unreachable tools — even under a
+ *      wildcard `*` allow-list,
  *   4. rejects ownership-gated tools on sessions the device did not create,
  *   5. rejects tools outside the device's allow-list,
  *   6. rejects calls exceeding the per-device rate limit,
@@ -47,6 +48,38 @@ export { HARD_DENY_TOOLS };
  * Sentinel underscores keep it from ever colliding with a real tool name.
  */
 export const RESERVED_MOBILE_TOOLS_METHOD = '__mobile_tools__';
+
+/**
+ * Tool-name prefixes that are STRUCTURALLY UNREACHABLE from a phone.
+ *
+ * These families resolve their subject from `authContext.sessionId` alone — they
+ * take no session argument at all (see every `requireCallerSession` call site in
+ * `mcp/tools/dispatcher.ts`). A phone's identity is the synthetic
+ * `mobile:<deviceId>` proxy, which deliberately owns no artifacts, no memories
+ * and no mess thread, so these can only ever address the proxy's OWN empty data.
+ *
+ * That makes them worse than denied. `artifact_list` from a phone does not fail —
+ * it SUCCEEDS with an empty array, and a user who can see three artifacts on the
+ * desktop concludes the phone lost them. A denial is legible; a silent empty
+ * success is not.
+ *
+ * So the permitted surface means "this will do something", not merely "this will
+ * not be refused": they are filtered out of the discovery answer AND denied on
+ * dispatch, exactly like a hard-deny. This is NOT a change to the ownership
+ * boundary — `requireCallerSession` is untouched, and reaching another session's
+ * artifacts from a phone would need a session-scoped surface that does not exist
+ * and whose threat model nobody has written.
+ */
+export const MOBILE_UNREACHABLE_TOOL_PREFIXES: readonly string[] = [
+  'artifact_',
+  'memory_',
+  'mess_',
+];
+
+/** Whether `tool` is structurally unreachable for a phone. */
+export function isMobileUnreachableTool(tool: string): boolean {
+  return MOBILE_UNREACHABLE_TOOL_PREFIXES.some(prefix => tool.startsWith(prefix));
+}
 
 /** Uniform, non-leaky deny message shared by EVERY deny reason. */
 export const MOBILE_DENY_MESSAGE = 'Tool not permitted';
@@ -101,11 +134,22 @@ export class GateError extends Error {
 }
 
 /**
- * Tools a device may invoke only on sessions IT created. `session_close` alone
- * for now, matching the peer rule — a lost phone must not be able to close the
- * user's own work.
+ * Tools a device may invoke only on sessions IT created.
+ *
+ * DELIBERATELY EMPTY. `session_close` was here, mirroring the peer rule, and the
+ * user removed it: a SAS-paired phone is their own device, and closing a session
+ * from the kitchen is the point of the app, not an attack on it. The alternative
+ * was worse than permissive — ownership is invisible to `__mobile_tools__`, so
+ * the control sheet would have offered a Close row that looked permitted and was
+ * refused every single time, which is the "fails looking like success" trap this
+ * surface was audited to remove.
+ *
+ * The MECHANISM is kept, not deleted: the next tool that needs "only what you
+ * created" (a phone-initiated destructive batch, say) adds a name here and gets
+ * the check, the uniform denial and the audit for free. An empty set is one line;
+ * re-deriving the check later is not.
  */
-const OWNERSHIP_GATED_TOOLS: ReadonlySet<string> = new Set(['session_close']);
+const OWNERSHIP_GATED_TOOLS: ReadonlySet<string> = new Set<string>();
 
 /** Minimal session view the ownership check needs. */
 export interface MobileSessionLookup {
@@ -191,14 +235,18 @@ export class MobileGate {
     if (method === RESERVED_MOBILE_TOOLS_METHOD) {
       this.consumeOrThrow(deviceId, method, argSummary);
       const tools = MCP_TOOLS
-        .filter(t => !HARD_DENY_TOOLS.has(t.name) && this.deviceStore.isToolAllowed(deviceId, t.name))
+        .filter(t => !HARD_DENY_TOOLS.has(t.name)
+          && !isMobileUnreachableTool(t.name)
+          && this.deviceStore.isToolAllowed(deviceId, t.name))
         .map(t => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema }));
       this.record(deviceId, method, argSummary, 'ok');
       return { tools };
     }
 
-    // 3. Hard-deny — never invocable from a phone, even under a wildcard.
-    if (HARD_DENY_TOOLS.has(method)) {
+    // 3. Hard-deny, and the structurally unreachable families with it: a tool
+    // that can only return the proxy's own empty data must refuse legibly rather
+    // than succeed emptily.
+    if (HARD_DENY_TOOLS.has(method) || isMobileUnreachableTool(method)) {
       return this.denied(deviceId, method, argSummary);
     }
 

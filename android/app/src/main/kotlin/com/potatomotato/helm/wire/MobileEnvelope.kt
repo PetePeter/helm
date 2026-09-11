@@ -33,14 +33,23 @@ object MobileEnvelope {
     const val MAX_ENVELOPE_BYTES = 1024 * 1024
 
     /**
-     * Encode one call. Params are string-valued because every call the phone
-     * makes has string arguments; widening this is a real change, not a typo
-     * fix, since the key order of whatever replaces it must still be fixed.
+     * Encode one call.
+     *
+     * Param VALUES are typed — string, integer or boolean — because the desktop's
+     * tool schemas are typed and its dispatcher checks `typeof`. `session_read_terminal`
+     * is the case that forced it: `lines` is a number there, and a quoted "200"
+     * is not rejected, it is silently IGNORED and the call quietly returns the
+     * default tail. A wrong answer that looks right is the worst failure this
+     * link can produce, so the codec carries the type rather than hoping.
+     *
+     * This is NOT a wire break: the desktop decoder types `params` as `unknown`
+     * and JSON-parses it, and every committed vector has string-only params, so
+     * those re-encode byte for byte. Key ORDER is still part of the format.
      *
      * Pass a [LinkedHashMap] (or any ordered map) — iteration order becomes wire
      * order.
      */
-    fun encodeCall(id: String, method: String, params: Map<String, String>? = null): ByteArray {
+    fun encodeCall(id: String, method: String, params: Map<String, Any>? = null): ByteArray {
         val json = StringBuilder()
         json.append("{\"v\":").append(VERSION)
         json.append(",\"t\":\"call\"")
@@ -50,7 +59,7 @@ object MobileEnvelope {
             json.append(",\"params\":{")
             params.entries.forEachIndexed { index, (key, value) ->
                 if (index > 0) json.append(',')
-                json.appendJsonString(key).append(':').appendJsonString(value)
+                json.appendJsonString(key).append(':').appendJsonValue(value)
             }
             json.append('}')
         }
@@ -127,6 +136,21 @@ object MobileEnvelope {
      * the reject vectors into "7" and would let a malformed record through.
      */
     private fun JSONObject.string(key: String): String? = opt(key) as? String
+
+    /**
+     * One param value. Unsupported types THROW rather than fall back to
+     * `toString()`: a silently stringified value is exactly the failure this
+     * typing exists to prevent, and it would only surface as a call that does
+     * nothing. The caller is code in this app, so the bug is fixable at source.
+     */
+    private fun StringBuilder.appendJsonValue(value: Any): StringBuilder = when (value) {
+        is String -> appendJsonString(value)
+        is Int, is Long -> append(value.toString())
+        is Boolean -> append(if (value) "true" else "false")
+        else -> throw IllegalArgumentException(
+            "unsupported param type ${value.javaClass.simpleName}; use String, Int, Long or Boolean",
+        )
+    }
 
     private fun StringBuilder.appendJsonString(value: String): StringBuilder {
         append('"')
