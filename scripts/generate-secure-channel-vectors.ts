@@ -5,7 +5,7 @@
  *
  * Only run this for an INTENTIONAL protocol change — the committed vectors are
  * what the Kotlin client is verified against, so changing them silently breaks
- * pairing on real hardware. Bump SECURE_CHANNEL_VERSION alongside any change.
+ * pairing on real hardware. Bump PROTOCOL_MAX alongside any change.
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';

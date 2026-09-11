@@ -17,8 +17,10 @@
  * sequenceDiagram
  *     participant I as Initiator
  *     participant R as Responder
- *     I->>R: HELLO  version, sessionId, machineId, commitment
- *     R->>I: RESPONSE  machineId, pubKey, nonce
+ *     I->>R: HELLO  protocol range, sessionId, machineId, commitment, product versions
+ *     Note over R: negotiate protocol version FIRST
+ *     R--xI: REFUSE  code, human message (no capability disclosed)
+ *     R->>I: RESPONSE  negotiated version, machineId, pubKey, nonce
  *     I->>R: REVEAL  pubKey, nonce
  *     Note over I,R: both derive shared secret, transcript, SAS, direction keys
  *     I->>R: CONFIRM  mac
@@ -53,9 +55,14 @@ import {
   type EphemeralKeyPair,
 } from '../mcp/peer/pairing-crypto';
 import { AeadReceiver, AeadSender, bindPsk, deriveDirectionKeys } from './aead';
-
-/** Wire protocol version — bumped only on a breaking framing change. */
-export const SECURE_CHANNEL_VERSION = 1;
+import {
+  LOCAL_PROTOCOL_RANGE,
+  negotiateProtocolVersion,
+  parseProtocolRange,
+  type ProtocolLabels,
+  type ProtocolRange,
+  type ProtocolRefusalCode,
+} from './protocol-version';
 
 /** Upper bound on a single wire frame, so a hostile length cannot exhaust memory. */
 export const MAX_FRAME_BYTES = 128 * 1024;
@@ -89,6 +96,22 @@ export interface SecureChannelOptions {
   sessionId?: string;
   /** Pairing PSK from a previous SAS comparison. Present ⇒ no SAS prompt. */
   psk?: Buffer;
+  /** Wire protocol range this end offers. Defaults to this build's range. */
+  protocolRange?: ProtocolRange;
+  /** Human-readable product version — messaging ONLY, never a compatibility gate. */
+  productVersion?: string;
+  /** The peer product version this build recommends — messaging ONLY. */
+  minPeerVersion?: string;
+  /** How each side is named in a refusal message. */
+  labels?: ProtocolLabels;
+}
+
+/** Thrown when the two ends cannot agree on a protocol version. */
+export class ProtocolRefusalError extends Error {
+  constructor(readonly code: ProtocolRefusalCode, message: string) {
+    super(message);
+    this.name = 'ProtocolRefusalError';
+  }
 }
 
 enum FrameType {
@@ -97,6 +120,7 @@ enum FrameType {
   Reveal = 0x03,
   Confirm = 0x04,
   Data = 0x05,
+  Refuse = 0x06,
 }
 
 export class SecureChannel extends EventEmitter {
@@ -113,6 +137,10 @@ export class SecureChannel extends EventEmitter {
   private readonly role: ChannelRole;
   private readonly machineId: string;
   private readonly psk?: Buffer;
+  private readonly range: ProtocolRange;
+  private readonly productVersion: string;
+  private readonly minPeerVersion: string;
+  private readonly labels: ProtocolLabels;
 
   private inbound = Buffer.alloc(0);
   private isClosed = false;
@@ -121,6 +149,9 @@ export class SecureChannel extends EventEmitter {
   private readonly nonce = randomBytes(HANDSHAKE_NONCE_BYTES);
 
   private sessionId: string;
+  private version = 0;
+  private peerVersionText = '';
+  private peerMinVersionText = '';
   private peerMachineId = '';
   private peerPubDER: Buffer | null = null;
   private peerNonce: Buffer | null = null;
@@ -146,6 +177,8 @@ export class SecureChannel extends EventEmitter {
 
   private resolveHandshake: ((channel: SecureChannel) => void) | null = null;
   private rejectHandshake: ((error: Error) => void) | null = null;
+  /** Set just before close() so the handshake rejects with the real cause. */
+  private failure: Error | null = null;
 
   private constructor(options: SecureChannelOptions) {
     super();
@@ -153,10 +186,29 @@ export class SecureChannel extends EventEmitter {
     this.role = options.role;
     this.machineId = options.machineId;
     this.psk = options.psk;
+    this.range = options.protocolRange ?? LOCAL_PROTOCOL_RANGE;
+    this.productVersion = options.productVersion ?? '';
+    this.minPeerVersion = options.minPeerVersion ?? '';
+    this.labels = options.labels ?? { local: 'Helm', peer: 'the phone app' };
     this.sessionId = options.sessionId ?? '';
     if (this.role === 'initiator' && !this.sessionId) {
       throw new Error('An initiator must supply a sessionId');
     }
+  }
+
+  /** The agreed wire protocol version; 0 until negotiation succeeds. */
+  get negotiatedVersion(): number {
+    return this.version;
+  }
+
+  /** The peer's product version — for display only, never a compatibility gate. */
+  get peerProductVersion(): string {
+    return this.peerVersionText;
+  }
+
+  /** The peer product version the other end recommends — display only. */
+  get peerMinVersion(): string {
+    return this.peerMinVersionText;
   }
 
   /** The 6-digit code the user compares on both screens. */
@@ -219,7 +271,7 @@ export class SecureChannel extends EventEmitter {
     } catch {
       // A pipe that is already gone is not an error worth propagating.
     }
-    this.settleHandshake(new Error(reason));
+    this.settleHandshake(this.failure ?? new Error(reason));
     this.emit('close', reason);
   }
 
@@ -236,10 +288,13 @@ export class SecureChannel extends EventEmitter {
 
     if (this.role === 'initiator') {
       this.writeFrame(FrameType.Hello, encodeFields([
-        uint32(SECURE_CHANNEL_VERSION),
+        uint32(this.range.min),
+        uint32(this.range.max),
         Buffer.from(this.sessionId, 'utf8'),
         Buffer.from(this.machineId, 'utf8'),
         computeCommitment(this.keyPair.publicKeyDER, this.nonce),
+        Buffer.from(this.productVersion, 'utf8'),
+        Buffer.from(this.minPeerVersion, 'utf8'),
       ]));
     }
 
@@ -280,6 +335,8 @@ export class SecureChannel extends EventEmitter {
         return this.handleConfirm(body);
       case FrameType.Data:
         return this.handleData(body);
+      case FrameType.Refuse:
+        return this.handleRefuse(body);
       default:
         throw new Error(`Unknown frame type ${type}`);
     }
@@ -287,15 +344,34 @@ export class SecureChannel extends EventEmitter {
 
   private handleHello(body: Buffer): void {
     if (this.role !== 'responder') throw new Error('HELLO received by the initiator');
-    const [version, sessionId, machineId, commitment] = decodeFields(body, 4);
-    if (version.readUInt32BE(0) !== SECURE_CHANNEL_VERSION) {
-      throw new Error('Unsupported secure channel version');
+    const [min, max, sessionId, machineId, commitment, productVersion, minPeerVersion]
+      = decodeFields(body, 7);
+
+    // Negotiation runs BEFORE anything is disclosed: on refusal the peer learns
+    // only that it is incompatible — no machine id, no public key, no nonce.
+    const peerRange = parseProtocolRange(readUint32(min), readUint32(max));
+    if (!peerRange) {
+      this.refuse(
+        'malformed-range',
+        `${this.labels.peer} sent an unusable protocol range. Reinstall ${this.labels.peer}.`,
+      );
+      return;
     }
+    const outcome = negotiateProtocolVersion(this.range, peerRange, this.labels);
+    if (!outcome.ok) {
+      this.refuse(outcome.code, outcome.message);
+      return;
+    }
+
+    this.version = outcome.version;
     this.sessionId = sessionId.toString('utf8');
     this.peerMachineId = machineId.toString('utf8');
     this.peerCommitment = commitment;
+    this.peerVersionText = productVersion.toString('utf8');
+    this.peerMinVersionText = minPeerVersion.toString('utf8');
 
     this.writeFrame(FrameType.Response, encodeFields([
+      uint32(this.version),
       Buffer.from(this.machineId, 'utf8'),
       this.keyPair.publicKeyDER,
       this.nonce,
@@ -304,7 +380,14 @@ export class SecureChannel extends EventEmitter {
 
   private handleResponse(body: Buffer): void {
     if (this.role !== 'initiator') throw new Error('RESPONSE received by the responder');
-    const [machineId, pubDER, nonce] = decodeFields(body, 3);
+    const [version, machineId, pubDER, nonce] = decodeFields(body, 4);
+
+    // The responder chooses, but it may only choose from what we offered.
+    const chosen = readUint32(version);
+    if (chosen === null || chosen < this.range.min || chosen > this.range.max) {
+      throw new Error('Peer selected a protocol version that was never offered');
+    }
+    this.version = chosen;
     this.peerMachineId = machineId.toString('utf8');
     this.peerPubDER = pubDER;
     this.peerNonce = nonce;
@@ -351,6 +434,33 @@ export class SecureChannel extends EventEmitter {
     this.emit('message', plaintext);
   }
 
+  private handleRefuse(body: Buffer): void {
+    const [code, message] = decodeFields(body, 2);
+    // The wire code is written from the REFUSER's point of view; invert it so a
+    // ProtocolRefusalError always reads relative to whoever is holding it. The
+    // human message needs no inversion — it names both sides explicitly.
+    this.fail(new ProtocolRefusalError(
+      invertRefusalCode(code.toString('utf8')),
+      message.toString('utf8'),
+    ));
+  }
+
+  /** Tell the peer why it is incompatible, then close. No capability is exposed. */
+  private refuse(code: ProtocolRefusalCode, message: string): void {
+    this.writeFrame(FrameType.Refuse, encodeFields([
+      Buffer.from(code, 'utf8'),
+      Buffer.from(message, 'utf8'),
+    ]));
+    this.fail(new ProtocolRefusalError(code, message));
+  }
+
+  /** Close carrying a typed cause, so the handshake rejects with it verbatim. */
+  private fail(error: Error): void {
+    this.failure = error;
+    this.emit('refused', error);
+    this.close(error.message);
+  }
+
   /**
    * Build the byte-identical transcript both peers see, derive the shared
    * secret, the SAS, the PSK and the two directional AEAD keys, then send our
@@ -361,8 +471,9 @@ export class SecureChannel extends EventEmitter {
 
     const initiatorFirst = this.role === 'initiator';
     this.sharedSecret = computeSharedSecret(this.keyPair.privateKey, this.peerPubDER);
+    if (!this.version) throw new Error('Key exchange attempted before version negotiation');
     this.transcript = buildPairingTranscript({
-      version: SECURE_CHANNEL_VERSION,
+      version: this.version,
       sessionId: this.sessionId,
       initiatorMachineId: initiatorFirst ? this.machineId : this.peerMachineId,
       responderMachineId: initiatorFirst ? this.peerMachineId : this.machineId,
@@ -431,6 +542,18 @@ function uint32(value: number): Buffer {
   const buffer = Buffer.alloc(4);
   buffer.writeUInt32BE(value >>> 0, 0);
   return buffer;
+}
+
+/** Flip a refusal code between the two peers' points of view. */
+function invertRefusalCode(code: string): ProtocolRefusalCode {
+  if (code === 'peer-too-old') return 'peer-too-new';
+  if (code === 'peer-too-new') return 'peer-too-old';
+  return 'malformed-range';
+}
+
+/** Read a wire uint32, or null if the field is not exactly 4 bytes. */
+function readUint32(field: Buffer): number | null {
+  return field.length === 4 ? field.readUInt32BE(0) : null;
 }
 
 /** 4-byte big-endian length prefix per field — injective, matching the transcript. */

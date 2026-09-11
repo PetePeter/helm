@@ -3,7 +3,7 @@
  *
  * The committed fixture is what the Kotlin client is verified against. If this
  * test fails, the wire format moved: either revert the change, or regenerate
- * the vectors AND bump SECURE_CHANNEL_VERSION, knowing every already-paired
+ * the vectors AND bump PROTOCOL_MAX, knowing every already-paired
  * phone stops working.
  */
 

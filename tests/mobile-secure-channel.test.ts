@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { SecureChannel } from '../src/mobile/secure-channel';
+import { PROTOCOL_MAX, PROTOCOL_MIN } from '../src/mobile/protocol-version';
 import { createMemoryPipePair, type MemoryPipeEnd } from './helpers/memory-pipe';
 
 const SESSION_ID = 'ble-session-1';
@@ -138,6 +139,109 @@ describe('SecureChannel handshake', () => {
     ]);
     expect(results.some((r) => r.status === 'rejected')).toBe(true);
     expect(results.every((r) => r.status !== 'fulfilled' || (r.value as SecureChannel).closed)).toBe(true);
+  });
+});
+
+describe('SecureChannel protocol negotiation', () => {
+  /** Raw wire frame, so a test can play a hostile or ancient peer. */
+  function frame(type: number, fields: Buffer[]): Buffer {
+    const body = Buffer.concat(fields.flatMap((field) => {
+      const length = Buffer.alloc(4);
+      length.writeUInt32BE(field.length, 0);
+      return [length, field];
+    }));
+    const payload = Buffer.concat([Buffer.from([type]), body]);
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(payload.length, 0);
+    return Buffer.concat([header, payload]);
+  }
+
+  function u32(value: number): Buffer {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32BE(value, 0);
+    return buffer;
+  }
+
+  it('agrees on the highest common version and records it on both ends', async () => {
+    const { initiator, responder } = await pair();
+    expect(initiator.negotiatedVersion).toBe(PROTOCOL_MAX);
+    expect(responder.negotiatedVersion).toBe(PROTOCOL_MAX);
+  });
+
+  it('refuses a peer whose range does not overlap, with an actionable message', async () => {
+    const { a, b } = createMemoryPipePair();
+    const results = await Promise.allSettled([
+      SecureChannel.open({
+        pipe: a,
+        role: 'initiator',
+        machineId: 'phone',
+        sessionId: SESSION_ID,
+        protocolRange: { min: PROTOCOL_MAX + 5, max: PROTOCOL_MAX + 6 },
+      }),
+      SecureChannel.open({ pipe: b, role: 'responder', machineId: 'desktop-secret-id' }),
+    ]);
+
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    const initiatorError = (results[0] as PromiseRejectedResult).reason as Error & { code?: string };
+    // Each end reads the code relative to itself: the phone's peer is the old
+    // one, the desktop's peer is the new one, from a single refusal frame.
+    expect(initiatorError.code).toBe('peer-too-old');
+    expect(initiatorError.message).toMatch(/\d/);
+    const responderError = (results[1] as PromiseRejectedResult).reason as Error & { code?: string };
+    expect(responderError.code).toBe('peer-too-new');
+
+    // Negotiation precedes any capability disclosure: the responder answered with
+    // a refusal and nothing else — no machine id, no public key, no nonce.
+    const disclosed = Buffer.concat(b.sent);
+    expect(b.sent).toHaveLength(1);
+    expect(disclosed.includes('desktop-secret-id')).toBe(false);
+  });
+
+  it('refuses a HELLO whose version fields are garbage rather than defaulting them', async () => {
+    const { a, b } = createMemoryPipePair();
+    const responder = SecureChannel.open({ pipe: b, role: 'responder', machineId: 'desktop' });
+    a.write(frame(0x01, [
+      Buffer.from('not-a-number'),
+      u32(PROTOCOL_MAX),
+      Buffer.from(SESSION_ID),
+      Buffer.from('phone'),
+      randomBytes(32),
+      Buffer.from('1.0.0'),
+      Buffer.from('1.0.0'),
+    ]));
+    await expect(responder).rejects.toThrow();
+  });
+
+  it('refuses a negotiated version the initiator never offered', async () => {
+    const { a, b } = createMemoryPipePair();
+    const initiator = SecureChannel.open({
+      pipe: a, role: 'initiator', machineId: 'phone', sessionId: SESSION_ID,
+    });
+    // A buggy or hostile responder claims a version outside the offered range.
+    b.write(frame(0x02, [
+      u32(PROTOCOL_MAX + 1), Buffer.from('desktop'), randomBytes(44), randomBytes(32),
+    ]));
+    await expect(initiator).rejects.toThrow(/version/i);
+  });
+
+  it('carries product versions for messaging only — they never gate compatibility', async () => {
+    const { a, b } = createMemoryPipePair();
+    const [initiator, responder] = await Promise.all([
+      SecureChannel.open({
+        pipe: a,
+        role: 'initiator',
+        machineId: 'phone',
+        sessionId: SESSION_ID,
+        productVersion: '0.0.1-ancient',
+        minPeerVersion: '99.0.0',
+      }),
+      SecureChannel.open({ pipe: b, role: 'responder', machineId: 'desktop' }),
+    ]);
+
+    expect(responder.peerProductVersion).toBe('0.0.1-ancient');
+    expect(responder.peerMinVersion).toBe('99.0.0');
+    expect(initiator.negotiatedVersion).toBeGreaterThanOrEqual(PROTOCOL_MIN);
+    expect(responder.closed).toBe(false);
   });
 });
 

@@ -7,6 +7,7 @@ and are entirely transport-agnostic.
 | File | Role |
 |------|------|
 | `src/mobile/secure-channel.ts` | Handshake + framing over any `BytePipe`. Zero BLE/GATT awareness. |
+| `src/mobile/protocol-version.ts` | Supported protocol range and the negotiation/refusal logic. |
 | `src/mobile/aead.ts` | AES-256-GCM sealing, per-direction keys, implicit monotonic nonces. |
 | `src/mobile/test-vectors.ts` | Cross-language conformance vectors (pure, fixed inputs). |
 | `src/mcp/peer/pairing-crypto.ts` | **Reused unchanged** — X25519, commit-reveal, transcript, SAS, confirm-MAC. |
@@ -18,8 +19,10 @@ and are entirely transport-agnostic.
 sequenceDiagram
     participant I as Initiator (desktop)
     participant R as Responder (phone)
-    I->>R: HELLO — version, sessionId, machineId, commitment
-    R->>I: RESPONSE — machineId, pubKey, nonce
+    I->>R: HELLO — protocol range, sessionId, machineId, commitment, product versions
+    Note over R: negotiate protocol version FIRST
+    R--xI: REFUSE — code + human message, then close (nothing disclosed)
+    R->>I: RESPONSE — negotiated version, machineId, pubKey, nonce
     I->>R: REVEAL — pubKey, nonce
     Note over I,R: X25519 → shared secret → transcript → SAS, PSK, direction keys
     I->>R: CONFIRM — HMAC over the transcript
@@ -31,8 +34,39 @@ sequenceDiagram
 Every frame on the wire is `uint32be length | type byte | payload`; handshake payload
 fields are 4-byte length-prefixed, matching the transcript encoding exactly.
 
+## Protocol version negotiation
+
+Helm auto-updates; the APK is sideloaded and drifts. Compatibility is therefore gated
+on a **protocol** version that is decoupled from both product versions and changes only
+when the wire changes. Each side declares a range (`PROTOCOL_MIN`…`PROTOCOL_MAX`) in
+HELLO and the highest common version wins.
+
+- Negotiation is the **first** thing that happens. On refusal the responder has sent
+  nothing but the REFUSE frame — no machine id, no public key, no nonce.
+- Product versions (`productVersion`, `minPeerVersion`) ride along **for the message
+  text only**. They never gate the decision.
+- A refusal is a clean close carrying a code plus human text, e.g. *"The phone app is
+  too old for this version of Helm. Helm speaks protocol 3–4; the phone app speaks 1–2.
+  Update the phone app."* The reverse direction (the user downgraded Helm) is handled
+  symmetrically.
+- A `ProtocolRefusalCode` is always relative to whoever holds it — `peer-too-old` means
+  "the other end is old". The wire code is written from the refuser's point of view and
+  inverted on receipt.
+- A malformed or absent range is refused, never defaulted to `0` or to `PROTOCOL_MAX`.
+
+### Version history
+
+Any **breaking** wire change increments `PROTOCOL_MAX` and adds a row here in the same
+commit. Additive changes do neither.
+
+| Version | Change |
+|---------|--------|
+| 1 | Initial wire format — range negotiation in HELLO, X25519 commit-reveal handshake, AES-256-GCM framing. |
+
 ## Invariants
 
+- **Negotiation precedes capability.** No identity, key material or tool surface is
+  exposed before the protocol version is agreed.
 - **No plaintext fallback.** Every failure path calls `close()`; there is no resync.
 - **Nonce reuse is structurally impossible.** Each direction has its own HKDF-derived
   key, and the 12-byte nonce is an implicit counter that is never transmitted — so a
@@ -61,5 +95,5 @@ Regenerate only for an intentional protocol change — it is a wire break, and e
 already-paired phone stops working:
 
 ```bash
-npx tsx scripts/generate-secure-channel-vectors.ts   # then bump SECURE_CHANNEL_VERSION
+npx tsx scripts/generate-secure-channel-vectors.ts   # then bump PROTOCOL_MAX
 ```

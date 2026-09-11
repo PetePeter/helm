@@ -15,7 +15,7 @@
  *
  * Regenerate after an intentional protocol change with:
  *   npx tsx scripts/generate-secure-channel-vectors.ts
- * A regeneration is a WIRE BREAK — bump SECURE_CHANNEL_VERSION with it.
+ * A regeneration is a WIRE BREAK — bump PROTOCOL_MAX (see protocol-version.ts) with it.
  */
 
 import {
@@ -26,7 +26,14 @@ import {
   derivePsk,
 } from '../mcp/peer/pairing-crypto';
 import { AeadSender, aeadNonce, bindPsk, deriveDirectionKeys } from './aead';
-import { SECURE_CHANNEL_VERSION, CARRIER_FINGERPRINT } from './secure-channel';
+import { CARRIER_FINGERPRINT } from './secure-channel';
+
+/**
+ * Pinned literal, NOT `PROTOCOL_MAX`: the vectors describe one specific wire
+ * version forever. Adding a new protocol version adds a new vector file rather
+ * than silently rewriting this one.
+ */
+const VECTOR_PROTOCOL_VERSION = 1;
 
 /** Fixed, meaningless-by-design inputs. Never derive these from randomness. */
 const SHARED_SECRET = Buffer.from(
@@ -71,7 +78,7 @@ export interface SecureChannelVectors {
 /** Compute every vector from the fixed inputs. Pure — no I/O, no randomness. */
 export function buildSecureChannelVectors(): SecureChannelVectors {
   const transcript = buildPairingTranscript({
-    version: SECURE_CHANNEL_VERSION,
+    version: VECTOR_PROTOCOL_VERSION,
     sessionId: SESSION_ID,
     initiatorMachineId: INITIATOR_MACHINE_ID,
     responderMachineId: RESPONDER_MACHINE_ID,
@@ -98,7 +105,7 @@ export function buildSecureChannelVectors(): SecureChannelVectors {
   }));
 
   return {
-    version: SECURE_CHANNEL_VERSION,
+    version: VECTOR_PROTOCOL_VERSION,
     carrierFingerprint: CARRIER_FINGERPRINT,
     inputs: {
       sessionId: SESSION_ID,
