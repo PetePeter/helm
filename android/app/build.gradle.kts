@@ -46,9 +46,13 @@ fun signingValue(key: String, env: String): String? =
 
 val keystorePath = signingValue("helm.keystore.file", "HELM_KEYSTORE_FILE")
 val keystorePassword = signingValue("helm.keystore.password", "HELM_KEYSTORE_PASSWORD")
-val keyAlias = signingValue("helm.key.alias", "HELM_KEY_ALIAS")
-val keyPassword = signingValue("helm.key.password", "HELM_KEY_PASSWORD")
-val hasReleaseSigning = listOf(keystorePath, keystorePassword, keyAlias, keyPassword).all { !it.isNullOrBlank() }
+// Deliberately NOT named keyAlias/keyPassword: inside signingConfigs.create the
+// receiver has properties of those names, so `this.keyAlias = keyAlias` reads the
+// receiver's own null back into itself and the release config silently loses its
+// key while still reporting as configured.
+val releaseKeyAlias = signingValue("helm.key.alias", "HELM_KEY_ALIAS")
+val releaseKeyPassword = signingValue("helm.key.password", "HELM_KEY_PASSWORD")
+val hasReleaseSigning = listOf(keystorePath, keystorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
 
 android {
     namespace = "com.potatomotato.helm"
@@ -69,8 +73,8 @@ android {
             create("release") {
                 storeFile = file(keystorePath!!)
                 storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                this.keyAlias = releaseKeyAlias
+                this.keyPassword = releaseKeyPassword
             }
         }
     }
