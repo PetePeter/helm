@@ -188,6 +188,34 @@ renderer/
     └── main.css
 ```
 
+## Android app (`android/`)
+
+Self-contained Gradle/Kotlin project for the phone client. It shares no
+toolchain with the Node build in either direction — see
+[../android/README.md](../android/README.md) for the boundary, the build
+commands and the permanent applicationId/keystore rules.
+
+```
+android/
+├── settings.gradle.kts          # Root + :app, repository declarations
+├── build.gradle.kts             # Plugin versions only (apply false)
+├── gradle.properties            # AndroidX, JVM args
+├── gradle/
+│   ├── libs.versions.toml       # Version catalog — AGP, Kotlin, Compose BOM
+│   └── wrapper/                 # Gradle wrapper (committed, incl. the jar)
+├── gradlew / gradlew.bat
+├── local.properties             # GITIGNORED — sdk.dir + release signing material
+└── app/
+    ├── build.gradle.kts         # applicationId, versionCode derived from ../package.json, signing
+    ├── proguard-rules.pro
+    └── src/main/
+        ├── AndroidManifest.xml  # BLUETOOTH_ADVERTISE (the phone is the peripheral), CONNECT, foreground-service, notifications, audio
+        ├── kotlin/com/potatomotato/helm/
+        │   ├── HelmApp.kt       # Application — process-scoped singletons land here
+        │   └── MainActivity.kt  # Compose shell placeholder (real UI: P-0740+)
+        └── res/values/          # strings.xml, themes.xml (true-black window chrome)
+```
+
 ## Config (`config/`)
 
 ```

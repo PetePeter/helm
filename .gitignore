@@ -24,3 +24,14 @@ src/config/skill-analytics.json
 tmp/helm-work*
 tmp/helm-attachment*
 .mcp.json
+
+# Android (android/) — build artifacts and signing material.
+# The keystore and its passwords NEVER enter the working tree (invariant 4);
+# they are supplied by android/local.properties or the environment.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.keystore
+*.jks
+

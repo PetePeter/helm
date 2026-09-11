@@ -16,6 +16,8 @@ export default defineConfig({
       '**/dist/**',
       '**/dist-electron/**',
       '**/node_modules/**',
+      // The Android module is a separate toolchain; Vitest must never walk it.
+      '**/android/**',
     ],
   },
 });
