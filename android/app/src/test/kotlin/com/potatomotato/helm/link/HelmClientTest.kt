@@ -6,6 +6,7 @@ import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
+import com.potatomotato.helm.notify.FakeNotificationPort
 import com.potatomotato.helm.ui.components.SessionState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -85,6 +86,30 @@ class HelmClientTest {
         assertEquals("the build is green", client.chats.thread("s1").single().text)
         assertEquals(1, client.chats.thread("s2").size)
         assertFalse(client.chats.thread("s1").single().fromPhone)
+    }
+
+    @Test
+    fun `a kind-bearing record notifies and never enters the thread`() {
+        val port = FakeNotificationPort()
+        client.alerts.port = port
+
+        client.onInbound(chatBytes(sessionId = "s1", text = "is idle", at = 7, kind = "idle"))
+
+        // A fabricated agent line is the failure this split exists to prevent:
+        // "is idle" as a chat bubble reads as something the CLI said.
+        assertTrue(client.chats.thread("s1").isEmpty())
+        assertEquals("is idle", port.showing("s1")?.text)
+    }
+
+    @Test
+    fun `a plain chat record still lands in the thread and never notifies`() {
+        val port = FakeNotificationPort()
+        client.alerts.port = port
+
+        client.onInbound(chatBytes(sessionId = "s1", text = "the build is green", at = 8))
+
+        assertEquals("the build is green", client.chats.thread("s1").single().text)
+        assertTrue(port.shade.isEmpty())
     }
 
     @Test
@@ -261,8 +286,11 @@ class HelmClientTest {
     private fun errorFor(id: String, message: String): ByteArray =
         """{"v":1,"t":"error","id":"$id","error":{"code":-32000,"message":"$message"}}""".toByteArray(Charsets.UTF_8)
 
-    private fun chatBytes(sessionId: String, text: String, at: Long): ByteArray =
-        """{"v":1,"t":"chat","sessionId":"$sessionId","sessionName":"work","text":"$text","at":$at}"""
+    private fun chatBytes(sessionId: String, text: String, at: Long, kind: String? = null): ByteArray =
+        (StringBuilder("""{"v":1,"t":"chat","sessionId":"$sessionId","sessionName":"work","text":"$text","at":$at""")
+            .apply { if (kind != null) append(""","kind":"$kind"""") }
+            .append('}'))
+            .toString()
             .toByteArray(Charsets.UTF_8)
 
     private fun lastCallId(): String = JSONObject(String(sent.last(), Charsets.UTF_8)).getString("id")

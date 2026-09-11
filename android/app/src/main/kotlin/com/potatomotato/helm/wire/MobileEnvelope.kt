@@ -128,6 +128,10 @@ object MobileEnvelope {
             at = at.toLong(),
             filePath = record.string("filePath"),
             voice = record.opt("voice") == true,
+            // Type-checked, never coerced: a numeric `kind` is malformed, and
+            // optString would turn it into a plausible-looking "7" that routes a
+            // record away from the thread on the strength of a bug.
+            kind = record.string("kind"),
         )
     }
 

@@ -7,6 +7,7 @@ import com.potatomotato.helm.data.ControlRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
+import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.wire.MobileRecord
 
@@ -22,6 +23,7 @@ import com.potatomotato.helm.wire.MobileRecord
  *     PC[PairingController] -->|plaintext| HC[HelmClient]
  *     HC -->|result| SR[SessionRepository]
  *     HC -->|chat| CR[ChatRepository]
+ *     HC -->|chat with a kind| AR[AlertRouter]
  *     HC -->|call| PC
  * ```
  *
@@ -41,6 +43,7 @@ class HelmClient(
     val chats: ChatRepository = ChatRepository(),
     val capabilities: CapabilityCache = CapabilityCache(),
     val control: ControlRepository = ControlRepository(),
+    val alerts: AlertRouter = AlertRouter(),
 ) {
     /** Outstanding calls, oldest first. */
     private val pending = LinkedHashMap<String, (Outcome) -> Unit>()
@@ -148,7 +151,12 @@ class HelmClient(
         when (val record = MobileEnvelope.decode(payload)) {
             is MobileRecord.Result -> pending.remove(record.id)?.invoke(Outcome.Ok(record.result))
             is MobileRecord.Failure -> pending.remove(record.id)?.invoke(Outcome.Failed(record.message))
-            is MobileRecord.Chat -> chats.receive(record)
+            // THE ONE place a chat record is split. A kind-bearing record is an
+            // EVENT Helm is reporting, not something an agent said: routing it
+            // into the thread would grow a conversation the desktop never had,
+            // and the drift would be invisible from the desktop side.
+            is MobileRecord.Chat ->
+                if (record.kind == null) chats.receive(record) else alerts.onAlert(record)
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.

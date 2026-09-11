@@ -20,6 +20,7 @@ import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
@@ -27,6 +28,7 @@ import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.voice.VoiceScreen
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 
 /**
@@ -57,6 +59,23 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
 
     PollSessions(client)
+
+    // A notification tap lands in that session's THREAD. It does not add a row to
+    // it: an alert is an event Helm reported, never something an agent said.
+    val tapped by PendingOpen.sessionId.collectAsState()
+    LaunchedEffect(tapped) {
+        PendingOpen.consume()?.let {
+            openSessionId = it
+            where = Destination.Thread
+        }
+    }
+
+    // What the notifier needs to know to stay quiet about the thing on screen —
+    // and to clear a row the user has just answered by opening it.
+    ReportVisibility(client)
+    LaunchedEffect(openSessionId, where) {
+        client.alerts.opened(openSessionId?.takeIf { where == Destination.Thread })
+    }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
     if (openSessionId != null && open == null && sessions.isNotEmpty()) {
@@ -186,6 +205,30 @@ private fun PollSessions(client: HelmClient) {
             while (true) {
                 client.refreshSessions()
                 delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+}
+
+/**
+ * Tell the notifier whether the user can actually see the app.
+ *
+ * STARTED and not RESUMED is the right line: an app visible behind the pairing
+ * dialog is still being looked at, while one in the recents carousel is not.
+ * Without this the phone would go silent for a session left open in a pocket —
+ * which is precisely the case the whole feature exists for.
+ */
+@Composable
+private fun ReportVisibility(client: HelmClient) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            client.alerts.visible(true)
+            try {
+                awaitCancellation()
+            } finally {
+                client.alerts.visible(false)
             }
         }
     }

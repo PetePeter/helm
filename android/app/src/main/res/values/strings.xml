@@ -85,6 +85,18 @@
     <string name="spawn_start">Start session</string>
     <string name="spawn_cancel">Cancel</string>
 
+    <!--
+      Three channels so the classes can be silenced apart. The descriptions are
+      what the user reads in Android's own notification settings, so they name the
+      event rather than the app's internals.
+    -->
+    <string name="alert_channel_attention">Needs you</string>
+    <string name="alert_channel_attention_description">A session is waiting on you, or asked for your attention.</string>
+    <string name="alert_channel_completion">Finished</string>
+    <string name="alert_channel_completion_description">A session finished what it was doing.</string>
+    <string name="alert_channel_idle">Went quiet</string>
+    <string name="alert_channel_idle_description">A session has been idle for a while.</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>

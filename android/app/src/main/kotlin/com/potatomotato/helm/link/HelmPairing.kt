@@ -5,6 +5,7 @@ import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.PhoneIdentity
+import com.potatomotato.helm.notify.AndroidNotifications
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +50,9 @@ object HelmPairing {
     fun init(context: Context) {
         if (started) return
         started = true
+        // The notification surface needs a Context, so it is attached here rather
+        // than constructed with the client — the same shape as HelmLink.sender.
+        client.alerts.port = AndroidNotifications(context)
         controller = PairingController(
             store = DeviceKeyStore(context),
             machineId = PhoneIdentity.machineId(context),

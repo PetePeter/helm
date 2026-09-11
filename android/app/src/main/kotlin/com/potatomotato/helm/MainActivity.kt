@@ -1,5 +1,6 @@
 package com.potatomotato.helm
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +27,8 @@ import com.potatomotato.helm.ble.BlePermissions
 import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.PairingState
+import com.potatomotato.helm.notify.AndroidNotifications
+import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.PermissionRationale
 import com.potatomotato.helm.ui.HelmHome
 import com.potatomotato.helm.ui.pairing.PairingScreen
@@ -41,7 +44,21 @@ import com.potatomotato.helm.ui.theme.HelmTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A cold start from a notification tap: the extra is on the launch intent
+        // and there is no composition yet to hand it to, so it is parked.
+        takeNotificationTap(intent)
         setContent { HelmTheme { HelmRoot() } }
+    }
+
+    /** A warm tap — the activity is already up, so the intent arrives here instead. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeNotificationTap(intent)
+    }
+
+    private fun takeNotificationTap(intent: Intent?) {
+        PendingOpen.request(intent?.getStringExtra(AndroidNotifications.EXTRA_SESSION_ID))
     }
 }
 

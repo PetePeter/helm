@@ -35,7 +35,16 @@ sealed interface MobileRecord {
      */
     data class Failure(val id: String, val code: Int, val message: String) : MobileRecord
 
-    /** Helm -> phone. An unsolicited agent message. Carries no id: it answers nothing. */
+    /**
+     * Helm -> phone. An unsolicited agent message. Carries no id: it answers nothing.
+     *
+     * [kind] splits this record in two, and the split matters more than it looks.
+     * ABSENT means the agent said this — it belongs in the thread. PRESENT means
+     * Helm is reporting an event (a state change, a flash) — it belongs in a
+     * notification and MUST NOT enter the thread, or the phone grows a
+     * conversation the desktop never had and nobody would ever see the drift.
+     * Routed once, in [com.potatomotato.helm.link.HelmClient.onInbound].
+     */
     data class Chat(
         val sessionId: String,
         val sessionName: String,
@@ -43,5 +52,6 @@ sealed interface MobileRecord {
         val at: Long,
         val filePath: String? = null,
         val voice: Boolean = false,
+        val kind: String? = null,
     ) : MobileRecord
 }
