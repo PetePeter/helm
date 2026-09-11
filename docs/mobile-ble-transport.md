@@ -3,6 +3,16 @@
 How bytes get between Helm and the Android app. Everything BLE-specific lives in
 `src/mobile/ble/` and nothing above it knows GATT exists.
 
+> **The wire contract has two homes and only two.** This file owns everything
+> below the byte pipe — the GATT service and characteristics, their directions,
+> and chunk framing. Everything above it — the handshake, AEAD framing,
+> protocol version negotiation and **the version history table that any breaking
+> change must add a row to** — lives in
+> [mobile-secure-channel.md](mobile-secure-channel.md). There is no third
+> document, deliberately: a wire contract with a spare copy is a wire contract
+> that drifts silently and is then believed. The app itself is described in
+> [mobile-app.md](mobile-app.md).
+
 ## Roles: Helm is the central
 
 Ratified 2026-09-11 after the P-0733 spike. `@stoprocent/bleno` cannot serve a
