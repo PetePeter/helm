@@ -63,3 +63,4 @@ export const systemClient = domainClient('system');
 export const eventsClient = domainClient('events');
 export const promptTemplatesClient = domainClient('promptTemplates');
 export const peersClient = domainClient('peers');
+export const mobileClient = domainClient('mobile');

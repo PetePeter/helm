@@ -104,6 +104,8 @@ import ChipbarActionsTab from './components/sidebar/ChipbarActionsTab.vue';
 import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
+import MobileTab from './components/sidebar/MobileTab.vue';
+import MobilePairingDialog from './components/modals/MobilePairingDialog.vue';
 import { usePeers } from './composables/usePeers.js';
 import SkillsTab from './components/sidebar/SkillsTab.vue';
 
@@ -1238,6 +1240,9 @@ onUnmounted(() => {
             <PeersTab
               v-else-if="activeTab === 'peers'"
             />
+            <MobileTab
+              v-else-if="activeTab === 'mobile'"
+            />
             <BindingsTab
               v-else
               :bindings="settingsBindings"
@@ -1261,6 +1266,7 @@ onUnmounted(() => {
 
     <RecycleBinModal v-model:visible="recycleBin.modalVisible.value" />
     <PeerPairingDialog />
+    <MobilePairingDialog />
     <PendingHandoverModal
       :session-id="state.activeSessionId"
       :terminal-focused="dockWorkspace.focusedPaneId.value === PANE_TERMINAL"

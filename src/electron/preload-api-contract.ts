@@ -249,6 +249,16 @@ export const PRELOAD_API_DOMAINS = {
     'peerGetAudit',
     'peerFleetEnabled',
   ],
+  mobile: [
+    'mobileList',
+    'mobileStartPairing',
+    'mobileConfirmPairing',
+    'mobileCancelPairing',
+    'mobilePairingState',
+    'mobileSetAllowList',
+    'mobileSetEnabled',
+    'mobileRevoke',
+  ],
   patterns: [
     'toolsGetPatterns',
     'toolsAddPattern',
@@ -338,6 +348,8 @@ export const PRELOAD_API_DOMAINS = {
     'onPeerConfigChanged',
     'onPeerLinkStatus',
     'onPeerAuditChanged',
+    'onMobileDevicesChanged',
+    'onMobilePairingState',
   ],
 } as const;
 

@@ -211,6 +211,15 @@ export class SecureChannel extends EventEmitter {
     return this.peerMinVersionText;
   }
 
+  /**
+   * The peer's stable machine identity, as bound into the handshake transcript.
+   * The pairing registry is keyed on this: a phone's advertised BLE address
+   * rotates, this does not.
+   */
+  get peerMachine(): string {
+    return this.peerMachineId;
+  }
+
   /** The 6-digit code the user compares on both screens. */
   get sas(): string {
     return this.sasDigits;

@@ -1378,6 +1378,70 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('peer-audit:changed', listener);
   },
 
+  // ---- mobile (paired phones over BLE) --------------------------------------
+
+  /** Paired phones with live online status + enable flag. Never carries a PSK. */
+  mobileList: (): Promise<Array<{
+    id: string;
+    machineId: string;
+    name: string;
+    allow: string[];
+    enabled: boolean;
+    online: boolean;
+    createdAt: number;
+    lastSeenAt?: number;
+  }>> => ipcRenderer.invoke('mobile:list'),
+
+  /** Arm pairing mode — the user has put the phone into advertising mode. */
+  mobileStartPairing: (): Promise<{ ok: boolean; reason?: string }> =>
+    ipcRenderer.invoke('mobile:startPairing'),
+
+  /** The user's ONE accept/reject decision (did the two codes match?). */
+  mobileConfirmPairing: (accepted: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mobile:confirmPairing', accepted),
+
+  /** Abandon the active pairing flow. */
+  mobileCancelPairing: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('mobile:cancelPairing'),
+
+  /** The current pairing state, for a dialog opened mid-flow. */
+  mobilePairingState: (): Promise<{
+    status: 'idle' | 'scanning' | 'awaiting-sas' | 'paired' | 'failed';
+    sas?: string;
+    deviceName?: string;
+    reason?: string;
+  }> => ipcRenderer.invoke('mobile:pairingState'),
+
+  /** Replace a device's tool-name allow-list (glob patterns). */
+  mobileSetAllowList: (deviceId: string, allow: string[]): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mobile:setAllowList', deviceId, allow),
+
+  /** Toggle whether a device may connect. Off drops the live link immediately. */
+  mobileSetEnabled: (deviceId: string, enabled: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mobile:setEnabled', deviceId, enabled),
+
+  /** Revoke a device: removes the record + PSK and drops the live link. */
+  mobileRevoke: (deviceId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mobile:revoke', deviceId),
+
+  /** Subscribe to the paired-device registry changing. */
+  onMobileDevicesChanged: (callback: () => void) => {
+    const listener = () => callback();
+    ipcRenderer.on('mobile-devices:changed', listener);
+    return () => ipcRenderer.removeListener('mobile-devices:changed', listener);
+  },
+
+  /** Subscribe to the pairing flow advancing (scanning → SAS → paired/failed). */
+  onMobilePairingState: (callback: (data: {
+    status: 'idle' | 'scanning' | 'awaiting-sas' | 'paired' | 'failed';
+    sas?: string;
+    deviceName?: string;
+    reason?: string;
+  }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on('mobile-pairing:state', listener);
+    return () => ipcRenderer.removeListener('mobile-pairing:state', listener);
+  },
+
 } as const;
 
 export type PreloadMethodImplementations = typeof PRELOAD_METHOD_IMPLEMENTATIONS;

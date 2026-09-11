@@ -76,6 +76,12 @@ import { PeerConfigManager } from '../../session/peer-config-manager.js';
 import { loadPeers, savePeers } from '../../session/peer-config-persistence.js';
 import { setupPairingHandlers } from './pairing-handlers.js';
 import { setupPeerManagementHandlers } from './peer-management-handlers.js';
+import { setupMobileHandlers } from './mobile-handlers.js';
+import { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
+import { MobilePairing } from '../../mobile/mobile-pairing.js';
+import {
+  loadMobileDevices, saveMobileDevices, loadMobileSecrets, saveMobileSecrets,
+} from '../../mobile/mobile-device-persistence.js';
 import { FleetController } from '../../mcp/peer/fleet-controller.js';
 import type { FleetConfig } from '../../config/loader.js';
 import { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
@@ -599,6 +605,25 @@ export function registerIPCHandlers(
     audit: peerAuditLog,
     getLinkManager: () => fleetController!.currentLinkManager(),
   });
+  // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
+  // own secret store, kept separate from the fleet's: a revoked phone must never
+  // be able to take a peer's trust with it, and the two files have different
+  // lifetimes. The BLE transport itself is wired by a later plan, so `dropLink`
+  // and `isOnline` are absent for now — a device simply reads as offline.
+  const mobileDeviceStore = new MobileDeviceStore((devices) => saveMobileDevices(devices));
+  mobileDeviceStore.importAll(loadMobileDevices());
+  const mobileSecretStore = new SecretStore((secrets) => saveMobileSecrets(secrets));
+  mobileSecretStore.importAll(loadMobileSecrets());
+  const mobilePairing = new MobilePairing({
+    deviceStore: mobileDeviceStore,
+    secretStore: mobileSecretStore,
+    machineId: hostname(),
+  });
+  const disposeMobile = setupMobileHandlers({
+    deviceStore: mobileDeviceStore,
+    getPairing: () => mobilePairing,
+  });
+
   // Apply the persisted config now (starts the stack iff enabled).
   void fleetController.start()
     .catch((err) => logger.error(`[fleet] Failed to start peer transport: ${err}`));
@@ -629,6 +654,7 @@ export function registerIPCHandlers(
       await localhostMcpServer.close();
       disposePairing();
       disposePeerManagement();
+      disposeMobile();
       await fleetController?.stop();
       logger.info('[IPC] Cleanup complete');
     },

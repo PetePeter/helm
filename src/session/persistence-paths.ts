@@ -26,6 +26,10 @@ export const SELF_SIGNED_CERT_FILE = join(configDir, 'self-signed-cert.yaml');
 export const PEER_PINS_FILE = join(configDir, 'peer-pins.yaml');
 export const PEER_SECRETS_FILE = join(configDir, 'peer-secrets.yaml');
 export const PEER_AUDIT_FILE = join(configDir, 'peer-audit.yaml');
+/** Paired phones. No secret material — only pskRef references. */
+export const MOBILE_DEVICES_FILE = join(configDir, 'mobile-devices.yaml');
+/** Mobile pairing PSKs, base64, mode 0600. The ONLY place they are stored. */
+export const MOBILE_SECRETS_FILE = join(configDir, 'mobile-secrets.yaml');
 export const MEMORIES_FILE = join(configDir, 'memories.json');
 export const MEMORY_ATTACHMENTS_DIR = join(configDir, 'memory-attachments');
 /** Mess is stored below per-user app data, never below the repository. */
