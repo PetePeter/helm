@@ -1,28 +1,30 @@
 package com.potatomotato.helm.ui.pairing
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.potatomotato.helm.R
-
-// Ratified palette. The design system (P-0740) will own these; until it lands
-// they match MainActivity's rather than inventing a second set.
-private val Accent = Color(0xFFCCFF00)
-private val OnAccent = Color(0xFF0D1200)
-private val Muted = Color(0xFF9A9A9A)
-private val Warning = Color(0xFFFBBF24)
+import com.potatomotato.helm.ui.components.GhostButton
+import com.potatomotato.helm.ui.components.PrimaryButton
+import com.potatomotato.helm.ui.theme.HelmColors
+import com.potatomotato.helm.ui.theme.HelmRadius
+import com.potatomotato.helm.ui.theme.HelmSize
+import com.potatomotato.helm.ui.theme.HelmSpacing
+import com.potatomotato.helm.ui.theme.HelmType
 
 /**
  * Screen 5 of the mockup: the SAS comparison.
@@ -43,56 +45,67 @@ fun PairingScreen(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Lg),
     ) {
-        Text(text = stringResource(R.string.pairing_title), color = Muted, fontSize = 14.sp)
-        Text(text = desktopId, color = Color.White, fontSize = 20.sp, textAlign = TextAlign.Center)
-
         Text(
-            text = sas.spaced(),
-            color = Accent,
-            fontSize = 52.sp,
+            text = stringResource(R.string.pairing_title),
+            color = HelmColors.Faint,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Text(
+            text = desktopId,
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.titleLarge,
             textAlign = TextAlign.Center,
         )
 
         Text(
             text = stringResource(R.string.pairing_prompt),
-            color = Color.White,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = stringResource(R.string.pairing_warning),
-            color = Warning,
-            fontSize = 13.sp,
+            color = HelmColors.Dim,
+            style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
         )
 
-        Row(
+        SasDigits(sas)
+
+        Text(
+            text = stringResource(R.string.pairing_warning),
+            color = HelmColors.Faint,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+        )
+
+        // Stacked, not side by side. "They match" is the action the user came
+        // to take; putting Reject beside it invites a mis-tap on the one screen
+        // where a mis-tap costs the whole security property.
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
-            Button(
-                onClick = onReject,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1A1A1A),
-                    contentColor = Color.White,
-                ),
-            ) {
-                Text(text = stringResource(R.string.pairing_reject))
-            }
-            Button(
-                onClick = onMatch,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = OnAccent,
-                ),
-            ) {
-                Text(text = stringResource(R.string.pairing_match))
-            }
+            PrimaryButton(text = stringResource(R.string.pairing_match), onClick = onMatch)
+            GhostButton(text = stringResource(R.string.pairing_reject), onClick = onReject)
         }
     }
 }
 
-/** "830701" -> "830 701": three-and-three is far easier to read off a screen. */
-private fun String.spaced(): String =
-    if (length == 6) "${substring(0, 3)} ${substring(3)}" else this
+/**
+ * One cell per digit. Splitting them stops the eye reading the code as a number
+ * and makes a digit-by-digit comparison against the desktop the natural motion.
+ */
+@Composable
+private fun SasDigits(sas: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs)) {
+        sas.forEach { digit ->
+            Box(
+                modifier = Modifier
+                    .width(HelmSize.SasCellWidth)
+                    .height(HelmSize.SasCellHeight)
+                    .background(HelmColors.Surface2, RoundedCornerShape(HelmRadius.Sm))
+                    .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Sm)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(text = digit.toString(), color = HelmColors.Accent, style = HelmType.SasDigit)
+            }
+        }
+    }
+}

@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-      Only the window chrome lives here; all in-app colour is Compose's, and the
-      real design system lands in P-0740. TRUE BLACK is ratified (not dark grey —
-      grey defeats the OLED pixel-off saving), so the window background matches
-      the first frame Compose draws and there is no white flash on launch.
+      Only the window chrome lives here; all in-app colour is Compose's and comes
+      from ui/theme/Color.kt. TRUE BLACK is ratified (not dark grey — grey defeats
+      the OLED pixel-off saving), so the window background matches the first frame
+      Compose draws and there is no white flash on launch.
     -->
     <style name="Theme.Helm" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#000000</item>
-        <item name="android:statusBarColor">#000000</item>
-        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:windowBackground">@color/helm_black</item>
+        <item name="android:statusBarColor">@color/helm_black</item>
+        <item name="android:navigationBarColor">@color/helm_black</item>
     </style>
 </resources>

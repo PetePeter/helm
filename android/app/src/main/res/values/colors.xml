@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The only colours the PLATFORM needs — window chrome and the launcher icon.
+  Compose never reads these; its tokens live in ui/theme/Color.kt. Both sets
+  come from the same ratified palette, and these two are the only values that
+  have to exist twice because the framework resolves them before Compose runs.
+-->
+<resources>
+    <!-- TRUE BLACK. Not a dark grey — see HelmColors.Bg for why. -->
+    <color name="helm_black">#FF000000</color>
+    <color name="helm_accent">#FFCCFF00</color>
+</resources>

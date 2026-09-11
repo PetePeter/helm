@@ -120,6 +120,9 @@ android {
  */
 tasks.withType<Test>().configureEach {
     systemProperty("helm.fixtures.dir", rootProject.file("../tests/fixtures").absolutePath)
+    // The design system is only enforceable if a test can read the sources it
+    // governs; see NoRawColorLiteralTest.
+    systemProperty("helm.android.src.dir", file("src/main/kotlin").absolutePath)
 }
 
 dependencies {

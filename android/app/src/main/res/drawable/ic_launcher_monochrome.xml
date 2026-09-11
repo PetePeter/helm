@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon layer (Android 13+). The system tints this itself, so the fill is
+  a flat white placeholder and must NOT use the accent — a pre-tinted glyph
+  comes out wrong against a themed launcher.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M36,30 h11 v18 h14 v-18 h11 v48 h-11 v-18 h-14 v18 h-11 z" />
+</vector>

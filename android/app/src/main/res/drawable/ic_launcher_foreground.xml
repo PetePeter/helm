@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Helm mark: a single accent H on true black, matching the notification
+  badge in the P-0740 mockup. A vector, not PNG mipmaps, so there is exactly one
+  file to keep correct and nothing binary in the tree.
+
+  The glyph stays inside the 66dp adaptive-icon safe zone (roughly x/y 21..87 of
+  the 108dp canvas), so no launcher mask can clip a stroke off it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="@color/helm_accent"
+        android:pathData="M36,30 h11 v18 h14 v-18 h11 v48 h-11 v-18 h-14 v18 h-11 z" />
+</vector>

@@ -61,6 +61,36 @@ property. They are shared with the TypeScript suite on purpose: the two
 languages must agree byte for byte, and a copy would drift silently. See
 [../docs/mobile-ble-transport.md](../docs/mobile-ble-transport.md).
 
+## Design system
+
+Every colour, type and spacing token lives in
+`app/src/main/kotlin/com/potatomotato/helm/ui/theme/`. Screens compose from
+`HelmColors`, `HelmSpacing`, `MaterialTheme.typography` and the shared
+components in `ui/components/` — **no screen declares a colour**.
+
+`NoRawColorLiteralTest` enforces that by scanning `src/main` for `Color(…)` and
+`Color.White`-style literals outside the theme package. It is the only test the
+design system has, deliberately: "black is black" is a constant equalling
+itself, but a screen quietly reintroducing a hardcoded accent is the real way a
+design system dies, and nothing else catches it.
+
+Two rules the tokens exist to protect:
+
+- **True black, always.** `HelmColors.Bg` is `#000000`. On OLED a black pixel is
+  an unlit pixel; a dark grey is not. Elevation is a 1px `HelmColors.Line`
+  hairline, never a lighter fill. There is no light theme and no Material You
+  dynamic colour — wallpaper tinting would replace the black with grey.
+- **State colours are the desktop's, semantically.** Green active, blue waiting,
+  grey idle, amber flash, per invariant 8 and `renderer/state-colors.ts`. The
+  Android hexes are the brighter OLED-tuned tones ratified in the P-0740 mockup,
+  so they are **not** byte-identical to the desktop's. Adding or removing a
+  *state* on the desktop must be mirrored here; re-tuning a desktop hex need not
+  be. All four are drawn by one composable, `ui/components/StateDot.kt`.
+
+The approved mockup is the attachment on plans P-0740 and P-0742–P-0746. It is
+deliberately **not** copied into the working tree — a copy is a second source of
+truth waiting to drift.
+
 ## Versioning
 
 `versionName` and `versionCode` are **derived from the repo's `package.json`**
