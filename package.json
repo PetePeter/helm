@@ -4,7 +4,7 @@
   "version": "3.5.0",
   "main": "dist-electron/main.js",
   "type": "module",
-  "description": "Helm \u2014 steer your fleet of agents",
+  "description": "Helm — steer your fleet of agents",
   "scripts": {
     "start": "npm run build && electron .",
     "dev": "npm run build && electron .",
@@ -90,6 +90,7 @@
   },
   "dependencies": {
     "@jitsi/robotjs": "^0.6.21",
+    "@stoprocent/noble": "^2.8.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-vue": "^6.0.6",
     "@xterm/addon-fit": "^0.11.0",
