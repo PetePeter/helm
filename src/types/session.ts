@@ -61,6 +61,11 @@ export interface SessionInfo {
    *  by an inbound peer proxy call rather than locally. Drives the sidebar's
    *  peer-created card tint. Persists across restarts. */
   createdByPeerId?: string;
+  /** Id of the paired phone (MobileDevice record id) that created this session,
+   *  when it was spawned by an inbound mobile proxy call rather than locally.
+   *  Drives the MobileGate ownership rule — a phone may only close its own
+   *  sessions. Persists across restarts. */
+  createdByMobileDeviceId?: string;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
 }

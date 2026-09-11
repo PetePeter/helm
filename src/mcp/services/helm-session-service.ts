@@ -15,6 +15,7 @@ import type { RuntimeGroupManager } from '../../session/runtime-group-manager.js
 import type { RuntimeGroup } from '../../types/runtime-group.js';
 import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placement.js';
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
+import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
 
 /** Throw if value is null, otherwise return it. */
 function requireResult<T>(value: T | null, message: string): T {
@@ -87,6 +88,10 @@ export class HelmSessionService {
     // A `peer:<id>` creator means this spawn arrived over the Fleet proxy, so the
     // session is marked as remotely created; a local creator is a real UUID.
     const createdByPeerId = peerIdFromProxySessionId(opts.creatorSessionId);
+    // A `mobile:<deviceId>` creator means this spawn arrived over the BLE mobile
+    // proxy. Recorded so MobileGate can let that phone — and only that phone —
+    // close the session again.
+    const createdByMobileDeviceId = deviceIdFromMobileSessionId(opts.creatorSessionId);
     const { sessionId } = spawnConfiguredSession({
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,
@@ -96,6 +101,7 @@ export class HelmSessionService {
       cwd: workingDir.path,
       fallbackCompleteDelayMs: 500,
       ...(createdByPeerId ? { createdByPeerId } : {}),
+      ...(createdByMobileDeviceId ? { createdByMobileDeviceId } : {}),
     });
 
     // A session is always made for its project; the runtime group is an optional

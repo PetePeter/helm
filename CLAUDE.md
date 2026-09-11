@@ -173,6 +173,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mobile-ble-transport.md](docs/mobile-ble-transport.md) | Phone ↔ Helm BLE link — Helm as central, GATT characteristics, chunk framing, cross-language vectors |
 | [docs/mobile-secure-channel.md](docs/mobile-secure-channel.md) | Phone ↔ Helm app-layer encryption — X25519 + SAS handshake, AEAD framing, cross-language vectors |
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |
+| [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit, key-names-only audit |
 | [docs/fleet.md](docs/fleet.md) | Cross-machine peer MCP proxy — TLS-WS transport, PSK + TOFU pinning, SAS pairing, InboundCallGate |
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |
 | [docs/helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Guide for AI clients using the Helm MCP tools |

@@ -30,6 +30,8 @@ export const PEER_AUDIT_FILE = join(configDir, 'peer-audit.yaml');
 export const MOBILE_DEVICES_FILE = join(configDir, 'mobile-devices.yaml');
 /** Mobile pairing PSKs, base64, mode 0600. The ONLY place they are stored. */
 export const MOBILE_SECRETS_FILE = join(configDir, 'mobile-secrets.yaml');
+/** Rolling 7-day trail of inbound phone tool calls. Argument KEY NAMES only. */
+export const MOBILE_AUDIT_FILE = join(configDir, 'mobile-audit.yaml');
 export const MEMORIES_FILE = join(configDir, 'memories.json');
 export const MEMORY_ATTACHMENTS_DIR = join(configDir, 'memory-attachments');
 /** Mess is stored below per-user app data, never below the repository. */

@@ -79,6 +79,19 @@ import { setupPeerManagementHandlers } from './peer-management-handlers.js';
 import { setupMobileHandlers } from './mobile-handlers.js';
 import { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import { MobilePairing } from '../../mobile/mobile-pairing.js';
+import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
+import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
+
+/**
+ * The ONE MobileGate instance, built during handler setup. Exposed so whoever
+ * owns the BLE call path (P-0748) routes inbound phone frames through
+ * `getMobileGate()?.handle(...)` — there must be no second gate and no direct
+ * path from a mobile frame to callMcpTool.
+ */
+let activeMobileGate: MobileGate | undefined;
+export function getMobileGate(): MobileGate | undefined {
+  return activeMobileGate;
+}
 import {
   loadMobileDevices, saveMobileDevices, loadMobileSecrets, saveMobileSecrets,
 } from '../../mobile/mobile-device-persistence.js';
@@ -622,6 +635,20 @@ export function registerIPCHandlers(
   const disposeMobile = setupMobileHandlers({
     deviceStore: mobileDeviceStore,
     getPairing: () => mobilePairing,
+  });
+  // The security boundary in front of every inbound phone call (P-0737). Built
+  // here because this scope owns the registry, the session manager and the
+  // dispatchForPeer seam. It is deliberately the ONLY way a mobile frame may
+  // reach a tool — whoever wires the BLE call path (P-0748) must route through
+  // `mobileGate.handle`, never through callMcpTool directly.
+  const mobileAuditLog = new MobileAuditLog();
+  activeMobileGate = new MobileGate({
+    deviceStore: mobileDeviceStore,
+    dispatch: (method, params, ctx) =>
+      localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx),
+    rateLimiter: createDefaultMobileRateLimiter(),
+    audit: mobileAuditLog,
+    sessionLookup: sessionManager,
   });
 
   // Apply the persisted config now (starts the stack iff enabled).

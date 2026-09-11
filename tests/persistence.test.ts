@@ -164,6 +164,22 @@ describe('persistence', () => {
       expect(parsed.sessions[0]).not.toHaveProperty('createdByPeerId');
     });
 
+    it('persists createdByMobileDeviceId so a phone still owns its session after a restart', () => {
+      saveSessions([{ ...mockSession1, createdByMobileDeviceId: 'device-7' }]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[0];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions[0].createdByMobileDeviceId).toBe('device-7');
+    });
+
+    it('omits createdByMobileDeviceId for locally created sessions', () => {
+      saveSessions([mockSession1]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[0];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions[0]).not.toHaveProperty('createdByMobileDeviceId');
+    });
+
     it('does not persist ephemeral activityLevel', () => {
       saveSessions([{ ...mockSession1, activityLevel: 'active' } as any]);
 

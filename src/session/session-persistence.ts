@@ -22,6 +22,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.createdAt != null ? { createdAt: s.createdAt } : {}),
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),
+    ...(s.createdByMobileDeviceId ? { createdByMobileDeviceId: s.createdByMobileDeviceId } : {}),
     // Always written, both states. The renderer folds this snapshot over its
     // cached session records with a spread merge, so an omitted key means
     // "keep whatever you had" — which would make unlocking invisible.

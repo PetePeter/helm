@@ -36,6 +36,8 @@ export interface ConfiguredSessionSpawnParams {
   markRestored?: (sessionId: string) => void;
   /** Remote Fleet peer that requested this spawn, when it came in over the peer proxy. */
   createdByPeerId?: string;
+  /** Paired phone that requested this spawn, when it came in over the mobile proxy. */
+  createdByMobileDeviceId?: string;
 }
 
 export interface ConfiguredSessionSpawnResult {
@@ -104,6 +106,7 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     cliSessionName,
     lastOutputAt: now,
     ...(params.createdByPeerId ? { createdByPeerId: params.createdByPeerId } : {}),
+    ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
   };
 
   if (isResume && params.sessionManager.hasSession(sessionId)) {
