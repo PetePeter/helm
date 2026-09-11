@@ -134,6 +134,62 @@ useful without it. The `<queries>` entry for `android.speech.RecognitionService`
 in the manifest is **load-bearing**: without it `isRecognitionAvailable()`
 returns false on API 30+ even when a recogniser is installed.
 
+## Control surface
+
+Mockup screen 4 (the session sheet), screen 7 (the terminal snapshot) and the
+spawn form screen 4 implies but never draws. Every action is a gated call over
+`link/HelmClient.kt` — there is no second route to `HelmPairing.send`, so
+nothing here bypasses `MobileGate`.
+
+```mermaid
+graph LR
+    T[Chat thread] -->|overflow| S[SessionSheet]
+    S -->|Snapshot| P[SnapshotScreen]
+    S -->|Spawn| N[SpawnScreen]
+    S -->|Compact / Close| T
+    C[(CapabilityCache<br/>__mobile_tools__)] -.->|greys rows| S
+    S --> HC[HelmClient] --> G[MobileGate<br/>the authority]
+    G -.->|refusal| B[ActionNoticeBar]
+```
+
+**What is offered comes from the gate.** Rows grey out from `__mobile_tools__`,
+the device's real permitted surface, never from a list written in the app. That
+is what entitles the sheet to say "not permitted" at all — a ratified divergence
+from the desktop's uniform-deny rule, defensible because a SAS-paired phone is
+the user's own device *and* because the claim is true. `Capabilities.Unknown` and
+`Known`-without-the-tool are drawn differently on purpose: an unanswered
+discovery says "checking…" rather than claiming a verdict the phone was never
+given. The surface is forgotten on link loss so a reconnect re-asks, and a
+capability revoked on the desktop stops being offered.
+
+**A row that cannot work is not drawn.** The mockup's Drafts and Artifacts rows
+are absent, not greyed. Drafts have no MCP surface at all; every `artifact_*`
+tool resolves its subject from the caller's own session, so from the phone's
+proxy identity it answers *emptily* instead of refusing. Greying them would be a
+lie — the user is permitted; there is nothing to call. They appear by themselves
+the day a reachable surface exists, with no change to this screen. See
+[docs/mobile-gate.md](../docs/mobile-gate.md#structurally-unreachable-tools).
+
+**The gate is the authority; this UI is a hint.** The capability cache can be a
+poll stale, so a refusal for a permitted-looking action is a NORMAL outcome, not
+a crash. `ActionNoticeBar` words a refusal as a rule that will hold and a link
+failure as a radio that may come back — and never guesses *which* rule, because
+every deny path answers with byte-identical text by design.
+
+**Snapshot is on demand, never streamed**, with the line count chosen before the
+pull, so the cost is decided by the person paying it. The tail is requested
+`stripped`: the ANSI cleaning is the desktop's own and this app has no second
+escape-code parser to drift from it. Lines scroll sideways rather than wrapping —
+a wrapped terminal line changes what a diff or a table means.
+
+**Spawn fills every field from a surface the phone already has** —
+`directory_list` for directories, distinct `cliType`s harvested from
+`session_list`. The consequence is deliberate: a phone can only spawn a KIND of
+session it can already see running. That is smaller than the desktop, and honest;
+the alternative was inventing a tool to populate a picker. Close confirms and
+names the session. Spawn does not confirm — creating is cheap, and a prompt on
+everything trains people to tap through the one that matters.
+
 ## Versioning
 
 `versionName` and `versionCode` are **derived from the repo's `package.json`**

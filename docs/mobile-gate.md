@@ -38,8 +38,8 @@ audited:
 |---|-------|-------------|
 | 1 | Device enabled | the record has `enabled === false` |
 | 2 | Permitted-tool discovery | (answered in-gate, never dispatched) |
-| 3 | Hard deny | tool is in `HARD_DENY_TOOLS` — even under a wildcard `*` |
-| 4 | Session ownership | `session_close` targets a session the device did not create |
+| 3 | Hard deny | tool is in `HARD_DENY_TOOLS`, or is structurally unreachable — even under a wildcard `*` |
+| 4 | Session ownership | (mechanism kept, set currently empty — see below) |
 | 5 | Allow-list | no `allow` glob matches the tool name |
 | 6 | Rate limit | the device's token bucket is empty |
 | 7 | Dispatch | — |
@@ -61,8 +61,28 @@ message, since it is a retry signal rather than an authorisation answer.
 
 `restart_helm` and `session_group_close` are never invocable from a phone,
 whatever the allow-list says. The set is imported from the fleet gate — one list,
-one rationale. `session_close` is deliberately *not* in it; it is ownership-gated
-instead.
+one rationale. `session_close` is deliberately *not* in it.
+
+### Structurally unreachable tools
+
+`MOBILE_UNREACHABLE_TOOL_PREFIXES` — `artifact_`, `memory_`, `mess_` — are denied
+alongside the hard-deny set and filtered out of `__mobile_tools__`.
+
+Every tool in those families resolves its subject from `authContext.sessionId`
+alone and takes no session argument (see the `requireCallerSession` call sites in
+`dispatcher.ts`). From the `mobile:` proxy they can only ever address the proxy's
+**own** empty data — and that is worse than a denial: `artifact_list` does not
+fail for a phone, it *succeeds* with an empty array, so a user looking at three
+artifacts on the desktop concludes the phone lost them.
+
+The rule this encodes: **the permitted surface means "this will do something", not
+"this will not be refused".** A UI built from `__mobile_tools__` must never be
+handed a row that looks live and silently does nothing.
+
+This is not a change to the ownership boundary. `requireCallerSession` is
+untouched; reaching another session's artifacts from a phone would need a
+session-scoped artifact surface that does not exist, and whose threat model is its
+own decision.
 
 ## Proxy identity
 
@@ -80,13 +100,23 @@ stronger choice.
 
 ## Session ownership
 
-A session spawned over the mobile proxy records `createdByMobileDeviceId` on its
-`SessionInfo`, derived from the proxy identity in `HelmSessionService.spawnCli`
-and persisted through `serializeSession` (invariant 6 — the allow-list is
-explicit). `session_close` succeeds only when that field matches the calling
-device. Missing session, foreign session, no reference and no lookup wired all
-collapse to the same uniform denial, so the phone learns nothing about which
-sessions exist.
+`OWNERSHIP_GATED_TOOLS` is **deliberately empty**, and the machinery behind it is
+deliberately kept.
+
+A session spawned over the mobile proxy still records `createdByMobileDeviceId` on
+its `SessionInfo`, derived from the proxy identity in
+`HelmSessionService.spawnCli` and persisted through `serializeSession`
+(invariant 6 — the allow-list is explicit). The check, the uniform denial and the
+audit all still work; nothing is currently named in the set.
+
+`session_close` used to be, mirroring the fleet rule. **Ruled otherwise:** a
+SAS-paired phone is the user's own device, and closing a session from the kitchen
+is the point of the app. The deciding argument was the app's, not the gate's —
+ownership is invisible to `__mobile_tools__`, so the control sheet would have
+shown a Close row that looked permitted and was refused every single time, which
+is precisely the failure the unreachable-tool audit above exists to remove.
+Closing is still governed by the allow-list: permissive about *which* session,
+unchanged about *whether*.
 
 ## Audit
 
@@ -105,7 +135,7 @@ absent.
 
 `__mobile_tools__` is a reserved, non-dispatchable meta-method that returns the
 intersection of the tool catalogue with the device's allow-list, minus the
-hard-deny set. It is the mechanism behind the ratified "grey out forbidden
+hard-deny set and the structurally unreachable families. It is the mechanism behind the ratified "grey out forbidden
 actions" rule in the app: the phone learns exactly what it may call and nothing
 about what it may not. It is rate-limited and audited like any other call, so it
 cannot be probed for free, and a disabled device gets the uniform denial.
