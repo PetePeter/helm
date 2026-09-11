@@ -26,6 +26,8 @@
  * be dropped and logged, not propagated into the session layer.
  */
 
+import type { SessionAlertKind } from '../session/session-alert.js';
+
 /** Bumped only for a breaking change to these records. */
 export const MOBILE_ENVELOPE_VERSION = 1;
 
@@ -68,6 +70,20 @@ export interface MobileChatRecord {
   filePath?: string;
   /** The attachment is a voice note rather than a plain file. */
   voice?: boolean;
+  /**
+   * Present turns this record from a MESSAGE into an ALERT.
+   *
+   * Absent (the default, and every committed vector) means an agent said this
+   * and it belongs in the phone's chat thread. Present means Helm is reporting
+   * an event — a state change, a flash — and the phone posts a notification and
+   * puts NOTHING in the thread: a reported event rendered as an agent bubble
+   * would fabricate a conversation the desktop never had.
+   *
+   * Additive and optional, so no vector was regenerated — the same precedent as
+   * `SessionSummary.activityLevel`. It is emitted LAST, after the other optional
+   * keys, because key order is part of this format.
+   */
+  kind?: SessionAlertKind;
 }
 
 export type MobileRecord =
@@ -83,6 +99,7 @@ export interface ChatRecordInput {
   at: number;
   filePath?: string;
   voice?: boolean;
+  kind?: SessionAlertKind;
 }
 
 /**
@@ -115,6 +132,7 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   };
   if (input.filePath !== undefined) record.filePath = input.filePath;
   if (input.voice) record.voice = true;
+  if (input.kind !== undefined) record.kind = input.kind;
   return encode(record);
 }
 

@@ -5,11 +5,9 @@ import type { TelegramConfig } from '../config/loader.js';
 import type { SessionState } from '../types/session.js';
 import { notificationKeyboard } from './keyboards.js';
 import { logger } from '../utils/logger.js';
+import { alertKindForTransition } from '../session/session-alert.js';
 import path from 'path';
 import { cliLabel } from './cli-label.js';
-
-/** States considered "active" (CLI is working). */
-const ACTIVE_STATES: ReadonlySet<SessionState> = new Set(['implementing', 'planning']);
 
 /** Dedup guard window — skip duplicate notifications for the same session within this period. */
 const DEDUP_WINDOW_MS = 15_000;
@@ -56,8 +54,9 @@ export class TelegramNotifier {
    * Only notifies on active → non-active transitions.
    */
   handleStateChange(transition: StateTransition): void {
-    if (!ACTIVE_STATES.has(transition.previousState)) return;
-    if (ACTIVE_STATES.has(transition.newState)) return;
+    // The definition of "something happened" is shared with the mobile surface
+    // so the two can never drift into telling the user different things.
+    if (!alertKindForTransition(transition.previousState, transition.newState)) return;
 
     const config = this.getConfig();
 

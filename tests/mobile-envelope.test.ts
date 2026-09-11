@@ -47,6 +47,25 @@ describe('mobile envelope round-trips', () => {
     expect(record).toMatchObject({ sessionName: 'ñoño', text: 'build ✅ — 完了' });
   });
 
+  it('appends an alert kind last, and omits it entirely from a plain message', () => {
+    // Key order is part of this format: `kind` goes after the other optional
+    // keys so a record with every field set stays byte-predictable, and a
+    // message without one is indistinguishable from the committed vectors.
+    const alert = encodeChat({
+      sessionId: 's1', sessionName: 'work', text: 'Finished', at: 1, voice: true, kind: 'completion',
+    }).toString('utf8');
+
+    expect(alert).toBe('{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"Finished","at":1,"voice":true,"kind":"completion"}');
+    expect(encodeChat({ sessionId: 's1', sessionName: 'work', text: 'done', at: 1 }).toString('utf8'))
+      .not.toContain('kind');
+  });
+
+  it('decodes an alert kind through, so the phone can tell an event from a message', () => {
+    expect(decodeRecord(encodeChat({
+      sessionId: 's1', sessionName: 'work', text: 'Went quiet', at: 1, kind: 'idle',
+    }))).toEqual({ v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'Went quiet', at: 1, kind: 'idle' });
+  });
+
   it('encodes an undefined result as null rather than dropping the key', () => {
     // A dropped key would decode as "not a result record" on the Kotlin side.
     expect(decodeRecord(encodeResult('c1', undefined))).toEqual({ v: 1, t: 'result', id: 'c1', result: null });

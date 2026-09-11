@@ -29,6 +29,7 @@ import { GateError, MOBILE_DENY_MESSAGE } from './mobile-gate.js';
 import { decodeRecord, encodeChat, encodeError, encodeResult } from './mobile-envelope.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
+import type { SessionAlertKind } from '../session/session-alert.js';
 
 /** The provider key the phone surface owns. */
 export const MOBILE_CHAT_PROVIDER = 'mobile';
@@ -116,6 +117,36 @@ export class MobileChatBridge implements ChatBridge {
     return sent.some(Boolean)
       ? { sent: true }
       : { sent: false, reason: 'No linked phone accepted the message' };
+  }
+
+  /**
+   * Push an ALERT — something happened to a session — to every linked phone.
+   *
+   * The same record shape as a message, with `kind` set, which is what tells the
+   * phone to raise a notification instead of appending to the thread. It goes out
+   * UNCONDITIONALLY, alongside Telegram: a phone that also gets the Telegram
+   * message buzzes twice, and that is ratified rather than tolerated — see
+   * docs/chat-fan-out.md.
+   *
+   * Returns false when nothing carried it; the caller logs, nobody retries. An
+   * alert is only true at the moment it happens.
+   */
+  sendAlert(sessionId: string, kind: SessionAlertKind, text: string): boolean {
+    const session = this.deps.sessions.getSession(sessionId);
+    if (!session) return false;
+
+    const machines = this.linkedMachines();
+    if (machines.length === 0) return false;
+
+    const payload = encodeChat({
+      sessionId: session.id,
+      sessionName: session.name,
+      text,
+      at: this.now(),
+      kind,
+    });
+
+    return machines.map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);
   }
 
   /** Enabled, registered devices this hub currently holds a link to. */

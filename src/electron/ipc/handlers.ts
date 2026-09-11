@@ -85,6 +85,8 @@ import { BleLinkClient } from '../../mobile/ble/ble-link-client.js';
 import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
+import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
+import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
 import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
 
 /**
@@ -715,6 +717,16 @@ export function registerIPCHandlers(
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
 
+  // The phone's notification path: a state change, a notify_user or a flash
+  // reaches a pocketed phone over the already-open BLE link. Fed in ADDITION to
+  // Telegram, never instead of it — see docs/chat-fan-out.md.
+  const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
+  notificationManager.setMobileNotifier(mobileAlertNotifier);
+  const observeForAlerts = (session: ObservedSession) => mobileAlertNotifier.observe(session);
+  const forgetForAlerts = (event: { sessionId: string }) => mobileAlertNotifier.forget(event.sessionId);
+  sessionManager.on('session:updated', observeForAlerts);
+  sessionManager.on('session:removed', forgetForAlerts);
+
   // Apply the persisted config now (starts the stack iff enabled).
   void fleetController.start()
     .catch((err) => logger.error(`[fleet] Failed to start peer transport: ${err}`));
@@ -746,6 +758,8 @@ export function registerIPCHandlers(
       disposePairing();
       disposePeerManagement();
       disposeMobile();
+      sessionManager.off('session:updated', observeForAlerts);
+      sessionManager.off('session:removed', forgetForAlerts);
       mobileChatBridge.stop();
       chatBroker.unregister(mobileChatBridge.provider);
       chatBroker.unregister(telegramModules.relayService.provider);

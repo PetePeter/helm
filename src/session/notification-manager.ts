@@ -13,6 +13,12 @@ export interface FlashAttentionPayload {
   textColor: string | null;
 }
 
+/** The phone surface, as the two events that reach it. Implemented by MobileAlertNotifier. */
+export interface MobileNotifierHooks {
+  notified(sessionId: string, title: string, content: string): void;
+  flashed(sessionId: string): void;
+}
+
 interface NotificationContent {
   title: string;
   body: string;
@@ -37,6 +43,7 @@ export class NotificationManager {
   private telegramNotifier: ((sessionId: string, title: string, content: string) => Promise<void>) | null = null;
   private activeSessionIdGetter: (() => string | null) | null = null;
   private accentColorReader: (() => string | null) | null = null;
+  private mobileNotifier: MobileNotifierHooks | null = null;
 
   constructor(
     private windowManager: WindowManager,
@@ -46,6 +53,15 @@ export class NotificationManager {
   setScreenLockChecker(fn: () => boolean): void { this.screenLockChecker = fn; }
 
   setTelegramNotifier(fn: (sessionId: string, title: string, content: string) => Promise<void>): void { this.telegramNotifier = fn; }
+
+  /**
+   * The paired phone. Fed UNCONDITIONALLY and in addition to every other route —
+   * never instead of one. A phone that also sees the Telegram message buzzes
+   * twice, which is ratified: Telegram is the only path that survives being out
+   * of BLE range, and suppressing one when the other is connected would make
+   * "was I told?" depend on link state. See docs/chat-fan-out.md.
+   */
+  setMobileNotifier(fn: MobileNotifierHooks): void { this.mobileNotifier = fn; }
 
   setActiveSessionIdGetter(fn: () => string | null): void { this.activeSessionIdGetter = fn; }
 
@@ -79,6 +95,10 @@ export class NotificationManager {
     const accentColor = parseAccentColor(this.readAccentColor());
     const textColor = accentColor ? contrastText(accentColor) : null;
     const payload: FlashAttentionPayload = { sessionId, accentColor, textColor };
+
+    // The phone is told too, and is told FIRST: a flash is a "look at me" for a
+    // user who may not be at the desk, which is the case the phone exists for.
+    this.mobileNotifier?.flashed(sessionId);
 
     const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
     for (const window of windows) {
@@ -120,6 +140,11 @@ export class NotificationManager {
    * - Window visible, focused, same session → 'none'
    */
   notifyLlmDirected(sessionId: string, title: string, content: string): 'toast' | 'bubble' | 'telegram' | 'taskbar_flash' | 'none' {
+    // The phone is fanned out to before any routing, never as one branch of it:
+    // the returned route describes where the DESKTOP put it, and a phone in
+    // another room is not an alternative to that, it is an addition.
+    this.mobileNotifier?.notified(sessionId, title, content);
+
     // Route via Telegram if session is in Telegram mode (takes priority over everything)
     const session = this.sessionManager.getSession(sessionId);
     if (session?.interactionChannel === 'telegram' && this.telegramNotifier) {

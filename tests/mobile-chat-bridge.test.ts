@@ -110,6 +110,36 @@ describe('MobileChatBridge as a chat surface', () => {
     });
   });
 
+  it('marks an alert with its kind, which is what keeps it out of the phone thread', () => {
+    links.online.add('phone-machine');
+
+    expect(bridge.sendAlert('s1', 'completion', 'Finished')).toBe(true);
+    expect(links.records()[0]).toEqual({
+      v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'Finished',
+      at: 1700000000000, kind: 'completion',
+    });
+  });
+
+  it('an ordinary message still carries no kind, so it stays a message', async () => {
+    links.online.add('phone-machine');
+
+    await bridge.sendToSession({ sessionId: 's1', text: 'the build is green' });
+
+    expect(links.records()[0]).not.toHaveProperty('kind');
+  });
+
+  it('drops an alert for a session that no longer exists rather than naming it blank', () => {
+    links.online.add('phone-machine');
+
+    expect(bridge.sendAlert('gone', 'attention', 'Needs input')).toBe(false);
+    expect(links.sent).toHaveLength(0);
+  });
+
+  it('reports an alert nobody could receive, and sends nothing', () => {
+    expect(bridge.sendAlert('s1', 'attention', 'Needs input')).toBe(false);
+    expect(links.sent).toHaveLength(0);
+  });
+
   it('skips a disabled device even while its link is still up', async () => {
     links.online.add('phone-machine');
     deviceStore.update(phone.id, { enabled: false });

@@ -61,6 +61,7 @@ vi.mock('../src/session/notification-manager.js', () => ({
     this.setScreenLockChecker = vi.fn();
     this.setTelegramNotifier = vi.fn();
     this.setActiveSessionIdGetter = vi.fn();
+    this.setMobileNotifier = vi.fn();
   }),
 }));
 

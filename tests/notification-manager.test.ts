@@ -536,3 +536,62 @@ describe('NotificationManager.flashAttention()', () => {
   });
 });
 
+
+/**
+ * The phone is an ADDITIONAL surface, never an alternative one.
+ *
+ * The failure this guards against is subtle: routing a notification to the phone
+ * "because Telegram is unavailable" would make whether the user was told depend
+ * on link state, which is the ambiguity the ratified double-buzz pays to avoid.
+ */
+describe('NotificationManager fan-out to a paired phone', () => {
+  let notificationManager: NotificationManager;
+  let sessionManager: SessionManager;
+  let mobile: { notified: ReturnType<typeof vi.fn>; flashed: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    electronMockState.getAllWindowsMock.mockClear();
+    electronMockState.getAllWindowsMock.mockReturnValue([]);
+    sessionManager = createMockSessionManager();
+    notificationManager = new NotificationManager(createMockWindowManager(), sessionManager);
+    mobile = { notified: vi.fn(), flashed: vi.fn() };
+    notificationManager.setMobileNotifier(mobile);
+  });
+
+  it('tells the phone about a notify_user whatever the desktop did with it', () => {
+    notificationManager.setScreenLockChecker(() => true);
+    const telegram = vi.fn();
+    notificationManager.setTelegramNotifier(telegram);
+
+    const route = notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
+
+    expect(mobile.notified).toHaveBeenCalledWith('sess-1', 'Title', 'Content');
+    expect(telegram).toHaveBeenCalled();
+    // The route describes where the DESKTOP put it; the phone is not a route.
+    expect(route).toBe('telegram');
+  });
+
+  it('tells the phone about a notify_user even with no Telegram at all', () => {
+    notificationManager.setScreenLockChecker(() => false);
+
+    notificationManager.notifyLlmDirected('sess-1', 'Title', 'Content');
+
+    expect(mobile.notified).toHaveBeenCalledWith('sess-1', 'Title', 'Content');
+  });
+
+  it('tells the phone about a flash', () => {
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'sess-1' });
+
+    notificationManager.flashAttention('sess-1');
+
+    expect(mobile.flashed).toHaveBeenCalledWith('sess-1');
+  });
+
+  it('does not flash a phone about a session that does not exist', () => {
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+
+    notificationManager.flashAttention('gone');
+
+    expect(mobile.flashed).not.toHaveBeenCalled();
+  });
+});
