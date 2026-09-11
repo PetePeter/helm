@@ -100,8 +100,9 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 |--------|---------|
 | `runApp.py` | Dev workflow — install deps, build, launch |
 | `runTests.py` | Run Vitest suite |
-| `prepareDeploy.py` | Release step 1 — bump version, strip configs for deploy, build, package EXE |
-| `sendDeploy.py` | Release step 2 — commit, tag, push, upload installer to GitHub Releases via `gh` CLI |
+| `prepareDeploy.py` | Release step 1 — bump version, strip configs for deploy, build, package EXE, build + signer-verify the Android APK |
+| `sendDeploy.py` | Release step 2 — commit, tag, push, upload installer **and APK** to GitHub Releases via `gh` CLI |
+| `deploy_android.py` | Shared Android release half — APK build, certificate verification, refuse-to-publish gates |
 
 ## Tech Stack
 
@@ -172,6 +173,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | Document | Content |
 |----------|---------|
 | [docs/chat-fan-out.md](docs/chat-fan-out.md) | Transport-agnostic chat — ChatBroker fan-out, ChatBridge, `chatBindings`, the mobile chat surface and its wire records |
+| [docs/apk-distribution.md](docs/apk-distribution.md) | Android APK delivery — GitHub release asset per tag, signer verification, version-pinned QR/URL, why R8 is off |
 | [docs/mobile-ble-transport.md](docs/mobile-ble-transport.md) | Phone ↔ Helm BLE link — Helm as central, GATT characteristics, chunk framing, link ownership and online state, cross-language vectors |
 | [docs/mobile-secure-channel.md](docs/mobile-secure-channel.md) | Phone ↔ Helm app-layer encryption — X25519 + SAS handshake, AEAD framing, cross-language vectors |
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |

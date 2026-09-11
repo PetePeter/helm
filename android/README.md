@@ -42,6 +42,24 @@ If none are set, `assembleRelease` still produces an installable APK — signed
 with the **debug** key and a loud warning. That is for local work only; it must
 never be published.
 
+> **Never rename `releaseKeyAlias` / `releaseKeyPassword` back to `keyAlias` /
+> `keyPassword`.** Inside `signingConfigs.create("release")` the receiver has
+> properties of those names, so `this.keyAlias = keyAlias` reads the receiver's
+> own null back into itself — a silent self-assignment. `hasReleaseSigning`
+> stays `true`, the config reports as configured, and the key quietly goes
+> missing. `storePassword` escapes only because that name does not collide.
+
+**Never conclude an APK is correctly signed from the build log.** A debug-signed
+APK builds, installs and runs exactly like a correct one; the fault surfaces
+only when a user cannot upgrade and loses their pairing. Verify the certificate:
+
+```bash
+apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
+```
+
+The release pipeline does this automatically and refuses to publish otherwise —
+see [`../docs/apk-distribution.md`](../docs/apk-distribution.md).
+
 ## Build
 
 Requires JDK 17 and the Android SDK (platform 35). **No Node tooling.**
@@ -245,6 +263,17 @@ Android refuses to install an APK whose `versionCode` went backwards, and a
 forgotten manual bump only surfaces on a user's phone.
 
 `versionCode = major * 10000 + minor * 100 + patch`.
+
+## Distribution
+
+Every tagged release carries the signed APK as a GitHub release asset on the
+public `PetePeter/helm`, named `helm-<version>.apk`. `prepareDeploy.py` builds
+and certificate-verifies it; `sendDeploy.py` refuses to publish a release that
+has no APK. Settings → Mobile shows a QR and the plain URL for the running
+version's asset — never `latest`.
+
+Full route, the three-valued availability check and why R8 is still off:
+[`../docs/apk-distribution.md`](../docs/apk-distribution.md).
 
 ## Toolchain boundary
 
