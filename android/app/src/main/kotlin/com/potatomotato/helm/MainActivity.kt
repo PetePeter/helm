@@ -1,16 +1,11 @@
 package com.potatomotato.helm
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -31,8 +26,7 @@ import com.potatomotato.helm.ble.BlePermissions
 import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.PairingState
-import com.potatomotato.helm.ui.components.GhostButton
-import com.potatomotato.helm.ui.components.PrimaryButton
+import com.potatomotato.helm.ui.components.PermissionRationale
 import com.potatomotato.helm.ui.HelmHome
 import com.potatomotato.helm.ui.pairing.PairingScreen
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -66,15 +60,9 @@ private fun HelmRoot() {
     if (!granted) {
         Interstitial {
             PermissionRationale(
+                title = stringResource(R.string.permission_title),
+                body = stringResource(R.string.permission_body),
                 onGrant = { request.launch(BlePermissions.missing(context).toTypedArray()) },
-                onOpenSettings = {
-                    context.startActivity(
-                        Intent(
-                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.fromParts("package", context.packageName, null),
-                        ),
-                    )
-                },
             )
         }
         return
@@ -131,33 +119,3 @@ private fun Interstitial(content: @Composable () -> Unit) {
     }
 }
 
-@Composable
-private fun PermissionRationale(onGrant: () -> Unit, onOpenSettings: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Lg),
-    ) {
-        Text(
-            text = stringResource(R.string.permission_title),
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = stringResource(R.string.permission_body),
-            color = HelmColors.Dim,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-        )
-
-        // Primary action sits lowest and reads accent — one-handed reach.
-        PrimaryButton(
-            text = stringResource(R.string.permission_grant),
-            onClick = onGrant,
-        )
-        GhostButton(
-            text = stringResource(R.string.permission_settings),
-            onClick = onOpenSettings,
-        )
-    }
-}

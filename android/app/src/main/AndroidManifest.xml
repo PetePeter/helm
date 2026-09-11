@@ -29,6 +29,17 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
+    <!--
+      Package visibility for the on-device speech recogniser. Without this,
+      SpeechRecognizer.isRecognitionAvailable() returns false on API 30+ even
+      when a recogniser is installed, and voice input silently never works.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:name=".HelmApp"
         android:allowBackup="false"

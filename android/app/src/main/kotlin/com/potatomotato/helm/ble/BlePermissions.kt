@@ -2,9 +2,8 @@ package com.potatomotato.helm.ble
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
-import androidx.core.content.ContextCompat
+import com.potatomotato.helm.Permissions
 
 /**
  * The runtime permissions the link needs, and nothing more.
@@ -28,9 +27,7 @@ object BlePermissions {
         }
     }
 
-    fun missing(context: Context): List<String> = required.filter {
-        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-    }
+    fun missing(context: Context): List<String> = Permissions.missing(context, required)
 
-    fun allGranted(context: Context): Boolean = missing(context).isEmpty()
+    fun allGranted(context: Context): Boolean = Permissions.allGranted(context, required)
 }

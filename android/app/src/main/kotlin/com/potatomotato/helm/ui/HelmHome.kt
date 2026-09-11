@@ -17,15 +17,17 @@ import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.ui.sessions.SessionListScreen
+import com.potatomotato.helm.ui.voice.VoiceScreen
 import kotlinx.coroutines.delay
 
 /**
- * The two screens the user lives in, and the navigation between them.
+ * The screens the user lives in, and the navigation between them.
  *
- * Navigation is one nullable id rather than a nav library: there are exactly two
- * destinations and one edge between them, and a graph definition would be more
- * machinery than the thing it describes. It is [rememberSaveable] so a rotation
- * does not drop the user back to the list.
+ * Navigation is a nullable session id plus a flag rather than a nav library:
+ * there are three destinations on one straight path (list → thread → voice) and
+ * a graph definition would be more machinery than the thing it describes. Both
+ * are [rememberSaveable] so a rotation does not drop the user back to the list,
+ * or out of a dictation they are halfway through.
  */
 @Composable
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
@@ -33,6 +35,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val sessions by client.sessions.sessions.collectAsState()
     val threads by client.chats.threads.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var dictating by rememberSaveable { mutableStateOf(false) }
 
     PollSessions(client)
 
@@ -41,9 +44,24 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         // The session went away while it was on screen. Fall back to the list
         // rather than leaving the user in a thread that can no longer be replied to.
         openSessionId = null
+        dictating = false
     }
 
-    if (open != null) {
+    if (open != null && dictating) {
+        // Sending returns to the thread rather than the list: the message lands
+        // there in its Sending state, so the user sees where the words went and
+        // watches them deliver instead of being left with no evidence.
+        VoiceScreen(
+            sessionName = open.name,
+            linkState = linkState,
+            onCancel = { dictating = false },
+            onSend = { text ->
+                client.sendChat(open.id, text)
+                dictating = false
+            },
+            modifier = modifier,
+        )
+    } else if (open != null) {
         BackHandler { openSessionId = null }
         ChatScreen(
             sessionId = open.id,
@@ -52,6 +70,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             linkState = linkState,
             onBack = { openSessionId = null },
             onSend = { text -> client.sendChat(open.id, text) },
+            onVoice = { dictating = true },
             modifier = modifier,
         )
     } else {

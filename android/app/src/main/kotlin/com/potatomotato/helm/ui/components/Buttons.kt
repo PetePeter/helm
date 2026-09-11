@@ -22,13 +22,23 @@ import com.potatomotato.helm.ui.theme.HelmSize
 
 /** The loud one — accent fill, near-black label. One per screen at most. */
 @Composable
-fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun PrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(
             containerColor = HelmColors.Accent,
             contentColor = HelmColors.OnAccent,
+            // Disabled is the accent held back, not a new grey: the button must
+            // read as the same control, temporarily not offered.
+            disabledContainerColor = HelmColors.Surface2,
+            disabledContentColor = HelmColors.Faint,
         ),
     ) {
         Text(text = text)

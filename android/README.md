@@ -91,6 +91,49 @@ The approved mockup is the attachment on plans P-0740 and P-0742–P-0746. It is
 deliberately **not** copied into the working tree — a copy is a second source of
 truth waiting to drift.
 
+## Voice input
+
+Dictation uses the platform `SpeechRecognizer` with `EXTRA_PREFER_OFFLINE`:
+recognition happens on the phone, nothing is recorded to a file and nothing is
+uploaded. There is no OpenWhispr, no ffmpeg and no audio on the BLE link — the
+only thing that crosses the wire is the confirmed text, as an ordinary gated
+`session_send_text` over `HelmClient`, identical to a typed message.
+
+```mermaid
+graph LR
+    MIC[Mic in the<br/>chat composer] --> VS[VoiceScreen]
+    VS --> SC[SpeechController<br/>state machine]
+    SC <--> AE[AndroidSpeechEngine<br/>SpeechRecognizer]
+    SC --> ED[Editable transcript]
+    ED -->|explicit Send tap| HC[HelmClient.sendChat]
+    HC --> TH[Chat thread<br/>Sending → Sent]
+```
+
+Three rules this layer exists to hold:
+
+- **Partial results replace, never append.** Each partial is the recogniser's
+  whole current guess. Appending them is what turns one spoken phrase into
+  "test test test test".
+- **Nothing is sent without an explicit tap.** The transcript is an editable
+  field, not a label, because recognisers get names and jargon wrong and
+  retyping a whole dictation to fix one word is worse than typing it.
+- **No failure strands the user on "Listening".** Every recogniser error lands
+  in `VoicePhase.Failed` with whatever was already heard still on screen.
+  `SpeechError.retryable` decides whether the screen offers another attempt or
+  sends the user to Settings — retrying a permission denial fails silently,
+  because the system stops prompting once a permission is refused for good.
+
+Logic lives in `voice/SpeechController.kt` with no Android types in it, driven
+in tests by `FakeSpeechEngine`. `voice/AndroidSpeechEngine.kt` is translation
+only — the same split the BLE layer uses, for the same reason: the sequences
+that break this (a partial after a cancel, an empty final, an error
+mid-utterance) cannot be produced on demand by the real recogniser.
+
+`RECORD_AUDIO` is requested at the mic button, not at launch — the app is
+useful without it. The `<queries>` entry for `android.speech.RecognitionService`
+in the manifest is **load-bearing**: without it `isRecognitionAvailable()`
+returns false on API 30+ even when a recogniser is installed.
+
 ## Versioning
 
 `versionName` and `versionCode` are **derived from the repo's `package.json`**

@@ -27,6 +27,27 @@
     <string name="chat_failed">Not delivered</string>
     <string name="chat_attachment">Attachment</string>
 
+    <string name="voice_title">Voice</string>
+    <string name="voice_destination">→ %1$s</string>
+    <string name="voice_mic_glyph">🎙</string>
+    <string name="voice_listening">Listening</string>
+    <string name="voice_captured">Check it, then send</string>
+    <string name="voice_idle">Tap the mic to speak</string>
+    <string name="voice_transcript_placeholder">What you say appears here.</string>
+    <string name="voice_cancel">Cancel</string>
+    <string name="voice_send">Send</string>
+
+    <string name="voice_error_no_match">Did not catch that. Tap the mic to try again.</string>
+    <string name="voice_error_network">No offline language pack on this phone, and no network to fall back on.</string>
+    <string name="voice_error_audio">The microphone stopped responding. Tap the mic to try again.</string>
+    <string name="voice_error_busy">Another app is using the microphone.</string>
+    <string name="voice_error_no_service">This phone has no speech recogniser installed.</string>
+    <string name="voice_error_permission">Microphone permission was refused.</string>
+    <string name="voice_error_unknown">Recognition failed. Tap the mic to try again.</string>
+
+    <string name="voice_permission_title">Microphone permission needed</string>
+    <string name="voice_permission_body">Speech is recognised on the phone itself — nothing is recorded and nothing is uploaded. Without microphone permission the mic button cannot hear you.</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>

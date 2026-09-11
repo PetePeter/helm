@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +63,7 @@ fun ChatScreen(
     linkState: LinkState,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onVoice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
@@ -108,6 +111,7 @@ fun ChatScreen(
         Composer(
             draft = draft,
             onDraft = { draft = it },
+            onVoice = onVoice,
             onSend = {
                 val text = draft.trim()
                 if (text.isNotEmpty()) {
@@ -166,7 +170,12 @@ private fun BubbleNote(textRes: Int, color: Color) {
 }
 
 @Composable
-private fun Composer(draft: String, onDraft: (String) -> Unit, onSend: () -> Unit) {
+private fun Composer(
+    draft: String,
+    onDraft: (String) -> Unit,
+    onVoice: () -> Unit,
+    onSend: () -> Unit,
+) {
     Hairline()
     Row(
         modifier = Modifier
@@ -198,6 +207,22 @@ private fun Composer(draft: String, onDraft: (String) -> Unit, onSend: () -> Uni
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
                 cursorBrush = SolidColor(HelmColors.Accent),
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        // The mic is permanent and first-class, not an option inside a keyboard:
+        // away from the desk it is the primary way a reply gets written.
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(HelmColors.Accent)
+                .clickable(onClick = onVoice),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.voice_mic_glyph),
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
 
