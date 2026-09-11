@@ -7,6 +7,7 @@ activityCompose = "1.9.3"
 composeBom = "2024.09.03"
 junit = "4.13.2"
 json = "20240303"
+bouncycastle = "1.78.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -18,6 +19,10 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# X25519 only. minSdk 26 predates the platform's XDH support (API 33), so the
+# scalar multiplication cannot come from the JCE. The jdk15to18 variant is the
+# one built for Android/Java 8 - jdk18on is a multi-release jar.
+bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk15to18", version.ref = "bouncycastle" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # The real org.json, not the android.jar stub: unit tests parse the committed
 # cross-language fixture vectors and the stub throws "not mocked".

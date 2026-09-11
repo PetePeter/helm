@@ -1,10 +1,12 @@
 package com.potatomotato.helm.ble
 
+import com.potatomotato.helm.fromHex
+import com.potatomotato.helm.loadFixture
+import com.potatomotato.helm.toHex
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 /**
  * The test that actually prevents cross-language drift.
@@ -107,16 +109,5 @@ class BleFramingVectorsTest {
         }
     }
 
-    private fun loadVectors(): JSONObject {
-        val dir = System.getProperty("helm.fixtures.dir")
-            ?: error("helm.fixtures.dir is not set; see android/app/build.gradle.kts")
-        val file = File(dir, "ble-framing-vectors.json")
-        check(file.isFile) { "missing conformance vectors at ${file.absolutePath}" }
-        return JSONObject(file.readText())
-    }
+    private fun loadVectors(): JSONObject = loadFixture("ble-framing-vectors.json")
 }
-
-internal fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
-
-internal fun String.fromHex(): ByteArray =
-    ByteArray(length / 2) { substring(it * 2, it * 2 + 2).toInt(16).toByte() }

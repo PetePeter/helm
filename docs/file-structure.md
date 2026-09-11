@@ -211,8 +211,26 @@ android/
     ├── src/main/
     │   ├── AndroidManifest.xml  # BLUETOOTH_ADVERTISE (the phone is the peripheral), CONNECT, foreground-service, notifications, audio
     │   ├── kotlin/com/potatomotato/helm/
-    │   │   ├── HelmApp.kt       # Application — process-scoped singletons land here
+    │   │   ├── HelmApp.kt       # Application — starts the process-scoped singletons
     │   │   ├── MainActivity.kt  # Compose shell placeholder + permission gate (real UI: P-0740+)
+    │   │   ├── crypto/
+    │   │   │   ├── Hkdf.kt            # RFC 5869 HMAC-SHA256, pinned to Node's hkdfSync
+    │   │   │   ├── X25519Keys.kt      # Ephemeral keys + strict SPKI-DER (Bouncy Castle; JCE XDH is API 33)
+    │   │   │   ├── PairingCrypto.kt   # Transcript, commitment, SAS, confirm-MAC, PSK
+    │   │   │   ├── Aead.kt            # AES-256-GCM, per-direction keys, implicit counters
+    │   │   │   ├── ProtocolVersion.kt # Ranges, refusal codes and their wording
+    │   │   │   ├── Frames.kt          # uint32be length | type | payload; length read through a Long
+    │   │   │   └── SecureChannel.kt   # Responder half only — Helm is always the initiator
+    │   │   ├── data/
+    │   │   │   ├── PskStore.kt        # Pairing persistence seam, keyed on machineId
+    │   │   │   ├── DeviceKeyStore.kt  # Keystore-wrapped PSK; only ciphertext reaches prefs
+    │   │   │   └── PhoneIdentity.kt   # Stable machineId, generated once (never the BLE address)
+    │   │   ├── link/
+    │   │   │   ├── PairingController.kt # PSK choice, screen state, persist-on-confirm. No Android types
+    │   │   │   ├── HelmLinkPipe.kt      # HelmLink as a BytePipe + the timeout's coroutine clock
+    │   │   │   └── HelmPairing.kt       # Process-scoped wiring: link up → handshake
+    │   │   ├── ui/pairing/
+    │   │   │   └── PairingScreen.kt   # Mockup screen 5 — the six-digit SAS comparison
     │   │   └── ble/
     │   │       ├── BleFraming.kt      # Chunker/reassembler — byte-for-byte port of ble-framing.ts
     │   │       ├── HelmGatt.kt        # Service/characteristic UUIDs, mirroring characteristics.ts
@@ -223,7 +241,11 @@ android/
     │   │       ├── HelmLink.kt        # The duplex byte-stream seam for the layers above
     │   │       └── BlePermissions.kt  # Runtime permissions (no BLUETOOTH_SCAN, by design)
     │   └── res/values/          # strings.xml, themes.xml (true-black window chrome)
-    └── src/test/kotlin/…/ble/   # JVM unit tests, incl. the shared-fixture conformance test
+    └── src/test/kotlin/…/      # JVM unit tests — no device, no Robolectric
+        ├── Fixtures.kt         # Reads tests/fixtures/ IN PLACE via helm.fixtures.dir
+        ├── ble/                # Framing + link session, incl. the shared-fixture conformance test
+        ├── crypto/             # SecureChannelVectorsTest pins every derivation to the desktop
+        └── link/               # PairingController against a real channel and a fake store
 ```
 
 ## Config (`config/`)

@@ -97,3 +97,54 @@ already-paired phone stops working:
 ```bash
 npx tsx scripts/generate-secure-channel-vectors.ts   # then bump PROTOCOL_MAX
 ```
+
+## The phone side (Kotlin)
+
+Helm is the BLE central, so Helm is ALWAYS the initiator. The phone therefore only
+ever plays **responder**, and the initiator half is deliberately absent from the
+Kotlin code rather than written and left unused.
+
+```mermaid
+graph LR
+    GATT[BleLinkSession<br/>chunking, MTU] --> HL[HelmLink<br/>whole messages]
+    HL --> HP[HelmLinkPipe<br/>BytePipe]
+    HP --> SC[SecureChannel<br/>responder]
+    SC --> PC[PairingController<br/>state + PskStore]
+    PC --> UI[PairingScreen<br/>SAS comparison]
+    PC --> DKS[DeviceKeyStore<br/>Keystore-wrapped PSK]
+```
+
+| Kotlin | Mirrors | Notes |
+|---|---|---|
+| `crypto/PairingCrypto.kt` | `src/mcp/peer/pairing-crypto.ts` | transcript, commitment, SAS, confirm-MAC, PSK |
+| `crypto/Aead.kt` | `src/mobile/aead.ts` | AES-256-GCM, per-direction keys, implicit counters |
+| `crypto/Hkdf.kt` | Node `crypto.hkdfSync` | RFC 5869 extract-then-expand, HMAC-SHA256 |
+| `crypto/ProtocolVersion.kt` | `src/mobile/protocol-version.ts` | ranges, refusal codes, refusal wording |
+| `crypto/Frames.kt` | the codec inside `secure-channel.ts` | `uint32be length \| type \| payload` |
+| `crypto/SecureChannel.kt` | `src/mobile/secure-channel.ts` | responder half only |
+
+Three details that differ, each for a reason:
+
+- **X25519 comes from Bouncy Castle, not the platform.** The JCE gained XDH in API 33
+  and `minSdk` is 26. Hashing, HMAC and AES-GCM still use the platform providers,
+  which are hardware-backed. BC is ~4 MB of the APK; enabling R8 would cut most of it.
+- **The phone picks the PSK at HELLO, not by guessing.** As responder it learns the
+  desktop's `machineId` before any key is derived, so `pskFor(machineId)` resolves the
+  stored PSK outright. Helm has to try a candidate and reconnect on failure, because it
+  cannot know who answered until the handshake authenticates.
+- **A handshake timeout is mandatory on this transport.** A refused GATT notification
+  discards the remainder of that message and produces no error frame, so a
+  half-delivered handshake is indistinguishable from a peer that went quiet. Silence is
+  the only symptom available, so `HANDSHAKE_TIMEOUT_MS` is the trigger. A write the
+  link refuses closes the channel for the same reason.
+
+`PairingController` owns the only three decisions above the crypto — which PSK to
+offer, what the screen shows, and whether a completed handshake is written to disk —
+and it is free of Android types so all three are tested on the JVM. A rejected SAS
+persists **nothing**: the store is touched after the verdict, never inside the channel.
+
+`DeviceKeyStore` does not put the PSK *in* the Android Keystore — a raw 32-byte secret
+cannot be imported there on API 26. The Keystore holds a key it generated and never
+exports (hardware-backed where available) and that key encrypts the PSK; only
+ciphertext reaches `SharedPreferences`. An undecryptable PSK (factory reset, changed
+lock screen) is treated as absent, because pairing again is the only cure either way.

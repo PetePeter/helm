@@ -1,13 +1,15 @@
 package com.potatomotato.helm
 
 import android.app.Application
+import com.potatomotato.helm.link.HelmPairing
 
 /**
- * Process-wide entry point.
- *
- * Intentionally empty: the BLE peripheral (P-0741), the secure channel
- * (P-0742) and their foreground service are owned by later plans. This exists
- * now so those plans have a single place to hang process-scoped singletons
- * instead of each inventing one.
+ * Process-wide entry point, and the single place process-scoped singletons are
+ * started — so no screen or service has to wonder whether it is the first one in.
  */
-class HelmApp : Application()
+class HelmApp : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        HelmPairing.init(this)
+    }
+}

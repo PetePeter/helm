@@ -34,6 +34,9 @@ import com.potatomotato.helm.ble.BlePermissions
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.link.PairingState
+import com.potatomotato.helm.ui.pairing.PairingScreen
 
 /**
  * Placeholder shell. The real navigation and screens arrive with the design
@@ -70,7 +73,24 @@ private fun HelmRoot() {
     ) {
         if (granted) {
             LaunchedEffect(Unit) { HelmLinkService.start(context) }
-            LinkStatus()
+            when (val pairing = HelmPairing.state.collectAsState().value) {
+                // The SAS is the only moment that must interrupt whatever else is
+                // on screen: an unanswered prompt is a link that never completes.
+                is PairingState.Comparing -> PairingScreen(
+                    desktopId = pairing.desktopId,
+                    sas = pairing.sas,
+                    onMatch = { HelmPairing.confirm(true) },
+                    onReject = { HelmPairing.confirm(false) },
+                )
+
+                is PairingState.Failed -> Text(text = pairing.message, color = Color.White)
+                is PairingState.Handshaking -> Text(
+                    text = stringResource(R.string.pairing_handshaking),
+                    color = Accent,
+                )
+
+                else -> LinkStatus()
+            }
         } else {
             PermissionRationale(
                 onGrant = { request.launch(BlePermissions.missing(context).toTypedArray()) },

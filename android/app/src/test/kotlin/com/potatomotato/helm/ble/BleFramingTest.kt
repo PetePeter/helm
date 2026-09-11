@@ -1,5 +1,7 @@
 package com.potatomotato.helm.ble
 
+import com.potatomotato.helm.fromHex
+import com.potatomotato.helm.toHex
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

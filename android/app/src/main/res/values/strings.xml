@@ -10,6 +10,13 @@
     <string name="link_state_linked">Linked</string>
     <string name="link_state_disconnected">Link off</string>
 
+    <string name="pairing_title">Pairing with</string>
+    <string name="pairing_prompt">Do these six digits match the ones on your desktop?</string>
+    <string name="pairing_warning">If they differ, do not continue — someone may be intercepting the connection.</string>
+    <string name="pairing_match">They match</string>
+    <string name="pairing_reject">Reject</string>
+    <string name="pairing_handshaking">Verifying…</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>
