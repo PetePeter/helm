@@ -4,7 +4,7 @@ Release publishing script - Step 2 of 2.
 
 Finds the latest prepared release in release/, commits the version bump,
 tags, pushes to GitHub, and publishes the release with the installer EXE
-via the GitHub CLI (gh).
+and the signed Android APK via the GitHub CLI (gh).
 
 Prerequisites:
     - Run prepareDeploy.py first
@@ -22,6 +22,8 @@ import os
 import re
 import shutil
 from pathlib import Path
+
+from deploy_android import find_release_apk, verify_release_signature
 
 
 def run(cmd, check=True, capture=False):
@@ -167,6 +169,15 @@ def main():
         print("   Did you run prepareDeploy.py for this version?")
         sys.exit(1)
     print(f"  OK: package.json version matches: {version}")
+
+    # Every tagged release must carry the APK: Settings -> Mobile points a QR at
+    # this exact asset, so a release without one leaves a code that scans into a
+    # 404 on a URL that looks correct. The signature is re-checked here because
+    # this is the last gate before the file becomes public, and a debug-signed
+    # APK is indistinguishable from a correct one until a user cannot upgrade it.
+    apk = find_release_apk(release_path, version)
+    verify_release_signature(apk)
+    print(f"  FILE: {apk.name} ({apk.stat().st_size / (1024 * 1024):.1f} MB)")
     print()
 
     # 3. Check gh CLI is available and authenticated
@@ -203,7 +214,7 @@ def main():
     # 5. Create GitHub Release and upload installer EXE only
     print("[5/5] Publishing to GitHub Releases...")
     tag = f"v{version}"
-    asset_args = " ".join(f'"{exe}"' for exe in exes)
+    asset_args = " ".join(f'"{asset}"' for asset in [*exes, apk])
     notes_file = release_path / "RELEASE_NOTES.md"
     if not notes_file.exists():
         generated = build_release_notes(tag)

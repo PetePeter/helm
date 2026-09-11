@@ -3,7 +3,8 @@
 Release preparation script - Step 1 of 2.
 
 Bumps version in package.json, builds the app, and packages a Windows
-NSIS installer into a date+version stamped folder under release/.
+NSIS installer plus the signed Android APK into a date+version stamped
+folder under release/.
 
 Does NOT commit, tag, or push. Run sendDeploy.py after validating the EXE.
 
@@ -24,6 +25,8 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+
+from deploy_android import build_apk
 
 
 def run(cmd, check=True):
@@ -186,7 +189,7 @@ def main():
     print()
 
     # 1. Check git is clean
-    print("[1/6] Checking git status...")
+    print("[1/7] Checking git status...")
     if force:
         print("  WARNING: Skipping dirty-repo check (--force)")
     else:
@@ -195,19 +198,19 @@ def main():
     print()
 
     # 2. Bump version
-    print("[2/6] Bumping version...")
+    print("[2/7] Bumping version...")
     old_version, new_version = bump_version(part)
     print(f"  OK: {old_version} -> {new_version}")
     print()
 
     # 3. Patch native modules for VS 2026 compatibility, then build + package
-    print("[3/6] Patching native modules for build...")
+    print("[3/7] Patching native modules for build...")
     patch_native_modules()
     print("  OK: Native modules patched")
     print()
 
     # 4. Create deploy-safe config staging directory
-    print("[4/6] Creating deploy configs (stripping personal paths)...")
+    print("[4/7] Creating deploy configs (stripping personal paths)...")
     create_deploy_configs()
     print("  OK: Deploy configs staged in config-deploy/")
     print()
@@ -218,7 +221,7 @@ def main():
         shutil.rmtree(release_root)
         print("  Cleaned previous release/")
 
-    print("[5/6] Building and packaging...")
+    print("[5/7] Building and packaging...")
     try:
         result = run("npm run package", check=False)
         if result.returncode != 0:
@@ -229,7 +232,7 @@ def main():
     print()
 
     # 6. Move installer artifacts to dated folder (skip win-unpacked build dir)
-    print("[6/6] Organizing release artifacts...")
+    print("[6/7] Organizing release artifacts...")
     date_stamp = datetime.now().strftime("%Y%m%d")
     release_dir = release_root / f"{date_stamp}-v{new_version}"
     release_dir.mkdir(parents=True, exist_ok=True)
@@ -258,7 +261,17 @@ def main():
             size_mb = exe.stat().st_size / (1024 * 1024)
             print(f"  FILE: {exe.name} ({size_mb:.1f} MB)")
 
+    # 7. Build the Android APK into the same folder
+    #
+    # AFTER the bump on purpose: build.gradle.kts derives versionName and
+    # versionCode from package.json, so building earlier would stamp the
+    # previous version into the APK. Signed with the permanent release key and
+    # verified by certificate before it is allowed near the release folder.
     print()
+    print("[7/7] Building the Android APK...")
+    build_apk(new_version, release_dir)
+    print()
+
     print("=" * 50)
     print(f"Release v{new_version} prepared!")
     print("=" * 50)
@@ -266,7 +279,7 @@ def main():
     print(f"  Artifacts: {release_dir}")
     print()
     print("Next steps:")
-    print(f"  1. Test the EXE in {release_dir}")
+    print(f"  1. Test the EXE and sideload the APK from {release_dir}")
     print("  2. If happy:  python sendDeploy.py")
     print("  3. If not:    git checkout package.json")
 
