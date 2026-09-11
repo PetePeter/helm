@@ -64,6 +64,8 @@ fun ChatScreen(
     onBack: () -> Unit,
     onSend: (String) -> Unit,
     onVoice: () -> Unit,
+    /** Opens the control sheet. The thread is where a session is acted on. */
+    onOverflow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
@@ -83,7 +85,7 @@ fun ChatScreen(
     }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg).imePadding()) {
-        HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack)
+        HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
 
         if (messages.isEmpty()) {
             Box(

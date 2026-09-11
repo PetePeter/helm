@@ -71,6 +71,32 @@ class CapabilityCacheTest {
         assertEquals(Capabilities.Known(setOf("session_list")), cache.state.value)
     }
 
+    @Test
+    fun `the sheet offers only the actions the gate named`() {
+        cache.apply(toolsResult("session_read_terminal", "session_compact"))
+
+        val state = cache.state.value
+        assertTrue(state.permits(SessionAction.Snapshot))
+        assertTrue(state.permits(SessionAction.Compact))
+
+        // Absent from the gate's answer, so the row greys and tapping it sends
+        // nothing — the sheet never offers an action from a list of its own.
+        assertFalse(state.permits(SessionAction.Spawn))
+        assertFalse(state.permits(SessionAction.Close))
+        assertTrue(state.answered)
+    }
+
+    @Test
+    fun `nothing is offered before the gate has answered, and no verdict is claimed`() {
+        val state = cache.state.value
+
+        for (action in SessionAction.entries) assertFalse(state.permits(action))
+
+        // Unavailable, but NOT "not permitted": the row says "checking…" instead
+        // of asserting a refusal the phone was never given.
+        assertFalse(state.answered)
+    }
+
     /** The `__mobile_tools__` answer, shaped as MobileGate builds it. */
     private fun toolsResult(vararg names: String): JSONObject =
         JSONObject("""{"tools":[${names.joinToString(",") { """{"name":"$it","title":"t"}""" }}]}""")

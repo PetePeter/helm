@@ -79,6 +79,12 @@ fun HelmAppBar(
     linkState: LinkState,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    /**
+     * The control overflow, when a screen has one. It sits AFTER the link badge
+     * rather than replacing it: the mockup draws the badge and the ⋮ in the same
+     * corner, and of the two the badge is the one that may never be absent.
+     */
+    onOverflow: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -112,8 +118,20 @@ fun HelmAppBar(
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             LinkBadge(linkState)
+            if (onOverflow != null) {
+                Text(
+                    text = stringResource(R.string.control_overflow_glyph),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier
+                        .size(HelmSize.TouchTarget)
+                        .clickable(onClick = onOverflow)
+                        .padding(start = HelmSpacing.Sm),
+                )
+            }
         }
     }
     Hairline()

@@ -34,6 +34,22 @@ sealed interface Capabilities {
     data class Known(val tools: Set<String>) : Capabilities
 }
 
+/**
+ * Whether the control sheet may offer [action] — the greying decision, in one
+ * place and testable without a screen. Unknown never permits: an action the app
+ * cannot yet vouch for is not offered.
+ */
+fun Capabilities.permits(action: SessionAction): Boolean =
+    this is Capabilities.Known && action.tool in tools
+
+/**
+ * Whether a verdict has actually been given. This is what decides between the
+ * "not permitted" label and "checking…": the sheet greys the row either way, but
+ * only one of the two states is entitled to claim the gate said no.
+ */
+val Capabilities.answered: Boolean
+    get() = this is Capabilities.Known
+
 class CapabilityCache {
     private val _state = MutableStateFlow<Capabilities>(Capabilities.Unknown)
     val state: StateFlow<Capabilities> = _state.asStateFlow()

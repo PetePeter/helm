@@ -48,6 +48,43 @@
     <string name="voice_permission_title">Microphone permission needed</string>
     <string name="voice_permission_body">Speech is recognised on the phone itself — nothing is recorded and nothing is uploaded. Without microphone permission the mic button cannot hear you.</string>
 
+    <string name="control_overflow_glyph">⋮</string>
+    <string name="control_action_snapshot">Terminal snapshot</string>
+    <string name="control_action_compact">Compact</string>
+    <string name="control_action_spawn">Spawn session</string>
+    <string name="control_action_close">Close session</string>
+    <string name="control_glyph_snapshot">📄</string>
+    <string name="control_glyph_compact">🛠</string>
+    <string name="control_glyph_spawn">✦</string>
+    <string name="control_glyph_close">✕</string>
+    <string name="control_not_permitted">not permitted</string>
+    <string name="control_asking">checking…</string>
+    <string name="control_confirm_close">Close “%1$s”? Its CLI stops.</string>
+    <string name="control_confirm_close_yes">Close it</string>
+    <string name="control_confirm_close_no">Keep it</string>
+
+    <string name="control_notice_refused">Helm did not allow that. It is a rule on this device, not a fault — change what this phone may do in Helm\'s Mobile settings.</string>
+    <string name="control_notice_done_compact">Compacting.</string>
+    <string name="control_notice_done_close">Session closed.</string>
+    <string name="control_notice_done_spawn">Session started.</string>
+    <string name="control_notice_dismiss">Dismiss</string>
+
+    <string name="snapshot_title">Snapshot</string>
+    <string name="snapshot_refresh_glyph">↻</string>
+    <string name="snapshot_lines">lines</string>
+    <string name="snapshot_idle">Pick a line count to pull the tail.</string>
+    <string name="snapshot_loading">Pulling %1$d lines…</string>
+    <string name="snapshot_empty">The session has printed nothing yet.</string>
+
+    <string name="spawn_title">New session</string>
+    <string name="spawn_where">Where</string>
+    <string name="spawn_which_cli">Which CLI</string>
+    <string name="spawn_name">Name</string>
+    <string name="spawn_no_directories">Waiting for the directory list from Helm.</string>
+    <string name="spawn_no_clis">No CLI to copy. Start one on the desktop first — the phone can only spawn a kind of session it can already see.</string>
+    <string name="spawn_start">Start session</string>
+    <string name="spawn_cancel">Cancel</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>
