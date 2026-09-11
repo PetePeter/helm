@@ -113,6 +113,10 @@ android {
 
     buildFeatures {
         compose = true
+        // HelmLog gates verbose/debug on BuildConfig.DEBUG so a release build is
+        // quiet without anyone having to remember. AGP 8 does not generate
+        // BuildConfig unless asked.
+        buildConfig = true
     }
 }
 
