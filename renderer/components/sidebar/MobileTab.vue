@@ -16,6 +16,7 @@
 import { onMounted, ref } from 'vue';
 import { useMobileDevices, type MobileDeviceItem } from '../../composables/useMobileDevices.js';
 import { getPeerStatusColor } from '../../state-colors.js';
+import QrCode from './QrCode.vue';
 
 const {
   devices,
@@ -24,6 +25,9 @@ const {
   setAllowList,
   setEnabled,
   revoke,
+  apkRelease,
+  apkError,
+  loadApkRelease,
 } = useMobileDevices();
 
 /** Allow-list presets: a friendly name → the glob patterns it applies. */
@@ -38,9 +42,21 @@ const newPattern = ref<Record<string, string>>({});
 const confirmRevokeId = ref<string | null>(null);
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+const copiedUrl = ref(false);
+
 onMounted(() => {
   ensureSubscribed();
+  void loadApkRelease();
 });
+
+function copyUrl(): void {
+  const url = apkRelease.value?.url;
+  if (!url) return;
+  void navigator.clipboard.writeText(url).then(() => {
+    copiedUrl.value = true;
+    setTimeout(() => { copiedUrl.value = false; }, 1500);
+  });
+}
 
 function dotColor(device: MobileDeviceItem): string {
   return getPeerStatusColor(device.online ? 'online' : 'offline');
@@ -105,6 +121,34 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 
 <template>
   <div class="mobile-tab">
+    <section class="mobile-section">
+      <h3 class="mobile-section-title">Install on your phone</h3>
+
+      <p v-if="apkError" class="mobile-empty">
+        No download to offer: {{ apkError }}
+      </p>
+
+      <div v-else-if="apkRelease" class="mobile-apk">
+        <QrCode :payload="apkRelease.qrPayload" :size="132" />
+        <div class="mobile-apk-detail">
+          <span class="mobile-apk-version">Helm v{{ apkRelease.version }}</span>
+          <code class="mobile-apk-url">{{ apkRelease.url }}</code>
+          <p v-if="apkRelease.note" class="mobile-apk-note">{{ apkRelease.note }}</p>
+          <div class="mobile-apk-actions">
+            <button class="btn btn-secondary" @click="copyUrl()">
+              {{ copiedUrl ? 'Copied' : 'Copy link' }}
+            </button>
+          </div>
+          <p class="mobile-empty">
+            Scan it, install, then pair — a fresh install is an unpaired stranger and
+            can reach nothing until you confirm its six digits below.
+          </p>
+        </div>
+      </div>
+
+      <p v-else class="mobile-empty">Looking up the download for this version…</p>
+    </section>
+
     <section class="mobile-section">
       <div class="mobile-section-head">
         <h3 class="mobile-section-title">Paired phones</h3>
@@ -204,6 +248,26 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 .mobile-section-title { margin: 0; font-size: 0.88rem; color: var(--text-primary); }
 .mobile-pair-btn { margin-left: auto; }
 .mobile-empty { margin: 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.35; }
+
+.mobile-apk {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  padding: 8px;
+}
+.mobile-apk-detail { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.mobile-apk-version { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+.mobile-apk-url {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+.mobile-apk-note { margin: 0; font-size: 0.78rem; color: var(--accent); line-height: 1.35; }
+.mobile-apk-actions { display: flex; gap: 6px; }
 
 .mobile-row {
   border: 1px solid var(--border);

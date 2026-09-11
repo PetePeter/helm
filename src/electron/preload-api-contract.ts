@@ -258,6 +258,7 @@ export const PRELOAD_API_DOMAINS = {
     'mobileSetAllowList',
     'mobileSetEnabled',
     'mobileRevoke',
+    'mobileApkRelease',
   ],
   patterns: [
     'toolsGetPatterns',

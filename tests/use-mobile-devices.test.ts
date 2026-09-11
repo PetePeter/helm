@@ -17,6 +17,16 @@ const on = (name: string) => (cb: (payload: any) => void) => { handlers[name] = 
 let devicesFromMain: any[] = [];
 let startResult: { ok: boolean; reason?: string } = { ok: true };
 let stateFromMain: any = { status: 'idle' };
+let apkResult: any = {
+  ok: true,
+  version: '2.7.3',
+  tag: 'v2.7.3',
+  assetName: 'helm-2.7.3.apk',
+  url: 'https://github.com/PetePeter/helm/releases/download/v2.7.3/helm-2.7.3.apk',
+  qrPayload: 'https://github.com/PetePeter/helm/releases/download/v2.7.3/helm-2.7.3.apk',
+  availability: 'available',
+  note: '',
+};
 const calls: Array<[string, ...any[]]> = [];
 
 vi.mock('../renderer/ipc/clients.js', () => ({
@@ -29,6 +39,7 @@ vi.mock('../renderer/ipc/clients.js', () => ({
     mobileSetAllowList: async (id: string, allow: string[]) => { calls.push(['allow', id, allow]); return { ok: true }; },
     mobileSetEnabled: async (id: string, on2: boolean) => { calls.push(['enabled', id, on2]); return { ok: true }; },
     mobileRevoke: async (id: string) => { calls.push(['revoke', id]); return { ok: true }; },
+    mobileApkRelease: async () => { calls.push(['apk']); return apkResult; },
   },
   eventsClient: {
     onMobileDevicesChanged: on('devices'),
@@ -45,6 +56,16 @@ describe('useMobileDevices', () => {
     devicesFromMain = [];
     startResult = { ok: true };
     stateFromMain = { status: 'idle' };
+    apkResult = {
+      ok: true,
+      version: '2.7.3',
+      tag: 'v2.7.3',
+      assetName: 'helm-2.7.3.apk',
+      url: 'https://github.com/PetePeter/helm/releases/download/v2.7.3/helm-2.7.3.apk',
+      qrPayload: 'https://github.com/PetePeter/helm/releases/download/v2.7.3/helm-2.7.3.apk',
+      availability: 'available',
+      note: '',
+    };
     calls.length = 0;
     for (const key of Object.keys(handlers)) delete handlers[key];
     vi.useFakeTimers();
@@ -168,5 +189,29 @@ describe('useMobileDevices', () => {
       ['allow', 'd1', ['session_*']],
       ['revoke', 'd1'],
     ]);
+  });
+
+  it('does not re-ask GitHub for the APK on every registry event', async () => {
+    // The answer only changes across releases. Folding it into refresh() would
+    // hit the network on every online/offline flip of a paired phone.
+    const mobile = useMobileDevices();
+    mobile.ensureSubscribed();
+    await mobile.loadApkRelease();
+    handlers.devices(undefined);
+    await vi.runAllTimersAsync();
+
+    expect(calls.filter(([name]) => name === 'apk')).toHaveLength(1);
+    expect(mobile.apkRelease.value?.availability).toBe('available');
+    expect(mobile.apkError.value).toBeNull();
+  });
+
+  it('surfaces a reason instead of an empty panel when there is no download to offer', async () => {
+    apkResult = { ok: false, reason: 'Not a releasable Helm version: "dev"' };
+    const mobile = useMobileDevices();
+
+    await mobile.loadApkRelease();
+
+    expect(mobile.apkRelease.value).toBeNull();
+    expect(mobile.apkError.value).toContain('dev');
   });
 });

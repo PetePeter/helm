@@ -19,6 +19,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { logger } from '../../utils/logger.js';
 import type { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import type { MobilePairing, MobilePairingState } from '../../mobile/mobile-pairing.js';
+import { describeApkRelease, apkReleaseUrl, type ApkReleaseInfo } from '../../mobile/apk-release.js';
 
 export interface MobileHandlerDeps {
   deviceStore: MobileDeviceStore;
@@ -36,6 +37,17 @@ export interface MobileHandlerDeps {
     on(event: 'online' | 'offline', handler: () => void): unknown;
     off(event: 'online' | 'offline', handler: () => void): unknown;
   };
+  /**
+   * The running app version, which is what the APK download must be pinned to.
+   * Injected rather than read from `app` so this module stays testable without
+   * a live Electron app.
+   */
+  getAppVersion?: () => string;
+  /**
+   * Resolves whether the release asset actually exists. Optional: with no
+   * checker the answer is `unknown`, which is deliberately NOT `missing`.
+   */
+  checkApkAsset?: (url: string) => Promise<boolean>;
 }
 
 /** A paired phone as the settings tab renders it. */
@@ -49,6 +61,11 @@ export interface MobileDeviceListItem {
   createdAt: number;
   lastSeenAt?: number;
 }
+
+/** What `mobile:apkRelease` answers with. Never a rejection. */
+export type ApkReleaseResult =
+  | ({ ok: true } & ApkReleaseInfo)
+  | { ok: false; reason: string };
 
 const INERT = { ok: false, reason: 'Mobile BLE is not running' } as const;
 
@@ -116,6 +133,34 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     return { ok: revoked };
   });
 
+  /**
+   * Where to get the app for the phone. Helm does not host it — this is a
+   * GitHub release asset for the version of Helm that is running, never
+   * `latest`. See src/mobile/apk-release.ts.
+   */
+  ipcMain.handle('mobile:apkRelease', async (): Promise<ApkReleaseResult> => {
+    const version = deps.getAppVersion?.() ?? '';
+    let url: string;
+    try {
+      url = apkReleaseUrl(version);
+    } catch (err) {
+      // A rejected IPC call reaches the renderer with no copy attached to it,
+      // which is how a settings tab ends up blank and unexplained.
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+
+    let availability: ApkReleaseInfo['availability'] = 'unknown';
+    if (deps.checkApkAsset) {
+      try {
+        availability = (await deps.checkApkAsset(url)) ? 'available' : 'missing';
+      } catch (err) {
+        // Offline is not evidence that the release lacks an APK.
+        logger.warn(`[mobile] Could not check for the APK asset: ${err}`);
+      }
+    }
+    return { ok: true, ...describeApkRelease(version, availability) };
+  });
+
   // ---- event forwarding ---------------------------------------------------
   const onDevicesChanged = () => broadcast((win) => win.webContents.send('mobile-devices:changed'));
   const onPairingState = (state: MobilePairingState) =>
@@ -143,6 +188,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     for (const channel of [
       'mobile:list', 'mobile:startPairing', 'mobile:confirmPairing', 'mobile:cancelPairing',
       'mobile:pairingState', 'mobile:setAllowList', 'mobile:setEnabled', 'mobile:revoke',
+      'mobile:apkRelease',
     ]) {
       ipcMain.removeHandler(channel);
     }

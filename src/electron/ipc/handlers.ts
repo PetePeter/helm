@@ -6,7 +6,7 @@
  * are never imported directly by the application.
  */
 
-import { BrowserWindow, dialog, powerMonitor } from 'electron';
+import { BrowserWindow, app, dialog, net, powerMonitor } from 'electron';
 import { SessionManager } from '../../session/manager.js';
 import { PtyManager } from '../../session/pty-manager.js';
 import { StateDetector } from '../../session/state-detector.js';
@@ -684,6 +684,14 @@ export function registerIPCHandlers(
     isOnline: (machineId) => mobileLinkManager.isOnline(machineId),
     dropLink: (machineId) => mobileLinkManager.dropLink(machineId),
     links: mobileLinkManager,
+    getAppVersion: () => app.getVersion(),
+    // Electron's net follows the redirect GitHub issues for a release asset and
+    // honours the system proxy. A failure here means "could not ask", which the
+    // handler deliberately does not report as "no APK was published".
+    checkApkAsset: async (url) => {
+      const response = await net.fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
+      return response.ok;
+    },
   });
   // The security boundary in front of every inbound phone call (P-0737). Built
   // here because this scope owns the registry, the session manager and the

@@ -1423,6 +1423,25 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   mobileRevoke: (deviceId: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('mobile:revoke', deviceId),
 
+  /**
+   * Where the phone downloads the app: a GitHub release asset for the version
+   * of Helm that is running, never `latest`. Never rejects — an unusable
+   * version answers `{ ok: false, reason }`.
+   */
+  mobileApkRelease: (): Promise<
+    | {
+        ok: true;
+        version: string;
+        tag: string;
+        assetName: string;
+        url: string;
+        qrPayload: string;
+        availability: 'available' | 'missing' | 'unknown';
+        note: string;
+      }
+    | { ok: false; reason: string }
+  > => ipcRenderer.invoke('mobile:apkRelease'),
+
   /** Subscribe to the paired-device registry changing. */
   onMobileDevicesChanged: (callback: () => void) => {
     const listener = () => callback();

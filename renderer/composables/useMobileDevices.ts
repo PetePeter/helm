@@ -35,9 +35,21 @@ export interface MobilePairingState {
 /** How long the "paired" confirmation stays up before the dialog closes itself. */
 export const PAIRED_DISMISS_MS = 1500;
 
+/** How the tab renders the "install it on your phone" panel. */
+export interface ApkReleaseView {
+  version: string;
+  url: string;
+  qrPayload: string;
+  availability: 'available' | 'missing' | 'unknown';
+  note: string;
+}
+
 const devices = ref<MobileDeviceItem[]>([]);
 const pairing = ref<MobilePairingState>({ status: 'idle' });
 const dialogOpen = ref(false);
+const apkRelease = ref<ApkReleaseView | null>(null);
+/** Why there is no download to offer. Null while loading or once one exists. */
+const apkError = ref<string | null>(null);
 
 let subscribed = false;
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -78,6 +90,29 @@ function ensureSubscribed(): void {
     // A dialog opened mid-flow (or after a renderer reload) picks up the truth.
     if (state.status !== 'idle') pairing.value = state;
   });
+}
+
+/**
+ * Load the APK download for the running Helm. Separate from `refresh()` because
+ * it costs a network round-trip and the answer only changes across releases —
+ * re-running it on every registry event would hit GitHub for nothing.
+ */
+async function loadApkRelease(): Promise<void> {
+  const result = await mobileClient.mobileApkRelease();
+  if (!result.ok) {
+    // No silent blank panel: the tab says why there is nothing to scan.
+    apkRelease.value = null;
+    apkError.value = result.reason;
+    return;
+  }
+  apkError.value = null;
+  apkRelease.value = {
+    version: result.version,
+    url: result.url,
+    qrPayload: result.qrPayload,
+    availability: result.availability,
+    note: result.note,
+  };
 }
 
 async function startPairing(): Promise<{ ok: boolean; reason?: string }> {
@@ -133,6 +168,8 @@ export function resetMobileDevicesStateForTesting(): void {
   devices.value = [];
   pairing.value = { status: 'idle' };
   dialogOpen.value = false;
+  apkRelease.value = null;
+  apkError.value = null;
 }
 
 export function useMobileDevices() {
@@ -149,5 +186,8 @@ export function useMobileDevices() {
     setAllowList,
     setEnabled,
     revoke,
+    apkRelease,
+    apkError,
+    loadApkRelease,
   };
 }
