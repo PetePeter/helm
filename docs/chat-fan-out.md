@@ -95,9 +95,55 @@ than emitted as null, so two encoders in two languages produce identical bytes.
 | `call` | phone → Helm | A tool invocation. The only inbound kind. |
 | `result` | Helm → phone | The gate's return value for one call id. |
 | `error` | Helm → phone | JSON-RPC-shaped failure; deny messages stay uniform. |
-| `chat` | Helm → phone | An unsolicited agent message for a session. |
+| `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. |
 
 Decoding never throws — a malformed record is dropped and logged.
+
+### `kind` — the field that splits a message from an alert
+
+A `chat` record carrying the optional `kind` (`attention` / `completion` /
+`idle`) is **not** something an agent said. It is Helm reporting an event, and
+the phone routes it to a notification and puts **nothing** in the thread.
+
+That split is the whole point. A reported event rendered as an agent bubble would
+grow a conversation on the phone that the desktop never had, and the drift would
+be invisible from the desktop side — nobody would ever file it.
+
+`kind` is additive and omitted when absent, so every committed vector still
+encodes byte-identically and **no vector was regenerated** — the same precedent
+as `SessionSummary.activityLevel`. It is emitted last, after the other optional
+keys, because key order is part of the format. Routing happens once, at decode,
+in `HelmClient.onInbound`.
+
+## Alerts — the phone's notification path
+
+```mermaid
+graph LR
+    SM[SessionManager<br/>session:updated] -->|aiagentState transition| MAN[MobileAlertNotifier]
+    NM[NotificationManager<br/>notify_user · flash_attention] --> MAN
+    SA[session-alert.ts<br/>shared transition filter] -.-> MAN
+    SA -.-> TN[TelegramNotifier]
+    MAN -->|chat record with a kind| MCB[MobileChatBridge.sendAlert]
+    MCB -->|BLE| PH[Phone<br/>AlertRouter → 3 channels]
+```
+
+`src/session/session-alert.ts` states **once** what counts as "something
+happened": an active (`implementing` / `planning`) → non-active transition, and
+which of the three classes the new state belongs to. Both surfaces gate on it, so
+they can never drift into telling the user different things.
+
+Only the **filter** is shared. `TelegramConfig`'s `notifyOnComplete` /
+`notifyOnIdle` / `notifyOnError` stay Telegram's own: reading them from the
+mobile path would couple two transports this whole module exists to keep apart.
+Per-transport notification preferences are an open config-surface question.
+
+What the mobile path deliberately does **not** do:
+
+| Not done | Why |
+|----------|-----|
+| Deduplication | The phone keys its notification on the session id, so ten alerts from one session replace into one row. Better than the desktop guessing a suppression window — and distinct from the ratified Telegram/app double-buzz, which stays. |
+| Retry | An alert is only true when it happens. A queue would deliver "needs input" about something that finished an hour ago. |
+| Preferences | See above. |
 
 **Cross-language contract:** `tests/fixtures/mobile-envelope-vectors.json` pins
 the exact bytes for both directions plus the payloads a conformant decoder must

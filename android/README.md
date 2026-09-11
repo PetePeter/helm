@@ -190,6 +190,52 @@ the alternative was inventing a tool to populate a picker. Close confirms and
 names the session. Spawn does not confirm — creating is cheap, and a prompt on
 everything trains people to tap through the one that matters.
 
+## Notifications
+
+The payoff for choosing BLE: a session needing attention buzzes a phone in your
+pocket with no cloud, no APNs, no Firebase and no Telegram in the path. A GATT
+notify reaches the already-running foreground service, which posts a lock-screen
+row.
+
+```mermaid
+graph LR
+    HC[HelmClient.onInbound] -->|kind absent| CR[ChatRepository<br/>the thread]
+    HC -->|kind present| AR[AlertRouter<br/>no Android types]
+    AR --> NP[NotificationPort]
+    NP --> AN[AndroidNotifications<br/>translation only]
+    HH[HelmHome] -->|opened / visible| AR
+    AN -->|tap| PO[PendingOpen] --> HH
+```
+
+**A kind-bearing record never enters the thread.** It is an event Helm reported,
+not something an agent said; putting it in the conversation would fabricate one.
+The split happens once, at decode. See [docs/chat-fan-out.md](../docs/chat-fan-out.md).
+
+**One row per session.** The notification id is derived from the session id and
+nothing else, so ten buzzes from one session REPLACE nine times. Key it on the
+kind or the timestamp and the phone stacks instead. This is a different thing
+from the ratified duplication between Telegram and the app — that is two surfaces
+telling you once each, which is the point.
+
+**A channel change cancels first.** Android will not carry a live notification to
+another channel, so a session going Attention → Completion must take the old row
+down or it strands under a channel the user may have silenced.
+
+**Three channels**, so the classes can be silenced apart: Attention ("Needs
+you"), Completion ("Finished"), Idle ("Went quiet"). Attention alone wears the
+amber flash colour — the same meaning as the flash dot, per invariant 8 — which
+is what finally gives `StateDot.Flash` a consumer. Everything else takes the app
+accent.
+
+**Nothing is posted for the session already open in the foreground**, and opening
+a session clears its row. Backgrounded, the same alert posts: being out of the
+room is exactly what this is for.
+
+A tap lands in that session's thread from a cold start as well as a warm one.
+`PendingOpen` parks the request because on a cold start the tap arrives before
+there is any composition to hand it to; it is consumed exactly once, so a
+rotation does not drag the user back to a thread they left.
+
 ## Versioning
 
 `versionName` and `versionCode` are **derived from the repo's `package.json`**
