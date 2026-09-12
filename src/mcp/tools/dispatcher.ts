@@ -553,8 +553,13 @@ export async function callMcpTool(
         );
       case 'session_close':
         return service.closeSession(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
-      case 'restart_helm':
-        return service.restartHelm(args.resume !== false);
+      case 'restart_helm': {
+        const resumePrompt = asString(args.resumePrompt, 'resumePrompt is required — a compact handover of the next step, delivered back to this session after relaunch');
+        // Server-derived identity: the self-resume task must target the session
+        // that is actually asking for the restart, never a client-supplied ref.
+        const callerSessionId = requireCallerSession(authContext, 'restart_helm');
+        return service.restartHelm(args.resume !== false, { callerSessionId, resumePrompt });
+      }
       case 'notify_user':
         return service.notifyUser(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),

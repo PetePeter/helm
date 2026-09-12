@@ -129,7 +129,7 @@ function makeService(): HelmControlService {
     })),
     notifyUser: vi.fn((sessionRef: string, title: string, content: string) => ({ delivered: 'bubble', sessionRef, title, content })),
     getAppVisibility: vi.fn(() => ({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's1' })),
-    restartHelm: vi.fn((resume = true) => ({ sessionsClosed: resume ? 0 : 2, resume })),
+    restartHelm: vi.fn((resume = true, _options?: { callerSessionId?: string; resumePrompt?: string }) => ({ sessionsClosed: resume ? 0 : 2, resume })),
     createScheduledTask: vi.fn((params: Record<string, unknown>) => ({ id: 'task-1', status: 'pending', ...params })),
     listScheduledTasks: vi.fn(() => [{ id: 'task-1', title: 'Follow up', status: 'pending' }]),
     getScheduledTask: vi.fn((id: string) => ({ id, title: 'Follow up', status: 'pending' })),
@@ -328,6 +328,8 @@ describe('LocalhostMcpServer', () => {
     expect(notifyUserTool!.description).toContain('error');
     expect(appVisibilityTool!.description).toContain('screen-lock');
     expect(restartHelmTool!.description).toContain('restart');
+    expect(restartHelmTool!.description).toContain('resumePrompt');
+    expect(restartHelmTool!.inputSchema.required).toEqual(['resumePrompt']);
     expect(skillsUpdateTool!.inputSchema.properties.aiAmendable).toEqual({ type: 'boolean' });
     expect(skillsUpdateTool!.inputSchema.properties.projectIds).toEqual({ type: 'array', items: { type: 'string' } });
     expect(skillsDeleteTool!.description).toContain('Delete');
@@ -366,12 +368,20 @@ describe('LocalhostMcpServer', () => {
       method: 'tools/call',
       params: {
         name: 'restart_helm',
-        arguments: {},
+        arguments: { resumePrompt: 'Continue after restart.' },
       },
+    }, {
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': 'restart_helm',
+      'X-Helm-Session-Id': 'sender-1',
     });
     const restartJson = await restartResponse.json();
     // No resume arg → defaults to resume:true (sessions preserved for auto-resume).
-    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(true);
+    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(true, {
+      callerSessionId: 'sender-1',
+      resumePrompt: 'Continue after restart.',
+    });
     expect(restartJson.result.structuredContent).toEqual({ sessionsClosed: 0, resume: true });
 
     const forceResponse = await rpc(port, 'secret-token', {
@@ -380,12 +390,41 @@ describe('LocalhostMcpServer', () => {
       method: 'tools/call',
       params: {
         name: 'restart_helm',
-        arguments: { resume: false },
+        arguments: { resume: false, resumePrompt: 'Continue after restart.' },
       },
+    }, {
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': 'restart_helm',
+      'X-Helm-Session-Id': 'sender-1',
     });
     const forceJson = await forceResponse.json();
-    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(false);
+    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(false, {
+      callerSessionId: 'sender-1',
+      resumePrompt: 'Continue after restart.',
+    });
     expect(forceJson.result.structuredContent).toEqual({ sessionsClosed: 2, resume: false });
+  });
+
+  it('rejects restart_helm without a resumePrompt — a restart must not strand the caller', async () => {
+    const service = makeService();
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+    const port = server.getAddress()!.port;
+
+    const response = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: {
+        name: 'restart_helm',
+        arguments: {},
+      },
+    });
+    const json = await response.json();
+    expect(json.error.message).toContain('resumePrompt is required');
+    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
   it('dispatches skills tools through the MCP surface', async () => {

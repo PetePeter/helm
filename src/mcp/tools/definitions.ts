@@ -697,7 +697,7 @@ export const MCP_TOOLS: McpTool[] = [
         name: { type: 'string' },
         runtimeGroupId: { type: 'string' },
       },
-      required: ['cliType', 'dirPath', 'name'],
+      required: ['cliType', 'dirPath'],
       additionalProperties: false,
     },
   },
@@ -1079,12 +1079,14 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'restart_helm',
     title: 'Restart Helm',
-    description: 'Restart the Helm application. By default sessions are preserved and auto-resume after relaunch. Pass resume:false to close all sessions first (force restart). MCP and Telegram resume after a 3-second delay.',
+    description: 'Restart the Helm application. By default sessions are preserved and auto-resume after relaunch. Pass resume:false to close all sessions first (force restart). MCP and Telegram resume after a 3-second delay. REQUIRED: pass resumePrompt — a compact handover to your post-restart self (what was being done, decisions made, the next concrete step). Helm creates a one-shot scheduled task that re-prompts this session ~2 minutes after relaunch, so the restart never strands your work. Returns the resumeTaskId so you can scheduler_cancel it if the restart turns out unnecessary.',
     inputSchema: {
       type: 'object',
       properties: {
-        resume: { type: 'boolean', description: 'Preserve and auto-resume existing sessions after relaunch. Defaults to true; set false to close all sessions first.' },
+        resume: { type: 'boolean', description: 'Preserve and auto-resume existing sessions after relaunch. Defaults to true; set false to close all sessions first. resumePrompt is not allowed with resume:false — the calling session is closed and cannot be re-prompted.' },
+        resumePrompt: { type: 'string', description: 'Handover delivered back to this session after relaunch: what was in flight, key decisions, and the next concrete step.' },
       },
+      required: ['resumePrompt'],
       additionalProperties: false,
     },
   },

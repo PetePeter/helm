@@ -1140,8 +1140,21 @@ export class HelmControlService extends EventEmitter {
    * Restart Helm. By default (`resume === true`) sessions are left intact on disk
    * so the relaunched instance auto-resumes them. Pass `resume === false` to close
    * every session first — a force restart that comes back with no sessions.
+   *
+   * When `options.resumePrompt` is set, a one-shot direct-mode scheduled task is
+   * created BEFORE the restart is triggered, so the relaunched app re-prompts the
+   * calling session ~2 minutes later. A restart can then never strand the work
+   * that asked for it — the caller hands over its next step as the prompt.
    */
-  restartHelm(resume = true): { sessionsClosed: number; resume: boolean } {
+  restartHelm(resume = true, options?: { callerSessionId?: string; resumePrompt?: string }): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
+    if (options?.resumePrompt) {
+      if (!resume) {
+        throw new Error('resumePrompt requires resume:true (the default) — with resume:false the calling session is closed and cannot be re-prompted');
+      }
+      if (!options.callerSessionId) {
+        throw new Error('callerSessionId is required to schedule a restart self-resume');
+      }
+    }
     let sessionsClosed = 0;
     if (!resume) {
       const sessions = this.sessionService.listSessions();
@@ -1158,8 +1171,31 @@ export class HelmControlService extends EventEmitter {
         }
       }
     }
+    let resumeTaskId: string | undefined;
+    if (options?.resumePrompt) {
+      const scheduler = this.requireScheduler();
+      const session = this.sessionService.getSession(options.callerSessionId!);
+      if (!session) {
+        throw new Error(`Session not found: ${options.callerSessionId}`);
+      }
+      const { workingDir } = session;
+      if (!workingDir) {
+        throw new Error(`Session ${options.callerSessionId} has no working directory to schedule its self-resume in`);
+      }
+      resumeTaskId = scheduler.createTask({
+        title: 'Restart self-resume',
+        initialPrompt: options.resumePrompt,
+        // Direct mode derives the CLI type from the target session.
+        cliType: '',
+        dirPath: workingDir,
+        planIds: [],
+        scheduledTime: new Date(Date.now() + 2 * 60_000).toISOString(),
+        mode: 'direct',
+        targetSessionId: options.callerSessionId!,
+      }).id;
+    }
     this.emit('restart-requested');
-    return { sessionsClosed, resume };
+    return resumeTaskId !== undefined ? { sessionsClosed, resume, resumeTaskId } : { sessionsClosed, resume };
   }
 
   setAiagentState(sessionRef: string, state: 'planning' | 'implementing' | 'completed' | 'idle') {

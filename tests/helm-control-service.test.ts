@@ -15,7 +15,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 process.env.HELM_INTERSESSION_VERIFY_DELAY_MS = '0';
 
-function makeService() {
+function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }) {
   const ptyManager = {
     has: vi.fn(() => true),
     deliverText: vi.fn(() => Promise.resolve()),
@@ -80,9 +80,12 @@ function makeService() {
     sessionManager as unknown as import('../src/session/manager.js').SessionManager,
     ptyManager as unknown as import('../src/session/pty-manager.js').PtyManager,
     configLoader as unknown as import('../src/config/loader.js').ConfigLoader,
+    undefined,
+    undefined,
+    schedulerManager as unknown as import('../src/session/scheduled-task-manager.js').ScheduledTaskManager | undefined,
   );
 
-  return { service, ptyManager, sessionManager, configLoader, planManager };
+  return { service, ptyManager, sessionManager, configLoader, planManager, schedulerManager };
 }
 
 describe('HelmControlService.sendTextToSession', () => {
@@ -1461,6 +1464,91 @@ describe('HelmControlService.restartHelm', () => {
     service.restartHelm();
 
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates a one-shot direct self-resume task before emitting restart-requested when a resumePrompt is given', () => {
+    const schedulerManager = { createTask: vi.fn((_params: unknown) => ({ id: 'task-1' })) };
+    const { service, sessionManager } = makeService(schedulerManager);
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: 'caller-1',
+      name: 'Caller',
+      cliType: 'claude-code',
+      workingDir: '/work',
+    });
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    const before = Date.now();
+    const result = service.restartHelm(true, { callerSessionId: 'caller-1', resumePrompt: 'Continue the deploy.' });
+
+    expect(result).toEqual({ sessionsClosed: 0, resume: true, resumeTaskId: 'task-1' });
+    expect(schedulerManager.createTask).toHaveBeenCalledTimes(1);
+    const params = schedulerManager.createTask.mock.calls[0][0] as Record<string, unknown>;
+    expect(params).toMatchObject({
+      title: 'Restart self-resume',
+      initialPrompt: 'Continue the deploy.',
+      cliType: '',
+      dirPath: '/work',
+      mode: 'direct',
+      targetSessionId: 'caller-1',
+    });
+    const fireAt = new Date(params.scheduledTime as string).getTime();
+    expect(fireAt).toBeGreaterThanOrEqual(before + 90_000);
+    expect(fireAt).toBeLessThanOrEqual(Date.now() + 150_000);
+    // The task must exist before the restart cuts the process down.
+    expect(schedulerManager.createTask.mock.invocationCallOrder[0]).toBeLessThan(listener.mock.invocationCallOrder[0]);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a resumePrompt when resume is false — the caller session is closed and cannot be re-prompted', () => {
+    const schedulerManager = { createTask: vi.fn() };
+    const { service } = makeService(schedulerManager);
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelm(false, { callerSessionId: 'caller-1', resumePrompt: 'Continue.' }))
+      .toThrow('resumePrompt requires resume:true');
+    expect(schedulerManager.createTask).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resumePrompt without a caller session identity', () => {
+    const schedulerManager = { createTask: vi.fn() };
+    const { service } = makeService(schedulerManager);
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelm(true, { resumePrompt: 'Continue.' }))
+      .toThrow('callerSessionId is required');
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resumePrompt when the caller session cannot be found, before restarting', () => {
+    const schedulerManager = { createTask: vi.fn() };
+    const { service, sessionManager } = makeService(schedulerManager);
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelm(true, { callerSessionId: 'ghost', resumePrompt: 'Continue.' }))
+      .toThrow('Session not found: ghost');
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('rejects a resumePrompt when the scheduler is unavailable, before restarting', () => {
+    const { service, sessionManager } = makeService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: 'caller-1', name: 'Caller', cliType: 'claude-code', workingDir: '/work',
+    });
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelm(true, { callerSessionId: 'caller-1', resumePrompt: 'Continue.' }))
+      .toThrow('Scheduler is not available');
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 
