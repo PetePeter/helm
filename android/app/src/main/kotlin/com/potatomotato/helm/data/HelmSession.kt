@@ -1,6 +1,7 @@
 package com.potatomotato.helm.data
 
 import com.potatomotato.helm.ui.components.SessionState
+import com.potatomotato.helm.wire.WireShape
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -41,9 +42,14 @@ data class HelmSession(
  */
 object SessionWire {
 
-    /** Null when the payload is not a session list at all. */
+    /**
+     * Null when the payload is not a session list at all — and never silently:
+     * an answer that arrived and could not be understood is indistinguishable
+     * from an empty list to every layer above, so it says so.
+     */
     fun parseList(result: Any?): List<HelmSession>? {
-        val array = result as? JSONArray ?: return null
+        val array = result as? JSONArray
+            ?: return WireShape.undecodable("a session_list result", "a JSON array", result)
         return (0 until array.length()).mapNotNull { parse(array.optJSONObject(it)) }
     }
 

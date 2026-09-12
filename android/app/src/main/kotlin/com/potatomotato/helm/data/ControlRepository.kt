@@ -1,5 +1,6 @@
 package com.potatomotato.helm.data
 
+import com.potatomotato.helm.wire.WireShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,6 +75,13 @@ class ControlRepository {
      */
     fun snapshotArrived(result: Any?, requested: Int) {
         val stripped = (result as? JSONObject)?.opt("stripped") as? JSONArray
+        if (stripped == null) {
+            WireShape.undecodable<Unit>(
+                "a session_read_terminal result",
+                "a JSON object with a `stripped` array",
+                result,
+            )
+        }
         _snapshot.value = if (stripped == null) {
             Snapshot.Failed(UNREADABLE_TAIL)
         } else {
@@ -100,7 +108,10 @@ class ControlRepository {
 
     /** Take a `directory_list` result. False when the payload is not a directory list. */
     fun directoriesArrived(result: Any?): Boolean {
-        val array = result as? JSONArray ?: return false
+        val array = result as? JSONArray ?: run {
+            WireShape.undecodable<Unit>("a directory_list result", "a JSON array", result)
+            return false
+        }
         _directories.value = (0 until array.length()).mapNotNull { index ->
             val entry = array.opt(index) as? JSONObject ?: return@mapNotNull null
             val path = entry.opt("dirPath") as? String ?: return@mapNotNull null

@@ -152,6 +152,7 @@ export class MobileLinkManager extends EventEmitter {
     const active = this.links.get(machineId);
     if (!active) return;
     this.links.delete(machineId);
+    this.log(`dropping the link to ${machineId}: ${reason}`);
     try {
       active.channel?.close(reason);
     } catch (error) {
@@ -279,7 +280,7 @@ export class MobileLinkManager extends EventEmitter {
     // new entry off a rotated address is exactly the regression this prevents.
     this.opts.deviceStore.update(device.id, { deviceId: link.deviceId, lastSeenAt: this.now() });
     this.attachChannel(machineId, channel);
-    link.pipe.onClose(() => this.onClosed(machineId));
+    link.pipe.onClose(() => this.onClosed(machineId, 'the BLE pipe closed'));
     this.log(`linked "${device.name}" (${machineId}) via ${link.deviceId}`);
     this.emit('online', machineId);
   }
@@ -295,7 +296,7 @@ export class MobileLinkManager extends EventEmitter {
       channel: event.channel ?? null,
     });
     if (event.channel) this.attachChannel(event.machineId, event.channel);
-    link.pipe.onClose(() => this.onClosed(event.machineId));
+    link.pipe.onClose(() => this.onClosed(event.machineId, 'the BLE pipe closed'));
     this.emit('online', event.machineId);
   }
 
@@ -318,11 +319,14 @@ export class MobileLinkManager extends EventEmitter {
 
   private attachChannel(machineId: string, channel: MobileChannel): void {
     channel.on?.('message', (message: Buffer) => this.emit('message', machineId, message));
-    channel.on?.('close', () => this.onClosed(machineId));
+    channel.on?.('close', () => this.onClosed(machineId, 'the secure channel closed'));
   }
 
   /** Disconnect a link we will not keep, and let the transport rescan. */
   private async refuse(link: BleLink, reason: string): Promise<void> {
+    // The reason used to go to the transport and nowhere else, so a hub that
+    // refused every advertiser in range looked identical to one that saw none.
+    this.log(`refusing ${link.deviceId}: ${reason}`);
     try {
       await this.transport?.reject(link, reason);
     } catch (error) {
@@ -332,7 +336,7 @@ export class MobileLinkManager extends EventEmitter {
 
   private onDisconnected(deviceId: string): void {
     for (const active of this.links.values()) {
-      if (active.link.deviceId === deviceId) this.onClosed(active.machineId);
+      if (active.link.deviceId === deviceId) this.onClosed(active.machineId, 'the transport reported a disconnect');
     }
   }
 
@@ -347,9 +351,15 @@ export class MobileLinkManager extends EventEmitter {
     else logger.warn(`[MobileLink] ${full}`);
   }
 
-  private onClosed(machineId: string): void {
+  /**
+   * A link ended. The REASON is required, because the three call sites mean
+   * genuinely different things — the radio went, the crypto went, or the OS
+   * told us — and a bare "closed" made a 13-to-40-second reconnect loop
+   * undiagnosable from the desktop end. See P-0756.
+   */
+  private onClosed(machineId: string, reason: string): void {
     if (!this.links.delete(machineId)) return;
-    this.log(`link to ${machineId} closed`);
+    this.log(`link to ${machineId} closed: ${reason}`);
     this.emit('offline', machineId);
   }
 }

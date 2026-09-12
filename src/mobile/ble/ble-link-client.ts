@@ -187,19 +187,34 @@ export class BleLinkClient extends EventEmitter {
     if (!this.started || this.active || this.busy) return;
     if (this.isIgnored(peripheral.id)) return;
     this.busy = true;
+    // WHICH STEP, and how long it took. P-0756 caught this sequence hanging for
+    // 35 seconds and failing with noble's bare "Disconnected unknown", while the
+    // phone sat in Connecting having seen a perfectly successful GATT connect.
+    // Three awaits, no timing on any of them, and one bare error for all three:
+    // there was no way to say which one stalled. Now there is.
+    const startedAt = Date.now();
+    let step = 'stopScanning';
     try {
       await this.noble.stopScanningAsync();
+
+      step = 'connect';
       await peripheral.connectAsync();
+      this.log(`BLE ${step} to ${peripheral.id} took ${Date.now() - startedAt}ms`);
+
+      step = 'discover';
       const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
         [this.serviceUuid],
         [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
       );
+      this.log(`BLE ${step} on ${peripheral.id} took ${Date.now() - startedAt}ms`);
 
       const rx = findCharacteristic(characteristics, HELM_RX_UUID_SHORT);
       const tx = findCharacteristic(characteristics, HELM_TX_UUID_SHORT);
       if (!rx || !tx) throw new Error(`peripheral ${peripheral.id} is missing the Helm characteristics`);
 
+      step = 'subscribe';
       await tx.subscribeAsync();
+      this.log(`BLE link to ${peripheral.id} is ready after ${Date.now() - startedAt}ms`);
 
       const link = new BleLinkPipe(peripheral, rx, tx, this.log);
       this.active = link;
@@ -209,7 +224,7 @@ export class BleLinkClient extends EventEmitter {
       this.emit('link', link);
     } catch (error) {
       this.busy = false;
-      this.log(`BLE connect to ${peripheral.id} failed`, error);
+      this.log(`BLE ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
       this.emitError(error);
       this.scheduleRescan();
     }

@@ -3,6 +3,7 @@ package com.potatomotato.helm.data
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.potatomotato.helm.wire.WireShape
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -79,7 +80,12 @@ class CapabilityCache {
         (_state.value as? Capabilities.Known)?.tools?.contains(tool) == true
 
     private fun parse(result: Any?): Set<String>? {
-        val tools = (result as? JSONObject)?.opt("tools") as? JSONArray ?: return null
+        val tools = (result as? JSONObject)?.opt("tools") as? JSONArray
+            ?: return WireShape.undecodable(
+                "a permitted-tools result",
+                "a JSON object with a `tools` array",
+                result,
+            )
         return (0 until tools.length())
             .mapNotNull { (tools.opt(it) as? JSONObject)?.opt("name") as? String }
             .toSet()

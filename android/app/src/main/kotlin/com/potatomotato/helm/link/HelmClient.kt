@@ -11,8 +11,6 @@ import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.wire.MobileRecord
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * HelmClient — what the phone DOES with an authenticated link.
@@ -70,11 +68,8 @@ class HelmClient(
             // screen, because a shape the decoder does not recognise is
             // indistinguishable from "no sessions" to every layer above.
             // It is a WARNING, never silence.
-            HelmLog.w(
-                HelmLog.CLIENT,
-                "session_list answered ok but did not decode as a session list; " +
-                    "the result was ${describeShape(outcome.result)} and the list is unchanged",
-            )
+            // SessionWire has already named the shape it could not read.
+            HelmLog.w(HelmLog.CLIENT, "session_list answered ok but did not decode; the list is unchanged")
             return@call
         }
         HelmLog.i(
@@ -216,18 +211,6 @@ class HelmClient(
         waiting(outcome)
     }
 
-    /**
-     * The SHAPE of a result, never its contents — a class name and a size. This
-     * is what tells a decode failure apart from an empty answer, and it is the
-     * boundary the no-payload rule draws: describe the container, never what is
-     * in it.
-     */
-    private fun describeShape(result: Any?): String = when (result) {
-        null -> "null"
-        is JSONArray -> "a JSON array of ${result.length()} entries"
-        is JSONObject -> "a JSON object with ${result.length()} keys named ${result.keys().asSequence().sorted().toList()}"
-        else -> "a ${result.javaClass.simpleName}"
-    }
 
     /** Everything outstanding fails when the link goes. Nothing waits forever. */
     fun onLinkLost() {
