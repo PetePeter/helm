@@ -160,6 +160,28 @@ Per invariant 7's spirit, a misbehaving radio must not take a session with it:
 - Disconnect and reconnect are **events** (`link`, `disconnected`, `error`), not
   exceptions.
 
+### The connect sequence is bounded, and never leaks a connection
+
+`connect → discover → subscribe` each run under a 10s ceiling, and any failure
+disconnects the peripheral before rescanning. Both rules were paid for:
+
+- **A step with no ceiling cannot be blamed.** Discovery was observed never
+  returning — noble said `Device is unreachable while discovering services`
+  while the phone sat in `Connecting` with zero chunks either way — and Helm
+  hung ~33s before dying on a bare `Disconnected unknown`. A failure now reads
+  `BLE <step> to <id> failed after <n>ms`. 10s is deliberately under the ~30s
+  the phone was seen holding a silent connection, so **Helm gives up first** and
+  is the one that gets to describe what happened.
+- **A half-built connection must not outlive its attempt.** Walking away without
+  disconnecting left the phone holding a live link carrying no traffic, and the
+  next attempt met its own leftover as `Peripheral already connected`. The
+  disconnect is unconditional: a step that timed out may have completed since,
+  so "we never got that far" is not knowable here.
+
+The loser of each race keeps running and its rejection is swallowed — noble
+cannot cancel an in-flight GATT operation, and a rejection surfacing long after
+we stopped caring is its own defect.
+
 ## The phone side (`android/app/src/main/kotlin/com/potatomotato/helm/ble/`)
 
 The peripheral half mirrors this document from the other end. Directions keep
