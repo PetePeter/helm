@@ -69,7 +69,9 @@ export class MobileChatBridge implements ChatBridge {
   private readonly deps: MobileChatBridgeDeps;
   private readonly now: () => number;
   private readonly onMessage = (machineId: string, payload: Buffer) => {
-    void this.handleInbound(machineId, payload);
+    void this.handleInbound(machineId, payload).catch((error) => {
+      logger.error(`[MobileChat] Unhandled inbound processing failure for ${machineId}: ${describe(error)}`);
+    });
   };
   private listening = false;
 
@@ -163,6 +165,7 @@ export class MobileChatBridge implements ChatBridge {
    * `getByMachineId` is the only bridge between the two.
    */
   private async handleInbound(machineId: string, payload: Buffer): Promise<void> {
+    logger.info(`[MobileChat] Inbound record received from ${machineId} bytes=${payload.length}`);
     const device = this.deps.deviceStore.getByMachineId(machineId);
     if (!device) {
       logger.warn(`[MobileChat] Dropped a record from an unregistered machine ${machineId}`);
@@ -184,7 +187,9 @@ export class MobileChatBridge implements ChatBridge {
     }
 
     try {
+      logger.info(`[MobileChat] Dispatching ${record.method} id=${record.id} from ${machineId}`);
       const result = await gate.handle(device.id, record.method, record.params);
+      logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
       this.answer(machineId, encodeResult(record.id, result));
     } catch (err) {
       const code = err instanceof GateError ? err.code : JSONRPC_SERVER_ERROR;
@@ -194,7 +199,12 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   private answer(machineId: string, payload: Buffer): void {
+    logger.info(`[MobileChat] Sending reply to ${machineId} bytes=${payload.length}`);
     if (this.deps.links.send(machineId, payload)) return;
     logger.warn(`[MobileChat] Could not deliver a reply to ${machineId}; the link is gone`);
   }
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.stack ?? error.message : String(error);
 }

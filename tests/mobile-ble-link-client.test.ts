@@ -128,6 +128,20 @@ describe('BleLinkClient connect sequence failures', () => {
     expect(failure).toMatch(/failed after \d+ms/);
   });
 
+  it('retries a transient Windows unreachable discovery and then accepts the link', async () => {
+    const phone = new FakePeripheral();
+    phone.failDiscover = new Error('Device is unreachable while discovering services');
+    phone.failDiscoverPermanently = false;
+    phone.discoverFailuresRemaining = 1;
+    const { client } = await attempt(phone);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(phone.discoverCalls).toBe(2);
+    expect(phone.connected).toBe(true);
+    expect(phone.tx.subscribed).toBe(true);
+  });
+
   it('times out a subscribe that never resolves, and blames subscribe rather than discover', async () => {
     const phone = new FakePeripheral();
     phone.tx.hangSubscribe = true;
@@ -235,6 +249,18 @@ describe('BleLinkClient pipe', () => {
     phone.rx.writes.forEach((chunk) => reassembler.push(chunk));
     expect(received).toHaveLength(1);
     expect(received[0].equals(payload)).toBe(true);
+  });
+
+  it('keeps handshake writes acknowledged when Windows reports a transient large MTU', async () => {
+    const { phone, link } = await connected();
+    phone.mtu = 517;
+
+    link.pipe.write(Buffer.alloc(514));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(phone.rx.writes.length).toBeGreaterThan(1);
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
+    expect(phone.rx.writeModes.every((mode) => mode === false)).toBe(true);
   });
 
   it('delivers a notified message to the pipe consumer as whole bytes', async () => {
@@ -421,7 +447,7 @@ describe('BleLinkClient rejection', () => {
 });
 
 describe('BleLinkClient with SecureChannel', () => {
-  it('carries a full handshake over two BLE pipes with zero SecureChannel changes', async () => {
+  it('carries the acknowledged handshake, then switches application writes to response-free', async () => {
     // Two clients, each connected to a fake peripheral, wired phone-to-phone:
     // whatever Helm writes on one link is notified into the other. This proves
     // the pipe is genuinely duplex and ordered under real chunking.
@@ -460,5 +486,7 @@ describe('BleLinkClient with SecureChannel', () => {
     initiator.send(Buffer.from('spawn claude'));
     expect((await arrived).toString()).toBe('spawn claude');
     expect(initiator.sas).toBe(responder.sas);
+    expect(phoneA.rx.writeModes.some((mode) => mode === false)).toBe(true);
+    expect(phoneA.rx.writeModes.at(-1)).toBe(true);
   });
 });

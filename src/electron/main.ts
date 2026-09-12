@@ -58,6 +58,15 @@ crashReporter.start({
   uploadToServer: false,
 });
 
+const previousCrash = crashReporter.getLastCrashReport();
+if (previousCrash) {
+  logger.error(`[Main] Previous native crash report: ${JSON.stringify(previousCrash)}`);
+}
+
+app.on('child-process-gone', (_event, details) => {
+  logger.error(`[Main] Child process gone: type=${details.type}, reason=${details.reason}, exitCode=${details.exitCode}`);
+});
+
 // Set app identity so Windows toast notifications show our name, not "Electron"
 app.setAppUserModelId('com.helm.desktop');
 

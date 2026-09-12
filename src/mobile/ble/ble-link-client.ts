@@ -28,6 +28,15 @@ import {
 /** ATT protocol overhead on a notification or write: opcode + handle. */
 const ATT_OVERHEAD_BYTES = 3;
 
+/**
+ * Application frames can contain hundreds of ATT chunks. Waiting for an
+ * Android GATT-server response for every chunk makes Windows/noble stall on a
+ * long session_list reply even though the phone has already accepted the
+ * writes. The queue still serialises chunks; disabling the per-chunk response
+ * avoids the native response backlog while preserving ordering.
+ */
+const DEFAULT_WRITE_WITHOUT_RESPONSE = false;
+
 /** Fallback when the adapter does not report a negotiated MTU. */
 const DEFAULT_ATT_MTU = 23;
 
@@ -45,6 +54,9 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
  * now gives up first and gets to describe what happened.
  */
 const DEFAULT_STEP_TIMEOUT_MS = 10_000;
+/** Windows can report the first uncached GATT query as unreachable while the
+ * connection is still settling. A bounded retry lets the stack converge. */
+const DISCOVERY_ATTEMPTS = 2;
 
 /**
  * How long a refused advertiser is skipped. Identity is only known after a
@@ -144,6 +156,7 @@ export class BleLinkClient extends EventEmitter {
   private rescanTimer: ReturnType<typeof setTimeout> | null = null;
   /** Peripheral id → epoch ms until which it is skipped. */
   private readonly ignored = new Map<string, number>();
+  private nextAttemptId = 1;
 
   constructor(options: BleLinkClientOptions) {
     super();
@@ -219,30 +232,31 @@ export class BleLinkClient extends EventEmitter {
     // successful GATT connect. Three awaits, no timing and no ceiling on any of
     // them, and one bare error for all three: nothing could say which stalled.
     const startedAt = Date.now();
+    const attemptId = this.nextAttemptId++;
     let step = 'stopScanning';
+    this.log(`BLE attempt ${attemptId} discovered ${peripheral.id}`);
     try {
+      this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
       await this.noble.stopScanningAsync();
 
       step = 'connect';
+      this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
       await this.bounded(step, () => peripheral.connectAsync());
-      this.log(`BLE ${step} to ${peripheral.id} took ${Date.now() - startedAt}ms`);
+      this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
       step = 'discover';
-      const { characteristics } = await this.bounded(step, () =>
-        peripheral.discoverSomeServicesAndCharacteristicsAsync(
-          [this.serviceUuid],
-          [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
-        ),
-      );
-      this.log(`BLE ${step} on ${peripheral.id} took ${Date.now() - startedAt}ms`);
+      this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
+      const { characteristics } = await this.discoverWithRetry(peripheral);
+      this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms (characteristics=${characteristics.length})`);
 
       const rx = findCharacteristic(characteristics, HELM_RX_UUID_SHORT);
       const tx = findCharacteristic(characteristics, HELM_TX_UUID_SHORT);
       if (!rx || !tx) throw new Error(`peripheral ${peripheral.id} is missing the Helm characteristics`);
 
       step = 'subscribe';
+      this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id} (tx=${tx.uuid})`);
       await this.bounded(step, () => tx.subscribeAsync());
-      this.log(`BLE link to ${peripheral.id} is ready after ${Date.now() - startedAt}ms`);
+      this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
       const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now);
       this.active = link;
@@ -252,11 +266,37 @@ export class BleLinkClient extends EventEmitter {
       this.emit('link', link);
     } catch (error) {
       this.busy = false;
-      this.log(`BLE ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
+      this.log(`BLE attempt ${attemptId} ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
       await this.abandon(peripheral);
       this.emitError(error);
       this.scheduleRescan();
     }
+  }
+
+  private async discoverWithRetry(peripheral: NoblePeripheral): Promise<{ characteristics: NobleCharacteristic[] }> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.bounded('discover', () =>
+          peripheral.discoverSomeServicesAndCharacteristicsAsync(
+            [this.serviceUuid],
+            [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
+          ),
+        );
+      } catch (error) {
+        lastError = error;
+        if (attempt < DISCOVERY_ATTEMPTS && this.isRetryableDiscoveryError(error)) {
+          this.log(`BLE discover attempt ${attempt} on ${peripheral.id} failed; retrying`, error);
+          continue;
+        }
+        break;
+      }
+    }
+    throw lastError;
+  }
+
+  private isRetryableDiscoveryError(error: unknown): boolean {
+    return /unreachable|not reachable/i.test(error instanceof Error ? error.message : String(error));
   }
 
   /**
@@ -306,6 +346,7 @@ export class BleLinkClient extends EventEmitter {
 
   private onDisconnect(link: BleLinkPipe): void {
     if (this.active !== link) return;
+    this.log(`BLE peripheral ${link.deviceId} emitted disconnect after ${Date.now() - link.connectedAt}ms`);
     this.active = null;
     link.handleClose();
     this.emit('disconnected', link.deviceId);
@@ -378,13 +419,15 @@ class BleLinkPipe implements BleLink {
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
   private readonly linkedAt: number;
+  private writeSequence = 0;
+  private writeWithoutResponse = DEFAULT_WRITE_WITHOUT_RESPONSE;
 
   constructor(
     private readonly peripheral: NoblePeripheral,
     private readonly rx: NobleCharacteristic,
     tx: NobleCharacteristic,
     private readonly log: (message: string, error?: unknown) => void,
-    private readonly now: () => number,
+    private now: () => number,
   ) {
     this.linkedAt = now();
     tx.on('data', (chunk: Buffer) => this.reassembler.push(chunk));
@@ -404,8 +447,17 @@ class BleLinkPipe implements BleLink {
     return this.peripheral.advertisement.localName;
   }
 
+  get connectedAt(): number {
+    return this.linkedAt;
+  }
+
   get pipe(): BytePipe {
     return this;
+  }
+
+  setWriteWithoutResponse(enabled: boolean): void {
+    this.writeWithoutResponse = enabled;
+    this.log(`BLE write mode ${this.deviceId}: withoutResponse=${enabled}`);
   }
 
   onFramingDrop(handler: (reason: string) => void): void {
@@ -426,16 +478,25 @@ class BleLinkPipe implements BleLink {
       return;
     }
 
+    const writeSequence = ++this.writeSequence;
+    this.log(
+      `BLE write queued ${this.deviceId} seq=${writeSequence} frameBytes=${data.length}` +
+        ` chunks=${chunks.length} chunkSize=${this.chunkSize()} mtu=${this.peripheral.mtu ?? DEFAULT_ATT_MTU}`,
+    );
+
     this.queue = this.queue.then(async () => {
-      for (const chunk of chunks) {
+      this.log(`BLE write begin ${this.deviceId} seq=${writeSequence}`);
+      for (const [chunkIndex, chunk] of chunks.entries()) {
         if (this.closed) return;
         try {
-          await this.rx.writeAsync(chunk, false);
+          this.log(`BLE write chunk ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length} bytes=${chunk.length}`);
+          await this.rx.writeAsync(chunk, this.writeWithoutResponse);
+          this.log(`BLE write chunk complete ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length}`);
         } catch (error) {
           const failure: BleTransportError = {
             chunkLength: chunk.length,
             mtu: this.peripheral.mtu ?? DEFAULT_ATT_MTU,
-            withoutResponse: false,
+            withoutResponse: this.writeWithoutResponse,
             elapsedMs: Date.now() - this.linkedAt,
             error,
           };
@@ -453,6 +514,7 @@ class BleLinkPipe implements BleLink {
           return;
         }
       }
+      this.log(`BLE write complete ${this.deviceId} seq=${writeSequence}`);
     });
   }
 
@@ -485,10 +547,16 @@ class BleLinkPipe implements BleLink {
     for (const handler of this.closeHandlers) handler();
   }
 
-  /** Read the MTU per write: it can be renegotiated mid-connection. */
+  /**
+   * Use the ATT default as the upper bound even when noble reports a larger
+   * negotiated MTU. Windows/noble can expose the larger value briefly and then
+   * fall back to 23; a queued long write can otherwise reach GATT as one 514+
+   * byte write and produce status 3. Twenty-byte chunks are universally valid
+   * for Write With Response and the phone reassembler already handles them.
+   */
   private chunkSize(): number {
     const mtu = this.peripheral.mtu ?? DEFAULT_ATT_MTU;
-    return Math.max(MIN_CHUNK_BYTES, mtu - ATT_OVERHEAD_BYTES);
+    return Math.max(MIN_CHUNK_BYTES, Math.min(DEFAULT_ATT_MTU, mtu) - ATT_OVERHEAD_BYTES);
   }
 }
 

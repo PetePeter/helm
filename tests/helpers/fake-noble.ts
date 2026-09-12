@@ -23,6 +23,7 @@ import {
 export class FakeCharacteristic extends EventEmitter implements NobleCharacteristic {
   /** Everything Helm has written to this characteristic, in order. */
   readonly writes: Buffer[] = [];
+  readonly writeModes: boolean[] = [];
   subscribed = false;
   failNextWrite: Error | null = null;
   /** Never resolve a subscribe, the way a stalled CCC descriptor write behaves. */
@@ -32,7 +33,7 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
     super();
   }
 
-  async writeAsync(data: Buffer, _withoutResponse: boolean): Promise<void> {
+  async writeAsync(data: Buffer, withoutResponse: boolean): Promise<void> {
     if (this.failNextWrite) {
       const error = this.failNextWrite;
       this.failNextWrite = null;
@@ -40,6 +41,7 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
     }
     const copy = Buffer.from(data);
     this.writes.push(copy);
+    this.writeModes.push(withoutResponse);
     // Lets a test cross-wire one fake peripheral's RX into another's TX.
     this.emit('write', copy);
   }
@@ -64,6 +66,9 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   advertisement: { localName?: string } = { localName: 'helm-phone' };
   failConnect: Error | null = null;
   failDiscover: Error | null = null;
+  failDiscoverPermanently = true;
+  discoverFailuresRemaining = 0;
+  discoverCalls = 0;
   /**
    * Never resolve discovery. This is the observed real failure: the GATT
    * connection succeeds, the phone sits in Connecting, and noble's discover
@@ -95,7 +100,12 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   async discoverSomeServicesAndCharacteristicsAsync(): Promise<{
     characteristics: NobleCharacteristic[];
   }> {
-    if (this.failDiscover) throw this.failDiscover;
+    this.discoverCalls += 1;
+    if (this.discoverFailuresRemaining > 0) {
+      this.discoverFailuresRemaining -= 1;
+      throw this.failDiscover ?? new Error('discovery failed');
+    }
+    if (this.failDiscover && this.failDiscoverPermanently) throw this.failDiscover;
     if (this.hangDiscover) {
       return new Promise<{ characteristics: NobleCharacteristic[] }>(() => {});
     }

@@ -80,6 +80,8 @@ export const CARRIER_FINGERPRINT = 'helm-mobile-ble-v1';
 /** Minimal duplex byte pipe. A BLE GATT link, a socket and a test double all fit. */
 export interface BytePipe {
   write(data: Buffer): void;
+  /** Switch to response-free GATT writes once the handshake is complete. */
+  setWriteWithoutResponse?(enabled: boolean): void;
   onData(handler: (chunk: Buffer) => void): void;
   onClose(handler: () => void): void;
   close(): void;
@@ -514,6 +516,11 @@ export class SecureChannel extends EventEmitter {
 
   private maybeComplete(): void {
     if (!this.confirmSent || !this.peerConfirmed) return;
+    // Keep handshake frames on Write With Response: Android must process the
+    // request before the next authentication step can safely follow it. Once
+    // both confirmation MACs are exchanged, application replies may be large;
+    // the BLE transport can then avoid the native response backlog.
+    this.pipe.setWriteWithoutResponse?.(true);
     this.settleHandshake(null);
   }
 
