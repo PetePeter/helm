@@ -280,6 +280,9 @@ export class MobileLinkManager extends EventEmitter {
     // new entry off a rotated address is exactly the regression this prevents.
     this.opts.deviceStore.update(device.id, { deviceId: link.deviceId, lastSeenAt: this.now() });
     this.attachChannel(machineId, channel);
+    link.onTransportError?.((failure) => {
+      this.dropLink(machineId, `BLE write failed after ${failure.elapsedMs}ms`);
+    });
     link.pipe.onClose(() => this.onClosed(machineId, 'the BLE pipe closed'));
     this.log(`linked "${device.name}" (${machineId}) via ${link.deviceId}`);
     this.emit('online', machineId);
@@ -296,6 +299,9 @@ export class MobileLinkManager extends EventEmitter {
       channel: event.channel ?? null,
     });
     if (event.channel) this.attachChannel(event.machineId, event.channel);
+    link.onTransportError?.((failure) => {
+      this.dropLink(event.machineId, `BLE write failed after ${failure.elapsedMs}ms`);
+    });
     link.pipe.onClose(() => this.onClosed(event.machineId, 'the BLE pipe closed'));
     this.emit('online', event.machineId);
   }

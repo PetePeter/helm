@@ -96,6 +96,16 @@ export interface BleLink {
   readonly pipe: BytePipe;
   /** Observe framing losses on this link — diagnostics, never fatal. */
   onFramingDrop(handler: (reason: string) => void): void;
+  /** Observe a transport failure that makes the byte stream unsafe to continue. */
+  onTransportError?(handler: (failure: BleTransportError) => void): void;
+}
+
+export interface BleTransportError {
+  readonly chunkLength: number;
+  readonly mtu: number;
+  readonly withoutResponse: boolean;
+  readonly elapsedMs: number;
+  readonly error: unknown;
 }
 
 export interface BleLinkClientOptions {
@@ -234,7 +244,7 @@ export class BleLinkClient extends EventEmitter {
       await this.bounded(step, () => tx.subscribeAsync());
       this.log(`BLE link to ${peripheral.id} is ready after ${Date.now() - startedAt}ms`);
 
-      const link = new BleLinkPipe(peripheral, rx, tx, this.log);
+      const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now);
       this.active = link;
       this.attempts = 0;
       peripheral.once('disconnect', () => this.onDisconnect(link));
@@ -364,15 +374,19 @@ class BleLinkPipe implements BleLink {
   private readonly reassembler = new BleReassembler();
   private readonly dataHandlers: Array<(chunk: Buffer) => void> = [];
   private readonly closeHandlers: Array<() => void> = [];
+  private readonly transportErrorHandlers: Array<(failure: BleTransportError) => void> = [];
   private queue: Promise<void> = Promise.resolve();
   private closed = false;
+  private readonly linkedAt: number;
 
   constructor(
     private readonly peripheral: NoblePeripheral,
     private readonly rx: NobleCharacteristic,
     tx: NobleCharacteristic,
     private readonly log: (message: string, error?: unknown) => void,
+    private readonly now: () => number,
   ) {
+    this.linkedAt = now();
     tx.on('data', (chunk: Buffer) => this.reassembler.push(chunk));
     this.reassembler.on('message', (message: Buffer) => {
       for (const handler of this.dataHandlers) handler(message);
@@ -398,6 +412,10 @@ class BleLinkPipe implements BleLink {
     this.reassembler.on('drop', handler);
   }
 
+  onTransportError(handler: (failure: BleTransportError) => void): void {
+    this.transportErrorHandlers.push(handler);
+  }
+
   write(data: Buffer): void {
     if (this.closed) return;
     let chunks: Buffer[];
@@ -414,9 +432,24 @@ class BleLinkPipe implements BleLink {
         try {
           await this.rx.writeAsync(chunk, false);
         } catch (error) {
-          // One failed chunk poisons only this message; the link stays up and
-          // the layer above sees a framing drop rather than a thrown error.
-          this.log(`BLE write to ${this.deviceId} failed: ${describe(error)}`, error);
+          const failure: BleTransportError = {
+            chunkLength: chunk.length,
+            mtu: this.peripheral.mtu ?? DEFAULT_ATT_MTU,
+            withoutResponse: false,
+            elapsedMs: Date.now() - this.linkedAt,
+            error,
+          };
+          // A missing chunk leaves the framed stream ambiguous. Continuing
+          // would append later bytes to a truncated frame, so force the owner
+          // through its existing reconnect path; never retry an uncertain write.
+          this.log(
+            `BLE write to ${this.deviceId} failed after ${failure.elapsedMs}ms` +
+              ` (chunk=${failure.chunkLength}, mtu=${failure.mtu},` +
+              ` withoutResponse=${failure.withoutResponse}): ${describe(error)}`,
+            error,
+          );
+          for (const handler of this.transportErrorHandlers) handler(failure);
+          void this.disconnect();
           return;
         }
       }

@@ -251,17 +251,28 @@ describe('BleLinkClient pipe', () => {
     expect(received[0].equals(message)).toBe(true);
   });
 
-  it('logs and continues when a GATT write fails, rather than throwing at the caller', async () => {
-    const { phone, link, logs } = await connected();
+  it('classifies a failed write, closes the link, and waits for backoff before rescanning', async () => {
+    const { noble, phone, link, logs } = await connected();
     phone.rx.failNextWrite = new Error('gatt busy');
+    const failures: Array<{ chunkLength: number; mtu: number; withoutResponse: boolean }> = [];
+    link.onTransportError?.((failure) => failures.push(failure));
 
     expect(() => link.pipe.write(Buffer.from('first'))).not.toThrow();
     await vi.advanceTimersByTimeAsync(0);
-    link.pipe.write(Buffer.from('second'));
-    await vi.advanceTimersByTimeAsync(0);
 
     expect(logs.join(' ')).toContain('gatt busy');
-    expect(phone.rx.writes.at(-1)?.subarray(6).toString()).toBe('second');
+    expect(logs.join(' ')).toContain('chunk=11');
+    expect(logs.join(' ')).toContain('mtu=185');
+    expect(logs.join(' ')).toContain('withoutResponse=false');
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ chunkLength: 11, mtu: 185, withoutResponse: false });
+    expect(phone.connected).toBe(false);
+    expect(noble.scanStarts).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(noble.scanStarts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(noble.scanStarts).toBe(2);
   });
 
   it('surfaces a dropped notification as a framing drop, not as corrupt data', async () => {
