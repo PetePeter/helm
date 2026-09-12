@@ -148,6 +148,46 @@ enum class SpeechError(val retryable: Boolean) {
     Unknown(retryable = true),
 }
 
+/**
+ * Platform error code → [SpeechError]. Lives here, not in AndroidSpeechEngine,
+ * because it IS a decision (which failures get which message) and decisions
+ * belong where they can be tested — the engine file is translation only.
+ */
+fun speechErrorOf(code: Int): SpeechError = when (code) {
+    1, // ERROR_NETWORK_TIMEOUT
+    2, // ERROR_NETWORK
+    -> SpeechError.Network
+
+    3, // ERROR_AUDIO
+    5, // ERROR_CLIENT
+    -> SpeechError.Audio
+
+    4, // ERROR_SERVER — the service answered, but cannot recognise.
+    -> SpeechError.NoSpeechService
+
+    6, // ERROR_SPEECH_TIMEOUT
+    7, // ERROR_NO_MATCH
+    -> SpeechError.NoMatch
+
+    8, // ERROR_RECOGNIZER_BUSY
+    -> SpeechError.Busy
+
+    9, // ERROR_INSUFFICIENT_PERMISSIONS
+    -> SpeechError.PermissionDenied
+
+    /**
+     * 12 ERROR_LANGUAGE_NOT_SUPPORTED and 13 ERROR_LANGUAGE_UNAVAILABLE are the
+     * offline-path failures: the recognizer started, then found no downloaded
+     * language pack for the locale (13 is what the on-device audit tablet
+     * reports, within 200ms of "Offline recognizer - start listening"). They
+     * read as [SpeechError.Network] because that error already says the honest
+     * thing: no offline language pack, and no network fallback.
+     */
+    12, 13 -> SpeechError.Network
+
+    else -> SpeechError.Unknown
+}
+
 /** Everything the voice screen draws. */
 data class VoiceState(
     val phase: VoicePhase = VoicePhase.Idle,

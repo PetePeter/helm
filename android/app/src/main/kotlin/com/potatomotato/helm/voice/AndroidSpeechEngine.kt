@@ -83,7 +83,7 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             // difference between "no language pack" and "service broken" is
             // only visible in this number. A code is a type, never a payload.
             HelmLog.w(HelmLog.UI, "speech recognition failed with code $error")
-            out.onError(toSpeechError(error))
+            out.onError(speechErrorOf(error))
         }
 
         override fun onBeginningOfSpeech() = Unit
@@ -107,22 +107,6 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
 
         const val RMS_FLOOR_DB = -2f
         const val RMS_CEILING_DB = 10f
-
-        fun toSpeechError(code: Int): SpeechError = when (code) {
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> SpeechError.PermissionDenied
-            SpeechRecognizer.ERROR_NO_MATCH,
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
-            -> SpeechError.NoMatch
-            SpeechRecognizer.ERROR_AUDIO,
-            SpeechRecognizer.ERROR_CLIENT,
-            -> SpeechError.Audio
-            SpeechRecognizer.ERROR_NETWORK,
-            SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
-            -> SpeechError.Network
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> SpeechError.Busy
-            SpeechRecognizer.ERROR_SERVER -> SpeechError.NoSpeechService
-            else -> SpeechError.Unknown
-        }
     }
 }
 
