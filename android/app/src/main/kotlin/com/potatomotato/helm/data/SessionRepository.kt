@@ -26,6 +26,19 @@ class SessionRepository {
     private val _sessions = MutableStateFlow<List<HelmSession>>(emptyList())
     val sessions: StateFlow<List<HelmSession>> = _sessions.asStateFlow()
 
+    private val _reach = MutableStateFlow(Reach.Never)
+
+    /**
+     * Why the list looks the way it does. Owned here because this class already
+     * owns the world it describes, and a second holder would be a second truth.
+     *
+     * A StateFlow of an enum is load-bearing, not incidental: it CONFLATES equal
+     * values, so the poll refusing forty times in a row is one state change and
+     * one calm screen rather than forty notices. That is the anti-spam property,
+     * and it comes from the type rather than from a debounce.
+     */
+    val reach: StateFlow<Reach> = _reach.asStateFlow()
+
     /**
      * Replace the world with [incoming], preserving untouched entries.
      *
@@ -38,6 +51,30 @@ class SessionRepository {
         _sessions.value = incoming
             .map { fresh -> known[fresh.id]?.takeIf { it == fresh } ?: fresh }
             .sortedWith(ORDER)
+        // An empty snapshot is an ANSWER, and the only thing that earns the
+        // right to tell the user no sessions are running.
+        _reach.value = Reach.Delivered
+    }
+
+    /**
+     * The gate refused. The list is left alone deliberately: losing permission
+     * says nothing about sessions the user was already shown.
+     */
+    fun denied() {
+        _reach.value = Reach.Denied
+    }
+
+    /** An answer arrived that this app could not read. Never silent, never blamed elsewhere. */
+    fun undecodable() {
+        _reach.value = Reach.Undecodable
+    }
+
+    /**
+     * The link went. Whatever we learned about permissions belonged to that
+     * link and must not be asserted about the next one.
+     */
+    fun forget() {
+        _reach.value = Reach.Never
     }
 
     /** The thread for one session, or null once it is gone. */

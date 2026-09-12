@@ -59,9 +59,20 @@ class HelmClient(
     /** Ask for the session list. False when the link cannot carry the request. */
     fun refreshSessions(): Boolean = call(METHOD_SESSION_LIST) { outcome ->
         // A failed refresh leaves the previous snapshot alone: a stale list is
-        // far more useful than an empty one, and the link state in the app bar
-        // already tells the user why nothing is moving.
-        if (outcome !is Outcome.Ok) return@call
+        // far more useful than an empty one.
+        //
+        // It does NOT leave the REASON alone. The app bar explains a dropped
+        // link, but it cannot explain a denial — and a denial taking the same
+        // early return as a dropped packet is how a paired-but-unpermitted
+        // phone came to assert "No sessions are running on this desktop."
+        //
+        // Only a refusal that came BACK from the gate counts. A call that never
+        // reached the radio is not a denial, and saying so would send the user
+        // hunting a permission that was never the problem.
+        if (outcome !is Outcome.Ok) {
+            if ((outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE) sessions.denied()
+            return@call
+        }
         val parsed = SessionWire.parseList(outcome.result)
         if (parsed == null) {
             // THE failure this app is worst at: `ok` on the wire and an empty
@@ -70,6 +81,10 @@ class HelmClient(
             // It is a WARNING, never silence.
             // SessionWire has already named the shape it could not read.
             HelmLog.w(HelmLog.CLIENT, "session_list answered ok but did not decode; the list is unchanged")
+            // Say it on the SCREEN too. A warning only a developer with adb can
+            // read is exactly how this failure survived: ok on the wire, and a
+            // confident "no sessions" underneath it.
+            sessions.undecodable()
             return@call
         }
         HelmLog.i(
@@ -224,6 +239,9 @@ class HelmClient(
         // An allow-list edited on the desktop while the phone was away must not
         // keep a revoked action looking available.
         capabilities.forget()
+        // Same reasoning for why the list is empty: a denial belonged to the link
+        // that carried it. Held sessions stay — only the explanation is dropped.
+        sessions.forget()
     }
 
     /**

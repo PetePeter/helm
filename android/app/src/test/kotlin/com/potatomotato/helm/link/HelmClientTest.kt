@@ -4,6 +4,7 @@ import com.potatomotato.helm.data.ActionNotice
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.data.Reach
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
 import com.potatomotato.helm.notify.FakeNotificationPort
@@ -277,6 +278,42 @@ class HelmClientTest {
 
         client.onInbound(resultFor(lastCallId(), """{"sessionId":"s9"}"""))
         assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
+    }
+
+    @Test
+    fun `a denied session list is remembered as denied`() {
+        client.refreshSessions()
+
+        client.onInbound(errorFor(lastCallId(), HelmClient.MOBILE_DENY_MESSAGE))
+
+        // The screen may now say the phone has no permissions granted yet.
+        assertEquals(Reach.Denied, client.sessions.reach.value)
+    }
+
+    @Test
+    fun `a call that never reached the radio is not a denial`() {
+        // THE distinction this plan turns on. The user's phone refused 40+ polls
+        // locally because the link was down. Calling that "denied" would send
+        // them hunting a permissions setting that was never the problem.
+        linked = false
+
+        assertFalse(client.refreshSessions())
+
+        assertEquals(Reach.Never, client.sessions.reach.value)
+    }
+
+    @Test
+    fun `an answer that arrived and could not be read says so instead of showing nothing`() {
+        client.refreshSessions()
+        client.onInbound(resultFor(lastCallId(), """[{"id":"s1","name":"work"}]"""))
+
+        client.refreshSessions()
+        // `ok` on the wire carrying a shape parseList cannot read — the failure
+        // this app is worst at, because it used to render as "no sessions".
+        client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
+
+        assertEquals(Reach.Undecodable, client.sessions.reach.value)
+        assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */

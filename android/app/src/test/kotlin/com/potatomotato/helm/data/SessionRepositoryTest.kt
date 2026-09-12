@@ -1,6 +1,10 @@
 package com.potatomotato.helm.data
 
 import com.potatomotato.helm.ui.components.SessionState
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -139,6 +143,65 @@ class SessionRepositoryTest {
         val summary = JSONObject(mapOf("id" to "s1", "workingDir" to "/repo/main"))
 
         assertEquals("/repo/main", SessionWire.parseList(JSONArray().put(summary))!!.single().projectPath)
+    }
+
+    @Test
+    fun `an answer moves reach to delivered, and an empty answer is still an answer`() {
+        val repo = SessionRepository()
+        assertEquals(Reach.Never, repo.reach.value)
+
+        // The empty case is the one that matters: it is the ONLY thing that
+        // earns the right to say "no sessions are running on this desktop".
+        repo.applySnapshot(emptyList())
+
+        assertEquals(Reach.Delivered, repo.reach.value)
+    }
+
+    @Test
+    fun `a flood of identical denials is one state change, not forty`() {
+        // The user's phone refused session_list 40+ times in a row. That must
+        // settle into ONE calm state. The property comes from StateFlow
+        // conflating equal values, which is why reach is a StateFlow of an enum
+        // and not a callback — so this test guards the design, not just the code.
+        val repo = SessionRepository()
+        val seen = mutableListOf<Reach>()
+
+        runBlocking {
+            // UNDISPATCHED so the collector is already subscribed — and has
+            // taken the initial value — before the first denial lands.
+            val watching = launch(start = CoroutineStart.UNDISPATCHED) {
+                repo.reach.collect { seen += it }
+            }
+            repeat(40) { repo.denied() }
+            yield()
+            watching.cancel()
+        }
+
+        // What the screen actually lives through: Loading, then NotPermitted,
+        // and nothing after. Not forty notices, and no oscillation.
+        assertEquals(listOf(Reach.Never, Reach.Denied), seen)
+    }
+
+    @Test
+    fun `a denial from the last link does not survive into the next one`() {
+        val repo = SessionRepository()
+        repo.denied()
+
+        repo.forget()
+
+        // Anything else and a phone that was once refused would keep saying so
+        // across a fresh link that had never been asked.
+        assertEquals(Reach.Never, repo.reach.value)
+    }
+
+    @Test
+    fun `a denial never empties a list we already hold`() {
+        val repo = SessionRepository()
+        repo.applySnapshot(SessionWire.parseList(listOf(summary("s1")).toJsonArray())!!)
+
+        repo.denied()
+
+        assertEquals(1, repo.sessions.value.size)
     }
 
     private fun summary(

@@ -19,6 +19,9 @@
 
     <string name="sessions_none">No sessions are running on this desktop.</string>
     <string name="sessions_no_link">Waiting for your desktop. Sessions appear as soon as the link is up.</string>
+    <string name="sessions_loading">Asking your desktop for the session list.</string>
+    <string name="sessions_not_permitted">This phone has no permissions granted yet. On the desktop: Sidebar → Mobile tab → choose an allow preset.</string>
+    <string name="sessions_unreadable">Your desktop answered, but this app could not read the reply.</string>
 
     <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
     <string name="chat_placeholder">Reply…</string>

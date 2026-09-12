@@ -50,6 +50,7 @@ private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn }
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
     val linkState by HelmLink.state.collectAsState()
     val sessions by client.sessions.sessions.collectAsState()
+    val reach by client.sessions.reach.collectAsState()
     val threads by client.chats.threads.collectAsState()
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
@@ -107,6 +108,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 open == null -> SessionListScreen(
                     sessions = sessions,
                     linkState = linkState,
+                    reach = reach,
                     onOpen = { openSessionId = it.id },
                 )
 

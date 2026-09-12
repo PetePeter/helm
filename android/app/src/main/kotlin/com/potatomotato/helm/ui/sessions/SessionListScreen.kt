@@ -23,6 +23,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.data.Reach
+import com.potatomotato.helm.data.SessionListState
+import com.potatomotato.helm.data.sessionListState
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.StateDot
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -40,6 +43,7 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 fun SessionListScreen(
     sessions: List<HelmSession>,
     linkState: LinkState,
+    reach: Reach,
     onOpen: (HelmSession) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -47,7 +51,7 @@ fun SessionListScreen(
         HelmAppBar(title = stringResource(R.string.app_name), linkState = linkState)
 
         if (sessions.isEmpty()) {
-            EmptyList(linkState)
+            EmptyList(sessionListState(linkState, sessions, reach))
             return@Column
         }
 
@@ -115,12 +119,22 @@ private fun SessionRow(session: HelmSession, onClick: () -> Unit) {
 }
 
 /**
- * Nothing to show is two different situations, and conflating them is how a user
- * ends up waiting on a list that was never coming.
+ * Nothing to show is five different situations, and conflating them is how a
+ * user ends up staring at a confident sentence the app never had grounds for.
+ *
+ * The decision lives in [sessionListState] where it can be tested; this is a
+ * dumb reader of the answer.
  */
 @Composable
-private fun EmptyList(linkState: LinkState) {
-    val message = if (linkState == LinkState.Linked) R.string.sessions_none else R.string.sessions_no_link
+private fun EmptyList(state: SessionListState) {
+    val message = when (state) {
+        SessionListState.NoLink -> R.string.sessions_no_link
+        SessionListState.NotPermitted -> R.string.sessions_not_permitted
+        SessionListState.Unreadable -> R.string.sessions_unreadable
+        SessionListState.Loading -> R.string.sessions_loading
+        // Populated never reaches here — the list drew itself.
+        SessionListState.Empty, SessionListState.Populated -> R.string.sessions_none
+    }
 
     Box(
         modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
