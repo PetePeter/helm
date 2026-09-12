@@ -212,6 +212,31 @@ class SpeechControllerTest {
         assertEquals(1, engine.releaseCount)
         assertEquals(VoicePhase.Idle, controller.state.value.phase)
     }
+
+    @Test
+    fun `an unavailable offline language reads as no language pack, not as an unknown failure`() {
+        // Found on-device: the audit tablet's recogniser starts, then reports
+        // code 13 (ERROR_LANGUAGE_UNAVAILABLE — no downloaded language pack)
+        // within 200ms. Generic "Recognition failed" hid a diagnosis the user
+        // could act on; Network says the honest thing about the offline path.
+        assertEquals(SpeechError.Network, speechErrorOf(13))
+        assertEquals(SpeechError.Network, speechErrorOf(12))
+    }
+
+    @Test
+    fun `every other platform code keeps its meaning`() {
+        assertEquals(SpeechError.Network, speechErrorOf(1))
+        assertEquals(SpeechError.Network, speechErrorOf(2))
+        assertEquals(SpeechError.Audio, speechErrorOf(3))
+        assertEquals(SpeechError.NoSpeechService, speechErrorOf(4))
+        assertEquals(SpeechError.Audio, speechErrorOf(5))
+        assertEquals(SpeechError.NoMatch, speechErrorOf(6))
+        assertEquals(SpeechError.NoMatch, speechErrorOf(7))
+        assertEquals(SpeechError.Busy, speechErrorOf(8))
+        assertEquals(SpeechError.PermissionDenied, speechErrorOf(9))
+        // A code a future Android invents degrades to Unknown, never crashes.
+        assertEquals(SpeechError.Unknown, speechErrorOf(99))
+    }
 }
 
 private const val TOLERANCE = 0.0001f
