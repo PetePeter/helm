@@ -41,9 +41,12 @@ data class ChatMessage(
  * feature with its own storage and retention questions; what this holds is what
  * has arrived since the app started, which is what the screen shows.
  *
- * Messages are kept in timestamp order rather than arrival order, because `at`
- * is stamped by Helm when the message was PRODUCED — a reconnect can deliver a
- * backlog that would otherwise read inside out.
+ * Messages are kept in ARRIVAL order, never sorted by `at`: outgoing messages
+ * are stamped by the phone clock and incoming ones by the desktop clock, and
+ * the two disagree in the wild (an on-device audit caught 65 s of skew), which
+ * sorted every phone message into the past. `at` is display data only. A
+ * reconnect backlog arrives from Helm in the order it was written, so arrival
+ * order reads correctly there too.
  */
 class ChatRepository {
     private val _threads = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
@@ -95,9 +98,7 @@ class ChatRepository {
     }
 
     private fun append(sessionId: String, message: ChatMessage) {
-        val thread = (_threads.value[sessionId].orEmpty() + message)
-            .sortedBy { it.at }
-            .takeLast(MAX_THREAD)
+        val thread = (_threads.value[sessionId].orEmpty() + message).takeLast(MAX_THREAD)
         _threads.value = _threads.value + (sessionId to thread)
     }
 

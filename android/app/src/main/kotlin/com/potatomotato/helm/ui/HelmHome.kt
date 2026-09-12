@@ -89,11 +89,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         where = Destination.Thread
     }
 
-    // The permitted surface is asked for when a control screen needs it and is
+    // The permitted surface is asked for when a control surface needs it and is
     // forgotten with the link, so a reconnect re-asks and a capability revoked on
-    // the desktop stops being offered.
-    LaunchedEffect(where, capabilities) {
-        if (where == Destination.Sheet && capabilities is Capabilities.Unknown) {
+    // the desktop stops being offered. The list needs it too: its New session
+    // button greys from the same answer the sheet does.
+    LaunchedEffect(where, openSessionId, capabilities) {
+        val listShowing = openSessionId == null && where != Destination.Spawn
+        if ((where == Destination.Sheet || listShowing) && capabilities is Capabilities.Unknown) {
             client.refreshCapabilities()
         }
     }
@@ -108,11 +110,44 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
 
         Box(modifier = Modifier.fillMaxSize()) {
             when {
+                // Spawn is reachable with NO session open — the list's New
+                // session button lands here — so it goes first: it touches no
+                // session, and putting it above the null check is what lets the
+                // branches below keep their non-null smart cast.
+                where == Destination.Spawn -> {
+                    BackHandler(onBack = toThread)
+                    SpawnScreen(
+                        directories = directories,
+                        sessions = sessions,
+                        linkState = linkState,
+                        onSpawn = { dirPath, cliType, name ->
+                            client.spawn(dirPath, cliType, name)
+                            // Back to where the user came from: the open thread
+                            // when there is one, the list when there is not.
+                            where = Destination.Thread
+                        },
+                        onBack = toThread,
+                    )
+                }
+
                 open == null -> SessionListScreen(
                     sessions = sessions,
                     linkState = linkState,
                     reach = reach,
+                    capabilities = capabilities,
                     onOpen = { openSessionId = it.id },
+                    // Long-press reuses the star exactly as it is: the pressed
+                    // session becomes the focused one with the sheet already up.
+                    // The thread behind the sheet names the session the actions
+                    // belong to — the same context the scrim gives on the chat.
+                    onLongPress = {
+                        openSessionId = it.id
+                        where = Destination.Sheet
+                    },
+                    onNewSession = {
+                        openSessionId = null
+                        where = Destination.Spawn
+                    },
                     onPairDesktop = { HelmLinkService.forcePairingMode(context) },
                 )
 
@@ -135,20 +170,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         snapshot = snapshot,
                         linkState = linkState,
                         onPull = { lines -> client.readTerminal(open.id, lines) },
-                        onBack = toThread,
-                    )
-                }
-
-                where == Destination.Spawn -> {
-                    BackHandler(onBack = toThread)
-                    SpawnScreen(
-                        directories = directories,
-                        sessions = sessions,
-                        linkState = linkState,
-                        onSpawn = { dirPath, cliType, name ->
-                            client.spawn(dirPath, cliType, name)
-                            where = Destination.Thread
-                        },
                         onBack = toThread,
                     )
                 }

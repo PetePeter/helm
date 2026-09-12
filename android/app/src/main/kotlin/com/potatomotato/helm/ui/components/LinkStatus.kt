@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
@@ -83,8 +84,13 @@ fun HelmAppBar(
      * The control overflow, when a screen has one. It sits AFTER the link badge
      * rather than replacing it: the mockup draws the badge and the ⋮ in the same
      * corner, and of the two the badge is the one that may never be absent.
+     *
+     * [overflowGlyphRes] because the affordance is not always an overflow menu:
+     * the snapshot screen's corner action is a refresh, and drawing ⋮ there asks
+     * for a menu that does not exist.
      */
     onOverflow: (() -> Unit)? = null,
+    overflowGlyphRes: Int = R.string.control_overflow_glyph,
 ) {
     Row(
         modifier = modifier
@@ -123,7 +129,7 @@ fun HelmAppBar(
             LinkBadge(linkState)
             if (onOverflow != null) {
                 Text(
-                    text = stringResource(R.string.control_overflow_glyph),
+                    text = stringResource(overflowGlyphRes),
                     color = HelmColors.Dim,
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier
@@ -137,13 +143,18 @@ fun HelmAppBar(
     Hairline()
 }
 
-/** The one unit of elevation this design system has. */
+/**
+ * The one unit of elevation this design system has.
+ *
+ * [color] defaults to [HelmColors.Line]; list rows pass [HelmColors.Separator]
+ * to divide themselves more quietly than components are edged.
+ */
 @Composable
-fun Hairline(modifier: Modifier = Modifier) {
+fun Hairline(modifier: Modifier = Modifier, color: Color = HelmColors.Line) {
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(HelmSize.Hairline)
-            .background(HelmColors.Line),
+            .background(color),
     )
 }

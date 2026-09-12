@@ -48,10 +48,20 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Helm">
+        <!--
+          windowSoftInputMode="adjustResize", not adjustPan. Edge-to-edge means
+          the window never resizes for the keyboard; what adjustResize does
+          instead is promise that the IME inset is DISPATCHED to Compose, where
+          HelmTheme's safeDrawingPadding lifts the composer above it. Without it
+          the system pans the window, the IME inset reads as zero, and the
+          keyboard paints over the composer — the bug the on-device audit caught.
+          The thread still auto-scrolls; see ChatScreen.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.Helm">
+            android:theme="@style/Theme.Helm"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -8,6 +8,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import com.potatomotato.helm.Permissions
+import com.potatomotato.helm.log.HelmLog
 
 /**
  * The platform recogniser, behind [SpeechEngine].
@@ -76,7 +77,14 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
 
         override fun onResults(results: Bundle?) = out.onFinal(firstResult(results).orEmpty())
 
-        override fun onError(error: Int) = out.onError(toSpeechError(error))
+        override fun onError(error: Int) {
+            // The raw code, not just the mapped error: Google's service reports
+            // values outside the public SpeechRecognizer constants, and the
+            // difference between "no language pack" and "service broken" is
+            // only visible in this number. A code is a type, never a payload.
+            HelmLog.w(HelmLog.UI, "speech recognition failed with code $error")
+            out.onError(toSpeechError(error))
+        }
 
         override fun onBeginningOfSpeech() = Unit
         override fun onEndOfSpeech() = Unit

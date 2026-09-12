@@ -50,4 +50,7 @@ object HelmSize {
 
     /** Minimum touch target. Below this, one-handed use starts missing. */
     val TouchTarget = 48.dp
+
+    /** Sheet action glyph tile — the mockup's 29dp rounded-8 inset box. */
+    val ActionTile = 29.dp
 }

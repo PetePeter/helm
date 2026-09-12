@@ -29,9 +29,22 @@ object HelmColors {
     /** Hairline borders. This is how elevation is expressed. */
     val Line = Color(0xFF1E1E23)
 
+    /**
+     * Row separators — the mockup's #101013, a shade BETWEEN Bg and [Line].
+     * List rows want to be divided more quietly than components want to be edged.
+     */
+    val Separator = Color(0xFF101013)
+
     val Txt = Color(0xFFFFFFFF)
     val Dim = Color(0xFF8B8B95)
     val Faint = Color(0xFF5A5A63)
+
+    /**
+     * Terminal snapshot body — #c8c8d0, brighter than [Dim]: a tail is the
+     * thing the user came to READ, and mockup screen 7 draws it that much
+     * closer to [Txt] without being it.
+     */
+    val Terminal = Color(0xFFC8C8D0)
 
     /**
      * 1970s highlighter green. App chrome only — it sits deliberately OUTSIDE

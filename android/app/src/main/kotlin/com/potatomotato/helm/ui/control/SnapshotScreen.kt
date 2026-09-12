@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.control
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
@@ -32,7 +32,9 @@ import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
+import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
+import com.potatomotato.helm.ui.theme.HelmType
 
 /**
  * Mockup screen 7 — the terminal tail, pulled on demand.
@@ -59,8 +61,10 @@ fun SnapshotScreen(
             linkState = linkState,
             onBack = onBack,
             // Refresh re-pulls the count already on screen, so the chip row stays
-            // the record of what was asked for.
+            // the record of what was asked for. An explicit ↻, not ⋮: this corner
+            // action IS the action, there is no menu behind it.
             onOverflow = { (snapshot as? Snapshot.Lines)?.let { onPull(it.requested) } },
+            overflowGlyphRes = R.string.snapshot_refresh_glyph,
         )
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -99,8 +103,8 @@ private fun Tail(lines: List<String>) {
                 // A blank row still occupies its line: the spacing between blocks
                 // of output is information too.
                 text = line.ifEmpty { " " },
-                color = HelmColors.Dim,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = HelmColors.Terminal,
+                style = HelmType.Terminal,
                 maxLines = 1,
             )
         }
@@ -136,13 +140,19 @@ private fun LineCountBar(selected: Int?, onPick: (Int) -> Unit) {
     ) {
         for (count in LINE_COUNTS) {
             val on = count == selected
+            // The mockup outlines the chosen chip in accent rather than filling
+            // it: a fill reads as a button, an outline reads as a setting.
             Text(
                 text = count.toString(),
-                color = if (on) HelmColors.OnAccent else HelmColors.Dim,
+                color = if (on) HelmColors.Accent else HelmColors.Dim,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier
                     .clip(RoundedCornerShape(HelmRadius.Pill))
-                    .background(if (on) HelmColors.Accent else HelmColors.Surface2)
+                    .border(
+                        HelmSize.Hairline,
+                        if (on) HelmColors.Accent else HelmColors.Line,
+                        RoundedCornerShape(HelmRadius.Pill),
+                    )
                     .clickable { onPick(count) }
                     .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
             )

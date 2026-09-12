@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -32,7 +34,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
@@ -82,6 +86,15 @@ fun ChatScreen(
         if (messages.isNotEmpty() && wasAtBottom) listState.scrollToItem(messages.lastIndex)
     }
 
+    // The keyboard opening shrinks the thread from the bottom, which on its own
+    // leaves the newest lines hidden behind where the composer just was. Reading
+    // (not consuming) the IME inset is allowed — insets stay owned by HelmTheme;
+    // see InsetsOwnedByThemeTest for the line between the two.
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 0 && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+    }
+
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
 
@@ -127,6 +140,15 @@ fun ChatScreen(
 private fun Bubble(message: ChatMessage) {
     val fromPhone = message.fromPhone
 
+    // The mockup's asymmetric tail: the corner nearest the speaker is pulled in
+    // (5dp vs the 16dp rest), which is what says who the bubble grew out of.
+    val shape = RoundedCornerShape(
+        topStart = HelmRadius.Lg,
+        topEnd = HelmRadius.Lg,
+        bottomStart = if (fromPhone) HelmRadius.Lg else BUBBLE_TAIL,
+        bottomEnd = if (fromPhone) BUBBLE_TAIL else HelmRadius.Lg,
+    )
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (fromPhone) Arrangement.End else Arrangement.Start,
@@ -137,15 +159,32 @@ private fun Bubble(message: ChatMessage) {
         ) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(HelmRadius.Lg))
-                    .background(if (fromPhone) HelmColors.Surface2 else HelmColors.Surface)
+                    .clip(shape)
+                    .background(if (fromPhone) HelmColors.Accent else HelmColors.Surface2)
+                    .then(
+                        // Only the AI bubble carries a hairline — the accent fill
+                        // is its own edge against true black.
+                        if (fromPhone) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, shape),
+                    )
                     .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
             ) {
-                Text(
-                    text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Column {
+                    Text(
+                        text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
+                        color = if (fromPhone) HelmColors.OnAccent else HelmColors.Txt,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            // The mockup sets the me-bubble one weight heavier:
+                            // OnAccent on Accent needs it to hold up.
+                            fontWeight = if (fromPhone) FontWeight.Medium else null,
+                        ),
+                    )
+                    Text(
+                        text = formatBubbleTime(message.at),
+                        color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = HelmSpacing.Xs),
+                    )
+                }
             }
 
             // Only outgoing messages carry a delivery state, and only the two
@@ -239,3 +278,13 @@ private fun Composer(
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private val BUBBLE_MAX_WIDTH = 280.dp
+
+/** The pulled-in tail corner. See Bubble. */
+private val BUBBLE_TAIL = 5.dp
+
+/** Immutable, so one instance serves every bubble. Compose is single-threaded anyway. */
+private val bubbleTime = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+
+/** The mockup shows "09:38" — local wall-clock, the only clock the reader has. */
+private fun formatBubbleTime(at: Long): String =
+    bubbleTime.format(java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()))

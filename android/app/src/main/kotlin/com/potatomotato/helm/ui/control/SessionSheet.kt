@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.control
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -147,16 +149,30 @@ private fun ActionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The mockup fades the WHOLE row, tile included — colour alone did
+            // not read as disabled next to a still-solid tile.
+            .then(if (permitted) Modifier else Modifier.alpha(FORBIDDEN_ALPHA))
             .clickable(enabled = permitted, onClick = onClick)
             .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
     ) {
-        Text(
-            text = stringResource(action.glyphRes),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.size(HelmSize.Dot * GLYPH_SCALE),
-        )
+        // Each glyph sits in its own inset tile — the mockup's 29dp rounded-8
+        // Surface2 box — so the emoji never floats free at reading size.
+        Box(
+            modifier = Modifier
+                .size(HelmSize.ActionTile)
+                .clip(RoundedCornerShape(HelmRadius.Sm))
+                .background(HelmColors.Surface2)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Sm)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(action.glyphRes),
+                color = action.labelColor(permitted),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
         Text(
             text = stringResource(action.labelRes),
             color = action.labelColor(permitted),
@@ -246,6 +262,8 @@ private val SessionAction.glyphRes: Int
 
 /** Dark enough to push the thread behind it back, never opaque. */
 private const val SCRIM_ALPHA = 0.72f
-private const val GLYPH_SCALE = 2
+
+/** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
+private const val FORBIDDEN_ALPHA = 0.3f
 private const val GRAB_THICKNESS = 4
 private val GRAB_WIDTH = HelmSize.TouchTarget

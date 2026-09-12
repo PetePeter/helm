@@ -10,12 +10,24 @@ class ChatRepositoryTest {
     private val repository = ChatRepository()
 
     @Test
-    fun `a backlog delivered out of order still reads in the order it was written`() {
-        repository.receive(chat(text = "third", at = 30))
+    fun `a reconnect backlog delivered in arrival order reads in the order it was written`() {
         repository.receive(chat(text = "first", at = 10))
         repository.receive(chat(text = "second", at = 20))
+        repository.receive(chat(text = "third", at = 30))
 
         assertEquals(listOf("first", "second", "third"), repository.thread("s1").map { it.text })
+    }
+
+    @Test
+    fun `an outgoing message stamped by a slow phone clock still lands after the desktop reply`() {
+        // Found on-device: the tablet ran 65 s behind the PC, so a phone message
+        // stamped with the phone clock sorted before every desktop message whose
+        // `at` was ahead of it. Ordering is by arrival, never by `at`.
+        repository.sending("s1", "go on", at = 100)
+        repository.receive(chat(text = "here you go", at = 165))
+        repository.sending("s1", "thanks", at = 102)
+
+        assertEquals(listOf("go on", "here you go", "thanks"), repository.thread("s1").map { it.text })
     }
 
     @Test

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -32,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -185,6 +187,10 @@ private fun Destination(sessionName: String) {
 /**
  * The one control. Tapping it while listening finishes the utterance rather than
  * abandoning it — the user has said their piece and wants the final result.
+ *
+ * The mockup's pulse glow is three rings stepping out from the circle; they are
+ * drawn behind it in one [Modifier.drawBehind] rather than as stacked Boxes —
+ * the halo is one visual, not three containers.
  */
 @Composable
 private fun MicButton(listening: Boolean, onClick: () -> Unit) {
@@ -194,18 +200,30 @@ private fun MicButton(listening: Boolean, onClick: () -> Unit) {
         targetValue = if (listening) 1f else IDLE_MIC_ALPHA,
         label = "micAlpha",
     )
+    val accent = HelmColors.Accent
 
     Box(
         modifier = Modifier
-            .size(PULSE_DIAMETER)
-            .clip(CircleShape)
-            .background(HelmColors.Accent.copy(alpha = alpha))
+            .size(PULSE_DIAMETER + HALO_SPREAD * 2)
+            .drawBehind {
+                val core = (PULSE_DIAMETER / 2).toPx()
+                // Wider is fainter, so the fall-off reads as light, not rings.
+                drawCircle(accent.copy(alpha = 0.06f * alpha), radius = core + 30.dp.toPx())
+                drawCircle(accent.copy(alpha = 0.13f * alpha), radius = core + 14.dp.toPx())
+                drawCircle(accent.copy(alpha = 0.30f * alpha), radius = core + 6.dp.toPx())
+            }
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = stringResource(R.string.voice_mic_glyph),
+            color = HelmColors.OnAccent,
             style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier
+                .size(PULSE_DIAMETER)
+                .clip(CircleShape)
+                .background(accent.copy(alpha = alpha))
+                .wrapContentSize(Alignment.Center),
         )
     }
 }
@@ -321,6 +339,9 @@ private val VoiceState.statusRes: Int
     }
 
 private val PULSE_DIAMETER = 112.dp
+
+/** Room for the widest halo ring — the button Box grows to fit its own glow. */
+private val HALO_SPREAD = 30.dp
 private val WAVE_HEIGHT = 32.dp
 private val WAVE_MIN_BAR = 4.dp
 private val WAVE_BAR_WIDTH = 3.dp
