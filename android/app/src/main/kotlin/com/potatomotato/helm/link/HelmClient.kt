@@ -7,9 +7,12 @@ import com.potatomotato.helm.data.ControlRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
+import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.wire.MobileRecord
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * HelmClient — what the phone DOES with an authenticated link.
@@ -60,7 +63,27 @@ class HelmClient(
         // A failed refresh leaves the previous snapshot alone: a stale list is
         // far more useful than an empty one, and the link state in the app bar
         // already tells the user why nothing is moving.
-        if (outcome is Outcome.Ok) SessionWire.parseList(outcome.result)?.let(sessions::applySnapshot)
+        if (outcome !is Outcome.Ok) return@call
+        val parsed = SessionWire.parseList(outcome.result)
+        if (parsed == null) {
+            // THE failure this app is worst at: `ok` on the wire and an empty
+            // screen, because a shape the decoder does not recognise is
+            // indistinguishable from "no sessions" to every layer above.
+            // It is a WARNING, never silence.
+            HelmLog.w(
+                HelmLog.CLIENT,
+                "session_list answered ok but did not decode as a session list; " +
+                    "the result was ${describeShape(outcome.result)} and the list is unchanged",
+            )
+            return@call
+        }
+        HelmLog.i(
+            HelmLog.CLIENT,
+            "session_list decoded ${parsed.size} sessions; " +
+                "the list held ${sessions.sessions.value.size} before the merge",
+        )
+        sessions.applySnapshot(parsed)
+        HelmLog.i(HelmLog.CLIENT, "the list holds ${sessions.sessions.value.size} after the merge")
     }
 
     /**
@@ -148,9 +171,15 @@ class HelmClient(
 
     /** One decrypted application message. Never throws: the link outlives its payloads. */
     fun onInbound(payload: ByteArray) {
-        when (val record = MobileEnvelope.decode(payload)) {
-            is MobileRecord.Result -> pending.remove(record.id)?.invoke(Outcome.Ok(record.result))
-            is MobileRecord.Failure -> pending.remove(record.id)?.invoke(Outcome.Failed(record.message))
+        val record = MobileEnvelope.decode(payload)
+        if (record == null) {
+            HelmLog.w(HelmLog.WIRE, "dropped an inbound record of ${payload.size} bytes: it did not decode")
+            return
+        }
+        HelmLog.d(HelmLog.WIRE) { "inbound ${record.javaClass.simpleName} of ${payload.size} bytes" }
+        when (record) {
+            is MobileRecord.Result -> settle(record.id, Outcome.Ok(record.result))
+            is MobileRecord.Failure -> settle(record.id, Outcome.Failed(record.message))
             // THE ONE place a chat record is split. A kind-bearing record is an
             // EVENT Helm is reporting, not something an agent said: routing it
             // into the thread would grow a conversation the desktop never had,
@@ -160,15 +189,52 @@ class HelmClient(
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.
-            // An unrecognised id is an answer to a call already abandoned. Both
-            // are dropped in silence; neither is a reason to disturb the user.
-            is MobileRecord.Call, null -> Unit
+            // Dropped, but no longer in silence: silence is what this plan exists
+            // to end, and a desktop that starts calling the phone is worth seeing.
+            is MobileRecord.Call ->
+                HelmLog.w(HelmLog.CLIENT, "dropped an inbound call for ${record.method}; the phone answers none")
         }
+    }
+
+    /**
+     * Hand one answer to the call that asked for it.
+     *
+     * An id with nothing waiting is ORPHANED — the answer to a call the link
+     * already failed, or one evicted for age. It is dropped either way, but it
+     * is logged, because a screen that stays empty while answers arrive and go
+     * nowhere is precisely the failure nobody could see.
+     */
+    private fun settle(id: String, outcome: Outcome) {
+        val waiting = pending.remove(id)
+        if (waiting == null) {
+            HelmLog.w(HelmLog.CLIENT, "ORPHANED answer for call $id; no call is waiting on it")
+            return
+        }
+        HelmLog.d(HelmLog.CLIENT) {
+            "call $id settled as ${if (outcome is Outcome.Ok) "ok" else "failed"}; ${pending.size} still pending"
+        }
+        waiting(outcome)
+    }
+
+    /**
+     * The SHAPE of a result, never its contents — a class name and a size. This
+     * is what tells a decode failure apart from an empty answer, and it is the
+     * boundary the no-payload rule draws: describe the container, never what is
+     * in it.
+     */
+    private fun describeShape(result: Any?): String = when (result) {
+        null -> "null"
+        is JSONArray -> "a JSON array of ${result.length()} entries"
+        is JSONObject -> "a JSON object with ${result.length()} keys named ${result.keys().asSequence().sorted().toList()}"
+        else -> "a ${result.javaClass.simpleName}"
     }
 
     /** Everything outstanding fails when the link goes. Nothing waits forever. */
     fun onLinkLost() {
         val abandoned = pending.values.toList()
+        if (abandoned.isNotEmpty()) {
+            HelmLog.w(HelmLog.CLIENT, "the link went; failing ${abandoned.size} calls that will never be answered")
+        }
         pending.clear()
         abandoned.forEach { it(Outcome.Failed(LINK_LOST)) }
         // The permitted surface is forgotten with the link so a reconnect re-asks.
@@ -201,10 +267,16 @@ class HelmClient(
         onOutcome: (Outcome) -> Unit,
     ): Boolean {
         val id = "p${sequence++}"
+        val frame = MobileEnvelope.encodeCall(id, method, params)
+        // Key NAMES only, never values — the same rule the desktop's audit keeps.
+        HelmLog.d(HelmLog.CLIENT) {
+            "call $id $method, ${frame.size} bytes, args ${params?.keys?.sorted() ?: emptyList<String>()}"
+        }
         // Registered only AFTER the link accepts the bytes: a call that was never
         // sent has no answer coming, and leaving it pending would hold a callback
         // — and the message it closes over — until the link drops.
-        if (!send(MobileEnvelope.encodeCall(id, method, params))) {
+        if (!send(frame)) {
+            HelmLog.w(HelmLog.CLIENT, "call $id $method was not sent; there is no usable link")
             onOutcome(Outcome.Failed(NOT_LINKED))
             return false
         }

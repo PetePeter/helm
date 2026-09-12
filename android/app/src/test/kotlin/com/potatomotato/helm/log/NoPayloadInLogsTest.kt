@@ -38,11 +38,22 @@ class NoPayloadInLogsTest {
         "key", "keyMaterial", "sharedSecret",
     )
 
-    /** A `$name` or `${expr.name}` interpolation naming one of the above. */
-    private val interpolated = Regex(
-        """\$\{?[A-Za-z0-9_.]*\b(${forbidden.joinToString("|")})\b""",
-        RegexOption.IGNORE_CASE,
-    )
+    /**
+     * Every `$name` / `${a.b.c}` interpolation, captured whole so the rule can
+     * be applied to its LAST segment.
+     */
+    private val interpolation = Regex("""\$\{?([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)""")
+
+    /**
+     * The rule is applied to the FINAL path segment, which is what draws the
+     * honest line: `${chunk.size}` and `${plaintext.size}` describe a payload
+     * and are fine, `${record.text}` and `$psk` ARE the payload and are not.
+     * Describe the container; never what is in it.
+     */
+    private fun offends(expression: String): Boolean {
+        val last = expression.substringAfterLast('.')
+        return forbidden.any { it.equals(last, ignoreCase = true) }
+    }
 
     @Test
     fun `no log call site interpolates a secret or a payload`() {
@@ -74,11 +85,15 @@ class NoPayloadInLogsTest {
             if (!line.contains("HelmLog.")) return@forEachIndexed
             val window = lines.subList(index, minOf(index + WINDOW, lines.size))
             window.forEachIndexed { offset, candidate ->
-                val match = interpolated.find(candidate) ?: return@forEachIndexed
-                result.add(
-                    "${file.toRelativeString(root)}:${index + offset + 1}  " +
-                        "${candidate.trim()}   [${match.value}]",
-                )
+                interpolation.findAll(candidate)
+                    .map { it.groupValues[1] }
+                    .filter(::offends)
+                    .forEach { expression ->
+                        result.add(
+                            "${file.toRelativeString(root)}:${index + offset + 1}  " +
+                                "${candidate.trim()}   [\$$expression]",
+                        )
+                    }
             }
         }
         return result

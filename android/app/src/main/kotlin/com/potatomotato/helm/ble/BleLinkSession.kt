@@ -1,5 +1,7 @@
 package com.potatomotato.helm.ble
 
+import com.potatomotato.helm.log.HelmLog
+
 /**
  * BleLinkSession — the link lifecycle, with every Android type kept out.
  *
@@ -21,7 +23,14 @@ class BleLinkSession(
     private val scheduler: LinkScheduler,
     private val onMessage: (ByteArray) -> Unit,
     private val onStateChange: (LinkState) -> Unit = {},
-    private val log: (String) -> Unit = {},
+    private val log: (String) -> Unit = HelmLog.port(HelmLog.BLE),
+    /**
+     * Wall clock, so a disconnect can report HOW LONG the link lasted. That
+     * number is the whole shape of the churn — 13 to 40 seconds, over and over —
+     * and a duration distinguishes a supervision timeout from a deliberate
+     * teardown far faster than a status code alone.
+     */
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     /** Advertising retry backoff, mirroring the desktop client's rescan curve. */
     private companion object {
@@ -44,6 +53,16 @@ class BleLinkSession(
     private var retryDelayMs = RETRY_MIN_MS
     private var retryPending = false
 
+    /** When the current central connected, for the lifetime in the drop line. */
+    private var connectedAt = 0L
+
+    /** Set when THIS session asked for the disconnect, so "who hung up" is exact. */
+    private var disconnectRequested = false
+
+    /** Chunk counters for the current connection. Sizes and counts only. */
+    private var chunksSent = 0L
+    private var chunksReceived = 0L
+
     private var chunker = BleChunker()
     private val reassembler = BleReassembler(
         onMessage = { message -> onMessage(message) },
@@ -64,7 +83,11 @@ class BleLinkSession(
     fun stop() {
         if (!running) return
         running = false
-        centralAddress?.let { safely("disconnect") { peripheral.disconnect(it) } }
+        log("stopping the link session")
+        centralAddress?.let {
+            disconnectRequested = true
+            safely("disconnect") { peripheral.disconnect(it) }
+        }
         safely("stopAdvertising") { peripheral.stopAdvertising() }
         resetLink()
         transitionTo(LinkState.Disconnected)
@@ -82,6 +105,10 @@ class BleLinkSession(
             log("refusing to send: ${e.message}")
             return
         }
+        HelmLog.d(HelmLog.BLE) {
+            "queueing ${message.size} bytes as ${chunks.size} chunks of $chunkSize; " +
+                "${outbound.size} were already waiting"
+        }
         outbound.addAll(chunks)
         drain()
     }
@@ -93,6 +120,7 @@ class BleLinkSession(
 
     fun onAdvertiseStarted() {
         retryDelayMs = RETRY_MIN_MS
+        log("advertising")
         if (centralAddress == null) transitionTo(LinkState.Advertising)
     }
 
@@ -102,7 +130,7 @@ class BleLinkSession(
         scheduleRetry()
     }
 
-    fun onCentralConnected(address: String) {
+    fun onCentralConnected(address: String, status: Int = GattStatus.SUCCESS) {
         val current = centralAddress
         if (current != null && current != address) {
             // Never two streams into one reassembler.
@@ -111,6 +139,9 @@ class BleLinkSession(
             return
         }
         centralAddress = address
+        connectedAt = now()
+        disconnectRequested = false
+        log("central $address connected, status ${GattStatus.describe(status)}")
         // Android keeps advertising through a connection; stop so a second
         // central is never invited in the first place.
         safely("stopAdvertising") { peripheral.stopAdvertising() }
@@ -120,17 +151,20 @@ class BleLinkSession(
     fun onMtuChanged(address: String, mtu: Int) {
         if (address != centralAddress) return
         chunkSize = BleFraming.chunkSizeForMtu(mtu)
+        log("MTU negotiated to $mtu, so a chunk carries $chunkSize bytes")
     }
 
     /** The central enabled notifications on TX: the link is usable both ways. */
     fun onTxSubscribed(address: String) {
         if (address != centralAddress) return
+        log("central $address subscribed to TX; the link is usable both ways")
         transitionTo(LinkState.Linked)
         drain()
     }
 
     fun onTxUnsubscribed(address: String) {
         if (address != centralAddress) return
+        log("central $address unsubscribed from TX after ${millisLinked()}ms")
         transitionTo(LinkState.Connecting)
     }
 
@@ -139,6 +173,8 @@ class BleLinkSession(
             log("ignoring a write from $address, which does not hold the link")
             return
         }
+        chunksReceived++
+        HelmLog.v(HelmLog.BLE) { "rx chunk #$chunksReceived, ${chunk.size} bytes" }
         reassembler.push(chunk)
     }
 
@@ -156,11 +192,34 @@ class BleLinkSession(
         drain()
     }
 
-    fun onCentralDisconnected(address: String) {
-        if (address != centralAddress) return
+    /**
+     * The link ended. THE most important line this app logs.
+     *
+     * It reports the Android status code, who hung up, how long the link lasted
+     * and what was still in flight — because the observed failure is a link that
+     * dies every 13 to 40 seconds forever, and none of those four facts were
+     * recoverable from either end before this.
+     */
+    fun onCentralDisconnected(address: String, status: Int = GattStatus.SUCCESS) {
+        if (address != centralAddress) {
+            log("ignoring a disconnect from $address, which does not hold the link")
+            return
+        }
+        val closer = if (disconnectRequested) GattStatus.Closer.PHONE else GattStatus.closerOf(status)
+        log(
+            "central $address DISCONNECTED after ${millisLinked()}ms" +
+                ", status ${GattStatus.describe(status)}" +
+                ", closed by $closer" +
+                ", state was $state" +
+                ", $chunksSent chunks out / $chunksReceived in" +
+                ", ${outbound.size} still queued",
+        )
         resetLink()
         if (running) advertise() else transitionTo(LinkState.Disconnected)
     }
+
+    /** How long the current central has held the link. 0 when none has. */
+    private fun millisLinked(): Long = if (connectedAt == 0L) 0L else now() - connectedAt
 
     // ---- internals --------------------------------------------------------
 
@@ -168,6 +227,8 @@ class BleLinkSession(
         if (state != LinkState.Linked || awaitingNotificationAck) return
         val chunk = outbound.removeFirstOrNull() ?: return
         awaitingNotificationAck = true
+        chunksSent++
+        HelmLog.v(HelmLog.BLE) { "tx chunk #$chunksSent, ${chunk.size} bytes, ${outbound.size} left" }
         val accepted = safely("notifyTx") { peripheral.notifyTx(chunk) } ?: false
         if (!accepted) {
             // A synchronous refusal never produces an ack callback, so unwind
@@ -195,6 +256,10 @@ class BleLinkSession(
 
     private fun resetLink() {
         centralAddress = null
+        connectedAt = 0L
+        disconnectRequested = false
+        chunksSent = 0
+        chunksReceived = 0
         chunkSize = BleFraming.MIN_CHUNK_BYTES
         outbound.clear()
         awaitingNotificationAck = false
@@ -205,6 +270,7 @@ class BleLinkSession(
 
     private fun transitionTo(next: LinkState) {
         if (state == next) return
+        log("link state $state -> $next")
         state = next
         try {
             onStateChange(next)

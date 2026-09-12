@@ -12,9 +12,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.Log
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
+import com.potatomotato.helm.log.HelmLog
 
 /**
  * HelmLinkService — keeps the phone advertising while backgrounded or
@@ -31,7 +31,7 @@ import com.potatomotato.helm.R
 class HelmLinkService : Service() {
 
     companion object {
-        private const val TAG = "HelmLinkService"
+        private const val TAG = HelmLog.BLE
         private const val CHANNEL_ID = "helm_link"
         private const val NOTIFICATION_ID = 1
 
@@ -52,10 +52,11 @@ class HelmLinkService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        HelmLog.i(TAG, "the link service is starting")
         createNotificationChannel()
         startForegroundWith(LinkState.Disconnected)
 
-        val server = GattServer(this) { Log.i(TAG, it) }
+        val server = GattServer(this, HelmLog.port(TAG))
         val link = BleLinkSession(
             peripheral = server,
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
@@ -64,25 +65,29 @@ class HelmLinkService : Service() {
                 HelmLink.publishState(state)
                 startForegroundWith(state)
             },
-            log = { Log.i(TAG, it) },
+            log = HelmLog.port(TAG),
         )
         server.session = link
         gattServer = server
         session = link
 
         if (server.open()) {
+            HelmLog.i(TAG, "the GATT server is open; advertising")
             HelmLink.sender = link::send
             link.start()
         } else {
             // No radio, no permission, or no peripheral support: stay up with an
             // honest notification rather than crash-looping the service.
-            Log.w(TAG, "could not open the GATT server; the link stays down")
+            HelmLog.w(TAG, "could not open the GATT server; the link stays down")
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        // Android tearing the service down is the one link-lifecycle event the
+        // phone can see and the desktop cannot infer.
+        HelmLog.i(TAG, "the link service is being destroyed")
         HelmLink.detach()
         session?.stop()
         gattServer?.close()

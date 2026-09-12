@@ -17,7 +17,7 @@ import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.Build
 import android.os.ParcelUuid
-import android.util.Log
+import com.potatomotato.helm.log.HelmLog
 
 /**
  * GattServer — the Android half of the peripheral: advertiser plus GATT server.
@@ -32,11 +32,12 @@ import android.util.Log
 @SuppressLint("MissingPermission") // Checked by BlePermissions before the service starts.
 class GattServer(
     private val context: Context,
-    private val log: (String) -> Unit = { Log.i(TAG, it) },
+    private val log: (String) -> Unit = HelmLog.port(HelmLog.BLE),
 ) : GattPeripheral {
 
     private companion object {
-        const val TAG = "HelmGattServer"
+        /** The radio's subsystem tag, so `adb logcat -s HelmBle:V` sees it all. */
+        const val TAG = HelmLog.BLE
     }
 
     /** Set immediately after construction; the session needs this object first. */
@@ -108,6 +109,7 @@ class GattServer(
             .setIncludeDeviceName(includeNameInScanResponse)
             .build()
 
+        log("starting the advertiser, name in scan response: $includeNameInScanResponse")
         advertiser.startAdvertising(settings, data, scanResponse, advertiseCallback)
     }
 
@@ -116,9 +118,18 @@ class GattServer(
     }
 
     override fun notifyTx(chunk: ByteArray): Boolean {
-        val server = gattServer ?: return false
-        val characteristic = txCharacteristic ?: return false
-        val device = connectedDevice() ?: return false
+        val server = gattServer ?: run {
+            log("cannot notify: there is no GATT server")
+            return false
+        }
+        val characteristic = txCharacteristic ?: run {
+            log("cannot notify: the TX characteristic is not built")
+            return false
+        }
+        val device = connectedDevice() ?: run {
+            log("cannot notify: no connected device holds the link")
+            return false
+        }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             server.notifyCharacteristicChanged(device, characteristic, false, chunk) ==
@@ -157,15 +168,25 @@ class GattServer(
     }
 
     private val serverCallback = object : BluetoothGattServerCallback() {
+        /**
+         * `status` is passed ON rather than dropped. It is the only thing that
+         * says WHY a link ended, and discarding it is what made the churn
+         * undiagnosable — see [GattStatus].
+         */
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> session?.onCentralConnected(device.address)
-                BluetoothProfile.STATE_DISCONNECTED -> session?.onCentralDisconnected(device.address)
+                BluetoothProfile.STATE_CONNECTED -> session?.onCentralConnected(device.address, status)
+                BluetoothProfile.STATE_DISCONNECTED -> session?.onCentralDisconnected(device.address, status)
+                else -> HelmLog.d(TAG) { "connection state $newState, status ${GattStatus.describe(status)}" }
             }
         }
 
         override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
             session?.onMtuChanged(device.address, mtu)
+        }
+
+        override fun onServiceAdded(status: Int, service: BluetoothGattService) {
+            log("GATT service added, status ${GattStatus.describe(status)}")
         }
 
         override fun onCharacteristicWriteRequest(
@@ -210,7 +231,11 @@ class GattServer(
         }
 
         override fun onNotificationSent(device: BluetoothDevice, status: Int) {
-            session?.onNotificationSent(device.address, status == BluetoothGatt.GATT_SUCCESS)
+            val ok = status == BluetoothGatt.GATT_SUCCESS
+            // A refusal discards the REST of the message one layer up, so it is
+            // never merely verbose — it is a silent truncation about to happen.
+            if (!ok) log("the stack REFUSED a notification, status ${GattStatus.describe(status)}")
+            session?.onNotificationSent(device.address, ok)
         }
     }
 
