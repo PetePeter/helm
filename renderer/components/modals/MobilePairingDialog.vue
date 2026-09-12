@@ -127,6 +127,7 @@ defineExpose({ handleButton });
             @click="onConfirm"
           >Confirm</button>
           <button class="btn btn--danger mp-reject" type="button" @click="onReject">Reject</button>
+          <button class="btn mp-cancel" type="button" @click="onCancel">Cancel</button>
         </div>
       </div>
     </div>

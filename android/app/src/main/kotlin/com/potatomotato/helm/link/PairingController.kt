@@ -94,6 +94,11 @@ class PairingController(
         _state.value = PairingState.Linked(desktopId)
     }
 
+    /** Abort the in-flight handshake without changing the stored pairings. */
+    fun cancel() {
+        channel?.close("pairing cancelled by the user")
+    }
+
     /** Send one application message. False when there is no usable link. */
     fun send(message: ByteArray): Boolean {
         val live = channel ?: return false

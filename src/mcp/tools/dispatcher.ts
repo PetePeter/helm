@@ -20,6 +20,7 @@ import {
   asPlanTypeOrNull,
   asRecord,
   asString,
+  asStringArray,
   asStringValue,
   asTerminalOutputMode,
   requireBooleanResult,
@@ -902,6 +903,23 @@ export async function callMcpTool(
           asString(args.peer, 'peer is required'),
           asString(args.tool, 'tool is required'),
           asRecord(args.args),
+        );
+      case 'mobile_pair_start':
+        return service.mobilePairStart();
+      case 'mobile_pair_status':
+        return service.mobilePairStatus();
+      case 'mobile_pair_confirm':
+        return service.mobilePairConfirm(asBoolean(args.accepted, 'accepted is required'));
+      case 'mobile_pair_cancel':
+        return service.mobilePairCancel(
+          args.reason === undefined ? undefined : asString(args.reason, 'reason must be a string'),
+        );
+      case 'mobile_device_list':
+        return service.mobileDeviceList();
+      case 'mobile_device_allow':
+        return service.mobileDeviceAllow(
+          asString(args.deviceId, 'deviceId is required'),
+          asStringArray(args.allow, 'allow must be an array of strings'),
         );
       default:
         throw new Error(`Unknown tool: ${name}`);

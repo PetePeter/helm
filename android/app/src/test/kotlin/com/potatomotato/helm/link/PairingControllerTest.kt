@@ -76,6 +76,17 @@ class PairingControllerTest {
     }
 
     @Test
+    fun `cancelling persists nothing and returns to idle`() {
+        val controller = controller()
+        connect(controller)
+
+        controller.cancel()
+
+        assertTrue(store.isEmpty)
+        assertEquals(PairingState.Idle, controller.state.value)
+    }
+
+    @Test
     fun `a paired desktop reconnects straight to linked, with no second SAS prompt`() {
         val first = controller()
         connect(first)

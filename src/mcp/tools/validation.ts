@@ -55,6 +55,18 @@ export function asBoolean(value: unknown, errorMessage: string): boolean {
   return value;
 }
 
+/**
+ * Parse a required array-of-strings ARGUMENT. An empty array is valid and
+ * meaningful — for an allow-list it is how a grant is revoked — so only the
+ * shape is enforced, never the length.
+ */
+export function asStringArray(value: unknown, errorMessage: string): string[] {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new Error(errorMessage);
+  }
+  return value as string[];
+}
+
 export function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>

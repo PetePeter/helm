@@ -1713,5 +1713,84 @@ export const MCP_TOOLS: McpTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'mobile_pair_start',
+    title: 'Arm Phone Pairing',
+    description:
+      'Arm BLE pairing so the next phone offering a link becomes the pairing candidate. This also powers the radio on — Helm only scans when a phone is paired or pairing is armed. Then poll mobile_pair_status until it reports "awaiting-sas", compare the SAS digits with the phone\'s screen, and call mobile_pair_confirm. A newly paired phone is granted NOTHING: finish with mobile_device_allow or every call it makes will be denied. Local only — phones and fleet peers can never invoke this.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mobile_pair_status',
+    title: 'Read Phone Pairing Status',
+    description:
+      'The current pairing state: status (idle / scanning / awaiting-sas / paired / failed), the candidate device name, a failure reason, and — once a candidate is found — the SAS digits. Compare those digits against the ones shown on the phone BEFORE confirming; a mismatch is the only thing that distinguishes a real phone from a man in the middle. The SAS is a derived value, never key material.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mobile_pair_confirm',
+    title: 'Confirm Or Reject The Pairing SAS',
+    description:
+      'Accept or reject the pairing candidate after comparing SAS digits. Pass accepted=true only when mobile_pair_status digits match the phone exactly; pass accepted=false on any mismatch rather than leaving it to time out. Returns the resulting pairing state. On success the phone is registered but has an EMPTY allow-list — call mobile_device_allow next.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        accepted: { type: 'boolean', description: 'true only if the SAS digits match the phone exactly.' },
+      },
+      required: ['accepted'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mobile_pair_cancel',
+    title: 'Cancel Phone Pairing',
+    description:
+      'Abandon an armed scan or a pending SAS confirmation and return to idle. Use this to clear a pairing that is stuck in "scanning" because no phone ever appeared.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Optional reason recorded in the resulting state.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mobile_device_list',
+    title: 'List Paired Phones',
+    description:
+      'List every paired phone with its record id, machineId, name, current allow-list, enabled flag, and whether it holds a live BLE link right now. Use the record id with mobile_device_allow. An empty allow-list means that phone is currently denied every call — which is the default immediately after pairing.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'mobile_device_allow',
+    title: 'Set A Phone\'s Allow-List',
+    description:
+      'REPLACE (not merge) the tools a paired phone may invoke. Patterns are globs matched against tool names, e.g. ["session_list", "session_read_terminal", "session_send_text"] or ["session_*"]. Pass an empty array to revoke everything. A phone starts with an empty list and is denied every call until this is set, so this is the step that actually makes a paired phone useful. Host-lifecycle and pairing tools stay blocked even with a "*" grant.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        deviceId: { type: 'string', description: 'The record id from mobile_device_list.' },
+        allow: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'The complete intended grant; replaces whatever was there.',
+        },
+      },
+      required: ['deviceId', 'allow'],
+      additionalProperties: false,
+    },
+  },
 ];
 

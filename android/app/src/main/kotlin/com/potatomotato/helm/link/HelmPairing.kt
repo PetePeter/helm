@@ -71,6 +71,8 @@ object HelmPairing {
 
     fun confirm(matches: Boolean) = requireController().confirm(matches)
 
+    fun cancel() = requireController().cancel()
+
     fun forget(desktopId: String) = requireController().forget(desktopId)
 
     /** False when there is no authenticated link to carry the message. */

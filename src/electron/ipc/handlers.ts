@@ -678,6 +678,14 @@ export function registerIPCHandlers(
   });
   void mobileLinkManager.start()
     .catch((err) => logger.error(`[mobile] Failed to start the BLE link manager: ${err}`));
+  // Give the mobile_* tools the SAME coordinator the renderer drives, so a local
+  // AI can pair a phone and grant it tools without a human at the UI. Wired here
+  // because the control service is built long before the BLE stack exists.
+  helmControlService.setMobileDeps({
+    pairing: mobilePairing,
+    deviceStore: mobileDeviceStore,
+    isOnline: (machineId) => mobileLinkManager.isOnline(machineId),
+  });
   const disposeMobile = setupMobileHandlers({
     deviceStore: mobileDeviceStore,
     getPairing: () => mobilePairing,

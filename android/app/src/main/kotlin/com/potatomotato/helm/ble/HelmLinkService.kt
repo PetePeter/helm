@@ -34,6 +34,7 @@ class HelmLinkService : Service() {
         private const val TAG = HelmLog.BLE
         private const val CHANNEL_ID = "helm_link"
         private const val NOTIFICATION_ID = 1
+        private const val ACTION_FORCE_PAIRING = "com.potatomotato.helm.FORCE_PAIRING"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, HelmLinkService::class.java))
@@ -41,6 +42,12 @@ class HelmLinkService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, HelmLinkService::class.java))
+        }
+
+        fun forcePairingMode(context: Context) {
+            context.startService(Intent(context, HelmLinkService::class.java).apply {
+                action = ACTION_FORCE_PAIRING
+            })
         }
     }
 
@@ -82,7 +89,10 @@ class HelmLinkService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_FORCE_PAIRING) session?.forcePairingMode()
+        return START_STICKY
+    }
 
     override fun onDestroy() {
         // Android tearing the service down is the one link-lifecycle event the

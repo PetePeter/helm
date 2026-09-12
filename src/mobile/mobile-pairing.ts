@@ -36,6 +36,15 @@ export const ATTEMPT_WINDOW_MS = 10 * 60_000;
 /** How long the cooldown lasts once the cap is hit. */
 export const COOLDOWN_MS = 15 * 60_000;
 
+/**
+ * What a newly paired phone is allowed to invoke. `*` is every tool the gate
+ * would otherwise permit — it is NOT a bypass: HARD_DENY_TOOLS (host lifecycle
+ * and the mobile_* pairing administration tools) and the unreachable-prefix
+ * filter are applied after this, so a phone still cannot restart the hub, pair
+ * another device, or widen its own grants.
+ */
+export const DEFAULT_MOBILE_ALLOW: readonly string[] = ['*'];
+
 export type MobilePairingStatus = 'idle' | 'scanning' | 'awaiting-sas' | 'paired' | 'failed';
 
 /**
@@ -245,8 +254,22 @@ export class MobilePairing extends EventEmitter {
         name: link.deviceName ?? machineId,
         deviceId: link.deviceId,
         pskRef,
-        // Deny-by-default for a new phone; an existing one keeps what it was granted.
-        ...(existing ? {} : { allow: [] }),
+        // A NEW phone is granted the full tool surface; an existing one keeps what
+        // it was already given.
+        //
+        // This used to be `allow: []` — deny-by-default. That read well and was
+        // unusable in practice: pairing through the UI produced a phone that
+        // connected, showed as online, and had EVERY call denied, with no way to
+        // grant anything from the UI at all. The audit log filled with denials
+        // that looked like a transport fault. A default nobody can lift is not a
+        // security boundary, it is a broken feature.
+        //
+        // The real boundary is unchanged and still enforced elsewhere: the user
+        // confirms a SAS before any of this runs, HARD_DENY_TOOLS keeps host
+        // lifecycle and mobile pairing administration unreachable no matter what
+        // this list says, and the unreachable-prefix filter still applies. Narrow
+        // an individual phone afterwards with mobile_device_allow.
+        ...(existing ? {} : { allow: [...DEFAULT_MOBILE_ALLOW] }),
       });
       recordId = device.id;
 

@@ -18,6 +18,7 @@ import {
   MAX_ATTEMPTS_PER_WINDOW,
   type MobilePairingState,
 } from '../src/mobile/mobile-pairing.js';
+import { HARD_DENY_TOOLS } from '../src/mcp/peer/inbound-call-gate.js';
 import type { BleLink } from '../src/mobile/ble/ble-link-client.js';
 import { createMemoryPipePair } from './helpers/memory-pipe';
 
@@ -112,7 +113,10 @@ describe('MobilePairing', () => {
     expect(device).toBeDefined();
     expect(device?.name).toBe('Pixel 8');
     expect(device?.deviceId).toBe('aa:bb:cc:dd:ee:ff');
-    expect(device?.allow).toEqual([]); // deny-by-default until the user grants
+    // Granted the full surface on pairing. An empty list used to be the default
+    // and made UI pairing useless: the phone connected and every call was denied
+    // with no way to grant anything. HARD_DENY_TOOLS still contains it.
+    expect(device?.allow).toEqual(['*']);
     expect(h.secrets.get(device!.pskRef)).toHaveLength(32);
     expect(h.pairing.getState().status).toBe('paired');
 
@@ -178,6 +182,25 @@ describe('MobilePairing', () => {
     expect(repaired.allow).toEqual(['session_*']);
     expect(repaired.deviceId).toBe('11:22:33:44:55:66');
     second.close('test');
+  });
+
+  it('grants a new phone a surface it can actually use, minus the hard-denied tools', async () => {
+    const h = makeHarness();
+    h.pairing.start();
+    const phone = await h.connect();
+    h.pairing.confirm(true);
+
+    const device = h.devices.getByMachineId(PHONE_MACHINE)!;
+
+    // The point of the default: an ordinary session tool works immediately.
+    expect(h.devices.isToolAllowed(device.id, 'session_list')).toBe(true);
+    // `*` is not a bypass — the gate's hard-deny set is what keeps the dangerous
+    // tools unreachable, and it is applied after this list.
+    for (const denied of ['restart_helm', 'mobile_pair_start', 'mobile_device_allow']) {
+      expect(HARD_DENY_TOOLS.has(denied), `${denied} must stay hard-denied`).toBe(true);
+    }
+
+    phone.close('test');
   });
 
   it('allows only one pairing in flight at a time', async () => {

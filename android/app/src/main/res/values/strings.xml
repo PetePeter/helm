@@ -15,6 +15,8 @@
     <string name="pairing_warning">If they differ, do not continue — someone may be intercepting the connection.</string>
     <string name="pairing_match">They match</string>
     <string name="pairing_reject">Reject</string>
+    <string name="pairing_cancel">Cancel</string>
+    <string name="pairing_pair_desktop">Pair a desktop</string>
     <string name="pairing_handshaking">Verifying…</string>
 
     <string name="sessions_none">No sessions are running on this desktop.</string>

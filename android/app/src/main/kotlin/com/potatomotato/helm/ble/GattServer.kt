@@ -46,6 +46,8 @@ class GattServer(
     private var gattServer: BluetoothGattServer? = null
     private var advertiser: BluetoothLeAdvertiser? = null
     private var txCharacteristic: BluetoothGattCharacteristic? = null
+    private var serviceReady = false
+    private var advertisePending = false
 
     /**
      * The advertisement is capped at 31 bytes and a 128-bit service UUID already
@@ -71,6 +73,7 @@ class GattServer(
         advertiser = adapter.bluetoothLeAdvertiser ?: return false
         val server = manager.openGattServer(context, serverCallback) ?: return false
         gattServer = server
+        serviceReady = false
         server.addService(buildService())
         return true
     }
@@ -81,11 +84,18 @@ class GattServer(
         gattServer = null
         advertiser = null
         txCharacteristic = null
+        serviceReady = false
+        advertisePending = false
     }
 
     // ---- GattPeripheral ---------------------------------------------------
 
     override fun startAdvertising() {
+        if (!serviceReady) {
+            advertisePending = true
+            log("advertising deferred until the GATT service is registered")
+            return
+        }
         val advertiser = advertiser ?: run {
             session?.onAdvertiseFailed("no advertiser")
             return
@@ -187,6 +197,16 @@ class GattServer(
 
         override fun onServiceAdded(status: Int, service: BluetoothGattService) {
             log("GATT service added, status ${GattStatus.describe(status)}")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                serviceReady = true
+                if (advertisePending) {
+                    advertisePending = false
+                    startAdvertising()
+                }
+            } else if (advertisePending) {
+                advertisePending = false
+                session?.onAdvertiseFailed("GATT service registration failed: ${GattStatus.describe(status)}")
+            }
         }
 
         override fun onCharacteristicWriteRequest(
@@ -261,7 +281,7 @@ class GattServer(
         // TX: the phone notifies, Helm subscribes. Also the wake channel.
         val tx = BluetoothGattCharacteristic(
             HelmGatt.TX_CHARACTERISTIC_UUID,
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ,
         )
         tx.addDescriptor(

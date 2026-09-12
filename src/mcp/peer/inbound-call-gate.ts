@@ -45,6 +45,16 @@ export const RESERVED_PEER_TOOLS_METHOD = '__peer_tools__';
  */
 export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   'restart_helm',
+  // Mobile pairing + grant administration: LOCAL AI ONLY. A phone that could
+  // reach these would pair further devices or widen its own allow-list — the
+  // gate would be handing out the keys to itself. A peer has no business
+  // administering this host's phones either. Deny regardless of allow-list.
+  'mobile_pair_start',
+  'mobile_pair_status',
+  'mobile_pair_confirm',
+  'mobile_pair_cancel',
+  'mobile_device_list',
+  'mobile_device_allow',
   // Running-session group killer: destructive to host/app lifecycle. A peer with a
   // wildcard `*` allow-list could otherwise batch-kill a whole group.
   'session_group_close',

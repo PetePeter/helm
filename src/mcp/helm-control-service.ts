@@ -27,6 +27,7 @@ import { HelmSchedulerService } from './services/helm-scheduler-service.js';
 import { HelmProjectService } from './services/helm-project-service.js';
 import { HelmDirectoryService } from './services/helm-directory-service.js';
 import { HelmPeerService } from './services/helm-peer-service.js';
+import { HelmMobileService, type MobileDeps } from './services/helm-mobile-service.js';
 import { logger } from '../utils/logger.js';
 import type { ScheduledTaskManager } from '../session/scheduled-task-manager.js';
 import type { CreateScheduledTaskParams, ScheduledTask, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
@@ -213,6 +214,9 @@ export class HelmControlService extends EventEmitter {
   /** Fleet is OFF by default → no manager until setPeerLinkManager wires one. */
   private peerLinkManager?: import('./peer/peer-link-manager.js').PeerLinkManager | null;
   private readonly peerService: HelmPeerService;
+  /** Absent until the BLE stack is built and setMobileDeps wires it. */
+  private mobileDeps?: MobileDeps | null;
+  private readonly mobileService: HelmMobileService;
   private readonly skillManager: SkillManager;
   private readonly skillAnalyticsManager: SkillAnalyticsManager;
   private readonly capabilityDetector: CapabilityDetector;
@@ -330,6 +334,7 @@ export class HelmControlService extends EventEmitter {
       : null;
     this.directoryService = new HelmDirectoryService(configLoader, sessionManager, planManager, projectStore);
     this.peerService = new HelmPeerService(() => this.peerLinkManager ?? undefined);
+    this.mobileService = new HelmMobileService(() => this.mobileDeps ?? undefined);
   }
 
   // ---------------------------------------------------------------------------
@@ -422,6 +427,44 @@ export class HelmControlService extends EventEmitter {
 
   peerCall(peer: string, tool: string, args: Record<string, unknown>) {
     return this.peerService.call(peer, tool, args);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mobile — phone pairing and per-device grants (mobile_*). LOCAL AI ONLY: every
+  // one of these is hard-denied to phones and peers, so a paired device can never
+  // pair another or widen its own allow-list.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Wire (or CLEAR, with null) the mobile stack so the mobile_* tools can drive
+   * pairing. The BLE stack is built long after this service, hence a setter.
+   */
+  setMobileDeps(deps: MobileDeps | null): void {
+    this.mobileDeps = deps;
+  }
+
+  mobilePairStart() {
+    return this.mobileService.pairStart();
+  }
+
+  mobilePairStatus() {
+    return this.mobileService.pairStatus();
+  }
+
+  mobilePairConfirm(accepted: boolean) {
+    return this.mobileService.pairConfirm(accepted);
+  }
+
+  mobilePairCancel(reason?: string) {
+    return this.mobileService.pairCancel(reason);
+  }
+
+  mobileDeviceList() {
+    return this.mobileService.deviceList();
+  }
+
+  mobileDeviceAllow(deviceId: string, allow: string[]) {
+    return this.mobileService.deviceAllow(deviceId, allow);
   }
 
   // ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ fun PairingScreen(
     sas: String,
     onMatch: () -> Unit,
     onReject: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -84,6 +85,7 @@ fun PairingScreen(
         ) {
             PrimaryButton(text = stringResource(R.string.pairing_match), onClick = onMatch)
             GhostButton(text = stringResource(R.string.pairing_reject), onClick = onReject)
+            GhostButton(text = stringResource(R.string.pairing_cancel), onClick = onCancel)
         }
     }
 }

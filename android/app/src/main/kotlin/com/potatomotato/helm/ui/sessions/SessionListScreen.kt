@@ -27,6 +27,7 @@ import com.potatomotato.helm.data.Reach
 import com.potatomotato.helm.data.SessionListState
 import com.potatomotato.helm.data.sessionListState
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.StateDot
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -45,10 +46,17 @@ fun SessionListScreen(
     linkState: LinkState,
     reach: Reach,
     onOpen: (HelmSession) -> Unit,
+    onPairDesktop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(title = stringResource(R.string.app_name), linkState = linkState)
+
+        GhostButton(
+            text = stringResource(R.string.pairing_pair_desktop),
+            onClick = onPairDesktop,
+            modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
+        )
 
         if (sessions.isEmpty()) {
             EmptyList(sessionListState(linkState, sessions, reach))

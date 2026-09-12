@@ -93,6 +93,18 @@ class BleLinkSession(
         transitionTo(LinkState.Disconnected)
     }
 
+    /** Restart advertising on demand when the user explicitly starts pairing. */
+    fun forcePairingMode() {
+        if (!running) return
+        centralAddress?.let {
+            disconnectRequested = true
+            safely("disconnect for pairing") { peripheral.disconnect(it) }
+        }
+        safely("stopAdvertising for pairing") { peripheral.stopAdvertising() }
+        resetLink()
+        advertise()
+    }
+
     /**
      * Queue a whole message for the central. Chunks are emitted one
      * notification at a time; GATT gives no second slot until the stack

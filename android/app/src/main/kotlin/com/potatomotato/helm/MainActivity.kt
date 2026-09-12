@@ -102,6 +102,7 @@ private fun HelmRoot() {
                 sas = pairing.sas,
                 onMatch = { HelmPairing.confirm(true) },
                 onReject = { HelmPairing.confirm(false) },
+                onCancel = { HelmPairing.cancel() },
             )
         }
 

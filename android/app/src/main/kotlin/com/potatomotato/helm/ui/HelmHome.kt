@@ -12,10 +12,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.potatomotato.helm.ble.HelmLink
+import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.link.HelmClient
@@ -48,6 +50,7 @@ private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn }
  */
 @Composable
 fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val linkState by HelmLink.state.collectAsState()
     val sessions by client.sessions.sessions.collectAsState()
     val reach by client.sessions.reach.collectAsState()
@@ -110,6 +113,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     linkState = linkState,
                     reach = reach,
                     onOpen = { openSessionId = it.id },
+                    onPairDesktop = { HelmLinkService.forcePairingMode(context) },
                 )
 
                 where == Destination.Voice -> VoiceScreen(
