@@ -65,6 +65,19 @@ const DISCOVERY_ATTEMPTS = 2;
  */
 const DEFAULT_REJECT_IGNORE_MS = 60_000;
 
+/**
+ * How long one ATT chunk write — and one disconnect request — may stay
+ * unsettled before the link is treated as dead.
+ *
+ * The observed reinstall failure: the phone's GATT server vanished mid-write
+ * and the Windows stack held the write promise FOREVER. No error, no
+ * disconnect event, no rescan — Helm sat with a live-looking link and a write
+ * queue stuck on its first chunk until the app was restarted by hand. A
+ * 20-byte acknowledged write completes in tens of milliseconds; anything still
+ * pending after ten seconds is a wedged stack, not a slow phone.
+ */
+const DEFAULT_WRITE_TIMEOUT_MS = 10_000;
+
 /* ------------------------------------------------------------------ *
  * The narrow slice of @stoprocent/noble this client uses. Declared here
  * rather than imported so the module stays testable against a fake and
@@ -128,6 +141,8 @@ export interface BleLinkClientOptions {
   reconnectMaxMs?: number;
   /** Per-step ceiling on the connect sequence; see DEFAULT_STEP_TIMEOUT_MS. */
   stepTimeoutMs?: number;
+  /** Ceiling on one unsettled chunk write or disconnect; see DEFAULT_WRITE_TIMEOUT_MS. */
+  writeTimeoutMs?: number;
   /** How long a rejected peripheral is skipped before it is tried again. */
   rejectIgnoreMs?: number;
   now?: () => number;
@@ -145,6 +160,7 @@ export class BleLinkClient extends EventEmitter {
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly stepTimeoutMs: number;
+  private readonly writeTimeoutMs: number;
   private readonly rejectIgnoreMs: number;
   private readonly now: () => number;
   private readonly log: (message: string, error?: unknown) => void;
@@ -165,6 +181,7 @@ export class BleLinkClient extends EventEmitter {
     this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+    this.writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS;
     this.rejectIgnoreMs = options.rejectIgnoreMs ?? DEFAULT_REJECT_IGNORE_MS;
     this.now = options.now ?? Date.now;
     this.log = options.logger ?? (() => {});
@@ -258,7 +275,7 @@ export class BleLinkClient extends EventEmitter {
       await this.bounded(step, () => tx.subscribeAsync());
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
-      const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now);
+      const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now, this.writeTimeoutMs);
       this.active = link;
       this.attempts = 0;
       peripheral.once('disconnect', () => this.onDisconnect(link));
@@ -428,8 +445,9 @@ class BleLinkPipe implements BleLink {
     tx: NobleCharacteristic,
     private readonly log: (message: string, error?: unknown) => void,
     private now: () => number,
+    private readonly writeTimeoutMs: number,
   ) {
-    this.linkedAt = now();
+    this.linkedAt = this.now();
     tx.on('data', (chunk: Buffer) => this.reassembler.push(chunk));
     this.reassembler.on('message', (message: Buffer) => {
       for (const handler of this.dataHandlers) handler(message);
@@ -490,7 +508,7 @@ class BleLinkPipe implements BleLink {
         if (this.closed) return;
         try {
           this.log(`BLE write chunk ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length} bytes=${chunk.length}`);
-          await this.rx.writeAsync(chunk, this.writeWithoutResponse);
+          await this.deadline('chunk write', this.rx.writeAsync(chunk, this.writeWithoutResponse));
           this.log(`BLE write chunk complete ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length}`);
         } catch (error) {
           const failure: BleTransportError = {
@@ -533,11 +551,39 @@ class BleLinkPipe implements BleLink {
   async disconnect(): Promise<void> {
     if (this.closed) return;
     try {
-      await this.peripheral.disconnectAsync();
+      // Bounded for the same reason the writes are: a wedged stack ignores the
+      // disconnect too, and an unbounded await here would leave the close
+      // handlers — the manager's whole recovery path — never firing.
+      await this.deadline('disconnect', this.peripheral.disconnectAsync());
     } catch (error) {
       this.log(`BLE disconnect of ${this.deviceId} failed`, error);
     }
     this.handleClose();
+  }
+
+  /**
+   * Race a GATT call against the clock. Same shape as the client's connect-step
+   * bound, applied to the pipe: a write whose promise never settles is the
+   * observed reinstall failure, and the loser of the race is left running
+   * because noble offers no way to cancel it.
+   */
+  private deadline<T>(what: string, call: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`${what} on ${this.deviceId} timed out after ${this.writeTimeoutMs}ms`)),
+        this.writeTimeoutMs,
+      );
+      call.then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   /** Fire close handlers exactly once, whoever noticed the link was gone. */

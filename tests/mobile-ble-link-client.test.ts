@@ -301,6 +301,50 @@ describe('BleLinkClient pipe', () => {
     expect(noble.scanStarts).toBe(2);
   });
 
+  /**
+   * The reinstall hang: the phone's GATT server vanished mid-write and the
+   * Windows stack held the write promise FOREVER — no error, no disconnect
+   * event. Helm sat with a live-looking link, a write queue stuck on chunk 1,
+   * and no rescan, until the app was restarted by hand. A write that never
+   * settles must settle itself and go through the same drop-and-rescan path a
+   * rejected one does.
+   */
+  it('times out a chunk write that never settles, drops the link, and rescans', async () => {
+    const { noble, phone, link, logs } = await connected();
+    phone.rx.hangWrites = true;
+    const failures: unknown[] = [];
+    link.onTransportError?.((failure) => failures.push(failure));
+
+    expect(() => link.pipe.write(Buffer.from('stuck'))).not.toThrow();
+    await vi.advanceTimersByTimeAsync(0);
+    // Still inside the deadline: nothing has been torn down yet.
+    expect(failures).toHaveLength(0);
+    expect(phone.disconnectCalls).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(failures).toHaveLength(1);
+    expect(logs.join(' ')).toContain('timed out');
+    expect(phone.disconnectCalls).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(noble.scanStarts).toBe(2);
+  });
+
+  it('a hung disconnect still closes the pipe instead of wedging recovery', async () => {
+    const { phone, link } = await connected();
+    let closed = false;
+    link.pipe.onClose(() => { closed = true; });
+    phone.hangDisconnect = true;
+
+    link.pipe.close();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closed).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(phone.disconnectCalls).toBe(1);
+    expect(closed).toBe(true);
+  });
+
   it('surfaces a dropped notification as a framing drop, not as corrupt data', async () => {
     const { phone, link } = await connected();
     const received: Buffer[] = [];

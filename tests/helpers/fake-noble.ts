@@ -28,6 +28,12 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
   failNextWrite: Error | null = null;
   /** Never resolve a subscribe, the way a stalled CCC descriptor write behaves. */
   hangSubscribe = false;
+  /**
+   * Accept chunk writes but never settle them. This is the observed reinstall
+   * failure: the phone's GATT server vanishes mid-write and the Windows stack
+   * holds the promise forever — no error, no disconnect event, nothing.
+   */
+  hangWrites = false;
 
   constructor(readonly uuid: string) {
     super();
@@ -44,6 +50,7 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
     this.writeModes.push(withoutResponse);
     // Lets a test cross-wire one fake peripheral's RX into another's TX.
     this.emit('write', copy);
+    if (this.hangWrites) return new Promise<void>(() => {});
   }
 
   async subscribeAsync(): Promise<void> {
@@ -77,6 +84,11 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   hangDiscover = false;
   /** Never resolve a connect, so the connect step can be timed out too. */
   hangConnect = false;
+  /**
+   * Never resolve a disconnect: a wedged stack ignores the request too, so the
+   * recovery path must not depend on the promise settling.
+   */
+  hangDisconnect = false;
   /** How many times Helm asked for a disconnect — proves orphan cleanup. */
   disconnectCalls = 0;
 
@@ -92,6 +104,7 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
 
   async disconnectAsync(): Promise<void> {
     this.disconnectCalls += 1;
+    if (this.hangDisconnect) return new Promise<void>(() => {});
     if (!this.connected) return;
     this.connected = false;
     this.emit('disconnect');
