@@ -35,6 +35,18 @@ const DEFAULT_RECONNECT_BASE_MS = 1_000;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
 
 /**
+ * How long any one step of the connect sequence may take before Helm gives up
+ * on it.
+ *
+ * None of the three steps had a bound, and on real hardware `discover` simply
+ * never returned: Helm sat for ~33 seconds, died on noble's bare "Disconnected
+ * unknown", and could not say which await had been stuck. Ten seconds is well
+ * under the ~30s the phone was observed holding a silent connection, so Helm
+ * now gives up first and gets to describe what happened.
+ */
+const DEFAULT_STEP_TIMEOUT_MS = 10_000;
+
+/**
  * How long a refused advertiser is skipped. Identity is only known after a
  * handshake, so the layer above has to connect before it can say no — without
  * this window a neighbour's phone would be reconnected on every rescan forever.
@@ -92,6 +104,8 @@ export interface BleLinkClientOptions {
   serviceUuid?: string;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
+  /** Per-step ceiling on the connect sequence; see DEFAULT_STEP_TIMEOUT_MS. */
+  stepTimeoutMs?: number;
   /** How long a rejected peripheral is skipped before it is tried again. */
   rejectIgnoreMs?: number;
   now?: () => number;
@@ -108,6 +122,7 @@ export class BleLinkClient extends EventEmitter {
   private readonly serviceUuid: string;
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
+  private readonly stepTimeoutMs: number;
   private readonly rejectIgnoreMs: number;
   private readonly now: () => number;
   private readonly log: (message: string, error?: unknown) => void;
@@ -126,6 +141,7 @@ export class BleLinkClient extends EventEmitter {
     this.serviceUuid = normaliseUuid(options.serviceUuid ?? HELM_SERVICE_UUID_SHORT);
     this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
+    this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
     this.rejectIgnoreMs = options.rejectIgnoreMs ?? DEFAULT_REJECT_IGNORE_MS;
     this.now = options.now ?? Date.now;
     this.log = options.logger ?? (() => {});
@@ -187,24 +203,26 @@ export class BleLinkClient extends EventEmitter {
     if (!this.started || this.active || this.busy) return;
     if (this.isIgnored(peripheral.id)) return;
     this.busy = true;
-    // WHICH STEP, and how long it took. P-0756 caught this sequence hanging for
-    // 35 seconds and failing with noble's bare "Disconnected unknown", while the
-    // phone sat in Connecting having seen a perfectly successful GATT connect.
-    // Three awaits, no timing on any of them, and one bare error for all three:
-    // there was no way to say which one stalled. Now there is.
+    // WHICH STEP, how long it took, and a bound on each one. P-0756 caught this
+    // sequence hanging for 35 seconds and failing with noble's bare "Disconnected
+    // unknown", while the phone sat in Connecting having seen a perfectly
+    // successful GATT connect. Three awaits, no timing and no ceiling on any of
+    // them, and one bare error for all three: nothing could say which stalled.
     const startedAt = Date.now();
     let step = 'stopScanning';
     try {
       await this.noble.stopScanningAsync();
 
       step = 'connect';
-      await peripheral.connectAsync();
+      await this.bounded(step, () => peripheral.connectAsync());
       this.log(`BLE ${step} to ${peripheral.id} took ${Date.now() - startedAt}ms`);
 
       step = 'discover';
-      const { characteristics } = await peripheral.discoverSomeServicesAndCharacteristicsAsync(
-        [this.serviceUuid],
-        [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
+      const { characteristics } = await this.bounded(step, () =>
+        peripheral.discoverSomeServicesAndCharacteristicsAsync(
+          [this.serviceUuid],
+          [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
+        ),
       );
       this.log(`BLE ${step} on ${peripheral.id} took ${Date.now() - startedAt}ms`);
 
@@ -213,7 +231,7 @@ export class BleLinkClient extends EventEmitter {
       if (!rx || !tx) throw new Error(`peripheral ${peripheral.id} is missing the Helm characteristics`);
 
       step = 'subscribe';
-      await tx.subscribeAsync();
+      await this.bounded(step, () => tx.subscribeAsync());
       this.log(`BLE link to ${peripheral.id} is ready after ${Date.now() - startedAt}ms`);
 
       const link = new BleLinkPipe(peripheral, rx, tx, this.log);
@@ -225,8 +243,54 @@ export class BleLinkClient extends EventEmitter {
     } catch (error) {
       this.busy = false;
       this.log(`BLE ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
+      await this.abandon(peripheral);
       this.emitError(error);
       this.scheduleRescan();
+    }
+  }
+
+  /**
+   * Run one step of the connect sequence under its own clock.
+   *
+   * The loser of the race is left running — noble gives us no way to cancel an
+   * in-flight GATT operation — so its eventual rejection is swallowed rather
+   * than surfacing as an unhandled rejection long after we stopped caring.
+   */
+  private bounded<T>(step: string, run: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${step} timed out after ${this.stepTimeoutMs}ms`));
+      }, this.stepTimeoutMs);
+
+      run().then(
+        (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
+  /**
+   * Drop a half-built connection before going back to scanning.
+   *
+   * A failed sequence used to walk away without disconnecting, so a connect
+   * that succeeded and a discover that then stalled left the phone holding a
+   * live link carrying no traffic — and the next attempt met its own leftover
+   * connection as "Peripheral already connected". State crossing an attempt
+   * boundary made every subsequent capture suspect. The disconnect is attempted
+   * unconditionally: a step that timed out may have completed since, so "we
+   * never got that far" is not something this layer can know.
+   */
+  private async abandon(peripheral: NoblePeripheral): Promise<void> {
+    try {
+      await peripheral.disconnectAsync();
+    } catch (error) {
+      this.log(`BLE cleanup disconnect of ${peripheral.id} failed`, error);
     }
   }
 

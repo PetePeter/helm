@@ -25,6 +25,8 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
   readonly writes: Buffer[] = [];
   subscribed = false;
   failNextWrite: Error | null = null;
+  /** Never resolve a subscribe, the way a stalled CCC descriptor write behaves. */
+  hangSubscribe = false;
 
   constructor(readonly uuid: string) {
     super();
@@ -43,6 +45,7 @@ export class FakeCharacteristic extends EventEmitter implements NobleCharacteris
   }
 
   async subscribeAsync(): Promise<void> {
+    if (this.hangSubscribe) return new Promise<void>(() => {});
     this.subscribed = true;
   }
 
@@ -60,6 +63,17 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   mtu = 185;
   advertisement: { localName?: string } = { localName: 'helm-phone' };
   failConnect: Error | null = null;
+  failDiscover: Error | null = null;
+  /**
+   * Never resolve discovery. This is the observed real failure: the GATT
+   * connection succeeds, the phone sits in Connecting, and noble's discover
+   * await simply never comes back.
+   */
+  hangDiscover = false;
+  /** Never resolve a connect, so the connect step can be timed out too. */
+  hangConnect = false;
+  /** How many times Helm asked for a disconnect — proves orphan cleanup. */
+  disconnectCalls = 0;
 
   constructor(readonly id: string = 'aa:bb:cc:dd:ee:ff') {
     super();
@@ -67,10 +81,12 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
 
   async connectAsync(): Promise<void> {
     if (this.failConnect) throw this.failConnect;
+    if (this.hangConnect) return new Promise<void>(() => {});
     this.connected = true;
   }
 
   async disconnectAsync(): Promise<void> {
+    this.disconnectCalls += 1;
     if (!this.connected) return;
     this.connected = false;
     this.emit('disconnect');
@@ -79,6 +95,10 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   async discoverSomeServicesAndCharacteristicsAsync(): Promise<{
     characteristics: NobleCharacteristic[];
   }> {
+    if (this.failDiscover) throw this.failDiscover;
+    if (this.hangDiscover) {
+      return new Promise<{ characteristics: NobleCharacteristic[] }>(() => {});
+    }
     return { characteristics: [this.rx, this.tx, this.ctl] };
   }
 

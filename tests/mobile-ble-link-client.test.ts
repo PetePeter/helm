@@ -15,7 +15,7 @@ import { SecureChannel } from '../src/mobile/secure-channel';
 import { FakeNoble, FakePeripheral } from './helpers/fake-noble';
 
 /** Build a client wired to a fake adapter, with logging captured. */
-function build() {
+function build(options: { stepTimeoutMs?: number } = {}) {
   const noble = new FakeNoble();
   const logs: string[] = [];
   const client = new BleLinkClient({
@@ -23,6 +23,7 @@ function build() {
     reconnectBaseMs: 1000,
     reconnectMaxMs: 8000,
     logger: (message) => logs.push(message),
+    ...options,
   });
   return { noble, client, logs };
 }
@@ -83,6 +84,128 @@ describe('BleLinkClient discovery', () => {
     expect(errors[0].message).toContain('connect refused');
     expect(logs.join(' ')).toContain('connect');
     expect(noble.scanning).toBe(true);
+  });
+});
+
+/**
+ * A connect sequence that hangs is the defect P-0758 exists for: on real
+ * hardware `discover` never came back, Helm sat ~33s and then died on noble's
+ * bare "Disconnected unknown" with nothing to say which await was stuck, and it
+ * walked away leaving the connection open — so the phone held a link with zero
+ * traffic and the NEXT attempt was refused as "Peripheral already connected".
+ *
+ * Two behaviours are pinned here: a stalled step gives up on its own clock and
+ * names itself, and a failed sequence never leaves an orphaned connection
+ * behind. Both are observable through the fake, neither needs a radio.
+ */
+describe('BleLinkClient connect sequence failures', () => {
+  /** Drive a client to the point of discovering one peripheral. */
+  async function attempt(phone: FakePeripheral, stepTimeoutMs = 10_000) {
+    const { noble, client, logs } = build({ stepTimeoutMs });
+    const errors: Error[] = [];
+    client.on('error', (error: Error) => errors.push(error));
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    noble.discover(phone);
+    return { noble, client, logs, errors };
+  }
+
+  it('gives up on a discover that never resolves, naming the step and the elapsed time', async () => {
+    const phone = new FakePeripheral();
+    phone.hangDiscover = true;
+    const { logs, errors } = await attempt(phone, 10_000);
+
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(errors).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('discover');
+    const failure = logs.find((line) => line.includes('failed after'));
+    expect(failure).toContain('discover');
+    expect(failure).toContain(phone.id);
+    expect(failure).toMatch(/failed after \d+ms/);
+  });
+
+  it('times out a subscribe that never resolves, and blames subscribe rather than discover', async () => {
+    const phone = new FakePeripheral();
+    phone.tx.hangSubscribe = true;
+    const { logs, errors } = await attempt(phone, 10_000);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(errors).toHaveLength(1);
+    const failure = logs.find((line) => line.includes('failed after'));
+    expect(failure).toContain('subscribe');
+    expect(failure).not.toContain('discover to');
+  });
+
+  it('times out a connect that never resolves', async () => {
+    const phone = new FakePeripheral();
+    phone.hangConnect = true;
+    const { logs, errors } = await attempt(phone, 10_000);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(errors).toHaveLength(1);
+    expect(logs.find((line) => line.includes('failed after'))).toContain('connect');
+  });
+
+  it('leaves no connection behind when discovery fails, so the next attempt is not refused', async () => {
+    const phone = new FakePeripheral();
+    phone.failDiscover = new Error('Device is unreachable while discovering services');
+    const { noble } = await attempt(phone);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(phone.connected).toBe(false);
+    expect(phone.disconnectCalls).toBe(1);
+
+    // The proof that matters: a second attempt connects cleanly rather than
+    // meeting its own leftover connection.
+    phone.failDiscover = null;
+    await vi.advanceTimersByTimeAsync(1000);
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(phone.connected).toBe(true);
+    expect(phone.tx.subscribed).toBe(true);
+  });
+
+  it('drops the orphan when a step times out, not only when it rejects', async () => {
+    const phone = new FakePeripheral();
+    phone.hangDiscover = true;
+    await attempt(phone, 5_000);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(phone.disconnectCalls).toBe(1);
+    expect(phone.connected).toBe(false);
+  });
+
+  it('still schedules a backoff rescan after a step times out', async () => {
+    const phone = new FakePeripheral();
+    phone.hangDiscover = true;
+    const { noble } = await attempt(phone, 5_000);
+    const scansBefore = noble.scanStarts;
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(noble.scanStarts).toBe(scansBefore);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(noble.scanStarts).toBe(scansBefore + 1);
+  });
+
+  it('accepts a link normally when every step resolves inside its timeout', async () => {
+    const phone = new FakePeripheral();
+    await attempt(phone, 10_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // A healthy sequence must survive the timeout plumbing rather than be torn
+    // down by it — the regression a bounded wait could easily introduce.
+    expect(phone.connected).toBe(true);
+    expect(phone.tx.subscribed).toBe(true);
+    expect(phone.disconnectCalls).toBe(0);
   });
 });
 
