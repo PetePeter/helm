@@ -272,6 +272,19 @@ describe('MCP session_create — cliType resolution', () => {
     const service = makeService(loader, []);
     expect(() => service.spawnCli('nope', TEST_DIR, 'x')).toThrow(/Unknown CLI type/);
   });
+
+  it('names the session after the CLI when session_create sends no name', () => {
+    const loader = loadedLoader();
+    const added: Array<Record<string, unknown>> = [];
+    const service = makeService(loader, added);
+
+    const created = service.spawnCli('Claude Code', TEST_DIR, undefined);
+
+    // The same default the desktop's own spawn uses (the UI passes no
+    // sessionName either): the resolved CLI's displayName, never a placeholder.
+    expect(created.id).toBeTruthy();
+    expect(added[0].name).toBe('Claude Code');
+  });
 });
 
 // ---------------------------------------------------------------------------

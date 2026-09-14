@@ -79,12 +79,14 @@ export class HelmSessionService {
   spawnCli(
     cliType: string,
     dirPath: string,
-    name: string,
+    name: string | undefined,
     opts: { creatorSessionId?: string; runtimeGroupId?: string } = {},
   ): { id: string; runtimeGroupId?: string; runtimeGroupName?: string } {
     const workingDir = this.requireWorkingDirectory(dirPath);
     const cli = this.requireCliEntry(cliType);
-    const sessionName = name.trim();
+    // No name is not an error: the desktop's own spawn sends none either, and
+    // spawnConfiguredSession names the session after the resolved CLI type.
+    const sessionName = name?.trim() ?? '';
     // A `peer:<id>` creator means this spawn arrived over the Fleet proxy, so the
     // session is marked as remotely created; a local creator is a real UUID.
     const createdByPeerId = peerIdFromProxySessionId(opts.creatorSessionId);

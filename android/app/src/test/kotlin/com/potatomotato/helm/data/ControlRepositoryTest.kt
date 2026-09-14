@@ -93,6 +93,45 @@ class ControlRepositoryTest {
         assertEquals(listOf(HelmDirectory("/work", "work")), control.directories.value)
     }
 
+    @Test
+    fun `the CLI catalogue arrives with display names and spawn targets`() {
+        assertTrue(
+            control.clisArrived(
+                JSONArray(
+                    """[{"cliType":"claudecode","name":"Claude Code","supportedDirPaths":["x:\\c","/w"]},
+                       {"name":"pathless"},
+                       {"cliType":"codex"}]""",
+                ),
+            ),
+        )
+
+        // An entry without a cliType is not a CLI; a missing label falls back to
+        // the id the wire actually needs.
+        assertEquals(
+            listOf(
+                HelmCli("claudecode", "Claude Code", listOf("x:\\c", "/w")),
+                HelmCli("codex", "codex", emptyList()),
+            ),
+            control.clis.value,
+        )
+    }
+
+    @Test
+    fun `a catalogue that is not a list changes nothing`() {
+        assertFalse(control.clisArrived(JSONObject("""{"cliType":"x"}""")))
+
+        assertTrue(control.clis.value.isEmpty())
+    }
+
+    @Test
+    fun `a directory failure is readable state that a new ask clears`() {
+        control.directoriesFailed("Tool not permitted")
+        assertEquals("Tool not permitted", control.directoriesError.value)
+
+        control.directoriesRequested()
+        assertNull(control.directoriesError.value)
+    }
+
     private fun tail(vararg lines: String): JSONObject =
         JSONObject("""{"stripped":[${lines.joinToString(",") { "\"$it\"" }}],"returnedLines":${lines.size}}""")
 }

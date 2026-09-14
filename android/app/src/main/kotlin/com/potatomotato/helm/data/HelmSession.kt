@@ -16,9 +16,9 @@ data class HelmSession(
     val projectPath: String,
     /**
      * The CLI's wire id (`claudecode`, `codex`, …), as opposed to its label.
-     * Carried because the spawn form needs a cliType to send and there is no
-     * phone-callable tool that enumerates them — the CLIs already running are the
-     * only honest source, so a phone can only spawn a kind of session it can see.
+     * Carried for the spawn form's FALLBACK: when the `tool_list` catalogue
+     * cannot be fetched, the CLIs already running are the only honest source,
+     * so the form can only offer a kind of session it can see.
      */
     val cliType: String,
     val cliTypeName: String,

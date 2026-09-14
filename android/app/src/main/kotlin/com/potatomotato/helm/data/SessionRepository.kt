@@ -11,8 +11,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * That is deliberate, not a shortcut: the envelope has exactly four record types
  * and only `chat` travels Helm-to-phone unprompted, so there is no push channel
  * to subscribe to and adding one would be a wire break. The desktop's per-device
- * rate limit was sized for exactly this (60/min, "a screen open on the sessions
- * list refreshes far more often than a peer AI issues tool calls").
+ * rate limit was sized around exactly this (120/min, leaving room for a user
+ * acting on top of the 2s poll that the visible screen runs).
  *
  * What makes the updates INCREMENTAL is here rather than on the wire: a snapshot
  * is merged BY ID, and an entry that has not changed keeps the instance it

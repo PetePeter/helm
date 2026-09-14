@@ -89,12 +89,14 @@ const JSONRPC_SERVER_ERROR = -32000;
 const ARG_SUMMARY_MAX = 200;
 
 /**
- * Per-device bucket: ~60 calls/min with a burst of 60. Roomier than the fleet's
- * 30 because a phone UI is interactive — a screen open on the sessions list
- * refreshes far more often than a peer AI issues tool calls.
+ * Per-device bucket: ~120 calls/min with a burst of 120. The phone's session
+ * poll alone spends 30/min of this shared bucket (one session_list every 2s
+ * while the app is visible), so 60 left too little for a user acting on top of
+ * it; 120 keeps the poll and the actions in one bucket with room for both.
+ * Still roomier than the fleet's 30 because a phone UI is interactive.
  */
-export const DEFAULT_MOBILE_RATE_CAPACITY = 60;
-export const DEFAULT_MOBILE_RATE_REFILL_PER_MS = 60 / 60000;
+export const DEFAULT_MOBILE_RATE_CAPACITY = 120;
+export const DEFAULT_MOBILE_RATE_REFILL_PER_MS = 120 / 60000;
 
 export function createDefaultMobileRateLimiter(now: () => number = Date.now): PeerRateLimiter {
   return new PeerRateLimiter({

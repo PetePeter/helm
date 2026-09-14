@@ -1285,6 +1285,32 @@ describe('LocalhostMcpServer', () => {
     expect(json.result.structuredContent).toEqual({ id: 's2', name: 'Builder', cliType: 'codex', workingDir: 'X:\\coding\\gamepad-cli-hub' });
   });
 
+  it('passes no name through as undefined rather than refusing the spawn', async () => {
+    const service = makeService();
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+    const port = server.getAddress()!.port;
+
+    // The phone's spawn form leaves the name blank; the desktop names the
+    // session after the CLI type instead of rejecting the call.
+    const response = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0',
+      id: 36,
+      method: 'tools/call',
+      params: {
+        name: 'session_create',
+        arguments: { cliType: 'codex', dirPath: 'X:\\coding\\gamepad-cli-hub' },
+      },
+    });
+
+    // Assert on the wire, not the mock: the call must be accepted and answer
+    // with a session — the naming default is proven in cli-type-resolution.
+    const json = await response.json();
+    expect(json.error).toBeUndefined();
+    expect(json.result.structuredContent.id).toBe('s2');
+  });
+
   it('passes an optional dirPath filter into session_list', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });

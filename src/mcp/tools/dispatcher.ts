@@ -415,7 +415,10 @@ export async function callMcpTool(
         return service.spawnCli(
           asString(args.cliType, 'cliType is required'),
           asString(args.dirPath, 'dirPath is required'),
-          asString(args.name, 'name is required'),
+          // Optional: the phone's spawn form leaves it blank, and an unnamed
+          // spawn falls back to the CLI type's display name — the same default
+          // the desktop's own spawn uses.
+          typeof args.name === 'string' ? args.name : undefined,
           {
             ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
             ...(typeof args.runtimeGroupId === 'string' ? { runtimeGroupId: args.runtimeGroupId } : {}),

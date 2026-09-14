@@ -40,7 +40,7 @@ object HelmPairing {
      * so it inherits the rule that nothing leaves the phone before the link is
      * authenticated — there is no second way out.
      */
-    val client = HelmClient(send = ::send)
+    val client = HelmClient(send = ::send, scheduler = CoroutineScheduler(scope))
 
     /** What the pairing screen renders. Idle until the first link comes up. */
     val state: StateFlow<PairingState>

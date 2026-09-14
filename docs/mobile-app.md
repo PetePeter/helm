@@ -73,9 +73,13 @@ would be more machinery than it removes.
   and the manifest carries no `INTERNET` permission, so the app is structurally
   incapable of uploading any.
 - **Snapshot** — recent terminal output for a session, read on request.
-- **Spawn** — start a new session. It can only offer a **kind** of session it can
-  already see, because nothing phone-callable enumerates CLI types; it harvests
-  the distinct ones out of `session_list`.
+- **Spawn** — start a new session. The CLI choices come from `tool_list` (the
+  desktop's full configured catalogue, with each type's display name), fetched
+  when the screen opens. When that fetch fails or comes back empty — an older
+  desktop, a refused call — the form falls back to harvesting the distinct CLI
+  types out of `session_list`, so it can only offer a kind of session already
+  running. The name is optional: a blank name is omitted from the wire and the
+  desktop names the session after the CLI type.
 - **Session sheet** — the per-session actions. Forbidden ones are greyed with
   "not permitted", read from the reserved `__mobile_tools__` meta-method and
   never a hardcoded list. Actions that are *reachable but meaningless* to a

@@ -143,9 +143,10 @@ cannot be probed for free, and a disabled device gets the uniform denial.
 ## Rate limit
 
 One `TokenBucket` per device (the fleet's `PeerRateLimiter`, which is keyed on an
-arbitrary string): 60 calls/minute with a burst of 60. Roomier than the fleet's
-30 because a phone UI is interactive — a sessions list open on screen refreshes
-far more often than a peer AI issues tool calls.
+arbitrary string): 120 calls/minute with a burst of 120. The phone's own session
+poll spends 30 calls/min of this shared bucket (one `session_list` every 2s while
+the app is visible), so the limit must leave room for a user acting on top of
+the poll. Still roomier than the fleet's 30 because a phone UI is interactive.
 
 ## Key modules
 

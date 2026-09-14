@@ -16,6 +16,8 @@ import {
   MOBILE_DENY_MESSAGE,
   isMobileUnreachableTool,
   MOBILE_UNREACHABLE_TOOL_PREFIXES,
+  DEFAULT_MOBILE_RATE_CAPACITY,
+  createDefaultMobileRateLimiter,
 } from '../src/mobile/mobile-gate.js';
 import { HARD_DENY_TOOLS } from '../src/mcp/peer/inbound-call-gate.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
@@ -226,6 +228,29 @@ describe('MobileGate — rate limiting', () => {
     await expect(gate.handle(deviceId, 'session_list', {})).rejects.toThrow('Rate limit exceeded');
     clock += 60_000; // a full minute refills the bucket
     await expect(gate.handle(deviceId, 'session_list', {})).resolves.toBeTruthy();
+  });
+
+  it('sizes the DEFAULT bucket for the 2s session poll plus a user on top', async () => {
+    // Pins the production number, not an injected one: the phone polls
+    // session_list every 2s (30 calls/min of the shared bucket), and the limit
+    // must leave room for the user's actions around that poll.
+    const clock = 0;
+    const store = new MobileDeviceStore(undefined, () => clock);
+    const device = store.add({ machineId: 'm', name: 'Pixel', pskRef: 'r', allow: ['session_list'] });
+    const audit = new MobileAuditLog(() => {}, () => clock);
+    audit.importAll([]);
+    const gate = new MobileGate({
+      deviceStore: store,
+      dispatch: async () => ({}),
+      rateLimiter: createDefaultMobileRateLimiter(() => clock),
+      audit,
+      now: () => clock,
+    });
+
+    for (let i = 0; i < DEFAULT_MOBILE_RATE_CAPACITY; i++) {
+      await expect(gate.handle(device.id, 'session_list', {})).resolves.toBeTruthy();
+    }
+    await expect(gate.handle(device.id, 'session_list', {})).rejects.toThrow('Rate limit exceeded');
   });
 });
 

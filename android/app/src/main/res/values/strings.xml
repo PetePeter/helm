@@ -102,9 +102,10 @@
     <string name="spawn_title">New session</string>
     <string name="spawn_where">Where</string>
     <string name="spawn_which_cli">Which CLI</string>
-    <string name="spawn_name">Name</string>
+    <string name="spawn_name">Name (optional — blank lets Helm name the session)</string>
     <string name="spawn_no_directories">Waiting for the directory list from Helm.</string>
-    <string name="spawn_no_clis">No CLI to copy. Start one on the desktop first — the phone can only spawn a kind of session it can already see.</string>
+    <string name="spawn_no_clis">No CLI list from Helm, and none running to copy. Start one on the desktop first.</string>
+    <string name="spawn_retry">Retry</string>
     <string name="spawn_start">Start session</string>
     <string name="spawn_cancel">Cancel</string>
 

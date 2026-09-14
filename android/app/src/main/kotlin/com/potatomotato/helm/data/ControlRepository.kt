@@ -64,6 +64,26 @@ class ControlRepository {
     private val _directories = MutableStateFlow<List<HelmDirectory>>(emptyList())
     val directories: StateFlow<List<HelmDirectory>> = _directories.asStateFlow()
 
+    /**
+     * Why the directory list is missing, when Helm was asked and could not
+     * answer. Null while an ask is in flight or a list has landed — the eternal
+     * "waiting for the directory list" hint must not outlive a failure the user
+     * could retry.
+     */
+    private val _directoriesError = MutableStateFlow<String?>(null)
+    val directoriesError: StateFlow<String?> = _directoriesError.asStateFlow()
+
+    /** The CLI catalogue from `tool_list`. Empty until asked — or when the call failed, which the spawn form covers with its fallback. */
+    private val _clis = MutableStateFlow<List<HelmCli>>(emptyList())
+    val clis: StateFlow<List<HelmCli>> = _clis.asStateFlow()
+
+    /**
+     * The session a confirmed spawn created, waiting to be opened once the list
+     * shows it. Null when no spawn has landed or the answer named no session.
+     */
+    private val _createdSessionId = MutableStateFlow<String?>(null)
+    val createdSessionId: StateFlow<String?> = _createdSessionId.asStateFlow()
+
     fun snapshotRequested(lines: Int) {
         _snapshot.value = Snapshot.Loading(lines)
     }
@@ -120,10 +140,65 @@ class ControlRepository {
         return true
     }
 
+    /** A new ask supersedes whatever the last one failed with. */
+    fun directoriesRequested() {
+        _directoriesError.value = null
+    }
+
+    /** Record why the directory list is missing. The message is what the user reads. */
+    fun directoriesFailed(message: String) {
+        _directoriesError.value = message
+    }
+
+    /**
+     * Take a `tool_list` result — the desktop's full CLI catalogue. False when
+     * the payload is not a catalogue at all, in which case the previous answer
+     * stands and the spawn form falls back to harvesting `session_list`.
+     */
+    fun clisArrived(result: Any?): Boolean {
+        val array = result as? JSONArray ?: run {
+            WireShape.undecodable<Unit>("a tool_list result", "a JSON array", result)
+            return false
+        }
+        _clis.value = (0 until array.length()).mapNotNull { index ->
+            val entry = array.opt(index) as? JSONObject ?: return@mapNotNull null
+            val cliType = entry.opt("cliType") as? String ?: return@mapNotNull null
+            val paths = entry.opt("supportedDirPaths") as? JSONArray
+            HelmCli(
+                cliType = cliType,
+                name = entry.opt("name") as? String ?: cliType,
+                supportedDirPaths = (0 until (paths?.length() ?: 0)).mapNotNull { paths?.opt(it) as? String },
+            )
+        }
+        return true
+    }
+
+    /** Record the session a confirmed spawn created. A null id means the answer named none. */
+    fun spawnCreated(sessionId: String?) {
+        _createdSessionId.value = sessionId
+    }
+
+    /**
+     * The created id is consumed once — opening the thread must not fire
+     * twice. Compare-and-set: a second spawn landing while the first is
+     * still being waited on must not have its id wiped by the first clear.
+     */
+    fun clearCreatedSession(sessionId: String) {
+        if (_createdSessionId.value == sessionId) _createdSessionId.value = null
+    }
+
     private companion object {
         const val UNREADABLE_TAIL = "Helm answered without a terminal tail"
     }
 }
+
+/**
+ * One CLI Helm can spawn, from the `tool_list` catalogue. [cliType] is the wire
+ * id `session_create` needs; [name] is only what the row shows. [supportedDirPaths]
+ * is carried for parity with the desktop answer even though the form does not
+ * filter on it yet — the phone-width row does not need it today.
+ */
+data class HelmCli(val cliType: String, val name: String, val supportedDirPaths: List<String>)
 
 /**
  * One directory Helm can spawn into. The path IS the identity — two projects can

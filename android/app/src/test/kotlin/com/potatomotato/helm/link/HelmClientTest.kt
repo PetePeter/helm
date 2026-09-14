@@ -4,14 +4,19 @@ import com.potatomotato.helm.data.ActionNotice
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.data.HelmCli
+import com.potatomotato.helm.data.HelmDirectory
 import com.potatomotato.helm.data.Reach
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
+import com.potatomotato.helm.crypto.Cancellable
+import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.notify.FakeNotificationPort
 import com.potatomotato.helm.ui.components.SessionState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,9 +31,11 @@ class HelmClientTest {
     private val sent = mutableListOf<ByteArray>()
     private var linked = true
     private var clock = 1_700_000_000_000L
+    private val scheduler = TestScheduler()
     private val client = HelmClient(
         send = { bytes -> if (linked) sent.add(bytes) else false },
         now = { clock },
+        scheduler = scheduler,
     )
 
     @Test
@@ -51,6 +58,63 @@ class HelmClientTest {
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
         assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+    }
+
+    @Test
+    fun `session refreshes coalesce while a previous refresh is waiting`() {
+        client.refreshSessions()
+        val first = lastCallId()
+        client.refreshSessions()
+        client.refreshSessions()
+
+        assertEquals(1, sent.size)
+
+        client.onInbound(resultFor(first, "[]"))
+
+        assertEquals(2, sent.size)
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+    }
+
+    @Test
+    fun `a queued refresh still runs after the first refresh fails`() {
+        client.refreshSessions()
+        val first = lastCallId()
+        client.refreshSessions()
+
+        client.onInbound(errorFor(first, "desktop busy"))
+
+        assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun `a call deadline settles it and a late answer cannot apply it`() {
+        client.refreshSessions()
+        val id = lastCallId()
+
+        scheduler.runNext()
+        client.onInbound(resultFor(id, """[{"id":"late","name":"late"}]"""))
+
+        assertTrue(client.sessions.sessions.value.isEmpty())
+        assertTrue(scheduler.cancelled > 0)
+    }
+
+    @Test
+    fun `a successful close requests one immediate reconciled session list`() {
+        client.closeSession("s1")
+        client.onInbound(resultFor(lastCallId(), "null"))
+
+        assertEquals(2, sent.size)
+        client.onInbound(resultFor(lastCallId(), "[]"))
+        assertTrue(client.sessions.sessions.value.isEmpty())
+    }
+
+    @Test
+    fun `a successful spawn requests one immediate reconciled session list`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
+
+        assertEquals(2, sent.size)
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
     @Test
@@ -268,7 +332,7 @@ class HelmClientTest {
     }
 
     @Test
-    fun `spawn sends the three arguments session_create needs and reports success`() {
+    fun `spawn sends the arguments session_create needs and carries the created id back`() {
         client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
@@ -276,8 +340,74 @@ class HelmClientTest {
         assertEquals("claudecode", params.getString("cliType"))
         assertEquals("kitchen", params.getString("name"))
 
-        client.onInbound(resultFor(lastCallId(), """{"sessionId":"s9"}"""))
+        // The real wire shape: spawnCli answers {id: ...}, and that id is what
+        // opens the new thread.
+        client.onInbound(resultFor(lastCallId(), """{"id":"s9"}"""))
         assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
+        assertEquals("s9", client.control.createdSessionId.value)
+    }
+
+    @Test
+    fun `a blank name is omitted from the wire so the desktop names the session`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "  ")
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("/work", params.getString("dirPath"))
+        assertEquals("claudecode", params.getString("cliType"))
+        assertFalse(params.has("name"))
+    }
+
+    @Test
+    fun `a spawn answer that names no session does not pretend it did`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+
+        client.onInbound(resultFor(lastCallId(), """"not an object""""))
+
+        // Done is still Done — the session exists — but navigation must not
+        // guess at an id that never arrived.
+        assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
+        assertNull(client.control.createdSessionId.value)
+    }
+
+    @Test
+    fun `the CLI catalogue is asked for as a bare tool_list call`() {
+        client.refreshClis()
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("tool_list", record.getString("method"))
+        assertFalse(record.has("params"))
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"cliType":"claudecode","name":"Claude Code","supportedDirPaths":["x:\\c"]},
+                    {"cliType":"codex"}]""",
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                HelmCli("claudecode", "Claude Code", listOf("x:\\c")),
+                HelmCli("codex", "codex", emptyList()),
+            ),
+            client.control.clis.value,
+        )
+    }
+
+    @Test
+    fun `a directory fetch that fails is state on the screen, not silence`() {
+        client.refreshDirectories()
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", client.control.directoriesError.value)
+
+        // A retry supersedes the failure, and a good answer keeps it cleared.
+        client.refreshDirectories()
+        assertNull(client.control.directoriesError.value)
+        client.onInbound(resultFor(lastCallId(), """[{"dirPath":"/work","name":"Work"}]"""))
+        assertNull(client.control.directoriesError.value)
+        assertEquals(listOf(HelmDirectory("/work", "Work")), client.control.directories.value)
     }
 
     @Test
@@ -331,4 +461,26 @@ class HelmClientTest {
             .toByteArray(Charsets.UTF_8)
 
     private fun lastCallId(): String = JSONObject(String(sent.last(), Charsets.UTF_8)).getString("id")
+
+    /** Timeout control stays deterministic: tests advance it, never wall time. */
+    private class TestScheduler : ChannelScheduler {
+        private val tasks = ArrayDeque<() -> Unit>()
+        var cancelled = 0
+            private set
+
+        override fun schedule(delayMs: Long, action: () -> Unit): Cancellable {
+            var active = true
+            tasks.add {
+                if (active) action()
+            }
+            return Cancellable {
+                if (active) {
+                    active = false
+                    cancelled++
+                }
+            }
+        }
+
+        fun runNext() = tasks.removeFirst().invoke()
+    }
 }

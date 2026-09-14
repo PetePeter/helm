@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.HelmDirectory
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.ui.components.GhostButton
@@ -42,16 +43,16 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * The spawn form — the sheet's one CREATING action.
  *
  * The mockup draws "Spawn session" greyed and therefore never says what it does.
- * It is a form because `session_create` needs three things the sheet does not
- * have: a directory, a CLI type and a name.
+ * It is a form because `session_create` needs things the sheet does not have:
+ * a directory, a CLI type, and (optionally) a name.
  *
- * EVERY FIELD IS FILLED FROM A SURFACE THE PHONE ALREADY HAS. Directories come
- * from `directory_list`; CLI types are harvested from the sessions already
- * visible in `session_list`, because nothing phone-callable enumerates them. The
- * consequence is deliberate and worth stating: a phone can only spawn a KIND of
- * session it can already see running. That is a smaller feature than the desktop
- * has, and an honest one — the alternative was inventing a tool to populate a
- * picker.
+ * EVERY FIELD IS FILLED FROM A SURFACE THE PHONE CAN ASK FOR. Directories come
+ * from `directory_list`; CLI types come from the `tool_list` catalogue, fetched
+ * on entry. When that fetch fails or comes back empty — an older desktop, a
+ * refused call — the form falls back to harvesting the distinct CLI types out
+ * of the sessions already visible in `session_list`, so it can only offer a
+ * KIND of session it can already see running. That fallback is a smaller
+ * feature than the catalogue, and an honest one.
  *
  * There is no confirmation. Creating is cheap and reversible; the confirmation
  * budget is spent on closing.
@@ -59,17 +60,25 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 @Composable
 fun SpawnScreen(
     directories: List<HelmDirectory>,
+    clis: List<HelmCli>,
+    directoriesError: String?,
     sessions: List<HelmSession>,
     linkState: LinkState,
     onSpawn: (dirPath: String, cliType: String, name: String) -> Unit,
+    onRetryDirectories: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Each CLI type once, labelled the way the desktop labels it.
-    val clis = remember(sessions) {
-        sessions.filter { it.cliType.isNotEmpty() }
-            .distinctBy { it.cliType }
-            .map { it.cliType to it.cliTypeName.ifEmpty { it.cliType } }
+    // The catalogue when the desktop answered it; the distinct CLIs already
+    // running when it did not. Each row labelled the way the desktop labels it.
+    val cliChoices = remember(clis, sessions) {
+        if (clis.isNotEmpty()) {
+            clis.map { it.cliType to it.name }
+        } else {
+            sessions.filter { it.cliType.isNotEmpty() }
+                .distinctBy { it.cliType }
+                .map { it.cliType to it.cliTypeName.ifEmpty { it.cliType } }
+        }
     }
 
     var dirPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -92,24 +101,31 @@ fun SpawnScreen(
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
             FieldLabel(stringResource(R.string.spawn_where))
-            if (directories.isEmpty()) {
-                Hint(stringResource(R.string.spawn_no_directories))
-            } else {
-                for (directory in directories) {
-                    Choice(
-                        label = directory.name,
-                        detail = directory.path,
-                        selected = directory.path == dirPath,
-                        onClick = { dirPath = directory.path },
-                    )
+            when {
+                // A dead fetch says so, with a way to try again. The waiting
+                // hint is only for a fetch that has not answered yet.
+                directoriesError != null -> {
+                    Hint(directoriesError)
+                    GhostButton(text = stringResource(R.string.spawn_retry), onClick = onRetryDirectories)
+                }
+                directories.isEmpty() -> Hint(stringResource(R.string.spawn_no_directories))
+                else -> {
+                    for (directory in directories) {
+                        Choice(
+                            label = directory.name,
+                            detail = directory.path,
+                            selected = directory.path == dirPath,
+                            onClick = { dirPath = directory.path },
+                        )
+                    }
                 }
             }
 
             FieldLabel(stringResource(R.string.spawn_which_cli))
-            if (clis.isEmpty()) {
+            if (cliChoices.isEmpty()) {
                 Hint(stringResource(R.string.spawn_no_clis))
             } else {
-                for ((type, label) in clis) {
+                for ((type, label) in cliChoices) {
                     Choice(
                         label = label,
                         detail = null,
@@ -136,10 +152,10 @@ fun SpawnScreen(
 
             PrimaryButton(
                 text = stringResource(R.string.spawn_start),
-                // Disabled until all three are real. Helm would refuse an
-                // incomplete spawn anyway; being refused for something the screen
-                // could see is a worse experience than a button that waits.
-                enabled = chosenDir != null && chosenCli != null && chosenName.isNotEmpty(),
+                // Disabled until the two REQUIRED choices are real. The name is
+                // optional on the wire: a blank one is omitted and the desktop
+                // names the session after the CLI type.
+                enabled = chosenDir != null && chosenCli != null,
                 onClick = { onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName) },
             )
             GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)

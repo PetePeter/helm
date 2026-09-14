@@ -59,6 +59,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val snapshot by client.control.snapshot.collectAsState()
     val notice by client.control.notice.collectAsState()
     val directories by client.control.directories.collectAsState()
+    val directoriesError by client.control.directoriesError.collectAsState()
+    val clis by client.control.clis.collectAsState()
+    val createdSessionId by client.control.createdSessionId.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
 
@@ -100,7 +103,33 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
     }
     LaunchedEffect(where) {
-        if (where == Destination.Spawn && directories.isEmpty()) client.refreshDirectories()
+        if (where == Destination.Spawn) {
+            if (directories.isEmpty()) client.refreshDirectories()
+            if (clis.isEmpty()) client.refreshClis()
+        }
+    }
+
+    // A spawn Helm confirmed names the session it made, and that id is how the
+    // new thread opens. The opening WAITS until the row is actually in the
+    // list: jumping straight there would trip the went-away fallback above (the
+    // next 2s poll has not shown the session yet) and dump the user back on the
+    // list. A session that never appears gives up quietly — the notice bar has
+    // already said the spawn succeeded, and the list is one poll away.
+    LaunchedEffect(createdSessionId) {
+        val id = createdSessionId ?: return@LaunchedEffect
+        var polls = 0
+        // No refreshSessions() here on purpose: PollSessions below is already
+        // polling every 2s while this screen is visible; a second caller would
+        // just double the wire traffic for the same list.
+        while (client.sessions.sessions.value.none { it.id == id } && polls < CREATED_SESSION_POLLS) {
+            delay(POLL_INTERVAL_MS)
+            polls++
+        }
+        client.control.clearCreatedSession(id)
+        if (client.sessions.sessions.value.any { it.id == id }) {
+            openSessionId = id
+            where = Destination.Thread
+        }
     }
 
     val toThread = { where = Destination.Thread }
@@ -118,14 +147,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     BackHandler(onBack = toThread)
                     SpawnScreen(
                         directories = directories,
+                        clis = clis,
+                        directoriesError = directoriesError,
                         sessions = sessions,
                         linkState = linkState,
                         onSpawn = { dirPath, cliType, name ->
+                            // Navigation is decided by the OUTCOME, not by the
+                            // tap: success arrives as createdSessionId above,
+                            // failure as the notice bar's to say — so the form
+                            // keeps its choices instead of leaving on faith.
                             client.spawn(dirPath, cliType, name)
-                            // Back to where the user came from: the open thread
-                            // when there is one, the list when there is not.
-                            where = Destination.Thread
                         },
+                        onRetryDirectories = { client.refreshDirectories() },
                         onBack = toThread,
                     )
                 }
@@ -219,9 +252,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
 /**
  * Keep the list fresh while the user can see it — and ONLY while they can.
  *
- * The desktop's per-device budget (60 calls/min) was sized for a visible screen,
- * not a background loop, so the poll is scoped to STARTED: a phone in a pocket
- * spends nothing, and the first poll after it comes out is immediate.
+ * The desktop's per-device budget (120 calls/min) was sized for a visible
+ * screen, not a background loop, so the poll is scoped to STARTED: a phone in a
+ * pocket spends nothing, and the first poll after it comes out is immediate.
  */
 @Composable
 private fun PollSessions(client: HelmClient) {
@@ -263,6 +296,13 @@ private fun ReportVisibility(client: HelmClient) {
 
 /** Half the per-device budget, leaving room for whatever the user is doing. */
 private const val POLL_INTERVAL_MS = 2_000L
+
+/**
+ * How long a confirmed spawn waits for its session to show in the list before
+ * giving up on opening the thread. The desktop records the session before it
+ * answers, so one poll is normally enough — this is the rope, not the path.
+ */
+private const val CREATED_SESSION_POLLS = 10
 
 /** The middle chip on screen 7 — enough to read, cheap enough to not think about. */
 private const val DEFAULT_SNAPSHOT_LINES = 200
