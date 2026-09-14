@@ -66,9 +66,8 @@ export const RESERVED_MOBILE_TOOLS_METHOD = '__mobile_tools__';
  * So the permitted surface means "this will do something", not merely "this will
  * not be refused": they are filtered out of the discovery answer AND denied on
  * dispatch, exactly like a hard-deny. This is NOT a change to the ownership
- * boundary — `requireCallerSession` is untouched, and reaching another session's
- * artifacts from a phone would need a session-scoped surface that does not exist
- * and whose threat model nobody has written.
+ * boundary — `requireCallerSession` is untouched. Cross-session artifact access
+ * belongs to the explicit `session_artifact_*` family, which is allow-list gated.
  */
 export const MOBILE_UNREACHABLE_TOOL_PREFIXES: readonly string[] = [
   'artifact_',

@@ -549,11 +549,6 @@ export class HelmControlService extends EventEmitter {
     return { id, deleted: this.requireArtifactManager().delete(id) };
   }
 
-  deleteAllArtifacts(sessionId: string): { sessionId: string; cleared: true } {
-    this.requireArtifactManager().deleteAllForSession(sessionId);
-    return { sessionId, cleared: true };
-  }
-
   /** Summaries of this session's artifacts (no content) so the LLM can see its own. */
   listArtifacts(sessionId: string): Array<{ id: string; title: string; kind: ArtifactKind; versionCount: number; createdAt: number; updatedAt: number }> {
     return this.requireArtifactManager().getForSession(sessionId).map(a => ({

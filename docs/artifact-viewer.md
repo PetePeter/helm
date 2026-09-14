@@ -76,10 +76,15 @@ surfaces the same `Artifact not found` error (no existence leak).
 | `artifact_create` | `title, kind('markdown'\|'html'), content` **or** `filePath, title?, contentType?` | New artifact (returns id); auto-reveals. With `filePath`, the caller owns the source file; Helm reads it but never deletes or modifies it. |
 | `artifact_update` | `id, content` **or** `id, filePath, contentType?` | Append a version; brings forward. With `filePath`, the caller owns the source file; Helm reads it but never deletes or modifies it. |
 | `artifact_show` | `id` | Bring forward in the viewer (no change) |
-| `artifact_delete` | `id` | Delete one, including its Helm-owned attachment copies; caller-owned source files are never deleted |
-| `artifact_delete_all` | — | Clear the caller's session, including Helm-owned attachment copies; caller-owned source files are never deleted |
 | `artifact_list` | — | The caller's artifacts (id/title/kind/versionCount/timestamps) |
 | `artifact_get` | `id, version?, asFile?, attachmentId?` | Read own content inline, or receive a Helm temp path for artifact content/attachment. Caller must delete returned `tempPath` after reading; Helm may reap stale temp files on startup. |
+
+The old `artifact_delete`/`artifact_delete_all` MCP tools were removed: they
+resolved the subject from the caller's auth context, which a paired phone can
+never satisfy. Deletion is now `session_artifact_delete` (`sessionId`,
+`artifactId`) — see [mobile-app.md](mobile-app.md) — and there is deliberately
+no bulk variant; the renderer's artifact panel keeps its own delete/deleteAll
+IPC, which is unaffected.
 
 ### MCP file ownership
 

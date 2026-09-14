@@ -719,14 +719,6 @@ export async function callMcpTool(
         const sessionId = requireCallerSession(authContext, 'artifact_show');
         return service.showArtifact(sessionId, asString(args.id, 'id is required'));
       }
-      case 'artifact_delete': {
-        const sessionId = requireCallerSession(authContext, 'artifact_delete');
-        return service.deleteArtifact(sessionId, asString(args.id, 'id is required'));
-      }
-      case 'artifact_delete_all': {
-        const sessionId = requireCallerSession(authContext, 'artifact_delete_all');
-        return service.deleteAllArtifacts(sessionId);
-      }
       case 'artifact_list': {
         const sessionId = requireCallerSession(authContext, 'artifact_list');
         return service.listArtifacts(sessionId);
@@ -784,6 +776,10 @@ export async function callMcpTool(
           asString(args.artifactId, 'artifactId is required'),
           asOptionalArtifactVersion(args.version),
         );
+      }
+      case 'session_artifact_delete': {
+        const target = requireTargetSession(service, args);
+        return service.deleteArtifact(target, asString(args.artifactId, 'artifactId is required'));
       }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');

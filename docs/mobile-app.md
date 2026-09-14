@@ -105,6 +105,7 @@ got a **session-addressed** family that takes the session as an argument:
 | `session_artifact_create` | mint a new artifact — **markdown only in v1** |
 | `session_artifact_update` | append a version to an artifact that session owns |
 | `session_artifact_download` | `{ filename, mimeType, base64 }` for saving as a file |
+| `session_artifact_delete` | delete one artifact — the only delete; the desktop-only `artifact_delete`/`artifact_delete_all` were removed, and there is **no bulk variant** (artifact-viewer.md) |
 
 Two deliberate edges: **create is markdown-only** because HTML authored from a
 phone keyboard is a sanitization question (invariant 9) nobody has answered, and

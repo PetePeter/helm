@@ -4,9 +4,15 @@
  * The existing artifact_* family resolves its subject from the caller's own
  * auth context, so from a phone (the mobile:<deviceId> proxy, which owns
  * nothing) it can only ever answer with the proxy's empty data — which is why
- * that family sits in MOBILE_UNREACHABLE_TOOL_PREFIXES. These five take the
+ * that family sits in MOBILE_UNREACHABLE_TOOL_PREFIXES. These six take the
  * session as an argument instead, so a phone can aim at a real session and the
  * family it came from stays unreachable.
+ *
+ * Deletion lives ONLY on the session-addressed surface: the caller-resolved
+ * `artifact_delete`/`artifact_delete_all` pair was removed, and there is
+ * deliberately no bulk `session_artifact_delete_all` — deletion is per
+ * artifact, so an aimed call can never wipe a session it was merely told a
+ * name of.
  *
  * A fake service is enough here: what the dispatcher owns is argument
  * validation and the session-existence gate, and a verify-per-call would not
@@ -31,6 +37,7 @@ function makeDeps() {
     createArtifact: vi.fn(() => ({ id: 'a2' })),
     updateArtifact: vi.fn(() => ({ id: 'a1', versions: [{ version: 1 }, { version: 2 }] })),
     downloadArtifact: vi.fn(() => ({ filename: 'report.md', mimeType: 'text/markdown', base64: 'I2hp' })),
+    deleteArtifact: vi.fn(() => ({ id: 'a1', deleted: true })),
   };
   return {
     service: service as any,
@@ -43,21 +50,31 @@ function makeDeps() {
 describe('session_artifact_* placement against the unreachable filter', () => {
   it('keeps every self-addressed artifact tool unreachable from a phone', () => {
     const artifactPrefixed = MCP_TOOLS.filter(t => t.name.startsWith('artifact_')).map(t => t.name);
-    expect(artifactPrefixed.length).toBeGreaterThanOrEqual(7);
+    expect(artifactPrefixed.length).toBeGreaterThanOrEqual(5);
     for (const name of artifactPrefixed) expect(isMobileUnreachableTool(name)).toBe(true);
   });
 
-  it('exposes the five session-addressed tools and lets them through the filter', () => {
+  it('exposes the six session-addressed tools and lets them through the filter', () => {
     const names = [
       'session_artifact_list',
       'session_artifact_get',
       'session_artifact_create',
       'session_artifact_update',
       'session_artifact_download',
+      'session_artifact_delete',
     ];
     for (const name of names) {
       expect(MCP_TOOLS.some(t => t.name === name), `${name} is defined`).toBe(true);
       expect(isMobileUnreachableTool(name), `${name} is reachable`).toBe(false);
+    }
+  });
+
+  it('retires the caller-resolved deletes and offers no bulk delete anywhere', () => {
+    // artifact_delete/artifact_delete_all trusted the caller's own auth context
+    // (unreachable from a phone), and a session-addressed bulk delete would let
+    // one aimed call clear a whole session. Neither name may return.
+    for (const gone of ['artifact_delete', 'artifact_delete_all', 'session_artifact_delete_all']) {
+      expect(MCP_TOOLS.some(t => t.name === gone), `${gone} is gone`).toBe(false);
     }
   });
 });
@@ -82,7 +99,11 @@ describe('session_artifact_* session resolution', () => {
     await expect(
       callMcpTool(deps, 'session_artifact_download', { sessionId: 'ghost', artifactId: 'a1' }, {}),
     ).rejects.toThrow('Session not found: ghost');
+    await expect(
+      callMcpTool(deps, 'session_artifact_delete', { sessionId: 'ghost', artifactId: 'a1' }, {}),
+    ).rejects.toThrow('Session not found: ghost');
     expect(deps.serviceMocks.createArtifact).not.toHaveBeenCalled();
+    expect(deps.serviceMocks.deleteArtifact).not.toHaveBeenCalled();
   });
 
   it('requires a sessionId argument', async () => {
@@ -152,5 +173,11 @@ describe('session_artifact_* dispatch', () => {
     const deps = makeDeps();
     await callMcpTool(deps, 'session_artifact_download', { sessionId: SESSION, artifactId: 'a1' }, {});
     expect(deps.serviceMocks.downloadArtifact).toHaveBeenCalledWith(SESSION, 'a1', undefined);
+  });
+
+  it('deletes by artifact id, ownership still enforced inside the service', async () => {
+    const deps = makeDeps();
+    await callMcpTool(deps, 'session_artifact_delete', { sessionId: SESSION, artifactId: 'a1' }, {});
+    expect(deps.serviceMocks.deleteArtifact).toHaveBeenCalledWith(SESSION, 'a1');
   });
 });

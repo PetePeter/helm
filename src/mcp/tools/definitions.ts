@@ -1353,29 +1353,6 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'artifact_delete',
-    title: 'Delete Artifact',
-    description: 'Delete a single artifact by id from this session\'s in-app Artifact panel. Helm also deletes the artifact\'s managed attachment copies; it never deletes the caller-owned source files supplied through filePath.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', description: 'The artifact id to delete.' },
-      },
-      required: ['id'],
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'artifact_delete_all',
-    title: 'Delete All Artifacts',
-    description: 'Clear ALL artifacts for THIS session (resolved from your auth context). Helm also deletes their managed attachment copies; it never deletes caller-owned source files supplied through filePath. Use to tidy up the panel when your reports are no longer needed.',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
     name: 'artifact_list',
     title: 'List Artifacts',
     description:
@@ -1407,7 +1384,10 @@ export const MCP_TOOLS: McpTool[] = [
   // The artifact_* family above resolves its subject from the caller's auth
   // context, which for a paired phone is the mobile:<deviceId> proxy — an
   // identity that owns nothing — so that family is unreachable from a phone.
-  // These five take the session as an argument instead; see docs/mobile-gate.md.
+  // These six take the session as an argument instead; see docs/mobile-gate.md.
+  // Deletion is session-addressed ONLY (the old artifact_delete/_all are gone):
+  // the owner names the target session, and there is no bulk variant — a single
+  // aimed call must never be able to wipe a whole session's artifacts.
   {
     name: 'session_artifact_list',
     title: 'List Session Artifacts',
@@ -1482,6 +1462,21 @@ export const MCP_TOOLS: McpTool[] = [
         sessionId: { type: 'string', description: '[TARGET] The session that owns the artifact.' },
         artifactId: { type: 'string', description: 'The artifact id to download.' },
         version: { type: 'number', description: 'Optional 1-based version number; omit for the latest.' },
+      },
+      required: ['sessionId', 'artifactId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_delete',
+    title: 'Delete Session Artifact',
+    description:
+      'Delete a single artifact by id from a NAMED session (sessionId argument). Helm also deletes the artifact\'s managed attachment copies; it never deletes caller-owned source files supplied through filePath. The artifact must belong to that session — a cross-session id answers not-found. There is no bulk variant: delete artifacts one at a time.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact id to delete.' },
       },
       required: ['sessionId', 'artifactId'],
       additionalProperties: false,
