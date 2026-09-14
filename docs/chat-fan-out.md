@@ -16,7 +16,7 @@ the concept is lifted out into a bridge interface and a broker.
 
 ```mermaid
 graph TB
-    CLI[AI CLI] -->|telegram_chat MCP tool| SVC[HelmTelegramService]
+    CLI[AI CLI] -->|chat_send MCP tool| SVC[HelmTelegramService]
     SVC --> BROKER[ChatBroker<br/>unconditional fan-out]
     BROKER --> TG[TelegramRelayService<br/>provider: telegram]
     BROKER --> MOB[MobileChatBridge<br/>provider: mobile]
@@ -41,9 +41,11 @@ becomes a `sent: false` row rather than propagating.
 
 The registry is **unbounded**. Adding a surface is one `register()` call and one
 interface implementation — nothing in the broker, the service or the MCP tools
-changes. The MCP tool names (`telegram_chat`, `telegram_send_voice`) are
-deliberately unchanged: a CLI keeps calling what it always called, and the extra
-surfaces appear behind them.
+changes. The MCP tool names (`chat_send` / `telegram_chat`,
+`telegram_send_voice`) are deliberately unchanged in behavior: `chat_send` is
+the transport-neutral name and `telegram_chat` is its long-standing alias, so a
+CLI keeps calling what it always called and the extra surfaces appear behind
+them.
 
 ## chatBindings — where a session lives on each surface
 

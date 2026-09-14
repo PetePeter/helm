@@ -14,7 +14,7 @@ describe('getSessionInfo', () => {
   describe('response shape', () => {
     it('has identity, workflow, artifact, and durable memory guidance', () => {
       const info = getSessionInfo(mgr, authContext);
-      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_session_id', 'your_working_dir']);
+      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_session_id', 'your_working_dir']);
       expect(info.durable_memory.ownership).toContain('authenticated Helm session');
       expect(info.knowledge_model.memory).toContain('project');
     });

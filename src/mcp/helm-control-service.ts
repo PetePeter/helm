@@ -163,6 +163,7 @@ export interface SessionInfoResponse {
   your_session_id: string;
   your_working_dir: string;
   helm_workflow: string;
+  chat: string;
   artifact_viewer: string;
   durable_memory: {
     ownership: string;

@@ -29,6 +29,10 @@ The tool returns a `SessionInfoResponse` object with these fields:
 - **`mcp_url`** (string) — HTTP endpoint for MCP requests: `http://127.0.0.1:PORT/mcp`. Constructed from `HELM_MCP_PORT` config (default 47373).
 - **`mcp_token`** (string) — Bearer auth token for MCP requests. From Helm settings → MCP → Auth Token. Pass in request header: `Authorization: Bearer {mcp_token}`.
 
+### Chat Guidance
+
+- **`chat`** (string) — Points agents at `chat_send` as the transport-neutral way to reach the user's bound chat surfaces (a paired phone over BLE; Telegram if configured), with `telegram_chat` documented as its identical-behavior alias.
+
 ### AIAGENT States
 
 Valid states for `session_set_aiagent_state`: `planning`, `implementing`, `completed`, `idle`. The tool definition is authoritative — no need to enumerate them in the response.

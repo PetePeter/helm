@@ -209,7 +209,8 @@ hub side stay in sync in **both** directions:
 
 | Tool | Purpose |
 |---|---|
-| `telegram_chat` | The AI opens/continues a conversation channel with the user for its session |
+| `chat_send` | The transport-neutral name for opening/continuing a conversation channel with the user for its session — every bound surface, not just Telegram |
+| `telegram_chat` | Alias of `chat_send` with identical behavior; kept so existing clients keep working |
 | `telegram_status` | Whether the bridge is running / available |
 | `telegram_channel_close` | Close an open channel |
 
