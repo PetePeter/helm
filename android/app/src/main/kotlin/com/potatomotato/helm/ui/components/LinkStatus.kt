@@ -125,47 +125,53 @@ fun HelmAppBar(
                 )
             }
         }
-        Text(
-            text = title,
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.titleLarge,
-            maxLines = 1,
-            // A long session name truncates; wrapping would push the link badge
-            // off the bar, which is the one thing that must always be visible.
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (contextLabel != null) {
-            Text(
-                text = contextLabel.uppercase(),
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                modifier = Modifier.padding(start = HelmSpacing.Xs),
-            )
-        }
+        // Title + context share ONE weighted block so the context eyebrow hugs
+        // the title while the badge and overflow stay pinned to the trailing
+        // edge. A title that also carried a weight fought the block for the
+        // leftover space and pulled the whole trailing cluster short of the
+        // edge — measured ~35% of the bar on a real tablet.
         Row(
             modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
-            LinkBadge(linkState)
-            if (onOverflow != null) {
-                // Same centred touch-target box as the back affordance: sizing
-                // the glyph Text directly left blank space after it, so the
-                // badge and the glyph hung short of the trailing edge.
-                Box(
-                    modifier = Modifier
-                        .size(HelmSize.TouchTarget)
-                        .clickable(onClick = onOverflow),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(overflowGlyphRes),
-                        color = HelmColors.Dim,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
+            Text(
+                text = title,
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.titleLarge,
+                maxLines = 1,
+                // A long session name truncates; wrapping would push the link
+                // badge off the bar, which is the one thing that must always
+                // be visible.
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (contextLabel != null) {
+                Text(
+                    text = contextLabel.uppercase(),
+                    color = HelmColors.Faint,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = HelmSpacing.Xs),
+                )
+            }
+        }
+        LinkBadge(linkState)
+        if (onOverflow != null) {
+            // Same centred touch-target box as the back affordance: sizing
+            // the glyph Text directly left blank space after it, so the
+            // badge and the glyph hung short of the trailing edge.
+            Box(
+                modifier = Modifier
+                    .size(HelmSize.TouchTarget)
+                    .clickable(onClick = onOverflow),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(overflowGlyphRes),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.titleLarge,
+                )
             }
         }
     }
