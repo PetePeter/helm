@@ -1426,7 +1426,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_get',
     title: 'Get Session Artifact',
     description:
-      'Read one of a NAMED session\'s artifacts inline (sessionId argument). Returns the artifact with its versions; pass version to select an earlier one. A cross-session artifact id answers not-found — there is no existence leak across sessions.',
+      'Read one of a NAMED session\'s artifacts inline (sessionId argument). Returns metadata plus exactly ONE version\'s content — the requested version, or the latest when version is omitted; not the whole version history, which would not fit a wire frame. A cross-session artifact id answers not-found — there is no existence leak across sessions. Content past the wire-frame budget is refused — fetch it on the desktop instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1475,7 +1475,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_download',
     title: 'Download Session Artifact',
     description:
-      'Save one of a NAMED session\'s artifacts as a file (sessionId argument). Returns { filename, mimeType, base64 } for the latest version, or the given version. Content past the ~256KB decoded cap is refused — fetch it on the desktop, where the artifact viewer renders it in full.',
+      'Save one of a NAMED session\'s artifacts as a file (sessionId argument). Returns { filename, mimeType, base64 } for the latest version, or the given version. Content past the wire-frame budget (~94KB decoded, the largest body that fits an encoded frame) is refused — fetch it on the desktop, where the artifact viewer renders it in full.',
     inputSchema: {
       type: 'object',
       properties: {

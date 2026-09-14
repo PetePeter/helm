@@ -101,17 +101,20 @@ got a **session-addressed** family that takes the session as an argument:
 | Tool | Does |
 |------|------|
 | `session_artifact_list` | id/title/kind/versionCount/timestamps for one session |
-| `session_artifact_get` | inline markdown or HTML source, any version |
+| `session_artifact_get` | metadata plus ONE version's content — the latest, or the version asked for |
 | `session_artifact_create` | mint a new artifact — **markdown only in v1** |
 | `session_artifact_update` | append a version to an artifact that session owns |
 | `session_artifact_download` | `{ filename, mimeType, base64 }` for saving as a file |
 
 Two deliberate edges: **create is markdown-only** because HTML authored from a
 phone keyboard is a sanitization question (invariant 9) nobody has answered, and
-**downloads cap at ~256KB decoded** because a bigger report would have to chunk
-through a BLE framing cap a fraction of its size — it refuses and points at the
-desktop viewer instead. A cross-session artifact id answers not-found like a
-genuinely missing one, so nothing leaks about which artifacts exist elsewhere.
+**reads and downloads are budgeted to the wire frame** (~94KB decoded — the
+largest body that still fits a 128KiB frame once the download's base64 inflation
+and the JSON/AEAD wrapper are paid). A decoded-only cap once let a boundary-size
+body encode past the ceiling and tear the link instead of refusing, so the check
+lives on what actually ships. Over budget, both refuse and point at the desktop
+viewer. A cross-session artifact id answers not-found like a genuinely missing
+one, so nothing leaks about which artifacts exist elsewhere.
 
 Artifacts also **push**. `MobileArtifactNotifier` (sibling of the state-alert
 notifier) listens to the ArtifactManager and emits a chat record with the

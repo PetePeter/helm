@@ -3,8 +3,10 @@
  *
  * Mirrors the DraftManager pattern: an injected `persist` sink is invoked on
  * every mutation with the full export, and an `artifact:changed` event carries
- * the affected sessionId. The clock is injectable so timestamps are
- * deterministic in tests.
+ * the affected sessionId plus the ids that changed — the ids let a listener tell
+ * WHICH artifact moved, which a session-level event alone cannot (a rename or a
+ * clear changes one artifact, not all of them). The clock is injectable so
+ * timestamps are deterministic in tests.
  *
  * Artifacts are keyed by sessionId. Each `create()` always mints a distinct
  * artifact (its own uuid) — duplicate titles are allowed. Subsequent versions
@@ -59,7 +61,7 @@ export class ArtifactManager extends EventEmitter {
     };
     if (!this.artifacts.has(sessionId)) this.artifacts.set(sessionId, []);
     this.artifacts.get(sessionId)!.push(artifact);
-    this.markChanged(sessionId);
+    this.markChanged(sessionId, [artifact.id]);
     this.emitReveal(sessionId, artifact.id);
     logger.info(`[ArtifactManager] Created artifact "${title}" for session ${sessionId}`);
     return artifact;
@@ -74,7 +76,7 @@ export class ArtifactManager extends EventEmitter {
       const artifact = artifacts.find(a => a.id === artifactId);
       if (artifact) {
         this.appendVersion(artifact, content);
-        this.markChanged(sessionId);
+        this.markChanged(sessionId, [artifact.id]);
         this.emitReveal(sessionId, artifact.id);
         return artifact;
       }
@@ -123,7 +125,7 @@ export class ArtifactManager extends EventEmitter {
       if (idx >= 0) {
         artifacts.splice(idx, 1);
         if (artifacts.length === 0) this.artifacts.delete(sessionId);
-        this.markChanged(sessionId);
+        this.markChanged(sessionId, [artifactId]);
         this.onDelete?.(artifactId);
         logger.info(`[ArtifactManager] Deleted artifact ${artifactId}`);
         return true;
@@ -141,7 +143,7 @@ export class ArtifactManager extends EventEmitter {
       if (artifact) {
         artifact.title = newTitle;
         artifact.updatedAt = this.now();
-        this.markChanged(sessionId);
+        this.markChanged(sessionId, [artifact.id]);
         return true;
       }
     }
@@ -154,7 +156,7 @@ export class ArtifactManager extends EventEmitter {
     if (artifacts) {
       this.artifacts.delete(sessionId);
       for (const artifact of artifacts) this.onDelete?.(artifact.id);
-      this.markChanged(sessionId);
+      this.markChanged(sessionId, artifacts.map(a => a.id));
       logger.info(`[ArtifactManager] Deleted all artifacts for session ${sessionId}`);
     }
   }
@@ -196,8 +198,8 @@ export class ArtifactManager extends EventEmitter {
     this.emit('artifact:reveal', sessionId, artifactId);
   }
 
-  private markChanged(sessionId: string): void {
+  private markChanged(sessionId: string, artifactIds: string[]): void {
     this.persist?.(this.exportAll());
-    this.emit('artifact:changed', sessionId);
+    this.emit('artifact:changed', sessionId, artifactIds);
   }
 }

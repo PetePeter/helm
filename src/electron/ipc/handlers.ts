@@ -747,7 +747,8 @@ export function registerIPCHandlers(
   // An artifact an agent just wrote reaches the pocketed phone too, over the
   // same link and with the same fire-and-forget rules as a state alert.
   const mobileArtifactNotifier = new MobileArtifactNotifier(mobileChatBridge, artifactManager);
-  const observeArtifactChange = (sessionId: string) => mobileArtifactNotifier.changed(sessionId);
+  const observeArtifactChange = (sessionId: string, artifactIds: string[]) =>
+    mobileArtifactNotifier.changed(sessionId, artifactIds);
   const observeArtifactReveal = (sessionId: string, artifactId: string) =>
     mobileArtifactNotifier.revealed(sessionId, artifactId);
   artifactManager.on('artifact:changed', observeArtifactChange);

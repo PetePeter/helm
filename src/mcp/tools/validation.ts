@@ -156,6 +156,21 @@ export function asGraphDepth(value: unknown): number {
   return value;
 }
 
+/**
+ * An optional artifact VERSION ARGUMENT. A bare `typeof === 'number'` check is
+ * not enough: a fractional or non-finite version (1.5, Infinity, NaN) would
+ * pass it and then silently match no version, reading as "the artifact has no
+ * content" rather than "you asked a nonsense question". Versions are 1-based
+ * integers, full stop.
+ */
+export function asOptionalArtifactVersion(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+    throw new Error('version must be a positive integer');
+  }
+  return value;
+}
+
 export function asMemoryExportFormat(value: unknown): MemoryExportFormat {
   if (value === 'markdown' || value === 'json') return value;
   throw new Error('format must be one of markdown or json');

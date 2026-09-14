@@ -6,6 +6,10 @@
  * asserted is the actual record bytes a Kotlin side will parse — including the
  * additive `kind: 'artifact'` and its artifactId/title payload, which must ride
  * in a FIXED key position because key order is part of this wire format.
+ *
+ * The manager is real too, wired to the notifier the way production is, because
+ * the load-bearing behaviour is the changed→reveal pairing across BOTH events,
+ * not either one alone.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -34,6 +38,14 @@ let bridge: MobileChatBridge;
 let notifier: MobileArtifactNotifier;
 let artifacts: ArtifactManager;
 
+/** Wire the manager to the notifier exactly as handlers.ts does. */
+function wire(): void {
+  artifacts.on('artifact:changed', (sessionId: string, artifactIds: string[]) =>
+    notifier.changed(sessionId, artifactIds));
+  artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) =>
+    notifier.revealed(sessionId, artifactId));
+}
+
 beforeEach(() => {
   links = new FakeLinks();
   const deviceStore = new MobileDeviceStore(() => {});
@@ -53,8 +65,7 @@ beforeEach(() => {
 
 describe('MobileArtifactNotifier', () => {
   it('pushes one artifact record when a change is followed by its reveal', () => {
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     const artifact = artifacts.create('s1', 'Q3 report', 'markdown', '# q3');
 
@@ -73,8 +84,7 @@ describe('MobileArtifactNotifier', () => {
   });
 
   it('emits the additive keys BEFORE kind, keeping kind last in key order', () => {
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     artifacts.create('s1', 'Q3 report', 'markdown', '# q3');
 
@@ -84,8 +94,7 @@ describe('MobileArtifactNotifier', () => {
   });
 
   it('collapses a change into its reveal instead of buzzing twice', () => {
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     const artifact = artifacts.create('s1', 'report', 'markdown', 'v1');
     artifacts.update(artifact.id, 'v2');
@@ -95,7 +104,7 @@ describe('MobileArtifactNotifier', () => {
 
   it('stays quiet when an artifact is only brought forward, not changed', () => {
     // artifact:reveal also fires when someone just opens an artifact they have
-    // already read. Re-opening is not news; only a change marks the session.
+    // already read. Re-opening is not news; only a change marks the artifact.
     const artifact = artifacts.create('s1', 'report', 'markdown', 'v1');
     links.sent.length = 0;
 
@@ -104,9 +113,42 @@ describe('MobileArtifactNotifier', () => {
     expect(links.sent).toHaveLength(0);
   });
 
+  it('never spends one artifact\'s change on a different artifact\'s reveal', () => {
+    // The regression: a session-level dirty mark let rename A (changed, no
+    // reveal) leak onto a later plain re-open of B, buzzing the wrong artifact.
+    wire();
+
+    const a = artifacts.create('s1', 'A', 'markdown', 'a');
+    artifacts.create('s1', 'B', 'markdown', 'b');
+    links.sent.length = 0;
+
+    artifacts.rename(a.id, 'A — renamed'); // changed, but no reveal follows
+    notifier.revealed('s1', 'not-even-a-real-id'); // an unrelated open
+
+    expect(links.sent).toHaveLength(0);
+
+    artifacts.reveal(a.id); // only A's own reveal spends A's mark
+
+    expect(links.sent).toHaveLength(1);
+    expect(links.records()[0]).toMatchObject({ artifactId: a.id, title: 'A — renamed' });
+  });
+
+  it('buzzes only the changed artifact when a session owns several', () => {
+    wire();
+
+    artifacts.create('s1', 'A', 'markdown', 'a');
+    const b = artifacts.create('s1', 'B', 'markdown', 'b');
+    links.sent.length = 0;
+
+    artifacts.update(b.id, 'b2');
+    artifacts.reveal(b.id);
+
+    expect(links.sent).toHaveLength(1);
+    expect(links.records()[0]).toMatchObject({ artifactId: b.id, title: 'B' });
+  });
+
   it('names the artifact from the manager, not from the event', () => {
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     const artifact = artifacts.create('s1', 'renamed later', 'markdown', 'v1');
     artifacts.rename(artifact.id, 'final title');
@@ -118,8 +160,7 @@ describe('MobileArtifactNotifier', () => {
   });
 
   it('drops the record when the artifact is gone by reveal time', () => {
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     artifacts.create('s1', 'report', 'markdown', 'v1');
     artifacts.deleteAllForSession('s1');
@@ -132,8 +173,7 @@ describe('MobileArtifactNotifier', () => {
 
   it('sends nothing when no phone is linked, and does not queue it', () => {
     links.online.delete('phone-machine');
-    artifacts.on('artifact:changed', (sessionId: string) => notifier.changed(sessionId));
-    artifacts.on('artifact:reveal', (sessionId: string, artifactId: string) => notifier.revealed(sessionId, artifactId));
+    wire();
 
     artifacts.create('s1', 'report', 'markdown', 'v1');
 
@@ -148,7 +188,16 @@ describe('MobileArtifactNotifier', () => {
       artifacts,
     );
 
-    expect(() => exploding.changed('s1')).not.toThrow();
+    expect(() => exploding.changed('s1', ['a1'])).not.toThrow();
     expect(() => exploding.revealed('s1', 'a1')).not.toThrow();
+  });
+
+  it('ignores a change event that names no artifact', () => {
+    // Nothing moved, so no reveal can spend anything — but recording the call
+    // would leave a permanent dirty entry if ids were ignored.
+    notifier.changed('s1', []);
+
+    expect(() => notifier.revealed('s1', 'a1')).not.toThrow();
+    expect(links.sent).toHaveLength(0);
   });
 });

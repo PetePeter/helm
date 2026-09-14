@@ -53,7 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { getTempDir } from '../utils/app-paths.js';
 import { sanitizeFilename } from '../session/artifact-temp-file.js';
 import { createArtifactFromBytes, updateArtifactFromBytes } from '../session/artifact-file-import.js';
-import { buildArtifactDownload, type ArtifactDownload } from '../session/artifact-download.js';
+import { buildArtifactDownload, buildArtifactRead, type ArtifactDownload, type ArtifactRead } from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
 import { HelmMemoryService, type MemoryExportResult } from './services/helm-memory-service.js';
@@ -603,6 +603,17 @@ export class HelmControlService extends EventEmitter {
   downloadArtifact(sessionId: string, id: string, version?: number): ArtifactDownload {
     const artifact = this.requireOwnedArtifact(sessionId, id);
     return buildArtifactDownload(artifact, version);
+  }
+
+  /**
+   * The inline-read envelope for a session-addressed artifact call: metadata
+   * plus ONE version's content — never the whole versions array, which grows
+   * without bound and rides the same wire frame budget as a download. Same
+   * ownership rule: an id belonging to another session answers not-found.
+   */
+  readArtifact(sessionId: string, id: string, version?: number): ArtifactRead {
+    const artifact = this.requireOwnedArtifact(sessionId, id);
+    return buildArtifactRead(artifact, version);
   }
 
   // ---------------------------------------------------------------------------

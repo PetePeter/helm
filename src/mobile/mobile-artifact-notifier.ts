@@ -11,15 +11,16 @@
  * It listens to BOTH ArtifactManager events because neither is sufficient
  * alone, and together they say exactly one thing:
  *
- *   'artifact:changed' carries no artifact id — but 'artifact:reveal' always
- *   follows it for a create or an update, carrying the id. So 'changed' marks
- *   the session dirty and 'reveal' spends the mark. That pairing is what keeps
- *   a bare reveal quiet: `artifact_show` and the desktop viewer both reveal
- *   without changing anything, and re-opening something you have already read
- *   is not news.
+ *   'artifact:reveal' always follows a create or an update, but it ALSO fires
+ *   when nothing changed — `artifact_show` and the desktop viewer reveal to
+ *   bring an already-read artifact forward, and re-opening it is not news. So
+ *   'changed' — which names the ids that moved — marks those ARTIFACTS dirty,
+ *   and a reveal spends the mark only for its own artifact. A session-level
+ *   mark would leak across artifacts: rename A, then open B, and B would be
+ *   buzzed about a change that happened to A.
  *
- * Deletions ('changed' with no reveal) are deliberately not buzz-worthy — the
- * artifact they would name no longer exists.
+ * Deletions mark artifacts that can never be revealed again; the marks simply
+ * die with the set. Nothing buzzes about something that no longer exists.
  *
  * The manager is read for the artifact's CURRENT title rather than trusting the
  * event, so a rename between the change and the push names the artifact what it
@@ -38,22 +39,28 @@ export interface MobileArtifactSink {
 export type MobileArtifactLookup = Pick<ArtifactManager, 'get'>;
 
 export class MobileArtifactNotifier {
-  /** Sessions with an unreported change; consumed by the reveal that explains it. */
-  private readonly dirty = new Set<string>();
+  /** Per session: the artifacts with an unreported change, spent by their own reveal. */
+  private readonly dirty = new Map<string, Set<string>>();
 
   constructor(
     private readonly sink: MobileArtifactSink,
     private readonly artifacts: MobileArtifactLookup,
   ) {}
 
-  /** `artifact:changed` — something about this session's artifacts mutated. */
-  changed(sessionId: string): void {
-    this.dirty.add(sessionId);
+  /** `artifact:changed` — these of this session's artifacts mutated. */
+  changed(sessionId: string, artifactIds: string[]): void {
+    if (artifactIds.length === 0) return;
+    const marks = this.dirty.get(sessionId) ?? new Set<string>();
+    for (const artifactId of artifactIds) marks.add(artifactId);
+    this.dirty.set(sessionId, marks);
   }
 
-  /** `artifact:reveal` — pushes only when a change is waiting to be explained. */
+  /**
+   * `artifact:reveal` — pushes only when THIS artifact has a change waiting to
+   * be explained. Another artifact's change never rides on this reveal.
+   */
   revealed(sessionId: string, artifactId: string): void {
-    if (!this.dirty.delete(sessionId)) return;
+    if (!this.dirty.get(sessionId)?.delete(artifactId)) return;
     const title = this.artifacts.get(artifactId)?.title;
     if (!title) return;
     this.push(sessionId, artifactId, title);

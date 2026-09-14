@@ -8,6 +8,7 @@ import {
   asBoolean,
   asContextBindingTargetType,
   asMdArtifactKind,
+  asOptionalArtifactVersion,
   asFiniteNumber,
   asDreamCandidateCount,
   asDreamPercentile,
@@ -753,10 +754,10 @@ export async function callMcpTool(
       }
       case 'session_artifact_get': {
         const target = requireTargetSession(service, args);
-        return service.getArtifact(
+        return service.readArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
-          typeof args.version === 'number' ? args.version : undefined,
+          asOptionalArtifactVersion(args.version),
         );
       }
       case 'session_artifact_create': {
@@ -781,7 +782,7 @@ export async function callMcpTool(
         return service.downloadArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
-          typeof args.version === 'number' ? args.version : undefined,
+          asOptionalArtifactVersion(args.version),
         );
       }
       case 'memory_list': {

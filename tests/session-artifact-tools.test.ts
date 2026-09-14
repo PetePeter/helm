@@ -24,7 +24,10 @@ function makeDeps() {
   const service = {
     getSession: vi.fn((ref: string) => (ref === SESSION ? { id: SESSION, name: 'work' } : null)),
     listArtifacts: vi.fn(() => []),
-    getArtifact: vi.fn(() => ({ id: 'a1', versions: [{ version: 1, content: '# hi' }] })),
+    readArtifact: vi.fn(() => ({
+      id: 'a1', title: 'hi', kind: 'markdown', versionCount: 1,
+      createdAt: 1, updatedAt: 1, requestedVersion: 1, requestedVersionContent: '# hi',
+    })),
     createArtifact: vi.fn(() => ({ id: 'a2' })),
     updateArtifact: vi.fn(() => ({ id: 'a1', versions: [{ version: 1 }, { version: 2 }] })),
     downloadArtifact: vi.fn(() => ({ filename: 'report.md', mimeType: 'text/markdown', base64: 'I2hp' })),
@@ -99,8 +102,24 @@ describe('session_artifact_* dispatch', () => {
     const deps = makeDeps();
     await callMcpTool(deps, 'session_artifact_get', { sessionId: SESSION, artifactId: 'a1' }, {});
     await callMcpTool(deps, 'session_artifact_get', { sessionId: SESSION, artifactId: 'a1', version: 2 }, {});
-    expect(deps.serviceMocks.getArtifact).toHaveBeenNthCalledWith(1, SESSION, 'a1', undefined);
-    expect(deps.serviceMocks.getArtifact).toHaveBeenNthCalledWith(2, SESSION, 'a1', 2);
+    expect(deps.serviceMocks.readArtifact).toHaveBeenNthCalledWith(1, SESSION, 'a1', undefined);
+    expect(deps.serviceMocks.readArtifact).toHaveBeenNthCalledWith(2, SESSION, 'a1', 2);
+  });
+
+  it('rejects a nonsense version instead of answering it with silence', async () => {
+    // A fractional or non-finite version would pass a bare typeof check and
+    // then match no version — reading as "the artifact has no content".
+    const deps = makeDeps();
+    for (const version of [1.5, 0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+      await expect(
+        callMcpTool(deps, 'session_artifact_get', { sessionId: SESSION, artifactId: 'a1', version }, {}),
+      ).rejects.toThrow('version must be a positive integer');
+      await expect(
+        callMcpTool(deps, 'session_artifact_download', { sessionId: SESSION, artifactId: 'a1', version }, {}),
+      ).rejects.toThrow('version must be a positive integer');
+    }
+    expect(deps.serviceMocks.readArtifact).not.toHaveBeenCalled();
+    expect(deps.serviceMocks.downloadArtifact).not.toHaveBeenCalled();
   });
 
   it('creates with kind md, the only kind a session-addressed call may mint', async () => {
