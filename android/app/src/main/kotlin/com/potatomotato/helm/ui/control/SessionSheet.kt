@@ -3,7 +3,6 @@ package com.potatomotato.helm.ui.control
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +33,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
@@ -261,8 +264,8 @@ private fun ConfirmClose(sessionName: String, onConfirm: () -> Unit, onCancel: (
 @Composable
 private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCancel: () -> Unit) {
     var name by remember { mutableStateOf(currentName) }
-    val trimmed = name.trim()
-    val canRename = trimmed.isNotEmpty() && trimmed != currentName && trimmed.length <= MAX_NAME_LENGTH
+    val verdict = RenameRules.judge(currentName, name)
+    val canRename = verdict == RenameRules.Verdict.Ok
 
     // The field takes focus as the dialog opens: the whole point of the dialog
     // is to type, and on a tablet with a keyboard attached that means now.
@@ -286,12 +289,17 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
                 .clip(RoundedCornerShape(HelmRadius.Md))
                 .background(HelmColors.Surface)
                 .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                // A bare pointer input, not an empty clickable: it keeps scrim
+                // taps from falling through to Cancel without adding the
+                // unlabeled no-op node an empty clickable puts in the tree.
+                .pointerInput(Unit) {}
                 .padding(HelmSpacing.Lg),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
+            val fieldLabel = stringResource(R.string.control_rename_title)
+            val tooLongLabel = stringResource(R.string.control_rename_too_long)
             Text(
-                text = stringResource(R.string.control_rename_title),
+                text = fieldLabel,
                 color = HelmColors.Txt,
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -312,8 +320,19 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     // Done on the keyboard is the confirm, not a dismissal —
                     // the same verb the dialog's own button carries.
-                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(trimmed) }),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(name.trim()) }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        // The field is titled above, but BasicTextField carries
+                        // no label of its own — without this, TalkBack reaches
+                        // an anonymous edit box. The rule state rides along so
+                        // an over-long name is announced as the reason the
+                        // confirm is dark, not discovered by tapping it.
+                        .semantics {
+                            contentDescription = fieldLabel
+                            if (verdict == RenameRules.Verdict.TooLong) error(tooLongLabel)
+                        },
                 )
             }
             Text(
@@ -323,7 +342,7 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(HelmRadius.Md))
-                    .clickable(enabled = canRename, onClick = { onRename(trimmed) })
+                    .clickable(enabled = canRename, onClick = { onRename(name.trim()) })
                     .padding(vertical = HelmSpacing.Md),
             )
             GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
@@ -369,9 +388,6 @@ private val SessionAction.glyphRes: Int
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
     }
-
-/** The desktop refuses a longer name; asking for one would be a certain denial. */
-private const val MAX_NAME_LENGTH = 50
 
 /** Dark enough to push the thread behind it back, never opaque. */
 private const val SCRIM_ALPHA = 0.72f

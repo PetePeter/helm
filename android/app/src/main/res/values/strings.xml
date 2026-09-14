@@ -88,6 +88,7 @@
     <string name="control_not_permitted">not permitted</string>
     <string name="control_asking">checking…</string>
     <string name="control_rename_title">Rename session</string>
+    <string name="control_rename_too_long">Keep the name to 50 characters.</string>
     <string name="control_rename_confirm">Rename</string>
     <string name="control_rename_cancel">Cancel</string>
     <string name="control_confirm_close">Close “%1$s”? Its CLI stops.</string>
