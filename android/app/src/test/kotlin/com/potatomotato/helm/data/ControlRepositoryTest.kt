@@ -43,6 +43,44 @@ class ControlRepositoryTest {
     }
 
     @Test
+    fun `the requested line count starts at the smallest chip`() {
+        assertEquals(50, control.requestedLines.value)
+    }
+
+    @Test
+    fun `a request persists its line count for the chip row and the refresh`() {
+        control.snapshotRequested(50)
+
+        assertEquals(50, control.requestedLines.value)
+    }
+
+    @Test
+    fun `a failed answer preserves the last requested line count`() {
+        control.snapshotRequested(500)
+        control.snapshotFailed("Helm did not answer before the request timed out")
+
+        // The chip row and refresh read this count, and the screen the user is
+        // looking at is the failure — the ask they made must stay on it.
+        assertEquals(500, control.requestedLines.value)
+    }
+
+    @Test
+    fun `an arrival preserves the last requested line count`() {
+        control.snapshotRequested(50)
+        control.snapshotArrived(tail("$ npm test"), requested = 50)
+
+        assertEquals(50, control.requestedLines.value)
+    }
+
+    @Test
+    fun `a later request replaces the persisted line count`() {
+        control.snapshotRequested(50)
+        control.snapshotRequested(500)
+
+        assertEquals(500, control.requestedLines.value)
+    }
+
+    @Test
     fun `a refusal and a dead link are different notices, because they mean opposite things`() {
         control.noticed(SessionAction.Close, ActionOutcome.Refused)
         assertEquals(ActionNotice(SessionAction.Close, ActionOutcome.Refused), control.notice.value)

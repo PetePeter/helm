@@ -46,10 +46,15 @@ import com.potatomotato.helm.ui.theme.HelmType
  *
  * The text arrives already cleaned: the phone asks for the `stripped` tail and
  * has no ANSI parser of its own to drift from the desktop's.
+ *
+ * [requestedLines] is the repository's persisted count — the last ask, not the
+ * current [Snapshot]. Deriving the chip and the refresh from the snapshot state
+ * instead would blank both the moment a pull failed or a new one started.
  */
 @Composable
 fun SnapshotScreen(
     snapshot: Snapshot,
+    requestedLines: Int,
     linkState: LinkState,
     onPull: (Int) -> Unit,
     onBack: () -> Unit,
@@ -60,10 +65,10 @@ fun SnapshotScreen(
             title = stringResource(R.string.snapshot_title),
             linkState = linkState,
             onBack = onBack,
-            // Refresh re-pulls the count already on screen, so the chip row stays
+            // Refresh re-pulls the count the chip row shows, so that row stays
             // the record of what was asked for. An explicit ↻, not ⋮: this corner
             // action IS the action, there is no menu behind it.
-            onOverflow = { (snapshot as? Snapshot.Lines)?.let { onPull(it.requested) } },
+            onOverflow = { onPull(requestedLines) },
             overflowGlyphRes = R.string.snapshot_refresh_glyph,
         )
 
@@ -80,8 +85,7 @@ fun SnapshotScreen(
         }
 
         LineCountBar(
-            selected = (snapshot as? Snapshot.Lines)?.requested
-                ?: (snapshot as? Snapshot.Loading)?.lines,
+            selected = requestedLines,
             onPick = onPull,
         )
     }

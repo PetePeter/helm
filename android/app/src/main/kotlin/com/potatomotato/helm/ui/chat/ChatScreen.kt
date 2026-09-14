@@ -52,6 +52,7 @@ import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
+import com.potatomotato.helm.ui.theme.HelmType
 
 /**
  * Mockup screen 2 — one session's conversation, and the reply box.
@@ -283,8 +284,11 @@ private fun Composer(
         ) {
             Text(
                 text = stringResource(R.string.chat_send_glyph),
-                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Faint,
-                style = MaterialTheme.typography.bodyLarge,
+                // Dim rather than Faint while disabled: Faint is the placeholder's
+                // colour, and a send arrow in it disappears against the Surface2
+                // circle — which reads as a layout hole, not a dead button.
+                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Dim,
+                style = HelmType.SendGlyph,
                 modifier = Modifier.semantics { contentDescription = sendLabel },
             )
         }

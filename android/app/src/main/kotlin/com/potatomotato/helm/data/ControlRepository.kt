@@ -61,6 +61,17 @@ class ControlRepository {
     private val _notice = MutableStateFlow<ActionNotice?>(null)
     val notice: StateFlow<ActionNotice?> = _notice.asStateFlow()
 
+    /**
+     * The last line count a terminal peek was asked for — what the screen 7 chip
+     * row highlights and what its refresh re-pulls. It lives HERE rather than in
+     * the [Snapshot] state on purpose: a Loading, a Failed, navigation away and
+     * back, and a different session must all leave the answer standing. Only a
+     * new request replaces it. Starts at the smallest chip, which is also what
+     * the sheet pulls before the user has chosen anything.
+     */
+    private val _requestedLines = MutableStateFlow(DEFAULT_REQUESTED_LINES)
+    val requestedLines: StateFlow<Int> = _requestedLines.asStateFlow()
+
     /** Directories Helm knows about, for the spawn form. Empty until asked. */
     private val _directories = MutableStateFlow<List<HelmDirectory>>(emptyList())
     val directories: StateFlow<List<HelmDirectory>> = _directories.asStateFlow()
@@ -87,6 +98,7 @@ class ControlRepository {
 
     fun snapshotRequested(lines: Int) {
         _snapshot.value = Snapshot.Loading(lines)
+        _requestedLines.value = lines
     }
 
     /**
@@ -189,6 +201,9 @@ class ControlRepository {
     }
 
     private companion object {
+        /** The smallest chip on screen 7 — enough to read, cheap enough to not think about. */
+        const val DEFAULT_REQUESTED_LINES = 50
+
         const val UNREADABLE_TAIL = "Helm answered without a terminal tail"
     }
 }

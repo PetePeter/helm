@@ -57,6 +57,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val threads by client.chats.threads.collectAsState()
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
+    val requestedLines by client.control.requestedLines.collectAsState()
     val notice by client.control.notice.collectAsState()
     val directories by client.control.directories.collectAsState()
     val directoriesError by client.control.directoriesError.collectAsState()
@@ -201,6 +202,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     BackHandler(onBack = toThread)
                     SnapshotScreen(
                         snapshot = snapshot,
+                        requestedLines = requestedLines,
                         linkState = linkState,
                         onPull = { lines -> client.readTerminal(open.id, lines) },
                         onBack = toThread,
@@ -242,9 +244,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             SessionAction.Rename -> Destination.Thread
                         }
                         // A snapshot is pulled as soon as it is asked for, at the
-                        // middle count: arriving on an empty terminal screen and
-                        // having to choose again is a step nobody wants.
-                        if (action == SessionAction.Snapshot) client.readTerminal(open.id, DEFAULT_SNAPSHOT_LINES)
+                        // count the chip row already shows (the smallest one before
+                        // the first choice): arriving on an empty terminal screen
+                        // and having to choose again is a step nobody wants.
+                        if (action == SessionAction.Snapshot) client.readTerminal(open.id, requestedLines)
                     },
                     // Back to the thread rather than staying on the sheet: the
                     // notice bar says how it ended and the app bar shows the new
@@ -313,6 +316,3 @@ private const val POLL_INTERVAL_MS = 2_000L
  * answers, so one poll is normally enough — this is the rope, not the path.
  */
 private const val CREATED_SESSION_POLLS = 10
-
-/** The middle chip on screen 7 — enough to read, cheap enough to not think about. */
-private const val DEFAULT_SNAPSHOT_LINES = 200

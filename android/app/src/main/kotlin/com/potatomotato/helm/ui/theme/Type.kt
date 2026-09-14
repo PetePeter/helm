@@ -102,4 +102,15 @@ object HelmType {
         fontWeight = FontWeight.SemiBold,
         fontSize = 22.sp,
     )
+
+    /**
+     * The composer's send arrow. It IS the button, not a caption: at body size
+     * ↑ drowns inside its circle, so it takes a larger, bolder style of its own
+     * — the same treatment [BackGlyph] gets on the app bar.
+     */
+    val SendGlyph = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+    )
 }
