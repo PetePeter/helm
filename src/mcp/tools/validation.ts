@@ -127,6 +127,19 @@ export function asArtifactKind(value: unknown): ArtifactKind {
   throw new Error('kind must be one of markdown or html');
 }
 
+/**
+ * The kind the SESSION-ADDRESSED artifact surface may mint: 'md', mapped to the
+ * internal 'markdown'. v1 is markdown-only on purpose — the phone's create flow
+ * is a text box, and HTML from an untrusted phone keyboard is a sanitization
+ * question nobody has answered yet (invariant 9). Anything else, including the
+ * 'markdown'/'html' spelling the caller-context family uses, is refused loudly
+ * rather than coerced, so a client cannot think it asked for something else.
+ */
+export function asMdArtifactKind(value: unknown): ArtifactKind {
+  if (value === 'md') return 'markdown';
+  throw new Error("kind must be 'md' — session-addressed artifact creation is markdown-only");
+}
+
 export function asStringValue(value: unknown, errorMessage: string): string {
   if (typeof value !== 'string') throw new Error(errorMessage);
   return value;

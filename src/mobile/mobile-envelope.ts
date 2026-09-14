@@ -28,6 +28,14 @@
 
 import type { SessionAlertKind } from '../session/session-alert.js';
 
+/**
+ * Everything a chat record's `kind` can say. The three session-alert classes
+ * are mirrored in Kotlin's `AlertKind`; 'artifact' was added when artifacts
+ * learned to push. A phone that predates a new value must degrade to an
+ * ordinary notification, never drop the record.
+ */
+export type MobileChatKind = SessionAlertKind | 'artifact';
+
 /** Bumped only for a breaking change to these records. */
 export const MOBILE_ENVELOPE_VERSION = 1;
 
@@ -75,15 +83,24 @@ export interface MobileChatRecord {
    *
    * Absent (the default, and every committed vector) means an agent said this
    * and it belongs in the phone's chat thread. Present means Helm is reporting
-   * an event — a state change, a flash — and the phone posts a notification and
-   * puts NOTHING in the thread: a reported event rendered as an agent bubble
-   * would fabricate a conversation the desktop never had.
+   * an event — a state change, a flash, an artifact changing — and the phone
+   * posts a notification and puts NOTHING in the thread: a reported event
+   * rendered as an agent bubble would fabricate a conversation the desktop
+   * never had.
    *
    * Additive and optional, so no vector was regenerated — the same precedent as
    * `SessionSummary.activityLevel`. It is emitted LAST, after the other optional
    * keys, because key order is part of this format.
    */
-  kind?: SessionAlertKind;
+  kind?: MobileChatKind;
+  /**
+   * Identifies the artifact a `kind: 'artifact'` record is about, with its
+   * title. The phone keys its notification row on the artifact id, so several
+   * notices from one session REPLACE rather than pile up. Omitted for every
+   * other kind; emitted before `kind` for the key-order rule above.
+   */
+  artifactId?: string;
+  title?: string;
 }
 
 export type MobileRecord =
@@ -99,7 +116,9 @@ export interface ChatRecordInput {
   at: number;
   filePath?: string;
   voice?: boolean;
-  kind?: SessionAlertKind;
+  kind?: MobileChatKind;
+  artifactId?: string;
+  title?: string;
 }
 
 /**
@@ -132,6 +151,8 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   };
   if (input.filePath !== undefined) record.filePath = input.filePath;
   if (input.voice) record.voice = true;
+  if (input.artifactId !== undefined) record.artifactId = input.artifactId;
+  if (input.title !== undefined) record.title = input.title;
   if (input.kind !== undefined) record.kind = input.kind;
   return encode(record);
 }

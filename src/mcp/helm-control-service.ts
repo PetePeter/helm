@@ -53,6 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { getTempDir } from '../utils/app-paths.js';
 import { sanitizeFilename } from '../session/artifact-temp-file.js';
 import { createArtifactFromBytes, updateArtifactFromBytes } from '../session/artifact-file-import.js';
+import { buildArtifactDownload, type ArtifactDownload } from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
 import { HelmMemoryService, type MemoryExportResult } from './services/helm-memory-service.js';
@@ -591,6 +592,17 @@ export class HelmControlService extends EventEmitter {
     const match = artifact.versions.find(v => v.version === version);
     if (!match) throw new Error(`Artifact ${id} has no version ${version}`);
     return { ...artifact, requestedVersionContent: match.content };
+  }
+
+  /**
+   * The file-download envelope for a session-addressed artifact call (a paired
+   * phone saving a report). Same ownership rule as every other artifact read:
+   * an id belonging to another session answers not-found. The size cap lives in
+   * buildArtifactDownload, which throws caller-facing errors.
+   */
+  downloadArtifact(sessionId: string, id: string, version?: number): ArtifactDownload {
+    const artifact = this.requireOwnedArtifact(sessionId, id);
+    return buildArtifactDownload(artifact, version);
   }
 
   // ---------------------------------------------------------------------------

@@ -86,6 +86,7 @@ import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
+import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
 import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
 import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
 
@@ -742,6 +743,15 @@ export function registerIPCHandlers(
   const forgetForAlerts = (event: { sessionId: string }) => mobileAlertNotifier.forget(event.sessionId);
   sessionManager.on('session:updated', observeForAlerts);
   sessionManager.on('session:removed', forgetForAlerts);
+
+  // An artifact an agent just wrote reaches the pocketed phone too, over the
+  // same link and with the same fire-and-forget rules as a state alert.
+  const mobileArtifactNotifier = new MobileArtifactNotifier(mobileChatBridge, artifactManager);
+  const observeArtifactChange = (sessionId: string) => mobileArtifactNotifier.changed(sessionId);
+  const observeArtifactReveal = (sessionId: string, artifactId: string) =>
+    mobileArtifactNotifier.revealed(sessionId, artifactId);
+  artifactManager.on('artifact:changed', observeArtifactChange);
+  artifactManager.on('artifact:reveal', observeArtifactReveal);
 
   // Apply the persisted config now (starts the stack iff enabled).
   void fleetController.start()

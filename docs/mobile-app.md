@@ -91,6 +91,38 @@ siblings) and deliberately has no copy in this repo — one source of truth,
 nothing to drift. Where the mockup and a plan's prose disagree about an
 interaction, the mockup wins.
 
+## Artifacts — reading, writing, downloading
+
+The desktop's `artifact_*` tools are unreachable from a phone: they address the
+caller's own session, and the phone's identity is a proxy that owns nothing (see
+[mobile-gate.md](mobile-gate.md)). Rather than loosen that boundary, artifacts
+got a **session-addressed** family that takes the session as an argument:
+
+| Tool | Does |
+|------|------|
+| `session_artifact_list` | id/title/kind/versionCount/timestamps for one session |
+| `session_artifact_get` | inline markdown or HTML source, any version |
+| `session_artifact_create` | mint a new artifact — **markdown only in v1** |
+| `session_artifact_update` | append a version to an artifact that session owns |
+| `session_artifact_download` | `{ filename, mimeType, base64 }` for saving as a file |
+
+Two deliberate edges: **create is markdown-only** because HTML authored from a
+phone keyboard is a sanitization question (invariant 9) nobody has answered, and
+**downloads cap at ~256KB decoded** because a bigger report would have to chunk
+through a BLE framing cap a fraction of its size — it refuses and points at the
+desktop viewer instead. A cross-session artifact id answers not-found like a
+genuinely missing one, so nothing leaks about which artifacts exist elsewhere.
+
+Artifacts also **push**. `MobileArtifactNotifier` (sibling of the state-alert
+notifier) listens to the ArtifactManager and emits a chat record with the
+additive `kind: 'artifact'` plus `artifactId`/`title`, so a report an agent just
+wrote buzzes the pocketed phone over the same link, with the same fire-and-forget
+rules and no retry — a notice is only true while it happens. The phone keys its
+row on the artifact id, so revisions replace rather than pile up. Re-opening an
+artifact you have already read does not buzz; only a change does. The new keys
+and the `'artifact'` kind are additive and omitted when absent, so the committed
+envelope vectors still match byte for byte.
+
 ## Why it is built this way
 
 **Why BLE, and not LAN or a cloud relay.** Battery over range, and it works

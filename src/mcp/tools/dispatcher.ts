@@ -7,6 +7,7 @@ import {
   asArtifactKind,
   asBoolean,
   asContextBindingTargetType,
+  asMdArtifactKind,
   asFiniteNumber,
   asDreamCandidateCount,
   asDreamPercentile,
@@ -41,6 +42,19 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
     );
   }
   return authContext.sessionId;
+}
+
+/**
+ * Resolve the TARGET session for the session-addressed artifact tools. Unlike
+ * the artifact_* family — which trusts the caller's own authContext because the
+ * subject is always "mine" — these take the session as an argument, so the
+ * argument must name a live session. Unknown collapses to the same
+ * `Session not found` shape session_get answers with.
+ */
+function requireTargetSession(service: HelmControlService, args: Record<string, unknown>): string {
+  const ref = asString(args.sessionId, 'sessionId is required');
+  if (!service.getSession(ref)) throw new Error(`Session not found: ${ref}`);
+  return ref;
 }
 
 /**
@@ -727,6 +741,47 @@ export async function callMcpTool(
           asString(args.id, 'id is required'),
           typeof args.version === 'number' ? args.version : undefined,
           { asFile, ...(attachmentId ? { attachmentId } : {}) },
+        );
+      }
+      // Session-ADDRESSED artifact tools: the subject arrives as an argument, so
+      // a phone (or any external client) can aim at a session other than its
+      // own proxy identity. Ownership of the artifact WITHIN the named session
+      // is still enforced by the service (cross-session ids answer not-found).
+      case 'session_artifact_list': {
+        const target = requireTargetSession(service, args);
+        return service.listArtifacts(target);
+      }
+      case 'session_artifact_get': {
+        const target = requireTargetSession(service, args);
+        return service.getArtifact(
+          target,
+          asString(args.artifactId, 'artifactId is required'),
+          typeof args.version === 'number' ? args.version : undefined,
+        );
+      }
+      case 'session_artifact_create': {
+        const target = requireTargetSession(service, args);
+        return service.createArtifact(
+          target,
+          asString(args.title, 'title is required'),
+          asMdArtifactKind(args.kind),
+          asString(args.content, 'content is required'),
+        );
+      }
+      case 'session_artifact_update': {
+        const target = requireTargetSession(service, args);
+        return service.updateArtifact(
+          target,
+          asString(args.artifactId, 'artifactId is required'),
+          asString(args.content, 'content is required'),
+        );
+      }
+      case 'session_artifact_download': {
+        const target = requireTargetSession(service, args);
+        return service.downloadArtifact(
+          target,
+          asString(args.artifactId, 'artifactId is required'),
+          typeof args.version === 'number' ? args.version : undefined,
         );
       }
       case 'memory_list': {

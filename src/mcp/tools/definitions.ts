@@ -1403,6 +1403,90 @@ export const MCP_TOOLS: McpTool[] = [
       additionalProperties: false,
     },
   },
+  // --- session-addressed artifacts -------------------------------------------------
+  // The artifact_* family above resolves its subject from the caller's auth
+  // context, which for a paired phone is the mobile:<deviceId> proxy — an
+  // identity that owns nothing — so that family is unreachable from a phone.
+  // These five take the session as an argument instead; see docs/mobile-gate.md.
+  {
+    name: 'session_artifact_list',
+    title: 'List Session Artifacts',
+    description:
+      'List the artifacts owned by the NAMED session (sessionId argument, not your own auth context — this is the session-addressed surface a paired phone uses). Returns id, title, kind, versionCount, and timestamps for each — call session_artifact_get to read one.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session whose artifacts to list.' },
+      },
+      required: ['sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_get',
+    title: 'Get Session Artifact',
+    description:
+      'Read one of a NAMED session\'s artifacts inline (sessionId argument). Returns the artifact with its versions; pass version to select an earlier one. A cross-session artifact id answers not-found — there is no existence leak across sessions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that owns the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact id to read.' },
+        version: { type: 'number', description: 'Optional 1-based version number; omit for the latest.' },
+      },
+      required: ['sessionId', 'artifactId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_create',
+    title: 'Create Session Artifact',
+    description:
+      'Create a NEW markdown artifact for a NAMED session (sessionId argument) and reveal it in the desktop viewer. kind is restricted to md in v1. Returns the new artifact including its id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session the artifact will belong to.' },
+        title: { type: 'string', description: 'Display title for the artifact.' },
+        kind: { type: 'string', enum: ['md'], description: "Only 'md' (markdown) can be created from a session-addressed call in v1." },
+        content: { type: 'string', description: 'The markdown source.' },
+      },
+      required: ['sessionId', 'title', 'kind', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_update',
+    title: 'Update Session Artifact',
+    description:
+      'Append a NEW version to an artifact owned by a NAMED session (sessionId argument). The artifact must belong to that session — a cross-session id answers not-found. Prior versions are retained. Returns the updated artifact.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact id to revise.' },
+        content: { type: 'string', description: 'The new full content body (becomes the latest version).' },
+      },
+      required: ['sessionId', 'artifactId', 'content'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_download',
+    title: 'Download Session Artifact',
+    description:
+      'Save one of a NAMED session\'s artifacts as a file (sessionId argument). Returns { filename, mimeType, base64 } for the latest version, or the given version. Content past the ~256KB decoded cap is refused — fetch it on the desktop, where the artifact viewer renders it in full.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that owns the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact id to download.' },
+        version: { type: 'number', description: 'Optional 1-based version number; omit for the latest.' },
+      },
+      required: ['sessionId', 'artifactId'],
+      additionalProperties: false,
+    },
+  },
   {
     name: 'memory_dream',
     title: 'Dream Memories',

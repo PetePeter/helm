@@ -80,9 +80,17 @@ The rule this encodes: **the permitted surface means "this will do something", n
 handed a row that looks live and silently does nothing.
 
 This is not a change to the ownership boundary. `requireCallerSession` is
-untouched; reaching another session's artifacts from a phone would need a
-session-scoped artifact surface that does not exist, and whose threat model is its
-own decision.
+untouched.
+
+The escape hatch, when a family needs to become reachable, is **address it by
+argument, not by loosening the filter**: the `session_artifact_*` tools were
+added alongside `artifact_*` and pass the filter by name construction because
+their subject is a `sessionId` argument — a phone aims them at a real session
+instead of addressing its own empty proxy data. The prefix list itself did not
+move, so the silent-empty-success trap stays closed for everything that still
+takes no session argument. Artifact ownership *within* the named session is
+still enforced (a cross-session artifact id answers not-found, no existence
+leak), and the gate's allow-list still applies per device as for any tool.
 
 ## Proxy identity
 

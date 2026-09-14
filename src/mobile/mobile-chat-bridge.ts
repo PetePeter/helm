@@ -151,6 +151,33 @@ export class MobileChatBridge implements ChatBridge {
     return machines.map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);
   }
 
+  /**
+   * Push an ARTIFACT notice — one of the session's artifacts was created or
+   * revised. The same alert shape as `sendAlert`, carrying `kind: 'artifact'`
+   * plus the artifact id and title so the phone can key its row on the artifact
+   * rather than the session. Fire-and-forget like every other push: a notice is
+   * only true while it happens.
+   */
+  sendArtifact(sessionId: string, artifactId: string, title: string): boolean {
+    const session = this.deps.sessions.getSession(sessionId);
+    if (!session) return false;
+
+    const machines = this.linkedMachines();
+    if (machines.length === 0) return false;
+
+    const payload = encodeChat({
+      sessionId: session.id,
+      sessionName: session.name,
+      text: title,
+      at: this.now(),
+      artifactId,
+      title,
+      kind: 'artifact',
+    });
+
+    return machines.map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);
+  }
+
   /** Enabled, registered devices this hub currently holds a link to. */
   private linkedMachines(): string[] {
     return this.deps.deviceStore
