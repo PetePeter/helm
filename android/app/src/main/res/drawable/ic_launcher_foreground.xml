@@ -1,28 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  A SHIP'S HELM — the wheel you steer with. The app is named for it and the
-  whole product is the metaphor: you steer sessions. The previous mark was a
-  letter H, a placeholder that was never the real mark.
+  THE HELM BOAT — the same paper sailboat with a terminal prompt in the jib
+  that build/icon.png uses on desktop. The wheel below is gone: the user looked
+  at the tablet and asked for the mark the app is actually known by. This is a
+  redraw of that PNG as vectors, not an approximation of it.
 
-  GEOMETRY, and why each number is what it is. The canvas is 108 and the
-  adaptive-icon safe zone is the middle 66 (x/y 21..87, so radius 33 about the
-  centre at 54,54). Everything outside that can be cut, and WHICH part gets cut
-  depends on the launcher's mask — circle, squircle, rounded square. So:
+  SOURCE GEOMETRY. build/icon.png is 512 and its mark spans x 95..413, y
+  168..418. Mapping it onto this canvas: scale 0.18, mark centre (254,293)
+  placed at (54,54) — the 108 canvas centre. Every coordinate below is that
+  transform applied to a point measured off the PNG, so the two stay comparable.
 
-  - Handles reach radius 27 and are stroked 6 wide with round caps, which adds
-    3 more: extent 84 against a limit of 87. The handles are the part most at
-    risk of clipping, so they stop three units short deliberately rather than
-    being pushed to the edge to look bigger.
-  - The rim sits at radius 18 stroked 7 wide (outer edge 21.5), so the spokes
-    project a clear 5+ units past it. That outward silhouette is the whole
-    difference between reading as a HELM and reading as a gear or a plain
-    circle — without it the mark is just a wheel with a hole.
-  - Strokes are 6-7 units on a 108 canvas, which is ~3dp once a launcher draws
-    this at 48dp. Hairlines look crisp in a vector viewer and turn to mush on
-    a panel; this is sized for the panel.
+  SAFE ZONE. The adaptive safe area is the circle of radius 33 about (54,54),
+  not the square 21..87 — a wide mark like this boat is limited by the circle,
+  not the box. The extreme points are the hull's top corners (29.5 from centre)
+  and the wave's right end (30.7); with the widest stroke half-width (1.6)
+  added, nothing exceeds 32.3 against a limit of 33. The desktop PNG's wave ran
+  flush with the hull's right tip; that end is pulled in ~3 units (x 410 -> 394
+  in source space) because out there it would cross the circle and get clipped
+  by round masks.
 
-  The mark spans 60 of the 66 safe units, so it fills the zone rather than
-  floating in it — which is what was actually wrong with the H, not clipping.
+  STROKE WEIGHTS. The PNG's mint outline is 11px/512, which maps to 2.0 here —
+  under 1dp at a 48dp launcher, where it turns to mush. Borders are drawn at
+  2.6 and the prompt at 2.4: a deliberate ~20-50% thickening for the panel, the
+  same tradeoff the old wheel made (6-7 unit strokes "sized for the panel").
+  The wave is 3.0 against a measured 2.5 for the same reason.
+
+  COLOURS. Sampled from the PNG: boat fill #F5FBF7, mint outline #E2F4E6,
+  prompt/wave green #4FD08B, background #101614. These are NOT the app tokens —
+  helm_accent is lime and would make a different mark; the icon's palette comes
+  from the desktop artwork. The background layer stays @color/helm_black
+  (true black): #101614 vs #000000 is indistinguishable on a launcher tile and
+  the app is true black everywhere else.
 
   Vector only. minSdk is 26, so the adaptive icon is the ONLY icon that has to
   exist and nothing binary belongs in the tree.
@@ -33,36 +41,49 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Spokes, drawn first so the rim and hub sit on top of the crossing. -->
+    <!-- Mainsail: apex, hull top-left, mast base. -->
     <path
-        android:strokeColor="@color/helm_accent"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:pathData="M27,54 L81,54" />
-    <path
-        android:strokeColor="@color/helm_accent"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:pathData="M54,27 L54,81" />
-    <path
-        android:strokeColor="@color/helm_accent"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:pathData="M34.9,34.9 L73.1,73.1" />
-    <path
-        android:strokeColor="@color/helm_accent"
-        android:strokeWidth="6"
-        android:strokeLineCap="round"
-        android:pathData="M73.1,34.9 L34.9,73.1" />
+        android:fillColor="#F5FBF7"
+        android:strokeColor="#E2F4E6"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:pathData="M51.5,30.5 L24.9,59 L51.5,59 Z" />
 
-    <!-- The rim. -->
+    <!-- Jib: same apex, out to the tip, then the bottom edge that leaves the
+         dark slit between sail and hull before meeting the mast base. -->
     <path
-        android:strokeColor="@color/helm_accent"
-        android:strokeWidth="7"
-        android:pathData="M36,54 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0" />
+        android:fillColor="#F5FBF7"
+        android:strokeColor="#E2F4E6"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:pathData="M51.5,30.5 L75.9,54.6 L61.5,59 L51.5,59 Z" />
 
-    <!-- The hub. -->
+    <!-- Hull: a wide trapezoid, drawn last so its mint top border crosses the
+         sail bottoms exactly as it does in the PNG. -->
     <path
-        android:fillColor="@color/helm_accent"
-        android:pathData="M48,54 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+        android:fillColor="#F5FBF7"
+        android:strokeColor="#E2F4E6"
+        android:strokeWidth="2.6"
+        android:strokeLineJoin="round"
+        android:pathData="M24.9,59 L83.1,59 L74.3,70.1 L34.8,70.1 Z" />
+
+    <!-- The terminal prompt, in the jib. -->
+    <path
+        android:strokeColor="#4FD08B"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M56.9,42.5 L56.9,53.8" />
+    <path
+        android:strokeColor="#4FD08B"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M60.3,44.8 L66.6,48.4 L60.3,51.9" />
+
+    <!-- The wave, one smooth line under the hull. -->
+    <path
+        android:strokeColor="#4FD08B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M36.3,71.6 C38.5,70 41,68.8 43.9,68.8 C51,68.8 54,75.9 60.3,75.9 C66,75.9 69,68.8 75.1,68.8 C77.5,68.8 78.5,70.2 79.2,71.6" />
 </vector>
