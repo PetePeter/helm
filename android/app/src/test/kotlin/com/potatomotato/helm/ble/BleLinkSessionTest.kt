@@ -229,4 +229,97 @@ class BleLinkSessionTest {
         session.send(Random(8).nextBytes(4))
         assertEquals(0, peripheral.notified.size)
     }
+
+    @Test
+    fun `a notification ack that never arrives tears the link down at the deadline`() {
+        link()
+        session.send(Random(9).nextBytes(700))
+        assertEquals(1, peripheral.notified.size)
+
+        // One deadline armed per chunk put on the wire, and none before.
+        assertEquals(listOf(10_000L), scheduler.delays)
+        scheduler.runPending()
+
+        // A missing ack is a transport failure: the central is dropped, the
+        // queue is cleared, and the session is free to re-advertise.
+        assertEquals(listOf(helm), peripheral.disconnected)
+        assertEquals(0, session.pendingChunks)
+
+        session.onCentralDisconnected(helm)
+        session.onAdvertiseStarted()
+        assertEquals(LinkState.Advertising, session.state)
+        assertNull(session.centralAddress)
+    }
+
+    @Test
+    fun `sends piling up behind a missing ack do not wedge the link`() {
+        link()
+        session.send(Random(10).nextBytes(700))
+        session.send(Random(11).nextBytes(700))
+        session.send(Random(12).nextBytes(700))
+
+        // Still exactly one chunk in flight — the queue holds, it does not
+        // duplicate — and the deadline still tears the link down.
+        assertEquals(1, peripheral.notified.size)
+        assertTrue(session.pendingChunks > 0)
+
+        scheduler.runPending()
+        assertEquals(0, session.pendingChunks)
+        assertEquals(listOf(helm), peripheral.disconnected)
+    }
+
+    @Test
+    fun `a healthy link survives its ack deadlines`() {
+        link()
+        session.send(Random(13).nextBytes(700))
+        while (session.pendingChunks > 0) session.onNotificationSent(helm, true)
+        // The final chunk's ack, so nothing is left legitimately in flight.
+        session.onNotificationSent(helm, true)
+
+        // Every armed deadline fires after the fact; none may tear a live
+        // link down, including the stale ones from earlier chunks.
+        scheduler.runPending()
+
+        assertEquals(LinkState.Linked, session.state)
+        assertTrue(peripheral.disconnected.isEmpty())
+    }
+
+    @Test
+    fun `interleaved sends and acks from different threads corrupt nothing`() {
+        link()
+        val messages = (0 until 24).map { Random(100 + it).nextBytes(700) }
+        val expectedChunks = messages.sumOf { BleChunker().chunk(it, session.chunkSize).size }
+        val failures = mutableListOf<Exception>()
+        val reassembled = mutableListOf<ByteArray>()
+        val reassembler = BleReassembler(
+            onMessage = { reassembled.add(it) },
+            onDrop = { throw AssertionError(it) },
+        )
+
+        val sender = Thread {
+            messages.forEach { session.send(it) }
+        }
+        val acker = Thread {
+            // Generous overshoot: spare acks are no-ops, missing ones stall.
+            repeat(expectedChunks + 100) {
+                session.onNotificationSent(helm, true)
+                Thread.yield()
+            }
+        }
+        sender.uncaughtExceptionHandler = Thread.UncaughtExceptionHandler { _, e -> failures.add(e as Exception) }
+        acker.uncaughtExceptionHandler = sender.uncaughtExceptionHandler
+        sender.start()
+        acker.start()
+        sender.join()
+        acker.join()
+        while (session.pendingChunks > 0) session.onNotificationSent(helm, true)
+
+        peripheral.notified.forEach(reassembler::push)
+        assertEquals(expectedChunks, peripheral.notified.size)
+        assertEquals(
+            messages.map { it.toHex() }.sorted(),
+            reassembled.map { it.toHex() }.sorted(),
+        )
+        assertEquals(emptyList<Exception>(), failures)
+    }
 }

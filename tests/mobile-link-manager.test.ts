@@ -11,7 +11,8 @@
  * uses the stored PSK and raises no SAS prompt.
  */
 
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
 import { SecretStore } from '../src/mcp/peer/secret-store.js';
 import { MobilePairing } from '../src/mobile/mobile-pairing.js';
@@ -32,15 +33,26 @@ const ADDR = 'aa:bb:cc:dd:ee:ff';
 const ROTATED = '7f:3e:0d:11:22:33';
 
 /** A SecureChannel stand-in: it only has to name its peer and close once. */
-class FakeChannel implements MobileChannel {
+class FakeChannel extends EventEmitter implements MobileChannel {
   closed = false;
   closeReason = '';
+  /** PINGs the manager sent, answered or not. */
+  pings = 0;
+  /** A healthy phone answers every probe; a vanished one answers nothing. */
+  answerPings = true;
 
-  constructor(readonly peerMachine: string) {}
+  constructor(readonly peerMachine: string) {
+    super();
+  }
 
   close(reason = 'closed'): void {
     this.closed = true;
     this.closeReason = reason;
+  }
+
+  sendPing(): void {
+    this.pings += 1;
+    if (this.answerPings) this.emit('pong');
   }
 }
 
@@ -55,6 +67,8 @@ interface Harness {
   offline: string[];
   /** PSKs the manager presented to openChannel, per attempt. */
   attempts: Array<{ deviceId: string; psk: string }>;
+  /** Channels the default openChannel produced, in order. */
+  channels: FakeChannel[];
   logs: string[];
 }
 
@@ -64,11 +78,20 @@ interface Harness {
  * which is what the real PSK binding guarantees, and what makes "connected to
  * the wrong advertiser" a genuine failure here rather than a silent pass.
  */
-function makeHarness(phones: Record<string, string> = {}, openChannel?: OpenMobileChannel): Harness {
+function makeHarness(
+  phones: Record<string, string> = {},
+  openChannel?: OpenMobileChannel,
+  options: {
+    handshakeTimeoutMs?: number;
+    keepaliveIntervalMs?: number;
+    keepaliveMissLimit?: number;
+  } = {},
+): Harness {
   const devices = new MobileDeviceStore(undefined, () => 1_700_000_000_000);
   const secrets = new SecretStore();
   const transport = new FakeTransport();
   const attempts: Array<{ deviceId: string; psk: string }> = [];
+  const channels: FakeChannel[] = [];
   const logs: string[] = [];
 
   const pairing = new MobilePairing({
@@ -83,13 +106,18 @@ function makeHarness(phones: Record<string, string> = {}, openChannel?: OpenMobi
     secretStore: secrets,
     pairing,
     machineId: 'desktop',
+    handshakeTimeoutMs: options.handshakeTimeoutMs,
+    keepaliveIntervalMs: options.keepaliveIntervalMs,
+    keepaliveMissLimit: options.keepaliveMissLimit,
     logger: (message) => logs.push(message),
     openChannel: openChannel ?? (async (link, options) => {
       const psk = options.psk.toString('utf8');
       attempts.push({ deviceId: link.deviceId, psk });
       const owner = psk.replace(/^mobile-/, '');
       if (phones[link.deviceId] !== owner) throw new Error('confirm-MAC mismatch');
-      return new FakeChannel(owner);
+      const channel = new FakeChannel(owner);
+      channels.push(channel);
+      return channel;
     }),
   });
 
@@ -98,7 +126,10 @@ function makeHarness(phones: Record<string, string> = {}, openChannel?: OpenMobi
   manager.on('online', (machineId: string) => online.push(machineId));
   manager.on('offline', (machineId: string) => offline.push(machineId));
 
-  return { manager, transport, devices, secrets, pairing, online, offline, attempts, logs };
+  return {
+    manager, transport, devices, secrets, pairing,
+    online, offline, attempts, channels, logs,
+  };
 }
 
 /** Register a paired phone with a PSK whose bytes are its own pskRef. */
@@ -352,6 +383,177 @@ describe('MobileLinkManager pairing mode', () => {
   });
 });
 
+describe('MobileLinkManager handshake deadline', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('drops a link whose peer accepts the connection but never answers the handshake', async () => {
+    // The HELLO write settles — the transport's own write deadline is satisfied —
+    // but the phone never replies. Nothing downstream can announce that: no
+    // disconnect, no transport error, no pipe close. Only a deadline here gets
+    // the transport's active-link slot back so a rescan can happen.
+    const h = makeHarness(
+      { [ADDR]: PHONE },
+      async () => new Promise<MobileChannel>(() => {}),
+      { handshakeTimeoutMs: 10_000 },
+    );
+    pair(h, PHONE);
+    await h.manager.start();
+
+    const link = new FakeBleLink(ADDR);
+    await offer(h, link);
+
+    // Still inside the deadline: nothing has been torn down yet.
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(link.closed).toBe(false);
+    expect(h.transport.rejected).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(h.transport.rejected).toHaveLength(1);
+    expect(h.transport.rejected[0].deviceId).toBe(ADDR);
+    expect(link.closed).toBe(true);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.online).toEqual([]);
+    expect(h.offline).toEqual([]);
+    expect(h.logs.join(' ')).toContain('handshake timed out');
+  });
+
+  it('does not drop a peer that answers the handshake inside the deadline', async () => {
+    const h = makeHarness({ [ADDR]: PHONE }, undefined, { handshakeTimeoutMs: 10_000 });
+    pair(h, PHONE);
+    await h.manager.start();
+
+    const link = new FakeBleLink(ADDR);
+    await offer(h, link);
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(link.closed).toBe(false);
+    expect(h.transport.rejected).toEqual([]);
+  });
+});
+
+/**
+ * A phone that vanishes without noble noticing — the wedged-radio-stack case —
+ * leaves a link that looks online until a send burns its write deadline, and a
+ * quiet link looks online FOREVER. The keepalive forces traffic instead: one
+ * probe per silent interval, and silence across the miss limit means the link
+ * is dead and the drop → offline → reject → rescan chain takes over.
+ */
+describe('MobileLinkManager keepalive', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function keepaliveHarness() {
+    return makeHarness({ [ADDR]: PHONE }, undefined, {
+      keepaliveIntervalMs: 1_000,
+      keepaliveMissLimit: 2,
+    });
+  }
+
+  async function linkAPhone(h: Harness): Promise<FakeChannel> {
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeBleLink(ADDR));
+    return h.channels[0];
+  }
+
+  it('probes a link that has gone quiet and drops it when the probe brings nothing back', async () => {
+    const h = keepaliveHarness();
+    const channel = await linkAPhone(h);
+    // A healthy phone answers; this one has gone away without a disconnect.
+    channel.answerPings = false;
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channel.pings).toBe(1);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+
+    // A second full interval with no inbound: the probe went out and died.
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channel.closed).toBe(true);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+    // Rejecting returns the transport's active-link slot, so the rescan recovers.
+    expect(h.transport.rejected.map((entry) => entry.deviceId)).toEqual([ADDR]);
+  });
+
+  it('never drops a healthy link that answers its probes', async () => {
+    const h = keepaliveHarness();
+    const channel = await linkAPhone(h);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(channel.pings).toBeGreaterThan(0);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+    expect(h.transport.rejected).toEqual([]);
+  });
+
+  it('resets the probe clock on ANY inbound, not just a pong', async () => {
+    const h = keepaliveHarness();
+    const channel = await linkAPhone(h);
+    channel.answerPings = false;
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channel.pings).toBe(1);
+
+    // An application message from the phone is exactly as much proof of life.
+    channel.emit('message', Buffer.from('still here'));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(channel.pings).toBe(2);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+  });
+
+  it('pauses probing while a handshake is in flight, and resumes after', async () => {
+    const PENDING = '44:44:44:44:44:44';
+    const channels: FakeChannel[] = [];
+    let release: ((channel: MobileChannel) => void) | null = null;
+    const h = makeHarness(
+      { [ADDR]: PHONE, [PENDING]: OTHER_PHONE },
+      async (link) => {
+        if (link.deviceId === PENDING) {
+          return new Promise<MobileChannel>((resolve) => { release = resolve; });
+        }
+        const channel = new FakeChannel(link.deviceId === ADDR ? PHONE : OTHER_PHONE);
+        channels.push(channel);
+        return channel;
+      },
+      { keepaliveIntervalMs: 1_000, keepaliveMissLimit: 2 },
+    );
+    pair(h, PHONE);
+    pair(h, OTHER_PHONE);
+    await h.manager.start();
+    await offer(h, new FakeBleLink(ADDR));
+    // A second advertiser starts a handshake that never answers.
+    await offer(h, new FakeBleLink(PENDING));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(channels[0].pings).toBe(0);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+
+    // The stalled handshake settles; the next silent interval probes again.
+    // (The linked phone says something first, so the pause did not push it
+    // past the miss limit.)
+    channels[0].emit('message', Buffer.from('still here'));
+    release!(new FakeChannel(OTHER_PHONE));
+    await flush();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channels[0].pings).toBe(1);
+  });
+
+  it('stops probing once stopped', async () => {
+    const h = keepaliveHarness();
+    const channel = await linkAPhone(h);
+    await h.manager.stop();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(channel.pings).toBe(0);
+  });
+});
+
 describe('MobileLinkManager lifecycle', () => {
   it('only runs the radio when there is something to connect to', async () => {
     const h = makeHarness({});
@@ -373,6 +575,27 @@ describe('MobileLinkManager lifecycle', () => {
     await Promise.resolve();
 
     expect(h.transport.started).toBe(true);
+  });
+
+  it('announces every online device offline and closes its channel when stopped', async () => {
+    const h = makeHarness({ [ADDR]: PHONE });
+    pair(h, PHONE);
+    await h.manager.start();
+    const link = new FakeBleLink(ADDR);
+    await offer(h, link);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    const channel = h.channels[0];
+
+    await h.manager.stop();
+
+    expect(h.offline).toEqual([PHONE]);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(channel.closed).toBe(true);
+
+    // The late pipe close — the radio noticing what stop already handled —
+    // must not announce the device offline a second time.
+    h.transport.drop(link);
+    expect(h.offline).toEqual([PHONE]);
   });
 
   it('logs and stays alive when the radio cannot be loaded at all', async () => {

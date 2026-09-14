@@ -139,11 +139,18 @@ export class FakeNoble extends EventEmitter implements NobleApi {
   scanStarts = 0;
   /** Service UUID filter of the most recent scan — proves Helm filters at all. */
   lastScanFilter: string[] = [];
+  /** Fail the next N scan starts, the way a Windows radio transiently refuses. */
+  scanStartFailuresRemaining = 0;
+  failScanStart: Error | null = null;
 
   async startScanningAsync(serviceUuids: string[] = []): Promise<void> {
-    this.scanning = true;
     this.scanStarts += 1;
     this.lastScanFilter = serviceUuids;
+    if (this.scanStartFailuresRemaining > 0) {
+      this.scanStartFailuresRemaining -= 1;
+      throw this.failScanStart ?? new Error('scanning failed to start');
+    }
+    this.scanning = true;
   }
 
   async stopScanningAsync(): Promise<void> {

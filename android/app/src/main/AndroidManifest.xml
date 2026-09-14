@@ -24,6 +24,15 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
+    <!--
+      The peripheral must also survive a REBOOT: without this, the phone stops
+      being reachable until someone opens the app. RECEIVE_BOOT_COMPLETED is a
+      normal install-time permission — nothing to grant at runtime. BOOT_COMPLETED
+      is an explicit exemption to the background foreground-service start ban, and
+      connectedDevice is a type it may start.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -77,6 +86,20 @@
             android:name=".ble.HelmLinkService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!--
+          Reboots restart the link on their own. exported is required for a
+          receiver with an intent filter on API 31+, and safe here: the broadcast
+          is a protected system broadcast, so only the system can send it.
+        -->
+        <receiver
+            android:name=".ble.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

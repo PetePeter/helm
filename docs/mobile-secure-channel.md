@@ -8,7 +8,7 @@ and are entirely transport-agnostic.
 |------|------|
 | `src/mobile/secure-channel.ts` | Handshake + framing over any `BytePipe`. Zero BLE/GATT awareness. |
 | `src/mobile/protocol-version.ts` | Supported protocol range and the negotiation/refusal logic. |
-| `src/mobile/aead.ts` | AES-256-GCM sealing, per-direction keys, implicit monotonic nonces. |
+| `src/mobile/aead.ts` | AES-256-GCM sealing, per-direction keys, explicit wire sequence as nonce + AAD. |
 | `src/mobile/test-vectors.ts` | Cross-language conformance vectors (pure, fixed inputs). |
 | `src/mcp/peer/pairing-crypto.ts` | **Reused unchanged** — X25519, commit-reveal, transcript, SAS, confirm-MAC. |
 | `tests/fixtures/secure-channel-vectors.json` | Committed vectors the Kotlin client is verified against. |
@@ -62,16 +62,22 @@ commit. Additive changes do neither.
 | Version | Change |
 |---------|--------|
 | 1 | Initial wire format — range negotiation in HELLO, X25519 commit-reveal handshake, AES-256-GCM framing. |
+| 2 | AEAD frames carry an explicit `u64` sequence (nonce + AAD), so the receiver can detect a lost frame, resync, and continue instead of failing the next tag. New PING/PONG frame kinds for keepalive. |
 
 ## Invariants
 
 - **Negotiation precedes capability.** No identity, key material or tool surface is
   exposed before the protocol version is agreed.
-- **No plaintext fallback.** Every failure path calls `close()`; there is no resync.
+- **No plaintext fallback.** Every failure path calls `close()`; there is no plaintext
+  resync. The one thing that does *not* close the channel is a **gap**: a frame whose
+  sequence skips ahead but whose tag verifies proves a peer frame was lost in transit,
+  not tampered — the receiver logs the lost range, resyncs its counter, and continues.
+  A lost frame costs one application record (call-id timeouts already cover that), not
+  the link.
 - **Nonce reuse is structurally impossible.** Each direction has its own HKDF-derived
-  key, and the 12-byte nonce is an implicit counter that is never transmitted — so a
-  replayed or reordered frame decrypts under the wrong nonce and fails the tag check.
-  The counter is refused at exhaustion rather than wrapped.
+  key, and the 12-byte nonce embeds the frame's wire sequence, which is also bound as
+  AAD — so a replayed, reordered, or spliced frame fails the tag check. The counter is
+  refused at exhaustion rather than wrapped.
 - **First pairing requires the user.** `send()` throws until `confirmSas(true)`;
   `confirmSas(false)` closes the channel. Messages that arrive before the local user
   has confirmed are queued, not dropped and not emitted.
@@ -117,7 +123,7 @@ graph LR
 | Kotlin | Mirrors | Notes |
 |---|---|---|
 | `crypto/PairingCrypto.kt` | `src/mcp/peer/pairing-crypto.ts` | transcript, commitment, SAS, confirm-MAC, PSK |
-| `crypto/Aead.kt` | `src/mobile/aead.ts` | AES-256-GCM, per-direction keys, implicit counters |
+| `crypto/Aead.kt` | `src/mobile/aead.ts` | AES-256-GCM, per-direction keys, explicit sequence as nonce + AAD |
 | `crypto/Hkdf.kt` | Node `crypto.hkdfSync` | RFC 5869 extract-then-expand, HMAC-SHA256 |
 | `crypto/ProtocolVersion.kt` | `src/mobile/protocol-version.ts` | ranges, refusal codes, refusal wording |
 | `crypto/Frames.kt` | the codec inside `secure-channel.ts` | `uint32be length \| type \| payload` |

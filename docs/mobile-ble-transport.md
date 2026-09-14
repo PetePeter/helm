@@ -77,8 +77,11 @@ flags := bit0 FIRST | bit1 LAST
 - `totalLength` rides on the FIRST chunk so the cap is enforced **before** a byte
   is buffered. `MAX_MESSAGE_BYTES` is 256 KiB; a peer that lies is refused, so
   reassembly memory is bounded regardless of what arrives.
-- A drop is never fatal. The reassembler resynchronises on the next FIRST chunk:
-  one lost notification costs one message, not the link.
+- A drop is never fatal. The reassembler resynchronises on the next FIRST chunk,
+  and since protocol v2 the AEAD layer above honours that contract too: a frame
+  whose sequence skips ahead but whose tag verifies is a **gap** — logged,
+  counter resynced, link continues. One lost notification costs one message,
+  not the link, end to end.
 
 ## Cross-language wire contract
 
@@ -182,6 +185,32 @@ The loser of each race keeps running and its rejection is swallowed — noble
 cannot cancel an in-flight GATT operation, and a rejection surfacing long after
 we stopped caring is its own defect.
 
+### Liveness: keepalive and half-open detection
+
+A radio can die without emitting `disconnect` (the wedged-stack class), and a
+quiet link would otherwise look online forever. The manager therefore probes:
+when a registered link has been silent for 15s it sends a **PING** (protocol v2
+frame; the phone answers PONG), and if *nothing* arrives inbound within two
+intervals the link is dropped, `offline` is emitted, and the normal rescan
+recovers it. Any inbound traffic — application data, pong, anything — resets the
+probe; probing pauses while a handshake is in flight. The initiator handshake
+itself is bounded (10s), so a phone that accepts the connection but never
+answers HELLO is rejected and rescanned rather than held forever. A scan start
+the radio refuses also feeds the rescan backoff instead of leaving the client
+dormant.
+
+### MTU and chunk size
+
+The default ATT MTU of 23 leaves ~20 usable bytes per notification — a 100 KiB
+snapshot would be ~5,000 serial chunks. Helm therefore listens for noble's
+negotiated-MTU report (on Windows the WinRT binding emits it right after
+connect; there is no central-side request API) and sizes chunks from it, capped
+at 247. Only an explicit report is trusted — never the ambient `peripheral.mtu`,
+which transiently reports 517 during negotiation, the reason the old code
+clamped to 20 — and anything outside `[23, 247]` is ignored. Without a report,
+chunking falls back to 20 bytes and everything still works, just slower. The
+phone side already sizes notifications from its own negotiated MTU.
+
 ## The phone side (`android/app/src/main/kotlin/com/potatomotato/helm/ble/`)
 
 The peripheral half mirrors this document from the other end. Directions keep
@@ -194,7 +223,9 @@ confusing it looks locally — so on the phone RX is *written to* and TX *notifi
 | `HelmGatt.kt` | The UUIDs, mirroring `characteristics.ts`, including the reserved CTL |
 | `BleLinkSession.kt` | Ownership, backpressure, state and the advertising retry curve |
 | `GattServer.kt` | `BluetoothGattServer` + `BluetoothLeAdvertiser`; decides nothing |
-| `HelmLinkService.kt` | Foreground service, type `connectedDevice` |
+| `BleRadioRecovery.kt` | Radio up/down policy — retry budget, generation guard; no Android types |
+| `BootReceiver.kt` | Thin `BOOT_COMPLETED` → service start |
+| `HelmLinkService.kt` | Foreground service, type `connectedDevice`, BT state receiver |
 | `HelmLink.kt` | The process-scoped duplex seam the layers above use |
 
 ```mermaid
@@ -214,10 +245,18 @@ Three things that shape the Kotlin:
   advertising and waiting, which is also what the status line says.
 - **One central at a time.** A second connection is disconnected on arrival —
   two byte streams into one reassembler would corrupt both.
-- **One notification in flight.** GATT gives no second slot until
-  `onNotificationSent`, so outbound chunks queue and drain on the ack. A refusal
-  discards the rest of that message rather than sending a hole; `SecureChannel`
-  above notices the absence.
+- **One notification in flight, with a deadline.** GATT gives no second slot
+  until `onNotificationSent`, so outbound chunks queue and drain on the ack —
+  and the ack itself is bounded (10s, mirroring the desktop's write deadline),
+  because an ack that never arrives would otherwise stall the queue for the life
+  of the connection. A refusal discards the rest of that message rather than
+  sending a hole; the peer's secure channel sees it as a sequence gap and
+  continues. All session state is confined behind a single monitor, since the
+  binder thread, the main thread, and coroutines all touch it.
+- **The radio comes back on its own.** `BleRadioRecovery` watches the adapter
+  state: Bluetooth off waits (no retry churn), on retries `open()` with a 1s→4s
+  backoff, and `BOOT_COMPLETED` restarts the foreground service so a reboot
+  doesn't leave the peripheral dead until the app is opened.
 
 Advertising is `ADVERTISE_MODE_BALANCED`, never `LOW_LATENCY` — this advertises
 all day. The 31-byte advertisement carries only the 128-bit service UUID; the

@@ -35,6 +35,35 @@ import type { MobileDevice } from '../types/mobile-device.js';
 import type { SecretStore } from '../mcp/peer/secret-store.js';
 
 /**
+ * How long the initiator waits for the peer's handshake answer.
+ *
+ * The HELLO write is already bounded in the transport, but a phone that accepts
+ * the connection and then goes silent — the app frozen before it could reply,
+ * while the radio keeps the link alive — settles the write and never answers.
+ * Without a deadline here the transport's one active-link slot is held forever:
+ * no error, no disconnect, no rescan.
+ */
+const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/**
+ * How long a registered link may hear nothing from the phone before the manager
+ * probes it with a PING.
+ *
+ * noble can lose a phone without ever emitting 'disconnect' — the observed
+ * wedged-radio-stack case — and a quiet link would then look online forever,
+ * until a send burned its 10s write deadline. The probe forces traffic: the
+ * peer answers PONG, which is inbound, which resets the clock.
+ */
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 15_000;
+
+/**
+ * Silent probe intervals that make a link dead. Two intervals of silence means
+ * one probe went out and came back with nothing — not merely a link between
+ * messages, which is what a healthy idle phone looks like.
+ */
+const DEFAULT_KEEPALIVE_MISS_LIMIT = 2;
+
+/**
  * The slice of a live channel this manager needs. `SecureChannel` satisfies it;
  * declaring it narrowly is what lets the lifecycle be tested without crypto.
  */
@@ -43,8 +72,12 @@ export interface MobileChannel {
   close(reason?: string): void;
   /** Encrypt and send one application message. */
   send?(message: Buffer): void;
+  /** Send the keepalive probe; the peer answers with inbound traffic. */
+  sendPing?(): void;
   /** `message` carries a decrypted payload; `close` fires once, with a reason. */
   on?(event: 'message' | 'close', handler: (payload: Buffer) => void): unknown;
+  /** Inbound control traffic — any of it resets the keepalive probe clock. */
+  on?(event: 'pong' | 'ping', handler: () => void): unknown;
 }
 
 /**
@@ -74,6 +107,12 @@ export interface MobileLinkManagerOptions {
   pairing: MobilePairing;
   /** This hub's stable machine id, bound into the handshake transcript. */
   machineId: string;
+  /** Ceiling on waiting for the peer's handshake answer; see DEFAULT_HANDSHAKE_TIMEOUT_MS. */
+  handshakeTimeoutMs?: number;
+  /** Silence before an idle link is probed; see DEFAULT_KEEPALIVE_INTERVAL_MS. */
+  keepaliveIntervalMs?: number;
+  /** Silent probe intervals that make a link dead; see DEFAULT_KEEPALIVE_MISS_LIMIT. */
+  keepaliveMissLimit?: number;
   now?: () => number;
   openChannel?: OpenMobileChannel;
   logger?: (message: string, error?: unknown) => void;
@@ -85,6 +124,8 @@ interface ActiveLink {
   link: BleLink;
   /** Absent for a link the pairing coordinator owns the channel of. */
   channel: MobileChannel | null;
+  /** Epoch ms of the last inbound byte — the keepalive probe's reference. */
+  lastInboundAt: number;
 }
 
 /**
@@ -94,10 +135,16 @@ export class MobileLinkManager extends EventEmitter {
   private readonly opts: MobileLinkManagerOptions;
   private readonly now: () => number;
   private readonly openChannel: OpenMobileChannel;
+  private readonly handshakeTimeoutMs: number;
+  private readonly keepaliveIntervalMs: number;
+  private readonly keepaliveMissLimit: number;
 
   private transport: MobileLinkTransport | null = null;
   private enabled = false;
   private running = false;
+  private keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Handshakes currently running — keepalive probing pauses while any is. */
+  private handshakesInFlight = 0;
   private readonly links = new Map<string, ActiveLink>();
   /** Which candidate to try next for a given advertised address. */
   private readonly cursor = new Map<string, number>();
@@ -106,6 +153,9 @@ export class MobileLinkManager extends EventEmitter {
     super();
     this.opts = options;
     this.now = options.now ?? Date.now;
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS;
+    this.keepaliveIntervalMs = options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS;
+    this.keepaliveMissLimit = Math.max(1, options.keepaliveMissLimit ?? DEFAULT_KEEPALIVE_MISS_LIMIT);
     this.openChannel = options.openChannel ?? ((link, { machineId, psk }) =>
       SecureChannel.open({
         pipe: link.pipe,
@@ -113,6 +163,7 @@ export class MobileLinkManager extends EventEmitter {
         machineId,
         sessionId: `mobile-${link.deviceId}-${this.now()}`,
         psk,
+        log: (message) => this.log(message),
       }));
 
     // The radio should run only while there is a phone to reach: any paired
@@ -127,13 +178,30 @@ export class MobileLinkManager extends EventEmitter {
   /** Allow the transport to run. Idempotent. */
   async start(): Promise<void> {
     this.enabled = true;
+    this.scheduleKeepalive();
     this.ensure();
   }
 
-  /** Stop the radio and drop every link. Idempotent. */
+  /**
+   * Stop the radio and drop every link. Idempotent.
+   *
+   * Every online device is announced offline and its channel closed BEFORE the
+   * map is dropped: a bare `clear()` left consumers holding stale online state,
+   * because `onClosed` early-returns once `links.delete` misses — the exact
+   * symptom this used to ship with.
+   */
   async stop(): Promise<void> {
     this.enabled = false;
-    this.links.clear();
+    this.clearKeepalive();
+    for (const active of [...this.links.values()]) {
+      this.links.delete(active.machineId);
+      try {
+        active.channel?.close('Helm stopped');
+      } catch (error) {
+        this.log(`closing the channel for ${active.machineId} failed`, error);
+      }
+      this.emit('offline', active.machineId);
+    }
     this.cursor.clear();
     this.running = false;
     await this.transport?.stop().catch((error) => this.log('stopping the BLE transport failed', error));
@@ -202,6 +270,58 @@ export class MobileLinkManager extends EventEmitter {
     return status === 'scanning' || status === 'awaiting-sas';
   }
 
+  // ----------------------------------------------------------------- keepalive
+
+  /**
+   * One self-rescheduling clock for every link. A link that has been silent for
+   * an interval is probed with a PING; one silent for the miss limit is dead —
+   * noble never told us, so the drop → offline → reject → rescan chain is the
+   * only recovery path that exists.
+   */
+  private scheduleKeepalive(): void {
+    if (!this.enabled || this.keepaliveTimer) return;
+    this.keepaliveTimer = setTimeout(() => {
+      this.keepaliveTimer = null;
+      try {
+        this.keepaliveTick();
+      } finally {
+        this.scheduleKeepalive();
+      }
+    }, this.keepaliveIntervalMs);
+  }
+
+  private clearKeepalive(): void {
+    if (!this.keepaliveTimer) return;
+    clearTimeout(this.keepaliveTimer);
+    this.keepaliveTimer = null;
+  }
+
+  private keepaliveTick(): void {
+    // A handshake in flight means a phone is mid-identification on a second
+    // link; probing registered links can wait a beat rather than race it.
+    if (this.handshakesInFlight > 0) return;
+    for (const active of [...this.links.values()]) {
+      if (!active.channel) continue;
+      const silentFor = this.now() - active.lastInboundAt;
+      if (silentFor >= this.keepaliveIntervalMs * this.keepaliveMissLimit) {
+        this.dropLink(active.machineId, `keepalive: no inbound traffic for ${silentFor}ms`);
+        continue;
+      }
+      if (silentFor < this.keepaliveIntervalMs) continue;
+      try {
+        active.channel.sendPing?.();
+      } catch (error) {
+        this.log(`keepalive probe to ${active.machineId} failed`, error);
+      }
+    }
+  }
+
+  /** ANY inbound byte — pong, ping, or application message — resets the probe. */
+  private markInbound(machineId: string): void {
+    const active = this.links.get(machineId);
+    if (active) active.lastInboundAt = this.now();
+  }
+
   /**
    * Build the transport once, on demand. A machine with no usable Bluetooth
    * stack must degrade to "mobile does not work", never to a failed startup.
@@ -223,6 +343,17 @@ export class MobileLinkManager extends EventEmitter {
   // ------------------------------------------------------------- identification
 
   private async onLink(link: BleLink): Promise<void> {
+    // Both handshake paths below count as in flight until they settle, so the
+    // keepalive clock stays out of the way while a link is being decided.
+    this.handshakesInFlight += 1;
+    try {
+      await this.identify(link);
+    } finally {
+      this.handshakesInFlight -= 1;
+    }
+  }
+
+  private async identify(link: BleLink): Promise<void> {
     // Pairing first: while it is armed the coordinator owns the handshake, and a
     // second one on the same pipe would fight it for the bytes.
     if (this.pairingArmed() && await this.opts.pairing.offerLink(link)) return;
@@ -248,7 +379,9 @@ export class MobileLinkManager extends EventEmitter {
 
     let channel: MobileChannel;
     try {
-      channel = await this.openChannel(link, { machineId: this.opts.machineId, psk });
+      channel = await this.boundedHandshake(
+        this.openChannel(link, { machineId: this.opts.machineId, psk }),
+      );
     } catch (error) {
       // The expected outcome for a stranger, or for the wrong candidate PSK.
       this.log(`identification of ${link.deviceId} failed`, error);
@@ -257,6 +390,31 @@ export class MobileLinkManager extends EventEmitter {
     }
 
     this.register(link, channel);
+  }
+
+  /**
+   * Race the handshake answer against the clock. Same shape as the transport's
+   * own bounds, and for the same reason: the loser of the race is left running,
+   * because a pipe cannot be asked to cancel its read — its eventual failure
+   * goes nowhere once we have stopped caring.
+   */
+  private boundedHandshake(run: Promise<MobileChannel>): Promise<MobileChannel> {
+    return new Promise<MobileChannel>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`handshake timed out after ${this.handshakeTimeoutMs}ms`)),
+        this.handshakeTimeoutMs,
+      );
+      run.then(
+        (channel) => {
+          clearTimeout(timer);
+          resolve(channel);
+        },
+        (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
   }
 
   /** Accept an authenticated channel, or drop it if trust has since moved. */
@@ -274,7 +432,7 @@ export class MobileLinkManager extends EventEmitter {
       return;
     }
 
-    this.links.set(machineId, { machineId, link, channel });
+    this.links.set(machineId, { machineId, link, channel, lastInboundAt: this.now() });
     this.cursor.delete(link.deviceId);
     // The address is a hint, so it is UPDATED on the existing record — keying a
     // new entry off a rotated address is exactly the regression this prevents.
@@ -297,6 +455,7 @@ export class MobileLinkManager extends EventEmitter {
       machineId: event.machineId,
       link,
       channel: event.channel ?? null,
+      lastInboundAt: this.now(),
     });
     if (event.channel) this.attachChannel(event.machineId, event.channel);
     link.onTransportError?.((failure) => {
@@ -324,7 +483,12 @@ export class MobileLinkManager extends EventEmitter {
   }
 
   private attachChannel(machineId: string, channel: MobileChannel): void {
-    channel.on?.('message', (message: Buffer) => this.emit('message', machineId, message));
+    channel.on?.('message', (message: Buffer) => {
+      this.markInbound(machineId);
+      this.emit('message', machineId, message);
+    });
+    channel.on?.('pong', () => this.markInbound(machineId));
+    channel.on?.('ping', () => this.markInbound(machineId));
     channel.on?.('close', () => this.onClosed(machineId, 'the secure channel closed'));
   }
 

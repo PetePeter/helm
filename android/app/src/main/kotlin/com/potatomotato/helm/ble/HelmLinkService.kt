@@ -1,12 +1,17 @@
 package com.potatomotato.helm.ble
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -26,7 +31,7 @@ import com.potatomotato.helm.log.HelmLog
  * and the ongoing notification is the honest price of that.
  *
  * This class is wiring only. Everything that decides anything is in
- * [BleLinkSession].
+ * [BleLinkSession] and [BleRadioRecovery].
  */
 class HelmLinkService : Service() {
 
@@ -54,6 +59,22 @@ class HelmLinkService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var gattServer: GattServer? = null
     private var session: BleLinkSession? = null
+    private lateinit var recovery: BleRadioRecovery
+
+    /**
+     * The radio being toggled off and on used to leave the peripheral dead until
+     * the user reopened the app. All decisions about that live in
+     * [BleRadioRecovery]; this receiver only translates broadcasts into its
+     * events. Registered on create, unregistered on destroy.
+     */
+    private val radioReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                BluetoothAdapter.STATE_ON -> recovery.onBluetoothOn()
+                BluetoothAdapter.STATE_OFF -> recovery.onBluetoothOff()
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -78,15 +99,36 @@ class HelmLinkService : Service() {
         gattServer = server
         session = link
 
-        if (server.open()) {
-            HelmLog.i(TAG, "the GATT server is open; advertising")
-            HelmLink.sender = link::send
-            link.start()
-        } else {
-            // No radio, no permission, or no peripheral support: stay up with an
-            // honest notification rather than crash-looping the service.
-            HelmLog.w(TAG, "could not open the GATT server; the link stays down")
+        recovery = BleRadioRecovery(
+            scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
+            log = HelmLog.port(TAG),
+        ).apply {
+            bringUp = {
+                // Whatever a previous radio incarnation left behind is dead — a
+                // Bluetooth off/on cycle tears the GATT server down in the stack.
+                server.close()
+                try {
+                    val opened = server.open()
+                    if (opened) {
+                        HelmLink.sender = link::send
+                        link.start()
+                    }
+                    opened
+                } catch (e: Exception) {
+                    // Boot can land here with a runtime permission the system
+                    // has since revoked; that must not crash-loop the service.
+                    HelmLog.w(TAG, "opening the GATT server threw ${e.javaClass.simpleName}: ${e.message}")
+                    false
+                }
+            }
+            standDown = {
+                link.stop()
+            }
         }
+
+        registerReceiver(radioReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
+        recovery.onBluetoothState(isBluetoothOn())
+        recovery.start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -102,10 +144,15 @@ class HelmLinkService : Service() {
         session?.stop()
         gattServer?.close()
         handler.removeCallbacksAndMessages(null)
+        runCatching { unregisterReceiver(radioReceiver) }
         session = null
         gattServer = null
         super.onDestroy()
     }
+
+    @SuppressLint("MissingPermission") // Checked by BlePermissions before the service starts.
+    private fun isBluetoothOn(): Boolean =
+        getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
 
     private fun startForegroundWith(state: LinkState) {
         val notification = buildNotification(state)

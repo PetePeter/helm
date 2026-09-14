@@ -40,6 +40,19 @@ const DEFAULT_WRITE_WITHOUT_RESPONSE = false;
 /** Fallback when the adapter does not report a negotiated MTU. */
 const DEFAULT_ATT_MTU = 23;
 
+/**
+ * The smallest MTU report worth trusting. Anything below is an old radio or a
+ * stack that never negotiated; the 20-byte fallback is safer than chasing it.
+ */
+const MIN_NEGOTIATED_ATT_MTU = 23;
+
+/**
+ * Ceiling on the negotiated MTU we will act on, matching the 247 the Android
+ * peripheral negotiates. A larger report (the transient 517 Windows once
+ * exposed) is not evidence the air link really carries that much.
+ */
+const MAX_NEGOTIATED_ATT_MTU = 247;
+
 const DEFAULT_RECONNECT_BASE_MS = 1_000;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
 
@@ -102,6 +115,12 @@ export interface NoblePeripheral {
     characteristicUuids: string[],
   ): Promise<{ characteristics: NobleCharacteristic[] }>;
   once(event: 'disconnect', handler: () => void): unknown;
+  /**
+   * The negotiated-MTU report. On Windows/noble this is the GATT session's
+   * MaxPduSize, emitted shortly after connect and again if it changes; it is
+   * the only MTU source trusted here (see BleLinkPipe.chunkSize).
+   */
+  on(event: 'mtu', handler: (mtu: number) => void): unknown;
 }
 
 export interface NobleApi {
@@ -236,7 +255,17 @@ export class BleLinkClient extends EventEmitter {
 
   private async scan(): Promise<void> {
     if (!this.started || this.active || this.busy) return;
-    await this.safely('startScanning', () => this.noble.startScanningAsync([this.serviceUuid], false));
+    try {
+      await this.noble.startScanningAsync([this.serviceUuid], false);
+    } catch (error) {
+      this.log('BLE startScanning failed', error);
+      this.emitError(error);
+      // A refused scan start is silent by construction: nothing was scanned, so
+      // no discover, no failed connect step, and no disconnect event will ever
+      // fire to announce it. The backoff is the only recovery, so a radio that
+      // transiently refuses must land here rather than idle the client forever.
+      this.scheduleRescan();
+    }
   }
 
   private async onDiscover(peripheral: NoblePeripheral): Promise<void> {
@@ -251,6 +280,9 @@ export class BleLinkClient extends EventEmitter {
     const startedAt = Date.now();
     const attemptId = this.nextAttemptId++;
     let step = 'stopScanning';
+    // The pipe does not exist until the last connect step, but the MTU report
+    // can arrive before it — route the report through this slot.
+    let onNegotiatedMtu: ((mtu: number) => void) | null = null;
     this.log(`BLE attempt ${attemptId} discovered ${peripheral.id}`);
     try {
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
@@ -260,6 +292,12 @@ export class BleLinkClient extends EventEmitter {
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
       await this.bounded(step, () => peripheral.connectAsync());
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
+
+      // Listen for the negotiated MTU before anything else can race it: on
+      // Windows the GATT session's MaxPduSize report lands just after connect
+      // resolves, and missing it would pin the whole connection to 20-byte
+      // chunks. Later reports (a renegotiation in either direction) update it.
+      peripheral.on('mtu', (mtu: number) => onNegotiatedMtu?.(mtu));
 
       step = 'discover';
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
@@ -276,6 +314,7 @@ export class BleLinkClient extends EventEmitter {
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
       const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now, this.writeTimeoutMs);
+      onNegotiatedMtu = (mtu: number) => link.noteNegotiatedMtu(mtu);
       this.active = link;
       this.attempts = 0;
       peripheral.once('disconnect', () => this.onDisconnect(link));
@@ -438,6 +477,8 @@ class BleLinkPipe implements BleLink {
   private readonly linkedAt: number;
   private writeSequence = 0;
   private writeWithoutResponse = DEFAULT_WRITE_WITHOUT_RESPONSE;
+  /** The MTU the radio actually negotiated; null until a report arrives. */
+  private negotiatedMtu: number | null = null;
 
   constructor(
     private readonly peripheral: NoblePeripheral,
@@ -476,6 +517,27 @@ class BleLinkPipe implements BleLink {
   setWriteWithoutResponse(enabled: boolean): void {
     this.writeWithoutResponse = enabled;
     this.log(`BLE write mode ${this.deviceId}: withoutResponse=${enabled}`);
+  }
+
+  /**
+   * Adopt an MTU the radio reports as negotiated. Reports outside the plausible
+   * band are ignored rather than clamped into it — a bogus value is a reason to
+   * stay on the fallback, not to stretch it.
+   */
+  noteNegotiatedMtu(mtu: number): void {
+    if (mtu < MIN_NEGOTIATED_ATT_MTU || mtu > MAX_NEGOTIATED_ATT_MTU) {
+      this.log(`BLE ignoring implausible MTU report ${this.deviceId}: mtu=${mtu}`);
+      return;
+    }
+    if (mtu === this.negotiatedMtu) return;
+    const first = this.negotiatedMtu === null;
+    this.negotiatedMtu = mtu;
+    // Once per connection in the normal case; a renegotiation is rare enough
+    // — and changes chunking hard enough — that it is worth its own line too.
+    this.log(
+      `BLE negotiated mtu ${this.deviceId}${first ? '' : ' (renegotiated)'}:` +
+        ` mtu=${mtu} chunkSize=${this.chunkSize()}`,
+    );
   }
 
   onFramingDrop(handler: (reason: string) => void): void {
@@ -594,15 +656,22 @@ class BleLinkPipe implements BleLink {
   }
 
   /**
-   * Use the ATT default as the upper bound even when noble reports a larger
-   * negotiated MTU. Windows/noble can expose the larger value briefly and then
-   * fall back to 23; a queued long write can otherwise reach GATT as one 514+
-   * byte write and produce status 3. Twenty-byte chunks are universally valid
-   * for Write With Response and the phone reassembler already handles them.
+   * Bytes of payload per chunk, derived from the MTU the radio NEGOTIATED — the
+   * GATT session's MaxPduSize report, not the ambient `peripheral.mtu` read.
+   * The ambient value has a history of being transiently large and then falling
+   * back, and chunking a queue for an MTU the air link does not really carry
+   * produced GATT status 3; only an explicit report is trusted. With no report
+   * — an old radio, or a test double that never negotiates — the universally
+   * valid 20-byte chunk is used, which the phone reassembler handles anyway.
+   * A later report that moves the MTU takes effect from the next write on: the
+   * chunker is sized per call precisely because the MTU can change.
    */
   private chunkSize(): number {
-    const mtu = this.peripheral.mtu ?? DEFAULT_ATT_MTU;
-    return Math.max(MIN_CHUNK_BYTES, Math.min(DEFAULT_ATT_MTU, mtu) - ATT_OVERHEAD_BYTES);
+    if (this.negotiatedMtu === null) return MIN_CHUNK_BYTES;
+    return Math.max(
+      MIN_CHUNK_BYTES,
+      Math.min(MAX_NEGOTIATED_ATT_MTU, this.negotiatedMtu) - ATT_OVERHEAD_BYTES,
+    );
   }
 }
 

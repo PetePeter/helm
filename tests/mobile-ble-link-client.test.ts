@@ -88,6 +88,47 @@ describe('BleLinkClient discovery', () => {
 });
 
 /**
+ * A refused scan start is the one failure nothing downstream can announce:
+ * nothing was scanned, so no peripheral is discovered, no connect step fails,
+ * and no disconnect event ever fires. Routing it only to the log left the
+ * client idle forever after a Windows radio transiently refused to scan during
+ * a post-disconnect recovery. It must land in the same backoff the other
+ * failures use.
+ */
+describe('BleLinkClient scan start failures', () => {
+  it('schedules a rescan after a refused scan start and recovers when the radio relents', async () => {
+    const { noble, client } = build();
+    const errors: Error[] = [];
+    client.on('error', (error: Error) => errors.push(error));
+    noble.failScanStart = new Error('adapter busy');
+    noble.scanStartFailuresRemaining = 2;
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(noble.scanning).toBe(false);
+    expect(errors[0].message).toContain('adapter busy');
+    expect(noble.scanStarts).toBe(1);
+
+    // Backoff retries, and the retry fails while the radio is still busy.
+    await vi.advanceTimersByTimeAsync(999);
+    expect(noble.scanStarts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(noble.scanStarts).toBe(2);
+    expect(noble.scanning).toBe(false);
+
+    // The radio relents; the next backoff attempt scans for real and a link follows.
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(noble.scanning).toBe(true);
+
+    const pending = nextLink(client);
+    const phone = new FakePeripheral('11:22:33:44:55:66');
+    noble.discover(phone);
+    expect((await pending).deviceId).toBe('11:22:33:44:55:66');
+  });
+});
+
+/**
  * A connect sequence that hangs is the defect P-0758 exists for: on real
  * hardware `discover` never came back, Helm sat ~33s and then died on noble's
  * bare "Disconnected unknown" with nothing to say which await was stuck, and it
@@ -133,7 +174,7 @@ describe('BleLinkClient connect sequence failures', () => {
     phone.failDiscover = new Error('Device is unreachable while discovering services');
     phone.failDiscoverPermanently = false;
     phone.discoverFailuresRemaining = 1;
-    const { client } = await attempt(phone);
+    await attempt(phone);
 
     await vi.advanceTimersByTimeAsync(0);
 
@@ -360,6 +401,102 @@ describe('BleLinkClient pipe', () => {
   });
 });
 
+/**
+ * Android negotiates its GATT MTU up; desktop only has to BELIEVE the report.
+ * The negotiated value is the GATT session's MaxPduSize report noble emits just
+ * after connect — never the ambient `peripheral.mtu`, which Windows has a
+ * documented history of exposing transiently large. Chunking for an MTU the air
+ * link does not carry produced GATT status 3, which is why only the report is
+ * trusted and 20 bytes remains the fallback.
+ */
+describe('BleLinkClient MTU negotiation', () => {
+  async function connected(options: { mtu?: number } = {}) {
+    const { noble, client, logs } = build();
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = nextLink(client);
+    const phone = new FakePeripheral('mtu-phone');
+    noble.discover(phone);
+    const link = await pending;
+    if (options.mtu !== undefined) phone.emit('mtu', options.mtu);
+    return { noble, client, logs, phone, link };
+  }
+
+  /** Reassemble whatever reached the phone's RX characteristic. */
+  function reassembled(phone: FakePeripheral): Buffer[] {
+    const reassembler = new BleReassembler();
+    const received: Buffer[] = [];
+    reassembler.on('message', (m: Buffer) => received.push(m));
+    phone.rx.writes.forEach((chunk) => reassembler.push(chunk));
+    return received;
+  }
+
+  it('derives the chunk size from the negotiated MTU', async () => {
+    const { logs, phone, link } = await connected({ mtu: 247 });
+
+    const payload = Buffer.alloc(1000, 0x2a);
+    link.pipe.write(payload);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // 247 - 3 bytes of ATT overhead = 244 per chunk: 1000 bytes take five.
+    expect(phone.rx.writes).toHaveLength(5);
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(244);
+    expect(logs.join(' ')).toContain('chunkSize=244');
+    const received = reassembled(phone);
+    expect(received).toHaveLength(1);
+    expect(received[0].equals(payload)).toBe(true);
+  });
+
+  it('stays on 20-byte chunks when the radio never negotiates', async () => {
+    const { phone, link } = await connected();
+
+    const payload = Buffer.alloc(600, 0x5e);
+    link.pipe.write(payload);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(phone.rx.writes.length).toBeGreaterThan(1);
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
+    const received = reassembled(phone);
+    expect(received).toHaveLength(1);
+    expect(received[0].equals(payload)).toBe(true);
+  });
+
+  it('ignores implausible reports and keeps the fallback chunking', async () => {
+    // 517 is the transient lie Windows once exposed; 5 is not a real ATT MTU.
+    const { logs, phone, link } = await connected();
+    phone.emit('mtu', 517);
+    phone.emit('mtu', 5);
+
+    link.pipe.write(Buffer.alloc(600));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
+    expect(logs.join(' ')).toContain('ignoring implausible MTU report');
+    expect(reassembled(phone)).toHaveLength(1);
+  });
+
+  it('re-derives chunking when the link renegotiates mid-connection', async () => {
+    const { logs, phone, link } = await connected({ mtu: 247 });
+
+    link.pipe.write(Buffer.alloc(1000));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(phone.rx.writes).toHaveLength(5);
+
+    // The documented Windows behaviour: the large MTU falls back to 23. The
+    // chunker is sized per call precisely so the next write follows.
+    phone.emit('mtu', 23);
+    link.pipe.write(Buffer.alloc(1000));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const later = phone.rx.writes.slice(5);
+    expect(later.length).toBeGreaterThan(5);
+    expect(Math.max(...later.map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
+    expect(logs.join(' ')).toContain('renegotiated');
+    expect(reassembled(phone)).toHaveLength(2);
+  });
+});
+
 describe('BleLinkClient lifecycle', () => {
   async function connected() {
     const { noble, client, logs } = build();
@@ -531,6 +668,6 @@ describe('BleLinkClient with SecureChannel', () => {
     expect((await arrived).toString()).toBe('spawn claude');
     expect(initiator.sas).toBe(responder.sas);
     expect(phoneA.rx.writeModes.some((mode) => mode === false)).toBe(true);
-    expect(phoneA.rx.writeModes.at(-1)).toBe(true);
+    expect(phoneA.rx.writeModes[phoneA.rx.writeModes.length - 1]).toBe(true);
   });
 });
