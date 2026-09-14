@@ -208,11 +208,19 @@ class BleReassembler(
         onMessage(message)
     }
 
-    private fun reset() {
+    /**
+     * Forget everything, including the sequence expectation. Used when the
+     * connection itself is replaced: the peer restarts its chunker at zero, so
+     * a carried-over expectation would read the first fresh chunk as a gap and
+     * drop it. Helm does not need this — it builds a fresh reassembler per
+     * connection — so this is the one place the two mirrors differ.
+     */
+    fun reset() {
         parts = mutableListOf()
         assembled = 0
         expectedLength = 0
         inFlight = false
+        expectedSeq = null
     }
 
     /**

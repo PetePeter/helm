@@ -339,6 +339,10 @@ class BleLinkSession(
         // A fresh sequence counter per connection: the peer's reassembler is
         // also new, and carrying the old count across would read as a gap.
         chunker = BleChunker()
+        // And the mirror image: OUR reassembler must forget the old count too,
+        // or the peer's fresh chunker starting at zero drops its first message
+        // as a sequence gap.
+        reassembler.reset()
     }
 
     private fun transitionTo(next: LinkState) {

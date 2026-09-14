@@ -193,7 +193,11 @@ when a registered link has been silent for 15s it sends a **PING** (protocol v2
 frame; the phone answers PONG), and if *nothing* arrives inbound within two
 intervals the link is dropped, `offline` is emitted, and the normal rescan
 recovers it. Any inbound traffic — application data, pong, anything — resets the
-probe; probing pauses while a handshake is in flight. The initiator handshake
+probe; probing pauses while a handshake is in flight, and both probing and the
+silence-drop pause while the link's outbound write queue is still working a
+transfer (a bulk send is itself proof the peer path is up, and the reply that
+would reset the clock cannot arrive until it finishes; a wedged queue is still
+dropped, bounded by the per-chunk 10s write deadline). The initiator handshake
 itself is bounded (10s), so a phone that accepts the connection but never
 answers HELLO is rejected and rescanned rather than held forever. A scan start
 the radio refuses also feeds the rescan backoff instead of leaving the client
@@ -203,13 +207,18 @@ dormant.
 
 The default ATT MTU of 23 leaves ~20 usable bytes per notification — a 100 KiB
 snapshot would be ~5,000 serial chunks. Helm therefore listens for noble's
-negotiated-MTU report (on Windows the WinRT binding emits it right after
-connect; there is no central-side request API) and sizes chunks from it, capped
-at 247. Only an explicit report is trusted — never the ambient `peripheral.mtu`,
-which transiently reports 517 during negotiation, the reason the old code
-clamped to 20 — and anything outside `[23, 247]` is ignored. Without a report,
-chunking falls back to 20 bytes and everything still works, just slower. The
-phone side already sizes notifications from its own negotiated MTU.
+negotiated-MTU report (on Windows the WinRT binding emits the GATT session's
+MaxPduSize — MTU minus the 3-byte ATT header — and on real hardware the report
+lands *during* `connectAsync`, so the listener is attached before the connect
+attempt starts and the value is replayed once the pipe exists) and sizes chunks
+from it, capped at the 517 MTU the phone negotiates. Only an explicit report is
+trusted — never the ambient `peripheral.mtu`, which transiently reports 517
+during negotiation — and anything outside `[23, 517]` is ignored. A genuine 514
+report (phone MTU 517) therefore yields 511-byte chunks: the 3-byte ATT
+subtraction is applied twice, which only ever under-shoots the peer's window,
+so it is left alone. Without a report, chunking falls back to 20 bytes and
+everything still works, just slower. The phone side already sizes notifications
+from its own negotiated MTU.
 
 ## The phone side (`android/app/src/main/kotlin/com/potatomotato/helm/ble/`)
 

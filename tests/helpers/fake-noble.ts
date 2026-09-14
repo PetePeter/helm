@@ -91,6 +91,13 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
   hangDisconnect = false;
   /** How many times Helm asked for a disconnect — proves orphan cleanup. */
   disconnectCalls = 0;
+  /**
+   * MTU report fired during connectAsync, before it resolves. This is the
+   * observed Windows behaviour: the WinRT MaxPduSize report lands while the
+   * connect await is still outstanding, so a listener attached only after it
+   * resolves never sees anything at all.
+   */
+  mtuOnConnect: number | null = null;
 
   constructor(readonly id: string = 'aa:bb:cc:dd:ee:ff') {
     super();
@@ -100,6 +107,7 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
     if (this.failConnect) throw this.failConnect;
     if (this.hangConnect) return new Promise<void>(() => {});
     this.connected = true;
+    if (this.mtuOnConnect !== null) this.emit('mtu', this.mtuOnConnect);
   }
 
   async disconnectAsync(): Promise<void> {

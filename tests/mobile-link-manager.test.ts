@@ -552,6 +552,80 @@ describe('MobileLinkManager keepalive', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(channel.pings).toBe(0);
   });
+
+  /**
+   * The churn root cause, transport side: a ~55KB session_list reply chunked at
+   * 20 bytes held the outbound queue for ~58s, the PING queued behind it never
+   * reached the air, and the silence rule dropped the link mid-transfer. While
+   * the queue is still working, the transfer IS the evidence of life — the peer
+   * is accepting chunks, and the inbound traffic that would reset the clock
+   * cannot arrive until the answer has finished going out.
+   */
+  it('does not silence-drop while the outbound queue is still working a transfer', async () => {
+    const h = keepaliveHarness();
+    const link = new FakeBleLink(ADDR);
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, link);
+    const channel = h.channels[0];
+    channel.answerPings = false;
+    link.pendingWrites = 1;
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+    // A probe would queue behind the transfer and arrive after it anyway.
+    expect(channel.pings).toBe(0);
+    expect(h.transport.rejected).toEqual([]);
+  });
+
+  it('resumes the silence-drop once the queue drains', async () => {
+    const h = keepaliveHarness();
+    const link = new FakeBleLink(ADDR);
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, link);
+    const channel = h.channels[0];
+    channel.answerPings = false;
+    link.pendingWrites = 1;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+
+    // The transfer is done but nothing came back: the normal rule applies again.
+    link.pendingWrites = 0;
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(channel.closed).toBe(true);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+  });
+
+  /**
+   * The exemption must not become a way to hold a dead link forever. It cannot:
+   * each queued chunk carries the transport's own write deadline, and the error
+   * it raises drops the link through the transport-error path long before the
+   * keepalive clock would ever matter again.
+   */
+  it('still drops a wedged queue through the per-chunk write deadline', async () => {
+    const h = keepaliveHarness();
+    const link = new FakeBleLink(ADDR);
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, link);
+    const channel = h.channels[0];
+    channel.answerPings = false;
+    link.pendingWrites = 1;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+
+    // The 10s chunk-write deadline fires on the stalled first chunk.
+    link.failPendingWrite();
+
+    expect(channel.closed).toBe(true);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+  });
 });
 
 describe('MobileLinkManager lifecycle', () => {

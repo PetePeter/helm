@@ -101,4 +101,19 @@ class BleFramingTest {
         assertEquals(BleFraming.MIN_CHUNK_BYTES, BleFraming.chunkSizeForMtu(10))
         assertEquals(182, BleFraming.chunkSizeForMtu(185))
     }
+
+    @Test
+    fun `reset clears the sequence expectation so a fresh connection is not a gap`() {
+        BleChunker().chunk(Random(14).nextBytes(120), 20).forEach(reassembler::push)
+        assertEquals(1, received.size)
+
+        // The connection is replaced: Helm's chunker restarts at zero, so a
+        // carried-over expectation would drop the first fresh message as a gap.
+        reassembler.reset()
+        val fresh = Random(15).nextBytes(40)
+        BleChunker().chunk(fresh, 20).forEach(reassembler::push)
+
+        assertEquals(emptyList<String>(), drops)
+        assertEquals(listOf(fresh.toHex()), received.drop(1).map { it.toHex() })
+    }
 }

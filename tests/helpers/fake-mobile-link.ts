@@ -9,16 +9,19 @@
  */
 
 import { EventEmitter } from 'node:events';
-import type { BleLink } from '../../src/mobile/ble/ble-link-client';
+import type { BleLink, BleTransportError } from '../../src/mobile/ble/ble-link-client';
 import type { MobileLinkTransport } from '../../src/mobile/mobile-link-manager';
 
 /** One connected phone, presented as a BytePipe that records what is written. */
 export class FakeBleLink implements BleLink {
   readonly writes: Buffer[] = [];
   closed = false;
+  /** Chunk writes the transport is still working through; > 0 is a busy queue. */
+  pendingWrites = 0;
 
   private readonly dataHandlers: Array<(chunk: Buffer) => void> = [];
   private readonly closeHandlers: Array<() => void> = [];
+  private readonly transportErrorHandlers: Array<(failure: BleTransportError) => void> = [];
 
   constructor(
     readonly deviceId: string,
@@ -49,6 +52,29 @@ export class FakeBleLink implements BleLink {
 
   onFramingDrop(): void {
     /* diagnostics only; nothing under test listens */
+  }
+
+  hasPendingWrites(): boolean {
+    return this.pendingWrites > 0;
+  }
+
+  onTransportError(handler: (failure: BleTransportError) => void): void {
+    this.transportErrorHandlers.push(handler);
+  }
+
+  /**
+   * Simulate the transport's per-chunk write deadline firing — the way a wedged
+   * queue is bounded in the real BleLinkPipe.
+   */
+  failPendingWrite(): void {
+    const failure: BleTransportError = {
+      chunkLength: 20,
+      mtu: 23,
+      withoutResponse: false,
+      elapsedMs: 10_000,
+      error: new Error('chunk write timed out'),
+    };
+    for (const handler of this.transportErrorHandlers) handler(failure);
   }
 
   /** Simulate the phone notifying Helm. */

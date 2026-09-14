@@ -47,11 +47,21 @@ const DEFAULT_ATT_MTU = 23;
 const MIN_NEGOTIATED_ATT_MTU = 23;
 
 /**
- * Ceiling on the negotiated MTU we will act on, matching the 247 the Android
- * peripheral negotiates. A larger report (the transient 517 Windows once
- * exposed) is not evidence the air link really carries that much.
+ * Ceiling on the negotiated MTU we will act on. The report Windows emits is the
+ * GATT session's MaxPduSize — MTU minus the 3-byte ATT header — and the phone
+ * negotiates a 517-byte MTU, so the genuine report is 514, exactly what the
+ * phone chunks its notifications at. Any chunk at or below our own negotiated
+ * payload is safe to send, so the cap sits at the 517 MTU itself. (The old 247
+ * ceiling silently discarded that genuine report and pinned every real transfer
+ * to 20-byte chunks, which is what starved the keepalive into dropping the link
+ * mid-transfer.)
+ *
+ * chunkSize still subtracts ATT_OVERHEAD_BYTES from the report, so a 514 report
+ * yields 511-byte chunks — 3 bytes under what the phone actually accepts. That
+ * double-subtraction is harmless (we can only under-shoot the peer's window)
+ * and is left alone deliberately.
  */
-const MAX_NEGOTIATED_ATT_MTU = 247;
+const MAX_NEGOTIATED_ATT_MTU = 517;
 
 const DEFAULT_RECONNECT_BASE_MS = 1_000;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
@@ -121,6 +131,8 @@ export interface NoblePeripheral {
    * the only MTU source trusted here (see BleLinkPipe.chunkSize).
    */
   on(event: 'mtu', handler: (mtu: number) => void): unknown;
+  /** Detach the report listener again when an attempt or a link ends. */
+  off(event: 'mtu', handler: (mtu: number) => void): unknown;
 }
 
 export interface NobleApi {
@@ -142,6 +154,13 @@ export interface BleLink {
   onFramingDrop(handler: (reason: string) => void): void;
   /** Observe a transport failure that makes the byte stream unsafe to continue. */
   onTransportError?(handler: (failure: BleTransportError) => void): void;
+  /**
+   * Whether chunk writes are still queued or in flight — a bulk transfer the
+   * radio has not finished sending. The keepalive reads this as liveness: see
+   * mobile-link-manager.ts. Optional because a transport that cannot answer
+   * simply gets the plain silence rule.
+   */
+  hasPendingWrites?(): boolean;
 }
 
 export interface BleTransportError {
@@ -281,8 +300,18 @@ export class BleLinkClient extends EventEmitter {
     const attemptId = this.nextAttemptId++;
     let step = 'stopScanning';
     // The pipe does not exist until the last connect step, but the MTU report
-    // can arrive before it — route the report through this slot.
-    let onNegotiatedMtu: ((mtu: number) => void) | null = null;
+    // can beat it: on Windows the WinRT MaxPduSize report lands DURING
+    // connectAsync — real logs show zero 'mtu' events ever reaching a listener
+    // attached after the connect await. So the listener goes on before the
+    // connect attempt is even started, the latest report is kept, and it is
+    // replayed into the pipe the moment the pipe exists.
+    let latestMtu: number | null = null;
+    let pipe: BleLinkPipe | null = null;
+    const onMtu = (mtu: number) => {
+      latestMtu = mtu;
+      pipe?.noteNegotiatedMtu(mtu);
+    };
+    peripheral.on('mtu', onMtu);
     this.log(`BLE attempt ${attemptId} discovered ${peripheral.id}`);
     try {
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
@@ -292,12 +321,6 @@ export class BleLinkClient extends EventEmitter {
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
       await this.bounded(step, () => peripheral.connectAsync());
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
-
-      // Listen for the negotiated MTU before anything else can race it: on
-      // Windows the GATT session's MaxPduSize report lands just after connect
-      // resolves, and missing it would pin the whole connection to 20-byte
-      // chunks. Later reports (a renegotiation in either direction) update it.
-      peripheral.on('mtu', (mtu: number) => onNegotiatedMtu?.(mtu));
 
       step = 'discover';
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
@@ -314,7 +337,12 @@ export class BleLinkClient extends EventEmitter {
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
       const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now, this.writeTimeoutMs);
-      onNegotiatedMtu = (mtu: number) => link.noteNegotiatedMtu(mtu);
+      // Replay a report that arrived before the pipe did; the plausibility band
+      // in noteNegotiatedMtu applies to it exactly as to a live one. Later
+      // reports (a renegotiation in either direction) update the live link
+      // through the listener above.
+      if (latestMtu !== null) link.noteNegotiatedMtu(latestMtu);
+      pipe = link;
       this.active = link;
       this.attempts = 0;
       peripheral.once('disconnect', () => this.onDisconnect(link));
@@ -323,6 +351,7 @@ export class BleLinkClient extends EventEmitter {
     } catch (error) {
       this.busy = false;
       this.log(`BLE attempt ${attemptId} ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
+      peripheral.off('mtu', onMtu);
       await this.abandon(peripheral);
       this.emitError(error);
       this.scheduleRescan();
@@ -473,6 +502,8 @@ class BleLinkPipe implements BleLink {
   private readonly closeHandlers: Array<() => void> = [];
   private readonly transportErrorHandlers: Array<(failure: BleTransportError) => void> = [];
   private queue: Promise<void> = Promise.resolve();
+  /** Write tasks queued or in flight; write() adds one and retires it. */
+  private pendingWrites = 0;
   private closed = false;
   private readonly linkedAt: number;
   private writeSequence = 0;
@@ -548,6 +579,16 @@ class BleLinkPipe implements BleLink {
     this.transportErrorHandlers.push(handler);
   }
 
+  /**
+   * Whether any chunk writes are still queued or in flight. The keepalive reads
+   * this as liveness — a queue that is moving proves the peer path is up, and
+   * one that stops moving is killed by the per-chunk write deadline well before
+   * this could ever vouch for a dead link.
+   */
+  hasPendingWrites(): boolean {
+    return this.pendingWrites > 0;
+  }
+
   write(data: Buffer): void {
     if (this.closed) return;
     let chunks: Buffer[];
@@ -564,37 +605,42 @@ class BleLinkPipe implements BleLink {
         ` chunks=${chunks.length} chunkSize=${this.chunkSize()} mtu=${this.peripheral.mtu ?? DEFAULT_ATT_MTU}`,
     );
 
+    this.pendingWrites += 1;
     this.queue = this.queue.then(async () => {
-      this.log(`BLE write begin ${this.deviceId} seq=${writeSequence}`);
-      for (const [chunkIndex, chunk] of chunks.entries()) {
-        if (this.closed) return;
-        try {
-          this.log(`BLE write chunk ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length} bytes=${chunk.length}`);
-          await this.deadline('chunk write', this.rx.writeAsync(chunk, this.writeWithoutResponse));
-          this.log(`BLE write chunk complete ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length}`);
-        } catch (error) {
-          const failure: BleTransportError = {
-            chunkLength: chunk.length,
-            mtu: this.peripheral.mtu ?? DEFAULT_ATT_MTU,
-            withoutResponse: this.writeWithoutResponse,
-            elapsedMs: Date.now() - this.linkedAt,
-            error,
-          };
-          // A missing chunk leaves the framed stream ambiguous. Continuing
-          // would append later bytes to a truncated frame, so force the owner
-          // through its existing reconnect path; never retry an uncertain write.
-          this.log(
-            `BLE write to ${this.deviceId} failed after ${failure.elapsedMs}ms` +
-              ` (chunk=${failure.chunkLength}, mtu=${failure.mtu},` +
-              ` withoutResponse=${failure.withoutResponse}): ${describe(error)}`,
-            error,
-          );
-          for (const handler of this.transportErrorHandlers) handler(failure);
-          void this.disconnect();
-          return;
+      try {
+        this.log(`BLE write begin ${this.deviceId} seq=${writeSequence}`);
+        for (const [chunkIndex, chunk] of chunks.entries()) {
+          if (this.closed) return;
+          try {
+            this.log(`BLE write chunk ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length} bytes=${chunk.length}`);
+            await this.deadline('chunk write', this.rx.writeAsync(chunk, this.writeWithoutResponse));
+            this.log(`BLE write chunk complete ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length}`);
+          } catch (error) {
+            const failure: BleTransportError = {
+              chunkLength: chunk.length,
+              mtu: this.peripheral.mtu ?? DEFAULT_ATT_MTU,
+              withoutResponse: this.writeWithoutResponse,
+              elapsedMs: Date.now() - this.linkedAt,
+              error,
+            };
+            // A missing chunk leaves the framed stream ambiguous. Continuing
+            // would append later bytes to a truncated frame, so force the owner
+            // through its existing reconnect path; never retry an uncertain write.
+            this.log(
+              `BLE write to ${this.deviceId} failed after ${failure.elapsedMs}ms` +
+                ` (chunk=${failure.chunkLength}, mtu=${failure.mtu},` +
+                ` withoutResponse=${failure.withoutResponse}): ${describe(error)}`,
+              error,
+            );
+            for (const handler of this.transportErrorHandlers) handler(failure);
+            void this.disconnect();
+            return;
+          }
         }
+        this.log(`BLE write complete ${this.deviceId} seq=${writeSequence}`);
+      } finally {
+        this.pendingWrites -= 1;
       }
-      this.log(`BLE write complete ${this.deviceId} seq=${writeSequence}`);
     });
   }
 

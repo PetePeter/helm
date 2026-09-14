@@ -410,13 +410,14 @@ describe('BleLinkClient pipe', () => {
  * trusted and 20 bytes remains the fallback.
  */
 describe('BleLinkClient MTU negotiation', () => {
-  async function connected(options: { mtu?: number } = {}) {
+  async function connected(options: { mtu?: number; duringConnect?: number } = {}) {
     const { noble, client, logs } = build();
     await client.start();
     noble.powerOn();
     await vi.advanceTimersByTimeAsync(0);
     const pending = nextLink(client);
     const phone = new FakePeripheral('mtu-phone');
+    if (options.duringConnect !== undefined) phone.mtuOnConnect = options.duringConnect;
     noble.discover(phone);
     const link = await pending;
     if (options.mtu !== undefined) phone.emit('mtu', options.mtu);
@@ -463,9 +464,9 @@ describe('BleLinkClient MTU negotiation', () => {
   });
 
   it('ignores implausible reports and keeps the fallback chunking', async () => {
-    // 517 is the transient lie Windows once exposed; 5 is not a real ATT MTU.
+    // 600 is above anything Windows negotiates; 5 is not a real ATT MTU.
     const { logs, phone, link } = await connected();
-    phone.emit('mtu', 517);
+    phone.emit('mtu', 600);
     phone.emit('mtu', 5);
 
     link.pipe.write(Buffer.alloc(600));
@@ -474,6 +475,59 @@ describe('BleLinkClient MTU negotiation', () => {
     expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
     expect(logs.join(' ')).toContain('ignoring implausible MTU report');
     expect(reassembled(phone)).toHaveLength(1);
+  });
+
+  it('accepts the Windows MaxPduSize report of 514 and chunks to 511', async () => {
+    // The real churn root cause: the phone negotiates a 517 MTU, Windows reports
+    // it as MaxPduSize (= MTU - 3) = 514, and a 247 ceiling discarded the report
+    // — pinning a ~55KB session_list reply to 20-byte chunks and starving the
+    // keepalive. The report must be trusted and 511-byte chunks must follow.
+    const { logs, phone, link } = await connected({ mtu: 514 });
+
+    const payload = Buffer.alloc(1_500, 0x3b);
+    link.pipe.write(payload);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(phone.rx.writes.length).toBeLessThan(5);
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(511);
+    expect(logs.join(' ')).toContain('chunkSize=511');
+    const received = reassembled(phone);
+    expect(received).toHaveLength(1);
+    expect(received[0].equals(payload)).toBe(true);
+  });
+
+  it('keeps 517 and 23 as the plausible band edges, and rejects what is outside', async () => {
+    const { logs, phone, link } = await connected();
+
+    phone.emit('mtu', 517);
+    link.pipe.write(Buffer.alloc(1_500));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logs.join(' ')).toContain('chunkSize=514');
+    expect(phone.rx.writes[0].length).toBeLessThanOrEqual(514);
+
+    phone.emit('mtu', 23);
+    link.pipe.write(Buffer.alloc(100));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(logs.join(' ')).toContain('(renegotiated)');
+    expect(Math.max(...phone.rx.writes.slice(-2).map((chunk) => chunk.length))).toBeLessThanOrEqual(20);
+
+    phone.emit('mtu', 22);
+    phone.emit('mtu', 600);
+    expect(logs.join(' ').match(/ignoring implausible MTU report/g)).toHaveLength(2);
+    expect(reassembled(phone)).toHaveLength(2);
+  });
+
+  it('captures an MTU report that arrives during connectAsync, before the link exists', async () => {
+    // The red test for the listener race: on Windows the report fires while the
+    // connect await is still outstanding, so a listener attached afterwards saw
+    // ZERO mtu events ever and every connection stayed on 20-byte chunks.
+    const { logs, phone, link } = await connected({ duringConnect: 514 });
+
+    link.pipe.write(Buffer.alloc(1_500));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(511);
+    expect(logs.join(' ')).toContain('chunkSize=511');
   });
 
   it('re-derives chunking when the link renegotiates mid-connection', async () => {

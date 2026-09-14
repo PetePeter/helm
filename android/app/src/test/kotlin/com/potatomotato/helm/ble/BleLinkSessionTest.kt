@@ -167,6 +167,25 @@ class BleLinkSessionTest {
     }
 
     @Test
+    fun `a reconnect resets inbound framing so a fresh sequence is not read as a gap`() {
+        link()
+        BleChunker().chunk(Random(14).nextBytes(400), session.chunkSize)
+            .forEach { session.onRxWrite(helm, it) }
+        assertEquals(1, messages.size)
+
+        // Helm walks away and comes back; its fresh chunker restarts at seq 0
+        // while this reassembler was left expecting the old count.
+        session.onCentralDisconnected(helm)
+        link()
+
+        val fresh = Random(15).nextBytes(100)
+        BleChunker().chunk(fresh, session.chunkSize).forEach { session.onRxWrite(helm, it) }
+
+        assertEquals(listOf(fresh.toHex()), messages.drop(1).map { it.toHex() })
+        assertTrue(logs.none { it.contains("sequence gap") })
+    }
+
+    @Test
     fun `advertising failure backs off instead of spinning`() {
         session.start()
         session.onAdvertiseFailed("DATA_TOO_LARGE")

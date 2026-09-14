@@ -277,6 +277,9 @@ export class MobileLinkManager extends EventEmitter {
    * an interval is probed with a PING; one silent for the miss limit is dead —
    * noble never told us, so the drop → offline → reject → rescan chain is the
    * only recovery path that exists.
+   *
+   * One exemption: a link whose outbound queue is still working a transfer is
+   * never silence-dropped or probed. See keepaliveTick.
    */
   private scheduleKeepalive(): void {
     if (!this.enabled || this.keepaliveTimer) return;
@@ -303,6 +306,20 @@ export class MobileLinkManager extends EventEmitter {
     for (const active of [...this.links.values()]) {
       if (!active.channel) continue;
       const silentFor = this.now() - active.lastInboundAt;
+      // A bulk write still working through the outbound queue IS evidence of a
+      // live peer path: the phone is accepting chunks, and the inbound traffic
+      // that would reset this clock — the reply itself — cannot arrive until
+      // the transfer finishes. Without this exemption every long transfer died:
+      // a ~55KB session_list reply at 20-byte chunks outpaced the silence
+      // budget, the PING queued behind it never reached the air, and the link
+      // was dropped mid-transfer, reconnecting and repeating forever.
+      //
+      // This cannot hold a dead link forever, bounded by construction: each
+      // queued chunk carries the transport's own write deadline, and the error
+      // it raises drops the link through onTransportError; a queue that keeps
+      // draining slowly empties, and the silence rule below resumes. Probing is
+      // paused too — a PING would queue behind the transfer and arrive after it.
+      if (active.link.hasPendingWrites?.()) continue;
       if (silentFor >= this.keepaliveIntervalMs * this.keepaliveMissLimit) {
         this.dropLink(active.machineId, `keepalive: no inbound traffic for ${silentFor}ms`);
         continue;
