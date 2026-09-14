@@ -200,4 +200,24 @@ describe('MobileArtifactNotifier', () => {
     expect(() => notifier.revealed('s1', 'a1')).not.toThrow();
     expect(links.sent).toHaveLength(0);
   });
+
+  it('drops a session\'s dirty set once its last mark is spent', () => {
+    // Hygiene, not behaviour: an empty set is residue a finished buzz leaves
+    // behind, and it would otherwise outlive the session it belongs to. The
+    // map is read directly because the cleanup has no other observable face.
+    wire();
+
+    const artifact = artifacts.create('s1', 'A', 'markdown', 'a'); // create spends its own mark
+    artifacts.rename(artifact.id, 'A — renamed'); // re-marks; no reveal follows
+    expect(notifier['dirty'].get('s1')?.size).toBe(1); // one mark pending
+
+    links.sent.length = 0;
+    notifier.revealed('s1', artifact.id); // spends the last mark, pushes, drops the set
+    expect(links.records()[0]).toMatchObject({ artifactId: artifact.id, title: 'A — renamed' });
+    expect(notifier['dirty'].has('s1')).toBe(false); // spent out — nothing kept
+
+    links.sent.length = 0;
+    notifier.revealed('s1', artifact.id);
+    expect(links.sent).toHaveLength(0); // a re-open after the buzz is not news again
+  });
 });

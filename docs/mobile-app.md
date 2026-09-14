@@ -108,13 +108,16 @@ got a **session-addressed** family that takes the session as an argument:
 
 Two deliberate edges: **create is markdown-only** because HTML authored from a
 phone keyboard is a sanitization question (invariant 9) nobody has answered, and
-**reads and downloads are budgeted to the wire frame** (~94KB decoded — the
-largest body that still fits a 128KiB frame once the download's base64 inflation
-and the JSON/AEAD wrapper are paid). A decoded-only cap once let a boundary-size
-body encode past the ceiling and tear the link instead of refusing, so the check
-lives on what actually ships. Over budget, both refuse and point at the desktop
-viewer. A cross-session artifact id answers not-found like a genuinely missing
-one, so nothing leaks about which artifacts exist elsewhere.
+**reads and downloads are budgeted to the wire frame**, each on the form that
+actually ships. A download body is base64 (3 bytes to 4 chars, ~94KB decoded at
+the cap); an inline read body is a plain JSON string, so **JSON escaping counts
+against the frame** — a quote doubles, a control character costs 6 bytes — and
+the authority is the measured escaped length (JSON-inert content may run larger
+than the download cap; escape-heavy content is refused sooner). Each cap once
+let its boundary-size body ride past the 128KiB ceiling and tear the link
+instead of refusing. Over budget, both refuse and point at the desktop viewer. A
+cross-session artifact id answers not-found like a genuinely missing one, so
+nothing leaks about which artifacts exist elsewhere.
 
 Artifacts also **push**. `MobileArtifactNotifier` (sibling of the state-alert
 notifier) listens to the ArtifactManager and emits a chat record with the

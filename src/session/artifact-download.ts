@@ -3,12 +3,19 @@
  * artifact, whether it asks for a file or for inline content.
  *
  * WHY A CAP: artifacts are unbounded markdown/HTML, but a phone reads them over
- * a SecureChannel whose frames ceiling is 128KiB (MAX_FRAME_BYTES), and base64
- * inflates a body by a third on the way. A cap in DECODED bytes alone is not
- * enough — a 256KiB body encodes to ~350KiB of base64 and would tear the link
- * instead of refusing — so the authoritative check is on the ENCODED result,
- * with a decoded pre-check ahead of it only so the error names a byte count
- * instead of paying to encode a body that cannot possibly fit.
+ * a SecureChannel whose frames ceiling is 128KiB (MAX_FRAME_BYTES). The two
+ * envelopes inflate differently on the way, so each has its own authority:
+ *
+ *  - A DOWNLOAD body is base64 — 3 bytes become 4 chars, and the output alphabet
+ *    is JSON-inert, so encoding is the ONLY inflation. The authority is the
+ *    encoded length, with a decoded pre-check ahead of it only so the error
+ *    names a byte count instead of paying to encode a body that cannot fit.
+ *  - An INLINE READ body is a plain JSON string inside the result record, and
+ *    JSON escaping can inflate it up to 6x: a quote or a backslash doubles, a
+ *    control character becomes a 6-byte `\u00XX` escape. A decoded-only cap
+ *    once accepted a frame-full of quotes that escaped to ~1.5 frames and tore
+ *    the link, so the authority here is the MEASURED JSON-encoded length, with
+ *    the decoded pre-check only to condemn absurd bodies without stringify.
  *
  * An oversized artifact refuses legibly and points at the desktop, where the
  * artifact viewer renders it in full.
@@ -37,6 +44,15 @@ export const ARTIFACT_DOWNLOAD_MAX_ENCODED_BYTES = 128 * 1024 - DOWNLOAD_WRAPPER
  * per 3 bytes). A pre-check, not the authority — the encoded length decides.
  */
 export const ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES = Math.floor(ARTIFACT_DOWNLOAD_MAX_ENCODED_BYTES / 4) * 3;
+
+/**
+ * The wire budget for an inline read's body, measured in its JSON-ENCODED form.
+ * Same frame-minus-headroom arithmetic a download uses, but the number counts
+ * escaped bytes — the form the result record actually carries. Pinned to
+ * MAX_FRAME_BYTES (src/mobile/secure-channel.ts) by a test alongside the
+ * download constants, so raising either side alone fails loudly.
+ */
+export const ARTIFACT_INLINE_MAX_ESCAPED_BYTES = 128 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
 
 const MIME_BY_KIND: Record<ArtifactKind, string> = {
   markdown: 'text/markdown',
@@ -111,15 +127,14 @@ export function selectArtifactVersion(artifact: Artifact, version?: number): { v
 }
 
 /**
- * Refuse, legibly, a body that cannot ride a frame. The budget is stated in
- * DECODED bytes because that is the honest number to name in an error, and
- * because it implies the encoded bound for BOTH envelopes: base64 inflates 3
- * bytes to 4 chars, so a body at the decoded cap encodes to exactly the encoded
- * budget, while a plain JSON string ships smaller than its own byte count. A
- * test pins the "never encodes past the frame" property rather than trusting
- * this arithmetic.
+ * Refuse, legibly, a body that cannot ride a frame as a DOWNLOAD. The budget is
+ * stated in DECODED bytes because that is the honest number to name in an error
+ * and the honest pre-check for base64: 3 bytes become 4 chars, so a body at the
+ * decoded cap encodes to exactly the encoded budget — and base64 output is
+ * JSON-inert, so nothing inflates it further on the wire. A test pins the
+ * "never encodes past the frame" property rather than trusting this arithmetic.
  */
-export function assertFitsWireBudget(artifact: Artifact, content: string): void {
+export function assertFitsDownloadBudget(artifact: Artifact, content: string): void {
   const bytes = Buffer.byteLength(content, 'utf8');
   if (bytes > ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES) {
     throw new Error(
@@ -131,9 +146,35 @@ export function assertFitsWireBudget(artifact: Artifact, content: string): void 
   }
 }
 
+/**
+ * Refuse, legibly, a body that cannot ride a frame as an INLINE READ. Unlike
+ * base64, a plain JSON string is inflated by its own escaping — quotes and
+ * backslashes double, control characters cost 6 bytes — so the decoded byte
+ * count UNDERSTATES what rides the wire, up to 6x. Hence two checks: the
+ * decoded pre-check (escaping never shrinks a body, so a body already past the
+ * ceiling needs no stringify to be condemned) and the authoritative measurement
+ * of the escaped form, which is exact for every escape class. Together they
+ * keep every ACCEPTED read inside the frame that actually carries it.
+ */
+export function assertFitsInlineReadBudget(artifact: Artifact, content: string): void {
+  const bytes = Buffer.byteLength(content, 'utf8');
+  const reject = (detail: string) =>
+    new Error(
+      `Artifact "${artifact.title}" ${detail} past the ` +
+        `${ARTIFACT_INLINE_MAX_ESCAPED_BYTES}-byte inline cap ` +
+        '(JSON escaping counts against the mobile frame budget) — ' +
+        'fetch it on the desktop instead',
+    );
+  if (bytes > ARTIFACT_INLINE_MAX_ESCAPED_BYTES) throw reject(`is ${bytes} bytes`);
+  const escapedBytes = Buffer.byteLength(JSON.stringify(content), 'utf8');
+  if (escapedBytes > ARTIFACT_INLINE_MAX_ESCAPED_BYTES) {
+    throw reject(`is ${bytes} bytes, escaping to ${escapedBytes} bytes of JSON`);
+  }
+}
+
 /** The download body: base64 (UTF-8), size-checked like every other envelope. */
 export function encodeArtifactForWire(artifact: Artifact, content: string): string {
-  assertFitsWireBudget(artifact, content);
+  assertFitsDownloadBudget(artifact, content);
   return Buffer.from(content, 'utf8').toString('base64');
 }
 
@@ -158,14 +199,15 @@ export function buildArtifactDownload(artifact: Artifact, version?: number): Art
 
 /**
  * Build the inline-read envelope: metadata plus the ONE version that was asked
- * for (or the latest), size-checked like a download since it rides the same
- * wire. An empty version body passes — nothing to encode, nothing to burst.
+ * for (or the latest). Size-checked on the JSON-ESCAPED form, because plain
+ * text is exactly the body class the download cap cannot police — escaping can
+ * inflate it after these decoded bytes are counted. An empty version body
+ * passes — nothing to encode, nothing to burst.
  */
 export function buildArtifactRead(artifact: Artifact, version?: number): ArtifactRead {
   const selected = selectArtifactVersion(artifact, version);
-  // Plain text, not base64: a read is for RENDERING, and the budget is checked
-  // on the same decoded bytes either way.
-  assertFitsWireBudget(artifact, selected.content);
+  // Plain text, not base64: a read is for RENDERING.
+  assertFitsInlineReadBudget(artifact, selected.content);
   return {
     id: artifact.id,
     title: artifact.title,

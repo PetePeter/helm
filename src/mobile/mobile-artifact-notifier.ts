@@ -58,9 +58,13 @@ export class MobileArtifactNotifier {
   /**
    * `artifact:reveal` — pushes only when THIS artifact has a change waiting to
    * be explained. Another artifact's change never rides on this reveal.
+   * Spending a session's LAST mark drops its set: an empty set is residue a
+   * finished buzz leaves behind, not state.
    */
   revealed(sessionId: string, artifactId: string): void {
-    if (!this.dirty.get(sessionId)?.delete(artifactId)) return;
+    const marks = this.dirty.get(sessionId);
+    if (!marks?.delete(artifactId)) return;
+    if (marks.size === 0) this.dirty.delete(sessionId);
     const title = this.artifacts.get(artifactId)?.title;
     if (!title) return;
     this.push(sessionId, artifactId, title);
