@@ -82,7 +82,11 @@ fun SessionListScreen(
     val collapsed = collapsedList.toSet()
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
-        HelmAppBar(title = stringResource(R.string.app_name), linkState = linkState)
+        HelmAppBar(
+            title = stringResource(R.string.app_name),
+            linkState = linkState,
+            contextLabel = stringResource(R.string.sessions_context),
+        )
 
         // Only while there is nothing to pair WITH: once a desktop is connected
         // (or connecting) the button is an answer to a question already answered,

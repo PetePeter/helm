@@ -187,12 +187,17 @@ private fun Bubble(message: ChatMessage) {
                 }
             }
 
-            // Only outgoing messages carry a delivery state, and only the two
-            // that tell the user something they cannot otherwise see.
+            // Only outgoing messages carry a delivery state. Sending/Failed tell
+            // the user something they cannot otherwise see; Sent is the honest
+            // ceiling — the wire has no read receipt, so "✓ Sent" means the
+            // session_send_text call was accepted and the text reached the
+            // session. A true read ack would land as a new Delivery state here
+            // once Helm reports one, not as a guess at one.
             when (message.delivery) {
                 Delivery.Sending -> BubbleNote(R.string.chat_sending, HelmColors.Faint)
+                Delivery.Sent -> BubbleNote(R.string.chat_sent, HelmColors.Dim)
                 Delivery.Failed -> BubbleNote(R.string.chat_failed, HelmColors.Danger)
-                Delivery.Sent, null -> Unit
+                null -> Unit
             }
         }
     }
@@ -248,8 +253,19 @@ private fun Composer(
             )
         }
 
+        Text(
+            text = stringResource(R.string.chat_send),
+            color = if (draft.isBlank()) HelmColors.Faint else HelmColors.Accent,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier
+                .clip(RoundedCornerShape(HelmRadius.Pill))
+                .clickable(enabled = draft.isNotBlank(), onClick = onSend)
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+        )
+
         // The mic is permanent and first-class, not an option inside a keyboard:
-        // away from the desk it is the primary way a reply gets written.
+        // away from the desk it is the primary way a reply gets written, so it
+        // holds the thumb position and send sits beside it.
         Box(
             modifier = Modifier
                 .size(HelmSize.MicButton)
@@ -263,16 +279,6 @@ private fun Composer(
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-
-        Text(
-            text = stringResource(R.string.chat_send),
-            color = if (draft.isBlank()) HelmColors.Faint else HelmColors.Accent,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier
-                .clip(RoundedCornerShape(HelmRadius.Pill))
-                .clickable(enabled = draft.isNotBlank(), onClick = onSend)
-                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-        )
     }
 }
 

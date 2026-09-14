@@ -91,4 +91,15 @@ object HelmType {
         fontWeight = FontWeight.ExtraBold,
         fontSize = 9.sp,
     )
+
+    /**
+     * The app-bar back chevron. ‹ sits small in its em box — at title size it
+     * reads as punctuation rather than the button it is, so it carries a larger
+     * point size than the bar text to match the other glyph affordances.
+     */
+    val BackGlyph = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp,
+    )
 }

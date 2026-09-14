@@ -22,6 +22,7 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
+import com.potatomotato.helm.ui.theme.HelmType
 
 /**
  * The link, said once.
@@ -79,6 +80,12 @@ fun HelmAppBar(
     title: String,
     linkState: LinkState,
     modifier: Modifier = Modifier,
+    /**
+     * What the title is about, said quietly after it — the main screen names
+     * the desktop and then where you are: "Helm  SESSIONS". Screens whose title
+     * already says it (a session name, "Snapshot") leave this out.
+     */
+    contextLabel: String? = null,
     onBack: (() -> Unit)? = null,
     /**
      * The control overflow, when a screen has one. It sits AFTER the link badge
@@ -101,15 +108,22 @@ fun HelmAppBar(
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
         if (onBack != null) {
-            Text(
-                text = "‹",
-                color = HelmColors.Accent,
-                style = MaterialTheme.typography.titleLarge,
+            // The glyph lives in a centred touch-target box: sizing the Text
+            // itself left it top-aligned in the bar, hanging above the title.
+            Box(
                 modifier = Modifier
                     .size(HelmSize.TouchTarget)
-                    .clickable(onClick = onBack)
-                    .padding(horizontal = HelmSpacing.Md),
-            )
+                    .clickable(onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "‹",
+                    color = HelmColors.Accent,
+                    // ‹ sits small in its em box; at title size it reads as
+                    // punctuation, not a button. See HelmType.BackGlyph.
+                    style = HelmType.BackGlyph,
+                )
+            }
         }
         Text(
             text = title,
@@ -121,6 +135,15 @@ fun HelmAppBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false),
         )
+        if (contextLabel != null) {
+            Text(
+                text = contextLabel.uppercase(),
+                color = HelmColors.Faint,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                modifier = Modifier.padding(start = HelmSpacing.Xs),
+            )
+        }
         Row(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.End,
@@ -128,15 +151,21 @@ fun HelmAppBar(
         ) {
             LinkBadge(linkState)
             if (onOverflow != null) {
-                Text(
-                    text = stringResource(overflowGlyphRes),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.titleLarge,
+                // Same centred touch-target box as the back affordance: sizing
+                // the glyph Text directly left blank space after it, so the
+                // badge and the glyph hung short of the trailing edge.
+                Box(
                     modifier = Modifier
                         .size(HelmSize.TouchTarget)
-                        .clickable(onClick = onOverflow)
-                        .padding(start = HelmSpacing.Sm),
-                )
+                        .clickable(onClick = onOverflow),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(overflowGlyphRes),
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
             }
         }
     }

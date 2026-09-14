@@ -34,6 +34,7 @@
     <string name="agent_completed">Completed</string>
 
     <string name="sessions_new_session">New session</string>
+    <string name="sessions_context">Sessions</string>
     <string name="sessions_plan_claimed">plan</string>
     <string name="group_expanded_glyph">▾</string>
     <string name="group_collapsed_glyph">▸</string>
@@ -47,6 +48,7 @@
     <string name="chat_placeholder">Reply…</string>
     <string name="chat_send">Send</string>
     <string name="chat_sending">Sending…</string>
+    <string name="chat_sent">✓ Sent</string>
     <string name="chat_failed">Not delivered</string>
     <string name="chat_attachment">Attachment</string>
 
