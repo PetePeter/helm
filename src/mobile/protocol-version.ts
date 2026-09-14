@@ -17,10 +17,10 @@
  */
 
 /** Oldest wire protocol this build can still speak. */
-export const PROTOCOL_MIN = 1;
+export const PROTOCOL_MIN = 2;
 
 /** Newest wire protocol this build speaks. Bump on any breaking wire change. */
-export const PROTOCOL_MAX = 1;
+export const PROTOCOL_MAX = 2;
 
 /** Sanity ceiling — a version beyond this is corruption, not a future build. */
 const PROTOCOL_ABSURD = 4096;

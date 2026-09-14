@@ -8,9 +8,13 @@
 import { describe, expect, it } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import {
+  AEAD_NONCE_BYTES,
+  AEAD_SEQ_BYTES,
+  AEAD_TAG_BYTES,
   AeadReceiver,
   AeadSender,
   MAX_AEAD_COUNTER,
+  aeadNonce,
   deriveDirectionKeys,
 } from '../src/mobile/aead';
 
@@ -102,7 +106,7 @@ describe('AeadSender / AeadReceiver', () => {
 
   it('refuses to open past counter exhaustion', () => {
     const sender = new AeadSender(key, MAX_AEAD_COUNTER);
-    const receiver = new AeadReceiver(key, MAX_AEAD_COUNTER);
+    const receiver = new AeadReceiver(key, undefined, MAX_AEAD_COUNTER);
     expect(receiver.open(sender.seal(Buffer.from('last'))).toString()).toBe('last');
     expect(() => receiver.open(Buffer.alloc(32))).toThrow(/exhaust/i);
   });
@@ -115,5 +119,78 @@ describe('AeadSender / AeadReceiver', () => {
   it('rejects a key that is not 256 bits', () => {
     expect(() => new AeadSender(randomBytes(16))).toThrow();
     expect(() => new AeadReceiver(randomBytes(16))).toThrow();
+  });
+});
+
+describe('AeadSender / AeadReceiver wire sequence', () => {
+  const key = randomBytes(32);
+
+  it('carries the sequence number on the wire as an authenticated prefix', () => {
+    const sender = new AeadSender(key);
+    const frame = sender.seal(Buffer.from('abc'));
+    expect(frame.readBigUInt64BE(0)).toBe(0n);
+    // 8-byte sequence + 3 bytes plaintext + 16-byte tag.
+    expect(frame).toHaveLength(AEAD_SEQ_BYTES + 3 + AEAD_TAG_BYTES);
+    const second = sender.seal(Buffer.from('abc'));
+    expect(second.readBigUInt64BE(0)).toBe(1n);
+  });
+
+  it('resynchronises after a whole frame is lost in flight', () => {
+    const sender = new AeadSender(key);
+    const gaps: Array<[bigint, bigint]> = [];
+    const receiver = new AeadReceiver(key, (from, to) => gaps.push([from, to]));
+
+    expect(receiver.open(sender.seal(Buffer.from('one'))).toString()).toBe('one');
+    sender.seal(Buffer.from('never delivered'));
+    expect(receiver.open(sender.seal(Buffer.from('three'))).toString()).toBe('three');
+
+    expect(gaps).toEqual([[1n, 1n]]);
+    // The channel is still usable: the next in-sequence frame decrypts normally.
+    expect(receiver.open(sender.seal(Buffer.from('four'))).toString()).toBe('four');
+    expect(gaps).toEqual([[1n, 1n]]);
+  });
+
+  it('reports a multi-frame gap with the whole lost range', () => {
+    const sender = new AeadSender(key);
+    const gaps: Array<[bigint, bigint]> = [];
+    const receiver = new AeadReceiver(key, (from, to) => gaps.push([from, to]));
+
+    sender.seal(Buffer.from('a'));
+    sender.seal(Buffer.from('b'));
+    sender.seal(Buffer.from('c'));
+    expect(receiver.open(sender.seal(Buffer.from('d'))).toString()).toBe('d');
+    expect(gaps).toEqual([[0n, 2n]]);
+  });
+
+  it('binds the sequence into the tag — a spliced sequence fails authentication', () => {
+    const sender = new AeadSender(key);
+    const first = sender.seal(Buffer.from('one'));
+    const second = sender.seal(Buffer.from('two'));
+
+    // Take frame two's body+tag and pass it off under frame one's sequence.
+    const spliced = Buffer.concat([first.subarray(0, AEAD_SEQ_BYTES), second.subarray(AEAD_SEQ_BYTES)]);
+    const receiver = new AeadReceiver(key);
+    expect(() => receiver.open(spliced)).toThrow();
+  });
+
+  it('treats a sequence regression as a fatal replay, not a resync', () => {
+    const sender = new AeadSender(key);
+    const gaps: Array<[bigint, bigint]> = [];
+    const receiver = new AeadReceiver(key, (from, to) => gaps.push([from, to]));
+    const first = sender.seal(Buffer.from('one'));
+    receiver.open(first);
+    receiver.open(sender.seal(Buffer.from('two')));
+
+    expect(() => receiver.open(first)).toThrow(/replay/i);
+    expect(gaps).toEqual([]);
+    expect(() => receiver.open(sender.seal(Buffer.from('three')))).toThrow(/closed/);
+  });
+
+  it('keeps the nonce equal to the wire sequence so gaps cannot reuse one', () => {
+    const sender = new AeadSender(key, 40n);
+    const frame = sender.seal(Buffer.from('x'));
+    // The nonce is four zero bytes followed by the sequence — the wire prefix
+    // duplicates the nonce's counter field exactly.
+    expect(aeadNonce(40n).subarray(AEAD_NONCE_BYTES - AEAD_SEQ_BYTES).equals(frame.subarray(0, AEAD_SEQ_BYTES))).toBe(true);
   });
 });

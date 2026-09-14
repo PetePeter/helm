@@ -11,6 +11,8 @@ enum class FrameType(val wire: Byte) {
     CONFIRM(0x04),
     DATA(0x05),
     REFUSE(0x06),
+    PING(0x07),
+    PONG(0x08),
     ;
 
     companion object {

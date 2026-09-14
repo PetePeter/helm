@@ -141,9 +141,20 @@ class SecureChannelVectorsTest {
         val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
         val sender = AeadSender(key)
 
-        forEachFrame { counter, nonceHex, plaintext, frameHex ->
-            assertEquals("counter $counter nonce", nonceHex, Aead.nonce(counter).toHex())
-            assertEquals("counter $counter frame", frameHex, sender.seal(plaintext.toByteArray()).toHex())
+        forEachFrame { seq, nonceHex, plaintext, frameHex ->
+            assertEquals("seq $seq nonce", nonceHex, Aead.nonce(seq).toHex())
+            assertEquals("seq $seq frame", frameHex, sender.seal(plaintext.toByteArray()).toHex())
+        }
+    }
+
+    @Test
+    fun `every desktop AEAD frame carries its sequence as an authenticated prefix`() {
+        forEachFrame { seq, _, _, frameHex ->
+            assertEquals(
+                "seq $seq prefix",
+                java.lang.Long.toHexString(seq).padStart(16, '0'),
+                frameHex.substring(0, AEAD_SEQ_BYTES * 2),
+            )
         }
     }
 
@@ -152,13 +163,87 @@ class SecureChannelVectorsTest {
         val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
         val receiver = AeadReceiver(key)
 
-        forEachFrame { counter, _, plaintext, frameHex ->
+        forEachFrame { seq, _, plaintext, frameHex ->
             assertEquals(
-                "counter $counter",
+                "seq $seq",
                 plaintext,
                 String(receiver.open(frameHex.fromHex())),
             )
         }
+    }
+
+    @Test
+    fun `a whole frame lost in flight is a gap, then delivery resumes`() {
+        val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
+        val gaps = mutableListOf<LongRange>()
+        val receiver = AeadReceiver(key, { from, to -> gaps.add(from..to) })
+
+        // First the three in-order frames, exactly as the guard above consumes them.
+        forEachFrame { _, _, plaintext, frameHex ->
+            assertEquals(plaintext, String(receiver.open(frameHex.fromHex())))
+        }
+
+        // Sequence 3 never arrives; 4 and 5 do. The receiver must report 3..3
+        // and decrypt both post-gap frames — a lost message, not a dead link.
+        val gapResync = vectors.getJSONObject("gapResync")
+        val delivered = gapResync.getJSONArray("delivered")
+        for (i in 0 until delivered.length()) {
+            val frame = delivered.getJSONObject(i)
+            assertEquals(
+                "delivered seq ${frame.getInt("seq")}",
+                frame.getString("plaintextUtf8"),
+                String(receiver.open(frame.getString("frameHex").fromHex())),
+            )
+        }
+        assertEquals(listOf(3L..3L), gaps)
+    }
+
+    @Test
+    fun `the lost frame really would have decrypted at sequence 3`() {
+        // Proves the fixture's gap is a genuine dropped frame, not made-up bytes.
+        val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
+        val gaps = mutableListOf<LongRange>()
+        val receiver = AeadReceiver(key, { from, to -> gaps.add(from..to) })
+        receiver.open(firstFrame().fromHex())
+
+        val lost = vectors.getJSONObject("gapResync").getString("lostFrameHex").fromHex()
+        assertEquals("lost in transit", String(receiver.open(lost)))
+        assertEquals(listOf(1L..2L), gaps)
+    }
+
+    @Test
+    fun `a PING sealed by the initiator and a PONG sealed by the responder both open empty`() {
+        val pingPong = vectors.getJSONObject("pingPong")
+        val i2r = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
+        val r2i = vectors.getJSONObject("directionKeys").getString("responderToInitiatorHex").fromHex()
+
+        val ping = pingPong.getJSONObject("initiatorToResponder")
+        assertEquals(ping.getInt("seq").toLong(), java.lang.Long.parseUnsignedLong(ping.getString("frameHex").substring(0, 16), 16))
+        assertTrue(AeadReceiver(i2r).open(ping.getString("frameHex").fromHex()).isEmpty())
+
+        val pong = pingPong.getJSONObject("responderToInitiator")
+        assertEquals(pong.getInt("seq").toLong(), java.lang.Long.parseUnsignedLong(pong.getString("frameHex").substring(0, 16), 16))
+        assertTrue(AeadReceiver(r2i).open(pong.getString("frameHex").fromHex()).isEmpty())
+    }
+
+    @Test
+    fun `a frame shorter than seq+tag is refused and burns the receiver`() {
+        val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
+        val short = vectors.getJSONObject("rejected").getString("shortFrameHex").fromHex()
+        val receiver = AeadReceiver(key)
+
+        assertThrows { receiver.open(short) }
+        assertThrows { receiver.open(firstFrame().fromHex()) }
+    }
+
+    @Test
+    fun `a frame with a flipped tag bit is refused and burns the receiver`() {
+        val key = vectors.getJSONObject("directionKeys").getString("initiatorToResponderHex").fromHex()
+        val tampered = vectors.getJSONObject("rejected").getString("tamperedFrameHex").fromHex()
+        val receiver = AeadReceiver(key)
+
+        assertThrows { receiver.open(tampered) }
+        assertThrows { receiver.open(firstFrame().fromHex()) }
     }
 
     @Test
@@ -201,14 +286,14 @@ class SecureChannelVectorsTest {
         vectors.getJSONArray("aeadFrames").getJSONObject(0).getString("frameHex")
 
     private fun forEachFrame(
-        body: (counter: Long, nonceHex: String, plaintext: String, frameHex: String) -> Unit,
+        body: (seq: Long, nonceHex: String, plaintext: String, frameHex: String) -> Unit,
     ) {
         val frames = vectors.getJSONArray("aeadFrames")
         assertTrue("the fixture must carry AEAD frames", frames.length() > 0)
         for (i in 0 until frames.length()) {
             val frame = frames.getJSONObject(i)
             body(
-                frame.getLong("counter"),
+                frame.getLong("seq"),
                 frame.getString("nonceHex"),
                 frame.getString("plaintextUtf8"),
                 frame.getString("frameHex"),

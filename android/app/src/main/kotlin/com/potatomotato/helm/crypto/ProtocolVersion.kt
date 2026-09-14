@@ -14,10 +14,10 @@ package com.potatomotato.helm.crypto
  */
 object ProtocolVersion {
     /** Oldest wire protocol this build can still speak. */
-    const val MIN = 1
+    const val MIN = 2
 
     /** Newest wire protocol this build speaks. */
-    const val MAX = 1
+    const val MAX = 2
 
     /** A version beyond this is corruption, not a future build. */
     private const val ABSURD = 4096

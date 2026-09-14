@@ -30,9 +30,12 @@
  * ```
  *
  * SECURITY INVARIANTS (do not weaken):
- *  - No plaintext fallback exists. Every failure path closes the channel.
- *  - Nonce reuse is structurally impossible: per-direction keys, implicit
- *    monotonic counters (see `aead.ts`).
+ *  - No plaintext fallback exists. Every authentication failure closes the
+ *    channel — with ONE deliberate exception: a frame that never arrived (the
+ *    peer's sequence jumps ahead) is a lost message, logged and survived, not a
+ *    reason to tear down the link (see `aead.ts`).
+ *  - Nonce reuse is structurally impossible: per-direction keys and an explicit
+ *    per-frame wire sequence that doubles as the nonce.
  *  - Keys live only in memory. Only the pairing PSK is ever persisted, and that
  *    is the caller's job, following the fleet split of peers.yaml vs
  *    peer-secrets.yaml.
@@ -66,6 +69,9 @@ import {
 
 /** Upper bound on a single wire frame, so a hostile length cannot exhaust memory. */
 export const MAX_FRAME_BYTES = 128 * 1024;
+
+/** A PING/PONG body seals zero bytes: its content is its authentication. */
+const EMPTY_PAYLOAD = Buffer.alloc(0);
 
 /** Nonce length used in the commit-then-reveal exchange. */
 export const HANDSHAKE_NONCE_BYTES = 32;
@@ -106,6 +112,8 @@ export interface SecureChannelOptions {
   minPeerVersion?: string;
   /** How each side is named in a refusal message. */
   labels?: ProtocolLabels;
+  /** Diagnostic sink — a lost-frame resync is logged here when present. */
+  log?: (message: string) => void;
 }
 
 /** Thrown when the two ends cannot agree on a protocol version. */
@@ -123,6 +131,8 @@ enum FrameType {
   Confirm = 0x04,
   Data = 0x05,
   Refuse = 0x06,
+  Ping = 0x07,
+  Pong = 0x08,
 }
 
 export class SecureChannel extends EventEmitter {
@@ -143,6 +153,7 @@ export class SecureChannel extends EventEmitter {
   private readonly productVersion: string;
   private readonly minPeerVersion: string;
   private readonly labels: ProtocolLabels;
+  private readonly log: (message: string) => void;
 
   private inbound = Buffer.alloc(0);
   private isClosed = false;
@@ -192,6 +203,7 @@ export class SecureChannel extends EventEmitter {
     this.productVersion = options.productVersion ?? '';
     this.minPeerVersion = options.minPeerVersion ?? '';
     this.labels = options.labels ?? { local: 'Helm', peer: 'the phone app' };
+    this.log = options.log ?? (() => {});
     this.sessionId = options.sessionId ?? '';
     if (this.role === 'initiator' && !this.sessionId) {
       throw new Error('An initiator must supply a sessionId');
@@ -267,6 +279,20 @@ export class SecureChannel extends EventEmitter {
       throw new Error('SAS must be confirmed before sending application data');
     }
     this.writeFrame(FrameType.Data, this.sender.seal(message));
+  }
+
+  /**
+   * Send a keepalive PING. Sealed empty like any other frame, so it consumes a
+   * sequence number: a peer that misses it sees an ordinary gap, not a
+   * desynchronised link. The peer answers PONG immediately.
+   */
+  sendPing(): void {
+    if (this.isClosed) throw new Error('SecureChannel is closed');
+    if (!this.sender) throw new Error('Handshake has not completed');
+    if (this.sasConfirmationRequired) {
+      throw new Error('SAS must be confirmed before sending application data');
+    }
+    this.writeFrame(FrameType.Ping, this.sender.seal(EMPTY_PAYLOAD));
   }
 
   /** Close the channel and drop all key material. Idempotent. */
@@ -348,6 +374,10 @@ export class SecureChannel extends EventEmitter {
         return this.handleData(body);
       case FrameType.Refuse:
         return this.handleRefuse(body);
+      case FrameType.Ping:
+        return this.handlePing(body);
+      case FrameType.Pong:
+        return this.handlePong(body);
       default:
         throw new Error(`Unknown frame type ${type}`);
     }
@@ -431,18 +461,48 @@ export class SecureChannel extends EventEmitter {
   }
 
   private handleData(body: Buffer): void {
-    if (!this.receiver) throw new Error('Data frame received before the handshake completed');
-    let plaintext: Buffer;
-    try {
-      plaintext = this.receiver.open(body);
-    } catch {
-      throw new Error('Frame authentication failed — closing channel');
-    }
+    const plaintext = this.openSealed(body);
     if (this.sasConfirmationRequired) {
       this.pendingMessages.push(plaintext);
       return;
     }
     this.emit('message', plaintext);
+  }
+
+  /**
+   * Answer a PING with a PONG immediately. A pong is control traffic, not
+   * application data, so it flows even while a SAS comparison is still pending.
+   */
+  private handlePing(body: Buffer): void {
+    this.openSealed(body);
+    this.emit('ping');
+    if (this.isClosed || !this.sender) return;
+    this.writeFrame(FrameType.Pong, this.sender.seal(EMPTY_PAYLOAD));
+  }
+
+  private handlePong(body: Buffer): void {
+    this.openSealed(body);
+    this.emit('pong');
+  }
+
+  /** Open a Data/Ping/Pong body; any authentication failure closes the channel. */
+  private openSealed(body: Buffer): Buffer {
+    if (!this.receiver) throw new Error('Frame received before the handshake completed');
+    try {
+      return this.receiver.open(body);
+    } catch {
+      throw new Error('Frame authentication failed — closing channel');
+    }
+  }
+
+  /**
+   * The peer's frames jumped ahead: everything in between never arrived. That is
+   * one lost message, not a broken link — the AEAD layer has already
+   * resynchronised, so log it and let the lost records' call ids time out.
+   */
+  private onSequenceGap(lostFrom: bigint, lostTo: bigint): void {
+    this.log(`secure channel: lost frame(s) ${lostFrom}..${lostTo} in flight; resynchronised`);
+    this.emit('gap', { from: lostFrom, to: lostTo });
   }
 
   private handleRefuse(body: Buffer): void {
@@ -504,7 +564,7 @@ export class SecureChannel extends EventEmitter {
     const sendKey = initiatorFirst ? keys.initiatorToResponder : keys.responderToInitiator;
     const receiveKey = initiatorFirst ? keys.responderToInitiator : keys.initiatorToResponder;
     this.sender = new AeadSender(sendKey);
-    this.receiver = new AeadReceiver(receiveKey);
+    this.receiver = new AeadReceiver(receiveKey, (lostFrom, lostTo) => this.onSequenceGap(lostFrom, lostTo));
 
     this.writeFrame(
       FrameType.Confirm,

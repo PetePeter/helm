@@ -31,6 +31,12 @@ class HelmInitiator(
         private set
     val received = mutableListOf<ByteArray>()
 
+    /** PONGs answered on the initiator's behalf, and PINGs it received. */
+    var pongs = 0
+        private set
+    var pings = 0
+        private set
+
     private var transcript: ByteArray? = null
     private var sender: AeadSender? = null
     private var receiver: AeadReceiver? = null
@@ -59,6 +65,11 @@ class HelmInitiator(
         pipe.write(encodeFrame(FrameType.DATA, requireNotNull(sender).seal(message)))
     }
 
+    /** Send a keepalive PING, exactly as the desktop's SecureChannel would. */
+    fun sendPing() {
+        pipe.write(encodeFrame(FrameType.PING, requireNotNull(sender).seal(ByteArray(0))))
+    }
+
     /** Send a DATA frame whose ciphertext has been altered in flight. */
     fun sendTampered(message: ByteArray) {
         val frame = requireNotNull(sender).seal(message)
@@ -79,6 +90,17 @@ class HelmInitiator(
             FrameType.RESPONSE -> onResponse(body)
             FrameType.CONFIRM -> onConfirm(body)
             FrameType.DATA -> received.add(requireNotNull(receiver).open(body))
+            FrameType.PING -> {
+                pings++
+                requireNotNull(receiver).open(body)
+                pipe.write(encodeFrame(FrameType.PONG, requireNotNull(sender).seal(ByteArray(0))))
+            }
+
+            FrameType.PONG -> {
+                requireNotNull(receiver).open(body)
+                pongs++
+            }
+
             FrameType.REFUSE -> {
                 val (code, message) = decodeFields(body, 2)
                 refusal = RefusalCode.fromWire(code.toString(Charsets.UTF_8)).inverted() to
@@ -157,12 +179,23 @@ class TestPipe : BytePipe {
     /** Set to make the next write fail, as a refused GATT notification does. */
     var writeFails = false
 
+    /**
+     * Set to make the next write vanish: recorded on the wire but never
+     * delivered to the peer, exactly as a BLE notification the central refuses
+     * to forward disappears above the framing layer.
+     */
+    var swallowNext = false
+
     /** Everything this end put on the wire, for asserting on frame types. */
     val written = mutableListOf<ByteArray>()
 
     override fun write(data: ByteArray) {
         check(!writeFails) { "link write refused" }
         written.add(data)
+        if (swallowNext) {
+            swallowNext = false
+            return
+        }
         peer?.deliver(data)
     }
 
@@ -222,6 +255,11 @@ class RecordingListener : SecureChannelListener {
     val messages = mutableListOf<ByteArray>()
     var refusal: Pair<RefusalCode, String>? = null
     var closedReason: String? = null
+    var pings = 0
+        private set
+    var pongs = 0
+        private set
+    val gaps = mutableListOf<LongRange>()
 
     override fun onEstablished(channel: SecureChannel) {
         established = channel
@@ -233,6 +271,18 @@ class RecordingListener : SecureChannelListener {
 
     override fun onRefused(code: RefusalCode, message: String) {
         refusal = code to message
+    }
+
+    override fun onPing() {
+        pings++
+    }
+
+    override fun onPong() {
+        pongs++
+    }
+
+    override fun onGap(lostFrom: Long, lostTo: Long) {
+        gaps.add(lostFrom..lostTo)
     }
 
     override fun onClosed(reason: String) {

@@ -314,4 +314,113 @@ describe('SecureChannel data plane', () => {
     expect(() => initiator.send(Buffer.from('gone'))).toThrow();
     expect(responder.closed).toBe(true);
   });
+
+  it('survives a lost data frame: one message is lost, the channel is not', async () => {
+    const { initiator, responder, a } = await pair();
+    const gaps: Array<{ from: bigint; to: bigint }> = [];
+    responder.on('gap', (gap) => gaps.push(gap));
+
+    // The relay swallows exactly one whole DATA frame — what a refused BLE
+    // notification looks like above the framer.
+    let dropped = false;
+    a.transform = (chunk) => {
+      if (dropped) return chunk;
+      dropped = true;
+      return null;
+    };
+
+    initiator.send(Buffer.from('lost'));
+    initiator.send(Buffer.from('kept'));
+    expect((await nextMessage(responder)).toString()).toBe('kept');
+    expect(gaps).toEqual([{ from: 0n, to: 0n }]);
+    expect(responder.closed).toBe(false);
+
+    // And the reverse direction carries on as if nothing happened.
+    const back = nextMessage(initiator);
+    responder.send(Buffer.from('still alive'));
+    expect((await back).toString()).toBe('still alive');
+  });
+
+  it('still closes on a tampered frame whose sequence skips ahead', async () => {
+    const { initiator, responder, a } = await pair();
+    const closed = nextClose(responder);
+
+    let seen = 0;
+    a.transform = (chunk) => {
+      seen += 1;
+      if (seen === 1) return null; // drop one frame so the next arrives out of order
+      const copy = Buffer.from(chunk);
+      copy[copy.length - 1] ^= 0x01;
+      return copy;
+    };
+    let delivered = false;
+    responder.on('message', () => { delivered = true; });
+
+    initiator.send(Buffer.from('dropped'));
+    initiator.send(Buffer.from('tampered out of order'));
+    await closed;
+    expect(delivered).toBe(false);
+    expect(responder.closed).toBe(true);
+  });
+});
+
+describe('SecureChannel keepalive', () => {
+  it('answers a PING with a PONG in both directions, with no payload on either', async () => {
+    const { initiator, responder } = await pair();
+
+    const pongToInitiator = new Promise<void>((resolve) => initiator.once('pong', resolve));
+    initiator.sendPing();
+    await pongToInitiator;
+
+    const pongToResponder = new Promise<void>((resolve) => responder.once('pong', resolve));
+    responder.sendPing();
+    await pongToResponder;
+    expect(responder.closed).toBe(false);
+  });
+
+  it('answers a PING that arrives after a long idle, and keeps the data plane intact', async () => {
+    const { initiator, responder } = await pair();
+
+    // Nothing has been sent since the handshake: the very next frame is a ping.
+    const ponged = new Promise<void>((resolve) => initiator.once('pong', resolve));
+    initiator.sendPing();
+    await ponged;
+
+    const received = nextMessage(responder);
+    initiator.send(Buffer.from('after ping'));
+    expect((await received).toString()).toBe('after ping');
+  });
+
+  it('refuses to ping before the handshake and SAS are complete', async () => {
+    const { a, b } = createMemoryPipePair();
+    const [initiator] = await Promise.all([
+      SecureChannel.open({ pipe: a, role: 'initiator', machineId: 'desktop', sessionId: SESSION_ID }),
+      SecureChannel.open({ pipe: b, role: 'responder', machineId: 'phone' }),
+    ]);
+    expect(() => initiator.sendPing()).toThrow();
+  });
+});
+
+describe('SecureChannel version gate against old peers', () => {
+  it('rejects a peer that only speaks the previous wire protocol', async () => {
+    const { a, b } = createMemoryPipePair();
+    const results = await Promise.allSettled([
+      SecureChannel.open({
+        pipe: a,
+        role: 'initiator',
+        machineId: 'phone',
+        sessionId: SESSION_ID,
+        protocolRange: { min: 1, max: PROTOCOL_MAX - 1 },
+      }),
+      SecureChannel.open({ pipe: b, role: 'responder', machineId: 'desktop' }),
+    ]);
+
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+    const initiatorError = (results[0] as PromiseRejectedResult).reason as Error & { code?: string };
+    // Codes are relative to whoever holds them: the old initiator is told its
+    // peer speaks a protocol IT cannot reach — i.e. the peer is too new.
+    expect(initiatorError.code).toBe('peer-too-new');
+    // The refusal names the two protocol ranges, so a human knows what to update.
+    expect(initiatorError.message).toContain('speaks protocol');
+  });
 });

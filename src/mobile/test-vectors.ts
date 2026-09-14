@@ -25,15 +25,16 @@ import {
   deriveSas,
   derivePsk,
 } from '../mcp/peer/pairing-crypto';
-import { AeadSender, aeadNonce, bindPsk, deriveDirectionKeys } from './aead';
+import { AEAD_SEQ_BYTES, AEAD_TAG_BYTES, AeadSender, aeadNonce, bindPsk, deriveDirectionKeys } from './aead';
 import { CARRIER_FINGERPRINT } from './secure-channel';
 
 /**
  * Pinned literal, NOT `PROTOCOL_MAX`: the vectors describe one specific wire
  * version forever. Adding a new protocol version adds a new vector file rather
- * than silently rewriting this one.
+ * than silently rewriting this one. THIS FILE WAS REWRITTEN for version 2
+ * (explicit AEAD wire sequence + PING/PONG) — the one sanctioned regeneration.
  */
-const VECTOR_PROTOCOL_VERSION = 1;
+const VECTOR_PROTOCOL_VERSION = 2;
 
 /** Fixed, meaningless-by-design inputs. Never derive these from randomness. */
 const SHARED_SECRET = Buffer.from(
@@ -72,7 +73,29 @@ export interface SecureChannelVectors {
   confirmMacWithPskHex: string;
   directionKeys: { initiatorToResponderHex: string; responderToInitiatorHex: string };
   directionKeysWithPsk: { initiatorToResponderHex: string; responderToInitiatorHex: string };
-  aeadFrames: Array<{ counter: number; nonceHex: string; plaintextUtf8: string; frameHex: string }>;
+  aeadFrames: Array<{ seq: number; nonceHex: string; plaintextUtf8: string; frameHex: string }>;
+  /**
+   * A frame lost in flight, then delivery resuming: the receiver must open
+   * `delivered` in order, report the `lostSeqs` gap, and carry on.
+   */
+  gapResync: {
+    lostSeqs: number[];
+    /** The frame(s) that never arrived, so a port can prove WHY the gap is right. */
+    lostFrameHex: string;
+    delivered: Array<{ seq: number; plaintextUtf8: string; frameHex: string }>;
+  };
+  /** A PING and the PONG that answers it, sealed under their own direction key. */
+  pingPong: {
+    initiatorToResponder: { seq: number; frameHex: string };
+    responderToInitiator: { seq: number; frameHex: string };
+  };
+  /** Frames every implementation must refuse — and burn on. */
+  rejected: {
+    /** Shorter than sequence + tag. */
+    shortFrameHex: string;
+    /** `aeadFrames[0]` with one bit of its tag flipped. */
+    tamperedFrameHex: string;
+  };
 }
 
 /** Compute every vector from the fixed inputs. Pure — no I/O, no randomness. */
@@ -93,16 +116,40 @@ export function buildSecureChannelVectors(): SecureChannelVectors {
   const keys = deriveDirectionKeys(SHARED_SECRET, transcript);
   const keysWithPsk = deriveDirectionKeys(SHARED_SECRET, transcript, PSK);
 
-  // Three consecutive frames from one sender prove the counter advances and
+  // Three consecutive frames from one sender prove the sequence advances and
   // that identical plaintext does not produce identical ciphertext.
   const sender = new AeadSender(keys.initiatorToResponder);
   const plaintexts = ['hello', 'hello', 'third frame'];
   const aeadFrames = plaintexts.map((text, index) => ({
-    counter: index,
+    seq: index,
     nonceHex: aeadNonce(BigInt(index)).toString('hex'),
     plaintextUtf8: text,
     frameHex: sender.seal(Buffer.from(text, 'utf8')).toString('hex'),
   }));
+
+  // Continuing the SAME sender: sequence 3 never arrives, 4 and 5 do. A receiver
+  // must open 4, report the gap 3..3, and open 5 normally.
+  const lostFrame = sender.seal(Buffer.from('lost in transit'));
+  const delivered = [
+    { seq: 4, plaintextUtf8: 'first after the gap' },
+    { seq: 5, plaintextUtf8: 'second after the gap' },
+  ].map(({ seq, plaintextUtf8 }) => ({
+    seq,
+    plaintextUtf8,
+    frameHex: sender.seal(Buffer.from(plaintextUtf8, 'utf8')).toString('hex'),
+  }));
+
+  // A PING sealed by the initiator and the PONG that answers it, sealed by the
+  // responder under its own direction key. Bodies are empty: the content is
+  // their authentication.
+  const pingFrame = sender.seal(Buffer.alloc(0));
+  const pongFrame = new AeadSender(keys.responderToInitiator).seal(Buffer.alloc(0));
+
+  // Refusal cases every implementation must burn on.
+  const shortFrame = Buffer.alloc(AEAD_SEQ_BYTES + AEAD_TAG_BYTES - 1, 0xab);
+  const genuineFirst = Buffer.from(aeadFrames[0].frameHex, 'hex');
+  const tamperedFrame = Buffer.from(genuineFirst);
+  tamperedFrame[tamperedFrame.length - 1] ^= 0x01;
 
   return {
     version: VECTOR_PROTOCOL_VERSION,
@@ -133,6 +180,19 @@ export function buildSecureChannelVectors(): SecureChannelVectors {
       responderToInitiatorHex: keysWithPsk.responderToInitiator.toString('hex'),
     },
     aeadFrames,
+    gapResync: {
+      lostSeqs: [3],
+      lostFrameHex: lostFrame.toString('hex'),
+      delivered,
+    },
+    pingPong: {
+      initiatorToResponder: { seq: 6, frameHex: pingFrame.toString('hex') },
+      responderToInitiator: { seq: 0, frameHex: pongFrame.toString('hex') },
+    },
+    rejected: {
+      shortFrameHex: shortFrame.toString('hex'),
+      tamperedFrameHex: tamperedFrame.toString('hex'),
+    },
   };
 }
 

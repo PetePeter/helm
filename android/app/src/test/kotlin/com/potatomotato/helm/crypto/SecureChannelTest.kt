@@ -242,4 +242,67 @@ class SecureChannelTest {
         assertTrue(channel.isClosed)
         assertEquals("RESPONSE received by the responder", listener.closedReason)
     }
+
+    @Test
+    fun `a PING is answered with a PONG immediately and keeps the channel open`() {
+        val channel = phone()
+        val desktop = helm().also { it.start() }
+        channel.confirmSas(true)
+
+        desktop.sendPing()
+
+        assertEquals("the phone answered exactly once", 1, listener.pings)
+        // pipes.phone records what the PHONE wrote: RESPONSE, CONFIRM, then PONG.
+        assertEquals(listOf(FrameType.PONG), pipes.phone.frameTypes().takeLast(1))
+        assertEquals("the desktop got its PONG back", 1, desktop.pongs)
+        assertFalse(channel.isClosed)
+    }
+
+    @Test
+    fun `the phone can ping the desktop too - keepalive is symmetric`() {
+        val channel = phone()
+        val desktop = helm().also { it.start() }
+        channel.confirmSas(true)
+
+        channel.sendPing()
+
+        assertEquals(1, desktop.pings)
+        assertEquals(1, listener.pongs)
+    }
+
+    @Test
+    fun `a lost data frame costs one message - the receiver reports the gap and carries on`() {
+        val channel = phone()
+        val desktop = helm().also { it.start() }
+        channel.confirmSas(true)
+
+        // Swallow the whole first DATA frame, the way a refused BLE notification
+        // disappears above the framing layer.
+        pipes.helm.swallowNext = true
+        desktop.send("lost".toByteArray())
+        desktop.send("kept".toByteArray())
+
+        assertFalse("a lost message must not close the channel", channel.isClosed)
+        assertEquals(listOf("kept"), listener.messages.map { String(it) })
+        assertEquals("the gap 0..0 was reported", listOf(0L..0L), listener.gaps)
+
+        // And the link still works both ways afterwards.
+        channel.send("still alive".toByteArray())
+        assertEquals("still alive", String(desktop.received.last()))
+    }
+
+    @Test
+    fun `a ping survives being lost - the pongs resync the same as data`() {
+        val channel = phone()
+        val desktop = helm().also { it.start() }
+        channel.confirmSas(true)
+
+        pipes.helm.swallowNext = true
+        desktop.sendPing()
+        desktop.send("after a lost ping".toByteArray())
+
+        assertFalse(channel.isClosed)
+        assertEquals(listOf("after a lost ping"), listener.messages.map { String(it) })
+        assertEquals(listOf(0L..0L), listener.gaps)
+    }
 }

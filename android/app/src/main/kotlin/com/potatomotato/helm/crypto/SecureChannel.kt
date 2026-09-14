@@ -51,6 +51,18 @@ interface SecureChannelListener {
     /** The peer is protocol-incompatible; [message] is fit to show the user. */
     fun onRefused(code: RefusalCode, message: String) {}
 
+    /** The peer pinged; a PONG has already been answered automatically. */
+    fun onPing() {}
+
+    /** A reply to our PING arrived. */
+    fun onPong() {}
+
+    /**
+     * Frames [lostFrom]..[lostTo] never arrived and the receiver resynchronised.
+     * Those messages are gone — not the link.
+     */
+    fun onGap(lostFrom: Long, lostTo: Long) {}
+
     /** Terminal, and always the last call. */
     fun onClosed(reason: String)
 }
@@ -80,9 +92,12 @@ interface SecureChannelListener {
  * ```
  *
  * SECURITY INVARIANTS (do not weaken):
- *  - No plaintext fallback exists. Every failure path closes the channel.
- *  - Nonce reuse is structurally impossible: per-direction keys, implicit
- *    monotonic counters (see [Aead]).
+ *  - No plaintext fallback exists. Every authentication failure closes the
+ *    channel — with ONE deliberate exception: a frame that never arrived (the
+ *    peer's sequence jumps ahead) is a lost message, reported and survived, not
+ *    a reason to tear down the link (see [Aead]).
+ *  - Nonce reuse is structurally impossible: per-direction keys and an explicit
+ *    per-frame wire sequence that doubles as the nonce.
  *  - Keys live only in memory. Only the pairing PSK is ever persisted, by the
  *    caller, and only after the user confirms the SAS.
  *  - On a first pairing the user MUST compare the SAS; application data cannot
@@ -198,6 +213,18 @@ class SecureChannel(
         writeFrame(FrameType.DATA, aead.seal(message))
     }
 
+    /**
+     * Send a keepalive PING. Sealed empty like any other frame, so it consumes a
+     * sequence number: a peer that misses it sees an ordinary gap, not a
+     * desynchronised link. The peer answers PONG immediately.
+     */
+    fun sendPing() {
+        check(!closed) { "SecureChannel is closed" }
+        val aead = sender ?: throw IllegalStateException("Handshake has not completed")
+        check(!sasConfirmationRequired) { "SAS must be confirmed before sending application data" }
+        writeFrame(FrameType.PING, aead.seal(ByteArray(0)))
+    }
+
     /** Close and drop all key material. Idempotent. */
     fun close(reason: String = "closed") {
         if (closed) return
@@ -235,6 +262,8 @@ class SecureChannel(
             FrameType.CONFIRM -> handleConfirm(body)
             FrameType.DATA -> handleData(body)
             FrameType.REFUSE -> handleRefuse(body)
+            FrameType.PING -> handlePing(body)
+            FrameType.PONG -> handlePong(body)
             // Responder-only: a peer claiming our role is not a peer we can serve.
             FrameType.RESPONSE -> throw IllegalStateException("RESPONSE received by the responder")
         }
@@ -306,18 +335,40 @@ class SecureChannel(
     }
 
     private fun handleData(body: ByteArray) {
-        val aead = receiver
-            ?: throw IllegalStateException("Data frame received before the handshake completed")
-        val plaintext = try {
-            aead.open(body)
-        } catch (_: Exception) {
-            throw IllegalStateException("Frame authentication failed - closing channel")
-        }
+        val plaintext = openSealed(body)
         if (sasConfirmationRequired) {
             pending.addLast(plaintext)
             return
         }
         listener.onMessage(plaintext)
+    }
+
+    /**
+     * Answer a PING with a PONG immediately. A pong is control traffic, not
+     * application data, so it flows even while a SAS comparison is still pending.
+     */
+    private fun handlePing(body: ByteArray) {
+        openSealed(body)
+        listener.onPing()
+        if (closed) return
+        val aead = sender ?: return
+        writeFrame(FrameType.PONG, aead.seal(ByteArray(0)))
+    }
+
+    private fun handlePong(body: ByteArray) {
+        openSealed(body)
+        listener.onPong()
+    }
+
+    /** Open a DATA/PING/PONG body; any authentication failure closes the channel. */
+    private fun openSealed(body: ByteArray): ByteArray {
+        val aead = receiver
+            ?: throw IllegalStateException("Frame received before the handshake completed")
+        return try {
+            aead.open(body)
+        } catch (_: Exception) {
+            throw IllegalStateException("Frame authentication failed - closing channel")
+        }
     }
 
     private fun handleRefuse(body: ByteArray) {
@@ -374,7 +425,12 @@ class SecureChannel(
 
         val keys = Aead.deriveDirectionKeys(shared, script, psk)
         sender = AeadSender(keys.responderToInitiator)
-        receiver = AeadReceiver(keys.initiatorToResponder)
+        receiver = AeadReceiver(keys.initiatorToResponder, { lostFrom, lostTo ->
+            // One lost message, not a broken link — the AEAD layer has already
+            // resynchronised, so surface it and let the lost records' callers
+            // time out individually.
+            listener.onGap(lostFrom, lostTo)
+        })
 
         writeFrame(
             FrameType.CONFIRM,
