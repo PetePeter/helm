@@ -10,6 +10,7 @@ import org.json.JSONObject
 /** The control actions the sheet offers, and the gated tool each one is. */
 enum class SessionAction(val tool: String) {
     Snapshot("session_read_terminal"),
+    Rename("session_rename"),
     Compact("session_compact"),
     Spawn("session_create"),
     Close("session_close"),

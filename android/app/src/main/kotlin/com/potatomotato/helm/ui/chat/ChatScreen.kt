@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -36,6 +37,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -169,15 +172,20 @@ private fun Bubble(message: ChatMessage) {
                     .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
             ) {
                 Column {
-                    Text(
-                        text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
-                        color = if (fromPhone) HelmColors.OnAccent else HelmColors.Txt,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            // The mockup sets the me-bubble one weight heavier:
-                            // OnAccent on Accent needs it to hold up.
-                            fontWeight = if (fromPhone) FontWeight.Medium else null,
-                        ),
-                    )
+                    // Selection lives on the message text alone, not the bubble:
+                    // the least the user needs — long-press to copy what arrived —
+                    // and the timestamp and delivery note stay outside it.
+                    SelectionContainer {
+                        Text(
+                            text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
+                            color = if (fromPhone) HelmColors.OnAccent else HelmColors.Txt,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                // The mockup sets the me-bubble one weight heavier:
+                                // OnAccent on Accent needs it to hold up.
+                                fontWeight = if (fromPhone) FontWeight.Medium else null,
+                            ),
+                        )
+                    }
                     Text(
                         text = formatBubbleTime(message.at),
                         color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,
@@ -253,15 +261,33 @@ private fun Composer(
             )
         }
 
-        Text(
-            text = stringResource(R.string.chat_send),
-            color = if (draft.isBlank()) HelmColors.Faint else HelmColors.Accent,
-            style = MaterialTheme.typography.labelLarge,
+        // Send is a circle like the mic, not a caption: the composer's two
+        // controls read as one pair, and the one that delivers sits where a
+        // thumb already is. Until there is something to send it is dark — an
+        // enabled control that does nothing is worse than a visibly dead one.
+        val sendLabel = stringResource(R.string.chat_send)
+        Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(HelmRadius.Pill))
-                .clickable(enabled = draft.isNotBlank(), onClick = onSend)
-                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-        )
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(if (draft.isNotBlank()) HelmColors.Accent else HelmColors.Surface2)
+                .then(
+                    if (draft.isBlank()) {
+                        Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape)
+                    } else {
+                        Modifier
+                    },
+                )
+                .clickable(enabled = draft.isNotBlank(), onClick = onSend),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.chat_send_glyph),
+                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Faint,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.semantics { contentDescription = sendLabel },
+            )
+        }
 
         // The mic is permanent and first-class, not an option inside a keyboard:
         // away from the desk it is the primary way a reply gets written, so it

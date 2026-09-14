@@ -72,6 +72,7 @@ fun ActionNoticeBar(notice: ActionNotice, onDismiss: () -> Unit, modifier: Modif
 /** Success is stated in the past tense of the thing that happened, never "OK". */
 private val SessionAction.doneRes: Int
     get() = when (this) {
+        SessionAction.Rename -> R.string.control_notice_done_rename
         SessionAction.Compact -> R.string.control_notice_done_compact
         SessionAction.Close -> R.string.control_notice_done_close
         SessionAction.Spawn -> R.string.control_notice_done_spawn

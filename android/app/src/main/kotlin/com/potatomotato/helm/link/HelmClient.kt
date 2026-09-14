@@ -197,6 +197,15 @@ class HelmClient(
         act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
 
     /**
+     * Rename a session. The list is the only place the new name shows, so success
+     * pulls it the way a close does; the notice bar says the rest.
+     */
+    fun renameSession(sessionId: String, newName: String): Boolean =
+        act(SessionAction.Rename, METHOD_SESSION_RENAME, linkedMapOf("sessionId" to sessionId, "newName" to newName)) { outcome ->
+            if (outcome is Outcome.Ok) refreshSessions()
+        }
+
+    /**
      * Close a session. Expect a refusal for anything this phone did not create:
      * the gate lets a device close only its own sessions, and the permitted-tools
      * cache cannot see that rule. The refusal is reported as a rule, not a fault.
@@ -403,6 +412,7 @@ class HelmClient(
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"
         private const val METHOD_SESSION_CLOSE = "session_close"
+        private const val METHOD_SESSION_RENAME = "session_rename"
         private const val METHOD_SESSION_CREATE = "session_create"
 
         /** The full CLI catalogue, for the spawn form. Gated like every dispatch — a read-only tool, so a refusal just falls back to the harvested list. */

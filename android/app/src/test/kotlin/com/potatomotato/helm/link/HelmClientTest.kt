@@ -109,6 +109,34 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a rename sends the arguments session_rename needs and reconciles the list`() {
+        client.renameSession("s1", "kitchen")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_rename", record.getString("method"))
+        // newName, not name: the desktop's dispatcher reads the new name from
+        // `newName` and would refuse a call that carried it under any other key.
+        assertEquals("s1", record.getJSONObject("params").getString("sessionId"))
+        assertEquals("kitchen", record.getJSONObject("params").getString("newName"))
+
+        client.onInbound(resultFor(lastCallId(), "null"))
+        assertEquals(ActionNotice(SessionAction.Rename, ActionOutcome.Done), client.control.notice.value)
+
+        // The list is the only place the new name shows, so success pulls it.
+        assertEquals(2, sent.size)
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+    }
+
+    @Test
+    fun `a rename refusal is a rule, not a dropped link`() {
+        client.renameSession("s1", "kitchen")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(ActionNotice(SessionAction.Rename, ActionOutcome.Refused), client.control.notice.value)
+    }
+
+    @Test
     fun `a successful spawn requests one immediate reconciled session list`() {
         client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
         client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))

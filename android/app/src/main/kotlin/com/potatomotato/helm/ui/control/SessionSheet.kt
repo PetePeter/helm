@@ -3,6 +3,7 @@ package com.potatomotato.helm.ui.control
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,9 +15,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,8 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.Capabilities
@@ -66,6 +75,7 @@ fun SessionSheet(
     sessionName: String,
     capabilities: Capabilities,
     onAction: (SessionAction) -> Unit,
+    onRename: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -74,6 +84,7 @@ fun SessionSheet(
     // confirms: a prompt on every action trains people to tap through the one
     // that matters.
     var confirming by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(
@@ -118,11 +129,28 @@ fun SessionSheet(
                         action = action,
                         capabilities = capabilities,
                         onClick = {
-                            if (action == SessionAction.Close) confirming = true else onAction(action)
+                            when (action) {
+                                SessionAction.Close -> confirming = true
+                                // Rename needs a name before it can act, so it
+                                // opens the dialog instead of firing at once.
+                                SessionAction.Rename -> renaming = true
+                                else -> onAction(action)
+                            }
                         },
                     )
                 }
             }
+        }
+
+        if (renaming) {
+            RenameDialog(
+                currentName = sessionName,
+                onRename = {
+                    renaming = false
+                    onRename(it)
+                },
+                onCancel = { renaming = false },
+            )
         }
     }
 }
@@ -133,6 +161,7 @@ fun SessionSheet(
  */
 private val SHEET_ACTIONS = listOf(
     SessionAction.Snapshot,
+    SessionAction.Rename,
     SessionAction.Compact,
     SessionAction.Spawn,
     SessionAction.Close,
@@ -223,6 +252,85 @@ private fun ConfirmClose(sessionName: String, onConfirm: () -> Unit, onCancel: (
     }
 }
 
+/**
+ * Rename, asked in place. Hand-drawn like the sheet itself, centred on the
+ * scrim it sits on. The field is prefilled with the current name so the edit
+ * starts from what is true, and Rename stays dark until the name has actually
+ * changed — a confirm that fires on a no-op trains tapping through it.
+ */
+@Composable
+private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCancel: () -> Unit) {
+    var name by remember { mutableStateOf(currentName) }
+    val trimmed = name.trim()
+    val canRename = trimmed.isNotEmpty() && trimmed != currentName && trimmed.length <= MAX_NAME_LENGTH
+
+    // The field takes focus as the dialog opens: the whole point of the dialog
+    // is to type, and on a tablet with a keyboard attached that means now.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HelmColors.Bg.copy(alpha = SCRIM_ALPHA))
+            // Tapping the darkness around the card is cancel, like the sheet.
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Consume taps on the card so they never fall through to the
+                // scrim: only a deliberate Cancel or a dismiss-tap cancels.
+                .padding(HelmSpacing.Gutter)
+                .clip(RoundedCornerShape(HelmRadius.Md))
+                .background(HelmColors.Surface)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = {})
+                .padding(HelmSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
+        ) {
+            Text(
+                text = stringResource(R.string.control_rename_title),
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(HelmRadius.Md))
+                    .background(HelmColors.Surface2)
+                    .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+                    .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+            ) {
+                BasicTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
+                    cursorBrush = SolidColor(HelmColors.Accent),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    // Done on the keyboard is the confirm, not a dismissal —
+                    // the same verb the dialog's own button carries.
+                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(trimmed) }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                )
+            }
+            Text(
+                text = stringResource(R.string.control_rename_confirm),
+                color = if (canRename) HelmColors.Accent else HelmColors.Faint,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(HelmRadius.Md))
+                    .clickable(enabled = canRename, onClick = { onRename(trimmed) })
+                    .padding(vertical = HelmSpacing.Md),
+            )
+            GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
+        }
+    }
+}
+
 /** The drag affordance from the mockup. Decorative — the scrim is what dismisses. */
 @Composable
 private fun GrabHandle() {
@@ -247,6 +355,7 @@ private fun SessionAction.labelColor(permitted: Boolean): Color = when {
 private val SessionAction.labelRes: Int
     get() = when (this) {
         SessionAction.Snapshot -> R.string.control_action_snapshot
+        SessionAction.Rename -> R.string.control_action_rename
         SessionAction.Compact -> R.string.control_action_compact
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
@@ -255,10 +364,14 @@ private val SessionAction.labelRes: Int
 private val SessionAction.glyphRes: Int
     get() = when (this) {
         SessionAction.Snapshot -> R.string.control_glyph_snapshot
+        SessionAction.Rename -> R.string.control_glyph_rename
         SessionAction.Compact -> R.string.control_glyph_compact
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
     }
+
+/** The desktop refuses a longer name; asking for one would be a certain denial. */
+private const val MAX_NAME_LENGTH = 50
 
 /** Dark enough to push the thread behind it back, never opaque. */
 private const val SCRIM_ALPHA = 0.72f

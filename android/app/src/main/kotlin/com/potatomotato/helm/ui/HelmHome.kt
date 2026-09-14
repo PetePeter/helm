@@ -237,11 +237,21 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             SessionAction.Spawn -> Destination.Spawn
                             SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
+                            // Rename never reaches here — it is answered by
+                            // onRename below, because it carries a name.
+                            SessionAction.Rename -> Destination.Thread
                         }
                         // A snapshot is pulled as soon as it is asked for, at the
                         // middle count: arriving on an empty terminal screen and
                         // having to choose again is a step nobody wants.
                         if (action == SessionAction.Snapshot) client.readTerminal(open.id, DEFAULT_SNAPSHOT_LINES)
+                    },
+                    // Back to the thread rather than staying on the sheet: the
+                    // notice bar says how it ended and the app bar shows the new
+                    // name, which is the same landing every other action gets.
+                    onRename = { name ->
+                        client.renameSession(open.id, name)
+                        where = Destination.Thread
                     },
                 )
             }

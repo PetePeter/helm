@@ -47,6 +47,7 @@
     <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
     <string name="chat_placeholder">Reply…</string>
     <string name="chat_send">Send</string>
+    <string name="chat_send_glyph">↑</string>
     <string name="chat_sending">Sending…</string>
     <string name="chat_sent">✓ Sent</string>
     <string name="chat_failed">Not delivered</string>
@@ -75,20 +76,26 @@
 
     <string name="control_overflow_glyph">⋮</string>
     <string name="control_action_snapshot">Terminal snapshot</string>
+    <string name="control_action_rename">Rename session</string>
     <string name="control_action_compact">Compact</string>
     <string name="control_action_spawn">Spawn session</string>
     <string name="control_action_close">Close session</string>
     <string name="control_glyph_snapshot">📄</string>
+    <string name="control_glyph_rename">✎</string>
     <string name="control_glyph_compact">🛠</string>
     <string name="control_glyph_spawn">✦</string>
     <string name="control_glyph_close">✕</string>
     <string name="control_not_permitted">not permitted</string>
     <string name="control_asking">checking…</string>
+    <string name="control_rename_title">Rename session</string>
+    <string name="control_rename_confirm">Rename</string>
+    <string name="control_rename_cancel">Cancel</string>
     <string name="control_confirm_close">Close “%1$s”? Its CLI stops.</string>
     <string name="control_confirm_close_yes">Close it</string>
     <string name="control_confirm_close_no">Keep it</string>
 
     <string name="control_notice_refused">Helm did not allow that. It is a rule on this device, not a fault — change what this phone may do in Helm\'s Mobile settings.</string>
+    <string name="control_notice_done_rename">Session renamed.</string>
     <string name="control_notice_done_compact">Compacting.</string>
     <string name="control_notice_done_close">Session closed.</string>
     <string name="control_notice_done_spawn">Session started.</string>
