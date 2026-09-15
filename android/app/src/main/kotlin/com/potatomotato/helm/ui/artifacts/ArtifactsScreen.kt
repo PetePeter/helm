@@ -1,5 +1,8 @@
 package com.potatomotato.helm.ui.artifacts
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -47,6 +51,7 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmArtifact
+import com.potatomotato.helm.data.HelmArtifactRead
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
@@ -94,18 +99,33 @@ fun ArtifactsScreen(
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (state) {
-                is ArtifactList.Ready ->
-                    if (state.artifacts.isEmpty() && !capabilities.permits(SessionAction.CreateArtifact)) {
-                        Placeholder(stringResource(R.string.artifacts_empty))
-                    } else {
-                        ArtifactRows(state.artifacts, capabilities, onOpen, onNew)
-                    }
+                is ArtifactList.Ready -> ListBody(state.artifacts, capabilities, onOpen, onNew)
+
+                // A re-visit keeps the last answer on screen while the fresh one
+                // crosses the link: the rows the user is looking at are the
+                // best-known truth, and a blank screen is the worst one.
+                is ArtifactList.Refreshing -> ListBody(state.cached, capabilities, onOpen, onNew)
 
                 is ArtifactList.Loading -> Placeholder(stringResource(R.string.artifacts_loading))
                 is ArtifactList.Failed -> Placeholder(state.message, HelmColors.Danger)
                 ArtifactList.Idle -> Placeholder(stringResource(R.string.artifacts_loading))
             }
         }
+    }
+}
+
+/** The rows both a settled and a refreshing list draw; only the source differs. */
+@Composable
+private fun ListBody(
+    artifacts: List<HelmArtifact>,
+    capabilities: Capabilities,
+    onOpen: (HelmArtifact) -> Unit,
+    onNew: () -> Unit,
+) {
+    if (artifacts.isEmpty() && !capabilities.permits(SessionAction.CreateArtifact)) {
+        Placeholder(stringResource(R.string.artifacts_empty))
+    } else {
+        ArtifactRows(artifacts, capabilities, onOpen, onNew)
     }
 }
 
@@ -194,7 +214,11 @@ fun ArtifactDetailScreen(
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 when (state) {
-                    is ArtifactRead.Done -> ArtifactBody(state)
+                    is ArtifactRead.Done -> ArtifactBody(state.read)
+                    // A version (or artifact) already read shows its cached body
+                    // while the re-ask crosses the link — paging back never
+                    // blanks the screen the user was just reading.
+                    is ArtifactRead.Refreshing -> ArtifactBody(state.cached)
                     is ArtifactRead.Loading -> Placeholder(stringResource(R.string.artifacts_detail_loading))
                     is ArtifactRead.Failed -> Placeholder(state.message, HelmColors.Danger)
                     ArtifactRead.Idle -> Placeholder(stringResource(R.string.artifacts_detail_loading))
@@ -204,8 +228,8 @@ fun ArtifactDetailScreen(
             // The actions the session-addressed tools bought, one row each, greyed
             // from the gate like the sheet's. Revise needs the body in hand to
             // start from, so a body still crossing the link greys the row with the
-            // same reason the body area above gives.
-            val bodyInHand = state is ArtifactRead.Done
+            // same reason the body area above gives. A cached body IS in hand.
+            val bodyInHand = shownRead(state) != null
             GatedRow(
                 action = SessionAction.ReviseArtifact,
                 capabilities = capabilities,
@@ -225,17 +249,20 @@ fun ArtifactDetailScreen(
                 // the artifact, because "are you sure?" answers nothing.
                 onClick = { confirmingDelete = true },
             )
-            SaveStateLine(saveState, artifactId = (state as? ArtifactRead.Done)?.read?.artifact?.id ?: artifact?.id)
+            SaveStateLine(saveState, artifactId = shownRead(state)?.artifact?.id ?: artifact?.id)
 
             // Version paging, the way the terminal tail's line counts work: the
             // desktop answers ONE version per ask, so a page is a re-ask, and the
-            // row of chips is the record of what there is to ask for.
-            if (state is ArtifactRead.Done && state.read.artifact.versionCount > 1) {
-                VersionBar(
-                    versions = state.read.artifact.versionCount,
-                    selected = state.read.requestedVersion,
-                    onPick = onPull,
-                )
+            // row of chips is the record of what there is to ask for. A cached
+            // read keeps its chips usable during the refresh it triggered.
+            shownRead(state)?.let { read ->
+                if (read.artifact.versionCount > 1) {
+                    VersionBar(
+                        versions = read.artifact.versionCount,
+                        selected = read.requestedVersion,
+                        onPick = onPull,
+                    )
+                }
             }
         }
 
@@ -255,7 +282,15 @@ fun ArtifactDetailScreen(
 private fun title(artifact: HelmArtifact?, state: ArtifactRead): String = when {
     artifact != null -> artifact.title
     state is ArtifactRead.Done -> state.read.artifact.title
+    state is ArtifactRead.Refreshing -> state.cached.artifact.title
     else -> ""
+}
+
+/** The body on screen: settled, or the cached one a refresh is re-checking. */
+private fun shownRead(state: ArtifactRead): HelmArtifactRead? = when (state) {
+    is ArtifactRead.Done -> state.read
+    is ArtifactRead.Refreshing -> state.cached
+    else -> null
 }
 
 /** What the Save row knows beyond its label: the file's journey, in one line. */
@@ -409,13 +444,13 @@ private fun GatedRow(
 }
 
 @Composable
-private fun ArtifactBody(state: ArtifactRead.Done) {
-    when (state.read.artifact.kind) {
-        KIND_HTML -> HtmlSource(state.read.content)
-        KIND_MARKDOWN -> MarkdownBody(state.read.content)
+private fun ArtifactBody(read: HelmArtifactRead) {
+    when (read.artifact.kind) {
+        KIND_HTML -> HtmlSource(read.content)
+        KIND_MARKDOWN -> MarkdownBody(read.content)
         // A kind this build has never met is still text a reader can read;
         // refusing the whole artifact over its label would protect nobody.
-        else -> PlainBody(state.read.content)
+        else -> PlainBody(read.content)
     }
 }
 
@@ -467,6 +502,7 @@ private fun MarkdownBody(markdown: String) {
 @Composable
 private fun MarkdownBlock(block: MdBlock) {
     when (block) {
+        is MdBlock.Image -> InlineImage(block)
         is MdBlock.Heading -> Text(
             text = block.text,
             color = HelmColors.Txt,
@@ -516,6 +552,17 @@ private fun MarkdownBlock(block: MdBlock) {
         }
 
         MdBlock.Rule -> Hairline()
+    }
+}
+
+@Composable
+private fun InlineImage(image: MdBlock.Image) {
+    val bytes = try { Base64.decode(image.source.substringAfter(','), Base64.DEFAULT) } catch (_: IllegalArgumentException) { null }
+    val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+    if (bitmap == null) {
+        Text(text = image.alt.ifBlank { "Image unavailable" }, color = HelmColors.Faint, style = MaterialTheme.typography.bodySmall)
+    } else {
+        Image(bitmap = bitmap.asImageBitmap(), contentDescription = image.alt.ifBlank { null }, modifier = Modifier.fillMaxWidth())
     }
 }
 

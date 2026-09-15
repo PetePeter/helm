@@ -8,12 +8,36 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
+ * One binary file stored on the desktop beside an artifact — a chart image, a
+ * data dump — as the list answer names it. METADATA ONLY: the bytes never ride
+ * the list; they are fetched one attachment at a time with a bounded download
+ * ask, the same way an artifact body is.
+ *
+ * [contentType] is a hint the desktop passes through from the source and is
+ * nullable on the wire for exactly that reason — a hint the desktop never had
+ * must not be invented here.
+ */
+data class HelmArtifactAttachment(
+    val id: String,
+    val filename: String,
+    val contentType: String?,
+    val sizeBytes: Long,
+    val createdAtEpochMs: Long,
+)
+
+/**
  * One artifact of a session, as the list screen draws it.
  *
  * [kind] is the desktop's raw wire value (`markdown`, `html`, …) rather than an
  * enum on purpose: a kind this build has never met is still a readable artifact
  * rendered as text, and refusing the whole list over one unknown kind would trade
  * N-1 readable artifacts for a purity the reader never asked for.
+ *
+ * [attachments] is WIRE-SAFE in both directions: a desktop old enough to have
+ * never heard of attachments omits the field and parses to an empty list, and a
+ * desktop new enough may omit it for an artifact that simply has none. The read
+ * answer deliberately carries no attachments — the list is their home — so a
+ * detail screen reads them from the list cache, not from the body it asked for.
  */
 data class HelmArtifact(
     val id: String,
@@ -22,6 +46,7 @@ data class HelmArtifact(
     val versionCount: Int,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
+    val attachments: List<HelmArtifactAttachment> = emptyList(),
 )
 
 /**
@@ -40,6 +65,11 @@ data class HelmArtifactRead(
  * delivers them and as the device sink writes them. Plain class rather than a
  * data class because a byte array has no meaningful structural equality — two
  * downloads of the same file are still two files.
+ *
+ * The same envelope carries an artifact VERSION's body and an ATTACHMENT's
+ * bytes — the desktop answers both with `{filename, mimeType, base64, size}`,
+ * and a version answer adds `version` while an attachment answer does not —
+ * which is why [version] defaults instead of being required.
  */
 class HelmArtifactFile(
     val artifactId: String,
@@ -53,6 +83,8 @@ class HelmArtifactFile(
  * The state of one artifact's download on the detail screen. The bytes landing
  * ([Ready]) and the file landing on disk ([Saved]) are deliberately separate:
  * a Done notice between the two would claim a save that has not happened.
+ * A version download and an attachment download share this one machine — the
+ * phone saves both as files, and neither is "saved" until the sink says so.
  */
 sealed interface ArtifactSave {
     data object Idle : ArtifactSave
@@ -66,18 +98,39 @@ sealed interface ArtifactSave {
     data class Failed(val artifactId: String, val message: String) : ArtifactSave
 }
 
-/** The state of the artifacts list for the session on screen. */
+/**
+ * The state of the artifacts list for the session on screen.
+ *
+ * [Refreshing] is what a re-visit looks like when the session has been listed
+ * before: the previous answer stays on screen while a fresh one crosses the
+ * link, because the rows the user is looking at are the best-known truth and a
+ * blank screen is the worst one.
+ */
 sealed interface ArtifactList {
     data object Idle : ArtifactList
     data class Loading(val sessionId: String) : ArtifactList
+
+    /** A fresh ask in flight; [cached] is what the last answer for the session said. */
+    data class Refreshing(val sessionId: String, val cached: List<HelmArtifact>) : ArtifactList
     data class Ready(val sessionId: String, val artifacts: List<HelmArtifact>) : ArtifactList
     data class Failed(val sessionId: String, val message: String) : ArtifactList
 }
 
-/** The state of one artifact's body on the detail screen. */
+/**
+ * The state of one artifact's body on the detail screen. [Refreshing] is the
+ * read-side twin of the list's: a version (or artifact) already read once shows
+ * its cached body while the re-ask crosses the link, so paging back to a
+ * version never blanks the screen the user was just reading.
+ */
 sealed interface ArtifactRead {
     data object Idle : ArtifactRead
     data class Loading(val artifactId: String, val version: Int?) : ArtifactRead
+    data class Refreshing(
+        val sessionId: String,
+        val artifactId: String,
+        val version: Int?,
+        val cached: HelmArtifactRead,
+    ) : ArtifactRead
     data class Done(val read: HelmArtifactRead) : ArtifactRead
     data class Failed(val artifactId: String, val message: String) : ArtifactRead
 }
@@ -95,6 +148,16 @@ sealed interface ArtifactRead {
  * the old ask must not land under the new one's name. That guard is the whole
  * reason the states carry the session and artifact ids they are about.
  *
+ * THE CACHES AND THEIR ONE EVICTION RULE. A per-session list cache and a
+ * per-(session, artifact, version) read cache stand behind the pulls, and both
+ * obey the same discipline — OMISSION-ONLY PURGE. A cache entry leaves only
+ * when a fresh, PARSED answer for that session demonstrably omits it: that is
+ * the desktop saying the artifact is gone, the one fact that outranks the
+ * cache. A failed refresh, an undecodable answer, a dropped link, or time
+ * itself never evict anything — stale rows a user can still read beat an empty
+ * screen that pretends to be the truth, and the next successful answer is the
+ * purge when there is one to make.
+ *
  * Deliberately free of Android types, like every other repository here. The
  * device sink that turns a [HelmArtifactFile] into a file on the phone lives
  * behind `save.ArtifactFiles` and is injected at the UI edge.
@@ -109,9 +172,29 @@ class ArtifactRepository {
     private val _save = MutableStateFlow<ArtifactSave>(ArtifactSave.Idle)
     val save: StateFlow<ArtifactSave> = _save.asStateFlow()
 
-    /** An ask for the session's artifact list. Replaces any failure with patience. */
+    /** Last parsed list answer per session — what a re-visit shows while it refreshes. */
+    private val listCache = HashMap<String, List<HelmArtifact>>()
+
+    /** Last parsed read answer per (session, artifact, asked version) — what paging back shows. */
+    private val readCache = HashMap<ReadKey, HelmArtifactRead>()
+
+    /** Keyed on the ASKED version, so `null` (the latest) is its own cache slot. */
+    private data class ReadKey(val sessionId: String, val artifactId: String, val version: Int?)
+
+    /** The cached rows for a session, when it has been listed before; empty otherwise. */
+    fun cachedArtifacts(sessionId: String): List<HelmArtifact> = listCache[sessionId].orEmpty()
+
+    /**
+     * An ask for the session's artifact list. A session with a cache shows it
+     * ([ArtifactList.Refreshing]); a first visit waits ([ArtifactList.Loading]).
+     */
     fun listRequested(sessionId: String) {
-        _list.value = ArtifactList.Loading(sessionId)
+        val cached = listCache[sessionId]
+        _list.value = if (cached != null) {
+            ArtifactList.Refreshing(sessionId, cached)
+        } else {
+            ArtifactList.Loading(sessionId)
+        }
     }
 
     /**
@@ -121,26 +204,45 @@ class ArtifactRepository {
      * read, which the caller turns into a failure the screen can show.
      */
     fun listArrived(sessionId: String, result: Any?): Boolean {
-        val state = _list.value
-        if (state is ArtifactList.Loading && state.sessionId != sessionId) return true
+        // The session an answer may still speak for: whichever ask is in flight.
+        val askedSession: String? = when (val state = _list.value) {
+            is ArtifactList.Loading -> state.sessionId
+            is ArtifactList.Refreshing -> state.sessionId
+            else -> null
+        }
+        if (askedSession != null && askedSession != sessionId) return true
 
         val array = result as? JSONArray ?: run {
             WireShape.undecodable<Unit>("a session_artifact_list result", "a JSON array", result)
             return false
         }
         val parsed = (0 until array.length()).mapNotNull { parseEntry(array.optJSONObject(it)) }
+        // Replacement IS the purge: what the fresh answer omits leaves the cache,
+        // and nothing else — not a failure, not an age limit — ever evicts a row.
+        listCache[sessionId] = parsed
+        // The same omission is the read cache's only eviction: reads of an
+        // artifact the list no longer names are reads of an artifact that is gone.
+        parsedIds(parsed).let { live ->
+            readCache.keys.removeAll { it.sessionId == sessionId && it.artifactId !in live }
+        }
         _list.value = ArtifactList.Ready(sessionId, parsed)
         return true
     }
 
     /** Record why the list is missing. The message is what the user reads. */
     fun listFailed(sessionId: String, message: String) {
+        // The cache stands: a failed ask is no evidence an artifact left.
         _list.value = ArtifactList.Failed(sessionId, message)
     }
 
     /** An ask for one artifact's body — [version] null for the latest. */
-    fun readRequested(artifactId: String, version: Int?) {
-        _read.value = ArtifactRead.Loading(artifactId, version)
+    fun readRequested(sessionId: String, artifactId: String, version: Int?) {
+        val cached = readCache[ReadKey(sessionId, artifactId, version)]
+        _read.value = if (cached != null) {
+            ArtifactRead.Refreshing(sessionId, artifactId, version, cached)
+        } else {
+            ArtifactRead.Loading(artifactId, version)
+        }
     }
 
     /**
@@ -150,13 +252,15 @@ class ArtifactRepository {
      * answer arrived and could not be read, which the caller turns into a
      * failure the screen can show.
      */
-    fun readArrived(artifactId: String, version: Int?, result: Any?): Boolean {
-        val state = _read.value
-        if (state is ArtifactRead.Loading &&
-            (state.artifactId != artifactId || state.version != version)
-        ) {
-            return true
+    fun readArrived(sessionId: String, artifactId: String, version: Int?, result: Any?): Boolean {
+        // The (artifact, version) the in-flight ask named — Loading or a cached
+        // Refreshing, both guard the same way.
+        val asked: Pair<String, Int?>? = when (val state = _read.value) {
+            is ArtifactRead.Loading -> state.artifactId to state.version
+            is ArtifactRead.Refreshing -> state.artifactId to state.version
+            else -> null
         }
+        if (asked != null && asked != (artifactId to version)) return true
 
         val body = result as? JSONObject
         val id = body?.opt("id") as? String
@@ -171,7 +275,10 @@ class ArtifactRepository {
             )
             return false
         }
-        _read.value = ArtifactRead.Done(parseRead(body, id, content))
+        val read = parseRead(body, id, content)
+        // Filed under the ASK, so a later ask of the same shape finds it.
+        readCache[ReadKey(sessionId, artifactId, version)] = read
+        _read.value = ArtifactRead.Done(read)
         return true
     }
 
@@ -187,9 +294,10 @@ class ArtifactRepository {
 
     /**
      * Take a `session_artifact_download` result — `{filename, mimeType, base64,
-     * version, size}`. The base64 body DECODES here, because the one thing worse
-     * than no file is a corrupt one saved to the phone's storage. Same contract
-     * as the other arrivals: true when settled (applied, or a stale arrival for
+     * size}` for an ATTACHMENT, the same keys plus `version` for a version's
+     * body. The base64 body DECODES here, because the one thing worse than no
+     * file is a corrupt one saved to the phone's storage. Same contract as the
+     * other arrivals: true when settled (applied, or a stale arrival for
      * another artifact dropped), false when the answer could not be read.
      */
     fun downloadArrived(artifactId: String, result: Any?): Boolean {
@@ -223,8 +331,9 @@ class ArtifactRepository {
                 artifactId = artifactId,
                 filename = filename,
                 mimeType = mimeType,
-                // A shape that answers no version is the latest; 1 is what a
-                // fresh artifact is, and a file does not care either way.
+                // A shape that answers no version — an attachment's, always — is
+                // the latest; 1 is what a fresh artifact is, and a file does not
+                // care either way.
                 version = (body.opt("version") as? Number)?.toInt() ?: 1,
                 bytes = bytes,
             ),
@@ -257,7 +366,28 @@ class ArtifactRepository {
             // org.json hands back Integer or Long by magnitude; both are the number.
             createdAtEpochMs = (entry.opt("createdAt") as? Number)?.toLong() ?: 0L,
             updatedAtEpochMs = (entry.opt("updatedAt") as? Number)?.toLong() ?: 0L,
+            attachments = parseAttachments(entry.opt("attachments")),
         )
+    }
+
+    /**
+     * An artifact's attachment metadata, read the wire-safe way: the whole
+     * field absent is simply no attachments, and one malformed entry is dropped
+     * rather than being allowed to cost the reader its artifact.
+     */
+    private fun parseAttachments(raw: Any?): List<HelmArtifactAttachment> {
+        val array = raw as? JSONArray ?: return emptyList()
+        return (0 until array.length()).mapNotNull { index ->
+            val meta = array.optJSONObject(index)
+            val id = meta?.opt("id") as? String ?: return@mapNotNull null
+            HelmArtifactAttachment(
+                id = id,
+                filename = meta.opt("filename") as? String ?: id,
+                contentType = meta.opt("contentType") as? String,
+                sizeBytes = (meta.opt("sizeBytes") as? Number)?.toLong() ?: 0L,
+                createdAtEpochMs = (meta.opt("createdAt") as? Number)?.toLong() ?: 0L,
+            )
+        }
     }
 
     private fun parseRead(body: JSONObject, id: String, content: String): HelmArtifactRead =
@@ -273,4 +403,6 @@ class ArtifactRepository {
             requestedVersion = (body.opt("requestedVersion") as? Number)?.toInt() ?: 1,
             content = content,
         )
+
+    private fun parsedIds(parsed: List<HelmArtifact>): Set<String> = parsed.map { it.id }.toSet()
 }

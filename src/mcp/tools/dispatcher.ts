@@ -771,10 +771,14 @@ export async function callMcpTool(
       }
       case 'session_artifact_download': {
         const target = requireTargetSession(service, args);
+        const attachmentId = args.attachmentId === undefined
+          ? undefined
+          : asString(args.attachmentId, 'attachmentId must not be empty');
         return service.downloadArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
           asOptionalArtifactVersion(args.version),
+          attachmentId ? { attachmentId } : undefined,
         );
       }
       case 'session_artifact_delete': {

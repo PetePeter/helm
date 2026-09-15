@@ -64,6 +64,11 @@ object MarkdownRules {
 
                 isQuote(line) -> blocks += MdBlock.Quote(spans(line.substring(2).trim()))
 
+                image(line) != null -> {
+                    flushParagraph()
+                    blocks += image(line)!!
+                }
+
                 else -> paragraph += line.trim()
             }
             index++
@@ -153,6 +158,13 @@ object MarkdownRules {
     private fun isBullet(line: String): Boolean =
         line.startsWith("- ") || line.startsWith("* ")
 
+    /** Safe inline images are portable over the BLE artifact frame. */
+    private fun image(line: String): MdBlock.Image? {
+        val match = IMAGE.matchEntire(line.trim()) ?: return null
+        val source = match.groupValues[2]
+        return if (SAFE_DATA_IMAGE.matches(source)) MdBlock.Image(match.groupValues[1], source) else null
+    }
+
     private fun isQuote(line: String): Boolean = line.startsWith("> ")
 
     /** `#hashtag` is a paragraph; `# hash` is a heading. The space decides. */
@@ -162,10 +174,13 @@ object MarkdownRules {
     private const val CODE_DELIM = "`"
     private const val BOLD_DELIM = "**"
     private const val ITALIC_DELIM = "*"
+    private val IMAGE = Regex("!\\[([^]]*)]\\((.+)\\)")
+    private val SAFE_DATA_IMAGE = Regex("data:image/(png|jpe?g|gif|webp|bmp|avif);base64,[A-Za-z0-9+/=]+", RegexOption.IGNORE_CASE)
 }
 
 /** One rendered chunk of the document, in reading order. */
 sealed interface MdBlock {
+    data class Image(val alt: String, val source: String) : MdBlock
     /** `#`..`######`. Seven hashes and up is a paragraph, per CommonMark. */
     data class Heading(val level: Int, val text: String) : MdBlock
 

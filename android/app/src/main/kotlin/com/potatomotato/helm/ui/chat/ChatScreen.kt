@@ -66,6 +66,7 @@ fun ChatScreen(
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
     onVoice: () -> Unit,
+    onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
@@ -124,6 +125,7 @@ fun ChatScreen(
             draft = draft,
             onDraft = { draft = it },
             onVoice = onVoice,
+            onTerminal = onTerminal,
             onSend = {
                 val text = draft.trim()
                 if (text.isNotEmpty()) {
@@ -222,6 +224,7 @@ private fun Composer(
     draft: String,
     onDraft: (String) -> Unit,
     onVoice: () -> Unit,
+    onTerminal: () -> Unit,
     onSend: () -> Unit,
 ) {
     Hairline()
@@ -237,9 +240,9 @@ private fun Composer(
             modifier = Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(HelmRadius.Md))
-                .background(HelmColors.Surface2)
-                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+                .background(HelmColors.Bg)
+                .border(HelmSize.Hairline, HelmColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(HelmRadius.Md))
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Md),
         ) {
             if (draft.isEmpty()) {
                 Text(
@@ -285,6 +288,26 @@ private fun Composer(
                 color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Dim,
                 style = HelmType.SendGlyph,
                 modifier = Modifier.semantics { contentDescription = sendLabel },
+            )
+        }
+
+        // The terminal preview is deliberately the same Snapshot journey as the
+        // overflow action: one pull/navigation path, merely reachable where a
+        // user is already composing a reply.
+        val terminalLabel = stringResource(R.string.control_action_snapshot)
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(HelmColors.Accent)
+                .clickable(onClick = onTerminal),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "🖥",
+                color = HelmColors.OnAccent,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { contentDescription = terminalLabel },
             )
         }
 

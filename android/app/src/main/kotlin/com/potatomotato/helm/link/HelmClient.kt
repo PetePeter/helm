@@ -224,15 +224,18 @@ class HelmClient(
      * One artifact's body — the version asked for, or the latest when [version]
      * is null. The desktop sends exactly ONE version's content per answer, so
      * version paging on the detail screen is a re-ask, not a local cache walk.
+     * The session id rides along to the repository because the read cache is
+     * per-session: the same artifact id in two sessions is two bodies, and a
+     * cached answer from the wrong session would be a convincing lie.
      */
     fun readArtifact(sessionId: String, artifactId: String, version: Int?): Boolean {
-        artifacts.readRequested(artifactId, version)
+        artifacts.readRequested(sessionId, artifactId, version)
         val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
         if (version != null) params["version"] = version
         return call(METHOD_SESSION_ARTIFACT_GET, params) { outcome ->
             when (outcome) {
                 is Outcome.Ok ->
-                    if (!artifacts.readArrived(artifactId, version, outcome.result)) {
+                    if (!artifacts.readArrived(sessionId, artifactId, version, outcome.result)) {
                         artifacts.readFailed(artifactId, UNREADABLE_ARTIFACT)
                     }
                 is Outcome.Failed -> artifacts.readFailed(artifactId, outcome.message)
@@ -314,7 +317,32 @@ class HelmClient(
         artifacts.downloadRequested(artifactId)
         val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
         if (version != null) params["version"] = version
-        return call(METHOD_SESSION_ARTIFACT_DOWNLOAD, params) { outcome ->
+        return fetchArtifactFile(artifactId, params)
+    }
+
+    /**
+     * Fetch one artifact's ATTACHMENT — a binary file the desktop stores beside
+     * the artifact and the list names as metadata — by the same
+     * `session_artifact_download` tool, with `attachmentId` instead of
+     * `version` (the desktop refuses the two together). The ask lands in the
+     * SAME [ArtifactSave] machine a version download uses, because the phone
+     * saves both as files and neither is saved until the device sink says so.
+     */
+    fun downloadArtifactAttachment(sessionId: String, artifactId: String, attachmentId: String): Boolean {
+        artifacts.downloadRequested(artifactId)
+        return fetchArtifactFile(
+            artifactId,
+            linkedMapOf(
+                "sessionId" to sessionId,
+                "artifactId" to artifactId,
+                "attachmentId" to attachmentId,
+            ),
+        )
+    }
+
+    /** One `session_artifact_download` ask; [artifactId] is who the answer belongs to. */
+    private fun fetchArtifactFile(artifactId: String, params: Map<String, Any>): Boolean =
+        call(METHOD_SESSION_ARTIFACT_DOWNLOAD, params) { outcome ->
             when (outcome) {
                 is Outcome.Ok ->
                     if (!artifacts.downloadArrived(artifactId, outcome.result)) {
@@ -326,7 +354,6 @@ class HelmClient(
                 }
             }
         }
-    }
 
     /**
      * Rename a session. The list is the only place the new name shows, so success

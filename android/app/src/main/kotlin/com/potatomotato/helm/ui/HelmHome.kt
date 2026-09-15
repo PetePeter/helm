@@ -187,6 +187,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         client.control.clearCreatedSession(id)
         if (client.sessions.sessions.value.any { it.id == id }) {
             openSessionId = id
+            // A newly-created session is an opening just like tapping a list
+            // row; never inherit the previous session's artifact tab/detail.
+            tab = SessionTab.Chat
+            openArtifactId = null
+            editingArtifactId = null
+            editingShown = null
             where = Destination.Thread
         }
     }
@@ -245,6 +251,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
 
     val toThread = { where = Destination.Thread }
+    val listedArtifacts = when (val listed = artifactList) {
+        is ArtifactList.Ready -> listed.artifacts
+        is ArtifactList.Refreshing -> listed.cached
+        else -> openSessionId?.let { client.artifacts.cachedArtifacts(it) }.orEmpty()
+    }
+    // Snapshot has two entry points (overflow and the composer shortcut), but
+    // one transition and one initial pull. Keeping that contract here prevents
+    // the convenient button drifting from the established context-menu action.
+    val openTerminalPreview = {
+        where = Destination.Snapshot
+        client.readTerminal(open?.id.orEmpty(), requestedLines)
+        Unit
+    }
 
     // The editor's payload, built before composition so no branch has to render
     // a form for an edit it cannot name. A revise whose artifact went missing
@@ -254,11 +273,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         where != Destination.ArtifactEditor -> null
         editingArtifactId == null -> ArtifactEdit.New(sessionId = open?.id.orEmpty())
         else -> {
-            val revised = (artifactList as? ArtifactList.Ready)?.artifacts
-                ?.firstOrNull { it.id == editingArtifactId }
+            val revised = listedArtifacts.firstOrNull { it.id == editingArtifactId }
                 ?: (artifactRead as? ArtifactRead.Done)
                     ?.takeIf { it.read.artifact.id == editingArtifactId }
                     ?.read?.artifact
+                ?: (artifactRead as? ArtifactRead.Refreshing)
+                    ?.takeIf { it.cached.artifact.id == editingArtifactId }
+                    ?.cached?.artifact
             val shown = editingShown
             if (revised != null && shown != null) ArtifactEdit.Revision(revised, shown) else null
         }
@@ -394,8 +415,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         // The row the list showed names the artifact while its
                         // body is still crossing the link; the read state takes
                         // over once it lands.
-                        artifact = (artifactList as? ArtifactList.Ready)
-                            ?.artifacts?.firstOrNull { it.id == openArtifactId },
+                        artifact = listedArtifacts.firstOrNull { it.id == openArtifactId },
                         state = artifactRead,
                         saveState = artifactSave,
                         capabilities = capabilities,
@@ -405,7 +425,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         },
                         onRevise = {
                             editingArtifactId = openArtifactId
-                            editingShown = (artifactRead as? ArtifactRead.Done)?.read?.content
+                            editingShown = when (val current = artifactRead) {
+                                is ArtifactRead.Done -> current.read.content
+                                is ArtifactRead.Refreshing -> current.cached.content
+                                else -> null
+                            }
                             where = Destination.ArtifactEditor
                         },
                         onDownload = {
@@ -442,6 +466,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 messages = threads[open.id].orEmpty(),
                                 onSend = { text -> client.sendChat(open.id, text) },
                                 onVoice = { where = Destination.Voice },
+                                onTerminal = openTerminalPreview,
                             )
 
                             SessionTab.Artifacts -> ArtifactsScreen(

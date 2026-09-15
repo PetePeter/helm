@@ -550,7 +550,16 @@ export class HelmControlService extends EventEmitter {
   }
 
   /** Summaries of this session's artifacts (no content) so the LLM can see its own. */
-  listArtifacts(sessionId: string): Array<{ id: string; title: string; kind: ArtifactKind; versionCount: number; createdAt: number; updatedAt: number }> {
+  listArtifacts(sessionId: string): Array<{
+    id: string;
+    title: string;
+    kind: ArtifactKind;
+    versionCount: number;
+    createdAt: number;
+    updatedAt: number;
+    attachments: Array<Pick<ArtifactAttachment, 'id' | 'filename' | 'contentType' | 'sizeBytes' | 'createdAt'>>;
+  }> {
+    const attachmentManager = this.requireArtifactAttachmentManager();
     return this.requireArtifactManager().getForSession(sessionId).map(a => ({
       id: a.id,
       title: a.title,
@@ -558,6 +567,13 @@ export class HelmControlService extends EventEmitter {
       versionCount: a.versions.length,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,
+      attachments: attachmentManager.list(a.id).map(({ id, filename, contentType, sizeBytes, createdAt }) => ({
+        id,
+        filename,
+        ...(contentType ? { contentType } : {}),
+        sizeBytes,
+        createdAt,
+      })),
     }));
   }
 
@@ -595,8 +611,25 @@ export class HelmControlService extends EventEmitter {
    * an id belonging to another session answers not-found. The size cap lives in
    * buildArtifactDownload, which throws caller-facing errors.
    */
-  downloadArtifact(sessionId: string, id: string, version?: number): ArtifactDownload {
+  downloadArtifact(
+    sessionId: string,
+    id: string,
+    version?: number,
+    options?: { attachmentId?: string },
+  ): ArtifactDownload {
     const artifact = this.requireOwnedArtifact(sessionId, id);
+    if (options?.attachmentId) {
+      if (version !== undefined) throw new Error('attachmentId cannot be combined with version');
+      const attachment = this.requireArtifactAttachmentManager().get(artifact.id, options.attachmentId);
+      if (!attachment) throw new Error(`Attachment not found: ${options.attachmentId}`);
+      const bytes = this.requireArtifactAttachmentManager().readBytes(artifact.id, attachment.id);
+      return {
+        filename: attachment.filename,
+        mimeType: attachment.contentType ?? 'application/octet-stream',
+        base64: bytes.toString('base64'),
+        size: bytes.byteLength,
+      };
+    }
     return buildArtifactDownload(artifact, version);
   }
 

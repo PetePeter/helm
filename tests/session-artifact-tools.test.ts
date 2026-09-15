@@ -172,7 +172,16 @@ describe('session_artifact_* dispatch', () => {
   it('downloads as a base64 file envelope', async () => {
     const deps = makeDeps();
     await callMcpTool(deps, 'session_artifact_download', { sessionId: SESSION, artifactId: 'a1' }, {});
-    expect(deps.serviceMocks.downloadArtifact).toHaveBeenCalledWith(SESSION, 'a1', undefined);
+    expect(deps.serviceMocks.downloadArtifact).toHaveBeenCalledWith(SESSION, 'a1', undefined, undefined);
+  });
+
+  it('forwards a managed attachment id when one is supplied', async () => {
+    const deps = makeDeps();
+    await callMcpTool(deps, 'session_artifact_download', {
+      sessionId: SESSION, artifactId: 'a1', attachmentId: 'att-1',
+    }, {});
+    expect(deps.serviceMocks.downloadArtifact)
+      .toHaveBeenCalledWith(SESSION, 'a1', undefined, { attachmentId: 'att-1' });
   });
 
   it('deletes by artifact id, ownership still enforced inside the service', async () => {

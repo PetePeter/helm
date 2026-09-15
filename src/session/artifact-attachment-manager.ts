@@ -22,6 +22,7 @@ import {
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
+import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES } from './artifact-download.js';
 import { getConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 
@@ -105,6 +106,26 @@ export class ArtifactAttachmentManager {
     this.assertInside(this.rootDir, absPath);
     if (!existsSync(absPath)) throw new Error(`Attachment file missing: ${attachmentId}`);
     return absPath;
+  }
+
+  /** Metadata only: callers must make an explicit, bounded read for bytes. */
+  list(artifactId: string): ArtifactAttachment[] {
+    return this.loadIndex().attachments.filter(a => a.artifactId === artifactId);
+  }
+
+  /** Read attachment bytes without exposing a caller-controlled filesystem path. */
+  readBytes(artifactId: string, attachmentId: string): Buffer {
+    const attachment = this.get(artifactId, attachmentId);
+    if (!attachment) throw new Error(`Attachment not found: ${attachmentId}`);
+    if (attachment.sizeBytes > ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES) {
+      throw new Error(`Attachment exceeds the mobile wire budget — fetch it on the desktop instead`);
+    }
+    const path = this.getPath(artifactId, attachmentId);
+    const bytes = readFileSync(path);
+    if (bytes.byteLength > ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES) {
+      throw new Error(`Attachment exceeds the mobile wire budget — fetch it on the desktop instead`);
+    }
+    return bytes;
   }
 
   /** Delete one attachment, used to roll back a failed artifact update. */

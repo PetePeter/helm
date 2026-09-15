@@ -731,6 +731,93 @@ class HelmClientTest {
         assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
     }
 
+    // -------------------------------------------------------- artifact attachments
+
+    @Test
+    fun `an attachment download asks the same tool for one named file`() {
+        client.downloadArtifactAttachment("s1", "a1", "att7")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_download", record.getString("method"))
+        val params = record.getJSONObject("params")
+        // Targeted, and nothing else: attachmentId REPLACES version on the wire
+        // — the desktop refuses the two together.
+        assertEquals(setOf("sessionId", "artifactId", "attachmentId"), params.keySet().toSet())
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("a1", params.getString("artifactId"))
+        assertEquals("att7", params.getString("attachmentId"))
+    }
+
+    @Test
+    fun `an attachment's answer lands in the same save state a version download uses`() {
+        client.downloadArtifactAttachment("s1", "a1", "att7")
+
+        // The attachment shape: no `version` key — the desktop answers binary
+        // files without one.
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """{"filename":"chart.png","mimeType":"image/png","base64":"aGVsbG8=","size":5}""",
+            ),
+        )
+
+        val ready = client.artifacts.save.value as ArtifactSave.Ready
+        assertEquals("chart.png", ready.file.filename)
+        assertEquals("image/png", ready.file.mimeType)
+        assertEquals("hello", String(ready.file.bytes, Charsets.UTF_8))
+        // Same silence-until-saved rule: the bytes are not on disk yet.
+        assertNull(client.control.notice.value)
+    }
+
+    @Test
+    fun `a refused attachment download is a rule and leaves no file`() {
+        client.downloadArtifactAttachment("s1", "a1", "att7")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(ActionNotice(SessionAction.SaveArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+    }
+
+    @Test
+    fun `the artifact list hands the repository each artifact's attachments`() {
+        client.refreshArtifacts("s1")
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"id":"a1","title":"Report","kind":"markdown","versionCount":1,"createdAt":1,"updatedAt":2,""" +
+                    """"attachments":[{"id":"att1","filename":"chart.png","contentType":"image/png","sizeBytes":9,"createdAt":3}]}]""",
+            ),
+        )
+
+        val ready = client.artifacts.list.value as ArtifactList.Ready
+        val attachments = ready.artifacts.single().attachments
+        assertEquals(listOf("att1"), attachments.map { it.id })
+        assertEquals("chart.png", attachments.single().filename)
+        assertEquals("image/png", attachments.single().contentType)
+        assertEquals(9L, attachments.single().sizeBytes)
+    }
+
+    @Test
+    fun `a re-read of a body already read shows the cached body while it refreshes`() {
+        client.readArtifact("s1", "a1", version = null)
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """{"id":"a1","title":"Report","kind":"markdown","versionCount":2,"createdAt":1,"updatedAt":2,""" +
+                    """"requestedVersion":2,"requestedVersionContent":"# Report"}""",
+            ),
+        )
+
+        client.readArtifact("s1", "a1", version = null)
+
+        // The repository cached the answer; the re-ask surfaces it instead of a
+        // blank Loading, and the fresh answer will overwrite it on arrival.
+        val refreshing = client.artifacts.read.value as ArtifactRead.Refreshing
+        assertEquals("# Report", refreshing.cached.content)
+    }
+
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */
     private fun resultFor(id: String, resultJson: String): ByteArray =
         """{"v":1,"t":"result","id":"$id","result":$resultJson}""".toByteArray(Charsets.UTF_8)

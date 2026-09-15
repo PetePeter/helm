@@ -72,8 +72,8 @@ export interface ArtifactDownload {
   mimeType: string;
   /** The version body, base64 (UTF-8). */
   base64: string;
-  /** The version this envelope carries. */
-  version: number;
+  /** The version this envelope carries, when downloading artifact content. */
+  version?: number;
   /** Decoded byte length. */
   size: number;
 }

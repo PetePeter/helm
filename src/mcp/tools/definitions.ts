@@ -1462,6 +1462,7 @@ export const MCP_TOOLS: McpTool[] = [
         sessionId: { type: 'string', description: '[TARGET] The session that owns the artifact.' },
         artifactId: { type: 'string', description: 'The artifact id to download.' },
         version: { type: 'number', description: 'Optional 1-based version number; omit for the latest.' },
+        attachmentId: { type: 'string', description: 'Optional managed attachment id; mutually exclusive with version.' },
       },
       required: ['sessionId', 'artifactId'],
       additionalProperties: false,
