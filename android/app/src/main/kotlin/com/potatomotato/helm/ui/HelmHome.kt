@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -18,11 +19,20 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
+import com.potatomotato.helm.data.ActionOutcome
+import com.potatomotato.helm.data.ArtifactList
+import com.potatomotato.helm.data.ArtifactRead
+import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.notify.PendingOpen
+import com.potatomotato.helm.save.AndroidArtifactFiles
+import com.potatomotato.helm.ui.artifacts.ArtifactDetailScreen
+import com.potatomotato.helm.ui.artifacts.ArtifactEdit
+import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
+import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
@@ -30,14 +40,18 @@ import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.voice.VoiceScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * Where the session's thread can take you. One straight path still — the sheet
  * and the screens it opens all hang off a session's thread, never off each other.
+ * The artifacts screens do the same: list, detail and editor hang off the
+ * thread, and the editor hangs off whichever screen opened it.
  */
-private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn }
+private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, Artifacts, ArtifactDetail, ArtifactEditor }
 
 /**
  * The screens the user lives in, and the navigation between them.
@@ -63,26 +77,42 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val directoriesError by client.control.directoriesError.collectAsState()
     val clis by client.control.clis.collectAsState()
     val createdSessionId by client.control.createdSessionId.collectAsState()
+    val artifactList by client.artifacts.list.collectAsState()
+    val artifactRead by client.artifacts.read.collectAsState()
+    val artifactSave by client.artifacts.save.collectAsState()
+    val artifactLanding by client.control.artifactLanding.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
+    var openArtifactId by rememberSaveable { mutableStateOf<String?>(null) }
+    // The editor's payload, kept saveable so a rotation or a process death can
+    // never turn a half-written revise into a create: the id names the mode
+    // (null is create) and the shown body is what a revise starts from. The
+    // artifact itself is re-derived from the list, which is re-pulled on arrival.
+    var editingArtifactId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingShown by rememberSaveable { mutableStateOf<String?>(null) }
 
     PollSessions(client)
 
-    // A notification tap lands in that session's THREAD. It does not add a row to
-    // it: an alert is an event Helm reported, never something an agent said.
-    val tapped by PendingOpen.sessionId.collectAsState()
+    // A notification tap lands in that session's THREAD — or, for an artifact
+    // row, in its ARTIFACTS. Neither adds a row to the thread: an alert is an
+    // event Helm reported, never something an agent said.
+    val tapped by PendingOpen.target.collectAsState()
     LaunchedEffect(tapped) {
-        PendingOpen.consume()?.let {
-            openSessionId = it
-            where = Destination.Thread
+        PendingOpen.consume()?.let { target ->
+            openSessionId = target.sessionId
+            where = if (target.artifacts) Destination.Artifacts else Destination.Thread
         }
     }
 
     // What the notifier needs to know to stay quiet about the thing on screen —
-    // and to clear a row the user has just answered by opening it.
+    // and to clear rows the user has just answered by opening them. The
+    // artifacts screens count as reading the session too: opening the list is
+    // answering every artifact buzz for it.
     ReportVisibility(client)
     LaunchedEffect(openSessionId, where) {
-        client.alerts.opened(openSessionId?.takeIf { where == Destination.Thread })
+        val reading = where == Destination.Thread || where == Destination.Artifacts ||
+            where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
+        client.alerts.opened(openSessionId?.takeIf { reading })
     }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
@@ -96,17 +126,32 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // The permitted surface is asked for when a control surface needs it and is
     // forgotten with the link, so a reconnect re-asks and a capability revoked on
     // the desktop stops being offered. The list needs it too: its New session
-    // button greys from the same answer the sheet does.
+    // button greys from the same answer the sheet does — and so do the artifacts
+    // screens, whose New/Revise/Save/Delete rows grey from it.
     LaunchedEffect(where, openSessionId, capabilities) {
         val listShowing = openSessionId == null && where != Destination.Spawn
-        if ((where == Destination.Sheet || listShowing) && capabilities is Capabilities.Unknown) {
+        val artifactsShowing = where == Destination.Artifacts ||
+            where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
+        if ((where == Destination.Sheet || listShowing || artifactsShowing) && capabilities is Capabilities.Unknown) {
             client.refreshCapabilities()
         }
     }
-    LaunchedEffect(where) {
-        if (where == Destination.Spawn) {
-            if (directories.isEmpty()) client.refreshDirectories()
-            if (clis.isEmpty()) client.refreshClis()
+    LaunchedEffect(where, openSessionId) {
+        when (where) {
+            Destination.Spawn -> {
+                if (directories.isEmpty()) client.refreshDirectories()
+                if (clis.isEmpty()) client.refreshClis()
+            }
+            // The artifacts screens pull on arrival, like a snapshot pull: a
+            // fresh ask every visit, never a stream and never a stale cache.
+            // This is also why the artifact writes need no follow-up ask of
+            // their own — returning from one re-pulls what it changed.
+            Destination.Artifacts -> openSessionId?.let { client.refreshArtifacts(it) }
+            Destination.ArtifactDetail ->
+                if (openSessionId != null && openArtifactId != null) {
+                    client.readArtifact(openSessionId!!, openArtifactId!!, version = null)
+                }
+            else -> {}
         }
     }
 
@@ -133,7 +178,81 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
     }
 
+    // An artifact write that LANDED moves the user once. Create opens the new
+    // artifact's detail; revise returns to the detail it came from (which
+    // re-pulls the fresh body on arrival); delete returns to the list (which
+    // re-pulls without the row). Consumed exactly once, so two identical
+    // outcomes both navigate and a rotation does not drag anyone anywhere.
+    LaunchedEffect(artifactLanding) {
+        val landing = artifactLanding ?: return@LaunchedEffect
+        client.control.consumeArtifactLanding()
+        when (landing.action) {
+            SessionAction.CreateArtifact -> {
+                val id = landing.artifactId
+                if (id == null) {
+                    // The answer named no artifact; the list is where the new
+                    // row is one pull away.
+                    where = Destination.Artifacts
+                } else {
+                    openArtifactId = id
+                    editingArtifactId = null
+                    editingShown = null
+                    where = Destination.ArtifactDetail
+                }
+            }
+            SessionAction.ReviseArtifact -> {
+                editingArtifactId = null
+                editingShown = null
+                where = Destination.ArtifactDetail
+            }
+            SessionAction.DeleteArtifact -> where = Destination.Artifacts
+            else -> {}
+        }
+    }
+
+    // A downloaded artifact's bytes are not a save until they are on disk. The
+    // device sink is the only Android-typed step in the artifacts slice; it
+    // lives here at the UI edge, and its outcome is both the Save row's state
+    // and the notice the user reads.
+    val artifactFiles = remember { AndroidArtifactFiles(context) }
+    LaunchedEffect(artifactSave) {
+        val ready = artifactSave as? ArtifactSave.Ready ?: return@LaunchedEffect
+        try {
+            val path = withContext(Dispatchers.IO) {
+                artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes)
+            }
+            client.artifacts.saveLanded(ready.file.artifactId, path)
+            client.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)
+        } catch (error: Exception) {
+            client.artifacts.saveFailed(
+                ready.file.artifactId,
+                error.message ?: CANNOT_WRITE_FILE,
+            )
+        }
+    }
+
     val toThread = { where = Destination.Thread }
+
+    // The editor's payload, built before composition so no branch has to render
+    // a form for an edit it cannot name. A revise whose artifact went missing
+    // (list emptied under it, a cold process restore) falls back to the list
+    // rather than silently becoming a create.
+    val edit: ArtifactEdit? = when {
+        where != Destination.ArtifactEditor -> null
+        editingArtifactId == null -> ArtifactEdit.New(sessionId = open?.id.orEmpty())
+        else -> {
+            val revised = (artifactList as? ArtifactList.Ready)?.artifacts
+                ?.firstOrNull { it.id == editingArtifactId }
+                ?: (artifactRead as? ArtifactRead.Done)
+                    ?.takeIf { it.read.artifact.id == editingArtifactId }
+                    ?.read?.artifact
+            val shown = editingShown
+            if (revised != null && shown != null) ArtifactEdit.Revision(revised, shown) else null
+        }
+    }
+    LaunchedEffect(where, edit) {
+        if (where == Destination.ArtifactEditor && edit == null) where = Destination.Artifacts
+    }
 
     Column(modifier = modifier.fillMaxSize()) {
         notice?.let { ActionNoticeBar(notice = it, onDismiss = client.control::clearNotice) }
@@ -209,6 +328,99 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     )
                 }
 
+                where == Destination.Artifacts -> {
+                    BackHandler(onBack = toThread)
+                    ArtifactsScreen(
+                        state = artifactList,
+                        capabilities = capabilities,
+                        linkState = linkState,
+                        onOpen = { artifact ->
+                            openArtifactId = artifact.id
+                            where = Destination.ArtifactDetail
+                        },
+                        onNew = {
+                            editingArtifactId = null
+                            editingShown = null
+                            where = Destination.ArtifactEditor
+                        },
+                        onBack = toThread,
+                    )
+                }
+
+                where == Destination.ArtifactEditor && edit != null -> {
+                    BackHandler(
+                        // Back undoes the edit without a wire call: a create
+                        // returns to the list it came from, a revise to the
+                        // artifact it was revising.
+                        onBack = {
+                            where = if (editingArtifactId == null) {
+                                Destination.Artifacts
+                            } else {
+                                Destination.ArtifactDetail
+                            }
+                        },
+                    )
+                    ArtifactEditorScreen(
+                        edit = edit,
+                        linkState = linkState,
+                        onSubmit = { title, content ->
+                            if (edit is ArtifactEdit.New) {
+                                client.createArtifact(open.id, title, content)
+                            } else {
+                                val artifactId = editingArtifactId
+                                if (artifactId != null) client.reviseArtifact(open.id, artifactId, content)
+                            }
+                        },
+                        onBack = {
+                            where = if (editingArtifactId == null) {
+                                Destination.Artifacts
+                            } else {
+                                Destination.ArtifactDetail
+                            }
+                        },
+                    )
+                }
+
+                // The editor's payload went missing under it — the reset effect
+                // is one frame away from landing on the list. Nothing renders
+                // here, and nothing may: rendering the thread would flash a
+                // conversation into a screen the user left.
+                where == Destination.ArtifactEditor -> Unit
+
+                where == Destination.ArtifactDetail -> {
+                    BackHandler(onBack = { where = Destination.Artifacts })
+                    ArtifactDetailScreen(
+                        // The row the list showed names the artifact while its
+                        // body is still crossing the link; the read state takes
+                        // over once it lands.
+                        artifact = (artifactList as? ArtifactList.Ready)
+                            ?.artifacts?.firstOrNull { it.id == openArtifactId },
+                        state = artifactRead,
+                        saveState = artifactSave,
+                        capabilities = capabilities,
+                        linkState = linkState,
+                        onPull = { version ->
+                            openSessionId?.let { session -> client.readArtifact(session, openArtifactId!!, version) }
+                        },
+                        onRevise = {
+                            editingArtifactId = openArtifactId
+                            editingShown = (artifactRead as? ArtifactRead.Done)?.read?.content
+                            where = Destination.ArtifactEditor
+                        },
+                        onDownload = {
+                            openSessionId?.let { session ->
+                                client.downloadArtifact(session, openArtifactId!!, version = null)
+                            }
+                        },
+                        onDelete = {
+                            openSessionId?.let { session ->
+                                client.deleteArtifact(session, openArtifactId!!)
+                            }
+                        },
+                        onBack = { where = Destination.Artifacts },
+                    )
+                }
+
                 else -> {
                     BackHandler { openSessionId = null }
                     ChatScreen(
@@ -236,12 +448,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     onAction = { action ->
                         where = when (action) {
                             SessionAction.Snapshot -> Destination.Snapshot
+                            SessionAction.Artifacts -> Destination.Artifacts
                             SessionAction.Spawn -> Destination.Spawn
                             SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
                             // Rename never reaches here — it is answered by
-                            // onRename below, because it carries a name.
+                            // onRename below, because it carries a name. The
+                            // artifact actions never reach here either: their
+                            // rows live on the artifacts screens, where the
+                            // thing acted on is visible.
                             SessionAction.Rename -> Destination.Thread
+                            else -> Destination.Thread
                         }
                         // A snapshot is pulled as soon as it is asked for, at the
                         // count the chip row already shows (the smallest one before
@@ -316,3 +533,6 @@ private const val POLL_INTERVAL_MS = 2_000L
  * answers, so one poll is normally enough — this is the rope, not the path.
  */
 private const val CREATED_SESSION_POLLS = 10
+
+/** The sink threw with no message of its own; the row still needs a reason. */
+private const val CANNOT_WRITE_FILE = "The phone could not write the file"

@@ -64,7 +64,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun takeNotificationTap(intent: Intent?) {
-        PendingOpen.request(intent?.getStringExtra(AndroidNotifications.EXTRA_SESSION_ID))
+        PendingOpen.request(
+            intent?.getStringExtra(AndroidNotifications.EXTRA_SESSION_ID),
+            intent?.getBooleanExtra(AndroidNotifications.EXTRA_ARTIFACTS, false) == true,
+        )
     }
 }
 

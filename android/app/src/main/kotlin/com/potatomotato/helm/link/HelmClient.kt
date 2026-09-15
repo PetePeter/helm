@@ -1,6 +1,7 @@
 package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
+import com.potatomotato.helm.data.ArtifactRepository
 import com.potatomotato.helm.data.CapabilityCache
 import com.potatomotato.helm.data.ChatRepository
 import com.potatomotato.helm.data.ControlRepository
@@ -12,6 +13,8 @@ import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.wire.MobileEnvelope
+import com.potatomotato.helm.data.ArtifactRules
+
 import org.json.JSONObject
 import com.potatomotato.helm.wire.MobileRecord
 
@@ -48,6 +51,7 @@ class HelmClient(
     val chats: ChatRepository = ChatRepository(),
     val capabilities: CapabilityCache = CapabilityCache(),
     val control: ControlRepository = ControlRepository(),
+    val artifacts: ArtifactRepository = ArtifactRepository(),
     val alerts: AlertRouter = AlertRouter(),
 ) {
     /** Outstanding calls, oldest first, each with a deadline that owns its cleanup. */
@@ -197,6 +201,134 @@ class HelmClient(
         act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
 
     /**
+     * The artifacts of one session, for the artifacts screen. Like the terminal
+     * tail, this is PULLED when the screen asks for it, never streamed: the list
+     * is a bounded answer and the link's budget belongs to the user's taps.
+     */
+    fun refreshArtifacts(sessionId: String): Boolean {
+        artifacts.listRequested(sessionId)
+        return call(METHOD_SESSION_ARTIFACT_LIST, linkedMapOf("sessionId" to sessionId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    // A shape the app cannot read is a failure the screen shows,
+                    // never a calm empty list that quietly means "no answer".
+                    if (!artifacts.listArrived(sessionId, outcome.result)) {
+                        artifacts.listFailed(sessionId, UNREADABLE_ARTIFACTS)
+                    }
+                is Outcome.Failed -> artifacts.listFailed(sessionId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * One artifact's body — the version asked for, or the latest when [version]
+     * is null. The desktop sends exactly ONE version's content per answer, so
+     * version paging on the detail screen is a re-ask, not a local cache walk.
+     */
+    fun readArtifact(sessionId: String, artifactId: String, version: Int?): Boolean {
+        artifacts.readRequested(artifactId, version)
+        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
+        if (version != null) params["version"] = version
+        return call(METHOD_SESSION_ARTIFACT_GET, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!artifacts.readArrived(artifactId, version, outcome.result)) {
+                        artifacts.readFailed(artifactId, UNREADABLE_ARTIFACT)
+                    }
+                is Outcome.Failed -> artifacts.readFailed(artifactId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * Mint a NEW markdown artifact for the session. `kind` rides as `md` on the
+     * wire — the desktop's session-addressed create refuses anything else
+     * (markdown-only in v1) — so the phone never authors a kind of its own.
+     *
+     * The body is budgeted HERE, before any bytes reach the radio, against the
+     * same 128KiB frame the desktop caps its answers with: a request the link
+     * cannot carry dies as a torn link, not as a refusal.
+     */
+    fun createArtifact(sessionId: String, title: String, content: String): Boolean {
+        if (!ArtifactRules.fitsCreate(title, content)) {
+            control.noticed(SessionAction.CreateArtifact, ActionOutcome.Failed(TOO_LARGE))
+            return false
+        }
+        return act(
+            SessionAction.CreateArtifact,
+            METHOD_SESSION_ARTIFACT_CREATE,
+            linkedMapOf(
+                "sessionId" to sessionId,
+                "title" to ArtifactRules.title(title),
+                "kind" to CREATE_KIND,
+                "content" to content,
+            ),
+        ) { outcome ->
+            if (outcome is Outcome.Ok) {
+                control.artifactLanded(SessionAction.CreateArtifact, idIn(outcome.result))
+            }
+        }
+    }
+
+    /**
+     * Append a version to an artifact the session owns. No title rides the wire
+     * (`session_artifact_update` takes content only) and no follow-up ask is
+     * made: returning to the detail screen re-pulls the body the way every
+     * visit does, and that re-pull is the reconciliation.
+     */
+    fun reviseArtifact(sessionId: String, artifactId: String, content: String): Boolean {
+        if (!ArtifactRules.fitsRevise(content)) {
+            control.noticed(SessionAction.ReviseArtifact, ActionOutcome.Failed(TOO_LARGE))
+            return false
+        }
+        return act(
+            SessionAction.ReviseArtifact,
+            METHOD_SESSION_ARTIFACT_UPDATE,
+            linkedMapOf("sessionId" to sessionId, "artifactId" to artifactId, "content" to content),
+        ) { outcome ->
+            if (outcome is Outcome.Ok) control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
+        }
+    }
+
+    /**
+     * Delete exactly ONE artifact. There is no bulk delete on the wire and this
+     * app offers none; the artifacts screen confirms before this call exists.
+     */
+    fun deleteArtifact(sessionId: String, artifactId: String): Boolean =
+        act(
+            SessionAction.DeleteArtifact,
+            METHOD_SESSION_ARTIFACT_DELETE,
+            linkedMapOf("sessionId" to sessionId, "artifactId" to artifactId),
+        ) { outcome ->
+            if (outcome is Outcome.Ok) control.artifactLanded(SessionAction.DeleteArtifact, artifactId)
+        }
+
+    /**
+     * Fetch one artifact as a FILE — `{filename, mimeType, base64, …}` — rather
+     * than inline content. The outcome is deliberately NOT noticed on `Ok`: the
+     * bytes have not been saved yet, and the notice that says "saved" waits for
+     * the device sink. A refusal or a dead link IS noticed like any other
+     * action, because those are verdicts the user must be able to read.
+     */
+    fun downloadArtifact(sessionId: String, artifactId: String, version: Int? = null): Boolean {
+        artifacts.downloadRequested(artifactId)
+        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
+        if (version != null) params["version"] = version
+        return call(METHOD_SESSION_ARTIFACT_DOWNLOAD, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!artifacts.downloadArrived(artifactId, outcome.result)) {
+                        artifacts.downloadFailed(artifactId, UNREADABLE_DOWNLOAD)
+                    }
+                is Outcome.Failed -> {
+                    control.noticed(SessionAction.SaveArtifact, outcomeFor(outcome))
+                    artifacts.downloadFailed(artifactId, outcome.message)
+                }
+            }
+        }
+    }
+
+    /**
      * Rename a session. The list is the only place the new name shows, so success
      * pulls it the way a close does; the notice bar says the rest.
      */
@@ -230,7 +362,7 @@ class HelmClient(
         if (name.isNotBlank()) params["name"] = name.trim()
         return act(SessionAction.Spawn, METHOD_SESSION_CREATE, params) { outcome ->
             if (outcome is Outcome.Ok) {
-                control.spawnCreated(createdSessionId(outcome.result))
+                control.spawnCreated(idIn(outcome.result))
                 refreshSessions()
             }
         }
@@ -313,7 +445,7 @@ class HelmClient(
      * because they mean opposite things: one is a rule that will hold, the other
      * is a radio that may come back. [onOutcome] sees the same verdict after the
      * notice, for the few actions whose result carries state onward (the spawn's
-     * created id).
+     * created session, the create's minted artifact).
      */
     private fun act(
         action: SessionAction,
@@ -321,23 +453,24 @@ class HelmClient(
         params: Map<String, Any>,
         onOutcome: (Outcome) -> Unit = {},
     ): Boolean = call(method, params) { outcome ->
-        control.noticed(
-            action,
-            when {
-                outcome is Outcome.Ok -> ActionOutcome.Done
-                (outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE -> ActionOutcome.Refused
-                else -> ActionOutcome.Failed(outcome.message)
-            },
-        )
+        control.noticed(action, outcomeFor(outcome))
         onOutcome(outcome)
     }
 
+    /** One verdict per outcome shape; Refused needs the deny text byte-exact. */
+    private fun outcomeFor(outcome: Outcome): ActionOutcome = when {
+        outcome is Outcome.Ok -> ActionOutcome.Done
+        (outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE -> ActionOutcome.Refused
+        else -> ActionOutcome.Failed(outcome.message)
+    }
+
     /**
-     * The session a spawn created, read out of its `ok`. The desktop answers
-     * `{id: ...}`; anything else is null, because navigating to a guessed id is
-     * worse than staying put.
+     * The `id` a desktop answer carries, read out of its `ok`. Spawn answers
+     * `{id: ...}` for the session it started and artifact-create answers the
+     * same for the artifact it minted; anything else is null, because navigating
+     * to a guessed id is worse than staying put.
      */
-    private fun createdSessionId(result: Any?): String? =
+    private fun idIn(result: Any?): String? =
         (result as? JSONObject)?.opt("id") as? String
 
     private fun call(
@@ -415,11 +548,31 @@ class HelmClient(
         private const val METHOD_SESSION_RENAME = "session_rename"
         private const val METHOD_SESSION_CREATE = "session_create"
 
+        /** A session's artifacts: list, read, and the writes this app gates per tool. */
+        private const val METHOD_SESSION_ARTIFACT_LIST = "session_artifact_list"
+        private const val METHOD_SESSION_ARTIFACT_GET = "session_artifact_get"
+        private const val METHOD_SESSION_ARTIFACT_CREATE = "session_artifact_create"
+        private const val METHOD_SESSION_ARTIFACT_UPDATE = "session_artifact_update"
+        private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
+        private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
+
+        /** The ONLY kind the session-addressed create accepts; the desktop maps it to 'markdown'. */
+        private const val CREATE_KIND = "md"
+
+        /** Same failure, for the download — an unreadable answer is not a file. */
+        private const val UNREADABLE_DOWNLOAD = "Helm answered with a file this app could not read"
+
+        /** Refused client-side, before the link is asked to carry bytes it cannot. */
+        private const val TOO_LARGE = "That would not fit the link — trim it, or write it on the desktop"
         /** The full CLI catalogue, for the spawn form. Gated like every dispatch — a read-only tool, so a refusal just falls back to the harvested list. */
         private const val METHOD_TOOL_LIST = "tool_list"
 
         /** `ok` on the wire carrying a shape the app cannot read, for the fetch the spawn form waits on. */
         private const val UNREADABLE_LIST = "Helm answered with a directory list this app could not read"
+
+        /** Same failure, for the artifacts screen — an unreadable answer is not an empty list. */
+        private const val UNREADABLE_ARTIFACTS = "Helm answered with an artifact list this app could not read"
+        private const val UNREADABLE_ARTIFACT = "Helm answered with an artifact this app could not read"
 
         /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
         private const val SNAPSHOT_MODE = "stripped"

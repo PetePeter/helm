@@ -63,12 +63,14 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * divergence from the desktop's uniform-deny rule, defensible only because a
  * SAS-paired phone is the user's own device AND because the claim is true.
  *
- * A ROW THAT CANNOT WORK IS NOT DRAWN. Drafts and artifacts are absent, not
- * greyed: both are reachable only through the CALLER's own session, and from the
- * phone's proxy identity they would answer emptily rather than refuse. A live
- * row that silently does nothing is worse than no row, and "not permitted" would
- * be a lie — the user IS permitted; there is simply nothing to call. They appear
- * by themselves the day a session-scoped surface exists.
+ * A ROW THAT CANNOT WORK IS NOT DRAWN. Drafts are absent, not greyed: reachable
+ * only through the CALLER's own session, from the phone's proxy identity they
+ * would answer emptily rather than refuse. A live row that silently does nothing
+ * is worse than no row, and "not permitted" would be a lie — the user IS
+ * permitted; there is simply nothing to call. Artifacts USED to be absent for the
+ * same reason; the session-addressed `session_artifact_list`/`_get` tools are the
+ * session-scoped surface that was waiting for, so the row exists now and greys
+ * from the gate like every other.
  *
  * The sheet is hand-drawn rather than a ModalBottomSheet: Material's sheet tints
  * its surface, and this design's elevation is a hairline on true black.
@@ -164,6 +166,7 @@ fun SessionSheet(
  */
 private val SHEET_ACTIONS = listOf(
     SessionAction.Snapshot,
+    SessionAction.Artifacts,
     SessionAction.Rename,
     SessionAction.Compact,
     SessionAction.Spawn,
@@ -364,29 +367,44 @@ private fun GrabHandle() {
     }
 }
 
-/** The label colour: dim when unavailable, danger for the one that destroys. */
-private fun SessionAction.labelColor(permitted: Boolean): Color = when {
+/** The label colour: dim when unavailable, danger for the ones that destroy. */
+internal fun SessionAction.labelColor(permitted: Boolean): Color = when {
     !permitted -> HelmColors.Faint
-    this == SessionAction.Close -> HelmColors.Danger
+    this == SessionAction.Close || this == SessionAction.DeleteArtifact -> HelmColors.Danger
     else -> HelmColors.Txt
 }
 
-private val SessionAction.labelRes: Int
+/**
+ * Shared with the artifacts screens, whose rows are the same action shape drawn
+ * in a list rather than a sheet: one definition, so a label or glyph cannot
+ * drift between the two surfaces.
+ */
+internal val SessionAction.labelRes: Int
     get() = when (this) {
         SessionAction.Snapshot -> R.string.control_action_snapshot
+        SessionAction.Artifacts -> R.string.control_action_artifacts
         SessionAction.Rename -> R.string.control_action_rename
         SessionAction.Compact -> R.string.control_action_compact
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
+        SessionAction.CreateArtifact -> R.string.artifacts_action_new
+        SessionAction.ReviseArtifact -> R.string.artifacts_action_revise
+        SessionAction.SaveArtifact -> R.string.artifacts_action_save
+        SessionAction.DeleteArtifact -> R.string.artifacts_action_delete
     }
 
-private val SessionAction.glyphRes: Int
+internal val SessionAction.glyphRes: Int
     get() = when (this) {
         SessionAction.Snapshot -> R.string.control_glyph_snapshot
+        SessionAction.Artifacts -> R.string.control_glyph_artifacts
         SessionAction.Rename -> R.string.control_glyph_rename
         SessionAction.Compact -> R.string.control_glyph_compact
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
+        SessionAction.CreateArtifact -> R.string.artifacts_glyph_new
+        SessionAction.ReviseArtifact -> R.string.artifacts_glyph_revise
+        SessionAction.SaveArtifact -> R.string.artifacts_glyph_save
+        SessionAction.DeleteArtifact -> R.string.artifacts_glyph_delete
     }
 
 /** Dark enough to push the thread behind it back, never opaque. */

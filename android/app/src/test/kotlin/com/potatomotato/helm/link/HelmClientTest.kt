@@ -2,6 +2,10 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionNotice
 import com.potatomotato.helm.data.ActionOutcome
+import com.potatomotato.helm.data.ArtifactList
+import com.potatomotato.helm.data.ArtifactRead
+import com.potatomotato.helm.data.ArtifactLanding
+import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.data.HelmCli
@@ -12,6 +16,7 @@ import com.potatomotato.helm.data.Snapshot
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.notify.FakeNotificationPort
+import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.ui.components.SessionState
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -472,6 +477,258 @@ class HelmClientTest {
 
         assertEquals(Reach.Undecodable, client.sessions.reach.value)
         assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+    }
+
+    @Test
+    fun `the artifact list is asked for per session and lands in the repository`() {
+        client.refreshArtifacts("s1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_list", record.getString("method"))
+        assertEquals("s1", record.getJSONObject("params").getString("sessionId"))
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"id":"a1","title":"Report","kind":"markdown","versionCount":2,"createdAt":1,"updatedAt":2}]""",
+            ),
+        )
+
+        val ready = client.artifacts.list.value as ArtifactList.Ready
+        assertEquals("Report", ready.artifacts.single().title)
+    }
+
+    @Test
+    fun `a failed artifact list is state on the screen, not silence`() {
+        client.refreshArtifacts("s1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        val failed = client.artifacts.list.value as ArtifactList.Failed
+        assertEquals("Tool not permitted", failed.message)
+    }
+
+    @Test
+    fun `an artifact read asks for the session, the id and the version together`() {
+        client.readArtifact("s1", "a1", version = 3)
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("a1", params.getString("artifactId"))
+        // A NUMBER, like every other count on this link: the desktop reads the
+        // version with a type check and ignores a quoted one.
+        assertEquals(3, params.get("version"))
+    }
+
+    @Test
+    fun `the version is omitted from the wire when the latest is wanted`() {
+        client.readArtifact("s1", "a1", version = null)
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertFalse(params.has("version"))
+    }
+
+    @Test
+    fun `an artifact read result lands as metadata plus the one body`() {
+        client.readArtifact("s1", "a1", version = null)
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """{"id":"a1","title":"Report","kind":"markdown","versionCount":2,"createdAt":1,"updatedAt":2,""" +
+                    """"requestedVersion":2,"requestedVersionContent":"# Report"}""",
+            ),
+        )
+
+        val done = client.artifacts.read.value as ArtifactRead.Done
+        assertEquals("Report", done.read.artifact.title)
+        assertEquals("# Report", done.read.content)
+    }
+
+    @Test
+    fun `an unreadable artifact read says so instead of loading forever`() {
+        client.readArtifact("s1", "a1", version = null)
+
+        client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
+
+        assertTrue(client.artifacts.read.value is ArtifactRead.Failed)
+    }
+
+    // ---------------------------------------------------------- artifact writes
+
+    @Test
+    fun `a create asks for the markdown-only kind and names the session and body`() {
+        client.createArtifact("s1", "  Note  ", "# body")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_create", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("Note", params.getString("title"))
+        // 'md' — the desktop's session-addressed create refuses any other kind,
+        // so a phone-authored artifact is markdown by construction.
+        assertEquals("md", params.getString("kind"))
+        assertEquals("# body", params.getString("content"))
+
+        // The real wire shape: createArtifact answers the full Artifact, and the
+        // id inside it is what opens the new artifact's detail screen.
+        client.onInbound(resultFor(lastCallId(), """{"id":"a9","title":"Note","kind":"markdown","versions":[]}"""))
+        assertEquals(ActionNotice(SessionAction.CreateArtifact, ActionOutcome.Done), client.control.notice.value)
+        // The minted id is parked as a LANDING — the one-shot the artifacts
+        // screens navigate on — because two identical notices must both count.
+        assertEquals(
+            ArtifactLanding(SessionAction.CreateArtifact, "a9"),
+            client.control.artifactLanding.value,
+        )
+    }
+
+    @Test
+    fun `a create answer that names no artifact does not pretend it did`() {
+        client.createArtifact("s1", "Note", "# body")
+
+        client.onInbound(resultFor(lastCallId(), """"not an object""""))
+
+        // Done is still Done — the artifact exists — but navigation must not
+        // guess at an id that never arrived.
+        assertEquals(ActionNotice(SessionAction.CreateArtifact, ActionOutcome.Done), client.control.notice.value)
+        // A landing is parked even when the answer named no id, so the editor
+        // still closes for the list, where the new row is one pull away.
+        assertEquals(
+            ArtifactLanding(SessionAction.CreateArtifact, null),
+            client.control.artifactLanding.value,
+        )
+    }
+
+    @Test
+    fun `a body too big for the link is refused before the radio sees it`() {
+        val big = "x".repeat(ArtifactRules.MAX_EDIT_ESCAPED_BYTES + 1)
+
+        assertFalse(client.createArtifact("s1", "Note", big))
+        assertEquals(SessionAction.CreateArtifact, client.control.notice.value!!.action)
+        assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
+
+        assertFalse(client.reviseArtifact("s1", "a1", big))
+        assertEquals(SessionAction.ReviseArtifact, client.control.notice.value!!.action)
+        assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
+
+        // An oversized frame tears the link — the one failure this app is worst
+        // at — so an authored body that cannot fit never leaves the phone.
+        assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `a revise sends the session, the artifact and the new body, and adds no second ask`() {
+        client.reviseArtifact("s1", "a1", "# v2")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_update", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("a1", params.getString("artifactId"))
+        assertEquals("# v2", params.getString("content"))
+
+        client.onInbound(resultFor(lastCallId(), """{"id":"a1","versions":[]}"""))
+        assertEquals(ActionNotice(SessionAction.ReviseArtifact, ActionOutcome.Done), client.control.notice.value)
+        // The artifacts screens re-pull on every visit, so a write adds no
+        // refresh of its own — the next visit reconciles the list for free.
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun `a revise refusal is a rule, not a dropped link`() {
+        client.reviseArtifact("s1", "a1", "# v2")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(ActionNotice(SessionAction.ReviseArtifact, ActionOutcome.Refused), client.control.notice.value)
+    }
+
+    @Test
+    fun `a delete is aimed at exactly one artifact and adds no second ask`() {
+        client.deleteArtifact("s1", "a1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_delete", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("a1", params.getString("artifactId"))
+        // Targeted, and nothing else: there is no bulk delete on the wire and
+        // this app must not grow one.
+        assertEquals(setOf("sessionId", "artifactId"), params.keySet().toSet())
+
+        client.onInbound(resultFor(lastCallId(), """{"id":"a1","deleted":true}"""))
+        assertEquals(ActionNotice(SessionAction.DeleteArtifact, ActionOutcome.Done), client.control.notice.value)
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun `a delete refusal is a rule, not a dropped link`() {
+        client.deleteArtifact("s1", "a1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(ActionNotice(SessionAction.DeleteArtifact, ActionOutcome.Refused), client.control.notice.value)
+    }
+
+    @Test
+    fun `a download fetches the file and stays quiet until it lands`() {
+        client.downloadArtifact("s1", "a1", version = null)
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_download", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("a1", params.getString("artifactId"))
+        assertFalse(params.has("version"))
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """{"filename":"Perf-report.md","mimeType":"text/markdown","base64":"aGVsbG8=","version":2,"size":5}""",
+            ),
+        )
+
+        val ready = client.artifacts.save.value as ArtifactSave.Ready
+        assertEquals("Perf-report.md", ready.file.filename)
+        assertEquals("text/markdown", ready.file.mimeType)
+        assertEquals("hello", String(ready.file.bytes, Charsets.UTF_8))
+        // The bytes are on the phone, not on disk yet: a Done notice now would
+        // claim a save that has not happened.
+        assertNull(client.control.notice.value)
+    }
+
+    @Test
+    fun `a download of one version asks for it as a number`() {
+        client.downloadArtifact("s1", "a1", version = 3)
+
+        assertEquals(3, JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params").get("version"))
+    }
+
+    @Test
+    fun `a refused download is a rule and leaves no file`() {
+        client.downloadArtifact("s1", "a1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals(ActionNotice(SessionAction.SaveArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+    }
+
+    @Test
+    fun `a download answer that is not a file says so`() {
+        client.downloadArtifact("s1", "a1")
+
+        client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
+
+        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+    }
+
+    @Test
+    fun `a download with no link to carry it fails the ask`() {
+        linked = false
+
+        assertFalse(client.downloadArtifact("s1", "a1"))
+
+        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */

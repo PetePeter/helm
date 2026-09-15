@@ -19,15 +19,23 @@ class FakeNotificationPort : NotificationPort {
     val shade = linkedMapOf<Int, Alert>()
 
     override fun post(alert: Alert) {
-        calls += "post:${alert.sessionId}:${alert.kind}"
+        calls += "post:${rowKey(alert)}:${alert.kind}"
         shade[alert.notificationId] = alert
     }
 
-    override fun cancel(sessionId: String) {
-        calls += "cancel:$sessionId"
-        shade.remove(Alert.notificationId(sessionId))
+    override fun cancel(alert: Alert) {
+        calls += "cancel:${rowKey(alert)}"
+        shade.remove(alert.notificationId)
     }
 
-    /** The alert currently shown for a session, or null when nothing is. */
+    /** The alert currently shown for a session's own row, or null when nothing is. */
     fun showing(sessionId: String): Alert? = shade[Alert.notificationId(sessionId)]
+
+    /** The alert currently shown for one of the session's artifact rows. */
+    fun showing(sessionId: String, artifactId: String): Alert? =
+        shade[Alert.notificationId(sessionId, artifactId)]
+
+    /** What the call log names a row: the session, or the session plus its artifact. */
+    private fun rowKey(alert: Alert): String =
+        alert.artifactId?.let { "${alert.sessionId}#$it" } ?: alert.sessionId
 }

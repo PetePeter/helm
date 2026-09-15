@@ -16,12 +16,14 @@ class AlertRouterTest {
         sessionName: String = "ble-transport",
         text: String = "Needs a decision",
         kind: String? = "attention",
+        artifactId: String? = null,
     ) = MobileRecord.Chat(
         sessionId = sessionId,
         sessionName = sessionName,
         text = text,
         at = 1_700_000_000_000L,
         kind = kind,
+        artifactId = artifactId,
     )
 
     @Test
@@ -170,6 +172,81 @@ class AlertRouterTest {
 
         // A notification for something that happened before the app had a
         // notification surface is stale by the time it could be shown.
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `an artifact notice routes to the artifact channel and carries its id`() {
+        router.onAlert(alert(kind = "artifact", text = "Perf report", artifactId = "a1"))
+
+        val shown = port.showing("s1", artifactId = "a1")
+        assertEquals(AlertKind.Artifact, shown?.kind)
+        assertEquals("Perf report", shown?.text)
+    }
+
+    @Test
+    fun `distinct artifacts from one session stack rather than overwrite`() {
+        router.onAlert(alert(kind = "artifact", text = "One", artifactId = "a1"))
+        router.onAlert(alert(kind = "artifact", text = "Two", artifactId = "a2"))
+
+        assertEquals(2, port.shade.size)
+        assertEquals("One", port.showing("s1", artifactId = "a1")?.text)
+        assertEquals("Two", port.showing("s1", artifactId = "a2")?.text)
+    }
+
+    @Test
+    fun `the same artifact twice replaces its own row`() {
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
+        router.onAlert(alert(kind = "artifact", text = "Report (revised)", artifactId = "a1"))
+
+        assertEquals(1, port.shade.size)
+        assertEquals("Report (revised)", port.showing("s1", artifactId = "a1")?.text)
+    }
+
+    @Test
+    fun `an artifact row does not evict the session's own row`() {
+        router.onAlert(alert(kind = "completion"))
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
+
+        assertEquals(2, port.shade.size)
+        assertEquals(AlertKind.Completion, port.showing("s1")?.kind)
+    }
+
+    @Test
+    fun `opening the session clears its artifact rows with it`() {
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
+        router.visible(true)
+
+        router.opened("s1")
+
+        assertNull(port.showing("s1", artifactId = "a1"))
+    }
+
+    @Test
+    fun `an artifact for the session on screen is not posted`() {
+        router.visible(true)
+        router.opened("s1")
+
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
+
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `another session's artifact still posts while one session is open`() {
+        router.visible(true)
+        router.opened("s1")
+
+        router.onAlert(alert(sessionId = "s2", kind = "artifact", text = "Report", artifactId = "a1"))
+
+        assertEquals("Report", port.showing("s2", artifactId = "a1")?.text)
+    }
+
+    @Test
+    fun `an artifact record without an id is dropped rather than posted unfindable`() {
+        // A row nobody can cancel later is a permanent resident of the shade.
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = null))
+
         assertTrue(port.shade.isEmpty())
     }
 }

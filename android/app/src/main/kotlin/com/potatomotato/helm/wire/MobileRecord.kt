@@ -53,5 +53,15 @@ sealed interface MobileRecord {
         val filePath: String? = null,
         val voice: Boolean = false,
         val kind: String? = null,
+
+        /**
+         * The artifact a `kind: "artifact"` record is about, with its title. The
+         * notification row is keyed on THIS, so several artifacts from one
+         * session stack instead of overwriting each other. Null for every other
+         * kind. Additive on the wire: the desktop emits them before `kind` and
+         * omits them entirely when absent, so nothing else on the link changed.
+         */
+        val artifactId: String? = null,
+        val title: String? = null,
     ) : MobileRecord
 }

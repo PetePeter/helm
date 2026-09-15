@@ -170,6 +170,40 @@ class ControlRepositoryTest {
         assertNull(control.directoriesError.value)
     }
 
+    @Test
+    fun `an artifact landing is parked once and consumed once`() {
+        control.artifactLanded(SessionAction.CreateArtifact, "a1")
+        assertEquals(ArtifactLanding(SessionAction.CreateArtifact, "a1"), control.artifactLanding.value)
+
+        // Consumed exactly once: a second read sees nothing, so a rotation
+        // cannot drag the user back to the artifact they just left.
+        assertEquals("a1", control.consumeArtifactLanding()?.artifactId)
+        assertNull(control.artifactLanding.value)
+        assertNull(control.consumeArtifactLanding())
+    }
+
+    @Test
+    fun `two identical landings in a row are both honoured`() {
+        control.artifactLanded(SessionAction.DeleteArtifact, "a1")
+        control.consumeArtifactLanding()
+
+        // The delete navigation is driven by the landing, not the notice: two
+        // successful deletes carry byte-identical notices, which a watched
+        // state would dedup and strand the user on the editor.
+        control.artifactLanded(SessionAction.DeleteArtifact, "a2")
+
+        assertEquals("a2", control.consumeArtifactLanding()?.artifactId)
+    }
+
+    @Test
+    fun `a create answer that names no artifact still parks a landing`() {
+        control.artifactLanded(SessionAction.CreateArtifact, null)
+
+        // The landing carries the null: the editor closes for the list, where
+        // the new row is one pull away.
+        assertNull(control.consumeArtifactLanding()?.artifactId)
+    }
+
     private fun tail(vararg lines: String): JSONObject =
         JSONObject("""{"stripped":[${lines.joinToString(",") { "\"$it\"" }}],"returnedLines":${lines.size}}""")
 }

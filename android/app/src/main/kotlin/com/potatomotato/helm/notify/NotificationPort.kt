@@ -14,9 +14,13 @@ package com.potatomotato.helm.notify
  */
 interface NotificationPort {
 
-    /** Show [alert], replacing whatever this session was showing. */
+    /** Show [alert], replacing whatever this row was showing. */
     fun post(alert: Alert)
 
-    /** Take down this session's notification, if it has one. */
-    fun cancel(sessionId: String)
+    /**
+     * Take down this row, if it is showing. The row is named by the whole
+     * [Alert] — not just its session — because one session can now hold several
+     * rows, one per artifact, and taking down the session would not know which.
+     */
+    fun cancel(alert: Alert)
 }

@@ -130,8 +130,11 @@ object MobileEnvelope {
             voice = record.opt("voice") == true,
             // Type-checked, never coerced: a numeric `kind` is malformed, and
             // optString would turn it into a plausible-looking "7" that routes a
-            // record away from the thread on the strength of a bug.
+            // record away from the thread on the strength of a bug. The same rule
+            // guards the artifact keys an artifact record rides with.
             kind = record.string("kind"),
+            artifactId = record.string("artifactId"),
+            title = record.string("title"),
         )
     }
 

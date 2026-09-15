@@ -97,6 +97,39 @@ class CapabilityCacheTest {
         assertFalse(state.answered)
     }
 
+    @Test
+    fun `the artifact writes gate on their own tools, not the read's`() {
+        // The writes are four separate gated tools; granting the LIST tool must
+        // not silently grant the delete next to it.
+        val all = Capabilities.Known(
+            setOf(
+                "session_artifact_list",
+                "session_artifact_create",
+                "session_artifact_update",
+                "session_artifact_download",
+                "session_artifact_delete",
+            ),
+        )
+        for (action in listOf(
+            SessionAction.Artifacts,
+            SessionAction.CreateArtifact,
+            SessionAction.ReviseArtifact,
+            SessionAction.SaveArtifact,
+            SessionAction.DeleteArtifact,
+        )) {
+            assertTrue(all.permits(action))
+        }
+
+        // And the reads-only surface leaves every write dark, with a verdict —
+        // this is the row that reads "not permitted" rather than "checking…".
+        val readOnly = Capabilities.Known(setOf("session_artifact_list"))
+        assertFalse(readOnly.permits(SessionAction.CreateArtifact))
+        assertFalse(readOnly.permits(SessionAction.ReviseArtifact))
+        assertFalse(readOnly.permits(SessionAction.SaveArtifact))
+        assertFalse(readOnly.permits(SessionAction.DeleteArtifact))
+    }
+
+    /** The `__mobile_tools__` answer, shaped as MobileGate builds it. */
     /** The `__mobile_tools__` answer, shaped as MobileGate builds it. */
     private fun toolsResult(vararg names: String): JSONObject =
         JSONObject("""{"tools":[${names.joinToString(",") { """{"name":"$it","title":"t"}""" }}]}""")

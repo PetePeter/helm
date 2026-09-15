@@ -80,11 +80,13 @@
     <string name="control_action_compact">Compact</string>
     <string name="control_action_spawn">Spawn session</string>
     <string name="control_action_close">Close session</string>
+    <string name="control_action_artifacts">Artifacts</string>
     <string name="control_glyph_snapshot">📄</string>
     <string name="control_glyph_rename">✎</string>
     <string name="control_glyph_compact">🛠</string>
     <string name="control_glyph_spawn">✦</string>
     <string name="control_glyph_close">✕</string>
+    <string name="control_glyph_artifacts">🗂</string>
     <string name="control_not_permitted">not permitted</string>
     <string name="control_asking">checking…</string>
     <string name="control_rename_title">Rename session</string>
@@ -109,6 +111,58 @@
     <string name="snapshot_loading">Pulling %1$d lines…</string>
     <string name="snapshot_empty">The session has printed nothing yet.</string>
 
+    <string name="artifacts_title">Artifacts</string>
+    <string name="artifacts_loading">Pulling the artifact list…</string>
+    <string name="artifacts_empty">Nothing here yet. Anything this session writes appears here.</string>
+    <string name="artifacts_detail_loading">Pulling the artifact…</string>
+    <string name="artifacts_source_note">HTML is shown as source — open it on the desktop for the rendered page.</string>
+    <plurals name="artifacts_version_count">
+        <item quantity="one">%1$d version</item>
+        <item quantity="other">%1$d versions</item>
+    </plurals>
+    <string name="artifacts_kind_markdown">Markdown</string>
+    <string name="artifacts_kind_html">HTML</string>
+    <string name="artifacts_version_glyph">v%1$d</string>
+
+    <!--
+      The artifact writes. Create is markdown-only by desktop rule (session_artifact_create
+      refuses every other kind in v1); a revise inherits the artifact's own kind, and an
+      HTML body stays SOURCE — shown and edited as text, never rendered on the phone.
+    -->
+    <string name="artifacts_action_new">New artifact</string>
+    <string name="artifacts_glyph_new">✚</string>
+    <string name="artifacts_action_revise">Revise</string>
+    <string name="artifacts_glyph_revise">✎</string>
+    <string name="artifacts_action_save">Save to phone</string>
+    <string name="artifacts_glyph_save">⇣</string>
+    <string name="artifacts_action_delete">Delete</string>
+    <string name="artifacts_glyph_delete">🗑</string>
+
+    <string name="artifacts_editor_new">New artifact</string>
+    <string name="artifacts_editor_revise">Revise “%1$s”</string>
+    <string name="artifacts_editor_revising">Revising %1$s</string>
+    <string name="artifacts_title_label">Title</string>
+    <string name="artifacts_body_markdown">Markdown</string>
+    <string name="artifacts_body_label">Body</string>
+    <string name="artifacts_title_blank">Give it a title.</string>
+    <string name="artifacts_title_too_long">Keep the title to 80 characters.</string>
+    <string name="artifacts_body_unchanged">The body is unchanged — nothing new to add.</string>
+    <string name="artifacts_too_large">Too large for the link — trim it, or write it on the desktop.</string>
+    <string name="artifacts_submit_create">Create</string>
+    <string name="artifacts_submit_revise">Add version</string>
+
+    <string name="artifacts_confirm_delete">Delete “%1$s”? Every version goes with it.</string>
+    <string name="artifacts_confirm_delete_yes">Delete it</string>
+
+    <string name="artifacts_save_receiving">Receiving the file…</string>
+    <string name="artifacts_save_writing">Saving to the phone…</string>
+    <string name="artifacts_save_saved">Saved to %1$s</string>
+
+    <string name="artifacts_notice_done_create">Artifact created.</string>
+    <string name="artifacts_notice_done_revise">New version added.</string>
+    <string name="artifacts_notice_done_save">Artifact saved to your phone.</string>
+    <string name="artifacts_notice_done_delete">Artifact deleted.</string>
+
     <string name="spawn_title">New session</string>
     <string name="spawn_where">Where</string>
     <string name="spawn_which_cli">Which CLI</string>
@@ -130,6 +184,8 @@
     <string name="alert_channel_completion_description">A session finished what it was doing.</string>
     <string name="alert_channel_idle">Went quiet</string>
     <string name="alert_channel_idle_description">A session has been idle for a while.</string>
+    <string name="alert_channel_artifact">Artifacts</string>
+    <string name="alert_channel_artifact_description">A session produced or revised an artifact.</string>
 
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>

@@ -76,6 +76,12 @@ private val SessionAction.doneRes: Int
         SessionAction.Compact -> R.string.control_notice_done_compact
         SessionAction.Close -> R.string.control_notice_done_close
         SessionAction.Spawn -> R.string.control_notice_done_spawn
-        // A snapshot reports itself on its own screen; it never raises a notice.
+        // A snapshot and the artifacts row report themselves on their own
+        // screens; they never raise a notice.
+        SessionAction.CreateArtifact -> R.string.artifacts_notice_done_create
+        SessionAction.ReviseArtifact -> R.string.artifacts_notice_done_revise
+        SessionAction.SaveArtifact -> R.string.artifacts_notice_done_save
+        SessionAction.DeleteArtifact -> R.string.artifacts_notice_done_delete
         SessionAction.Snapshot -> R.string.snapshot_title
+        SessionAction.Artifacts -> R.string.artifacts_title
     }

@@ -120,6 +120,24 @@ instead of refusing. Over budget, both refuse and point at the desktop viewer. A
 cross-session artifact id answers not-found like a genuinely missing one, so
 nothing leaks about which artifacts exist elsewhere.
 
+On the phone these are rows on the artifacts screens, not sheet entries: a New
+row under the list, and Revise / Save to phone / Delete under the open artifact.
+Each greys from `__mobile_tools__` against its own tool — the sheet's greying
+rules, drawn where the thing acted on is visible — and Delete is the one action
+that confirms, naming the artifact. There is deliberately **no bulk delete**:
+`session_artifact_delete` is the only delete on the wire and the phone offers
+nothing bigger. A create mints markdown only (the wire kind is `md`); a revise
+inherits the artifact's kind and an HTML body is edited as the source it is shown
+as, because the phone never renders HTML. A save lands in `MediaStore.Downloads`
+on API 29+ — user-visible, and no storage permission — falling back to the app's
+own Download folder below 29; the notice waits until the file is actually on
+disk, because "saved" before that would be a lie. An authored body is measured
+against the same 128KiB frame the desktop caps its answers with
+(`data/ArtifactRules.kt` mirrors `ARTIFACT_INLINE_MAX_ESCAPED_BYTES`), so a body
+that would not fit is refused at the submit button instead of tearing the link.
+The screens re-pull on every visit, so a write needs no refresh of its own —
+returning from one reconciles the list for free.
+
 Artifacts also **push**. `MobileArtifactNotifier` (sibling of the state-alert
 notifier) listens to the ArtifactManager and emits a chat record with the
 additive `kind: 'artifact'` plus `artifactId`/`title`, so a report an agent just

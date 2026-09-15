@@ -14,6 +14,27 @@ enum class SessionAction(val tool: String) {
     Compact("session_compact"),
     Spawn("session_create"),
     Close("session_close"),
+
+    /**
+     * Opens the session's artifacts. It gates on the LIST tool — the screen's
+     * first ask — though the detail screen then needs `session_artifact_get`
+     * too; the gate is the authority either way, and a refusal there is state
+     * on that screen, not here.
+     */
+    Artifacts("session_artifact_list"),
+
+    /**
+     * The artifact writes. They never appear on the control sheet — they are
+     * row affordances on the artifacts screens — but they gate and report like
+     * every other action here: one tool each for `__mobile_tools__` to confirm,
+     * one notice each for the outcome bar. Revise and save need their target
+     * named before they can act, like Rename, so the screens open a form
+     * instead of firing at once; delete confirms on its own screen.
+     */
+    CreateArtifact("session_artifact_create"),
+    ReviseArtifact("session_artifact_update"),
+    SaveArtifact("session_artifact_download"),
+    DeleteArtifact("session_artifact_delete"),
 }
 
 /** How the last control action ended. */
@@ -34,6 +55,20 @@ sealed interface ActionOutcome {
 }
 
 data class ActionNotice(val action: SessionAction, val outcome: ActionOutcome)
+
+/**
+ * The artifact write that just landed, parked for the artifacts screens to
+ * honour exactly once — a request, not a state, the same shape
+ * [com.potatomotato.helm.notify.PendingOpen] uses for a notification tap. It
+ * exists because two successful deletes carry byte-identical notices, so a
+ * state an effect merely watches would silently dedup the second one and
+ * strand the user on the editor.
+ *
+ * [artifactId] is the artifact the action named — the id a create minted, or
+ * the one a revise/delete acted on. Null only when a create's answer named
+ * none, which the screen reads as "back to the list".
+ */
+data class ArtifactLanding(val action: SessionAction, val artifactId: String?)
 
 /** The terminal tail, pulled on demand. */
 sealed interface Snapshot {
@@ -199,6 +234,19 @@ class ControlRepository {
     fun clearCreatedSession(sessionId: String) {
         if (_createdSessionId.value == sessionId) _createdSessionId.value = null
     }
+
+    /** The parked landing, and the only state an artifacts screen navigates on. */
+    private val _artifactLanding = MutableStateFlow<ArtifactLanding?>(null)
+    val artifactLanding: StateFlow<ArtifactLanding?> = _artifactLanding.asStateFlow()
+
+    /** Park one landing. Called only for outcomes a screen navigates on. */
+    fun artifactLanded(action: SessionAction, artifactId: String?) {
+        _artifactLanding.value = ArtifactLanding(action, artifactId)
+    }
+
+    /** Take the parked landing. The second read sees nothing, by design. */
+    fun consumeArtifactLanding(): ArtifactLanding? =
+        _artifactLanding.value?.also { _artifactLanding.value = null }
 
     private companion object {
         /** The smallest chip on screen 7 — enough to read, cheap enough to not think about. */

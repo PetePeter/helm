@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * The session a notification tap asked for, waiting to be consumed.
+ * Where a notification tap asked to go, waiting to be consumed.
  *
  * Process-scoped for the same reason [com.potatomotato.helm.ble.HelmLink] is: the
  * tap arrives at the Activity, and the screen that can act on it is composed some
@@ -14,16 +14,24 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * [consume] is what makes it a request rather than a state: the destination is
  * honoured exactly once, so the user can navigate away afterwards and a rotation
- * does not drag them back to the thread they just left.
+ * does not drag them back to the screen they just left.
  */
 object PendingOpen {
-    private val _sessionId = MutableStateFlow<String?>(null)
 
-    val sessionId: StateFlow<String?> = _sessionId.asStateFlow()
+    /**
+     * A session, and which of its screens the tap wants. A session row lands in
+     * the thread; an ARTIFACT row lands in that session's artifacts list, which
+     * is where its artifacts live.
+     */
+    data class Target(val sessionId: String, val artifacts: Boolean)
 
-    fun request(sessionId: String?) {
-        if (!sessionId.isNullOrBlank()) _sessionId.value = sessionId
+    private val _target = MutableStateFlow<Target?>(null)
+
+    val target: StateFlow<Target?> = _target.asStateFlow()
+
+    fun request(sessionId: String?, artifacts: Boolean = false) {
+        if (!sessionId.isNullOrBlank()) _target.value = Target(sessionId, artifacts)
     }
 
-    fun consume(): String? = _sessionId.value?.also { _sessionId.value = null }
+    fun consume(): Target? = _target.value?.also { _target.value = null }
 }

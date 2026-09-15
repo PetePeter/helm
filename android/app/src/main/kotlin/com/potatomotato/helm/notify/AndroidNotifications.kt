@@ -63,13 +63,15 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
         }
     }
 
-    override fun cancel(sessionId: String) {
-        manager.cancel(Alert.notificationId(sessionId))
+    override fun cancel(alert: Alert) {
+        manager.cancel(alert.notificationId)
     }
 
     /**
-     * Tapping lands in that session's thread, from a cold start as well as a warm
-     * one — [MainActivity] reads this extra in both `onCreate` and `onNewIntent`.
+     * Tapping lands in that session's thread — or, for an artifact row, in the
+     * session's artifact list, which is where its artifacts live — from a cold
+     * start as well as a warm one. [MainActivity] reads these extras in both
+     * `onCreate` and `onNewIntent`.
      *
      * The request code is the notification id, not 0: PendingIntents with equal
      * request codes are the SAME intent to the system, so a shared code would
@@ -80,6 +82,7 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
             .setAction("${OPEN_ACTION}.${alert.sessionId}")
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             .putExtra(EXTRA_SESSION_ID, alert.sessionId)
+        if (alert.kind == AlertKind.Artifact) intent.putExtra(EXTRA_ARTIFACTS, true)
 
         return PendingIntent.getActivity(
             context,
@@ -92,6 +95,9 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
     companion object {
         /** The session a notification tap is asking for. Read by [MainActivity]. */
         const val EXTRA_SESSION_ID = "com.potatomotato.helm.OPEN_SESSION"
+
+        /** True when the tap wants the session's ARTIFACTS, not its thread. */
+        const val EXTRA_ARTIFACTS = "com.potatomotato.helm.OPEN_ARTIFACTS"
 
         private const val OPEN_ACTION = "com.potatomotato.helm.action.OPEN_SESSION"
         private const val TAG = "HelmNotifications"
@@ -116,6 +122,7 @@ private val AlertKind.channelNameRes: Int
         AlertKind.Attention -> R.string.alert_channel_attention
         AlertKind.Completion -> R.string.alert_channel_completion
         AlertKind.Idle -> R.string.alert_channel_idle
+        AlertKind.Artifact -> R.string.alert_channel_artifact
     }
 
 private val AlertKind.channelDescriptionRes: Int
@@ -123,4 +130,5 @@ private val AlertKind.channelDescriptionRes: Int
         AlertKind.Attention -> R.string.alert_channel_attention_description
         AlertKind.Completion -> R.string.alert_channel_completion_description
         AlertKind.Idle -> R.string.alert_channel_idle_description
+        AlertKind.Artifact -> R.string.alert_channel_artifact_description
     }

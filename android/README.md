@@ -180,13 +180,14 @@ discovery says "checking…" rather than claiming a verdict the phone was never
 given. The surface is forgotten on link loss so a reconnect re-asks, and a
 capability revoked on the desktop stops being offered.
 
-**A row that cannot work is not drawn.** The mockup's Drafts and Artifacts rows
-are absent, not greyed. Drafts have no MCP surface at all; every `artifact_*`
-tool resolves its subject from the caller's own session, so from the phone's
-proxy identity it answers *emptily* instead of refusing. Greying them would be a
-lie — the user is permitted; there is nothing to call. They appear by themselves
-the day a reachable surface exists, with no change to this screen. See
-[docs/mobile-gate.md](../docs/mobile-gate.md#structurally-unreachable-tools).
+**A row that cannot work is not drawn.** The mockup's Drafts row is absent, not
+greyed: Drafts have no MCP surface at all, so from the phone's proxy identity a
+call answers *emptily* instead of refusing, and a greyed row would be a lie —
+the user is permitted; there is nothing to call. The Artifacts row exists now,
+because the session-addressed tools (see
+[docs/mobile-gate.md](../docs/mobile-gate.md#structurally-unreachable-tools))
+gave the subject somewhere to arrive as an argument; it greys from the gate like
+every other.
 
 **The gate is the authority; this UI is a hint.** The capability cache can be a
 poll stale, so a refusal for a permitted-looking action is a NORMAL outcome, not
