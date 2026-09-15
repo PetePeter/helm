@@ -57,8 +57,8 @@
   largeTextAsTempFile: true
   helmActions:
     clear: /clear{Enter}
-    compact: ''
-    export: ''
+    compact: /compact $instructions{Enter}
+    export: /export $path{Enter} {Wait 5000}
 
 # Plain shell — the escape hatch when you want a terminal rather than an agent.
 7f4b0a25-8e36-4c19-a2f7-4b1d6c9e2a44:
