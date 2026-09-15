@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
+import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
@@ -34,6 +35,9 @@ import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.SessionTab
+import com.potatomotato.helm.ui.components.SessionTabs
 import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
 import com.potatomotato.helm.ui.control.SnapshotScreen
@@ -46,12 +50,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * Where the session's thread can take you. One straight path still — the sheet
- * and the screens it opens all hang off a session's thread, never off each other.
- * The artifacts screens do the same: list, detail and editor hang off the
- * thread, and the editor hangs off whichever screen opened it.
+ * Where an open session can take you. One straight path still — the sheet and the
+ * screens it opens all hang off [Destination.Thread], never off each other.
+ *
+ * [Destination.Thread] is not the chat alone: it is the session's TAB surface
+ * (chat or artifact list, see [SessionTab]), which is why the artifact detail and
+ * editor return to it rather than to a screen of their own.
  */
-private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, Artifacts, ArtifactDetail, ArtifactEditor }
+private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor }
 
 /**
  * The screens the user lives in, and the navigation between them.
@@ -83,6 +89,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactLanding by client.control.artifactLanding.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
+    // Which of the open session's tabs is showing. Saveable for the same reason
+    // [where] is: a rotation must not drop a user reading the artifact list back
+    // into the conversation.
+    var tab by rememberSaveable { mutableStateOf(SessionTab.Chat) }
     var openArtifactId by rememberSaveable { mutableStateOf<String?>(null) }
     // The editor's payload, kept saveable so a rotation or a process death can
     // never turn a half-written revise into a create: the id names the mode
@@ -100,7 +110,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     LaunchedEffect(tapped) {
         PendingOpen.consume()?.let { target ->
             openSessionId = target.sessionId
-            where = if (target.artifacts) Destination.Artifacts else Destination.Thread
+            tab = if (target.artifacts) SessionTab.Artifacts else SessionTab.Chat
+            where = Destination.Thread
         }
     }
 
@@ -110,7 +121,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // answering every artifact buzz for it.
     ReportVisibility(client)
     LaunchedEffect(openSessionId, where) {
-        val reading = where == Destination.Thread || where == Destination.Artifacts ||
+        val reading = where == Destination.Thread ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
         client.alerts.opened(openSessionId?.takeIf { reading })
     }
@@ -128,26 +139,28 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // the desktop stops being offered. The list needs it too: its New session
     // button greys from the same answer the sheet does — and so do the artifacts
     // screens, whose New/Revise/Save/Delete rows grey from it.
-    LaunchedEffect(where, openSessionId, capabilities) {
+    LaunchedEffect(where, tab, openSessionId, capabilities) {
         val listShowing = openSessionId == null && where != Destination.Spawn
-        val artifactsShowing = where == Destination.Artifacts ||
+        val artifactsShowing = (where == Destination.Thread && tab == SessionTab.Artifacts) ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
         if ((where == Destination.Sheet || listShowing || artifactsShowing) && capabilities is Capabilities.Unknown) {
             client.refreshCapabilities()
         }
     }
-    LaunchedEffect(where, openSessionId) {
-        when (where) {
-            Destination.Spawn -> {
+    LaunchedEffect(where, tab, openSessionId) {
+        when {
+            where == Destination.Spawn -> {
                 if (directories.isEmpty()) client.refreshDirectories()
                 if (clis.isEmpty()) client.refreshClis()
             }
             // The artifacts screens pull on arrival, like a snapshot pull: a
             // fresh ask every visit, never a stream and never a stale cache.
             // This is also why the artifact writes need no follow-up ask of
-            // their own — returning from one re-pulls what it changed.
-            Destination.Artifacts -> openSessionId?.let { client.refreshArtifacts(it) }
-            Destination.ArtifactDetail ->
+            // their own — returning from one re-pulls what it changed. Switching
+            // TO the tab is an arrival; switching away and back pulls again.
+            where == Destination.Thread && tab == SessionTab.Artifacts ->
+                openSessionId?.let { client.refreshArtifacts(it) }
+            where == Destination.ArtifactDetail ->
                 if (openSessionId != null && openArtifactId != null) {
                     client.readArtifact(openSessionId!!, openArtifactId!!, version = null)
                 }
@@ -192,7 +205,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 if (id == null) {
                     // The answer named no artifact; the list is where the new
                     // row is one pull away.
-                    where = Destination.Artifacts
+                    where = Destination.Thread
                 } else {
                     openArtifactId = id
                     editingArtifactId = null
@@ -205,7 +218,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 editingShown = null
                 where = Destination.ArtifactDetail
             }
-            SessionAction.DeleteArtifact -> where = Destination.Artifacts
+            SessionAction.DeleteArtifact -> where = Destination.Thread
             else -> {}
         }
     }
@@ -251,7 +264,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
     }
     LaunchedEffect(where, edit) {
-        if (where == Destination.ArtifactEditor && edit == null) where = Destination.Artifacts
+        if (where == Destination.ArtifactEditor && edit == null) where = Destination.Thread
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -288,13 +301,20 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     linkState = linkState,
                     reach = reach,
                     capabilities = capabilities,
-                    onOpen = { openSessionId = it.id },
+                    onOpen = {
+                        openSessionId = it.id
+                        // A freshly opened session starts on its conversation —
+                        // the tab the LAST session was left on is not a choice
+                        // the user made about this one.
+                        tab = SessionTab.Chat
+                    },
                     // Long-press reuses the star exactly as it is: the pressed
                     // session becomes the focused one with the sheet already up.
                     // The thread behind the sheet names the session the actions
                     // belong to — the same context the scrim gives on the chat.
                     onLongPress = {
                         openSessionId = it.id
+                        tab = SessionTab.Chat
                         where = Destination.Sheet
                     },
                     onNewSession = {
@@ -328,25 +348,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     )
                 }
 
-                where == Destination.Artifacts -> {
-                    BackHandler(onBack = toThread)
-                    ArtifactsScreen(
-                        state = artifactList,
-                        capabilities = capabilities,
-                        linkState = linkState,
-                        onOpen = { artifact ->
-                            openArtifactId = artifact.id
-                            where = Destination.ArtifactDetail
-                        },
-                        onNew = {
-                            editingArtifactId = null
-                            editingShown = null
-                            where = Destination.ArtifactEditor
-                        },
-                        onBack = toThread,
-                    )
-                }
-
                 where == Destination.ArtifactEditor && edit != null -> {
                     BackHandler(
                         // Back undoes the edit without a wire call: a create
@@ -354,7 +355,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         // artifact it was revising.
                         onBack = {
                             where = if (editingArtifactId == null) {
-                                Destination.Artifacts
+                                Destination.Thread
                             } else {
                                 Destination.ArtifactDetail
                             }
@@ -373,7 +374,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         },
                         onBack = {
                             where = if (editingArtifactId == null) {
-                                Destination.Artifacts
+                                Destination.Thread
                             } else {
                                 Destination.ArtifactDetail
                             }
@@ -388,7 +389,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 where == Destination.ArtifactEditor -> Unit
 
                 where == Destination.ArtifactDetail -> {
-                    BackHandler(onBack = { where = Destination.Artifacts })
+                    BackHandler(onBack = toThread)
                     ArtifactDetailScreen(
                         // The row the list showed names the artifact while its
                         // body is still crossing the link; the read state takes
@@ -417,22 +418,47 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 client.deleteArtifact(session, openArtifactId!!)
                             }
                         },
-                        onBack = { where = Destination.Artifacts },
+                        onBack = toThread,
                     )
                 }
 
+                // The session's tab surface — and what the sheet's scrim sits
+                // over, which is why Sheet lands here too rather than on a blank
+                // screen: the actions must name the session they belong to.
                 else -> {
-                    BackHandler { openSessionId = null }
-                    ChatScreen(
-                        sessionId = open.id,
+                    val toList = { openSessionId = null }
+                    BackHandler(onBack = toList)
+                    SessionTabScaffold(
                         sessionName = open.name,
-                        messages = threads[open.id].orEmpty(),
                         linkState = linkState,
-                        onBack = { openSessionId = null },
-                        onSend = { text -> client.sendChat(open.id, text) },
-                        onVoice = { where = Destination.Voice },
+                        tab = tab,
+                        onSelectTab = { tab = it },
+                        onBack = toList,
                         onOverflow = { where = Destination.Sheet },
-                    )
+                    ) {
+                        when (tab) {
+                            SessionTab.Chat -> ChatScreen(
+                                sessionId = open.id,
+                                messages = threads[open.id].orEmpty(),
+                                onSend = { text -> client.sendChat(open.id, text) },
+                                onVoice = { where = Destination.Voice },
+                            )
+
+                            SessionTab.Artifacts -> ArtifactsScreen(
+                                state = artifactList,
+                                capabilities = capabilities,
+                                onOpen = { artifact ->
+                                    openArtifactId = artifact.id
+                                    where = Destination.ArtifactDetail
+                                },
+                                onNew = {
+                                    editingArtifactId = null
+                                    editingShown = null
+                                    where = Destination.ArtifactEditor
+                                },
+                            )
+                        }
+                    }
                 }
             }
 
@@ -448,15 +474,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     onAction = { action ->
                         where = when (action) {
                             SessionAction.Snapshot -> Destination.Snapshot
-                            SessionAction.Artifacts -> Destination.Artifacts
                             SessionAction.Spawn -> Destination.Spawn
                             SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
                             // Rename never reaches here — it is answered by
                             // onRename below, because it carries a name. The
                             // artifact actions never reach here either: their
-                            // rows live on the artifacts screens, where the
-                            // thing acted on is visible.
+                            // rows live on the artifacts tab and the screens
+                            // under it, where the thing acted on is visible.
                             SessionAction.Rename -> Destination.Thread
                             else -> Destination.Thread
                         }
@@ -476,6 +501,30 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 )
             }
         }
+    }
+}
+
+/**
+ * The chrome an open session wears, whichever tab is showing.
+ *
+ * One owner for the bar and the tab row means switching tabs re-lays-out only the
+ * body: the title, the link badge and the ⋮ do not blink, and neither can drift
+ * apart between the two tabs.
+ */
+@Composable
+private fun SessionTabScaffold(
+    sessionName: String,
+    linkState: LinkState,
+    tab: SessionTab,
+    onSelectTab: (SessionTab) -> Unit,
+    onBack: () -> Unit,
+    onOverflow: () -> Unit,
+    body: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
+        SessionTabs(selected = tab, onSelect = onSelectTab)
+        Box(modifier = Modifier.weight(1f)) { body() }
     }
 }
 

@@ -84,19 +84,14 @@ import com.potatomotato.helm.ui.control.labelRes
 fun ArtifactsScreen(
     state: ArtifactList,
     capabilities: Capabilities,
-    linkState: LinkState,
     onOpen: (HelmArtifact) -> Unit,
     onNew: () -> Unit,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // No app bar here: this is the session's Artifacts TAB, and the session's
+    // chrome is owned by the scaffold that hosts the tabs. The DETAIL screen
+    // below still carries its own — it hangs off the tab, it is not one.
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
-        HelmAppBar(
-            title = stringResource(R.string.artifacts_title),
-            linkState = linkState,
-            onBack = onBack,
-        )
-
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (state) {
                 is ArtifactList.Ready ->

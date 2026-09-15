@@ -44,6 +44,9 @@
         <item quantity="other">%1$d sessions</item>
     </plurals>
 
+    <string name="session_tab_chat">Chat</string>
+    <string name="session_tab_artifacts">Artifacts</string>
+
     <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
     <string name="chat_placeholder">Reply…</string>
     <string name="chat_send">Send</string>

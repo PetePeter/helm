@@ -43,11 +43,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
-import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.ui.components.Hairline
-import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -57,21 +55,17 @@ import com.potatomotato.helm.ui.theme.HelmType
 /**
  * Mockup screen 2 — one session's conversation, and the reply box.
  *
- * This is the forum topic done properly: the thread is the session, the reply
- * goes to the session's PTY, and the link state stays on the bar so a message
- * typed into a dead link is never mistaken for one that was delivered.
+ * This is the forum topic done properly: the thread is the session and the reply
+ * goes to the session's PTY. It is the session's Chat TAB — the bar above it
+ * (with the link state, so a message typed into a dead link is never mistaken
+ * for one that was delivered) belongs to the scaffold that hosts the tabs.
  */
 @Composable
 fun ChatScreen(
     sessionId: String,
-    sessionName: String,
     messages: List<ChatMessage>,
-    linkState: LinkState,
-    onBack: () -> Unit,
     onSend: (String) -> Unit,
     onVoice: () -> Unit,
-    /** Opens the control sheet. The thread is where a session is acted on. */
-    onOverflow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
@@ -99,9 +93,10 @@ fun ChatScreen(
         if (imeBottom > 0 && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
     }
 
+    // No app bar here: the session's chrome (title, link badge, back, overflow,
+    // tab row) is owned by the session scaffold, so it does not flicker or
+    // re-lay-out when the user moves between a session's tabs.
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
-        HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
-
         if (messages.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(HelmSpacing.Xl),

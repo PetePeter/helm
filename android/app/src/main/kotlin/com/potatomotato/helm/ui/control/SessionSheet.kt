@@ -67,10 +67,9 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * only through the CALLER's own session, from the phone's proxy identity they
  * would answer emptily rather than refuse. A live row that silently does nothing
  * is worse than no row, and "not permitted" would be a lie — the user IS
- * permitted; there is simply nothing to call. Artifacts USED to be absent for the
- * same reason; the session-addressed `session_artifact_list`/`_get` tools are the
- * session-scoped surface that was waiting for, so the row exists now and greys
- * from the gate like every other.
+ * permitted; there is simply nothing to call. Artifacts is absent for a different
+ * reason: it is a PLACE, not an action, so it is one of the session's tabs (see
+ * SessionTab) and greys from the gate row by row on the screen it opens.
  *
  * The sheet is hand-drawn rather than a ModalBottomSheet: Material's sheet tints
  * its surface, and this design's elevation is a hairline on true black.
@@ -166,7 +165,6 @@ fun SessionSheet(
  */
 private val SHEET_ACTIONS = listOf(
     SessionAction.Snapshot,
-    SessionAction.Artifacts,
     SessionAction.Rename,
     SessionAction.Compact,
     SessionAction.Spawn,

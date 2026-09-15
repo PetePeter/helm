@@ -59,15 +59,23 @@ Two rules hold that picture together:
 
 ## The screens
 
-Six screens plus one sheet, in a hand-rolled `when` over a `rememberSaveable`
-route. There is still no navigation library: the graph is small enough that one
-would be more machinery than it removes.
+A handful of screens plus one sheet, in a hand-rolled `when` over a
+`rememberSaveable` route (plus a saveable tab). There is still no navigation
+library: the graph is small enough that one would be more machinery than it
+removes.
 
 - **Pairing** — the 6-digit SAS shown next to the same digits on the desktop.
   Confirming on both ends is what turns a radio link into a trusted device.
 - **Session list** — the live sessions, each with an activity dot. The dot reads
   **activity**, never pipeline state, mirroring desktop invariant 8.
-- **Chat** — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
+- **Session tabs** — an open session shows two tabs under one app bar: **Chat**
+  and **Artifacts**. They are places, not actions, which is why they are tabs and
+  not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so
+  switching tabs swaps only the body. A freshly opened session starts on Chat.
+- **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
+- **Artifacts** (tab) — the session's artifact list, re-pulled on every arrival.
+  Opening a row pushes the artifact **detail**, which hangs off the tab and
+  carries its own bar.
 - **Voice** — on-device speech to an editable transcript, then one confirmation
   tap that sends into that session's thread. **No audio ever crosses the link**,
   and the manifest carries no `INTERNET` permission, so the app is structurally

@@ -53,4 +53,7 @@ object HelmSize {
 
     /** Sheet action glyph tile — the mockup's 29dp rounded-8 inset box. */
     val ActionTile = 29.dp
+
+    /** Selected-tab underline. Thicker than a hairline so it reads as state. */
+    val TabIndicator = 2.dp
 }
