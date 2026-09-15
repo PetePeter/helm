@@ -280,6 +280,31 @@ describe('seedConfigIfNeeded', () => {
     seedConfigIfNeeded(sourceConfigDir, deepTarget);
     expect(fs.existsSync(path.join(deepTarget, 'settings.yaml'))).toBe(true);
   });
+
+  // The guard is per file, not per directory: a default shipped after the user's
+  // config dir already exists must still land, without touching their files.
+  it('adds a newly shipped default into an existing config dir', () => {
+    fs.mkdirSync(targetConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(targetConfigDir, 'settings.yaml'), 'activeProfile: custom\n');
+    fs.writeFileSync(path.join(sourceConfigDir, 'cli-types.yaml'), 'shipped: true\n');
+
+    seedConfigIfNeeded(sourceConfigDir, targetConfigDir);
+
+    expect(fs.readFileSync(path.join(targetConfigDir, 'cli-types.yaml'), 'utf8')).toContain('shipped: true');
+    expect(fs.readFileSync(path.join(targetConfigDir, 'settings.yaml'), 'utf8')).toBe('activeProfile: custom\n');
+  });
+
+  it('leaves existing files byte-identical inside nested directories', () => {
+    const targetProfiles = path.join(targetConfigDir, 'profiles');
+    fs.mkdirSync(targetProfiles, { recursive: true });
+    fs.writeFileSync(path.join(targetProfiles, 'default.yaml'), 'tools:\n  mine:\n    name: Mine\n');
+
+    seedConfigIfNeeded(sourceConfigDir, targetConfigDir);
+
+    expect(fs.readFileSync(path.join(targetProfiles, 'default.yaml'), 'utf8')).toBe('tools:\n  mine:\n    name: Mine\n');
+    // Missing sibling still seeded, so recursion is not short-circuited by the skip.
+    expect(fs.existsSync(path.join(targetConfigDir, 'settings.yaml'))).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

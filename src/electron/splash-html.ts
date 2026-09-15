@@ -29,7 +29,11 @@ export function buildSplashHtml(version: string, logoUrl?: string): string {
 
     body {
       margin: 0;
-      min-height: 100vh;
+      /* Fixed 460x320 frameless window: the card is only just shorter than the
+         viewport, so DPI rounding would otherwise produce a scrollbar on a
+         window the user cannot scroll or resize anyway. */
+      height: 100vh;
+      overflow: hidden;
       display: grid;
       place-items: center;
       background:

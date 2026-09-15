@@ -102,28 +102,23 @@ def bump_version(part):
 
 
 def create_deploy_configs():
-    """Create stripped config files in config-deploy/ for packaging.
+    """Create the shipped config staging dir, config-deploy/, for packaging.
 
-    Original config files are NEVER modified. The staging directory
-    is overlaid on top of config/ by electron-builder during packaging,
-    so deploy builds ship clean defaults instead of personal paths.
+    src/config/ is the single source of shipped defaults — it is what dev mode
+    seeds from, so copying it here makes the packaged build seed from exactly
+    the same set. The dev machine's own runtime config (which lives in the
+    per-user app-data dir) is never read, so personal paths cannot leak.
+
+    The runtime-state files are then overwritten with empty stubs.
     """
     deploy_dir = Path("config-deploy")
     if deploy_dir.exists():
         shutil.rmtree(deploy_dir)
 
-    # Strip workingDirectories from each profile YAML
-    profiles_src = Path("config/profiles")
-    profiles_dst = deploy_dir / "profiles"
-    profiles_dst.mkdir(parents=True)
-
-    for yaml_file in sorted(profiles_src.glob("*.yaml")):
-        with open(yaml_file, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        data.pop("workingDirectories", None)
-        with open(profiles_dst / yaml_file.name, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        print(f"    {yaml_file.name} -> config-deploy/profiles/{yaml_file.name}")
+    shutil.copytree(Path("src/config"), deploy_dir, ignore=shutil.ignore_patterns("*.ts", "skill-analytics.json"))
+    for shipped in sorted(deploy_dir.rglob("*")):
+        if shipped.is_file():
+            print(f"    src/config/{shipped.relative_to(deploy_dir).as_posix()} -> config-deploy/")
 
     # Clean settings.yaml (defaults only - no window bounds or session groups)
     settings = {

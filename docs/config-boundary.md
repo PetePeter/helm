@@ -70,9 +70,15 @@ paths no longer depend on where the code is running from. That is the point.
 
 ## Seeding
 
-`seedConfigIfNeeded(sourceDir, targetDir)` copies the bundled defaults into the user
-config dir on first launch, and is a **no-op if the target already exists** — it
-never overwrites user data.
+`seedConfigIfNeeded(sourceDir, targetDir)` fills the user config dir in from the
+bundled defaults. The decision is **per file**: a file that already exists is
+never read, merged or overwritten, but a default shipped in a later version still
+lands on upgrade instead of being locked out by the config dir merely existing.
+
+`src/config/` is the single source of shipped defaults. Dev mode seeds straight
+from it; for packaged builds `prepareDeploy.py` copies it into `config-deploy/`
+(overwriting the runtime-state files with empty stubs) and electron-builder maps
+that to `config/` inside the asar.
 
 Seed stubs shipped in `src/config/`:
 
@@ -81,7 +87,7 @@ Seed stubs shipped in `src/config/`:
 | `settings.yaml` | App settings |
 | `sessions.yaml` | Empty session list |
 | `drafts.yaml` | Empty draft store |
-| `profiles/default.yaml` | Default profile (tools, dirs, bindings, patterns) |
+| `cli-types.yaml` | Default CLI types — Claude Code, Codex, GitHub Copilot CLI, cmd |
 | `scheduled-tasks.yaml` | Empty scheduled-task list |
 | `prompt-templates.yaml` | Empty prompt-template tree |
 | `peers.yaml` | Empty fleet peer registry |

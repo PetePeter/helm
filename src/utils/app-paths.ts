@@ -145,14 +145,17 @@ export function getTempDir(_dirname: string, appData?: string): string {
 
 /**
  * Copy default config files from the source (inside asar) to the target
- * (user data dir) on first launch. Skips if target already exists.
+ * (user data dir), filling in whatever is missing.
+ *
+ * The decision is per FILE, not per directory: an existing file is never read,
+ * merged or overwritten, but a newly shipped default lands on upgrade instead
+ * of being locked out forever by the presence of the config dir.
  *
  * Uses readFileSync + writeFileSync instead of copyFileSync because
  * Electron does NOT patch copyFileSync for asar archive reads.
  */
 export function seedConfigIfNeeded(sourceDir: string, targetDir: string): void {
   if (!fs.existsSync(sourceDir)) return;
-  if (fs.existsSync(targetDir)) return;
   copyDirRecursive(sourceDir, targetDir);
 }
 
@@ -163,7 +166,7 @@ function copyDirRecursive(src: string, dest: string): void {
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
       copyDirRecursive(srcPath, destPath);
-    } else {
+    } else if (!fs.existsSync(destPath)) {
       // readFileSync + writeFileSync: asar-safe (Electron patches both).
       // copyFileSync is NOT patched for asar reads.
       const content = fs.readFileSync(srcPath);
