@@ -45,8 +45,8 @@
   id: 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33
   name: GitHub Copilot CLI
   displayName: GitHub Copilot CLI
-  spawnCommand: copilot
-  resumeCommand: copilot --resume {cliSessionName}
+  spawnCommand: copilot --name={cliSessionName}
+  resumeCommand: copilot --resume={cliSessionName}
   continueCommand: copilot --continue
   initialPrompt:
     - label: Helm session init
