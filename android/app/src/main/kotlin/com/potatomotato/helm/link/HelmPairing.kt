@@ -53,6 +53,12 @@ object HelmPairing {
     private var lan: LanLinkController? = null
     private var started = false
 
+    /**
+     * A LAN address list that arrived before pairing had a desktop to file it
+     * under. Drained by [refreshDesktops] the moment one exists.
+     */
+    private var pendingLanAddresses: List<String>? = null
+
     private val _desktops = MutableStateFlow<List<PairedDesktop>>(emptyList())
 
     /**
@@ -100,15 +106,23 @@ object HelmPairing {
         client.onLanAddresses = { pushed ->
             val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
             if (desktopId == null) {
-                // A record with no live pairing behind it has no owner to file
-                // it under; dropping it is safe because the push repeats.
-                HelmLog.w(HelmLog.WIRE, "dropped a LAN address list: no desktop is linked")
+                // HELD, NOT DROPPED. The desktop advertises its addresses the
+                // moment IT adopts the link, which during a first pairing is
+                // before this phone's user has tapped "They match" — so the
+                // list routinely lands while the state is still Comparing and
+                // there is no desktop id to file it under yet.
+                //
+                // This used to be discarded, on the reasoning that the push
+                // repeats. It does not: it repeats on the desktop's `online`
+                // event, i.e. the NEXT reconnect. So a freshly paired phone
+                // could finish pairing having never learned an address, and the
+                // first walk out of Bluetooth range dropped it to nothing with
+                // no LAN to fall back to. Observed on real hardware, minutes
+                // after a successful pairing.
+                pendingLanAddresses = pushed
+                HelmLog.i(HelmLog.WIRE, "held a LAN address list until pairing names a desktop")
             } else {
-                addresses.save(desktopId, pushed)
-                // The other dial trigger. The FIRST list a phone ever receives
-                // arrives after the Bluetooth link came up, so waiting for the
-                // next link would leave LAN unused for a whole session.
-                scope.launch(Dispatchers.IO) { lan?.tryConnect(desktopId) }
+                fileLanAddresses(desktopId, pushed)
             }
         }
         controller = PairingController(
@@ -186,7 +200,23 @@ object HelmPairing {
     private fun refreshDesktops() {
         val keys = store ?: return
         val linked = (controller?.state?.value as? PairingState.Linked)?.desktopId
+        // The pairing state drives this, so it is also where a held address
+        // list learns whose it is — a first pairing reaches Linked here.
+        val held = pendingLanAddresses
+        if (linked != null && held != null) {
+            pendingLanAddresses = null
+            fileLanAddresses(linked, held)
+        }
         _desktops.value = pairedDesktops(keys, linked)
+    }
+
+    /** Store an address list against its desktop and try it immediately. */
+    private fun fileLanAddresses(desktopId: String, pushed: List<String>) {
+        lanAddresses?.save(desktopId, pushed)
+        // The FIRST list a phone ever receives arrives after the Bluetooth link
+        // came up, so waiting for the next link would leave LAN unused for a
+        // whole session.
+        scope.launch(Dispatchers.IO) { lan?.tryConnect(desktopId) }
     }
 
     /** False when there is no authenticated link to carry the message. */

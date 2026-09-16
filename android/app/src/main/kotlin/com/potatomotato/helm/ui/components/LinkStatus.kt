@@ -9,15 +9,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
+import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -52,9 +57,16 @@ val LinkState.dot: SessionState
         LinkState.Disconnected -> SessionState.Idle
     }
 
-/** Dot plus label, for an app bar or a status line. */
+/**
+ * Dot plus label, for an app bar or a status line.
+ *
+ * [rank] names the transport carrying the link — see [transportLabelRes], which
+ * owns the decision of when naming one would be a guess. It defaults to null so
+ * a caller with nothing truthful to say says nothing, rather than being forced
+ * to invent a value.
+ */
 @Composable
-fun LinkBadge(state: LinkState, modifier: Modifier = Modifier) {
+fun LinkBadge(state: LinkState, modifier: Modifier = Modifier, rank: Int? = null) {
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -66,6 +78,15 @@ fun LinkBadge(state: LinkState, modifier: Modifier = Modifier) {
             color = HelmColors.Dim,
             style = MaterialTheme.typography.bodySmall,
         )
+        // Quieter than the state itself: "are we live" is the question the badge
+        // answers, and "over what" is the footnote to it.
+        transportLabelRes(state, rank)?.let { transport ->
+            Text(
+                text = "${stringResource(R.string.link_transport_separator)} ${stringResource(transport)}",
+                color = HelmColors.Faint,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 
@@ -80,6 +101,16 @@ fun HelmAppBar(
     title: String,
     linkState: LinkState,
     modifier: Modifier = Modifier,
+    /**
+     * The owning transport's rank, so the badge can name it.
+     *
+     * Read from [HelmLink] by default rather than threaded down from each
+     * screen. Ten call sites pass a link state they got from the same object a
+     * moment earlier, and a badge that names the transport on only the screens
+     * someone remembered to update is worse than one that never does — the
+     * point of this file is that the link is said ONCE, the same way everywhere.
+     */
+    linkRank: Int? = HelmLink.owner.collectAsState().value,
     /**
      * What the title is about, said quietly after it — the main screen names
      * the desktop and then where you are: "Helm  SESSIONS". Screens whose title
@@ -185,6 +216,7 @@ fun HelmAppBar(
         }
         LinkBadge(
             state = linkState,
+            rank = linkRank,
             modifier = if (onLinkClick == null) {
                 Modifier
             } else {
@@ -221,10 +253,15 @@ fun HelmAppBar(
                     .clickable(onClick = onExportLogs),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = stringResource(R.string.logs_export_glyph),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.titleLarge,
+                // A real icon, not a glyph in a Text: ⤓ rendered as a stray
+                // character rather than a control, and an unlabelled one — a
+                // screen reader had nothing to announce for the only way out
+                // of a link problem.
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.logs_export_description),
+                    tint = HelmColors.Dim,
+                    modifier = Modifier.size(HelmSize.Icon),
                 )
             }
         }

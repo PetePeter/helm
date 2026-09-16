@@ -51,6 +51,12 @@ object HelmSize {
     /** Minimum touch target. Below this, one-handed use starts missing. */
     val TouchTarget = 48.dp
 
+    /**
+     * A vector icon inside a [TouchTarget] box, sized to sit level with the
+     * glyph actions it shares the app bar with rather than towering over them.
+     */
+    val Icon = 22.dp
+
     /** Sheet action glyph tile — the mockup's 29dp rounded-8 inset box. */
     val ActionTile = 29.dp
 

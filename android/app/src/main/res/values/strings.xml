@@ -9,6 +9,9 @@
     <string name="link_state_connecting">Connecting…</string>
     <string name="link_state_linked">Linked</string>
     <string name="link_state_disconnected">Link off</string>
+    <string name="link_transport_ble">BT</string>
+    <string name="link_transport_lan">LAN</string>
+    <string name="link_transport_separator">·</string>
 
     <string name="pairing_title">Pairing with</string>
     <string name="pairing_prompt">Do these six digits match the ones on your desktop?</string>
@@ -21,6 +24,13 @@
     <string name="pairing_handshaking_detail">Your desktop connected. Waiting for it to answer.</string>
     <string name="pairing_failed_title">Pairing failed</string>
     <string name="pairing_retry">Back</string>
+
+    <string name="pairing_wait_title">Waiting for your desktop</string>
+    <string name="pairing_wait_instruction">This phone is advertising and cannot start pairing on its own. On your desktop, arm pairing for this phone — this screen finishes on its own once it connects.</string>
+    <string name="pairing_wait_elapsed">Waiting… %1$s</string>
+    <string name="pairing_wait_still_waiting">Still waiting. Check Helm is running and pairing is armed on the desktop.</string>
+    <string name="pairing_wait_readvertise">Advertise again</string>
+    <string name="pairing_wait_readvertised">Re-advertising…</string>
 
     <string name="sessions_none">No sessions are running on this desktop.</string>
     <string name="sessions_no_link">Waiting for your desktop. Sessions appear as soon as the link is up.</string>
@@ -80,7 +90,7 @@
     <string name="voice_permission_title">Microphone permission needed</string>
     <string name="voice_permission_body">Speech is recognised on the phone itself — nothing is recorded and nothing is uploaded. Without microphone permission the mic button cannot hear you.</string>
 
-    <string name="logs_export_glyph">⤓</string>
+    <string name="logs_export_description">Export log</string>
     <string name="logs_export_saved">Log saved to %1$s</string>
     <string name="logs_export_empty">Nothing logged yet</string>
     <string name="logs_export_failed">Could not save the log: %1$s</string>

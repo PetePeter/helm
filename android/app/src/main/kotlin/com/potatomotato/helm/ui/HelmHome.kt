@@ -53,6 +53,7 @@ import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
 import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
+import com.potatomotato.helm.ui.pairing.AwaitingDesktopScreen
 import com.potatomotato.helm.ui.pairing.DesktopsScreen
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.voice.VoiceScreen
@@ -70,7 +71,7 @@ import kotlinx.coroutines.withContext
  * (chat or artifact list, see [SessionTab]), which is why the artifact detail and
  * editor return to it rather than to a screen of their own.
  */
-private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor, Desktops }
+private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor, Desktops, Pairing }
 
 /**
  * The screens the user lives in, and the navigation between them.
@@ -356,6 +357,21 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     )
                 }
 
+                // Reachable with no session open, same as Spawn and Desktops.
+                // A desktop connecting mid-wait is not handled here at all: it
+                // drives PairingController into Handshaking/Comparing, and
+                // HelmRoot's own `when` renders that interstitial ABOVE this
+                // composition regardless of `where` — so this branch just stops
+                // being drawn rather than needing to navigate itself away.
+                where == Destination.Pairing -> {
+                    BackHandler(onBack = toThread)
+                    AwaitingDesktopScreen(
+                        linkState = linkState,
+                        onReadvertise = { HelmLinkService.forcePairingMode(context) },
+                        onBack = toThread,
+                    )
+                }
+
                 where == Destination.Spawn -> {
                     BackHandler(onBack = toThread)
                     SpawnScreen(
@@ -401,7 +417,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         openSessionId = null
                         where = Destination.Spawn
                     },
-                    onPairDesktop = { HelmLinkService.forcePairingMode(context) },
+                    onPairDesktop = {
+                        HelmLinkService.forcePairingMode(context)
+                        where = Destination.Pairing
+                    },
                     onDesktops = { where = Destination.Desktops },
                     onExportLogs = exportLogs,
                     notificationsEnabled = notificationsEnabled,
