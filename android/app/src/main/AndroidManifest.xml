@@ -92,6 +92,16 @@
           receiver with an intent filter on API 31+, and safe here: the broadcast
           is a protected system broadcast, so only the system can send it.
         -->
+        <!--
+          The notification reply box lands here. NOT exported: the PendingIntent
+          that reaches it is MUTABLE, because RemoteInput must write the typed
+          text into it, so the receiver being unreachable from outside the app is
+          what keeps that safe.
+        -->
+        <receiver
+            android:name=".notify.ReplyReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".ble.BootReceiver"
             android:enabled="true"

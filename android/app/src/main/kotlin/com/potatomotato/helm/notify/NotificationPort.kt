@@ -23,4 +23,15 @@ interface NotificationPort {
      * rows, one per artifact, and taking down the session would not know which.
      */
     fun cancel(alert: Alert)
+
+    /**
+     * Tell the user their reply did not go out, on the row they typed it into.
+     *
+     * Separate from [post] because it is not an alert: nothing happened in a
+     * session, the phone is reporting on itself. It exists because the failure
+     * is already recorded in the thread and the user is not looking at the
+     * thread — they are looking at a notification that has just swallowed what
+     * they typed. A reply box that can fail silently is worse than none.
+     */
+    fun replyFailed(alert: Alert)
 }

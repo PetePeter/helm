@@ -186,6 +186,8 @@
       what the user reads in Android's own notification settings, so they name the
       event rather than the app's internals.
     -->
+    <string name="alert_channel_message">Messages</string>
+    <string name="alert_channel_message_description">A session said something.</string>
     <string name="alert_channel_attention">Needs you</string>
     <string name="alert_channel_attention_description">A session is waiting on you, or asked for your attention.</string>
     <string name="alert_channel_completion">Finished</string>
@@ -194,6 +196,15 @@
     <string name="alert_channel_idle_description">A session has been idle for a while.</string>
     <string name="alert_channel_artifact">Artifacts</string>
     <string name="alert_channel_artifact_description">A session produced or revised an artifact.</string>
+
+    <string name="reply_action">Reply</string>
+    <string name="reply_hint">Reply to this session…</string>
+    <string name="reply_not_sent">Not sent — no link to Helm. Your reply is in the thread.</string>
+
+    <string name="notifications_on">Notifications on</string>
+    <string name="notifications_off">Notifications off</string>
+    <string name="notifications_glyph_on">&#x1F514;</string>
+    <string name="notifications_glyph_off">&#x1F515;</string>
 
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>

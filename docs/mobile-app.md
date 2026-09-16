@@ -67,7 +67,9 @@ removes.
 - **Pairing** — the 6-digit SAS shown next to the same digits on the desktop.
   Confirming on both ends is what turns a radio link into a trusted device.
 - **Session list** — the live sessions, each with an activity dot. The dot reads
-  **activity**, never pipeline state, mirroring desktop invariant 8.
+  **activity**, never pipeline state, mirroring desktop invariant 8. Its app bar
+  carries the two controls that belong to the app rather than to a session: the
+  notification bell and the log export.
 - **Session tabs** — an open session shows two tabs under one app bar: **Chat**
   and **Artifacts**. They are places, not actions, which is why they are tabs and
   not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so
@@ -155,6 +157,77 @@ row on the artifact id, so revisions replace rather than pile up. Re-opening an
 artifact you have already read does not buzz; only a change does. The new keys
 and the `'artifact'` kind are additive and omitted when absent, so the committed
 envelope vectors still match byte for byte.
+
+## Notifications — messages, a reply box, and one switch
+
+Until now the phone buzzed for **events** (a session needs you, finished, went
+quiet, wrote an artifact) and stayed silent for the one record type the user can
+actually answer: something an agent said. A plain chat record went to the thread
+and nowhere else, so between glances the phone looked dead.
+
+```mermaid
+graph LR
+    HC[HelmClient.onInbound] -->|kind present| AR[AlertRouter.onAlert]
+    HC -->|kind absent| CR[ChatRepository<br/>the thread]
+    HC -->|kind absent| AM[AlertRouter.onMessage]
+    AR & AM --> EN{notifications on?}
+    EN -->|no| X[dropped]
+    EN -->|yes| NP[AndroidNotifications]
+    NP -->|Message only| RB[reply box<br/>RemoteInput]
+    RB --> RR[ReplyReceiver] --> RD[ReplyDelivery]
+    RD -->|sendChat| HC2[HelmClient]
+    HC2 -->|no link| F[thread: Delivery.Failed]
+    RD -->|Sent / Failed| AR
+```
+
+The outcome goes back through `AlertRouter` — `replySent` / `replyFailed` —
+rather than straight to the port, so the router's record of what is on the shade
+stays true. A row taken down behind its back would leave it spending a cancel on
+a row that had already gone.
+
+A message goes to **both** surfaces — the thread is where it lives, the
+notification is how you learn it arrived while you were elsewhere. That is the
+same shape as the ratified Telegram/app duplication: one message, told once on
+each surface.
+
+Four decisions worth keeping:
+
+- **Only a `Message` carries a reply box.** The other kinds report that something
+  happened; a reply box on "a session went idle" invites the user to talk to an
+  event. `AlertKind.Message` has no wire value the desktop sends — it is what a
+  record with *no* kind means — and `fromWire` still falls back to `Attention`,
+  so a future desktop event can never arrive wearing a reply box.
+- **A reply that cannot be sent says so, and is not lost.** `sendChat` already
+  writes the message into the thread before it calls and settles it as
+  `Delivery.Failed` when the link refuses it. So there is no queue here: the
+  reply is already recorded where the user will look. What was missing is that
+  the user is looking at a *notification*, not the thread — so the row rewrites
+  itself to "not sent", keeping its box for a retry.
+- **The receiver can reach the link because the process is the link.**
+  `HelmPairing` is process-scoped, so a `BroadcastReceiver` talks to the same
+  client the UI does. And if there is a notification to reply to, a message
+  crossed BLE, which means the foreground service was up. A process killed since
+  then takes the link with it — which is the failure path above, and it is tested.
+- **One master switch, not one per kind.** Android already gives per-channel
+  control in system settings, which is exactly why the channels exist. What the
+  OS does not give is a switch one tap from the screen you are already on. It
+  lives beside the link badge as a bell, and turning it off **takes down the rows
+  already showing** — rows left standing after you silenced them are
+  indistinguishable from the setting not working.
+
+Tap-to-open and swipe-to-dismiss were already there: `PendingOpen` parks a tap
+until a screen can honour it (surviving a cold start), and `setAutoCancel` makes
+the row disappear when it is used.
+
+The setting is a one-byte file under the app's own storage rather than
+`SharedPreferences`, so the thing that ships is the thing the tests exercise —
+`SharedPreferences` is an unmocked stub on the JVM, and persistence is the whole
+point of a toggle. Unreadable or unwritable resolves to **on**: the failure that
+cannot be noticed is the silent one.
+
+> The reply text is a **payload**. `ReplyReceiver` logs the session and the
+> outcome, never what was typed — [`HelmLog`'s one rule](../android/app/src/main/kotlin/com/potatomotato/helm/log/HelmLog.kt),
+> enforced by `NoPayloadInLogsTest`.
 
 ## Logs — always on, exportable without a cable
 
@@ -279,6 +352,12 @@ decision or a known gap at the time of writing.
   were built to committed vectors and to unit tests over fakes. The first live
   pairing, the notification look, lock-screen truncation, the cold-start deep
   link and voice quality are all still unjudged.
+- **The reply box has never been typed into on a phone.** Everything it decides
+  is unit-tested through `ReplyDelivery`, but `RemoteInput` extraction, the
+  heads-up presentation and the "not sent" rewrite are framework behaviour, and
+  the Android suite is JVM-only — there are no instrumentation tests. The one
+  path most worth watching is a reply sent while the link is down: it should
+  rewrite the row rather than vanish.
 - **Four of the six screens have never been photographed.** They are gated
   behind an open session and need a live desktop link. The window-inset fix is
   owned at the theme root and a test fails the build if any screen tries to own

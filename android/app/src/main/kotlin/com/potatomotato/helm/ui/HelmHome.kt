@@ -96,6 +96,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactRead by client.artifacts.read.collectAsState()
     val artifactSave by client.artifacts.save.collectAsState()
     val artifactLanding by client.control.artifactLanding.collectAsState()
+    val notificationsEnabled by client.alerts.enabled.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
     // Which of the open session's tabs is showing. Saveable for the same reason
@@ -381,6 +382,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     },
                     onPairDesktop = { HelmLinkService.forcePairingMode(context) },
                     onExportLogs = exportLogs,
+                    notificationsEnabled = notificationsEnabled,
+                    onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
                 )
 
                 where == Destination.Voice -> VoiceScreen(

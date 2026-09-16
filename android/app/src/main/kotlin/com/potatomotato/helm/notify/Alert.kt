@@ -3,15 +3,28 @@ package com.potatomotato.helm.notify
 /**
  * What class of event buzzed the phone.
  *
- * Four, because the user must be able to silence them apart: "a session needs
+ * Several, because the user must be able to silence them apart: "a session needs
  * you" and "a session went idle" are not the same interruption, and a single
  * channel forces the choice of all or nothing. The strings are the WIRE values
- * `src/mobile/mobile-envelope.ts` sends in the chat record's optional `kind`.
+ * `src/mobile/mobile-envelope.ts` sends in the chat record's optional `kind` —
+ * except [Message], which has no wire value because it is what a record with NO
+ * kind means.
  */
 enum class AlertKind(val wire: String, val channelId: String) {
 
     /** Needs you — a session waiting on input, or an explicit flash_attention. */
     Attention("attention", "helm_attention"),
+
+    /**
+     * Something an agent actually SAID, as opposed to an event Helm is reporting.
+     *
+     * The only kind the user can answer, which is why it is the only one that
+     * carries a reply box. Its wire value is never sent by the desktop — a plain
+     * chat record has no kind at all, and [fromWire] must never produce this from
+     * an unrecognised string, or a future desktop event would arrive wearing a
+     * reply box that replies to nothing.
+     */
+    Message("message", "helm_message"),
 
     /** A session finished. */
     Completion("completion", "helm_completion"),

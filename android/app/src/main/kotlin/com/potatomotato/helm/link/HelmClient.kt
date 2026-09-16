@@ -410,8 +410,17 @@ class HelmClient(
             // EVENT Helm is reporting, not something an agent said: routing it
             // into the thread would grow a conversation the desktop never had,
             // and the drift would be invisible from the desktop side.
+            // A kind-less record goes to BOTH: the thread is where it lives, and
+            // the notification is how the user finds out it arrived while they
+            // were elsewhere. It is one message told once on two surfaces, the
+            // same shape as the ratified Telegram/app duplication.
             is MobileRecord.Chat ->
-                if (record.kind == null) chats.receive(record) else alerts.onAlert(record)
+                if (record.kind == null) {
+                    chats.receive(record)
+                    alerts.onMessage(record)
+                } else {
+                    alerts.onAlert(record)
+                }
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.

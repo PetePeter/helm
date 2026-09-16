@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.util.Log
 import androidx.compose.ui.graphics.toArgb
 import com.potatomotato.helm.MainActivity
@@ -44,17 +46,44 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
     }
 
     override fun post(alert: Alert) {
-        val notification = Notification.Builder(context, alert.kind.channelId)
-            .setContentTitle(alert.sessionName)
+        val builder = builderFor(alert)
             .setContentText(alert.text)
+        // Only a MESSAGE can be answered: the others report that something
+        // happened, and a reply box on "a session went idle" would invite the
+        // user to talk to an event.
+        if (alert.kind == AlertKind.Message) builder.addAction(replyAction(alert))
+
+        show(alert, builder.build())
+    }
+
+    override fun cancel(alert: Alert) {
+        manager.cancel(alert.notificationId)
+    }
+
+    /**
+     * The same row, rewritten to say the reply never left the phone — and still
+     * carrying its reply box, because the obvious next thing the user wants is
+     * to try again once the link is back.
+     */
+    override fun replyFailed(alert: Alert) {
+        val builder = builderFor(alert)
+            .setContentText(context.getString(R.string.reply_not_sent))
+            .addAction(replyAction(alert))
+
+        show(alert, builder.build())
+    }
+
+    private fun builderFor(alert: Alert): Notification.Builder =
+        Notification.Builder(context, alert.kind.channelId)
+            .setContentTitle(alert.sessionName)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setColor(alert.kind.accent)
             .setColorized(false)
             .setContentIntent(openSession(alert))
             .setAutoCancel(true)
             .setShowWhen(true)
-            .build()
 
+    private fun show(alert: Alert, notification: Notification) {
         try {
             manager.notify(alert.notificationId, notification)
         } catch (error: SecurityException) {
@@ -63,8 +92,46 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
         }
     }
 
-    override fun cancel(alert: Alert) {
-        manager.cancel(alert.notificationId)
+    /**
+     * The reply box itself.
+     *
+     * It targets a BroadcastReceiver rather than the Activity so answering does
+     * not drag the user into the app — the point of replying from the shade is
+     * not to leave what you were doing. The intent is MUTABLE because RemoteInput
+     * has to write the typed text into it; that is the one sanctioned reason, and
+     * the receiver is not exported, so nothing outside the app can reach it.
+     *
+     * The request code is the notification id for the same reason the tap intent
+     * uses it: equal request codes are the same PendingIntent to the system, and
+     * a shared one would send every session's reply to whichever posted first.
+     */
+    private fun replyAction(alert: Alert): Notification.Action {
+        val remoteInput = RemoteInput.Builder(ReplyReceiver.RESULT_KEY)
+            .setLabel(context.getString(R.string.reply_hint))
+            .build()
+
+        val intent = Intent(context, ReplyReceiver::class.java)
+            .setAction("${REPLY_ACTION}.${alert.sessionId}")
+            .putExtra(EXTRA_SESSION_ID, alert.sessionId)
+            .putExtra(EXTRA_SESSION_NAME, alert.sessionName)
+
+        val pending = PendingIntent.getBroadcast(
+            context,
+            alert.notificationId,
+            intent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        return Notification.Action.Builder(
+            // The Icon overload, not the drawable-id one: that constructor is
+            // deprecated, and a build warning nobody can fix is a warning
+            // everybody learns to scroll past.
+            Icon.createWithResource(context, android.R.drawable.ic_menu_send),
+            context.getString(R.string.reply_action),
+            pending,
+        )
+            .addRemoteInput(remoteInput)
+            .build()
     }
 
     /**
@@ -99,7 +166,11 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
         /** True when the tap wants the session's ARTIFACTS, not its thread. */
         const val EXTRA_ARTIFACTS = "com.potatomotato.helm.OPEN_ARTIFACTS"
 
+        /** The session a reply belongs to. Read by [ReplyReceiver]. */
+        const val EXTRA_SESSION_NAME = "com.potatomotato.helm.SESSION_NAME"
+
         private const val OPEN_ACTION = "com.potatomotato.helm.action.OPEN_SESSION"
+        private const val REPLY_ACTION = "com.potatomotato.helm.action.REPLY"
         private const val TAG = "HelmNotifications"
     }
 }
@@ -119,6 +190,7 @@ private val ACCENT_ARGB = HelmColors.Accent.toArgb()
 
 private val AlertKind.channelNameRes: Int
     get() = when (this) {
+        AlertKind.Message -> R.string.alert_channel_message
         AlertKind.Attention -> R.string.alert_channel_attention
         AlertKind.Completion -> R.string.alert_channel_completion
         AlertKind.Idle -> R.string.alert_channel_idle
@@ -127,6 +199,7 @@ private val AlertKind.channelNameRes: Int
 
 private val AlertKind.channelDescriptionRes: Int
     get() = when (this) {
+        AlertKind.Message -> R.string.alert_channel_message_description
         AlertKind.Attention -> R.string.alert_channel_attention_description
         AlertKind.Completion -> R.string.alert_channel_completion_description
         AlertKind.Idle -> R.string.alert_channel_idle_description

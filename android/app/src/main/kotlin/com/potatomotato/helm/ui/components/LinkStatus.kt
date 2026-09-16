@@ -105,6 +105,18 @@ fun HelmAppBar(
      * is one tap away from the words that prompted it.
      */
     onExportLogs: (() -> Unit)? = null,
+    /**
+     * The master notification switch, when a screen offers it — only the session
+     * list does, because that is the screen the user is on when the buzzing
+     * becomes too much.
+     *
+     * A bell that changes glyph rather than a Material Switch: the bar is a row
+     * of equal-weight glyph actions, and a switch would be the only control in
+     * the app that renders its own state as a track. [notificationsEnabled] is
+     * the state it draws, hoisted like every other piece of state here.
+     */
+    notificationsEnabled: Boolean = true,
+    onToggleNotifications: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -164,6 +176,25 @@ fun HelmAppBar(
             }
         }
         LinkBadge(linkState)
+        if (onToggleNotifications != null) {
+            Box(
+                modifier = Modifier
+                    .size(HelmSize.TouchTarget)
+                    .clickable(onClick = onToggleNotifications),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(
+                        if (notificationsEnabled) R.string.notifications_glyph_on
+                        else R.string.notifications_glyph_off,
+                    ),
+                    // Accent when live, Faint when silenced: the state must be
+                    // readable at a glance without counting bell strokes.
+                    color = if (notificationsEnabled) HelmColors.Accent else HelmColors.Faint,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+        }
         if (onExportLogs != null) {
             Box(
                 modifier = Modifier

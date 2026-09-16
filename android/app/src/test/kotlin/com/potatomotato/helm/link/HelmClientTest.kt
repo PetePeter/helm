@@ -15,6 +15,7 @@ import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
+import com.potatomotato.helm.notify.AlertKind
 import com.potatomotato.helm.notify.FakeNotificationPort
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.ui.components.SessionState
@@ -199,15 +200,25 @@ class HelmClientTest {
         assertEquals("is idle", port.showing("s1")?.text)
     }
 
+    /**
+     * A plain chat record goes to BOTH surfaces. The thread is where the message
+     * lives; the notification is how the user learns it arrived while they were
+     * somewhere else — which, for the one record type they can answer, was the
+     * gap that made the phone feel dead between glances.
+     */
     @Test
-    fun `a plain chat record still lands in the thread and never notifies`() {
+    fun `a plain chat record lands in the thread and notifies`() {
         val port = FakeNotificationPort()
         client.alerts.port = port
 
         client.onInbound(chatBytes(sessionId = "s1", text = "the build is green", at = 8))
 
         assertEquals("the build is green", client.chats.thread("s1").single().text)
-        assertTrue(port.shade.isEmpty())
+        // It must appear ONCE in the thread — the notification is a second
+        // surface, not a second message.
+        assertEquals(1, client.chats.thread("s1").size)
+        assertEquals("the build is green", port.showing("s1")?.text)
+        assertEquals(AlertKind.Message, port.showing("s1")?.kind)
     }
 
     @Test

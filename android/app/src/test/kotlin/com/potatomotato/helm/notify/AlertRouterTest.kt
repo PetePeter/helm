@@ -3,6 +3,7 @@ package com.potatomotato.helm.notify
 import com.potatomotato.helm.wire.MobileRecord
 import org.junit.Test
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 
@@ -248,5 +249,181 @@ class AlertRouterTest {
         router.onAlert(alert(kind = "artifact", text = "Report", artifactId = null))
 
         assertTrue(port.shade.isEmpty())
+    }
+
+    // ---- plain messages ----------------------------------------------------
+    //
+    // A kind-BEARING record is an event Helm is reporting; a kind-less one is
+    // something an agent actually said. Until now the second buzzed nothing at
+    // all, which meant the phone stayed silent for the only record type the user
+    // can answer.
+
+    private fun message(
+        sessionId: String = "s1",
+        sessionName: String = "ble-transport",
+        text: String = "I have pushed the fix",
+    ) = alert(sessionId = sessionId, sessionName = sessionName, text = text, kind = null)
+
+    @Test
+    fun `a message posts a row on the message channel`() {
+        router.onMessage(message())
+
+        val shown = port.showing("s1")
+        assertEquals("ble-transport", shown?.sessionName)
+        assertEquals("I have pushed the fix", shown?.text)
+        assertEquals(AlertKind.Message, shown?.kind)
+    }
+
+    @Test
+    fun `a session's messages replace one another rather than stacking`() {
+        repeat(5) { router.onMessage(message(text = "line $it")) }
+
+        assertEquals(1, port.shade.size)
+        assertEquals("line 4", port.showing("s1")?.text)
+    }
+
+    @Test
+    fun `nothing is posted for a message in the session being read`() {
+        router.visible(true)
+        router.opened("s1")
+
+        router.onMessage(message())
+
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `a message with nothing to show is dropped rather than posted blank`() {
+        router.onMessage(message(sessionId = ""))
+        router.onMessage(message(sessionName = ""))
+        router.onMessage(message(text = "  "))
+
+        assertTrue(port.shade.isEmpty())
+    }
+
+    // ---- replying from the shade -------------------------------------------
+
+    @Test
+    fun `a sent reply takes its row down`() {
+        router.onMessage(message())
+
+        router.replySent("s1")
+
+        assertNull(port.showing("s1"))
+    }
+
+    @Test
+    fun `a sent reply leaves other sessions alone`() {
+        router.onMessage(message())
+        router.onMessage(message(sessionId = "s2", sessionName = "two"))
+
+        router.replySent("s1")
+
+        assertEquals("two", port.showing("s2")?.sessionName)
+    }
+
+    @Test
+    fun `a failed reply rewrites the row rather than leaving it unchanged`() {
+        router.onMessage(message())
+        port.calls.clear()
+
+        router.replyFailed("s1", "ble-transport")
+
+        // The user typed into a box and it vanished. Saying nothing here is the
+        // silent drop this whole path exists to avoid.
+        assertEquals(listOf("replyFailed:s1"), port.calls)
+        assertEquals("ble-transport", port.showing("s1")?.sessionName)
+    }
+
+    /**
+     * The reason [AlertRouter.replySent] exists at all rather than the receiver
+     * cancelling the row itself: a row taken down behind the router's back would
+     * leave bookkeeping claiming it was still up, and the next alert would spend
+     * a cancel on a row that had already gone.
+     */
+    @Test
+    fun `a session that was replied to posts cleanly next time`() {
+        router.onMessage(message())
+        router.replySent("s1")
+        port.calls.clear()
+
+        router.onAlert(alert(kind = "completion"))
+
+        assertEquals(listOf("post:s1:Completion"), port.calls)
+    }
+
+    @Test
+    fun `a row left by a failed reply is cleared by opening the session`() {
+        router.replyFailed("s1", "ble-transport")
+        router.visible(true)
+
+        router.opened("s1")
+
+        assertNull(port.showing("s1"))
+    }
+
+    // ---- the master toggle -------------------------------------------------
+
+    @Test
+    fun `notifications are on for a phone that has never been told otherwise`() {
+        assertTrue(router.enabled.value)
+    }
+
+    @Test
+    fun `nothing is posted at all while notifications are off`() {
+        router.setEnabled(false)
+
+        router.onMessage(message())
+        router.onAlert(alert(kind = "attention"))
+        router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
+
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `turning notifications off takes down the rows already showing`() {
+        router.onAlert(alert(kind = "attention"))
+        router.onAlert(alert(sessionId = "s2", kind = "artifact", text = "Report", artifactId = "a1"))
+
+        router.setEnabled(false)
+
+        // Leaving them up would be the setting visibly not working: the user
+        // turned the buzzing off and the evidence of it is still on the screen.
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `turning notifications back on posts the next one`() {
+        router.setEnabled(false)
+        router.onMessage(message())
+
+        router.setEnabled(true)
+        router.onMessage(message(text = "the next one"))
+
+        // The suppressed message is NOT replayed: it is stale by now, and a
+        // buzz for something said ten minutes ago is a lie about when.
+        assertEquals(1, port.shade.size)
+        assertEquals("the next one", port.showing("s1")?.text)
+    }
+
+    @Test
+    fun `the choice is written through to the store`() {
+        val store = MemoryNotificationSettings()
+        val persisting = AlertRouter().also { it.port = port; it.useSettings(store) }
+
+        persisting.setEnabled(false)
+
+        assertFalse(store.enabled)
+    }
+
+    @Test
+    fun `a router adopts what the store already remembers`() {
+        val store = MemoryNotificationSettings().also { it.enabled = false }
+
+        val restored = AlertRouter().also { it.port = port; it.useSettings(store) }
+
+        assertFalse(restored.enabled.value)
+        restored.onMessage(message())
+        assertTrue("a remembered OFF must survive a restart", port.shade.isEmpty())
     }
 }

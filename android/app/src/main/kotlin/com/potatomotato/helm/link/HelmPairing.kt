@@ -6,10 +6,12 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.PhoneIdentity
 import com.potatomotato.helm.notify.AndroidNotifications
+import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * HelmPairing — where the radio meets the handshake.
@@ -50,8 +52,11 @@ object HelmPairing {
     fun init(context: Context) {
         if (started) return
         started = true
-        // The notification surface needs a Context, so it is attached here rather
-        // than constructed with the client — the same shape as HelmLink.sender.
+        // The notification surface and its stored setting both need a Context, so
+        // they are attached here rather than constructed with the client — the
+        // same shape as HelmLink.sender. Settings first: the router adopts what
+        // the user chose before any alert can arrive to be judged against it.
+        client.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
         client.alerts.port = AndroidNotifications(context)
         controller = PairingController(
             store = DeviceKeyStore(context),
@@ -92,4 +97,7 @@ object HelmPairing {
 
     private fun requireController(): PairingController =
         controller ?: error("HelmPairing.init has not been called")
+
+    /** Alongside the log, under the app's own files — never shared storage. */
+    private const val NOTIFY_DIRECTORY = "notify"
 }

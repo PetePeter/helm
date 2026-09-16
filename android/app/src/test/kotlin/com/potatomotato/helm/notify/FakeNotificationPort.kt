@@ -28,6 +28,11 @@ class FakeNotificationPort : NotificationPort {
         shade.remove(alert.notificationId)
     }
 
+    override fun replyFailed(alert: Alert) {
+        calls += "replyFailed:${rowKey(alert)}"
+        shade[alert.notificationId] = alert
+    }
+
     /** The alert currently shown for a session's own row, or null when nothing is. */
     fun showing(sessionId: String): Alert? = shade[Alert.notificationId(sessionId)]
 
