@@ -87,10 +87,14 @@ class LanLinkSession(
                 log("connected over LAN to $raw")
                 onStateChange(LanLinkState.Connected)
                 return opened
-            } catch (error: IOException) {
-                // Unreachable is the NORMAL answer for an interface the phone
-                // cannot see. Log it and try the next one.
-                log("could not reach $raw: ${error.message}")
+            } catch (error: Exception) {
+                // Exception, not IOException: a missing INTERNET permission
+                // raises SecurityException, and a dialler is injected so it may
+                // fail in ways this file cannot enumerate. Per invariant 7's
+                // spirit, every one of them is "try the next address", never a
+                // throw into the layer above. Unreachable is the NORMAL answer
+                // for an interface the phone cannot see from where it stands.
+                log("could not reach $raw: ${error.javaClass.simpleName}: ${error.message}")
             }
         }
 

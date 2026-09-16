@@ -93,8 +93,11 @@ negotiating it. Desktop: `MobileLinkManager.register()`. Phone:
    for logs only.
 3. **Equal rank loses.** A transport re-attaching at its own rank must not
    displace itself mid-transfer.
-4. **Downgrade needs no code.** If LAN drops, the link goes offline and the
-   existing scan/reconnect path brings BLE back.
+4. **Downgrade needs no code on either end**, but for different reasons. On
+   the DESKTOP the link goes offline and the existing scan/reconnect path
+   brings BLE back — a real reconnect, taking seconds. On the PHONE nothing
+   reconnects at all: it is the peripheral, its Bluetooth link was never
+   dropped, and the handover is immediate. See "The phone's side of ownership".
 
 ### Generations — the defect this exists to prevent
 
@@ -203,13 +206,63 @@ both transports identically. LAN is faster, not bigger.
 | `android/…/data/LanAddressStore.kt` | Stored addresses and strict `host:port` parsing |
 | `android/…/ble/HelmLink.kt` | Ranked link ownership on the phone |
 
+## When the phone dials
+
+`LanLinkController` owns the *when*; `LanLinkSession` owns the *how*. They are
+split because the when is all policy and the how is all sockets, and only one of
+them needs a network to test.
+
+There are exactly two triggers, and both are events rather than timers:
+
+1. **A Bluetooth link came up.** That is the moment the phone both knows which
+   desktop it is talking to and has somewhere to reach it.
+2. **A fresh address list arrived.** The first list a phone ever receives lands
+   *after* the Bluetooth link came up, so waiting for the next link would leave
+   LAN unused for a whole session.
+
+**It does not retry on a schedule.** Away from home every address is
+unreachable, so a background loop would drain the battery to rediscover that the
+office wifi still isolates its clients. One quiet failed connect per link is
+enough. The TCP connect timeout is 1.5s for the same reason: the user is waiting
+on a Bluetooth link that already works.
+
+The phone needs `android.permission.INTERNET`. Without it a dial raises
+`SecurityException` — which is **not** an `IOException`, so the dial loop catches
+`Exception` rather than enumerating failure modes it cannot predict.
+
+## The phone's side of ownership
+
+`HelmLink` holds a **map of rank → transport**, not a single winner.
+
+A single holder handles the upgrade fine and gets the downgrade badly wrong: when
+LAN drops the holder empties, and Bluetooth does not resume because it attached
+once at startup and nothing re-attaches it. The phone would sit dead until the
+BLE service happened to cycle. With a map, Bluetooth stays registered the whole
+time, so LAN dropping is an **instant handover** with no restore path to write —
+and therefore none to forget to call.
+
+Note the asymmetry with the desktop: **the desktop's recovery is a reconnect**
+(scan, connect, handshake — seconds), because it is the central. **The phone's is
+not a reconnect at all**, because it is the peripheral and its Bluetooth link was
+never dropped.
+
+Link state is **derived from whichever transport owns the link**, not written by
+whoever spoke last — otherwise Bluetooth reporting "Advertising" while LAN is
+connected would make the UI claim the phone is offline.
+
+A swap also **restarts the phone's SecureChannel**: a handshake belongs to one
+transport, so the desktop opening a new channel over the new pipe means the old
+session's keys and counters are finished. `HelmLink.owner` is a flow for exactly
+this reason, and the inbound queue is drained on every change of it — bytes a
+finished transport left behind would otherwise be read as the first frame of the
+next handshake.
+
 ## Known gaps
 
-- The phone stores pushed addresses and `LanLinkSession` implements the dialling
-  policy, but **the controller that actually opens the socket on a background
-  thread is not yet wired into `HelmLinkService`**, and there is no LAN row on
-  the phone's settings screen. Until that lands, the phone still links over BLE
-  only. The desktop half is complete.
-- WAN access ([P-0753](#)) is out of scope and remains unbuilt; a VPN that routes
-  the home subnet makes it unnecessary, because the desktop then keeps one
-  address from either side.
+- There is no LAN row on the phone's settings screen. Nothing needs one: the
+  address arrives over Bluetooth and the desktop is where LAN is turned on.
+- **Not yet validated on real hardware end to end.** Every layer has tests, but
+  a phone has not yet been watched moving from Bluetooth to LAN and back.
+- WAN access (P-0753) is out of scope and remains unbuilt; a VPN that routes the
+  home subnet makes it unnecessary, because the desktop then keeps one address
+  from either side.

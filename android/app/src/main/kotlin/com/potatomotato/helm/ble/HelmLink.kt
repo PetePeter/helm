@@ -43,56 +43,108 @@ object HelmLink {
     /** Whole messages from Helm, already reassembled. */
     val inbound: Flow<ByteArray> = _inbound.receiveAsFlow()
 
-    /** The transport that currently owns the link, and how it sends. */
-    private var holder: Holder? = null
+    /**
+     * Every attached transport, by rank, with how it sends and where it has got
+     * to. The highest rank present IS the link.
+     *
+     * A MAP rather than one winner, and that is the whole design. With a single
+     * holder, LAN displacing BLE is easy and LAN *dropping* is not: the holder
+     * becomes empty and Bluetooth does not resume, because it attached once at
+     * startup and nothing re-attaches it. The phone would sit dead until the BLE
+     * service happened to cycle. Here a transport going away simply removes its
+     * rank and the next one down is already in place — there is no restore path
+     * to write, and therefore none to forget to call.
+     */
+    private val transports = sortedMapOf<Int, Attached>()
 
-    private data class Holder(val rank: Int, val send: (ByteArray) -> Unit)
+    private val _owner = MutableStateFlow<Int?>(null)
 
     /**
-     * Take the link for a transport of [rank], if nothing better holds it.
+     * Which transport currently owns the link, as a flow.
      *
-     * Higher wins and EQUAL LOSES: a transport re-attaching at its own rank must
-     * not displace itself mid-stream. Returns whether the caller now owns it, so
-     * a loser can close its own connection rather than sit half-attached.
+     * A HANDSHAKE BELONGS TO ONE TRANSPORT. When ownership moves, the peer opens
+     * a NEW SecureChannel over the new pipe, so the old session's keys and
+     * sequence counters are finished — feeding the new transport's handshake
+     * into it would read as corruption. Whoever owns the channel above must
+     * therefore tear it down and start again on every change of this value, not
+     * merely when the link goes down. See HelmPairing.
+     */
+    val owner: StateFlow<Int?> = _owner.asStateFlow()
+
+    private data class Attached(val send: (ByteArray) -> Unit, val state: LinkState)
+
+    /**
+     * Register a transport of [rank]. Returns whether it currently OWNS the link.
      *
-     * Ownership is not a lock: the incumbent is not told, because there is
-     * nothing for it to do. Its bytes simply stop being sent, and the desktop
-     * retires its end of that transport on its own (see MobileLinkManager's
-     * retire grace).
+     * Attaching always succeeds — a lower-ranked transport stays registered so it
+     * can take over the moment the better one goes. The return value answers a
+     * different question: whether this transport's bytes are the ones leaving the
+     * phone right now.
+     *
+     * Ownership is not a lock and the loser is not told: its bytes simply stop
+     * being sent, and the desktop retires its end of that transport on its own
+     * (see MobileLinkManager's retire grace).
      */
     internal fun attach(rank: Int, send: (ByteArray) -> Unit): Boolean {
-        val current = holder
-        if (current != null && current.rank >= rank) return false
-        holder = Holder(rank, send)
-        return true
+        transports[rank] = Attached(send, transports[rank]?.state ?: LinkState.Disconnected)
+        republish()
+        return holderRank == rank
     }
 
     /**
-     * Release the link IF this rank still holds it.
+     * Release a transport. A no-op if it was never attached.
      *
-     * The rank check is what makes a losing transport's later teardown safe: a
-     * BLE link displaced by LAN still eventually closes, and a bare release
-     * would take the LAN link down with it.
+     * Safe to call late: a BLE link displaced by LAN still eventually closes, and
+     * because ranks are addressed individually that teardown cannot touch the
+     * link that replaced it.
      */
     internal fun detachRank(rank: Int) {
-        if (holder?.rank != rank) return
-        holder = null
-        _state.value = LinkState.Disconnected
+        if (transports.remove(rank) == null) return
+        republish()
     }
 
-    /** Which rank owns the link, or null when nothing does. Diagnostics only. */
-    internal val holderRank: Int? get() = holder?.rank
+    /** Which rank currently owns the link, or null when nothing is attached. */
+    internal val holderRank: Int? get() = transports.keys.lastOrNull()
 
     /** False when the link is down; the caller decides whether that matters. */
     fun send(message: ByteArray): Boolean {
-        val send = holder?.send ?: return false
-        if (_state.value != LinkState.Linked) return false
-        send(message)
+        // Read the entry directly rather than looking up `holderRank`: a sorted
+        // map THROWS on a null key where a hash map would answer null, so an
+        // empty map is a crash and not a "no link" — see republish.
+        val holder = transports.entries.lastOrNull()?.value ?: return false
+        if (holder.state != LinkState.Linked) return false
+        holder.send(message)
         return true
     }
 
-    internal fun publishState(next: LinkState) {
-        _state.value = next
+    /**
+     * Report a transport's own state. What the UI shows is the state of whichever
+     * transport currently owns the link — derived, never raced for: two
+     * transports writing one flag would flap between "Linked" and "Advertising"
+     * depending on which spoke last.
+     */
+    internal fun publishState(rank: Int, next: LinkState) {
+        val existing = transports[rank] ?: return
+        transports[rank] = existing.copy(state = next)
+        republish()
+    }
+
+    private fun republish() {
+        val holder = transports.entries.lastOrNull()
+        if (holder?.key != _owner.value) {
+            // The bytes a finished transport left behind belong to a session
+            // that is over. Dropping them is what stops them being read as the
+            // first frame of the next handshake.
+            drainInbound()
+            _owner.value = holder?.key
+        }
+        _state.value = holder?.value?.state ?: LinkState.Disconnected
+    }
+
+    private fun drainInbound() {
+        while (_inbound.tryReceive().isSuccess) {
+            // discarded
+        }
     }
 
     internal fun publishInbound(message: ByteArray) {
@@ -102,13 +154,11 @@ object HelmLink {
     }
 
     internal fun detach() {
-        holder = null
-        _state.value = LinkState.Disconnected
-        // Frames a dead link left unconsumed are garbage to the next one: the
-        // peer's sequence counters start over, so delivering them would read
-        // as corruption. Drop them rather than leak them into a new handshake.
-        while (_inbound.tryReceive().isSuccess) {
-            // discarded
-        }
+        transports.clear()
+        // Drained UNCONDITIONALLY, not merely when the owner changed: tearing
+        // the service down with nothing attached still has to discard whatever
+        // the link produced, or those frames greet the next handshake.
+        drainInbound()
+        republish()
     }
 }

@@ -3,6 +3,8 @@ package com.potatomotato.helm.link
 import android.content.Context
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.ble.RANK_BLE
+import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.LanAddressStore
 import com.potatomotato.helm.data.PrefsLanAddressStore
@@ -14,10 +16,13 @@ import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -45,6 +50,7 @@ object HelmPairing {
     private var pipe: HelmLinkPipe? = null
     private var store: PskStore? = null
     private var lanAddresses: LanAddressStore? = null
+    private var lan: LanLinkController? = null
     private var started = false
 
     private val _desktops = MutableStateFlow<List<PairedDesktop>>(emptyList())
@@ -87,6 +93,10 @@ object HelmPairing {
         // authenticated channel this callback hangs off.
         val addresses = PrefsLanAddressStore(context)
         lanAddresses = addresses
+        lan = LanLinkController(
+            addresses = addresses,
+            log = { message -> HelmLog.i(HelmLog.WIRE, message) },
+        )
         client.onLanAddresses = { pushed ->
             val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
             if (desktopId == null) {
@@ -95,6 +105,10 @@ object HelmPairing {
                 HelmLog.w(HelmLog.WIRE, "dropped a LAN address list: no desktop is linked")
             } else {
                 addresses.save(desktopId, pushed)
+                // The other dial trigger. The FIRST list a phone ever receives
+                // arrives after the Bluetooth link came up, so waiting for the
+                // next link would leave LAN unused for a whole session.
+                scope.launch(Dispatchers.IO) { lan?.tryConnect(desktopId) }
             }
         }
         controller = PairingController(
@@ -104,12 +118,24 @@ object HelmPairing {
             onInbound = client::onInbound,
         )
 
-        // A handshake belongs to ONE link. The phone cannot initiate, so every
-        // new channel starts from the transport coming up, never from here.
+        // A handshake belongs to ONE TRANSPORT, not merely to one connection.
+        // A swap from Bluetooth to LAN means the desktop has opened a brand new
+        // SecureChannel over the new pipe, so the old session must be torn down
+        // even though the link never went "down" from the app's point of view.
+        // Pairing the two flows is what makes that true for both causes.
         scope.launch {
-            HelmLink.state.collect { linkState ->
-                if (linkState == LinkState.Linked) attach() else detach()
-            }
+            combine(HelmLink.state, HelmLink.owner) { linkState, owner -> linkState to owner }
+                .distinctUntilChanged()
+                .collect { (linkState, owner) ->
+                    if (linkState == LinkState.Linked && owner != null) attach() else detach()
+                    // One dial attempt per Bluetooth link, off the main thread.
+                    // Only from BLUETOOTH: dialling in response to the LAN link
+                    // coming up would be dialling because we just dialled.
+                    if (linkState == LinkState.Linked && owner == RANK_BLE) {
+                        val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
+                        if (desktopId != null) scope.launch(Dispatchers.IO) { lan?.tryConnect(desktopId) }
+                    }
+                }
         }
 
         // The desktops list is derived from the pairing state, so it follows it

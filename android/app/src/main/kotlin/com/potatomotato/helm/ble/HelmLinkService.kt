@@ -90,7 +90,7 @@ class HelmLinkService : Service() {
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
             onMessage = HelmLink::publishInbound,
             onStateChange = { state ->
-                HelmLink.publishState(state)
+                HelmLink.publishState(RANK_BLE, state)
                 startForegroundWith(state)
             },
             log = HelmLog.port(TAG),
@@ -98,6 +98,10 @@ class HelmLinkService : Service() {
         server.session = link
         gattServer = server
         session = link
+        // Registered UP FRONT so its state reports are never dropped, and so it
+        // is already in place to resume the moment a better transport goes away.
+        // Attaching is not the same as being connected — see HelmLink.attach.
+        HelmLink.attach(RANK_BLE, link::send)
 
         recovery = BleRadioRecovery(
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
