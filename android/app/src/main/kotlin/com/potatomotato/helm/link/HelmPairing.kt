@@ -152,6 +152,16 @@ object HelmPairing {
         scope.launch { requireController().state.collect { refreshDesktops() } }
     }
 
+    /**
+     * Drop the LAN link on purpose — the quit path only. The controller is NOT
+     * stopped on service teardown or backgrounding: those must keep LAN up
+     * (that is the point of backgrounding), and its non-daemon pump thread
+     * holds the process open after finish() if nobody closes the socket.
+     */
+    fun stopLan() {
+        lan?.stop()
+    }
+
     fun confirm(matches: Boolean) = requireController().confirm(matches)
 
     fun cancel() = requireController().cancel()

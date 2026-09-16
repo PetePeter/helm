@@ -616,6 +616,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     },
                     onQuit = {
                         leaving = false
+                        // Quit means QUIT. The foreground service outlives the
+                        // activity by design when backgrounding, so finishing
+                        // alone leaves the link and its notification running —
+                        // observed as "quit doesn't work" with Helm still
+                        // online on the desktop afterwards. LAN is the same
+                        // story but sneakier: it lives in HelmPairing, not the
+                        // service, and its non-daemon pump thread keeps the
+                        // whole process — and the socket — alive after finish().
+                        HelmPairing.stopLan()
+                        HelmLinkService.stop(context)
                         (context as? Activity)?.finish()
                     },
                     onDismiss = { leaving = false },
