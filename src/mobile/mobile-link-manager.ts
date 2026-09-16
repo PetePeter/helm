@@ -508,7 +508,15 @@ export class MobileLinkManager extends EventEmitter {
     // deadline of its own: a phone that connects and then says nothing never
     // lets that await return, so a hold armed after it would never be armed at
     // all. Recording it first is what makes the deadline cover the handshake.
-    if (this.pairingArmed()) {
+    // BLE ONLY, and this is the line that enforces it. Proximity is the trust
+    // anchor: a socket may only ever carry a handshake against a PSK Bluetooth
+    // already established. The rule was documented and never implemented, and an
+    // ALREADY PAIRED phone dialling in over LAN was pulled into the pairing flow
+    // as a result — it failed the confirm-MAC check against a coordinator that
+    // holds no PSK, and fail() took the whole attempt down with it. Arming
+    // pairing on a home network destroyed itself within seconds of the next LAN
+    // dial. Observed on real hardware.
+    if (this.pairingArmed() && this.rankOf(link) === RANK_BLE) {
       this.holdForPairing(link);
       const taken = await this.opts.pairing.offerLink(link);
       // The deadline may have reclaimed and dropped the link while we waited.

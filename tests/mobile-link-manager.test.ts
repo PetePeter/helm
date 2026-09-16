@@ -874,6 +874,29 @@ describe('MobileLinkManager pairing link ownership', () => {
     expect(h.attempts.map((a) => a.deviceId)).toContain(ROTATED);
   });
 
+  it('never offers a LAN link to the coordinator, even while pairing is armed', async () => {
+    // Proximity is the trust anchor: a socket may only ever carry a handshake
+    // against a PSK that Bluetooth already established (P-0752). The rule was
+    // documented but never enforced, and the cost was not theoretical — an
+    // ALREADY PAIRED phone dialling in over LAN was pulled into the pairing
+    // flow, failed the confirm-MAC check against a coordinator that holds no
+    // PSK, and took the whole pairing attempt down with it. Arming pairing at
+    // home therefore destroyed itself within seconds, every time.
+    const h = makeHarness({ [ADDR]: PHONE }, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+    pair(h, PHONE);
+    await h.manager.start();
+    h.pairing.start();
+
+    const lan = new FakeLink(ADDR, 'Pixel 8 over LAN');
+    await offerOn(h.transports[1], lan);
+
+    // Identified on its own merits against the stored PSK, not offered to pairing.
+    expect(h.attempts.map((a) => a.deviceId)).toEqual([ADDR]);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    // And the pairing attempt is untouched — still armed, waiting for a radio.
+    expect(h.pairing.getState().status).toBe('scanning');
+  });
+
   it('releases a held link when Helm stops', async () => {
     const h = makeHarness({});
     await h.manager.start();

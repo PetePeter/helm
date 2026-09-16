@@ -56,8 +56,17 @@ PSK.** A socket may only ever carry a handshake against a PSK that Bluetooth
 already established. This is a real security property, not a convenience.
 
 `SocketLinkTransport` does not know what a PSK is, which is how it stays unable
-to violate the rule. `MobileLinkManager` offers a link to the pairing
-coordinator only while pairing is armed, and pairing is armed only over BLE.
+to violate the rule. `MobileLinkManager.identify()` offers a link to the pairing
+coordinator only while pairing is armed **and only when the link is BLE rank** —
+that rank test is where the rule is actually enforced.
+
+It used to be enforced nowhere. This paragraph claimed the property while the
+code offered the coordinator whatever link arrived next, and the bill came due on
+a home network: an ALREADY PAIRED phone dialling in over LAN was pulled into the
+pairing flow, failed the confirm-MAC check against a coordinator that holds no
+PSK, and `fail()` destroyed the whole attempt. Arming pairing therefore killed
+itself within seconds of the next LAN dial, over and over. A documented invariant
+with no line of code behind it is a comment, not an invariant.
 
 The PSK is transport-independent, so the same device is the same device over
 either pipe. **Identity comes from the PSK-bound handshake, never from an IP
