@@ -36,6 +36,7 @@ export type CliTypeOptions = {
   continueCommand?: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
+  messReminders?: boolean;
   submitSuffix?: string;
   helmActions?: HelmActionMap;
 };

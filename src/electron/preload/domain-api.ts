@@ -546,6 +546,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       continueCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
+      messReminders?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
     },
@@ -562,6 +563,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       continueCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
+      messReminders?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
     },

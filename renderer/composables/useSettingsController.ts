@@ -281,6 +281,7 @@ export function useSettingsController(options: {
       handoffCommand: value?.handoffCommand || '',
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),
+      messReminders: value?.messReminders !== false,
       submitSuffix: value?.submitSuffix ?? '\\r',
       helmActions: {
         clear: value?.helmActions?.clear ?? '',
@@ -435,6 +436,7 @@ export function useSettingsController(options: {
       handoffCommand: '',
       helmPreambleForInterSession: true,
       largeTextAsTempFile: false,
+      messReminders: true,
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
       initialPrompt: [],

@@ -908,6 +908,15 @@ describe('ConfigLoader', () => {
       expect(entry.largeTextAsTempFile).toBe(true);
     });
 
+    it('updateCliType turns Mess reminders off and omits the true default', () => {
+      loader.load();
+      loader.updateCliType('claude-code', 'CC', [], 0, { messReminders: false });
+      expect(loader.getCliTypeEntry('claude-code')!.messReminders).toBe(false);
+
+      loader.updateCliType('claude-code', 'CC', [], 0, { messReminders: true });
+      expect(loader.getCliTypeEntry('claude-code')!.messReminders).toBeUndefined();
+    });
+
     it('updateCliType with spawnCommand stores the full launch template', () => {
       loader.load();
       loader.updateCliType('claude-code', 'CC', [], 0, {

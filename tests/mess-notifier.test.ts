@@ -29,7 +29,7 @@ async function flush(): Promise<void> {
   await Promise.resolve();
 }
 
-function setup() {
+function setup(remindersAllowed: (sessionId: string) => boolean = () => true) {
   const directory = mkdtempSync(join(tmpdir(), 'helm-mess-notifier-'));
   directories.push(directory);
   const projects = {
@@ -55,6 +55,7 @@ function setup() {
     projects as any,
     { sendSystemReminder },
     () => true,
+    remindersAllowed,
   );
   const sender = { id: 'sender', name: 'planner', cliType: 'test', processId: 1, workingDir: project.canonicalPath };
   const receiver = { id: 'receiver', name: 'memories', cliType: 'test', processId: 2, workingDir: project.canonicalPath, activityLevel: 'idle' as 'idle' | 'inactive' | 'active' };
@@ -76,6 +77,17 @@ describe('MessNotifier', () => {
     await flush();
 
     expect(deliveries).toEqual(['[HELM_MESS] 1 new — call mess_check']);
+    notifier.dispose();
+  });
+
+  it('stays silent for a session whose CLI type has reminders turned off', async () => {
+    vi.useFakeTimers();
+    const { manager, stateDetector, notifier, deliveries } = setup(sessionId => sessionId !== 'receiver');
+    manager.post('sender', 'hello');
+    stateDetector.emit('activity-change', { sessionId: 'receiver', level: 'idle' });
+    await flush();
+
+    expect(deliveries).toEqual([]);
     notifier.dispose();
   });
 

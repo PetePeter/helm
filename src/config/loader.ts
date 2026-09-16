@@ -132,6 +132,12 @@ export interface CliTypeConfig {
   helmPreambleForInterSession?: boolean;
   /** For large session_send_text MCP handoffs, write the payload to a temp file and paste instructions with the path instead. */
   largeTextAsTempFile?: boolean;
+  /**
+   * Whether MessNotifier may poke this CLI with an unread-Mess system reminder.
+   * Default: true. Set false for CLIs that are not an LLM — prose injected into
+   * a plain shell's stdin is not a nudge, it is a stray command.
+   */
+  messReminders?: boolean;
   /** Named sequence groups — accessible via gamepad bindings and context menu */
   sequences?: Record<string, SequenceListItem[]>;
   /** Command written to PTY on pipeline handoff. If omitted, no command is sent. */
@@ -1012,6 +1018,7 @@ export class ConfigLoader {
     if (options?.continueCommand) tool.continueCommand = options.continueCommand;
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
+    if (options?.messReminders === false) tool.messReminders = false;
     const helmActions = this.cleanHelmActions(options?.helmActions);
     if (helmActions) tool.helmActions = helmActions;
     this.cliTypeStore.add(id, tool);
@@ -1083,6 +1090,13 @@ export class ConfigLoader {
           delete (existing as any).largeTextAsTempFile;  // omit default from YAML
         } else {
           existing.largeTextAsTempFile = true;
+        }
+      }
+      if (options.messReminders !== undefined) {
+        if (options.messReminders === true) {
+          delete (existing as any).messReminders;  // omit default from YAML
+        } else {
+          existing.messReminders = false;
         }
       }
       if (options.helmActions !== undefined) {

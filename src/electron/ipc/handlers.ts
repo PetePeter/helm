@@ -406,6 +406,11 @@ export function registerIPCHandlers(
       projectStore,
       helmControlService,
       sessionId => ptyManager.has(sessionId),
+      sessionId => {
+        // An unresolved CLI type is not an opt-out: only an explicit false silences.
+        const cliType = sessionManager.getSession(sessionId)?.cliType;
+        return configLoader.getCliTypeEntry(cliType ?? '')?.messReminders !== false;
+      },
     )
     : null;
   // Carries a session's handover note across its own compaction: session_compact

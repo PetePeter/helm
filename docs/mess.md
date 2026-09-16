@@ -213,6 +213,15 @@ delivered. The poke is itself PTY output, which drives the session back through
 `active` to `inactive`; without the throttle that bounce would re-poke every few
 seconds forever. The guard is the cooldown, never the activity level.
 
+**A CLI type can refuse the poke entirely.** The reminder is prose written into
+stdin: for an LLM that is a nudge, for a plain shell it is a stray command. The
+`Allow Mess reminders` checkbox on the CLI Type editor (Settings -> Tools) owns
+that choice per CLI type, defaults to on, and is stored only when turned off, so
+no existing profile changes behaviour. The gate sits on the single path every
+poke funnels through, so it covers fresh posts, idle transitions and the
+one-time join line alike. It silences only the push — `mess_check` and the
+observer pane are pull-side and stay available.
+
 A retry timer rechecks the conditions after cooldown. Cooldown is recorded only
 after successful delivery; a failed or unverified write does not acknowledge
 anything.

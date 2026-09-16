@@ -89,6 +89,15 @@ export class MessNotifier {
     private readonly projectStore: ProjectStore,
     private readonly delivery: SystemReminderDelivery,
     private readonly isSessionRunning: (sessionId: string) => boolean,
+    /**
+     * Whether this session's CLI type accepts a poke at all.
+     *
+     * A reminder is prose written into stdin. For an LLM that is a nudge; for a
+     * plain shell it is a stray command, so the CLI type owns an opt-out and
+     * this is how the notifier reads it without taking a config dependency.
+     * Defaults to allowing every session — silence is opted into, never assumed.
+     */
+    private readonly remindersAllowed: (sessionId: string) => boolean = () => true,
     options: MessNotifierOptions = {},
   ) {
     this.now = options.now ?? Date.now;
@@ -132,6 +141,9 @@ export class MessNotifier {
     const session = this.sessionManager.getSession(sessionId);
     if (!session || !isReceptive(session.activityLevel)) return;
     if (!this.isSessionRunning(sessionId)) return;
+    // Every path into a poke funnels through here, so one gate covers activity
+    // changes, fresh posts and the join line alike.
+    if (!this.remindersAllowed(sessionId)) return;
 
     let unread: number;
     try {

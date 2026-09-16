@@ -22,6 +22,7 @@ interface ToolEditorData {
   handoffCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
+  messReminders?: boolean;
   submitSuffix: string;
   initialPrompt: Array<{ label: string; sequence: string }>;
 }
@@ -37,6 +38,7 @@ const DEFAULT_DATA: ToolEditorData = {
   handoffCommand: '',
   helmPreambleForInterSession: true,
   largeTextAsTempFile: false,
+  messReminders: true,
   submitSuffix: '\\r',
   initialPrompt: [],
 };
@@ -203,6 +205,24 @@ describe('ToolEditorModal.vue', () => {
 
     const values = w.emitted('save')![0][0] as Record<string, unknown>;
     expect(values.largeTextAsTempFile).toBe(false);
+    w.unmount();
+  });
+
+  it('round-trips the Mess reminders checkbox and omits it when left on', async () => {
+    const w = factory({ initialData: { ...DEFAULT_DATA } });
+    const checkbox = w.findAll('.te-checkbox-row input')[2];
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true);
+
+    const saveBtn = w.findAll('button').find(b => b.text() === 'Save')!;
+    await saveBtn.trigger('click');
+    await flushPromises();
+    // On is the default, so it stays out of the payload entirely.
+    expect(w.emitted('save')![0][0] as Record<string, unknown>).not.toHaveProperty('messReminders');
+
+    await checkbox.setValue(false);
+    await saveBtn.trigger('click');
+    await flushPromises();
+    expect((w.emitted('save')![1][0] as Record<string, unknown>).messReminders).toBe(false);
     w.unmount();
   });
 
