@@ -206,6 +206,20 @@
     <string name="notifications_glyph_on">&#x1F514;</string>
     <string name="notifications_glyph_off">&#x1F515;</string>
 
+    <string name="desktops_title">Desktops</string>
+    <string name="desktops_empty">No desktops paired yet. Pair one from the session list.</string>
+    <string name="desktops_footnote">Helm connects to the phone, so only one desktop can be linked at a time — whichever reaches you first.</string>
+    <string name="desktops_rename_title">Name this desktop</string>
+    <string name="desktops_rename_label">Desktop name</string>
+    <string name="desktops_rename_save">Save name</string>
+    <string name="desktops_forget">Forget this desktop</string>
+
+    <string name="exit_title">Leave Helm?</string>
+    <string name="exit_body">In the background Helm stays linked to your desktop and keeps notifying you. Quitting drops the link.</string>
+    <string name="exit_background">Leave it running</string>
+    <string name="exit_quit">Quit Helm</string>
+    <string name="exit_cancel">Stay here</string>
+
     <string name="permission_title">Bluetooth permission needed</string>
     <string name="permission_body">Helm links to your desktop over Bluetooth LE. Without Bluetooth and notification permission the phone cannot advertise, so your desktop can never find it.</string>
     <string name="permission_grant">Grant permission</string>

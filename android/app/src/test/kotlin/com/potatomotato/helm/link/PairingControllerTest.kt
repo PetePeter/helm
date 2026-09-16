@@ -27,10 +27,11 @@ class PairingControllerTest {
     private fun connect(
         controller: PairingController,
         range: ProtocolRange = ProtocolVersion.LOCAL_RANGE,
+        machineId: String = "desktop-test",
     ): HelmInitiator {
         val pipes = PipePair()
         controller.attach(pipes.phone)
-        return HelmInitiator(pipes.helm, psk = store.load("desktop-test"), range = range)
+        return HelmInitiator(pipes.helm, machineId = machineId, psk = store.load(machineId), range = range)
             .also { it.start() }
     }
 
@@ -116,6 +117,32 @@ class PairingControllerTest {
     }
 
     @Test
+    fun `pairing a second desktop keeps the first one paired`() {
+        controller().let { connect(it, machineId = "desktop-office"); it.confirm(true) }
+        val officePsk = store.load("desktop-office")
+
+        controller().let { connect(it, machineId = "desktop-home"); it.confirm(true) }
+
+        assertEquals(setOf("desktop-office", "desktop-home"), store.pairedMachineIds())
+        assertArrayEquals("the first desktop's key is untouched", officePsk, store.load("desktop-office"))
+    }
+
+    @Test
+    fun `forgetting a desktop other than the linked one leaves the live link alone`() {
+        controller().let { connect(it, machineId = "desktop-office"); it.confirm(true) }
+
+        val live = controller()
+        val desktop = connect(live, machineId = "desktop-home")
+        live.confirm(true)
+        live.forget("desktop-office")
+
+        assertEquals(PairingState.Linked("desktop-home"), live.state.value)
+        assertTrue("the surviving link still carries traffic", live.send("still here".toByteArray()))
+        assertEquals("still here", String(desktop.received.single()))
+        assertEquals(setOf("desktop-home"), store.pairedMachineIds())
+    }
+
+    @Test
     fun `messages only reach the app once the user has confirmed`() {
         val controller = controller()
         val desktop = connect(controller)
@@ -141,6 +168,7 @@ class PairingControllerTest {
 /** A [PskStore] with no device and no filesystem behind it. */
 class InMemoryPskStore : PskStore {
     private val entries = mutableMapOf<String, ByteArray>()
+    private val labels = mutableMapOf<String, String>()
 
     val isEmpty: Boolean get() = entries.isEmpty()
 
@@ -152,7 +180,14 @@ class InMemoryPskStore : PskStore {
 
     override fun forget(machineId: String) {
         entries.remove(machineId)
+        labels.remove(machineId)
     }
 
     override fun pairedMachineIds(): Set<String> = entries.keys.toSet()
+
+    override fun label(machineId: String): String? = labels[machineId]
+
+    override fun setLabel(machineId: String, label: String) {
+        labels[machineId] = label
+    }
 }

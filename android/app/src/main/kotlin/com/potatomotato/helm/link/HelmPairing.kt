@@ -4,12 +4,17 @@ import android.content.Context
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.DeviceKeyStore
+import com.potatomotato.helm.data.PairedDesktop
 import com.potatomotato.helm.data.PhoneIdentity
+import com.potatomotato.helm.data.PskStore
+import com.potatomotato.helm.data.pairedDesktops
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -35,7 +40,19 @@ object HelmPairing {
 
     private var controller: PairingController? = null
     private var pipe: HelmLinkPipe? = null
+    private var store: PskStore? = null
     private var started = false
+
+    private val _desktops = MutableStateFlow<List<PairedDesktop>>(emptyList())
+
+    /**
+     * Every desktop this phone holds a key for, live one first.
+     *
+     * A flow rather than a function the screen calls: which desktop is linked
+     * changes with the radio, not with navigation, so a screen that read it once
+     * on arrival would show a stale dot for as long as it stayed open.
+     */
+    val desktops: StateFlow<List<PairedDesktop>> = _desktops.asStateFlow()
 
     /**
      * What the app talks to once the handshake is done. It sends through [send],
@@ -58,8 +75,10 @@ object HelmPairing {
         // the user chose before any alert can arrive to be judged against it.
         client.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
         client.alerts.port = AndroidNotifications(context)
+        val keys = DeviceKeyStore(context)
+        store = keys
         controller = PairingController(
-            store = DeviceKeyStore(context),
+            store = keys,
             machineId = PhoneIdentity.machineId(context),
             scheduler = CoroutineScheduler(scope),
             onInbound = client::onInbound,
@@ -72,13 +91,35 @@ object HelmPairing {
                 if (linkState == LinkState.Linked) attach() else detach()
             }
         }
+
+        // The desktops list is derived from the pairing state, so it follows it
+        // rather than being poked from every place that could change it: a new
+        // pairing, a dropped link and a revocation all land here as one update.
+        scope.launch { requireController().state.collect { refreshDesktops() } }
     }
 
     fun confirm(matches: Boolean) = requireController().confirm(matches)
 
     fun cancel() = requireController().cancel()
 
-    fun forget(desktopId: String) = requireController().forget(desktopId)
+    fun forget(desktopId: String) {
+        requireController().forget(desktopId)
+        // forget() only moves the pairing state when the REVOKED desktop is the
+        // live one, so the row must be dropped here too.
+        refreshDesktops()
+    }
+
+    /** Blank clears the nickname and returns the row to its derived default. */
+    fun rename(desktopId: String, label: String) {
+        store?.setLabel(desktopId, label)
+        refreshDesktops()
+    }
+
+    private fun refreshDesktops() {
+        val keys = store ?: return
+        val linked = (controller?.state?.value as? PairingState.Linked)?.desktopId
+        _desktops.value = pairedDesktops(keys, linked)
+    }
 
     /** False when there is no authenticated link to carry the message. */
     fun send(message: ByteArray): Boolean = requireController().send(message)

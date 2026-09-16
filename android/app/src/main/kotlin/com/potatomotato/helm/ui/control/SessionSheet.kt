@@ -47,6 +47,7 @@ import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
+import com.potatomotato.helm.ui.components.SCRIM_ALPHA
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -404,9 +405,6 @@ internal val SessionAction.glyphRes: Int
         SessionAction.SaveArtifact -> R.string.artifacts_glyph_save
         SessionAction.DeleteArtifact -> R.string.artifacts_glyph_delete
     }
-
-/** Dark enough to push the thread behind it back, never opaque. */
-private const val SCRIM_ALPHA = 0.72f
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

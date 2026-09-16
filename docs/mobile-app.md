@@ -69,7 +69,16 @@ removes.
 - **Session list** — the live sessions, each with an activity dot. The dot reads
   **activity**, never pipeline state, mirroring desktop invariant 8. Its app bar
   carries the two controls that belong to the app rather than to a session: the
-  notification bell and the log export.
+  notification bell and the log export. Tapping the **link badge** opens Desktops
+  — the badge is already what you look at to ask "what am I connected to", so the
+  longer answer costs no extra chrome on a full bar.
+- **Desktops** — every desktop this phone holds a key for, the live one first.
+  Pairing more than one has always worked (keys are stored per `machineId`); until
+  this screen existed, nothing said so, a second pairing was invisible, and a key
+  could not be revoked from the phone. Each row can be renamed or forgotten.
+  **One at a time is reported here, never enforced here**: the phone advertises
+  and the desktop connects, so the radio itself refuses a second central
+  (`BleLinkSession.onCentralConnected`) and advertising stops once linked.
 - **Session tabs** — an open session shows two tabs under one app bar: **Chat**
   and **Artifacts**. They are places, not actions, which is why they are tabs and
   not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so
@@ -95,6 +104,24 @@ removes.
   never a hardcoded list. Actions that are *reachable but meaningless* to a
   phone are **absent rather than greyed** — greying would claim you lack
   permission, when the truth is there is nothing there to call.
+
+### Back, and what it costs
+
+Every screen above owns a `BackHandler` for its own in-app step. At the **true
+root** — the session list with nothing open over it — back asks instead of
+acting, offering *leave it running* or *quit*.
+
+This is not a way to enable background running; background running is already
+the status quo. The foreground service keeps the BLE link and the notifications
+alive while the app is backgrounded, so **quitting is the destructive option**
+and a stray back used to take it silently. Backgrounding uses
+`moveTaskToBack(true)`, never `finish()`, so the task stays in Recents where the
+user left it.
+
+The root handler is **gated on being at the root**, not merely composed last: it
+composes after the nested handlers, and Android's dispatcher gives back to the
+most recently added *enabled* callback — ungated it would swallow every in-app
+back and offer to quit from halfway down the app.
 
 The visual design lives as an attachment on the screen plans (P-0740 and
 siblings) and deliberately has no copy in this repo — one source of truth,

@@ -59,11 +59,22 @@ class DeviceKeyStore(context: Context) : PskStore {
     }
 
     override fun forget(machineId: String) {
-        prefs.edit().remove(key(machineId)).apply()
+        prefs.edit().remove(key(machineId)).remove(labelKey(machineId)).apply()
     }
 
     override fun pairedMachineIds(): Set<String> =
         prefs.all.keys.filter { it.startsWith(KEY_PREFIX) }.map { it.removePrefix(KEY_PREFIX) }.toSet()
+
+    override fun label(machineId: String): String? = prefs.getString(labelKey(machineId), null)
+
+    override fun setLabel(machineId: String, label: String) {
+        val trimmed = label.trim()
+        // An absent key and a blank one mean the same thing to the reader, so
+        // store one of them and not both.
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(labelKey(machineId)) else putString(labelKey(machineId), trimmed)
+        }.apply()
+    }
 
     /** The Keystore-resident wrapping key, generated once on first use. */
     private fun wrapKey(): SecretKey {
@@ -86,9 +97,14 @@ class DeviceKeyStore(context: Context) : PskStore {
 
     private fun key(machineId: String) = KEY_PREFIX + machineId
 
+    private fun labelKey(machineId: String) = LABEL_PREFIX + machineId
+
     private companion object {
         const val PREFS_NAME = "helm-pairings"
         const val KEY_PREFIX = "psk:"
+
+        /** Distinct from [KEY_PREFIX] so pairedMachineIds() never sees a nickname. */
+        const val LABEL_PREFIX = "name:"
         const val PROVIDER = "AndroidKeyStore"
         const val WRAP_KEY_ALIAS = "helm-psk-wrap-v1"
         const val TRANSFORMATION = "AES/GCM/NoPadding"

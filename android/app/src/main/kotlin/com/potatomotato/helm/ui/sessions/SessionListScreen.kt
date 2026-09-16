@@ -74,6 +74,8 @@ fun SessionListScreen(
     onLongPress: (HelmSession) -> Unit,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
+    /** Open the paired-desktops list. Reached by tapping the link badge. */
+    onDesktops: () -> Unit,
     /** Export the log to Downloads. The list is the screen the user is on when
      *  they notice something is wrong, so the affordance lives here. */
     onExportLogs: () -> Unit,
@@ -94,6 +96,7 @@ fun SessionListScreen(
             title = stringResource(R.string.app_name),
             linkState = linkState,
             contextLabel = stringResource(R.string.sessions_context),
+            onLinkClick = onDesktops,
             onExportLogs = onExportLogs,
             notificationsEnabled = notificationsEnabled,
             onToggleNotifications = onToggleNotifications,

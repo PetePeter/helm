@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -43,13 +44,16 @@ import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.ScrimDialog
 import com.potatomotato.helm.ui.components.SessionTab
 import com.potatomotato.helm.ui.components.SessionTabs
 import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
 import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
+import com.potatomotato.helm.ui.pairing.DesktopsScreen
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.voice.VoiceScreen
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +70,7 @@ import kotlinx.coroutines.withContext
  * (chat or artifact list, see [SessionTab]), which is why the artifact detail and
  * editor return to it rather than to a screen of their own.
  */
-private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor }
+private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor, Desktops }
 
 /**
  * The screens the user lives in, and the navigation between them.
@@ -97,7 +101,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactSave by client.artifacts.save.collectAsState()
     val artifactLanding by client.control.artifactLanding.collectAsState()
     val notificationsEnabled by client.alerts.enabled.collectAsState()
+    val desktops by HelmPairing.desktops.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Deliberately NOT saveable: a rotation must not redraw a question the user
+    // never asked, and back is one tap away if they still mean it.
+    var leaving by remember { mutableStateOf(false) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
     // Which of the open session's tabs is showing. Saveable for the same reason
     // [where] is: a rotation must not drop a user reading the artifact list back
@@ -335,6 +343,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 // session button lands here — so it goes first: it touches no
                 // session, and putting it above the null check is what lets the
                 // branches below keep their non-null smart cast.
+                // Same reasoning as Spawn: reachable with no session open, so
+                // it sits above the null check rather than inside it.
+                where == Destination.Desktops -> {
+                    BackHandler(onBack = toThread)
+                    DesktopsScreen(
+                        desktops = desktops,
+                        linkState = linkState,
+                        onRename = HelmPairing::rename,
+                        onForget = HelmPairing::forget,
+                        onBack = toThread,
+                    )
+                }
+
                 where == Destination.Spawn -> {
                     BackHandler(onBack = toThread)
                     SpawnScreen(
@@ -381,6 +402,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         where = Destination.Spawn
                     },
                     onPairDesktop = { HelmLinkService.forcePairingMode(context) },
+                    onDesktops = { where = Destination.Desktops },
                     onExportLogs = exportLogs,
                     notificationsEnabled = notificationsEnabled,
                     onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
@@ -566,7 +588,56 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     },
                 )
             }
+
+            // Back at the true root — the session list, nothing open over it.
+            //
+            // GATED, NOT MERELY LAST: this composes AFTER the branch handlers
+            // above, and the dispatcher gives back to the most recently added
+            // enabled callback. Without the condition it would swallow every
+            // in-app back and offer to quit from halfway down the app.
+            //
+            // WHY ASK AT ALL: backgrounding keeps the foreground service, and
+            // with it the BLE link and the notifications, alive. Quitting drops
+            // them. A stray back used to take the destructive option silently.
+            val atRoot = openSessionId == null && where == Destination.Thread
+            BackHandler(enabled = atRoot) { leaving = !leaving }
+            // A notification tap can navigate out from under an open dialog.
+            // Drop the question with the screen it was asked on, so returning
+            // to the list later does not find it still waiting.
+            LaunchedEffect(atRoot) { if (!atRoot) leaving = false }
+            if (leaving && atRoot) {
+                ExitDialog(
+                    onBackground = {
+                        leaving = false
+                        // moveTaskToBack, never finish(): the task stays in
+                        // Recents exactly where the user left it, and the
+                        // service keeps the link up behind it.
+                        (context as? Activity)?.moveTaskToBack(true)
+                    },
+                    onQuit = {
+                        leaving = false
+                        (context as? Activity)?.finish()
+                    },
+                    onDismiss = { leaving = false },
+                )
+            }
         }
+    }
+}
+
+/** The one question back asks at the root. See the BackHandler above for why. */
+@Composable
+private fun ExitDialog(onBackground: () -> Unit, onQuit: () -> Unit, onDismiss: () -> Unit) {
+    ScrimDialog(
+        title = stringResource(R.string.exit_title),
+        body = stringResource(R.string.exit_body),
+        onDismiss = onDismiss,
+    ) {
+        // Backgrounding leads because it is both the safe answer and the one
+        // the user almost always meant by pressing back.
+        DialogAction(text = stringResource(R.string.exit_background), onClick = onBackground)
+        DialogAction(text = stringResource(R.string.exit_quit), onClick = onQuit, emphasised = false)
+        DialogAction(text = stringResource(R.string.exit_cancel), onClick = onDismiss, emphasised = false)
     }
 }
 

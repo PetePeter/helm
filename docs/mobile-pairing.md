@@ -124,6 +124,26 @@ Disabling (`enabled: false`) is the reversible form: it drops the live link and
 denies every inbound call, but keeps the record and the PSK so the user can turn
 the phone back on without pairing again.
 
+## Many desktops, one link
+
+Because both registries are keyed on `machineId`, one phone can hold keys for
+several desktops at once. Nothing special makes that work and nothing enforces
+the "one at a time" half either — it falls out of the transport: the phone is
+the **peripheral** and only advertises, the desktop is the **central** and
+initiates, so whichever desktop connects first owns the link, the phone stops
+advertising, and a second central is disconnected on arrival.
+
+The phone surfaces this on its **Desktops** screen (see
+[mobile-app.md](mobile-app.md)). Two consequences worth stating:
+
+- The desktop's `machineId` is a random UUID and the protocol carries **no
+  friendly name**, so the nickname on each row is stored on the phone alone. It
+  is a label, not a secret, and is kept in the clear beside the sealed PSK.
+- A desktop that loses its identity file — a reinstall that wipes the per-user
+  config dir — comes back as a **new** `machineId`. The phone sees an unknown
+  desktop and asks for the SAS again; the old row survives as a pairing that can
+  never connect, and forgetting it is the cure.
+
 Deny messages stay **uniform**, so a device can never probe what exists.
 
 ## Module map

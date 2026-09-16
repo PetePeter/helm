@@ -58,6 +58,7 @@ import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.SCRIM_ALPHA
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -663,9 +664,6 @@ private const val KIND_HTML = "html"
 private const val SEPARATOR = " · "
 private const val CHEVRON = "›"
 private const val BULLET_GLYPH = "•  "
-
-/** Dark enough to push what is behind it back, never opaque — the sheet's value. */
-private const val SCRIM_ALPHA = 0.72f
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

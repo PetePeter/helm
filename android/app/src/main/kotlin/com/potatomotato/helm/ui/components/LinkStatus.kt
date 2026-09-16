@@ -88,6 +88,14 @@ fun HelmAppBar(
     contextLabel: String? = null,
     onBack: (() -> Unit)? = null,
     /**
+     * Makes the link badge itself the way in to the desktops list.
+     *
+     * The badge is already the thing the user looks at to ask "what am I
+     * connected to"; the paired-desktops screen is the longer answer to that
+     * same question, so it costs no new chrome on an already-full bar.
+     */
+    onLinkClick: (() -> Unit)? = null,
+    /**
      * The control overflow, when a screen has one. It sits AFTER the link badge
      * rather than replacing it: the mockup draws the badge and the ⋮ in the same
      * corner, and of the two the badge is the one that may never be absent.
@@ -175,7 +183,18 @@ fun HelmAppBar(
                 )
             }
         }
-        LinkBadge(linkState)
+        LinkBadge(
+            state = linkState,
+            modifier = if (onLinkClick == null) {
+                Modifier
+            } else {
+                Modifier
+                    .clickable(onClick = onLinkClick)
+                    // The badge is short; without padding its touch target is
+                    // thinner than a finger.
+                    .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Xs)
+            },
+        )
         if (onToggleNotifications != null) {
             Box(
                 modifier = Modifier
