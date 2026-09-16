@@ -479,6 +479,41 @@ describe('MobileLinkManager transport preemption', () => {
     expect(h.manager.isOnline('an-impostor')).toBe(false);
   });
 
+  it('offers the PSK of the phone already on BLE when a LAN link arrives', async () => {
+    // Found on real hardware. An upgrading link gets ONE handshake attempt —
+    // the phone dials once per Bluetooth link — so offering the wrong PSK is
+    // not a delay, it is a permanent failure. With two phones paired the walk
+    // reliably picked the other one, and LAN never came up at all.
+    //
+    // A device already linked over a SLOWER transport is overwhelmingly likely
+    // to be the peer dialling in over a faster one: that is what an upgrade is.
+    const h = preemptHarness();
+    // The other phone was paired FIRST and has connected before, so on general
+    // likelihood alone it sorts ahead — which is the production case, and the
+    // one that made LAN fail every time.
+    const other = pair(h, OTHER_PHONE);
+    h.devices.update(other.id, { lastSeenAt: 1_700_000_000_000 });
+    pair(h, PHONE);
+    await h.manager.start();
+
+    // Bluetooth itself takes two attempts here: the walk offers the other
+    // phone's PSK first, and only the second connection finds the right one.
+    await offerOn(h.transports[0], new FakeLink(ADDR));
+    await offerOn(h.transports[0], new FakeLink(ADDR));
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    const beforeLan = h.attempts.length;
+
+    await offerOn(h.transports[1], new FakeLink(LAN));
+
+    // The LAN link gets exactly ONE attempt, so this has to be right first time.
+    expect(h.attempts.length).toBe(beforeLan + 1);
+
+    // The LAN attempt offered PHONE's PSK, not the other device's.
+    expect(h.attempts.at(-1)?.psk).toBe(`mobile-${PHONE}`);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
   it('does not let a LAN address evict the stored BLE reconnect hint', async () => {
     // MobileDevice.deviceId is a BLE SCANNING hint: it decides which stored PSK
     // is tried first against an advertiser. A TCP source port is ephemeral, so

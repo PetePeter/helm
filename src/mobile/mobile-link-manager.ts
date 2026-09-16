@@ -643,6 +643,23 @@ export class MobileLinkManager extends EventEmitter {
     return this.origin.get(link)?.rank ?? RANK_BLE;
   }
 
+  /**
+   * How likely this device is to be the peer on the other end of `link`.
+   *
+   * A device ALREADY LINKED over a slower transport outranks everything else,
+   * because that is precisely what an upgrade looks like: the phone on BLE has
+   * just dialled in over LAN. Without this the walk picks by general
+   * likelihood, and with two phones paired it reliably offered the WRONG PSK to
+   * an upgrading link — the LAN handshake then failed with a confirm-MAC error
+   * on the one connection the phone makes per link, so LAN never came up at
+   * all. Observed on real hardware.
+   */
+  private candidateRank(device: MobileDevice, link: MobileLink, incoming: number): number {
+    const active = this.links.get(device.machineId);
+    if (active && active.rank < incoming) return 3;
+    return rank(device, link.deviceId);
+  }
+
   private linkedAtOrAbove(machineId: string, rank: number): boolean {
     const active = this.links.get(machineId);
     return active !== undefined && active.rank >= rank;
@@ -691,7 +708,7 @@ export class MobileLinkManager extends EventEmitter {
     const candidates = this.opts.deviceStore
       .list()
       .filter((device) => device.enabled !== false && !this.linkedAtOrAbove(device.machineId, incoming))
-      .sort((a, b) => rank(b, link.deviceId) - rank(a, link.deviceId));
+      .sort((a, b) => this.candidateRank(b, link, incoming) - this.candidateRank(a, link, incoming));
     if (candidates.length === 0) return undefined;
 
     const index = this.attempt % candidates.length;
