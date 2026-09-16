@@ -7,7 +7,8 @@
       "call",
       "result",
       "error",
-      "chat"
+      "chat",
+      "lan"
     ]
   },
   "cases": [
@@ -76,6 +77,18 @@
       "direction": "helm-to-phone",
       "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a227331222c2273657373696f6e4e616d65223a22776f726b222c2274657874223a22222c226174223a313730303030303030303030322c2266696c6550617468223a22433a5c5c55736572735c5c68656c6d5c5c417070446174615c5c526f616d696e675c5c48656c6d5c5c746d705c5c6e6f74652e6f6767222c22766f696365223a747275657d",
       "json": "{\"v\":1,\"t\":\"chat\",\"sessionId\":\"s1\",\"sessionName\":\"work\",\"text\":\"\",\"at\":1700000000002,\"filePath\":\"C:\\\\Users\\\\helm\\\\AppData\\\\Roaming\\\\Helm\\\\tmp\\\\note.ogg\",\"voice\":true}"
+    },
+    {
+      "name": "lan addresses",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b223139322e3136382e312e32303a3437343735222c2231302e382e302e343a3437343735225d7d",
+      "json": "{\"v\":1,\"t\":\"lan\",\"addresses\":[\"192.168.1.20:47475\",\"10.8.0.4:47475\"]}"
+    },
+    {
+      "name": "lan with no addresses",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b5d7d",
+      "json": "{\"v\":1,\"t\":\"lan\",\"addresses\":[]}"
     }
   ],
   "rejects": [
@@ -118,6 +131,16 @@
       "name": "chat with no text",
       "bytesHex": "7b2276223a312c2274223a2263686174222c2273657373696f6e4964223a2273222c2273657373696f6e4e616d65223a226e222c226174223a317d",
       "reason": "text is required on a chat record"
+    },
+    {
+      "name": "lan with no addresses field",
+      "bytesHex": "7b2276223a312c2274223a226c616e227d",
+      "reason": "addresses is required on a lan record"
+    },
+    {
+      "name": "lan addresses holding a non-string",
+      "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b2261222c375d7d",
+      "reason": "every address must be a string"
     }
   ]
 }

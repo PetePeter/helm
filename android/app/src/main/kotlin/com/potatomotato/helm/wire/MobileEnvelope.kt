@@ -1,5 +1,6 @@
 package com.potatomotato.helm.wire
 
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -86,8 +87,23 @@ object MobileEnvelope {
             "result" -> decodeResult(record)
             "error" -> decodeFailure(record)
             "chat" -> decodeChat(record)
+            "lan" -> decodeLan(record)
             else -> null
         }
+    }
+
+    /**
+     * An absent `addresses` is malformed; an EMPTY one is a valid instruction.
+     * A non-string entry fails the whole record rather than being skipped — a
+     * partially-understood address list is worse than none.
+     */
+    private fun decodeLan(record: JSONObject): MobileRecord.Lan? {
+        val array = record.opt("addresses") as? JSONArray ?: return null
+        val addresses = ArrayList<String>(array.length())
+        for (index in 0 until array.length()) {
+            addresses.add(array.opt(index) as? String ?: return null)
+        }
+        return MobileRecord.Lan(addresses)
     }
 
     private fun decodeCall(record: JSONObject): MobileRecord.Call? {

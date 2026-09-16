@@ -54,6 +54,16 @@ class HelmClient(
     val artifacts: ArtifactRepository = ArtifactRepository(),
     val alerts: AlertRouter = AlertRouter(),
 ) {
+    /**
+     * Where a pushed LAN address list lands (P-0752).
+     *
+     * A settable port rather than a constructor argument, for the same reason
+     * [alerts] has one: the store needs a Context, and this client is built
+     * before one exists. Defaults to discarding, so a build that never wires it
+     * simply never dials — which is exactly the pre-LAN behaviour.
+     */
+    var onLanAddresses: (List<String>) -> Unit = {}
+
     /** Outstanding calls, oldest first, each with a deadline that owns its cleanup. */
     private val pending = LinkedHashMap<String, PendingCall>()
     private var sequence = 0L
@@ -421,6 +431,13 @@ class HelmClient(
                 } else {
                     alerts.onAlert(record)
                 }
+
+            // Where this desktop can be reached over the network. Accepted ONLY
+            // here, from the authenticated channel — an address learned any
+            // other way is an invitation to dial someone else. An EMPTY list is
+            // honoured as "stop dialling", which is how the desktop turning LAN
+            // off reaches a phone that is connected right now.
+            is MobileRecord.Lan -> onLanAddresses(record.addresses)
 
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.

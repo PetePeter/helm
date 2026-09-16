@@ -7,6 +7,7 @@ import {
   isCliTypeOptions,
   normalizeMcpPort,
   normalizeFleetPort,
+  normalizeMobileLanPort,
   parseCommandTemplate,
   type CliTypeOptions,
   type EnvVarEntry,
@@ -20,7 +21,12 @@ import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
 import type { ProjectStore } from '../session/project-store.js';
-import { DEFAULT_FLEET_CONFIG, DEFAULT_MCP_CONFIG, SettingsManager } from './settings-manager.js';
+import {
+  DEFAULT_FLEET_CONFIG,
+  DEFAULT_MCP_CONFIG,
+  DEFAULT_MOBILE_LAN_CONFIG,
+  SettingsManager,
+} from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
@@ -266,6 +272,19 @@ export interface FleetConfig {
   port: number;
 }
 
+/**
+ * Phone LAN transport config (P-0752). OFF by default — nothing binds unless
+ * `enabled` is explicitly true AND a phone is paired.
+ *
+ * There is deliberately NO host field, and no phone address: Helm LISTENS and
+ * the phone dials, so the only address that matters lives on the phone. The
+ * bind is a wildcard, exactly as for the fleet listener.
+ */
+export interface MobileLanConfig {
+  enabled: boolean;
+  port: number;
+}
+
 export interface EditorPrefs {
   draftEditorHeight?: number;
   contextEditorHeight?: number;
@@ -301,6 +320,8 @@ export interface SettingsConfig {
   telegram?: TelegramConfig;
   mcp?: McpConfig;
   fleet?: FleetConfig;
+  /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
+  mobileLan?: MobileLanConfig;
   /** Pre-rename key, read-only migration input for `fleet`. Never written. */
   federation?: FleetConfig;
 }
@@ -956,6 +977,28 @@ export class ConfigLoader {
       enabled: next.enabled === true,
       host: typeof next.host === 'string' && next.host.length > 0 ? next.host : DEFAULT_FLEET_CONFIG.host,
       port: normalizeFleetPort(next.port),
+    };
+    this.saveSettings();
+  }
+
+  /** Get the phone LAN transport config (OFF by default). */
+  getMobileLanConfig(): MobileLanConfig {
+    const m = this.settings?.mobileLan;
+    return {
+      ...DEFAULT_MOBILE_LAN_CONFIG,
+      ...(m ?? {}),
+      enabled: m?.enabled === true,
+      port: normalizeMobileLanPort(m?.port),
+    };
+  }
+
+  /** Update the phone LAN transport config (partial merge). */
+  setMobileLanConfig(updates: Partial<MobileLanConfig>): void {
+    if (!this.settings) return;
+    const next = { ...this.getMobileLanConfig(), ...updates };
+    this.settings.mobileLan = {
+      enabled: next.enabled === true,
+      port: normalizeMobileLanPort(next.port),
     };
     this.saveSettings();
   }

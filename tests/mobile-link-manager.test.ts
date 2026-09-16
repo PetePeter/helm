@@ -1,5 +1,5 @@
 /**
- * MobileLinkManager — the owner of the BLE transport lifecycle.
+ * MobileLinkManager — the owner of the phone transports’ lifecycle.
  *
  * Driven against a fake transport but a REAL MobileDeviceStore, a REAL
  * SecretStore and a REAL MobilePairing, because what is under test is the trust
@@ -18,12 +18,14 @@ import { SecretStore } from '../src/mcp/peer/secret-store.js';
 import { MobilePairing } from '../src/mobile/mobile-pairing.js';
 import {
   MobileLinkManager,
+  RANK_BLE,
+  RANK_LAN,
   type MobileChannel,
   type OpenMobileChannel,
 } from '../src/mobile/mobile-link-manager.js';
 import { SecureChannel, type BytePipe } from '../src/mobile/secure-channel.js';
-import type { BleLink } from '../src/mobile/ble/ble-link-client.js';
-import { FakeBleLink, FakeTransport } from './helpers/fake-mobile-link.js';
+import type { MobileLink } from '../src/mobile/mobile-link.js';
+import { FakeLink, FakeTransport } from './helpers/fake-mobile-link.js';
 import { createMemoryPipePair } from './helpers/memory-pipe';
 
 const PHONE = 'phone-machine-1';
@@ -40,6 +42,8 @@ class FakeChannel extends EventEmitter implements MobileChannel {
   pings = 0;
   /** A healthy phone answers every probe; a vanished one answers nothing. */
   answerPings = true;
+  /** Application messages the manager routed to this channel, in order. */
+  readonly sent: Buffer[] = [];
 
   constructor(readonly peerMachine: string) {
     super();
@@ -50,6 +54,10 @@ class FakeChannel extends EventEmitter implements MobileChannel {
     this.closeReason = reason;
   }
 
+  send(message: Buffer): void {
+    this.sent.push(Buffer.from(message));
+  }
+
   sendPing(): void {
     this.pings += 1;
     if (this.answerPings) this.emit('pong');
@@ -58,7 +66,10 @@ class FakeChannel extends EventEmitter implements MobileChannel {
 
 interface Harness {
   manager: MobileLinkManager;
+  /** The BLE-rank transport. Shorthand for `transports[0]`. */
   transport: FakeTransport;
+  /** Every transport the manager owns, in the order it was given them. */
+  transports: FakeTransport[];
   devices: MobileDeviceStore;
   secrets: SecretStore;
   pairing: MobilePairing;
@@ -85,11 +96,15 @@ function makeHarness(
     handshakeTimeoutMs?: number;
     keepaliveIntervalMs?: number;
     keepaliveMissLimit?: number;
+    retireGraceMs?: number;
+    /** Ranks to build transports at. Default: one BLE-rank transport. */
+    ranks?: number[];
   } = {},
 ): Harness {
   const devices = new MobileDeviceStore(undefined, () => 1_700_000_000_000);
   const secrets = new SecretStore();
-  const transport = new FakeTransport();
+  const transports = (options.ranks ?? [RANK_BLE]).map((rank) => new FakeTransport(rank));
+  const transport = transports[0];
   const attempts: Array<{ deviceId: string; psk: string }> = [];
   const channels: FakeChannel[] = [];
   const logs: string[] = [];
@@ -101,7 +116,7 @@ function makeHarness(
   });
 
   const manager = new MobileLinkManager({
-    createTransport: () => transport,
+    createTransports: () => transports,
     deviceStore: devices,
     secretStore: secrets,
     pairing,
@@ -109,6 +124,7 @@ function makeHarness(
     handshakeTimeoutMs: options.handshakeTimeoutMs,
     keepaliveIntervalMs: options.keepaliveIntervalMs,
     keepaliveMissLimit: options.keepaliveMissLimit,
+    retireGraceMs: options.retireGraceMs,
     logger: (message) => logs.push(message),
     openChannel: openChannel ?? (async (link, options) => {
       const psk = options.psk.toString('utf8');
@@ -127,7 +143,7 @@ function makeHarness(
   manager.on('offline', (machineId: string) => offline.push(machineId));
 
   return {
-    manager, transport, devices, secrets, pairing,
+    manager, transport, transports, devices, secrets, pairing,
     online, offline, attempts, channels, logs,
   };
 }
@@ -150,8 +166,14 @@ async function flush(): Promise<void> {
 }
 
 /** Offer a link and let the manager's async identification settle. */
-async function offer(h: Harness, link: BleLink): Promise<void> {
+async function offer(h: Harness, link: MobileLink): Promise<void> {
   h.transport.offer(link);
+  await flush();
+}
+
+/** Offer a link on a specific transport — the only way to choose its rank. */
+async function offerOn(transport: FakeTransport, link: MobileLink): Promise<void> {
+  transport.offer(link);
   await flush();
 }
 
@@ -161,7 +183,7 @@ describe('MobileLinkManager identification', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR, 'Pixel 8');
+    const link = new FakeLink(ADDR, 'Pixel 8');
     await offer(h, link);
 
     expect(h.manager.isOnline(PHONE)).toBe(true);
@@ -177,7 +199,7 @@ describe('MobileLinkManager identification', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
 
     expect(h.manager.isOnline(PHONE)).toBe(false);
@@ -193,7 +215,7 @@ describe('MobileLinkManager identification', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const stranger = new FakeBleLink('99:99:99:99:99:99');
+    const stranger = new FakeLink('99:99:99:99:99:99');
     await offer(h, stranger);
 
     expect(stranger.closed).toBe(true);
@@ -206,9 +228,9 @@ describe('MobileLinkManager identification', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const neighbour = new FakeBleLink('11:11:11:11:11:11');
+    const neighbour = new FakeLink('11:11:11:11:11:11');
     await offer(h, neighbour);
-    const mine = new FakeBleLink(ADDR);
+    const mine = new FakeLink(ADDR);
     await offer(h, mine);
 
     expect(neighbour.closed).toBe(true);
@@ -222,7 +244,7 @@ describe('MobileLinkManager identification', () => {
     h.devices.update(device.id, { enabled: false });
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
 
     expect(link.closed).toBe(true);
@@ -237,11 +259,11 @@ describe('MobileLinkManager identification', () => {
     pair(h, OTHER_PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink('33:33:33:33:33:33');
+    const link = new FakeLink('33:33:33:33:33:33');
     await offer(h, link);
     expect(h.manager.isOnline(OTHER_PHONE)).toBe(false);
 
-    const retry = new FakeBleLink('33:33:33:33:33:33');
+    const retry = new FakeLink('33:33:33:33:33:33');
     await offer(h, retry);
 
     expect(h.attempts.map((a) => a.psk)).toEqual([`mobile-${PHONE}`, `mobile-${OTHER_PHONE}`]);
@@ -255,11 +277,11 @@ describe('MobileLinkManager identity is the machineId', () => {
     const device = pair(h, PHONE, ADDR);
     await h.manager.start();
 
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
     h.manager.dropLink(PHONE);
 
     // Android rotated the advertised address; the machine identity did not move.
-    await offer(h, new FakeBleLink(ROTATED));
+    await offer(h, new FakeLink(ROTATED));
 
     expect(h.devices.list()).toHaveLength(1);
     expect(h.devices.list()[0].id).toBe(device.id);
@@ -273,7 +295,7 @@ describe('MobileLinkManager identity is the machineId', () => {
     const device = pair(h, PHONE);
     await h.manager.start();
 
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
 
     expect(h.devices.get(device.id)?.lastSeenAt).toBeGreaterThan(0);
   });
@@ -285,9 +307,9 @@ describe('MobileLinkManager one link per device', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const first = new FakeBleLink(ADDR);
+    const first = new FakeLink(ADDR);
     await offer(h, first);
-    const second = new FakeBleLink(ROTATED);
+    const second = new FakeLink(ROTATED);
     await offer(h, second);
 
     expect(first.closed).toBe(false);
@@ -300,15 +322,271 @@ describe('MobileLinkManager one link per device', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
     h.transport.drop(link);
 
     expect(h.manager.isOnline(PHONE)).toBe(false);
     expect(h.offline).toEqual([PHONE]);
 
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
     expect(h.manager.isOnline(PHONE)).toBe(true);
+  });
+});
+
+/**
+ * LAN always wins (P-0752, ratified 2026-09-16). A link is keyed on machineId,
+ * so the two pipes to one phone are not two links — they are a candidate and an
+ * incumbent, and the higher-ranked one takes the slot.
+ *
+ * The invariant that makes the swap safe is ORDER: the challenger is fully
+ * handshaken and authenticated before the incumbent is touched. Nothing above
+ * the manager may observe a swap, because the machineId does not change.
+ */
+describe('MobileLinkManager transport preemption', () => {
+  /** The phone's LAN address — a different id space from a BLE peripheral id. */
+  const LAN = '192.168.1.50:7420';
+
+  function preemptHarness() {
+    return makeHarness({ [ADDR]: PHONE, [LAN]: PHONE }, undefined, {
+      ranks: [RANK_BLE, RANK_LAN],
+    });
+  }
+
+  /** Link the phone over BLE, and hand back the incumbent's parts. */
+  async function linkOverBle(h: Harness) {
+    pair(h, PHONE);
+    await h.manager.start();
+    const link = new FakeLink(ADDR, 'Pixel 8');
+    await offerOn(h.transports[0], link);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    return { link, channel: h.channels[0] };
+  }
+
+  it('lets a LAN link take over from a live BLE link', async () => {
+    const h = preemptHarness();
+    const ble = await linkOverBle(h);
+
+    const lan = new FakeLink(LAN, 'Pixel 8');
+    await offerOn(h.transports[1], lan);
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(lan.closed).toBe(false);
+
+    // Traffic now goes out the new channel, and not the old one.
+    expect(h.manager.send(PHONE, Buffer.from('hello'))).toBe(true);
+    expect(h.channels[1].sent.map((b) => b.toString())).toEqual(['hello']);
+    expect(ble.channel.sent).toEqual([]);
+  });
+
+  it('never reports the phone offline across the swap', async () => {
+    // This is the whole point of keying on machineId: MobileChatBridge,
+    // MobileGate and the settings UI must not see the phone blink.
+    const h = preemptHarness();
+    await linkOverBle(h);
+
+    const states: boolean[] = [];
+    h.manager.on('switched', () => states.push(h.manager.isOnline(PHONE)));
+    await offerOn(h.transports[1], new FakeLink(LAN));
+
+    expect(h.offline).toEqual([]);
+    expect(h.online).toEqual([PHONE]);
+    expect(states).toEqual([true]);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+  });
+
+  it('refuses a BLE link while a LAN link is live', async () => {
+    const h = preemptHarness();
+    pair(h, PHONE);
+    await h.manager.start();
+    const lan = new FakeLink(LAN);
+    await offerOn(h.transports[1], lan);
+
+    const ble = new FakeLink(ADDR);
+    await offerOn(h.transports[0], ble);
+
+    expect(ble.closed).toBe(true);
+    expect(lan.closed).toBe(false);
+    // The refusal is routed to the transport that produced the link, not to
+    // whichever one happens to be first.
+    expect(h.transports[0].rejected).toHaveLength(1);
+    expect(h.transports[1].rejected).toEqual([]);
+  });
+
+  it('refuses a second link of EQUAL rank, as it always has', async () => {
+    const h = preemptHarness();
+    const ble = await linkOverBle(h);
+
+    const second = new FakeLink(ROTATED);
+    await offerOn(h.transports[0], second);
+
+    expect(second.closed).toBe(true);
+    expect(ble.link.closed).toBe(false);
+  });
+
+  it('leaves the live BLE link untouched when the LAN handshake FAILS', async () => {
+    // The safety rule: authenticate first, displace second. A LAN peer that
+    // cannot complete the handshake must cost the user nothing.
+    const h = makeHarness({ [ADDR]: PHONE }, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+    const ble = await linkOverBle(h);
+
+    // LAN is not in the `phones` map, so the fake handshake rejects it.
+    const lan = new FakeLink(LAN);
+    await offerOn(h.transports[1], lan);
+
+    expect(lan.closed).toBe(true);
+    expect(ble.link.closed).toBe(false);
+    expect(ble.channel.closed).toBe(false);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('never lets an unauthenticated peer reach the preempt path', async () => {
+    const h = makeHarness(
+      { [ADDR]: PHONE },
+      async (link) => new FakeChannel(link.deviceId === ADDR ? PHONE : 'an-impostor'),
+      { ranks: [RANK_BLE, RANK_LAN] },
+    );
+    const ble = await linkOverBle(h);
+
+    // A high-rank stranger that authenticates as a machine we do not know.
+    await offerOn(h.transports[1], new FakeLink(LAN));
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(ble.link.closed).toBe(false);
+    expect(h.manager.isOnline('an-impostor')).toBe(false);
+  });
+
+  it('does not let a LAN address evict the stored BLE reconnect hint', async () => {
+    // MobileDevice.deviceId is a BLE SCANNING hint: it decides which stored PSK
+    // is tried first against an advertiser. A TCP source port is ephemeral, so
+    // writing one here would make every later BLE reconnect guess wrong — one
+    // LAN session silently degrading the transport it displaced.
+    const h = preemptHarness();
+    await linkOverBle(h);
+    const device = h.devices.getByMachineId(PHONE)!;
+    expect(h.devices.get(device.id)?.deviceId).toBe(ADDR);
+
+    h.transports[1].persistsAddressHint = false;
+    await offerOn(h.transports[1], new FakeLink(LAN));
+
+    expect(h.devices.get(device.id)?.deviceId).toBe(ADDR);
+    // The sighting itself is still recorded — only the address is withheld.
+    expect(h.devices.get(device.id)?.lastSeenAt).toBeGreaterThan(0);
+  });
+
+  it('refuses a preempt by a device that has since been disabled', async () => {
+    const h = preemptHarness();
+    const ble = await linkOverBle(h);
+    const device = h.devices.getByMachineId(PHONE)!;
+    h.devices.update(device.id, { enabled: false });
+
+    await offerOn(h.transports[1], new FakeLink(LAN));
+
+    // Trust moved while the challenger was handshaking: it is refused, and the
+    // incumbent is left for dropLink to deal with rather than silently upgraded.
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(ble.link.closed).toBe(false);
+  });
+});
+
+/**
+ * Footgun 1 (P-0752). `register` installs four machineId-keyed close handlers —
+ * transport error, pipe close, channel close and the transport's `disconnected`
+ * scan — and none of them used to check WHICH link had closed. After a swap the
+ * retired link's late teardown therefore deleted the entry that replaced it: the
+ * phone would drop offline seconds after a good upgrade, at random, with nothing
+ * in the log to explain it. Each of the four gets its own test.
+ */
+describe('MobileLinkManager retired links cannot drop their successor', () => {
+  const LAN = '192.168.1.50:7420';
+
+  async function swapped() {
+    const h = makeHarness({ [ADDR]: PHONE, [LAN]: PHONE }, undefined, {
+      ranks: [RANK_BLE, RANK_LAN],
+    });
+    pair(h, PHONE);
+    await h.manager.start();
+    const ble = new FakeLink(ADDR);
+    await offerOn(h.transports[0], ble);
+    const lan = new FakeLink(LAN);
+    await offerOn(h.transports[1], lan);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    return { h, ble, lan, bleChannel: h.channels[0], lanChannel: h.channels[1] };
+  }
+
+  it('survives the retired link\'s pipe closing late', async () => {
+    const { h, ble } = await swapped();
+    ble.close();
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('survives the retired link\'s write deadline firing late', async () => {
+    const { h, ble } = await swapped();
+    ble.failPendingWrite();
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('survives the retired channel emitting close late', async () => {
+    const { h, bleChannel } = await swapped();
+    bleChannel.emit('close');
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('survives the old transport reporting the disconnect late', async () => {
+    const { h, ble } = await swapped();
+    h.transports[0].drop(ble);
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('still drops the link when the CURRENT one really closes', async () => {
+    // The guard must not buy safety by ignoring genuine teardown.
+    const { h, lan } = await swapped();
+    lan.close();
+
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+  });
+});
+
+describe('MobileLinkManager retires the old link after a drain grace', () => {
+  const LAN = '192.168.1.50:7420';
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps the old channel open briefly so in-flight replies can drain', async () => {
+    // Envelope ids are chosen by the phone and Helm never awaits a reply, so a
+    // request in flight at swap time would simply lose its answer. The grace
+    // lets the queued reply out; the phone retries anything still missing.
+    const h = makeHarness({ [ADDR]: PHONE, [LAN]: PHONE }, undefined, {
+      ranks: [RANK_BLE, RANK_LAN],
+      retireGraceMs: 500,
+    });
+    pair(h, PHONE);
+    await h.manager.start();
+    const ble = new FakeLink(ADDR);
+    await offerOn(h.transports[0], ble);
+    await offerOn(h.transports[1], new FakeLink(LAN));
+    const bleChannel = h.channels[0];
+
+    expect(bleChannel.closed).toBe(false);
+    expect(ble.closed).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(bleChannel.closed).toBe(true);
+    expect(h.transports[0].rejected).toHaveLength(1);
+    // And the retirement still did not disturb the live link.
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
   });
 });
 
@@ -318,7 +596,7 @@ describe('MobileLinkManager revocation and disable', () => {
     const device = pair(h, PHONE);
     // The manager supplies the coordinator's dropLink, so revoke reaches the radio.
     await h.manager.start();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
 
     expect(h.pairing.revoke(device.id)).toBe(true);
@@ -327,7 +605,7 @@ describe('MobileLinkManager revocation and disable', () => {
     expect(h.manager.isOnline(PHONE)).toBe(false);
 
     // The phone is still advertising; with no record and no PSK it is a stranger.
-    const again = new FakeBleLink(ADDR);
+    const again = new FakeLink(ADDR);
     await offer(h, again);
     expect(again.closed).toBe(true);
     expect(h.manager.isOnline(PHONE)).toBe(false);
@@ -337,14 +615,14 @@ describe('MobileLinkManager revocation and disable', () => {
     const h = makeHarness({ [ADDR]: PHONE });
     const device = pair(h, PHONE);
     await h.manager.start();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
 
     h.devices.update(device.id, { enabled: false });
     h.manager.dropLink(PHONE);
 
     expect(link.closed).toBe(true);
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
     expect(h.manager.isOnline(PHONE)).toBe(false);
   });
 });
@@ -360,7 +638,7 @@ describe('MobileLinkManager pairing mode', () => {
     h.pairing.start();
 
     const { a, b } = createMemoryPipePair();
-    const link: BleLink = {
+    const link: MobileLink = {
       deviceId: ADDR,
       deviceName: 'Pixel 8',
       pipe: a as BytePipe,
@@ -400,7 +678,7 @@ describe('MobileLinkManager handshake deadline', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
 
     // Still inside the deadline: nothing has been torn down yet.
@@ -424,7 +702,7 @@ describe('MobileLinkManager handshake deadline', () => {
     pair(h, PHONE);
     await h.manager.start();
 
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
     await vi.advanceTimersByTimeAsync(60_000);
 
@@ -455,7 +733,7 @@ describe('MobileLinkManager keepalive', () => {
   async function linkAPhone(h: Harness): Promise<FakeChannel> {
     pair(h, PHONE);
     await h.manager.start();
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
     return h.channels[0];
   }
 
@@ -526,9 +804,9 @@ describe('MobileLinkManager keepalive', () => {
     pair(h, PHONE);
     pair(h, OTHER_PHONE);
     await h.manager.start();
-    await offer(h, new FakeBleLink(ADDR));
+    await offer(h, new FakeLink(ADDR));
     // A second advertiser starts a handshake that never answers.
-    await offer(h, new FakeBleLink(PENDING));
+    await offer(h, new FakeLink(PENDING));
 
     await vi.advanceTimersByTimeAsync(5_000);
     expect(channels[0].pings).toBe(0);
@@ -563,7 +841,7 @@ describe('MobileLinkManager keepalive', () => {
    */
   it('does not silence-drop while the outbound queue is still working a transfer', async () => {
     const h = keepaliveHarness();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     pair(h, PHONE);
     await h.manager.start();
     await offer(h, link);
@@ -582,7 +860,7 @@ describe('MobileLinkManager keepalive', () => {
 
   it('resumes the silence-drop once the queue drains', async () => {
     const h = keepaliveHarness();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     pair(h, PHONE);
     await h.manager.start();
     await offer(h, link);
@@ -609,7 +887,7 @@ describe('MobileLinkManager keepalive', () => {
    */
   it('still drops a wedged queue through the per-chunk write deadline', async () => {
     const h = keepaliveHarness();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     pair(h, PHONE);
     await h.manager.start();
     await offer(h, link);
@@ -655,7 +933,7 @@ describe('MobileLinkManager lifecycle', () => {
     const h = makeHarness({ [ADDR]: PHONE });
     pair(h, PHONE);
     await h.manager.start();
-    const link = new FakeBleLink(ADDR);
+    const link = new FakeLink(ADDR);
     await offer(h, link);
     expect(h.manager.isOnline(PHONE)).toBe(true);
     const channel = h.channels[0];
@@ -672,13 +950,40 @@ describe('MobileLinkManager lifecycle', () => {
     expect(h.offline).toEqual([PHONE]);
   });
 
+  it('starts every transport it was given, and only once there is a phone', async () => {
+    const h = makeHarness({}, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+    await h.manager.start();
+    expect(h.transports.map((t) => t.started)).toEqual([false, false]);
+
+    pair(h, PHONE);
+    await Promise.resolve();
+    expect(h.transports.map((t) => t.started)).toEqual([true, true]);
+
+    await h.manager.stop();
+    expect(h.transports.map((t) => t.started)).toEqual([false, false]);
+  });
+
+  it('closes links held on either transport when stopped', async () => {
+    const LAN = '192.168.1.50:7420';
+    const h = makeHarness({ [LAN]: OTHER_PHONE }, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+    pair(h, OTHER_PHONE);
+    await h.manager.start();
+    await offerOn(h.transports[1], new FakeLink(LAN));
+    expect(h.manager.isOnline(OTHER_PHONE)).toBe(true);
+
+    await h.manager.stop();
+
+    expect(h.offline).toEqual([OTHER_PHONE]);
+    expect(h.channels[0].closed).toBe(true);
+  });
+
   it('logs and stays alive when the radio cannot be loaded at all', async () => {
     const devices = new MobileDeviceStore();
     const secrets = new SecretStore();
     const pairing = new MobilePairing({ deviceStore: devices, secretStore: secrets, machineId: 'd' });
     const logs: string[] = [];
     const manager = new MobileLinkManager({
-      createTransport: () => { throw new Error('noble is unavailable'); },
+      createTransports: () => { throw new Error('noble is unavailable'); },
       deviceStore: devices,
       secretStore: secrets,
       pairing,
@@ -704,7 +1009,7 @@ describe('MobileLinkManager with a real SecureChannel', () => {
     secrets.set(device.pskRef, psk);
 
     const manager = new MobileLinkManager({
-      createTransport: () => transport,
+      createTransports: () => [transport],
       deviceStore: devices,
       secretStore: secrets,
       pairing,
@@ -714,7 +1019,7 @@ describe('MobileLinkManager with a real SecureChannel', () => {
     await manager.start();
 
     const { a, b } = createMemoryPipePair();
-    const link: BleLink = {
+    const link: MobileLink = {
       deviceId: ADDR,
       deviceName: 'Pixel 8',
       pipe: a as BytePipe,

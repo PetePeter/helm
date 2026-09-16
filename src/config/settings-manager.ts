@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as YAML from 'yaml';
 import logger from '../utils/logger.js';
 import { normalizeMcpPort } from './loader-helpers.js';
-import type { FleetConfig, McpConfig, SettingsConfig, TelegramConfig } from './loader.js';
+import type { FleetConfig, McpConfig, MobileLanConfig, SettingsConfig, TelegramConfig } from './loader.js';
 
 export const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
   enabled: false,
@@ -35,6 +35,16 @@ export const DEFAULT_FLEET_CONFIG: FleetConfig = {
   enabled: false,
   host: '0.0.0.0',
   port: 47474,
+};
+
+/**
+ * Phone LAN transport defaults — OFF; binds nothing unless explicitly enabled.
+ * 47475 is distinct from the fleet's 47474 on purpose: different protocols to
+ * different kinds of peer, so a firewall rule never means two things at once.
+ */
+export const DEFAULT_MOBILE_LAN_CONFIG: MobileLanConfig = {
+  enabled: false,
+  port: 47475,
 };
 
 export class SettingsManager {

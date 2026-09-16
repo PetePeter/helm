@@ -35,6 +35,15 @@ export interface MobilePairingState {
 /** How long the "paired" confirmation stays up before the dialog closes itself. */
 export const PAIRED_DISMISS_MS = 1500;
 
+/** How the tab renders the LAN panel. */
+export interface MobileLanView {
+  enabled: boolean;
+  port: number;
+  listening: boolean;
+  /** `host:port` strings to read off and type into the phone. */
+  addresses: string[];
+}
+
 /** How the tab renders the "install it on your phone" panel. */
 export interface ApkReleaseView {
   version: string;
@@ -51,6 +60,14 @@ const apkRelease = ref<ApkReleaseView | null>(null);
 /** Why there is no download to offer. Null while loading or once one exists. */
 const apkError = ref<string | null>(null);
 
+/**
+ * The LAN transport's settings and live bind state (P-0752).
+ *
+ * `listening` is NOT `enabled`: enabled-but-unbound is a real state (no paired
+ * phone yet, or a port already taken) and the panel must be able to say so.
+ */
+const lan = ref<MobileLanView>({ enabled: false, port: 0, listening: false, addresses: [] });
+
 let subscribed = false;
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -63,6 +80,23 @@ function cancelDismiss(): void {
 
 async function refresh(): Promise<void> {
   devices.value = await mobileClient.mobileList();
+  await refreshLan();
+}
+
+/** Re-read the LAN panel. Separate so a toggle can settle it without a full load. */
+async function refreshLan(): Promise<void> {
+  lan.value = await mobileClient.mobileLanConfig();
+}
+
+/**
+ * Persist and hot-apply the LAN settings, then re-read what actually happened.
+ *
+ * The re-read is the point: the user asked for a port, and the answer to
+ * "is it bound" comes from the socket, not from the request.
+ */
+async function setLanConfig(config: { enabled: boolean; port: number }): Promise<void> {
+  await mobileClient.mobileSetLanConfig(config);
+  await refreshLan();
 }
 
 /** Wire every mobile event exactly once, then do the initial load. */
@@ -170,6 +204,7 @@ export function resetMobileDevicesStateForTesting(): void {
   dialogOpen.value = false;
   apkRelease.value = null;
   apkError.value = null;
+  lan.value = { enabled: false, port: 0, listening: false, addresses: [] };
 }
 
 export function useMobileDevices() {
@@ -189,5 +224,8 @@ export function useMobileDevices() {
     apkRelease,
     apkError,
     loadApkRelease,
+    lan,
+    refreshLan,
+    setLanConfig,
   };
 }

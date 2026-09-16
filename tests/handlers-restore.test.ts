@@ -87,6 +87,10 @@ const mockConfigLoader = {
       host: '0.0.0.0',
       port: 47474,
     }),
+    getMobileLanConfig: vi.fn().mockReturnValue({
+      enabled: false,
+      port: 47475,
+    }),
     getPatterns: vi.fn().mockReturnValue([]),
     addBookmarkedDir: vi.fn(),
     setProjectStore: vi.fn(),

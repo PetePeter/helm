@@ -21,6 +21,10 @@
  *          messages stay uniform; nothing here widens what a phone learns.
  *   chat   Helm → phone. An unsolicited agent message for a session. Carries no
  *          id: it answers nothing.
+ *   lan    Helm → phone. Where this desktop can be reached over the network.
+ *          Carries no id: it answers nothing. See MobileAddressAdvertiser — it
+ *          rides the ALREADY AUTHENTICATED channel, which is the only reason a
+ *          phone may believe an address at all.
  *
  * Decoding NEVER throws. A malformed record from a paired-but-buggy phone must
  * be dropped and logged, not propagated into the session layer.
@@ -103,11 +107,29 @@ export interface MobileChatRecord {
   title?: string;
 }
 
+/**
+ * Where Helm can be reached over the network (P-0752).
+ *
+ * The phone dials, so the phone holds the address — and the list would rot the
+ * day the desktop's DHCP lease moved. Pushing it down the channel we already
+ * trust makes it self-healing without mDNS, which cannot cross a VPN.
+ *
+ * An EMPTY list is meaningful and must be honoured: it says "stop dialling",
+ * which is how disabling LAN reaches a phone that is connected right now.
+ */
+export interface MobileLanRecord {
+  v: number;
+  t: 'lan';
+  /** `host:port` strings, in no particular order. The phone may try any. */
+  addresses: string[];
+}
+
 export type MobileRecord =
   | MobileCallRecord
   | MobileResultRecord
   | MobileErrorRecord
-  | MobileChatRecord;
+  | MobileChatRecord
+  | MobileLanRecord;
 
 export interface ChatRecordInput {
   sessionId: string;
@@ -157,6 +179,11 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   return encode(record);
 }
 
+/** Addresses are emitted in the order given; the phone must not assume one. */
+export function encodeLan(addresses: string[]): Buffer {
+  return encode({ v: MOBILE_ENVELOPE_VERSION, t: 'lan', addresses });
+}
+
 function encode(record: MobileRecord): Buffer {
   return Buffer.from(JSON.stringify(record), 'utf8');
 }
@@ -196,6 +223,12 @@ export function decodeRecord(payload: Buffer): MobileRecord | null {
       return isString(record.sessionId) && isString(record.sessionName)
         && isString(record.text) && typeof record.at === 'number'
         ? ({ ...record } as unknown as MobileChatRecord)
+        : null;
+    case 'lan':
+      // An empty array is VALID — it means "stop dialling". Only a non-array,
+      // or an array holding anything but strings, is malformed.
+      return Array.isArray(record.addresses) && record.addresses.every(isString)
+        ? ({ ...record } as unknown as MobileLanRecord)
         : null;
     default:
       return null;

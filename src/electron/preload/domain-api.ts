@@ -1426,6 +1426,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('mobile:revoke', deviceId),
 
   /**
+   * The LAN transport's settings and where a phone can reach it (P-0752).
+   * `addresses` is what the user copies onto the phone; there is no host input
+   * because the bind is a wildcard and the phone holds the address.
+   */
+  mobileLanConfig: (): Promise<{
+    enabled: boolean;
+    port: number;
+    listening: boolean;
+    addresses: string[];
+  }> => ipcRenderer.invoke('mobile:lanConfig'),
+
+  /** Persists AND hot-applies — no restart, same as the fleet panel. */
+  mobileSetLanConfig: (config: { enabled: boolean; port: number }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('mobile:setLanConfig', config),
+
+  /**
    * Where the phone downloads the app: a GitHub release asset for the version
    * of Helm that is running, never `latest`. Never rejects — an unusable
    * version answers `{ ok: false, reason }`.

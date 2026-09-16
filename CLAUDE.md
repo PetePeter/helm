@@ -176,6 +176,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/apk-distribution.md](docs/apk-distribution.md) | Android APK delivery — GitHub release asset per tag, signer verification, version-pinned QR/URL, why R8 is off |
 | [docs/mobile-app.md](docs/mobile-app.md) | The Android companion — shape, screens, why BLE/Kotlin/peripheral/app-layer crypto, and the honest limitations |
 | [docs/mobile-ble-transport.md](docs/mobile-ble-transport.md) | Phone ↔ Helm BLE link — Helm as central, GATT characteristics, chunk framing, link ownership and online state, cross-language vectors |
+| [docs/mobile-lan-transport.md](docs/mobile-lan-transport.md) | Phone ↔ Helm LAN link — Helm listens, transport ranking (LAN preempts BLE), generations, address push over the authenticated channel |
 | [docs/mobile-secure-channel.md](docs/mobile-secure-channel.md) | Phone ↔ Helm app-layer encryption — X25519 + SAS handshake, AEAD framing, cross-language vectors |
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |
 | [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit, key-names-only audit |

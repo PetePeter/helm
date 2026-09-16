@@ -183,7 +183,11 @@ class ControlRepository {
         _directories.value = (0 until array.length()).mapNotNull { index ->
             val entry = array.opt(index) as? JSONObject ?: return@mapNotNull null
             val path = entry.opt("dirPath") as? String ?: return@mapNotNull null
-            HelmDirectory(path = path, name = entry.opt("name") as? String ?: lastPathSegment(path))
+            HelmDirectory(
+                path = path,
+                name = entry.opt("name") as? String ?: lastPathSegment(path),
+                projectName = entry.opt("projectName") as? String,
+            )
         }
         return true
     }
@@ -267,5 +271,10 @@ data class HelmCli(val cliType: String, val name: String, val supportedDirPaths:
 /**
  * One directory Helm can spawn into. The path IS the identity — two projects can
  * share a last segment — and [name] is only what a phone-width row shows.
+ *
+ * [projectName] is the owning project when there is one. It is separate from
+ * [name] because an ALTERNATE folder of a project carries its own name, so
+ * "project ▸ folder" needs both. Absent on an older desktop, which is why
+ * the row falls back to [name] alone rather than rendering a dangling marker.
  */
-data class HelmDirectory(val path: String, val name: String)
+data class HelmDirectory(val path: String, val name: String, val projectName: String? = null)

@@ -142,6 +142,15 @@ export interface DirectorySummary {
   dirPath: string;
   projectId?: string;
   name: string;
+  /**
+   * The owning project's name, when this directory belongs to one.
+   *
+   * Distinct from `name`: an ALTERNATE folder of a project carries its own name
+   * (the folder) while sharing the project. A client that shows only `name`
+   * cannot tell which project an alternate belongs to — which is exactly what
+   * the phone's spawn form needs in order to say "project ▸ folder".
+   */
+  projectName?: string;
   source: Array<'config' | 'plans' | 'sessions'>;
   planCount: number;
   sessionCount: number;

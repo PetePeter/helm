@@ -20,6 +20,8 @@ import { logger } from '../../utils/logger.js';
 import type { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import type { MobilePairing, MobilePairingState } from '../../mobile/mobile-pairing.js';
 import { describeApkRelease, apkReleaseUrl, type ApkReleaseInfo } from '../../mobile/apk-release.js';
+import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
+import type { MobileLanConfig } from '../../config/loader.js';
 
 export interface MobileHandlerDeps {
   deviceStore: MobileDeviceStore;
@@ -48,6 +50,33 @@ export interface MobileHandlerDeps {
    * checker the answer is `unknown`, which is deliberately NOT `missing`.
    */
   checkApkAsset?: (url: string) => Promise<boolean>;
+  /**
+   * The LAN transport's settings and live bind state (P-0752). Optional so a
+   * build without the LAN half degrades to "the panel is absent", never to a
+   * rejected call.
+   */
+  lan?: {
+    get(): MobileLanConfig;
+    /** Persists AND hot-applies; the panel never asks for a restart. */
+    set(config: MobileLanConfig): Promise<void>;
+    /** The port actually bound right now, or null when nothing is listening. */
+    boundPort(): number | null;
+  };
+}
+
+/**
+ * What `mobile:lanConfig` answers with.
+ *
+ * `addresses` is the point of the panel: the phone is the end that holds an
+ * address, so the only thing a user can act on is reading one of these off and
+ * typing it into the phone. Same reasoning as FleetConfigPanel's chips.
+ */
+export interface MobileLanStatus {
+  enabled: boolean;
+  port: number;
+  /** True only when a socket is genuinely bound — not merely `enabled`. */
+  listening: boolean;
+  addresses: string[];
 }
 
 /** A paired phone as the settings tab renders it. */
@@ -161,6 +190,33 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     return { ok: true, ...describeApkRelease(version, availability) };
   });
 
+  /**
+   * The LAN transport's settings plus where a phone can actually reach it.
+   *
+   * `listening` is read from the bound socket rather than from the setting,
+   * because "enabled but nothing bound" is a real state — no paired phone, or a
+   * port already taken — and a panel that conflated them would be lying.
+   */
+  ipcMain.handle('mobile:lanConfig', (): MobileLanStatus => {
+    const config = deps.lan?.get() ?? { enabled: false, port: 0 };
+    const boundPort = deps.lan?.boundPort() ?? null;
+    return {
+      enabled: config.enabled,
+      port: config.port,
+      listening: boundPort !== null,
+      // A wildcard bind is expanded to the concrete IPv4 addresses this host
+      // owns; reachableAddresses already solves that, including a VPN adapter.
+      addresses: boundPort === null ? [] : reachableAddresses('0.0.0.0', boundPort).addresses,
+    };
+  });
+
+  ipcMain.handle('mobile:setLanConfig', async (_e, config: MobileLanConfig) => {
+    if (!deps.lan) return INERT;
+    await deps.lan.set({ enabled: config.enabled === true, port: config.port });
+    broadcast((win) => win.webContents.send('mobile-devices:changed'));
+    return { ok: true };
+  });
+
   // ---- event forwarding ---------------------------------------------------
   const onDevicesChanged = () => broadcast((win) => win.webContents.send('mobile-devices:changed'));
   const onPairingState = (state: MobilePairingState) =>
@@ -188,7 +244,7 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
     for (const channel of [
       'mobile:list', 'mobile:startPairing', 'mobile:confirmPairing', 'mobile:cancelPairing',
       'mobile:pairingState', 'mobile:setAllowList', 'mobile:setEnabled', 'mobile:revoke',
-      'mobile:apkRelease',
+      'mobile:apkRelease', 'mobile:lanConfig', 'mobile:setLanConfig',
     ]) {
       ipcMain.removeHandler(channel);
     }

@@ -45,6 +45,7 @@ export class HelmDirectoryService {
       consolidated.set(dirPath, {
         dirPath,
         ...(projectId ? { projectId } : {}),
+        ...(project?.name ? { projectName: project.name } : {}),
         name: name ?? existing?.name ?? project?.name ?? dirPath.split(/[/\\]/).pop() ?? dirPath,
         source: [...source],
         planCount: Math.max(existing?.planCount ?? 0, planCount),

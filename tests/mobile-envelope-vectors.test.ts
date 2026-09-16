@@ -31,7 +31,7 @@ describe('committed mobile envelope vectors', () => {
       version: MOBILE_ENVELOPE_VERSION,
       encoding: 'utf8-json',
       maxEnvelopeBytes: MAX_ENVELOPE_BYTES,
-      recordTypes: ['call', 'result', 'error', 'chat'],
+      recordTypes: ['call', 'result', 'error', 'chat', 'lan'],
     });
   });
 

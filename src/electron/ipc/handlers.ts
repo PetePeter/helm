@@ -82,9 +82,12 @@ import { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import { MobilePairing } from '../../mobile/mobile-pairing.js';
 import { MobileLinkManager } from '../../mobile/mobile-link-manager.js';
 import { BleLinkClient } from '../../mobile/ble/ble-link-client.js';
+import { SocketLinkTransport } from '../../mobile/lan/socket-link-transport.js';
 import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
+import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.js';
+import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
 import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
@@ -667,16 +670,23 @@ export function registerIPCHandlers(
     secretStore: mobileSecretStore,
     machineId: hostname(),
   });
-  // The owner of the BLE transport: it scans, identifies a phone by its
-  // machineId over a PSK handshake, and is the only thing that can say whether a
-  // device is genuinely online. The radio itself is loaded lazily, and only once
-  // there is a paired phone to reach or a pairing under way.
+  // The owner of the phone transports: they scan, it identifies a phone by its
+  // machineId over a PSK handshake, and it is the only thing that can say whether
+  // a device is genuinely online. The radio itself is loaded lazily, and only
+  // once there is a paired phone to reach or a pairing under way.
+  // The LAN half. Held in a variable because settings changes hot-apply to it;
+  // the manager owns its lifecycle and never learns which transport is which.
+  const mobileLanTransport = new SocketLinkTransport({
+    ...configLoader.getMobileLanConfig(),
+    logger: (message, error) =>
+      error ? logger.warn(`[mobile-lan] ${message}: ${error}`) : logger.info(`[mobile-lan] ${message}`),
+  });
   const mobileLinkManager = new MobileLinkManager({
-    createTransport: () => new BleLinkClient({
+    createTransports: () => [new BleLinkClient({
       noble: loadNoble(),
       logger: (message, error) =>
         error ? logger.warn(`${message}: ${error}`) : logger.info(message),
-    }),
+    }), mobileLanTransport],
     deviceStore: mobileDeviceStore,
     secretStore: mobileSecretStore,
     pairing: mobilePairing,
@@ -705,6 +715,19 @@ export function registerIPCHandlers(
     checkApkAsset: async (url) => {
       const response = await net.fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(8000) });
       return response.ok;
+    },
+    // Persist, then hot-apply to the live transport. Both, in that order: a
+    // setting that took effect but was not saved is the worse of the two lies.
+    lan: {
+      get: () => configLoader.getMobileLanConfig(),
+      set: async (config) => {
+        configLoader.setMobileLanConfig(config);
+        await mobileLanTransport.configure(configLoader.getMobileLanConfig());
+        // The new port — or the fact that LAN is now off — has to reach a phone
+        // that is connected RIGHT NOW, not at its next reconnect.
+        mobileAddressAdvertiser.advertiseAll();
+      },
+      boundPort: () => mobileLanTransport.boundPort,
     },
   });
   // The security boundary in front of every inbound phone call (P-0737). Built
@@ -738,6 +761,23 @@ export function registerIPCHandlers(
   });
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
+
+  // Where to dial this desktop, pushed down the authenticated link (P-0752).
+  // Without it the phone's address is a typed string that dies silently the day
+  // the DHCP lease moves — and mDNS, which is how the fleet lane repairs that,
+  // cannot cross a VPN.
+  const mobileAddressAdvertiser = new MobileAddressAdvertiser({
+    links: mobileLinkManager,
+    addresses: () => {
+      const boundPort = mobileLanTransport.boundPort;
+      // Nothing bound means an EMPTY list, which is itself the instruction to
+      // stop dialling — not a reason to stay silent.
+      return boundPort === null ? [] : reachableAddresses('0.0.0.0', boundPort).addresses;
+    },
+    linkedMachines: () => mobileDeviceStore.list()
+      .filter((device) => device.enabled !== false && mobileLinkManager.isOnline(device.machineId))
+      .map((device) => device.machineId),
+  });
 
   // The phone's notification path: a state change, a notify_user or a flash
   // reaches a pocketed phone over the already-open BLE link. Fed in ADDITION to

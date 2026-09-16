@@ -28,6 +28,7 @@ let apkResult: any = {
   note: '',
 };
 const calls: Array<[string, ...any[]]> = [];
+let lanFromMain = { enabled: false, port: 47475, listening: false, addresses: [] as string[] };
 
 vi.mock('../renderer/ipc/clients.js', () => ({
   mobileClient: {
@@ -40,6 +41,11 @@ vi.mock('../renderer/ipc/clients.js', () => ({
     mobileSetEnabled: async (id: string, on2: boolean) => { calls.push(['enabled', id, on2]); return { ok: true }; },
     mobileRevoke: async (id: string) => { calls.push(['revoke', id]); return { ok: true }; },
     mobileApkRelease: async () => { calls.push(['apk']); return apkResult; },
+    mobileLanConfig: async () => lanFromMain,
+    mobileSetLanConfig: async (config: { enabled: boolean; port: number }) => {
+      calls.push(['lan', config.enabled, config.port]);
+      return { ok: true };
+    },
   },
   eventsClient: {
     onMobileDevicesChanged: on('devices'),
@@ -66,6 +72,7 @@ describe('useMobileDevices', () => {
       availability: 'available',
       note: '',
     };
+    lanFromMain = { enabled: false, port: 47475, listening: false, addresses: [] };
     calls.length = 0;
     for (const key of Object.keys(handlers)) delete handlers[key];
     vi.useFakeTimers();
@@ -213,5 +220,30 @@ describe('useMobileDevices', () => {
 
     expect(mobile.apkRelease.value).toBeNull();
     expect(mobile.apkError.value).toContain('dev');
+  });
+
+  it('reflects what the LAN transport actually did, not what was asked for', async () => {
+    // The user asks for a port; whether anything is BOUND is the socket's
+    // answer. A panel that echoed the request would claim to be listening on a
+    // port that was already taken.
+    lanFromMain = { enabled: true, port: 47475, listening: true, addresses: ['192.168.1.20:47475'] };
+    const mobile = useMobileDevices();
+
+    await mobile.setLanConfig({ enabled: true, port: 47475 });
+
+    expect(calls).toContainEqual(['lan', true, 47475]);
+    expect(mobile.lan.value.listening).toBe(true);
+    expect(mobile.lan.value.addresses).toEqual(['192.168.1.20:47475']);
+  });
+
+  it('does not claim to be listening merely because LAN is enabled', async () => {
+    // Enabled-but-unbound is real: nothing binds until a phone is paired.
+    lanFromMain = { enabled: true, port: 47475, listening: false, addresses: [] };
+    const mobile = useMobileDevices();
+
+    await mobile.refreshLan();
+
+    expect(mobile.lan.value.enabled).toBe(true);
+    expect(mobile.lan.value.listening).toBe(false);
   });
 });

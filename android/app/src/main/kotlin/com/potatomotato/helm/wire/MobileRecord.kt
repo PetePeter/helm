@@ -64,4 +64,20 @@ sealed interface MobileRecord {
         val artifactId: String? = null,
         val title: String? = null,
     ) : MobileRecord
+
+    /**
+     * Helm -> phone. Where this desktop can be reached over the network.
+     * Carries no id: it answers nothing.
+     *
+     * Arrives ONLY over the already-authenticated channel, which is the sole
+     * reason the phone may believe it. An address learned any other way is not
+     * an address — it is an invitation to dial someone else.
+     *
+     * An EMPTY list is meaningful and must be honoured: it says "stop dialling",
+     * and it is how the desktop turning LAN off reaches a phone that is
+     * connected right now. Treating empty as "no news" would leave the phone
+     * hammering a port that is no longer open.
+     */
+    data class Lan(val addresses: List<String>) : MobileRecord
 }
+

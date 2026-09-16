@@ -69,6 +69,14 @@ class MobileEnvelopeVectorsTest {
                     assertEquals(name, filePath, record.filePath)
                     assertEquals(name, expected.optBoolean("voice", false), record.voice)
                 }
+
+                is MobileRecord.Lan -> {
+                    val addresses = expected.getJSONArray("addresses")
+                    assertEquals(name, addresses.length(), record.addresses.size)
+                    for (index in 0 until addresses.length()) {
+                        assertEquals(name, addresses.getString(index), record.addresses[index])
+                    }
+                }
             }
         }
     }

@@ -1,5 +1,5 @@
 /**
- * MobileLinkManager — the one owner of the BLE transport lifecycle.
+ * MobileLinkManager — the one owner of the phone transports' lifecycle.
  *
  * Before this existed the mobile pieces were all correct and none of them were
  * connected: `BleLinkClient` connected to whatever advertised the Helm service,
@@ -21,14 +21,24 @@
  * reconnects rather than retrying the same one forever. With one or two paired
  * phones that converges immediately.
  *
- * Per invariant 7's spirit, every BLE failure here logs and continues; nothing
- * throws into the session layer.
+ * ONE LINK PER PHONE, ACROSS ALL TRANSPORTS. The manager owns N transports and
+ * knows them only by rank, so two pipes to one phone are not two links — they
+ * are an incumbent and a challenger, and the higher rank takes the slot (LAN
+ * displaces BLE; see RANK_BLE). A swap keeps the machineId, so nothing above
+ * here can observe which pipe the bytes take. The cost of that is that every
+ * teardown handler outlives its link, which is what `generation` exists for.
+ *
+ * Per invariant 7's spirit, every transport failure here logs and continues;
+ * nothing throws into the session layer.
  */
 
 import { EventEmitter } from 'node:events';
 import { logger } from '../utils/logger.js';
 import { SecureChannel } from './secure-channel.js';
-import type { BleLink } from './ble/ble-link-client.js';
+import { RANK_BLE, type MobileLink } from './mobile-link.js';
+
+// Re-exported so callers have ONE import site for the link vocabulary.
+export { RANK_BLE, RANK_LAN } from './mobile-link.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
 import type { MobilePairing } from './mobile-pairing.js';
 import type { MobileDevice } from '../types/mobile-device.js';
@@ -63,6 +73,17 @@ const DEFAULT_KEEPALIVE_INTERVAL_MS = 15_000;
  */
 const DEFAULT_KEEPALIVE_MISS_LIMIT = 2;
 
+
+/**
+ * How long a displaced link stays open after its replacement takes the slot.
+ *
+ * Envelope ids are chosen by the phone and Helm never initiates a request
+ * expecting a reply, so a request in flight at swap time would simply lose its
+ * answer down the closing pipe. The grace lets a queued reply finish going out;
+ * the phone retries anything still missing. No protocol change buys more.
+ */
+const DEFAULT_RETIRE_GRACE_MS = 500;
+
 /**
  * The slice of a live channel this manager needs. `SecureChannel` satisfies it;
  * declaring it narrowly is what lets the lifecycle be tested without crypto.
@@ -81,27 +102,45 @@ export interface MobileChannel {
 }
 
 /**
- * The slice of `BleLinkClient` the manager drives. Declared here so the manager
+ * The slice of a transport the manager drives. Declared here so the manager
  * never sees noble, and so a fake transport is a first-class implementation
  * rather than a mock.
  */
 export interface MobileLinkTransport {
+  /** Higher displaces lower for the same phone. See RANK_BLE / RANK_LAN. */
+  readonly rank: number;
+  /**
+   * Whether this transport's address is worth remembering as a reconnect hint.
+   *
+   * A BLE peripheral id is: it tells the candidate ranking which stored PSK to
+   * try first. A TCP source port is not — it is ephemeral, and persisting it
+   * would EVICT the BLE hint from the single `MobileDevice.deviceId` field, so
+   * one LAN connection would degrade every later BLE reconnect.
+   *
+   * The manager asks the transport rather than testing its rank, so this stays
+   * a property of the transport and not a BLE branch in the manager.
+   */
+  readonly persistsAddressHint?: boolean;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** Disconnect a link the manager refused, and go back to scanning. */
-  reject(link: BleLink, reason: string): Promise<void>;
-  on(event: 'link', handler: (link: BleLink) => void): unknown;
+  reject(link: MobileLink, reason: string): Promise<void>;
+  on(event: 'link', handler: (link: MobileLink) => void): unknown;
   on(event: 'disconnected', handler: (deviceId: string) => void): unknown;
 }
 
 export type OpenMobileChannel = (
-  link: BleLink,
+  link: MobileLink,
   options: { machineId: string; psk: Buffer },
 ) => Promise<MobileChannel>;
 
 export interface MobileLinkManagerOptions {
-  /** Built on first use so the native radio is only loaded when wanted. */
-  createTransport: () => MobileLinkTransport;
+  /**
+   * Built on first use so the native radio is only loaded when wanted. Returns
+   * EVERY transport this machine can reach a phone over; the manager owns them
+   * all and knows them only by rank.
+   */
+  createTransports: () => MobileLinkTransport[];
   deviceStore: MobileDeviceStore;
   secretStore: SecretStore;
   pairing: MobilePairing;
@@ -113,6 +152,8 @@ export interface MobileLinkManagerOptions {
   keepaliveIntervalMs?: number;
   /** Silent probe intervals that make a link dead; see DEFAULT_KEEPALIVE_MISS_LIMIT. */
   keepaliveMissLimit?: number;
+  /** Drain window for a displaced link; see DEFAULT_RETIRE_GRACE_MS. */
+  retireGraceMs?: number;
   now?: () => number;
   openChannel?: OpenMobileChannel;
   logger?: (message: string, error?: unknown) => void;
@@ -121,15 +162,33 @@ export interface MobileLinkManagerOptions {
 /** One phone Helm currently holds a link to. */
 interface ActiveLink {
   machineId: string;
-  link: BleLink;
+  link: MobileLink;
   /** Absent for a link the pairing coordinator owns the channel of. */
   channel: MobileChannel | null;
   /** Epoch ms of the last inbound byte — the keepalive probe's reference. */
   lastInboundAt: number;
+  /** The transport that produced this link — where a refusal must be routed. */
+  transport: MobileLinkTransport | null;
+  /** Its transport's rank, kept here so preemption never re-derives it. */
+  rank: number;
+  /**
+   * Process-unique id for THIS occupancy of the machineId slot.
+   *
+   * Every teardown handler is keyed on machineId, and a displaced link tears
+   * down after its replacement has taken the slot. Without an identity to
+   * compare, that late teardown deletes the successor. See P-0752 footgun 1.
+   */
+  generation: number;
 }
 
 /**
- * Events: `online` (machineId), `offline` (machineId), `message` (machineId, Buffer).
+ * Events: `online` (machineId), `offline` (machineId), `message` (machineId,
+ * Buffer), `switched` (machineId, fromRank, toRank).
+ *
+ * `switched` is DIAGNOSTIC ONLY. A swap deliberately raises no offline/online
+ * pair: the machineId has not changed, so nothing above this manager — the chat
+ * bridge, the gate, the settings UI — has any business noticing which pipe the
+ * bytes take.
  */
 export class MobileLinkManager extends EventEmitter {
   private readonly opts: MobileLinkManagerOptions;
@@ -138,8 +197,9 @@ export class MobileLinkManager extends EventEmitter {
   private readonly handshakeTimeoutMs: number;
   private readonly keepaliveIntervalMs: number;
   private readonly keepaliveMissLimit: number;
+  private readonly retireGraceMs: number;
 
-  private transport: MobileLinkTransport | null = null;
+  private transports: MobileLinkTransport[] | null = null;
   private enabled = false;
   private running = false;
   private keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,6 +208,16 @@ export class MobileLinkManager extends EventEmitter {
   private readonly links = new Map<string, ActiveLink>();
   /** Which candidate to try next for a given advertised address. */
   private readonly cursor = new Map<string, number>();
+  /** Increments on every slot occupancy; see ActiveLink.generation. */
+  private generation = 0;
+  /**
+   * Which transport handed us a given link. A refusal must go back to the
+   * transport that produced the link — with two of them, "the" transport is no
+   * longer a meaningful thing to reject on.
+   */
+  private readonly origin = new WeakMap<MobileLink, MobileLinkTransport>();
+  /** Displaced links still inside their drain window. */
+  private readonly retiring = new Map<ReturnType<typeof setTimeout>, ActiveLink>();
 
   constructor(options: MobileLinkManagerOptions) {
     super();
@@ -156,6 +226,7 @@ export class MobileLinkManager extends EventEmitter {
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS;
     this.keepaliveIntervalMs = options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS;
     this.keepaliveMissLimit = Math.max(1, options.keepaliveMissLimit ?? DEFAULT_KEEPALIVE_MISS_LIMIT);
+    this.retireGraceMs = options.retireGraceMs ?? DEFAULT_RETIRE_GRACE_MS;
     this.openChannel = options.openChannel ?? ((link, { machineId, psk }) =>
       SecureChannel.open({
         pipe: link.pipe,
@@ -193,6 +264,7 @@ export class MobileLinkManager extends EventEmitter {
   async stop(): Promise<void> {
     this.enabled = false;
     this.clearKeepalive();
+    this.flushRetiring('Helm stopped');
     for (const active of [...this.links.values()]) {
       this.links.delete(active.machineId);
       try {
@@ -204,7 +276,7 @@ export class MobileLinkManager extends EventEmitter {
     }
     this.cursor.clear();
     this.running = false;
-    await this.transport?.stop().catch((error) => this.log('stopping the BLE transport failed', error));
+    await this.stopTransports();
   }
 
   /** Whether this machine currently holds a live link to `machineId`. */
@@ -218,17 +290,34 @@ export class MobileLinkManager extends EventEmitter {
    */
   dropLink(machineId: string, reason = 'dropped by Helm'): void {
     const active = this.links.get(machineId);
-    if (!active) return;
+    if (active) this.dropGeneration(machineId, active.generation, reason);
+  }
+
+  /**
+   * Drop a link only if it is STILL the one holding the slot.
+   *
+   * Every teardown handler a link installs outlives that link, so a displaced
+   * link's late failure would otherwise drop the link that replaced it. The
+   * generation is the only thing that can tell the two apart.
+   */
+  private dropGeneration(machineId: string, generation: number, reason: string): void {
+    const active = this.links.get(machineId);
+    if (!active || active.generation !== generation) return;
     this.links.delete(machineId);
     this.log(`dropping the link to ${machineId}: ${reason}`);
+    this.teardown(active, reason);
+    this.emit('offline', machineId);
+  }
+
+  /** Close a link's channel and hand the link back to its own transport. */
+  private teardown(active: ActiveLink, reason: string): void {
     try {
       active.channel?.close(reason);
     } catch (error) {
-      this.log(`closing the channel for ${machineId} failed`, error);
+      this.log(`closing the channel for ${active.machineId} failed`, error);
     }
-    void this.transport?.reject(active.link, reason)
-      .catch((error) => this.log(`dropping the link for ${machineId} failed`, error));
-    this.emit('offline', machineId);
+    void active.transport?.reject(active.link, reason)
+      .catch((error) => this.log(`dropping the link for ${active.machineId} failed`, error));
   }
 
   /** Send an application message to a linked phone. Returns whether it went. */
@@ -253,16 +342,24 @@ export class MobileLinkManager extends EventEmitter {
     this.running = wanted;
 
     if (!wanted) {
-      void this.transport?.stop().catch((error) => this.log('stopping the BLE transport failed', error));
+      void this.stopTransports();
       return;
     }
 
-    const transport = this.ensureTransport();
-    if (!transport) {
+    const transports = this.ensureTransports();
+    if (transports.length === 0) {
       this.running = false;
       return;
     }
-    void transport.start().catch((error) => this.log('starting the BLE transport failed', error));
+    for (const transport of transports) {
+      void transport.start().catch((error) => this.log('starting a mobile transport failed', error));
+    }
+  }
+
+  private async stopTransports(): Promise<void> {
+    for (const transport of this.transports ?? []) {
+      await transport.stop().catch((error) => this.log('stopping a mobile transport failed', error));
+    }
   }
 
   private pairingArmed(): boolean {
@@ -340,26 +437,33 @@ export class MobileLinkManager extends EventEmitter {
   }
 
   /**
-   * Build the transport once, on demand. A machine with no usable Bluetooth
+   * Build the transports once, on demand. A machine with no usable Bluetooth
    * stack must degrade to "mobile does not work", never to a failed startup.
    */
-  private ensureTransport(): MobileLinkTransport | null {
-    if (this.transport) return this.transport;
+  private ensureTransports(): MobileLinkTransport[] {
+    if (this.transports) return this.transports;
     try {
-      const transport = this.opts.createTransport();
-      transport.on('link', (link: BleLink) => void this.onLink(link));
-      transport.on('disconnected', (deviceId: string) => this.onDisconnected(deviceId));
-      this.transport = transport;
-      return transport;
+      const transports = this.opts.createTransports();
+      for (const transport of transports) {
+        transport.on('link', (link: MobileLink) => {
+          this.origin.set(link, transport);
+          void this.onLink(link);
+        });
+        transport.on('disconnected', (deviceId: string) => this.onDisconnected(deviceId, transport));
+      }
+      this.transports = transports;
+      return transports;
     } catch (error) {
+      // Deliberately not cached: a radio that was missing at startup may be
+      // present by the next time there is a phone worth reaching.
       this.log('the BLE transport is unavailable', error);
-      return null;
+      return [];
     }
   }
 
   // ------------------------------------------------------------- identification
 
-  private async onLink(link: BleLink): Promise<void> {
+  private async onLink(link: MobileLink): Promise<void> {
     // Both handshake paths below count as in flight until they settle, so the
     // keepalive clock stays out of the way while a link is being decided.
     this.handshakesInFlight += 1;
@@ -370,7 +474,7 @@ export class MobileLinkManager extends EventEmitter {
     }
   }
 
-  private async identify(link: BleLink): Promise<void> {
+  private async identify(link: MobileLink): Promise<void> {
     // Pairing first: while it is armed the coordinator owns the handshake, and a
     // second one on the same pipe would fight it for the bytes.
     if (this.pairingArmed() && await this.opts.pairing.offerLink(link)) return;
@@ -434,8 +538,15 @@ export class MobileLinkManager extends EventEmitter {
     });
   }
 
-  /** Accept an authenticated channel, or drop it if trust has since moved. */
-  private register(link: BleLink, channel: MobileChannel): void {
+  /**
+   * Accept an authenticated channel, or drop it if trust has since moved.
+   *
+   * ORDER IS THE SAFETY RULE. This runs only once the challenger has completed
+   * a PSK-bound handshake, so an incumbent is never disturbed on the strength of
+   * a connection that might not authenticate. A failed LAN handshake costs a
+   * working BLE link nothing.
+   */
+  private register(link: MobileLink, channel: MobileChannel): void {
     const machineId = channel.peerMachine;
     const device = this.opts.deviceStore.getByMachineId(machineId);
     if (!device || device.enabled === false) {
@@ -443,42 +554,109 @@ export class MobileLinkManager extends EventEmitter {
       void this.refuse(link, 'authenticated machine is not a trusted device');
       return;
     }
-    if (this.links.has(machineId)) {
+
+    const rank = this.rankOf(link);
+    const incumbent = this.links.get(machineId);
+    if (incumbent && rank <= incumbent.rank) {
       channel.close('already linked');
       void this.refuse(link, 'a link to this device already exists');
       return;
     }
 
-    this.links.set(machineId, { machineId, link, channel, lastInboundAt: this.now() });
+    this.occupy({ machineId, link, channel, rank, lastInboundAt: this.now() });
     this.cursor.delete(link.deviceId);
     // The address is a hint, so it is UPDATED on the existing record — keying a
     // new entry off a rotated address is exactly the regression this prevents.
-    this.opts.deviceStore.update(device.id, { deviceId: link.deviceId, lastSeenAt: this.now() });
-    this.attachChannel(machineId, channel);
-    link.onTransportError?.((failure) => {
-      this.dropLink(machineId, `BLE write failed after ${failure.elapsedMs}ms`);
+    // Only a transport whose address survives a reconnect may write it; see
+    // MobileLinkTransport.persistsAddressHint.
+    this.opts.deviceStore.update(device.id, {
+      ...(this.origin.get(link)?.persistsAddressHint === false ? {} : { deviceId: link.deviceId }),
+      lastSeenAt: this.now(),
     });
-    link.pipe.onClose(() => this.onClosed(machineId, 'the BLE pipe closed'));
+
+    if (incumbent) {
+      this.log(`"${device.name}" (${machineId}) moved from rank ${incumbent.rank} to ${rank}`);
+      this.retire(incumbent, `displaced by a rank ${rank} link`);
+      // No online/offline pair: the machineId never went away. See the class
+      // comment — a swap must be invisible to everything above this manager.
+      this.emit('switched', machineId, incumbent.rank, rank);
+      return;
+    }
     this.log(`linked "${device.name}" (${machineId}) via ${link.deviceId}`);
     this.emit('online', machineId);
   }
 
-  /** Adopt the link the pairing coordinator just turned into a trusted phone. */
+  /**
+   * Take the machineId slot, wiring this link's teardown handlers to its own
+   * generation so they can never act on whatever occupies the slot later.
+   */
+  private occupy(entry: Omit<ActiveLink, 'generation' | 'transport'>): void {
+    this.generation += 1;
+    const generation = this.generation;
+    const { machineId, link, channel } = entry;
+    this.links.set(machineId, {
+      ...entry,
+      generation,
+      transport: this.origin.get(link) ?? null,
+    });
+    if (channel) this.attachChannel(machineId, generation, channel);
+    link.onTransportError?.((failure) => {
+      this.dropGeneration(machineId, generation, `BLE write failed after ${failure.elapsedMs}ms`);
+    });
+    link.pipe.onClose(() => this.onClosed(machineId, generation, 'the BLE pipe closed'));
+  }
+
+  /**
+   * Let a displaced link drain, then close it. See DEFAULT_RETIRE_GRACE_MS.
+   *
+   * It has already lost the slot, so its eventual close is a no-op against the
+   * generation guard — this is purely about not severing a reply mid-flight.
+   */
+  private retire(active: ActiveLink, reason: string): void {
+    const timer = setTimeout(() => {
+      this.retiring.delete(timer);
+      this.teardown(active, reason);
+    }, this.retireGraceMs);
+    // A drain window must not keep an exiting process alive.
+    timer.unref?.();
+    this.retiring.set(timer, active);
+  }
+
+  /** Close every draining link now — stop cannot wait out a grace window. */
+  private flushRetiring(reason: string): void {
+    for (const [timer, active] of this.retiring) {
+      clearTimeout(timer);
+      this.teardown(active, reason);
+    }
+    this.retiring.clear();
+  }
+
+  private rankOf(link: MobileLink): number {
+    return this.origin.get(link)?.rank ?? RANK_BLE;
+  }
+
+  private linkedAtOrAbove(machineId: string, rank: number): boolean {
+    const active = this.links.get(machineId);
+    return active !== undefined && active.rank >= rank;
+  }
+
+  /**
+   * Adopt the link the pairing coordinator just turned into a trusted phone.
+   *
+   * Pairing is BLE-only by design (P-0752: proximity is the trust anchor), so
+   * this never preempts — a freshly paired phone cannot already be linked.
+   */
   private adoptPaired(event: PairedEvent): void {
     const link = event.link;
     if (!link || this.links.has(event.machineId)) return;
 
-    this.links.set(event.machineId, {
+    this.occupy({
       machineId: event.machineId,
       link,
       channel: event.channel ?? null,
+      rank: this.rankOf(link),
       lastInboundAt: this.now(),
     });
-    if (event.channel) this.attachChannel(event.machineId, event.channel);
-    link.onTransportError?.((failure) => {
-      this.dropLink(event.machineId, `BLE write failed after ${failure.elapsedMs}ms`);
-    });
-    link.pipe.onClose(() => this.onClosed(event.machineId, 'the BLE pipe closed'));
     this.emit('online', event.machineId);
   }
 
@@ -487,10 +665,14 @@ export class MobileLinkManager extends EventEmitter {
    * last-seen address matches is tried first; after that the cursor walks the
    * rest across reconnects so a rotated address still finds its device.
    */
-  private nextCandidate(link: BleLink): MobileDevice | undefined {
+  private nextCandidate(link: MobileLink): MobileDevice | undefined {
+    // A device already linked at this rank or better is not a candidate — but
+    // one linked over a SLOWER transport is, or a LAN link could never identify
+    // itself as the phone already on BLE and preemption would be unreachable.
+    const incoming = this.rankOf(link);
     const candidates = this.opts.deviceStore
       .list()
-      .filter((device) => device.enabled !== false && !this.links.has(device.machineId))
+      .filter((device) => device.enabled !== false && !this.linkedAtOrAbove(device.machineId, incoming))
       .sort((a, b) => rank(b, link.deviceId) - rank(a, link.deviceId));
     if (candidates.length === 0) return undefined;
 
@@ -499,31 +681,47 @@ export class MobileLinkManager extends EventEmitter {
     return candidates[index];
   }
 
-  private attachChannel(machineId: string, channel: MobileChannel): void {
+  private attachChannel(machineId: string, generation: number, channel: MobileChannel): void {
+    // Inbound on a RETIRED channel is still genuinely the phone, so a late
+    // application message is delivered — but none of it may reset a keepalive
+    // clock the retired link no longer owns, or a dead replacement would look
+    // alive for as long as the old pipe kept chattering.
+    const stillOurs = () => this.isCurrent(machineId, generation);
     channel.on?.('message', (message: Buffer) => {
-      this.markInbound(machineId);
+      if (stillOurs()) this.markInbound(machineId);
       this.emit('message', machineId, message);
     });
-    channel.on?.('pong', () => this.markInbound(machineId));
-    channel.on?.('ping', () => this.markInbound(machineId));
-    channel.on?.('close', () => this.onClosed(machineId, 'the secure channel closed'));
+    channel.on?.('pong', () => { if (stillOurs()) this.markInbound(machineId); });
+    channel.on?.('ping', () => { if (stillOurs()) this.markInbound(machineId); });
+    channel.on?.('close', () => this.onClosed(machineId, generation, 'the secure channel closed'));
   }
 
-  /** Disconnect a link we will not keep, and let the transport rescan. */
-  private async refuse(link: BleLink, reason: string): Promise<void> {
+  private isCurrent(machineId: string, generation: number): boolean {
+    return this.links.get(machineId)?.generation === generation;
+  }
+
+  /** Disconnect a link we will not keep, and let its transport rescan. */
+  private async refuse(link: MobileLink, reason: string): Promise<void> {
     // The reason used to go to the transport and nowhere else, so a hub that
     // refused every advertiser in range looked identical to one that saw none.
     this.log(`refusing ${link.deviceId}: ${reason}`);
     try {
-      await this.transport?.reject(link, reason);
+      await this.origin.get(link)?.reject(link, reason);
     } catch (error) {
       this.log(`refusing ${link.deviceId} failed`, error);
     }
   }
 
-  private onDisconnected(deviceId: string): void {
-    for (const active of this.links.values()) {
-      if (active.link.deviceId === deviceId) this.onClosed(active.machineId, 'the transport reported a disconnect');
+  /**
+   * A transport lost a link. Matched on the transport AND the address, because
+   * a BLE peripheral id and a socket address are different id spaces that must
+   * never be compared — and a retired link is already out of `links`, so its
+   * late disconnect finds nothing to drop.
+   */
+  private onDisconnected(deviceId: string, transport: MobileLinkTransport): void {
+    for (const active of [...this.links.values()]) {
+      if (active.transport !== transport || active.link.deviceId !== deviceId) continue;
+      this.onClosed(active.machineId, active.generation, 'the transport reported a disconnect');
     }
   }
 
@@ -544,8 +742,13 @@ export class MobileLinkManager extends EventEmitter {
    * told us — and a bare "closed" made a 13-to-40-second reconnect loop
    * undiagnosable from the desktop end. See P-0756.
    */
-  private onClosed(machineId: string, reason: string): void {
-    if (!this.links.delete(machineId)) return;
+  private onClosed(machineId: string, generation: number, reason: string): void {
+    // The generation check is what makes a swap safe: a displaced link's pipe,
+    // channel and transport all report their close AFTER the replacement has
+    // taken the slot, and a bare delete-by-machineId would take the successor
+    // down with them. See P-0752 footgun 1.
+    if (!this.isCurrent(machineId, generation)) return;
+    this.links.delete(machineId);
     this.log(`link to ${machineId} closed: ${reason}`);
     this.emit('offline', machineId);
   }
@@ -555,7 +758,7 @@ export class MobileLinkManager extends EventEmitter {
 interface PairedEvent {
   id: string;
   machineId: string;
-  link?: BleLink;
+  link?: MobileLink;
   channel?: MobileChannel;
 }
 

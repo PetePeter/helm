@@ -110,7 +110,7 @@ class HelmLinkService : Service() {
                 try {
                     val opened = server.open()
                     if (opened) {
-                        HelmLink.sender = link::send
+                        HelmLink.attach(RANK_BLE, link::send)
                         link.start()
                     }
                     opened

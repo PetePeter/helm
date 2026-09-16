@@ -8,7 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BleLinkClient, type BleLink } from '../src/mobile/ble/ble-link-client';
+import { BleLinkClient } from '../src/mobile/ble/ble-link-client';
+import type { MobileLink } from '../src/mobile/mobile-link';
 import { BleChunker, BleReassembler, MIN_CHUNK_BYTES } from '../src/mobile/ble/ble-framing';
 import { HELM_SERVICE_UUID_SHORT } from '../src/mobile/ble/characteristics';
 import { SecureChannel } from '../src/mobile/secure-channel';
@@ -29,7 +30,7 @@ function build(options: { stepTimeoutMs?: number } = {}) {
 }
 
 /** Resolve with the next link the client opens. */
-function nextLink(client: BleLinkClient): Promise<BleLink> {
+function nextLink(client: BleLinkClient): Promise<MobileLink> {
   return new Promise((resolve) => client.once('link', resolve));
 }
 

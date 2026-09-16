@@ -19,7 +19,7 @@ import {
   type MobilePairingState,
 } from '../src/mobile/mobile-pairing.js';
 import { HARD_DENY_TOOLS } from '../src/mcp/peer/inbound-call-gate.js';
-import type { BleLink } from '../src/mobile/ble/ble-link-client.js';
+import type { MobileLink } from '../src/mobile/mobile-link.js';
 import { createMemoryPipePair } from './helpers/memory-pipe';
 
 const PHONE_MACHINE = 'phone-machine-1';
@@ -54,7 +54,7 @@ function makeHarness(): Harness {
 
   async function connect(options: { deviceId?: string; machineId?: string } = {}) {
     const { a, b } = createMemoryPipePair();
-    const link: BleLink = {
+    const link: MobileLink = {
       deviceId: options.deviceId ?? 'aa:bb:cc:dd:ee:ff',
       deviceName: 'Pixel 8',
       pipe: a as BytePipe,
@@ -215,7 +215,7 @@ describe('MobilePairing', () => {
   it('refuses a link when pairing mode was never started', async () => {
     const h = makeHarness();
     const { a } = createMemoryPipePair();
-    const link: BleLink = {
+    const link: MobileLink = {
       deviceId: 'aa:bb:cc:dd:ee:ff',
       deviceName: 'Pixel 8',
       pipe: a as BytePipe,

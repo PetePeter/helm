@@ -4,10 +4,13 @@ import android.content.Context
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.DeviceKeyStore
+import com.potatomotato.helm.data.LanAddressStore
+import com.potatomotato.helm.data.PrefsLanAddressStore
 import com.potatomotato.helm.data.PairedDesktop
 import com.potatomotato.helm.data.PhoneIdentity
 import com.potatomotato.helm.data.PskStore
 import com.potatomotato.helm.data.pairedDesktops
+import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +44,7 @@ object HelmPairing {
     private var controller: PairingController? = null
     private var pipe: HelmLinkPipe? = null
     private var store: PskStore? = null
+    private var lanAddresses: LanAddressStore? = null
     private var started = false
 
     private val _desktops = MutableStateFlow<List<PairedDesktop>>(emptyList())
@@ -77,6 +81,22 @@ object HelmPairing {
         client.alerts.port = AndroidNotifications(context)
         val keys = DeviceKeyStore(context)
         store = keys
+        // Where the desktop says it can be reached (P-0752). Keyed on the LIVE
+        // desktop, because that is the only one that could have sent it — and
+        // an address is only ever believed when it arrives over the
+        // authenticated channel this callback hangs off.
+        val addresses = PrefsLanAddressStore(context)
+        lanAddresses = addresses
+        client.onLanAddresses = { pushed ->
+            val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
+            if (desktopId == null) {
+                // A record with no live pairing behind it has no owner to file
+                // it under; dropping it is safe because the push repeats.
+                HelmLog.w(HelmLog.WIRE, "dropped a LAN address list: no desktop is linked")
+            } else {
+                addresses.save(desktopId, pushed)
+            }
+        }
         controller = PairingController(
             store = keys,
             machineId = PhoneIdentity.machineId(context),
@@ -104,6 +124,8 @@ object HelmPairing {
 
     fun forget(desktopId: String) {
         requireController().forget(desktopId)
+        // A forgotten desktop leaves nothing behind, addresses included.
+        lanAddresses?.forget(desktopId)
         // forget() only moves the pairing state when the REVOKED desktop is the
         // live one, so the row must be dropped here too.
         refreshDesktops()

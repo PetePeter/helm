@@ -6,7 +6,7 @@
  * to RX. `@stoprocent/bleno` cannot serve GATT on Windows without a WinUSB
  * driver swap, so the peripheral role is not available to us.
  *
- * What escapes this directory is a `BleLink`: a device identity plus a
+ * What escapes this directory is a `MobileLink`: a device identity plus a
  * `BytePipe`, the interface `secure-channel.ts` already consumes. No noble or
  * GATT type crosses that line, which is what lets SecureChannel stay entirely
  * transport-agnostic and hardware-free to test.
@@ -17,6 +17,7 @@
 
 import { EventEmitter } from 'node:events';
 import type { BytePipe } from '../secure-channel';
+import { RANK_BLE, type MobileLink, type LinkTransportError } from '../mobile-link';
 import {
   BleChunker,
   BleReassembler,
@@ -151,31 +152,6 @@ export interface NobleApi {
 /* ------------------------------------------------------------------ */
 
 /** What the rest of Helm sees: an identified phone and a byte pipe to it. */
-export interface BleLink {
-  readonly deviceId: string;
-  readonly deviceName?: string;
-  readonly pipe: BytePipe;
-  /** Observe framing losses on this link — diagnostics, never fatal. */
-  onFramingDrop(handler: (reason: string) => void): void;
-  /** Observe a transport failure that makes the byte stream unsafe to continue. */
-  onTransportError?(handler: (failure: BleTransportError) => void): void;
-  /**
-   * Whether chunk writes are still queued or in flight — a bulk transfer the
-   * radio has not finished sending. The keepalive reads this as liveness: see
-   * mobile-link-manager.ts. Optional because a transport that cannot answer
-   * simply gets the plain silence rule.
-   */
-  hasPendingWrites?(): boolean;
-}
-
-export interface BleTransportError {
-  readonly chunkLength: number;
-  readonly mtu: number;
-  readonly withoutResponse: boolean;
-  readonly elapsedMs: number;
-  readonly error: unknown;
-}
-
 export interface BleLinkClientOptions {
   noble: NobleApi;
   /** Overridable for tests against a second service UUID; defaults to Helm's. */
@@ -193,11 +169,17 @@ export interface BleLinkClientOptions {
 }
 
 /**
- * Scans for the phone, connects it, and emits a `BleLink` per connection.
+ * Scans for the phone, connects it, and emits a `MobileLink` per connection.
  *
- * Events: `link` (BleLink), `disconnected` (deviceId), `error` (Error).
+ * Events: `link` (MobileLink), `disconnected` (deviceId), `error` (Error).
  */
 export class BleLinkClient extends EventEmitter {
+  /** The slow transport: anything else the manager owns displaces it. */
+  readonly rank = RANK_BLE;
+
+  /** A peripheral id survives a reconnect, so it is worth remembering. */
+  readonly persistsAddressHint = true;
+
   private readonly noble: NobleApi;
   private readonly serviceUuid: string;
   private readonly reconnectBaseMs: number;
@@ -262,7 +244,7 @@ export class BleLinkClient extends EventEmitter {
    * after a handshake, so refusing AFTER connecting is the only filter possible
    * — see the identity note in mobile-link-manager.ts.
    */
-  async reject(link: BleLink, reason: string): Promise<void> {
+  async reject(link: MobileLink, reason: string): Promise<void> {
     this.ignored.set(link.deviceId, this.now() + this.rejectIgnoreMs);
     this.log(`BLE rejecting ${link.deviceId}: ${reason}`);
 
@@ -500,12 +482,12 @@ export class BleLinkClient extends EventEmitter {
  * writes on the same characteristic, and `BytePipe.write` is synchronous by
  * contract, so ordering has to be kept here.
  */
-class BleLinkPipe implements BleLink {
+class BleLinkPipe implements MobileLink {
   private readonly chunker = new BleChunker();
   private readonly reassembler = new BleReassembler();
   private readonly dataHandlers: Array<(chunk: Buffer) => void> = [];
   private readonly closeHandlers: Array<() => void> = [];
-  private readonly transportErrorHandlers: Array<(failure: BleTransportError) => void> = [];
+  private readonly transportErrorHandlers: Array<(failure: LinkTransportError) => void> = [];
   private queue: Promise<void> = Promise.resolve();
   /** Write tasks queued or in flight; write() adds one and retires it. */
   private pendingWrites = 0;
@@ -580,7 +562,7 @@ class BleLinkPipe implements BleLink {
     this.reassembler.on('drop', handler);
   }
 
-  onTransportError(handler: (failure: BleTransportError) => void): void {
+  onTransportError(handler: (failure: LinkTransportError) => void): void {
     this.transportErrorHandlers.push(handler);
   }
 
@@ -621,7 +603,7 @@ class BleLinkPipe implements BleLink {
             await this.deadline('chunk write', this.rx.writeAsync(chunk, this.writeWithoutResponse));
             this.log(`BLE write chunk complete ${this.deviceId} seq=${writeSequence} index=${chunkIndex + 1}/${chunks.length}`);
           } catch (error) {
-            const failure: BleTransportError = {
+            const failure: LinkTransportError = {
               chunkLength: chunk.length,
               mtu: this.peripheral.mtu ?? DEFAULT_ATT_MTU,
               withoutResponse: this.writeWithoutResponse,

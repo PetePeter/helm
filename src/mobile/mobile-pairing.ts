@@ -25,7 +25,7 @@ import { logger } from '../utils/logger.js';
 import { SecureChannel } from './secure-channel.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
 import type { SecretStore } from '../mcp/peer/secret-store.js';
-import type { BleLink } from './ble/ble-link-client.js';
+import type { MobileLink } from './mobile-link.js';
 
 /** How long an unconfirmed pairing may sit on screen before it is reaped. */
 export const PAIRING_TTL_MS = 180_000;
@@ -80,14 +80,14 @@ export interface MobilePairingOptions {
    * Seam for opening the channel over a link. Defaults to the real
    * SecureChannel; tests override it only to simulate a transport failure.
    */
-  openChannel?: (link: BleLink, machineId: string) => Promise<SecureChannel>;
+  openChannel?: (link: MobileLink, machineId: string) => Promise<SecureChannel>;
 }
 
 /** An in-flight attempt. Nothing here is persisted until finalize succeeds. */
 interface ActivePairing {
   startedAt: number;
   channel: SecureChannel | null;
-  link: BleLink | null;
+  link: MobileLink | null;
   decided: boolean;
 }
 
@@ -95,7 +95,7 @@ export class MobilePairing extends EventEmitter {
   private readonly opts: MobilePairingOptions;
   private readonly now: () => number;
   private readonly ttlMs: number;
-  private readonly openChannel: (link: BleLink, machineId: string) => Promise<SecureChannel>;
+  private readonly openChannel: (link: MobileLink, machineId: string) => Promise<SecureChannel>;
 
   private active: ActivePairing | null = null;
   private state: MobilePairingState = { status: 'idle' };
@@ -149,7 +149,7 @@ export class MobilePairing extends EventEmitter {
    * A link arriving outside pairing mode is ignored — an unpaired phone can
    * never pair itself without a local user action.
    */
-  async offerLink(link: BleLink): Promise<boolean> {
+  async offerLink(link: MobileLink): Promise<boolean> {
     this.reapExpired();
     if (!this.active || this.active.channel) return false;
 

@@ -100,6 +100,23 @@ fun SpawnScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
+            // CLI FIRST. What you are launching is the decision you actually
+            // make; where it runs is usually already settled. The short list
+            // also means the long directory list never buries it off-screen.
+            FieldLabel(stringResource(R.string.spawn_which_cli))
+            if (cliChoices.isEmpty()) {
+                Hint(stringResource(R.string.spawn_no_clis))
+            } else {
+                for ((type, label) in cliChoices) {
+                    Choice(
+                        label = label,
+                        detail = null,
+                        selected = type == cliType,
+                        onClick = { cliType = type },
+                    )
+                }
+            }
+
             FieldLabel(stringResource(R.string.spawn_where))
             when {
                 // A dead fetch says so, with a way to try again. The waiting
@@ -112,26 +129,12 @@ fun SpawnScreen(
                 else -> {
                     for (directory in directories) {
                         Choice(
-                            label = directory.name,
+                            label = directoryLabel(directory),
                             detail = directory.path,
                             selected = directory.path == dirPath,
                             onClick = { dirPath = directory.path },
                         )
                     }
-                }
-            }
-
-            FieldLabel(stringResource(R.string.spawn_which_cli))
-            if (cliChoices.isEmpty()) {
-                Hint(stringResource(R.string.spawn_no_clis))
-            } else {
-                for ((type, label) in cliChoices) {
-                    Choice(
-                        label = label,
-                        detail = null,
-                        selected = type == cliType,
-                        onClick = { cliType = type },
-                    )
                 }
             }
 
@@ -160,6 +163,22 @@ fun SpawnScreen(
             )
             GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
         }
+    }
+}
+
+/**
+ * "Project ▸ folder", or just the folder when there is no project to name.
+ *
+ * The marker is only drawn when it separates two DIFFERENT things: a project's
+ * canonical directory already carries the project's own name, and rendering
+ * "Helm ▸ Helm" would be noise pretending to be information.
+ */
+private fun directoryLabel(directory: HelmDirectory): String {
+    val project = directory.projectName
+    return if (project.isNullOrEmpty() || project == directory.name) {
+        directory.name
+    } else {
+        "$project ▸ ${directory.name}"
     }
 }
 

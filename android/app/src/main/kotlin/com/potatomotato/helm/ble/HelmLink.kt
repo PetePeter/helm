@@ -15,7 +15,14 @@ import kotlinx.coroutines.flow.receiveAsFlow
  * This is the seam instead — process-scoped, because there is exactly one radio
  * and exactly one link.
  *
- * Whole messages only. Chunking lives below, in [BleLinkSession].
+ * Whole messages only over BLE, where chunking lives below in [BleLinkSession].
+ * Over LAN the bytes arrive as the stream segments them, which is equally fine:
+ * SecureChannel accumulates and splits on its own length prefix either way.
+ *
+ * TWO TRANSPORTS, ONE LINK (P-0752). Bluetooth works anywhere and is slow; LAN
+ * works at home and is not. Both can be live at once, so ownership is RANKED
+ * and the higher rank holds the link — the same rule the desktop applies from
+ * its end, so the two converge without negotiating. See [attach].
  */
 object HelmLink {
     private val _state = MutableStateFlow(LinkState.Disconnected)
@@ -36,12 +43,49 @@ object HelmLink {
     /** Whole messages from Helm, already reassembled. */
     val inbound: Flow<ByteArray> = _inbound.receiveAsFlow()
 
-    /** Installed by [HelmLinkService] while it holds the radio. */
-    internal var sender: ((ByteArray) -> Unit)? = null
+    /** The transport that currently owns the link, and how it sends. */
+    private var holder: Holder? = null
+
+    private data class Holder(val rank: Int, val send: (ByteArray) -> Unit)
+
+    /**
+     * Take the link for a transport of [rank], if nothing better holds it.
+     *
+     * Higher wins and EQUAL LOSES: a transport re-attaching at its own rank must
+     * not displace itself mid-stream. Returns whether the caller now owns it, so
+     * a loser can close its own connection rather than sit half-attached.
+     *
+     * Ownership is not a lock: the incumbent is not told, because there is
+     * nothing for it to do. Its bytes simply stop being sent, and the desktop
+     * retires its end of that transport on its own (see MobileLinkManager's
+     * retire grace).
+     */
+    internal fun attach(rank: Int, send: (ByteArray) -> Unit): Boolean {
+        val current = holder
+        if (current != null && current.rank >= rank) return false
+        holder = Holder(rank, send)
+        return true
+    }
+
+    /**
+     * Release the link IF this rank still holds it.
+     *
+     * The rank check is what makes a losing transport's later teardown safe: a
+     * BLE link displaced by LAN still eventually closes, and a bare release
+     * would take the LAN link down with it.
+     */
+    internal fun detachRank(rank: Int) {
+        if (holder?.rank != rank) return
+        holder = null
+        _state.value = LinkState.Disconnected
+    }
+
+    /** Which rank owns the link, or null when nothing does. Diagnostics only. */
+    internal val holderRank: Int? get() = holder?.rank
 
     /** False when the link is down; the caller decides whether that matters. */
     fun send(message: ByteArray): Boolean {
-        val send = sender ?: return false
+        val send = holder?.send ?: return false
         if (_state.value != LinkState.Linked) return false
         send(message)
         return true
@@ -58,7 +102,7 @@ object HelmLink {
     }
 
     internal fun detach() {
-        sender = null
+        holder = null
         _state.value = LinkState.Disconnected
         // Frames a dead link left unconsumed are garbage to the next one: the
         // peer's sequence counters start over, so delivering them would read

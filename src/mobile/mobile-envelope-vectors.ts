@@ -21,6 +21,7 @@ import {
   encodeCall,
   encodeChat,
   encodeError,
+  encodeLan,
   encodeResult,
 } from './mobile-envelope.js';
 
@@ -105,6 +106,13 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
       filePath: 'C:\\Users\\helm\\AppData\\Roaming\\Helm\\tmp\\note.ogg',
       voice: true,
     })),
+    vector('lan addresses', 'helm-to-phone', encodeLan([
+      '192.168.1.20:47475',
+      '10.8.0.4:47475',
+    ])),
+    // An empty list is a MEANINGFUL record — "stop dialling" — so it is pinned
+    // rather than left to each side to guess at.
+    vector('lan with no addresses', 'helm-to-phone', encodeLan([])),
   ];
 
   const rejects: EnvelopeRejectCase[] = [
@@ -116,6 +124,8 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     reject('call with a numeric id', '{"v":1,"t":"call","id":7,"method":"x"}', 'id must be a string'),
     reject('error with no code', '{"v":1,"t":"error","id":"c1","error":{"message":"x"}}', 'error.code is required'),
     reject('chat with no text', '{"v":1,"t":"chat","sessionId":"s","sessionName":"n","at":1}', 'text is required on a chat record'),
+    reject('lan with no addresses field', '{"v":1,"t":"lan"}', 'addresses is required on a lan record'),
+    reject('lan addresses holding a non-string', '{"v":1,"t":"lan","addresses":["a",7]}', 'every address must be a string'),
   ];
 
   return {
@@ -123,7 +133,7 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
       version: MOBILE_ENVELOPE_VERSION,
       encoding: 'utf8-json',
       maxEnvelopeBytes: MAX_ENVELOPE_BYTES,
-      recordTypes: ['call', 'result', 'error', 'chat'],
+      recordTypes: ['call', 'result', 'error', 'chat', 'lan'],
     },
     cases,
     rejects,

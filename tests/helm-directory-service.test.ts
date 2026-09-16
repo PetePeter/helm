@@ -52,6 +52,32 @@ describe('HelmDirectoryService', () => {
     expect(dirs[0].source).toContain('config');
   });
 
+  it('names the owning project alongside the folder name', () => {
+    // An ALTERNATE folder keeps its own name, so a client showing only `name`
+    // cannot say which project it belongs to. The phone's spawn form renders
+    // "project ▸ folder" and needs both halves on the wire.
+    const configLoader = makeConfigLoader([{ path: '/repo/android', name: 'android' }]);
+    const projectStore = makeProjectStore([{ id: 'proj-1', canonicalPath: '/repo/android', name: 'Helm' }]);
+
+    const service = new HelmDirectoryService(
+      configLoader as any, makeSessionManager([]) as any, makePlanManager([]) as any, projectStore as any,
+    );
+    const dirs = service.listDirectories();
+
+    expect(dirs[0].name).toBe('android');
+    expect(dirs[0].projectName).toBe('Helm');
+  });
+
+  it('omits the project name for a directory no project owns', () => {
+    const configLoader = makeConfigLoader([{ path: '/scratch', name: 'scratch' }]);
+
+    const service = new HelmDirectoryService(
+      configLoader as any, makeSessionManager([]) as any, makePlanManager([]) as any, makeProjectStore([]) as any,
+    );
+
+    expect(service.listDirectories()[0].projectName).toBeUndefined();
+  });
+
   it('includes plan directories outside the configured list', () => {
     const configLoader = makeConfigLoader([{ path: '/repo/main', name: 'Main' }]);
     const sessionManager = makeSessionManager([]);

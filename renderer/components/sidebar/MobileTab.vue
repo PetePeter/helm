@@ -28,6 +28,8 @@ const {
   apkRelease,
   apkError,
   loadApkRelease,
+  lan,
+  setLanConfig,
 } = useMobileDevices();
 
 /** Allow-list presets: a friendly name → the glob patterns it applies. */
@@ -43,11 +45,39 @@ const confirmRevokeId = ref<string | null>(null);
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const copiedUrl = ref(false);
+const copiedAddress = ref<string | null>(null);
+/** The port box is a draft until committed, so typing "4" is not port 4. */
+const portDraft = ref('');
 
 onMounted(() => {
   ensureSubscribed();
   void loadApkRelease();
 });
+
+/**
+ * Toggling LAN is instant; a port change is committed on blur or Enter.
+ *
+ * Applying on every keystroke would rebind the listener once per digit, and the
+ * intermediate ports are real ports that a user never asked to open.
+ */
+function toggleLan(enabled: boolean): void {
+  void setLanConfig({ enabled, port: lan.value.port });
+}
+
+function commitPort(): void {
+  const port = Number.parseInt(portDraft.value, 10);
+  portDraft.value = '';
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+  if (port === lan.value.port) return;
+  void setLanConfig({ enabled: lan.value.enabled, port });
+}
+
+function copyAddress(address: string): void {
+  void navigator.clipboard.writeText(address).then(() => {
+    copiedAddress.value = address;
+    setTimeout(() => { copiedAddress.value = null; }, 1500);
+  });
+}
 
 function copyUrl(): void {
   const url = apkRelease.value?.url;
@@ -147,6 +177,63 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
       </div>
 
       <p v-else class="mobile-empty">Looking up the download for this version…</p>
+    </section>
+
+    <section class="mobile-section">
+      <div class="mobile-section-head">
+        <h3 class="mobile-section-title">Over your network</h3>
+        <label class="mobile-lan-toggle">
+          <input
+            type="checkbox"
+            :checked="lan.enabled"
+            @change="toggleLan(($event.target as HTMLInputElement).checked)"
+          />
+          <span>Enabled</span>
+        </label>
+      </div>
+
+      <p class="mobile-empty">
+        Bluetooth works anywhere but is slow. On your own network the phone can
+        connect over LAN instead, and Helm switches to it automatically.
+        Pairing still happens over Bluetooth.
+      </p>
+
+      <div class="mobile-lan-port">
+        <label for="mobile-lan-port">Port</label>
+        <input
+          id="mobile-lan-port"
+          class="mobile-lan-input"
+          type="text"
+          inputmode="numeric"
+          :placeholder="String(lan.port)"
+          :value="portDraft"
+          @input="portDraft = ($event.target as HTMLInputElement).value"
+          @keyup.enter="commitPort()"
+          @blur="commitPort()"
+        />
+      </div>
+
+      <template v-if="lan.enabled">
+        <p v-if="!lan.listening" class="mobile-empty">
+          Not listening yet — nothing binds until a phone is paired.
+        </p>
+        <template v-else>
+          <p class="mobile-empty">Enter one of these on the phone:</p>
+          <div class="mobile-lan-chips">
+            <button
+              v-for="address in lan.addresses"
+              :key="address"
+              class="mobile-lan-chip"
+              @click="copyAddress(address)"
+            >
+              {{ copiedAddress === address ? 'Copied' : address }}
+            </button>
+          </div>
+          <p v-if="lan.addresses.length === 0" class="mobile-empty">
+            Listening, but this machine has no reachable IPv4 address.
+          </p>
+        </template>
+      </template>
     </section>
 
     <section class="mobile-section">
@@ -268,6 +355,38 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 }
 .mobile-apk-note { margin: 0; font-size: 0.78rem; color: var(--accent); line-height: 1.35; }
 .mobile-apk-actions { display: flex; gap: 6px; }
+
+.mobile-lan-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.mobile-lan-port { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--text-secondary); }
+.mobile-lan-input {
+  width: 6.5rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.72rem;
+}
+.mobile-lan-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mobile-lan-chip {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+.mobile-lan-chip:hover { border-color: var(--accent); color: var(--text-primary); }
 
 .mobile-row {
   border: 1px solid var(--border);
