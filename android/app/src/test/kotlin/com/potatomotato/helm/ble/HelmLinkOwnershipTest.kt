@@ -20,7 +20,10 @@ import org.junit.Test
 class HelmLinkOwnershipTest {
 
     @After
-    fun tearDown() = HelmLink.detach()
+    fun tearDown() {
+        HelmLink.onLinkChanged = null
+        HelmLink.detach()
+    }
 
     private fun sink(into: MutableList<ByteArray>): (ByteArray) -> Unit = { into += it }
 
@@ -159,4 +162,41 @@ class HelmLinkOwnershipTest {
         assertNull(HelmLink.holderRank)
         assertEquals(LinkState.Disconnected, HelmLink.state.value)
     }
+
+    @Test
+    fun `the channel is rebuilt BEFORE attach returns, not on a later coroutine`() {
+        // Found on real hardware. The desktop sends its HELLO the instant it
+        // accepts the new transport, and the new transport pumps it immediately.
+        // A listener that merely observes the owner flow has not run yet, so the
+        // OLD channel's collector eats that HELLO — the queue is consume-once, so
+        // it is gone — and then ANSWERS it with the old session's keys down the
+        // new socket. The desktop reported "Peer confirmation MAC failed".
+        //
+        // So the rebuild has to have happened by the time attach() returns.
+        val rebuilds = mutableListOf<Pair<Int?, LinkState>>()
+        HelmLink.onLinkChanged = { owner, state -> rebuilds += owner to state }
+
+        HelmLink.attach(RANK_BLE) { }
+        HelmLink.publishState(RANK_BLE, LinkState.Linked)
+        val before = rebuilds.size
+        HelmLink.attach(RANK_LAN) { }
+
+        assertTrue("ownership moved without telling the channel", rebuilds.size > before)
+        assertEquals(RANK_LAN, rebuilds.last().first)
+    }
+
+    @Test
+    fun `a transport re-attaching at the same rank does not churn the channel`() {
+        // The radio recovery re-runs bringUp on a link that is already up. Tearing
+        // the session down there would drop a working link for no reason.
+        HelmLink.attach(RANK_BLE) { }
+        HelmLink.publishState(RANK_BLE, LinkState.Linked)
+        val rebuilds = mutableListOf<Pair<Int?, LinkState>>()
+        HelmLink.onLinkChanged = { owner, state -> rebuilds += owner to state }
+
+        HelmLink.attach(RANK_BLE) { }
+
+        assertTrue("nothing changed, so nothing should be rebuilt", rebuilds.isEmpty())
+    }
 }
+

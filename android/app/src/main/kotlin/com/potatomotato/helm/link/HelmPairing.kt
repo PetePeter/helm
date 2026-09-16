@@ -122,15 +122,23 @@ object HelmPairing {
         // A swap from Bluetooth to LAN means the desktop has opened a brand new
         // SecureChannel over the new pipe, so the old session must be torn down
         // even though the link never went "down" from the app's point of view.
-        // Pairing the two flows is what makes that true for both causes.
+        //
+        // SYNCHRONOUS, not a flow collector. The desktop sends its HELLO the
+        // instant it accepts the new transport, and a coroutine that has not run
+        // yet leaves the OLD channel's collector in place to eat it — and to
+        // answer it with the old session's keys down the new socket. Observed on
+        // real hardware as "Peer confirmation MAC failed". See HelmLink.
+        HelmLink.onLinkChanged = { owner, linkState ->
+            if (linkState == LinkState.Linked && owner != null) attach() else detach()
+        }
+
+        // One dial attempt per Bluetooth link, off the main thread. Only from
+        // BLUETOOTH: dialling in response to the LAN link coming up would be
+        // dialling because we just dialled.
         scope.launch {
             combine(HelmLink.state, HelmLink.owner) { linkState, owner -> linkState to owner }
                 .distinctUntilChanged()
                 .collect { (linkState, owner) ->
-                    if (linkState == LinkState.Linked && owner != null) attach() else detach()
-                    // One dial attempt per Bluetooth link, off the main thread.
-                    // Only from BLUETOOTH: dialling in response to the LAN link
-                    // coming up would be dialling because we just dialled.
                     if (linkState == LinkState.Linked && owner == RANK_BLE) {
                         val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
                         if (desktopId != null) scope.launch(Dispatchers.IO) { lan?.tryConnect(desktopId) }

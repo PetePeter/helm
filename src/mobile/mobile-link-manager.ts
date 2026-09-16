@@ -17,9 +17,10 @@
  *
  * Since the PSK is bound into the handshake, identification is "try a candidate
  * PSK and see": a failure closes the pipe, so exactly one candidate can be tried
- * per connection. A per-peripheral cursor walks the remaining candidates across
- * reconnects rather than retrying the same one forever. With one or two paired
- * phones that converges immediately.
+ * per connection. A cursor walks the remaining candidates across reconnects
+ * rather than retrying the same one forever. That cursor must NOT be keyed on
+ * the advertised address — rotation would reset it on every attempt and the
+ * same candidate would be tried forever. See nextCandidate.
  *
  * ONE LINK PER PHONE, ACROSS ALL TRANSPORTS. The manager owns N transports and
  * knows them only by rank, so two pipes to one phone are not two links — they
@@ -206,8 +207,14 @@ export class MobileLinkManager extends EventEmitter {
   /** Handshakes currently running — keepalive probing pauses while any is. */
   private handshakesInFlight = 0;
   private readonly links = new Map<string, ActiveLink>();
-  /** Which candidate to try next for a given advertised address. */
-  private readonly cursor = new Map<string, number>();
+  /**
+   * How many identification attempts have been made since the last success.
+   *
+   * Deliberately NOT per-address: see nextCandidate. This is the offset into the
+   * candidate list, so every paired device is tried in turn however often the
+   * peer's advertised address changes.
+   */
+  private attempt = 0;
   /** Increments on every slot occupancy; see ActiveLink.generation. */
   private generation = 0;
   /**
@@ -274,7 +281,7 @@ export class MobileLinkManager extends EventEmitter {
       }
       this.emit('offline', active.machineId);
     }
-    this.cursor.clear();
+    this.attempt = 0;
     this.running = false;
     await this.stopTransports();
   }
@@ -564,7 +571,8 @@ export class MobileLinkManager extends EventEmitter {
     }
 
     this.occupy({ machineId, link, channel, rank, lastInboundAt: this.now() });
-    this.cursor.delete(link.deviceId);
+    // A success means the ordering was right; start the next walk from the top.
+    this.attempt = 0;
     // The address is a hint, so it is UPDATED on the existing record — keying a
     // new entry off a rotated address is exactly the regression this prevents.
     // Only a transport whose address survives a reconnect may write it; see
@@ -661,9 +669,19 @@ export class MobileLinkManager extends EventEmitter {
   }
 
   /**
-   * Choose which paired phone this advertiser might be. The record whose
-   * last-seen address matches is tried first; after that the cursor walks the
-   * rest across reconnects so a rotated address still finds its device.
+   * Choose which paired phone this advertiser might be.
+   *
+   * Identification is "try a candidate PSK and see", because a failure closes
+   * the pipe and only one can be tried per connection. So the walk has to
+   * advance across RECONNECTS, and this is where that used to be wrong: the
+   * cursor was keyed on the advertised address. Android rotates that address on
+   * every connection, so the key was new every time, the index was always 0,
+   * and the same first candidate was tried forever.
+   *
+   * The consequence was not slowness. With two phones paired, whichever sorted
+   * second could NEVER be identified — observed on real hardware as an endless
+   * six-second loop of "Peer confirmation MAC failed". A rotating address is the
+   * normal case, so the walk must not be keyed on anything that rotates.
    */
   private nextCandidate(link: MobileLink): MobileDevice | undefined {
     // A device already linked at this rank or better is not a candidate — but
@@ -676,8 +694,8 @@ export class MobileLinkManager extends EventEmitter {
       .sort((a, b) => rank(b, link.deviceId) - rank(a, link.deviceId));
     if (candidates.length === 0) return undefined;
 
-    const index = (this.cursor.get(link.deviceId) ?? 0) % candidates.length;
-    this.cursor.set(link.deviceId, index + 1);
+    const index = this.attempt % candidates.length;
+    this.attempt += 1;
     return candidates[index];
   }
 

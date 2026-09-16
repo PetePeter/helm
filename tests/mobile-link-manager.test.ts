@@ -253,6 +253,28 @@ describe('MobileLinkManager identification', () => {
     expect(h.attempts).toEqual([]);
   });
 
+  it('still walks the candidates when the advertiser ROTATES its address', async () => {
+    // Found on real hardware. The walk used to be keyed on the advertised
+    // address, and Android rotates that on every single connection — so the key
+    // was new each time, the index was always 0, and the first candidate was
+    // tried forever. With two phones paired, whichever sorted second could NEVER
+    // be identified: an endless six-second loop of confirm-MAC failures.
+    const ROTATION_A = 'a1:a1:a1:a1:a1:a1';
+    const ROTATION_B = 'b2:b2:b2:b2:b2:b2';
+    const h = makeHarness({ [ROTATION_A]: OTHER_PHONE, [ROTATION_B]: OTHER_PHONE });
+    pair(h, PHONE);
+    pair(h, OTHER_PHONE);
+    await h.manager.start();
+
+    // Every reconnect looks like a brand new advertiser, which is the norm.
+    await offer(h, new FakeLink(ROTATION_A));
+    expect(h.manager.isOnline(OTHER_PHONE)).toBe(false);
+    await offer(h, new FakeLink(ROTATION_B));
+
+    expect(h.attempts.map((a) => a.psk)).toEqual([`mobile-${PHONE}`, `mobile-${OTHER_PHONE}`]);
+    expect(h.manager.isOnline(OTHER_PHONE)).toBe(true);
+  });
+
   it('tries each paired phone in turn across reconnects rather than only the first', async () => {
     const h = makeHarness({ '33:33:33:33:33:33': OTHER_PHONE });
     pair(h, PHONE);

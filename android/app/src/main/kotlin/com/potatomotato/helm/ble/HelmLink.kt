@@ -60,6 +60,28 @@ object HelmLink {
     private val _owner = MutableStateFlow<Int?>(null)
 
     /**
+     * Run SYNCHRONOUSLY the instant ownership moves, before [attach] returns.
+     *
+     * This is not the same thing as collecting [owner], and the difference is a
+     * bug found on real hardware. The peer sends its HELLO the moment it accepts
+     * the new transport, and the new transport starts pumping bytes immediately
+     * — so a listener that merely observes a flow has not run yet. The OLD
+     * channel's collector is still attached, eats the new transport's HELLO
+     * (the queue is consume-once, so it is gone for good), and ANSWERS it with
+     * the old session's keys down the new socket. The peer reports a confirm-MAC
+     * failure and the link never forms.
+     *
+     * Whoever owns the channel above installs this and rebuilds here. Bytes that
+     * arrive in the meantime simply wait in the queue, which is what an UNLIMITED
+     * channel is for.
+     *
+     * Fired on a change of EITHER value, because both mean the same thing to the
+     * layer above: the session it was holding is no longer the session on the
+     * wire.
+     */
+    internal var onLinkChanged: ((owner: Int?, state: LinkState) -> Unit)? = null
+
+    /**
      * Which transport currently owns the link, as a flow.
      *
      * A HANDSHAKE BELONGS TO ONE TRANSPORT. When ownership moves, the peer opens
@@ -131,14 +153,21 @@ object HelmLink {
 
     private fun republish() {
         val holder = transports.entries.lastOrNull()
-        if (holder?.key != _owner.value) {
+        val moved = holder?.key != _owner.value
+        if (moved) {
             // The bytes a finished transport left behind belong to a session
             // that is over. Dropping them is what stops them being read as the
             // first frame of the next handshake.
             drainInbound()
             _owner.value = holder?.key
         }
-        _state.value = holder?.value?.state ?: LinkState.Disconnected
+        val state = holder?.value?.state ?: LinkState.Disconnected
+        val changed = moved || state != _state.value
+        _state.value = state
+        // LAST, and synchronously: the values above must already be correct when
+        // the channel is rebuilt, and the rebuild must finish before the caller
+        // starts pumping the new transport's bytes.
+        if (changed) onLinkChanged?.invoke(holder?.key, state)
     }
 
     private fun drainInbound() {
