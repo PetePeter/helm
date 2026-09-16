@@ -48,8 +48,26 @@ object BleFraming {
     /** ATT notification/write overhead: a payload is the MTU minus three bytes. */
     const val ATT_OVERHEAD_BYTES = 3
 
-    /** Usable payload for a negotiated ATT MTU, never below the BLE 4.0 floor. */
-    fun chunkSizeForMtu(mtu: Int): Int = maxOf(MIN_CHUNK_BYTES, mtu - ATT_OVERHEAD_BYTES)
+    /**
+     * The ATT ceiling on a single attribute value, and so on a single chunk.
+     *
+     * WHY the MTU arithmetic alone is not enough: a 517-byte MTU leaves 514
+     * bytes of payload, and both ends computed exactly that. But 514 is past
+     * the attribute-value ceiling, and a real radio CLIPS such a write to 512
+     * instead of refusing it — two bytes lost per oversized chunk, no error on
+     * either side. Three of them in one message and the peer drops it as
+     * "truncated: 6 bytes short of the declared length", which is what left a
+     * phone stuck forever on "Asking your desktop for the session list" while
+     * single-chunk keepalives flowed normally.
+     */
+    const val MAX_ATTRIBUTE_VALUE_BYTES = 512
+
+    /**
+     * Usable payload for a negotiated ATT MTU, never below the BLE 4.0 floor
+     * and never above what a single attribute value may carry.
+     */
+    fun chunkSizeForMtu(mtu: Int): Int =
+        maxOf(MIN_CHUNK_BYTES, minOf(MAX_ATTRIBUTE_VALUE_BYTES, mtu - ATT_OVERHEAD_BYTES))
 }
 
 /** Splits whole messages into MTU-sized chunks, carrying the sequence counter. */

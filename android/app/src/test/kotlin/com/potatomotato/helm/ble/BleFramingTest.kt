@@ -2,6 +2,7 @@ package com.potatomotato.helm.ble
 
 import com.potatomotato.helm.fromHex
 import com.potatomotato.helm.toHex
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -100,6 +101,36 @@ class BleFramingTest {
         assertEquals(BleFraming.MIN_CHUNK_BYTES, BleFraming.chunkSizeForMtu(23))
         assertEquals(BleFraming.MIN_CHUNK_BYTES, BleFraming.chunkSizeForMtu(10))
         assertEquals(182, BleFraming.chunkSizeForMtu(185))
+    }
+
+    @Test
+    fun `a negotiated MTU never sizes a chunk past the attribute-value ceiling`() {
+        // THE REGRESSION. A 517 MTU leaves 514 bytes by the arithmetic, and both
+        // ends computed exactly that. A radio CLIPS a 514-byte write to 512
+        // rather than refusing it, so every oversized chunk arrived two bytes
+        // light and any multi-chunk message was dropped as truncated.
+        assertEquals(BleFraming.MAX_ATTRIBUTE_VALUE_BYTES, BleFraming.chunkSizeForMtu(517))
+        assertTrue(BleFraming.chunkSizeForMtu(517) <= BleFraming.MAX_ATTRIBUTE_VALUE_BYTES)
+        // Below the ceiling the MTU still decides.
+        assertEquals(244, BleFraming.chunkSizeForMtu(247))
+    }
+
+    @Test
+    fun `a multi-chunk message at the real negotiated size survives the round trip`() {
+        // The exact shape that failed on hardware: a 1711-byte answer over a
+        // 517-MTU link. It went out as 514/514/514/181 and arrived six bytes
+        // short of its declared length.
+        val message = Random(21).nextBytes(1711)
+
+        val chunks = BleChunker().chunk(message, BleFraming.chunkSizeForMtu(517))
+        chunks.forEach(reassembler::push)
+
+        assertTrue(
+            "a chunk exceeded the attribute-value ceiling",
+            chunks.all { it.size <= BleFraming.MAX_ATTRIBUTE_VALUE_BYTES },
+        )
+        assertEquals(1, received.size)
+        assertArrayEquals(message, received[0])
     }
 
     @Test

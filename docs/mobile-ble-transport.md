@@ -220,6 +220,19 @@ so it is left alone. Without a report, chunking falls back to 20 bytes and
 everything still works, just slower. The phone side already sizes notifications
 from its own negotiated MTU.
 
+Whatever the MTU allows, a chunk is additionally capped at
+`MAX_ATTRIBUTE_VALUE_BYTES` (512) — the ATT ceiling on a single attribute
+value — on **both** ends. This is not belt-and-braces: a 517 report yields 514
+by the arithmetic, and a real radio (Moto ThinkPhone, Android 15) *clips* a
+514-byte write to 512 rather than refusing it. The loss is two bytes per
+oversized chunk, invisible on the sending side, and it destroyed every
+multi-chunk message while single-chunk keepalives flowed normally — a phone
+stuck forever on "Asking your desktop for the session list" with the link
+showing `Linked`. The peer drops the message as `truncated: N bytes short of
+the declared length`, which is the only trace it leaves. Both suites pin the
+cap, including a round trip of the exact 1711-byte, 4-chunk shape that failed
+on hardware.
+
 ## The phone side (`android/app/src/main/kotlin/com/potatomotato/helm/ble/`)
 
 The peripheral half mirrors this document from the other end. Directions keep

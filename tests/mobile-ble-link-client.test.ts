@@ -496,14 +496,36 @@ describe('BleLinkClient MTU negotiation', () => {
     expect(received[0].equals(payload)).toBe(true);
   });
 
+  it('never writes past the 512-byte attribute-value ceiling, whatever the MTU allows', async () => {
+    // THE REGRESSION. A 517 report yields 514 by the MTU arithmetic, and 514 is
+    // two bytes past what a single attribute value may carry. A real phone
+    // CLIPS the write rather than refusing it, so a 1711-byte answer went out
+    // as 514/514/514/181, arrived six bytes light, and was dropped as
+    // "truncated" — while this side logged every chunk as complete. Every
+    // multi-chunk message was lost and nothing said so.
+    const { logs, phone, link } = await connected({ mtu: 517 });
+
+    const payload = Buffer.alloc(1_711, 0x5c);
+    link.pipe.write(payload);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(Math.max(...phone.rx.writes.map((chunk) => chunk.length))).toBeLessThanOrEqual(512);
+    expect(logs.join(' ')).toContain('chunkSize=512');
+    const received = reassembled(phone);
+    expect(received).toHaveLength(1);
+    expect(received[0].equals(payload)).toBe(true);
+  });
+
   it('keeps 517 and 23 as the plausible band edges, and rejects what is outside', async () => {
     const { logs, phone, link } = await connected();
 
     phone.emit('mtu', 517);
     link.pipe.write(Buffer.alloc(1_500));
     await vi.advanceTimersByTimeAsync(0);
-    expect(logs.join(' ')).toContain('chunkSize=514');
-    expect(phone.rx.writes[0].length).toBeLessThanOrEqual(514);
+    // 517 is still accepted as a plausible report; the chunk it yields is
+    // capped at the attribute-value ceiling rather than the MTU's 514.
+    expect(logs.join(' ')).toContain('chunkSize=512');
+    expect(phone.rx.writes[0].length).toBeLessThanOrEqual(512);
 
     phone.emit('mtu', 23);
     link.pipe.write(Buffer.alloc(100));

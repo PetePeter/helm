@@ -41,6 +41,25 @@ export const CHUNK_OVERHEAD_FIRST = CHUNK_HEADER_BYTES + LENGTH_PREFIX_BYTES;
 export const MIN_CHUNK_BYTES = 20;
 
 /**
+ * Largest chunk a link may ever write: the ATT ceiling on a single attribute
+ * value, 512 bytes.
+ *
+ * WHY this is not just the MTU arithmetic: a 517-byte MTU leaves 514 bytes of
+ * ATT payload, and sizing chunks at 514 looks correct on both sides — the
+ * desktop logs the write as complete and the phone logs a successful MTU
+ * negotiation. But 514 is past the attribute-value ceiling, and a real radio
+ * (Moto ThinkPhone, Android 15) CLIPS such a write to 512 instead of refusing
+ * it. The loss is silent and tiny: three 514-byte chunks arrive 2 bytes light
+ * each, and the phone drops the message as "truncated: 6 bytes short of the
+ * declared length" while the desktop believes it was delivered.
+ *
+ * The visible symptom was every multi-chunk answer vanishing — a phone stuck
+ * forever on "Asking your desktop for the session list" while the link showed
+ * Linked and single-chunk keepalives flowed normally.
+ */
+export const MAX_ATTRIBUTE_VALUE_BYTES = 512;
+
+/**
  * Hard ceiling on a single reassembled message. A peer that lies about its
  * length gets refused at the FIRST chunk, so reassembly memory is bounded by
  * this value no matter what arrives.

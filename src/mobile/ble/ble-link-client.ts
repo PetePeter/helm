@@ -17,7 +17,12 @@
 
 import { EventEmitter } from 'node:events';
 import type { BytePipe } from '../secure-channel';
-import { BleChunker, BleReassembler, MIN_CHUNK_BYTES } from './ble-framing';
+import {
+  BleChunker,
+  BleReassembler,
+  MAX_ATTRIBUTE_VALUE_BYTES,
+  MIN_CHUNK_BYTES,
+} from './ble-framing';
 import {
   HELM_RX_UUID_SHORT,
   HELM_SERVICE_UUID_SHORT,
@@ -711,12 +716,20 @@ class BleLinkPipe implements BleLink {
    * valid 20-byte chunk is used, which the phone reassembler handles anyway.
    * A later report that moves the MTU takes effect from the next write on: the
    * chunker is sized per call precisely because the MTU can change.
+   *
+   * The result is capped at MAX_ATTRIBUTE_VALUE_BYTES regardless of what the
+   * MTU allows: a 517 report yields 514 by the arithmetic, and a write that
+   * size is CLIPPED to 512 by a real phone rather than refused, which loses two
+   * bytes per chunk and silently destroys every multi-chunk message.
    */
   private chunkSize(): number {
     if (this.negotiatedMtu === null) return MIN_CHUNK_BYTES;
     return Math.max(
       MIN_CHUNK_BYTES,
-      Math.min(MAX_NEGOTIATED_ATT_MTU, this.negotiatedMtu) - ATT_OVERHEAD_BYTES,
+      Math.min(
+        MAX_ATTRIBUTE_VALUE_BYTES,
+        Math.min(MAX_NEGOTIATED_ATT_MTU, this.negotiatedMtu) - ATT_OVERHEAD_BYTES,
+      ),
     );
   }
 }
