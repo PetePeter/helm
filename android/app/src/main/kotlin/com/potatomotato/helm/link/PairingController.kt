@@ -99,6 +99,17 @@ class PairingController(
         channel?.close("pairing cancelled by the user")
     }
 
+    /**
+     * Clear a failure the user has read, so the screen is not a dead end.
+     *
+     * Deliberately narrow: only [PairingState.Failed] is cleared, because a
+     * dismiss that could also wipe a live SAS prompt or a working link would be
+     * a way to lose state the user never asked to lose.
+     */
+    fun dismissFailure() {
+        if (_state.value is PairingState.Failed) _state.value = PairingState.Idle
+    }
+
     /** Send one application message. False when there is no usable link. */
     fun send(message: ByteArray): Boolean {
         val live = channel ?: return false

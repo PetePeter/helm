@@ -18,6 +18,9 @@
     <string name="pairing_cancel">Cancel</string>
     <string name="pairing_pair_desktop">Pair a desktop</string>
     <string name="pairing_handshaking">Verifying…</string>
+    <string name="pairing_handshaking_detail">Your desktop connected. Waiting for it to answer.</string>
+    <string name="pairing_failed_title">Pairing failed</string>
+    <string name="pairing_retry">Back</string>
 
     <string name="sessions_none">No sessions are running on this desktop.</string>
     <string name="sessions_no_link">Waiting for your desktop. Sessions appear as soon as the link is up.</string>

@@ -41,7 +41,7 @@ import { RANK_BLE, type MobileLink } from './mobile-link.js';
 // Re-exported so callers have ONE import site for the link vocabulary.
 export { RANK_BLE, RANK_LAN } from './mobile-link.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
-import type { MobilePairing } from './mobile-pairing.js';
+import type { MobilePairing, MobilePairingState } from './mobile-pairing.js';
 import type { MobileDevice } from '../types/mobile-device.js';
 import type { SecretStore } from '../mcp/peer/secret-store.js';
 
@@ -225,6 +225,14 @@ export class MobileLinkManager extends EventEmitter {
   private readonly origin = new WeakMap<MobileLink, MobileLinkTransport>();
   /** Displaced links still inside their drain window. */
   private readonly retiring = new Map<ReturnType<typeof setTimeout>, ActiveLink>();
+  /**
+   * The link currently lent to the pairing coordinator, and its deadline.
+   *
+   * The coordinator only ever closes channels, never connections, so this is
+   * where a lent link is remembered until the flow settles. Only one exists at a
+   * time because the coordinator accepts only one attempt at a time.
+   */
+  private pairingHold: { link: MobileLink; timer: ReturnType<typeof setTimeout> } | null = null;
 
   constructor(options: MobileLinkManagerOptions) {
     super();
@@ -247,7 +255,15 @@ export class MobileLinkManager extends EventEmitter {
     // The radio should run only while there is a phone to reach: any paired
     // device, or an armed pairing (which is how the first one ever arrives).
     this.opts.deviceStore.on('mobile-devices:changed', () => this.ensure());
-    this.opts.pairing.on('state', () => this.ensure());
+    this.opts.pairing.on('state', (state: MobilePairingState) => {
+      // A flow that has stopped running can no longer own a link. 'paired' is
+      // the one terminal status excluded here: the 'paired' event follows it
+      // immediately, and adoptPaired takes the link over rather than dropping it.
+      if (state.status !== 'scanning' && state.status !== 'awaiting-sas' && state.status !== 'paired') {
+        this.releasePairingHold(`pairing ended: ${state.reason ?? state.status}`);
+      }
+      this.ensure();
+    });
     this.opts.pairing.on('paired', (event: PairedEvent) => this.adoptPaired(event));
     // Revocation must reach the radio, and this is the only object that holds it.
     this.opts.pairing.setDropLink((machineId) => this.dropLink(machineId, 'device revoked'));
@@ -272,6 +288,7 @@ export class MobileLinkManager extends EventEmitter {
     this.enabled = false;
     this.clearKeepalive();
     this.flushRetiring('Helm stopped');
+    this.releasePairingHold('Helm stopped');
     for (const active of [...this.links.values()]) {
       this.links.delete(active.machineId);
       try {
@@ -483,8 +500,23 @@ export class MobileLinkManager extends EventEmitter {
 
   private async identify(link: MobileLink): Promise<void> {
     // Pairing first: while it is armed the coordinator owns the handshake, and a
-    // second one on the same pipe would fight it for the bytes.
-    if (this.pairingArmed() && await this.opts.pairing.offerLink(link)) return;
+    // second one on the same pipe would fight it for the bytes. The link is only
+    // LENT — see holdForPairing for why it still has to be tracked here.
+    //
+    // ORDER IS THE SAFETY RULE, AGAIN. The loan is recorded BEFORE the
+    // coordinator is awaited, because offerLink awaits a real handshake with no
+    // deadline of its own: a phone that connects and then says nothing never
+    // lets that await return, so a hold armed after it would never be armed at
+    // all. Recording it first is what makes the deadline cover the handshake.
+    if (this.pairingArmed()) {
+      this.holdForPairing(link);
+      const taken = await this.opts.pairing.offerLink(link);
+      // The deadline may have reclaimed and dropped the link while we waited.
+      if (this.pairingHold?.link !== link) return;
+      if (taken) return;
+      // Declined, not refused: take the loan back and identify it normally.
+      this.takePairingHold();
+    }
 
     const device = this.nextCandidate(link);
     if (!device) {
@@ -672,8 +704,14 @@ export class MobileLinkManager extends EventEmitter {
    * this never preempts — a freshly paired phone cannot already be linked.
    */
   private adoptPaired(event: PairedEvent): void {
-    const link = event.link;
-    if (!link || this.links.has(event.machineId)) return;
+    // The loan ends here however this turns out, so the deadline is cancelled
+    // first and every path below decides the link's fate explicitly.
+    const held = this.takePairingHold();
+    const link = event.link ?? held;
+    if (!link || this.links.has(event.machineId)) {
+      if (link) void this.refuse(link, 'a link to this phone is already held');
+      return;
+    }
 
     this.occupy({
       machineId: event.machineId,
@@ -736,6 +774,45 @@ export class MobileLinkManager extends EventEmitter {
   }
 
   /** Disconnect a link we will not keep, and let its transport rescan. */
+  /**
+   * Remember a link lent to the pairing coordinator, and bound the loan.
+   *
+   * Two things are needed and neither used to happen. The link must come back on
+   * every exit the flow has — cancel, SAS rejection, expiry — because the
+   * coordinator closes the channel and leaves the connection up. And the loan
+   * needs a deadline of its own: the coordinator reaps an abandoned attempt only
+   * when the next call happens to arrive, so a phone that connects and then goes
+   * quiet is announced by nothing at all. Same shape as boundedHandshake, and
+   * for the same reason — without it the transport's one active-link slot is
+   * held by a link nobody is using, and no rescan is ever scheduled.
+   */
+  private holdForPairing(link: MobileLink): void {
+    // Defensive: a second loan means the first was never settled.
+    this.releasePairingHold('superseded by another pairing attempt');
+    const timer = setTimeout(
+      () => this.releasePairingHold('the pairing attempt was never settled'),
+      this.opts.pairing.attemptTtlMs,
+    );
+    // A pairing nobody finished must not keep an exiting process alive.
+    timer.unref?.();
+    this.pairingHold = { link, timer };
+  }
+
+  /** Take the lent link back from the coordinator, cancelling its deadline. */
+  private takePairingHold(): MobileLink | null {
+    if (!this.pairingHold) return null;
+    const { link, timer } = this.pairingHold;
+    clearTimeout(timer);
+    this.pairingHold = null;
+    return link;
+  }
+
+  /** Take the lent link back AND drop it — every pairing exit but adoption. */
+  private releasePairingHold(reason: string): void {
+    const link = this.takePairingHold();
+    if (link) void this.refuse(link, reason);
+  }
+
   private async refuse(link: MobileLink, reason: string): Promise<void> {
     // The reason used to go to the transport and nowhere else, so a hub that
     // refused every advertiser in range looked identical to one that saw none.

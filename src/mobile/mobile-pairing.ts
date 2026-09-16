@@ -120,6 +120,15 @@ export class MobilePairing extends EventEmitter {
    * Supply the link owner's disconnect hook after construction. MobileLinkManager
    * depends on this coordinator, so it cannot be passed in through the options.
    */
+  /**
+   * How long an attempt may stay unsettled, so the link owner can bound a link
+   * it lends here. Expiry in this class is lazy — reapExpired only runs when a
+   * call arrives — so the owner cannot rely on it to get its link back.
+   */
+  get attemptTtlMs(): number {
+    return this.ttlMs;
+  }
+
   setDropLink(dropLink: (machineId: string) => void): void {
     this.opts.dropLink = dropLink;
   }

@@ -163,6 +163,30 @@ class PairingControllerTest {
         assertTrue(failure.message, failure.message.contains("Update the phone app"))
         assertTrue(store.isEmpty)
     }
+
+    @Test
+    fun `a failure can be dismissed back to idle so the screen is not a dead end`() {
+        val controller = controller()
+        connect(controller, range = ProtocolRange(4000, 4000))
+        assertTrue(controller.state.value is PairingState.Failed)
+
+        controller.dismissFailure()
+
+        assertEquals(PairingState.Idle, controller.state.value)
+        assertTrue(store.isEmpty)
+    }
+
+    @Test
+    fun `dismissing is only ever a no-op on a state the user is not stuck on`() {
+        // It must never be able to wipe a live SAS prompt or a working link.
+        val controller = controller()
+        connect(controller)
+        val comparing = controller.state.value
+
+        controller.dismissFailure()
+
+        assertEquals(comparing, controller.state.value)
+    }
 }
 
 /** A [PskStore] with no device and no filesystem behind it. */

@@ -166,6 +166,8 @@ object HelmPairing {
 
     fun cancel() = requireController().cancel()
 
+    fun dismissFailure() = requireController().dismissFailure()
+
     fun forget(desktopId: String) {
         requireController().forget(desktopId)
         // A forgotten desktop leaves nothing behind, addresses included.

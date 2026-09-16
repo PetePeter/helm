@@ -7,9 +7,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,7 +33,9 @@ import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.PairingState
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.PendingOpen
+import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.PermissionRationale
+import com.potatomotato.helm.ui.components.PrimaryButton
 import com.potatomotato.helm.ui.HelmHome
 import com.potatomotato.helm.ui.pairing.PairingScreen
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -109,21 +114,56 @@ private fun HelmRoot() {
             )
         }
 
+        // A failure the user cannot leave is a failure they have to force-quit
+        // out of, so the message always comes with a way back.
         is PairingState.Failed -> Interstitial {
-            Text(
-                text = pairing.message,
-                color = HelmColors.Danger,
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Lg),
+            ) {
+                Text(
+                    text = stringResource(R.string.pairing_failed_title),
+                    color = HelmColors.Faint,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Text(
+                    text = pairing.message,
+                    color = HelmColors.Danger,
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
+                )
+                PrimaryButton(
+                    text = stringResource(R.string.pairing_retry),
+                    onClick = { HelmPairing.dismissFailure() },
+                )
+            }
         }
 
+        // The one screen with no deadline behind it: the desktop drives the
+        // handshake, and if it never answers this used to be a line of static
+        // text with no spinner and no way out — indistinguishable from a hang.
         is PairingState.Handshaking -> Interstitial {
-            Text(
-                text = stringResource(R.string.pairing_handshaking),
-                color = HelmColors.Accent,
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Lg),
+            ) {
+                CircularProgressIndicator(color = HelmColors.Accent)
+                Text(
+                    text = stringResource(R.string.pairing_handshaking),
+                    color = HelmColors.Accent,
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.pairing_handshaking_detail),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                )
+                GhostButton(
+                    text = stringResource(R.string.pairing_cancel),
+                    onClick = { HelmPairing.cancel() },
+                )
+            }
         }
 
         // Idle and Linked both land on the session list: it carries the link

@@ -91,6 +91,31 @@ wrote — removing a fresh record, or restoring a prior one's fields. A half-pai
 device that has a record but no usable key is worse than no device at all, because
 it looks trusted.
 
+## The link is lent, never given
+
+`MobilePairing` closes **channels**, never connections — it has no idea what a
+transport is, and that ignorance is what keeps it honest. So a link offered to it
+stays owned by `MobileLinkManager`, which records the loan and bounds it.
+
+```mermaid
+graph TD
+    OFFER[identify: pairing armed] -->|offerLink taken| HOLD[holdForPairing<br/>remember link + deadline]
+    HOLD --> PAIRED[state 'paired' → adoptPaired]
+    HOLD --> ENDED[state failed/idle<br/>cancel · SAS rejected · expired]
+    HOLD --> TTL[deadline fires<br/>attempt never settled]
+    PAIRED --> OCCUPY[occupy — the link is kept]
+    ENDED --> REFUSE[refuse → transport.reject → rescan]
+    TTL --> REFUSE
+```
+
+Both halves are load-bearing. Without the release, a cancelled flow left the
+channel closed but the connection up: no disconnect event, so `BleLinkClient`
+never rescanned and its single active-link slot was held until Helm restarted.
+Without the deadline, the same wedge happened to a phone that connected and then
+went quiet — `reapExpired` is lazy, running only when the next call arrives, so
+an abandoned attempt announces nothing on its own. `adoptPaired` is the one exit
+that keeps the link, and it drops it explicitly if it cannot.
+
 ## Storage
 
 Split exactly like the fleet, both under the per-user app-data config dir

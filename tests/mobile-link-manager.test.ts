@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
 import { SecretStore } from '../src/mcp/peer/secret-store.js';
-import { MobilePairing } from '../src/mobile/mobile-pairing.js';
+import { MobilePairing, PAIRING_TTL_MS } from '../src/mobile/mobile-pairing.js';
 import {
   MobileLinkManager,
   RANK_BLE,
@@ -715,6 +715,175 @@ describe('MobileLinkManager pairing mode', () => {
     expect(h.manager.isOnline(PHONE)).toBe(true);
     expect(h.attempts).toEqual([]);
     expect(h.transport.rejected).toEqual([]);
+  });
+});
+
+/**
+ * A link lent to the pairing coordinator has to come back.
+ *
+ * The coordinator is deliberately transport-ignorant — it closes channels, never
+ * connections — so the manager stays the single owner of every link it hands
+ * out. It used to hand one over and forget it: `identify` returned early on a
+ * taken link, which skipped the handshake deadline AND recorded nothing, so a
+ * cancelled or abandoned flow left the transport's one active-link slot occupied
+ * by a link nobody was using. No disconnect, no rescan, radio wedged until Helm
+ * restarted. Observed on real hardware.
+ */
+describe('MobileLinkManager pairing link ownership', () => {
+  /** Arm pairing, offer a link, and settle the phone's end of the handshake. */
+  async function armAndOffer(h: Harness) {
+    h.pairing.start();
+    const { a, b } = createMemoryPipePair();
+    const link: MobileLink = {
+      deviceId: ADDR,
+      deviceName: 'Pixel 8',
+      pipe: a as BytePipe,
+      onFramingDrop: () => {},
+    };
+    const phone = SecureChannel.open({ pipe: b as BytePipe, role: 'responder', machineId: PHONE });
+    h.transport.offer(link);
+    const phoneChannel = await phone;
+    await flush();
+    return { link, phoneChannel };
+  }
+
+  it('releases the link when the user cancels the flow', async () => {
+    const h = makeHarness({});
+    await h.manager.start();
+    const { link } = await armAndOffer(h);
+    expect(h.pairing.getState().status).toBe('awaiting-sas');
+    expect(h.transport.rejected).toEqual([]);
+
+    h.pairing.cancel('cancelled by the user');
+    await flush();
+
+    expect(h.transport.rejected).toHaveLength(1);
+    expect(h.transport.rejected[0].deviceId).toBe(ADDR);
+    expect((link.pipe as unknown as { closed: boolean }).closed).toBe(true);
+  });
+
+  it('releases the link when the user rejects the SAS digits', async () => {
+    const h = makeHarness({});
+    await h.manager.start();
+    await armAndOffer(h);
+
+    h.pairing.confirm(false);
+    await flush();
+
+    expect(h.transport.rejected).toHaveLength(1);
+    expect(h.transport.rejected[0].deviceId).toBe(ADDR);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+  });
+
+  it('keeps the link when pairing succeeds, and adopts it', async () => {
+    const h = makeHarness({});
+    await h.manager.start();
+    const { phoneChannel } = await armAndOffer(h);
+
+    h.pairing.confirm(true);
+    phoneChannel.confirmSas(true);
+    await flush();
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.transport.rejected).toEqual([]);
+  });
+
+  it('releases a link the flow never settles, once the attempt TTL passes', async () => {
+    // Expiry in the coordinator is lazy — nothing reaps an abandoned attempt
+    // until the next call arrives. So the hold needs its own deadline, the same
+    // shape and for the same reason as the identification handshake's.
+    vi.useFakeTimers();
+    try {
+      const h = makeHarness({});
+      await h.manager.start();
+      h.pairing.start();
+
+      const { a, b } = createMemoryPipePair();
+      const link: MobileLink = {
+        deviceId: ADDR,
+        deviceName: 'Pixel 8',
+        pipe: a as BytePipe,
+        onFramingDrop: () => {},
+      };
+      // The phone connects and answers the handshake, then simply goes quiet:
+      // no confirm, no disconnect, nothing for the manager to react to.
+      const phone = SecureChannel.open({ pipe: b as BytePipe, role: 'responder', machineId: PHONE });
+      h.transport.offer(link);
+      await vi.advanceTimersByTimeAsync(0);
+      await phone;
+      expect(h.transport.rejected).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(PAIRING_TTL_MS + 1_000);
+
+      expect(h.transport.rejected).toHaveLength(1);
+      expect(h.transport.rejected[0].deviceId).toBe(ADDR);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases a link whose peer connects but never answers the pairing handshake', async () => {
+    // The loan has to be recorded BEFORE the coordinator is awaited, not after.
+    // offerLink awaits a real handshake with no deadline of its own, so a phone
+    // that connects and then says nothing never lets that await return — and a
+    // hold armed on the far side of it is never armed at all. That is the exact
+    // shape that wedged the radio on real hardware AFTER the first fix landed.
+    vi.useFakeTimers();
+    try {
+      const h = makeHarness({});
+      await h.manager.start();
+      h.pairing.start();
+
+      const { a } = createMemoryPipePair();
+      const link: MobileLink = {
+        deviceId: ADDR,
+        deviceName: 'Pixel 8',
+        pipe: a as BytePipe,
+        onFramingDrop: () => {},
+      };
+      // No responder on the other end: the phone is connected and mute.
+      h.transport.offer(link);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.transport.rejected).toEqual([]);
+
+      await vi.advanceTimersByTimeAsync(PAIRING_TTL_MS + 1_000);
+
+      expect(h.transport.rejected).toHaveLength(1);
+      expect(h.transport.rejected[0].deviceId).toBe(ADDR);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('identifies a link the coordinator declines, rather than dropping it', async () => {
+    // Declining is not refusing: a link pairing does not want is still a link,
+    // and the paired-device path must get its normal chance at it.
+    const h = makeHarness({ [ADDR]: PHONE });
+    pair(h, PHONE);
+    await h.manager.start();
+    // Armed, but with an attempt already holding a channel, so offerLink says no.
+    h.pairing.start();
+    await armAndOffer(h);
+    expect(h.pairing.getState().status).toBe('awaiting-sas');
+
+    const second = new FakeLink(ROTATED);
+    h.transport.offer(second);
+    await flush();
+
+    // It was identified on its own merits, not silently dropped by the loan.
+    expect(h.attempts.map((a) => a.deviceId)).toContain(ROTATED);
+  });
+
+  it('releases a held link when Helm stops', async () => {
+    const h = makeHarness({});
+    await h.manager.start();
+    await armAndOffer(h);
+
+    await h.manager.stop();
+    await flush();
+
+    expect(h.transport.rejected).toHaveLength(1);
+    expect(h.transport.rejected[0].deviceId).toBe(ADDR);
   });
 });
 
