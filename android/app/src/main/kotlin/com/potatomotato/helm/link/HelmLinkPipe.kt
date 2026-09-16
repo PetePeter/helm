@@ -13,8 +13,14 @@ import kotlinx.coroutines.launch
  * [HelmLink] seen as a [BytePipe]. An adapter, and nothing more: the layers
  * above must not know that the bytes arrive over GATT, and P-0741 already did
  * the chunking, MTU sizing and reassembly below.
+ *
+ * BOUND TO ONE TRANSPORT [rank]: the pipe is created when its transport takes
+ * the link and reads only that transport's bytes. A session belongs to one
+ * transport, so its pipe must never swallow another transport's tail — a
+ * retired Bluetooth link's draining reply used to reach the fresh LAN channel
+ * and fail authentication. See HelmLink.inboundByRank.
  */
-class HelmLinkPipe(private val scope: CoroutineScope) : BytePipe {
+class HelmLinkPipe(private val scope: CoroutineScope, private val rank: Int) : BytePipe {
     private var collector: Job? = null
     private var onClose: (() -> Unit)? = null
     private var closed = false
@@ -31,7 +37,7 @@ class HelmLinkPipe(private val scope: CoroutineScope) : BytePipe {
 
     override fun onData(handler: (ByteArray) -> Unit) {
         collector?.cancel()
-        collector = scope.launch { HelmLink.inbound.collect(handler) }
+        collector = scope.launch { HelmLink.inboundFor(rank).collect(handler) }
     }
 
     override fun onClose(handler: () -> Unit) {

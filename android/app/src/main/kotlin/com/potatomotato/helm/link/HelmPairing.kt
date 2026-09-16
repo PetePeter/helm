@@ -182,7 +182,10 @@ object HelmPairing {
 
     private fun attach() {
         detach()
-        pipe = HelmLinkPipe(scope).also { requireController().attach(it) }
+        // Bound to the transport that just took the link — the channel above
+        // must read only its bytes, never another transport's tail.
+        val rank = HelmLink.holderRank ?: return
+        pipe = HelmLinkPipe(scope, rank).also { requireController().attach(it) }
     }
 
     private fun detach() {

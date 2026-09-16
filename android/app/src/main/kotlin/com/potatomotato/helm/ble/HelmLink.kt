@@ -3,6 +3,7 @@ package com.potatomotato.helm.ble
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -31,17 +32,24 @@ object HelmLink {
     val state: StateFlow<LinkState> = _state.asStateFlow()
 
     /**
-     * A Channel, not a SharedFlow: a SharedFlow buffers only for collectors it
-     * already has, so a message published before anyone subscribed vanished.
-     * That was the HELLO race — the central subscribes on a binder thread and
-     * the pipe above attaches a moment later, and a lost HELLO cost a 20s
-     * handshake timeout. A channel holds the message until a collector takes
-     * it; late subscribers drain whatever the link produced in the gap.
+     * Inbound bytes, ONE QUEUE PER TRANSPORT — not one shared stream.
+     *
+     * It was shared once, and that was a hardware bug: a 55KB reply still
+     * draining over Bluetooth when LAN took the link kept arriving, and every
+     * chunk was funnelled into the channel that had just been built for the LAN
+     * handshake. Sealed with the OLD session's keys, those frames failed
+     * authentication and the link flapped. A session belongs to one transport
+     * (see [owner]), so its bytes do too: the queue dies with the transport in
+     * [detachRank], and a retired transport's unread tail can never be read as
+     * the next channel's first frame.
+     *
+     * Each is a Channel, not a SharedFlow, for the HELLO race: a SharedFlow
+     * buffers only for collectors it already has, so the desktop's HELLO —
+     * sent the instant it accepts the transport, before the pipe above has
+     * attached its collector — vanished. A channel holds the message until a
+     * collector takes it.
      */
-    private val _inbound = Channel<ByteArray>(Channel.UNLIMITED)
-
-    /** Whole messages from Helm, already reassembled. */
-    val inbound: Flow<ByteArray> = _inbound.receiveAsFlow()
+    private val inboundByRank = mutableMapOf<Int, Channel<ByteArray>>()
 
     /**
      * Every attached transport, by rank, with how it sends and where it has got
@@ -54,8 +62,15 @@ object HelmLink {
      * service happened to cycle. Here a transport going away simply removes its
      * rank and the next one down is already in place — there is no restore path
      * to write, and therefore none to forget to call.
+     *
+     * Guarded by [lock]: Bluetooth mutates its entry on a binder thread, LAN on
+     * its dial and pump threads, while sends arrive from whichever thread the
+     * channel lives on. An unsynchronised TreeMap answered that with
+     * ConcurrentModificationException — a null-message error the channel could
+     * only report as "link write failed", flapping the link on every upgrade.
      */
     private val transports = sortedMapOf<Int, Attached>()
+    private val lock = Any()
 
     private val _owner = MutableStateFlow<Int?>(null)
 
@@ -107,10 +122,11 @@ object HelmLink {
      * being sent, and the desktop retires its end of that transport on its own
      * (see MobileLinkManager's retire grace).
      */
-    internal fun attach(rank: Int, send: (ByteArray) -> Unit): Boolean {
+    internal fun attach(rank: Int, send: (ByteArray) -> Unit): Boolean = synchronized(lock) {
+        inboundByRank.getOrPut(rank) { Channel(Channel.UNLIMITED) }
         transports[rank] = Attached(send, transports[rank]?.state ?: LinkState.Disconnected)
         republish()
-        return holderRank == rank
+        holderRank == rank
     }
 
     /**
@@ -120,21 +136,29 @@ object HelmLink {
      * because ranks are addressed individually that teardown cannot touch the
      * link that replaced it.
      */
-    internal fun detachRank(rank: Int) {
+    internal fun detachRank(rank: Int) = synchronized(lock) {
+        // The queue dies with the transport: a finished session's unread tail
+        // is garbage, not the next channel's first frame.
+        inboundByRank.remove(rank)?.cancel()
         if (transports.remove(rank) == null) return
         republish()
     }
 
     /** Which rank currently owns the link, or null when nothing is attached. */
-    internal val holderRank: Int? get() = transports.keys.lastOrNull()
+    internal val holderRank: Int? get() = synchronized(lock) { transports.keys.lastOrNull() }
 
     /** False when the link is down; the caller decides whether that matters. */
     fun send(message: ByteArray): Boolean {
         // Read the entry directly rather than looking up `holderRank`: a sorted
         // map THROWS on a null key where a hash map would answer null, so an
-        // empty map is a crash and not a "no link" — see republish.
-        val holder = transports.entries.lastOrNull()?.value ?: return false
-        if (holder.state != LinkState.Linked) return false
+        // empty map is a crash and not a "no link" — see republish. The entry is
+        // taken under the lock but SENT outside it — a send may block on the
+        // radio or the socket, and the map must never wait for the wire.
+        val holder = synchronized(lock) {
+            val current = transports.entries.lastOrNull()?.value ?: return false
+            if (current.state != LinkState.Linked) return false
+            current
+        }
         holder.send(message)
         return true
     }
@@ -145,20 +169,17 @@ object HelmLink {
      * transports writing one flag would flap between "Linked" and "Advertising"
      * depending on which spoke last.
      */
-    internal fun publishState(rank: Int, next: LinkState) {
+    internal fun publishState(rank: Int, next: LinkState) = synchronized(lock) {
         val existing = transports[rank] ?: return
         transports[rank] = existing.copy(state = next)
         republish()
     }
 
+    /** Caller holds [lock]. */
     private fun republish() {
         val holder = transports.entries.lastOrNull()
         val moved = holder?.key != _owner.value
         if (moved) {
-            // The bytes a finished transport left behind belong to a session
-            // that is over. Dropping them is what stops them being read as the
-            // first frame of the next handshake.
-            drainInbound()
             _owner.value = holder?.key
         }
         val state = holder?.value?.state ?: LinkState.Disconnected
@@ -170,24 +191,27 @@ object HelmLink {
         if (changed) onLinkChanged?.invoke(holder?.key, state)
     }
 
-    private fun drainInbound() {
-        while (_inbound.tryReceive().isSuccess) {
-            // discarded
-        }
-    }
-
-    internal fun publishInbound(message: ByteArray) {
+    /**
+     * Bytes that arrived on [rank]'s transport. Dropped when that transport is
+     * not attached: bytes from a transport nobody owns belong to no session.
+     */
+    internal fun publishInbound(rank: Int, message: ByteArray) {
         // UNLIMITED upstream of a collector is bounded by the radio itself —
         // GATT cannot notify faster than the stack acks the last chunk.
-        _inbound.trySend(message)
+        synchronized(lock) { inboundByRank[rank] }?.trySend(message)
     }
 
-    internal fun detach() {
+    /** The bytes of [rank]'s transport, for the channel bound to it. */
+    internal fun inboundFor(rank: Int): Flow<ByteArray> =
+        synchronized(lock) { inboundByRank[rank] }?.receiveAsFlow() ?: emptyFlow()
+
+    internal fun detach() = synchronized(lock) {
         transports.clear()
         // Drained UNCONDITIONALLY, not merely when the owner changed: tearing
         // the service down with nothing attached still has to discard whatever
         // the link produced, or those frames greet the next handshake.
-        drainInbound()
+        inboundByRank.values.forEach { it.cancel() }
+        inboundByRank.clear()
         republish()
     }
 }

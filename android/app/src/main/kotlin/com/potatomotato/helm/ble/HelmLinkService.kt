@@ -88,7 +88,7 @@ class HelmLinkService : Service() {
         val link = BleLinkSession(
             peripheral = server,
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
-            onMessage = HelmLink::publishInbound,
+            onMessage = { message -> HelmLink.publishInbound(RANK_BLE, message) },
             onStateChange = { state ->
                 HelmLink.publishState(RANK_BLE, state)
                 startForegroundWith(state)

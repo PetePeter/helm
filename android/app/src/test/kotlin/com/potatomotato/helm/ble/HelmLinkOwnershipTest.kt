@@ -1,5 +1,13 @@
 package com.potatomotato.helm.ble
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -197,6 +205,61 @@ class HelmLinkOwnershipTest {
         HelmLink.attach(RANK_BLE) { }
 
         assertTrue("nothing changed, so nothing should be rebuilt", rebuilds.isEmpty())
+    }
+
+    @Test
+    fun `a channel reads only its own transport's bytes`() = runBlocking {
+        // Found on hardware: a 55KB reply still draining over Bluetooth after a
+        // LAN upgrade was pumped into the NEW LAN channel — sealed with the OLD
+        // session's keys, it failed authentication ("Frame authentication
+        // failed") and flapped the link. Inbound is per transport: a channel
+        // bound to one rank can never consume another transport's tail.
+        HelmLink.attach(RANK_BLE) { }
+        HelmLink.attach(RANK_LAN) { }
+        val lanReceived = CompletableDeferred<ByteArray>()
+
+        HelmLink.publishInbound(RANK_BLE, byteArrayOf(1))
+        val collector = launch(Dispatchers.Unconfined) {
+            HelmLink.inboundFor(RANK_LAN).collect { lanReceived.complete(it) }
+        }
+        HelmLink.publishInbound(RANK_LAN, byteArrayOf(2))
+
+        assertArrayEquals(byteArrayOf(2), withTimeout(5_000) { lanReceived.await() })
+        collector.cancel()
+    }
+
+    @Test
+    fun `a retired transport's unread tail is discarded with it`() = runBlocking {
+        HelmLink.attach(RANK_BLE) { }
+        HelmLink.attach(RANK_LAN) { }
+        HelmLink.publishInbound(RANK_BLE, byteArrayOf(1))
+
+        HelmLink.detachRank(RANK_BLE)
+
+        assertNull(withTimeoutOrNull(500) { HelmLink.inboundFor(RANK_BLE).firstOrNull() })
+    }
+
+    @Test
+    fun `a send racing another transport's teardown never throws`() {
+        // Found on hardware: the desktop retires Bluetooth right after a LAN
+        // upgrade, so Bluetooth churns its transport entry on a binder thread
+        // while the main thread answers a keepalive. The unsynchronised map
+        // threw ConcurrentModificationException — a null-message error that
+        // surfaced as "link write failed" and flapped the link every ~35s.
+        HelmLink.attach(RANK_LAN) { }
+        HelmLink.publishState(RANK_LAN, LinkState.Linked)
+
+        val churn = Thread {
+            repeat(50_000) {
+                HelmLink.attach(RANK_BLE) { }
+                HelmLink.detachRank(RANK_BLE)
+            }
+        }
+        churn.start()
+        repeat(500_000) { HelmLink.send(byteArrayOf(9)) }
+        churn.join()
+
+        assertTrue(HelmLink.send(byteArrayOf(9)))
     }
 }
 

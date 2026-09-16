@@ -253,16 +253,26 @@ connected would make the UI claim the phone is offline.
 A swap also **restarts the phone's SecureChannel**: a handshake belongs to one
 transport, so the desktop opening a new channel over the new pipe means the old
 session's keys and counters are finished. `HelmLink.owner` is a flow for exactly
-this reason, and the inbound queue is drained on every change of it — bytes a
-finished transport left behind would otherwise be read as the first frame of the
-next handshake.
+this reason — and inbound bytes are queued **per transport rank**, so the
+channel bound to one rank can only ever read that rank's bytes. Draining one
+shared queue on owner change was not enough: a 55KB reply still draining over
+Bluetooth after the upgrade kept arriving for seconds, and its old-session
+frames reached the fresh LAN channel and failed authentication. A transport's
+queue now dies with it in `detachRank`, unread tail included.
+
+Phone-side socket writes also never run on the caller's thread: Android forbids
+network I/O on the main thread, and the app's first call after a link comes up
+(`session_list`) arrives there. `LanLinkController` hands every write to a
+single writer thread, exactly as the BLE queue absorbs its callers.
 
 ## Known gaps
 
 - There is no LAN row on the phone's settings screen. Nothing needs one: the
   address arrives over Bluetooth and the desktop is where LAN is turned on.
-- **Not yet validated on real hardware end to end.** Every layer has tests, but
-  a phone has not yet been watched moving from Bluetooth to LAN and back.
+- A phone whose app is backgrounded still advertises over BLE, so the desktop
+  connects, offers a PSK, and waits out the 10s handshake timeout — roughly
+  every 20s while that phone is on but unreachable. Harmless to the live link;
+  annoying on the radio.
 - WAN access (P-0753) is out of scope and remains unbuilt; a VPN that routes the
   home subnet makes it unnecessary, because the desktop then keeps one address
   from either side.

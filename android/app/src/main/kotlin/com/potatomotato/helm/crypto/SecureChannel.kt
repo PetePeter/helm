@@ -455,7 +455,7 @@ class SecureChannel(
         } catch (error: Exception) {
             // A write the link could not carry leaves the peer waiting forever.
             // Closing here is what turns that silence into a reconnect.
-            close(error.message ?: "link write failed")
+            close(error.message ?: "link write failed (${error.javaClass.simpleName})")
         }
     }
 }

@@ -6,6 +6,8 @@ import com.potatomotato.helm.ble.RANK_LAN
 import com.potatomotato.helm.data.LanAddressStore
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * LanLinkController — decides WHEN the phone dials, and owns the attempt.
@@ -33,9 +35,28 @@ class LanLinkController(
     private val dialer: LanLinkSession.Dialer = tcpDialer(),
     /** Runs the blocking pump. Injected so a test never needs a thread pool. */
     private val runBlocking: (() -> Unit) -> Unit = { body -> Thread(body, "helm-lan").start() },
+    /**
+     * Runs a socket write. Injected so a test can observe the deferral. The
+     * default is a single writer thread: Android forbids network I/O on the
+     * main thread, and the app's calls arrive there — the transport must
+     * absorb the caller's thread exactly as the BLE queue does.
+     */
+    runWrite: ((() -> Unit) -> Unit)? = null,
     private val log: (String) -> Unit = {},
 ) {
-    private var session: LanLinkSession? = null
+    private val lock = Any()
+    @Volatile private var session: LanLinkSession? = null
+
+    /** True while a dial is in flight, so stacked triggers make one attempt. */
+    private var dialing = false
+
+    private val writer: ExecutorService by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "helm-lan-writes").apply { isDaemon = true }
+        }
+    }
+    private val runWrite: (() -> Unit) -> Unit =
+        runWrite ?: { body -> writer.execute(body) }
 
     /** True while a LAN connection is up and carrying the link. */
     val connected: Boolean get() = session?.connected == true
@@ -43,36 +64,13 @@ class LanLinkController(
     /**
      * Try to reach [machineId] over the network.
      *
-     * A no-op when a LAN link is already up: the desktop refuses a second link
-     * from the same phone anyway, and dialling into that refusal would cost a
-     * connection and teach nobody anything.
+     * A no-op when a LAN link is already up or a dial is already in flight:
+     * the desktop refuses a second link from the same phone anyway, and two
+     * phone-side sockets would race each other for the rank — the loser's
+     * teardown detaching the winner's link was a real flap on hardware.
      */
     fun tryConnect(machineId: String) {
-        if (session?.connected == true) return
-
-        val known = addresses.load(machineId)
-        if (known.isEmpty()) return
-
-        val lan = LanLinkSession(
-            dialer = dialer,
-            onBytes = HelmLink::publishInbound,
-            onStateChange = { state ->
-                // Only ever reports on its OWN rank. Whether that is the link
-                // the phone is using is HelmLink's decision, not this one's.
-                HelmLink.publishState(RANK_LAN, state.toLinkState())
-            },
-            log = log,
-        )
-
-        // The session keeps the connection; a second handle to it here would
-        // be a way to close it behind the session's back.
-        if (lan.connect(known) == null) return
-        session = lan
-        // Attached AFTER the socket is open, never before: a rank that is
-        // registered but cannot carry bytes would silently swallow every send.
-        HelmLink.attach(RANK_LAN, lan::send)
-        HelmLink.publishState(RANK_LAN, LinkState.Linked)
-        log("LAN link is up; it now carries the link")
+        val lan = dial(machineId) ?: return
 
         runBlocking {
             try {
@@ -80,17 +78,70 @@ class LanLinkController(
             } finally {
                 // Releasing only THIS rank is what lets Bluetooth — still
                 // attached below — resume the instant this ends.
-                session = null
-                HelmLink.detachRank(RANK_LAN)
-                log("LAN link ended; Bluetooth resumes if it is still up")
+                endIfCurrent(lan)
             }
+        }
+    }
+
+    private fun dial(machineId: String): LanLinkSession? {
+        synchronized(lock) {
+            if (dialing || session?.connected == true) return null
+            dialing = true
+        }
+        try {
+            val known = addresses.load(machineId)
+            if (known.isEmpty()) return null
+
+            val lan = LanLinkSession(
+                dialer = dialer,
+                onBytes = { bytes -> HelmLink.publishInbound(RANK_LAN, bytes) },
+                onStateChange = { state ->
+                    // Only ever reports on its OWN rank. Whether that is the link
+                    // the phone is using is HelmLink's decision, not this one's.
+                    HelmLink.publishState(RANK_LAN, state.toLinkState())
+                },
+                log = log,
+            )
+
+            // The session keeps the connection; a second handle to it here would
+            // be a way to close it behind the session's back.
+            if (lan.connect(known) == null) return null
+            // Attached AFTER the socket is open, never before: a rank that is
+            // registered but cannot carry bytes would silently swallow every send.
+            synchronized(lock) {
+                session = lan
+                HelmLink.attach(RANK_LAN) { data -> runWrite { lan.send(data) } }
+            }
+            HelmLink.publishState(RANK_LAN, LinkState.Linked)
+            log("LAN link is up; it now carries the link")
+            return lan
+        } finally {
+            synchronized(lock) { dialing = false }
+        }
+    }
+
+    /**
+     * Tear [lan] down only if it is still the current session. Its pump can
+     * unwind AFTER a fresher dial has already taken over — releasing the rank
+     * then would detach a live link, whose next write fails.
+     */
+    private fun endIfCurrent(lan: LanLinkSession) {
+        synchronized(lock) {
+            if (session !== lan) return
+            session = null
+            HelmLink.detachRank(RANK_LAN)
+            log("LAN link ended; Bluetooth resumes if it is still up")
         }
     }
 
     /** Drop any LAN link. Bluetooth takes over again on its own. */
     fun stop() {
-        session?.close()
-        session = null
+        val open = synchronized(lock) {
+            val current = session ?: return
+            session = null
+            current
+        }
+        open.close()
         HelmLink.detachRank(RANK_LAN)
     }
 }
