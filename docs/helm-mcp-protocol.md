@@ -98,6 +98,13 @@ The directive instructs the recipient to:
 3. **Stand by** for the reply — not guess, not proceed on assumptions.
 4. Call `session_set_aiagent_state(state="planning")` while waiting, so the standby is visible on the session row rather than looking like a stalled session.
 
+**Phone senders get a different first rule.** A `mobile:<deviceId>` proxy sender
+cannot read the recipient's terminal at all, so before anything else the directive
+states the output channel: terminal output is invisible to the phone, `chat_send`
+is the only channel the user reads, and **every** phone message gets a
+`chat_send` reply — ack, plan, result, or error, not just questions. Peer and
+local sender directives are unchanged.
+
 It is appended to **every** enveloped message, not only `expectsResponse=true` ones —
 a fire-and-forget task is the most likely to sit blocked unobserved. The sender id it
 quotes is whatever the envelope carries, so a cross-machine `fleet:<peerId>:<sessionId>`

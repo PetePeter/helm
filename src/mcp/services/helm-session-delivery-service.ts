@@ -31,8 +31,17 @@ const ACTION_WAIT_NOTE =
  * Contains no brace tokens: the sequence parser would rewrite them.
  */
 function buildNonBlockingDirective(senderSessionId: string): string {
+  // A phone sender cannot read the recipient's terminal at all. Observed
+  // 2026-09-17: without a hard channel rule, interim updates went to the
+  // terminal only and the phone user had to ask for replies. Local and fleet
+  // peers CAN tail the terminal, so their directive stays unchanged.
+  const mobileChannelRule = isMobileSessionId(senderSessionId)
+    ? 'The user reads ONLY chat_send: your terminal output is invisible to them. ' +
+      'Reply to EVERY message from the phone with chat_send — ack, plan, result, or error, not just questions.\n'
+    : '';
   return (
     '[HELM_MSG_RULES]\n' +
+    mobileChannelRule +
     `${describeSender(senderSessionId)} ` +
     'Nobody can see or answer an interactive prompt here.\n' +
     'Do NOT use AskUserQuestion or any other blocking prompt.\n' +

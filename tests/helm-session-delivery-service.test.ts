@@ -242,6 +242,45 @@ describe('HelmSessionDeliveryService', () => {
      * Provenance is not routing: the envelope still records which phone sent the
      * message, it just stops being advertised as a reply address.
      */
+    /**
+     * Observed 2026-09-17: phone-originated turns ended with interim updates
+     * written to the terminal only — the phone user had to ask "reply to
+     * mobile!". For a phone sender the directive's FIRST rule is the output
+     * channel itself: terminal output is invisible there, and every message
+     * gets a chat_send reply, not just questions.
+     */
+    it('leads the phone directive with a mandatory chat_send-for-every-reply rule', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      const phoneSender = 'mobile:008a8ddd-1c4a-4f5e-9a2b-000000000000';
+
+      await service.sendTextToSession(receiver.id, 'how is it going?', {
+        senderSessionId: phoneSender,
+        senderSessionName: 'ThinkPhone',
+      });
+
+      const all = allDeliveredText(ptyManager);
+      const rulesStart = all.indexOf('[HELM_MSG_RULES]\n');
+      expect(rulesStart).toBeGreaterThanOrEqual(0);
+      const firstRule = all.slice(rulesStart).split('\n')[1];
+      expect(firstRule).toContain('chat_send');
+      expect(firstRule).toContain('invisible');
+    });
+
+    it('keeps the channel rule out of peer and local sender directives', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+
+      await service.sendTextToSession(receiver.id, 'how is it going?', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+
+      const all = allDeliveredText(ptyManager);
+      expect(all).not.toContain('invisible');
+      // Peer reply routing is unchanged: still session_send_text.
+      expect(all).toContain('session_send_text');
+      expect(all).toContain(`sessionId="${sender.id}"`);
+    });
+
     it('keeps the phone address in the envelope as provenance', async () => {
       const { service, ptyManager, receiver } = makeDeps();
       const phoneSender = 'mobile:008a8ddd-1c4a-4f5e-9a2b-000000000000';
