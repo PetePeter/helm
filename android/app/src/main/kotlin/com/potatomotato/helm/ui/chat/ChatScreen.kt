@@ -74,6 +74,20 @@ fun ChatScreen(
     var draft by rememberSaveable(sessionId) { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    // Every entry into a thread starts at the newest bubble. Seeding the list
+    // state is not enough: history often lands AFTER first composition (empty →
+    // filled), by which time the initial index is already captured at 0. So the
+    // anchor fires on the first non-empty frame of each session instead. The
+    // flag is saveable and keyed like the draft: a rotation restores it as true
+    // (position keeps), while a session switch re-keys it to false (re-anchor).
+    var anchored by rememberSaveable(sessionId) { mutableStateOf(false) }
+    LaunchedEffect(sessionId, messages.isEmpty()) {
+        if (!anchored && messages.isNotEmpty()) {
+            listState.scrollToItem(messages.lastIndex)
+            anchored = true
+        }
+    }
+
     // Follow the conversation, but only from the bottom. A user who has scrolled
     // up is READING; yanking them back to the newest line on every arriving
     // message — or on a reconnect that delivers a backlog — loses their place,
@@ -233,7 +247,9 @@ private fun Composer(
             .fillMaxWidth()
             .background(HelmColors.Surface)
             .padding(HelmSpacing.Md),
-        verticalAlignment = Alignment.CenterVertically,
+        // Bottom-anchored: a multiline draft grows the field upward, and the
+        // three circles stay where the thumb rests instead of riding to centre.
+        verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
         Box(
@@ -257,37 +273,6 @@ private fun Composer(
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
                 cursorBrush = SolidColor(HelmColors.Accent),
                 modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        // Send is a circle like the mic, not a caption: the composer's two
-        // controls read as one pair, and the one that delivers sits where a
-        // thumb already is. Until there is something to send it is dark — an
-        // enabled control that does nothing is worse than a visibly dead one.
-        val sendLabel = stringResource(R.string.chat_send)
-        Box(
-            modifier = Modifier
-                .size(HelmSize.MicButton)
-                .clip(CircleShape)
-                .background(if (draft.isNotBlank()) HelmColors.Accent else HelmColors.Surface2)
-                .then(
-                    if (draft.isBlank()) {
-                        Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape)
-                    } else {
-                        Modifier
-                    },
-                )
-                .clickable(enabled = draft.isNotBlank(), onClick = onSend),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.chat_send_glyph),
-                // Dim rather than Faint while disabled: Faint is the placeholder's
-                // colour, and a send arrow in it disappears against the Surface2
-                // circle — which reads as a layout hole, not a dead button.
-                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Dim,
-                style = HelmType.SendGlyph,
-                modifier = Modifier.semantics { contentDescription = sendLabel },
             )
         }
 
@@ -325,6 +310,37 @@ private fun Composer(
             Text(
                 text = stringResource(R.string.voice_mic_glyph),
                 style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+
+        // Send is a circle like the mic, not a caption: the composer's controls
+        // read as one pair, and the one that delivers sits last — where a thumb
+        // already is. Until there is something to send it is dark — an enabled
+        // control that does nothing is worse than a visibly dead one.
+        val sendLabel = stringResource(R.string.chat_send)
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(if (draft.isNotBlank()) HelmColors.Accent else HelmColors.Surface2)
+                .then(
+                    if (draft.isBlank()) {
+                        Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape)
+                    } else {
+                        Modifier
+                    },
+                )
+                .clickable(enabled = draft.isNotBlank(), onClick = onSend),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.chat_send_glyph),
+                // Dim rather than Faint while disabled: Faint is the placeholder's
+                // colour, and a send arrow in it disappears against the Surface2
+                // circle — which reads as a layout hole, not a dead button.
+                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Dim,
+                style = HelmType.SendGlyph,
+                modifier = Modifier.semantics { contentDescription = sendLabel },
             )
         }
     }

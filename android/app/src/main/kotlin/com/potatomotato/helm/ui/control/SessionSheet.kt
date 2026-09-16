@@ -38,7 +38,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.Capabilities
@@ -265,8 +267,12 @@ private fun ConfirmClose(sessionName: String, onConfirm: () -> Unit, onCancel: (
  */
 @Composable
 private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCancel: () -> Unit) {
-    var name by remember { mutableStateOf(currentName) }
-    val verdict = RenameRules.judge(currentName, name)
+    // Seeded as a TextFieldValue with the whole name selected: the common case
+    // is a full rewrite, so the first keystroke replaces it instead of appending.
+    var name by remember {
+        mutableStateOf(TextFieldValue(currentName, TextRange(0, currentName.length)))
+    }
+    val verdict = RenameRules.judge(currentName, name.text)
     val canRename = verdict == RenameRules.Verdict.Ok
 
     // The field takes focus as the dialog opens: the whole point of the dialog
@@ -322,7 +328,7 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     // Done on the keyboard is the confirm, not a dismissal —
                     // the same verb the dialog's own button carries.
-                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(name.trim()) }),
+                    keyboardActions = KeyboardActions(onDone = { if (canRename) onRename(name.text.trim()) }),
                     modifier = Modifier
                         .fillMaxWidth()
                         .focusRequester(focusRequester)
@@ -344,7 +350,7 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(HelmRadius.Md))
-                    .clickable(enabled = canRename, onClick = { onRename(name.trim()) })
+                    .clickable(enabled = canRename, onClick = { onRename(name.text.trim()) })
                     .padding(vertical = HelmSpacing.Md),
             )
             GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
