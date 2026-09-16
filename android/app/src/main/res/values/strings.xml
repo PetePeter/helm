@@ -59,6 +59,88 @@
 
     <string name="session_tab_chat">Chat</string>
     <string name="session_tab_artifacts">Artifacts</string>
+    <string name="session_tab_plans">Plans</string>
+    <string name="session_tab_sequences">Sequences</string>
+
+    <string name="home_tab_sessions">Sessions</string>
+    <string name="home_tab_plans">Plans</string>
+    <string name="home_tab_contexts">Contexts</string>
+
+    <!--
+      The five states every pulled surface has, said once. See LoadBody.
+    -->
+    <string name="load_retry">Try again</string>
+    <string name="load_refresh">Refresh</string>
+    <string name="load_refreshing">Refreshing…</string>
+
+    <string name="projects_label">PROJECT</string>
+    <string name="projects_loading">Reading projects…</string>
+    <string name="projects_none">Helm is tracking no projects yet.</string>
+    <string name="projects_choose">Choose a project</string>
+    <string name="projects_expand_glyph">▾</string>
+
+    <string name="plans_loading">Reading plans…</string>
+    <string name="plans_empty">No plans in this project yet.</string>
+    <string name="plans_no_project">Pick a project to see its plans.</string>
+    <string name="plans_no_session_directory">This session has no project directory, so it has no plans.</string>
+    <string name="plans_ungrouped">Ungrouped</string>
+    <string name="plans_startable">ready to start</string>
+    <string name="plans_lane_collapse">Collapse this group</string>
+    <string name="plans_lane_expand">Expand this group</string>
+    <string name="plan_detail_loading">Reading plan…</string>
+    <!-- The app bar's title before the record itself has arrived to name it. -->
+    <string name="plan_detail_title">Plan</string>
+    <string name="plan_contexts_loading">Reading the plan\'s context…</string>
+    <string name="plan_contexts_empty">No context is bound to this plan.</string>
+    <!-- Source first, then the node id: the source is what the plan screen alone can say. -->
+    <string name="plan_context_ref_sub">from %1$s · %2$s</string>
+
+    <string name="plan_status_planning">Planning</string>
+    <string name="plan_status_ready">Ready</string>
+    <string name="plan_status_coding">Coding</string>
+    <string name="plan_status_review">Review</string>
+    <string name="plan_status_blocked">Blocked</string>
+    <string name="plan_status_done">Done</string>
+    <string name="plan_status_unknown">Unknown</string>
+
+    <string name="sequences_loading">Reading sequences…</string>
+    <string name="sequences_empty">No sequences in this project yet.</string>
+    <string name="sequences_no_session_directory">This session has no project directory, so it has no sequences.</string>
+    <string name="sequence_detail_loading">Reading sequence…</string>
+    <string name="sequence_detail_title">Sequence</string>
+    <plurals name="sequences_member_count">
+        <item quantity="one">%1$d plan</item>
+        <item quantity="other">%1$d plans</item>
+    </plurals>
+
+    <string name="contexts_loading">Reading context…</string>
+    <string name="contexts_empty">No context nodes in this project yet.</string>
+    <string name="contexts_no_project">Pick a project to see its context.</string>
+    <string name="context_detail_loading">Reading context…</string>
+    <string name="context_detail_title">Context</string>
+    <string name="context_type_none">Untyped</string>
+    <string name="context_permission_readonly">Read-only</string>
+    <string name="context_permission_writable">Writable</string>
+    <string name="context_empty_content">This context node has no content.</string>
+
+    <!-- Detail field labels, shared by the plan and sequence screens. -->
+    <string name="detail_label_plan_id">Plan id</string>
+    <string name="detail_label_description">Description</string>
+    <string name="detail_label_state_note">State note</string>
+    <string name="detail_label_completion_notes">Completion notes</string>
+    <string name="detail_label_type">Type</string>
+    <string name="detail_label_auto_implement">Auto-implement</string>
+    <string name="detail_label_completion_recap">Completion recap</string>
+    <string name="detail_label_directory">Directory</string>
+    <string name="detail_label_order">Order</string>
+    <string name="detail_label_mission">Mission</string>
+    <string name="detail_label_shared_memory">Shared memory</string>
+    <string name="detail_label_members">Plans</string>
+    <string name="detail_label_contexts">Context</string>
+    <!-- An inline image whose data the phone could not decode. -->
+    <string name="markdown_image_unavailable">Image unavailable</string>
+    <string name="detail_flag_yes">Yes</string>
+    <string name="detail_flag_no">No</string>
 
     <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
     <string name="chat_placeholder">Reply…</string>

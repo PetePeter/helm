@@ -160,7 +160,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_summary',
     title: 'Plans Summary',
-    description: "List plans for a directory as a compact summary — status, canonical ID, human-readable P-00xx ID, title, and dependency relationships. Call this first when orienting to a project so you know what work exists and what is blocked by what. Use plan_get for the full description of a specific plan before claiming, updating, or creating linked follow-ups. The optional filter narrows results: 'active' (default) omits completed plans; 'all' includes done plans; 'startable' returns only the dependency frontier — non-done plans whose precursors are all complete (or have none).",
+    description: "List plans for a directory as a compact summary — status, canonical ID, human-readable P-00xx ID, title, sequence ID, and dependency relationships. Call this first when orienting to a project so you know what work exists and what is blocked by what. Use plan_get for the full description of a specific plan before claiming, updating, or creating linked follow-ups. The optional filter narrows results: 'active' (default) omits completed plans; 'all' includes done plans; 'startable' returns only the dependency frontier — non-done plans whose precursors are all complete (or have none).",
     inputSchema: {
       type: 'object',
       properties: {

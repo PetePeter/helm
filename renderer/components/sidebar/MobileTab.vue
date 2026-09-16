@@ -32,9 +32,30 @@ const {
   setLanConfig,
 } = useMobileDevices();
 
-/** Allow-list presets: a friendly name → the glob patterns it applies. */
+/**
+ * Allow-list presets: a friendly name → the glob patterns it applies.
+ *
+ * "Read-only" names every read tool explicitly rather than globbing a family.
+ * A `plan_*` glob would also hand over plan_create/update/delete, so a preset
+ * that promises read-only has to spell out what it grants.
+ */
+const PLAN_READ_GLOBS = [
+  'plan_list',
+  'plan_summary',
+  'plan_get',
+  'plan_get_id',
+  'plan_context_list',
+  'sequence_list',
+  'sequence_get',
+  'context_list',
+  'context_get',
+];
+
 const ALLOW_PRESETS: Array<{ label: string; globs: string[] }> = [
-  { label: 'Read-only', globs: ['session_list', 'plan_*', 'directory_list', 'project_list'] },
+  {
+    label: 'Read-only',
+    globs: ['session_list', 'directory_list', 'project_list', ...PLAN_READ_GLOBS],
+  },
   { label: 'Sessions', globs: ['session_*'] },
   { label: 'All', globs: ['*'] },
 ];

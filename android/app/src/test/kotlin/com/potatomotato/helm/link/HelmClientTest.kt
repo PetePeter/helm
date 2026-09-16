@@ -7,10 +7,21 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactLanding
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.ContextDetail
+import com.potatomotato.helm.data.ContextList
+import com.potatomotato.helm.data.ContextPermission
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.HelmDirectory
+import com.potatomotato.helm.data.HelmProject
+import com.potatomotato.helm.data.PlanContextRefs
+import com.potatomotato.helm.data.PlanDetail
+import com.potatomotato.helm.data.PlanList
+import com.potatomotato.helm.data.PlanStatus
+import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.Reach
+import com.potatomotato.helm.data.SequenceDetail
+import com.potatomotato.helm.data.SequenceList
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
 import com.potatomotato.helm.crypto.Cancellable
@@ -827,6 +838,254 @@ class HelmClientTest {
         // blank Loading, and the fresh answer will overwrite it on arrival.
         val refreshing = client.artifacts.read.value as ArtifactRead.Refreshing
         assertEquals("# Report", refreshing.cached.content)
+    }
+
+    // ------------------------------------------------- plans, sequences, contexts
+
+    /**
+     * THE REGRESSION. The board once asked `plan_list filter=all`, which answers
+     * every plan's full description: 419 KB for Helm's own project, ~820 chunks
+     * on a 512-byte-chunk link, and the link died mid-transfer so the phone only
+     * ever saw a timeout. The tool NAME and the FILTER are the two things that
+     * broke, so they are the two things pinned here.
+     */
+    @Test
+    fun `the plan board asks for summaries, never the full-record list`() {
+        client.refreshPlans("/work")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("plan_summary", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("/work", params.getString("dirPath"))
+        // 'active' is FIXED, not a default something could override: a done plan
+        // is noise on a phone, and its description is payload the link has to
+        // survive.
+        assertEquals("active", params.getString("filter"))
+        assertEquals(setOf("dirPath", "filter"), params.keySet().toSet())
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"id":"p1","humanId":"P-0007","title":"Wire it","status":"coding","blockedBy":["P-0006"]}]""",
+            ),
+        )
+
+        val ready = client.plans.list.value as PlanList.Ready
+        assertEquals("Wire it", ready.plans.single().title)
+        assertEquals(PlanStatus.Coding, ready.plans.single().status)
+        assertEquals(listOf("P-0006"), ready.plans.single().blockedBy)
+    }
+
+    @Test
+    fun `a failed plan list is state on the screen, not silence`() {
+        client.refreshPlans("/work")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.plans.list.value as PlanList.Failed).message)
+    }
+
+    @Test
+    fun `an unreadable plan list says so instead of showing an empty board`() {
+        client.refreshPlans("/work")
+
+        client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
+
+        assertTrue(client.plans.list.value is PlanList.Failed)
+    }
+
+    @Test
+    fun `one plan is asked for by uuid, the only form plan_get takes`() {
+        client.readPlan("p1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("plan_get", record.getString("method"))
+        assertEquals(setOf("uuid"), record.getJSONObject("params").keySet().toSet())
+        assertEquals("p1", record.getJSONObject("params").getString("uuid"))
+
+        client.onInbound(
+            resultFor(lastCallId(), """{"id":"p1","dirPath":"/work","title":"Wire it","status":"review"}"""),
+        )
+        assertEquals("Wire it", (client.plans.detail.value as PlanDetail.Ready).plan.title)
+    }
+
+    @Test
+    fun `a refused plan read is state on the screen`() {
+        client.readPlan("p1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.plans.detail.value as PlanDetail.Failed).message)
+    }
+
+    @Test
+    fun `a plan's effective context refs are asked for by planId`() {
+        client.refreshPlanContexts("p1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("plan_context_list", record.getString("method"))
+        assertEquals(setOf("planId"), record.getJSONObject("params").keySet().toSet())
+        assertEquals("p1", record.getJSONObject("params").getString("planId"))
+
+        client.onInbound(resultFor(lastCallId(), """[{"id":"c1","type":"Coding","source":"both"}]"""))
+        val ready = client.plans.contextRefs.value as PlanContextRefs.Ready
+        assertEquals("both", ready.refs.single().source)
+    }
+
+    @Test
+    fun `a refused plan context list is state on the screen`() {
+        client.refreshPlanContexts("p1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.plans.contextRefs.value as PlanContextRefs.Failed).message)
+    }
+
+    @Test
+    fun `sequences are asked for by directory, never one call per plan`() {
+        client.refreshSequences("/work")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("sequence_list", record.getString("method"))
+        assertEquals(setOf("dirPath"), record.getJSONObject("params").keySet().toSet())
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"id":"seq1","dirPath":"/work","title":"Lane","order":1,"memberPlanIds":["p1"]}]""",
+            ),
+        )
+
+        val ready = client.sequences.list.value as SequenceList.Ready
+        assertEquals(listOf("p1"), ready.sequences.single().memberPlanIds)
+    }
+
+    @Test
+    fun `a failed sequence list is state on the screen`() {
+        client.refreshSequences("/work")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.sequences.list.value as SequenceList.Failed).message)
+    }
+
+    @Test
+    fun `one sequence is asked for by id`() {
+        client.readSequence("seq1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("sequence_get", record.getString("method"))
+        assertEquals(setOf("id"), record.getJSONObject("params").keySet().toSet())
+        assertEquals("seq1", record.getJSONObject("params").getString("id"))
+
+        client.onInbound(resultFor(lastCallId(), """{"id":"seq1","dirPath":"/work","title":"Lane"}"""))
+        assertEquals("Lane", (client.sequences.detail.value as SequenceDetail.Ready).sequence.title)
+    }
+
+    @Test
+    fun `an unreadable sequence read says so instead of loading forever`() {
+        client.readSequence("seq1")
+
+        client.onInbound(resultFor(lastCallId(), """{"items":[]}"""))
+
+        assertTrue(client.sequences.detail.value is SequenceDetail.Failed)
+    }
+
+    @Test
+    fun `the project list is asked for as a bare project_list call`() {
+        client.refreshProjects()
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("project_list", record.getString("method"))
+        assertFalse(record.has("params"))
+
+        client.onInbound(resultFor(lastCallId(), """[{"id":"proj1","name":"Helm","canonicalPath":"/h"}]"""))
+
+        assertEquals(
+            listOf(HelmProject("proj1", "Helm", "/h")),
+            (client.contexts.projects.value as ProjectList.Ready).projects,
+        )
+    }
+
+    @Test
+    fun `a failed project list is state on the screen`() {
+        client.refreshProjects()
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.contexts.projects.value as ProjectList.Failed).message)
+    }
+
+    @Test
+    fun `context nodes are asked for by projectId`() {
+        client.refreshContexts("proj1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("context_list", record.getString("method"))
+        assertEquals(setOf("projectId"), record.getJSONObject("params").keySet().toSet())
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[{"id":"c1","projectId":"proj1","title":"Notes","permission":"writable","content":"body"}]""",
+            ),
+        )
+
+        val ready = client.contexts.list.value as ContextList.Ready
+        assertEquals(ContextPermission.Writable, ready.contexts.single().permission)
+    }
+
+    @Test
+    fun `a failed context list is state on the screen`() {
+        client.refreshContexts("proj1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.contexts.list.value as ContextList.Failed).message)
+    }
+
+    @Test
+    fun `one context node is asked for by id and lands with its body`() {
+        client.readContext("c1")
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("context_get", record.getString("method"))
+        assertEquals(setOf("id"), record.getJSONObject("params").keySet().toSet())
+
+        client.onInbound(
+            resultFor(lastCallId(), """{"id":"c1","projectId":"proj1","title":"Notes","content":"Run it."}"""),
+        )
+        assertEquals("Run it.", (client.contexts.detail.value as ContextDetail.Ready).context.content)
+    }
+
+    @Test
+    fun `a refused context read is state on the screen`() {
+        client.readContext("c1")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertEquals("Tool not permitted", (client.contexts.detail.value as ContextDetail.Failed).message)
+    }
+
+    /**
+     * The correlation is what keeps three read surfaces apart. A plan answer and
+     * a context answer are the same `result` record shape; only the pending id
+     * says which repository is waiting for it.
+     */
+    @Test
+    fun `an error routes to the surface that asked, and leaves the others alone`() {
+        client.refreshPlans("/work")
+        val plansCall = lastCallId()
+        client.refreshContexts("proj1")
+        val contextsCall = lastCallId()
+
+        client.onInbound(errorFor(contextsCall, "Tool not permitted"))
+
+        assertTrue(client.contexts.list.value is ContextList.Failed)
+        assertTrue(client.plans.list.value is PlanList.Loading)
+
+        client.onInbound(resultFor(plansCall, """[{"id":"p1","title":"Wire it"}]"""))
+        assertTrue(client.plans.list.value is PlanList.Ready)
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */

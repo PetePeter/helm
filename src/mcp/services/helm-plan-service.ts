@@ -43,6 +43,11 @@ export class HelmPlanService {
       type: item.type,
       status: item.status,
       stateUpdatedAt: item.stateUpdatedAt,
+      // The lane a plan belongs to, so a summary reader can group by sequence
+      // without a second pass over the full records. Absent when the plan is in
+      // no sequence. Nothing else joins this payload: keeping descriptions out
+      // is the point of it.
+      sequenceId: item.sequenceId,
       blockedBy: dependencies
         .filter((d) => d.toId === item.id)
         .map((d) => idToHumanId.get(d.fromId) ?? d.fromId),

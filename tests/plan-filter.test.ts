@@ -151,6 +151,27 @@ describe('HelmPlanService plan listing filters', () => {
     expect(secondSummary.blockedBy).toContain(first.humanId ?? first.id);
   });
 
+  it('plansSummary carries the sequence id so a reader can group by lane', () => {
+    // The phone board groups rows into sequence lanes and only ever asks for
+    // the summary — the full records are far too large for its link — so the
+    // lane has to ride this payload or the grouping has nothing to group by.
+    const lane = pm.createSequence(dir, 'Lane');
+    const grouped = pm.create(dir, 'Grouped', 'desc');
+    const loose = pm.create(dir, 'Loose', 'desc');
+    pm.assignSequence(grouped.id, lane.id);
+
+    const summary = service.plansSummary(dir);
+    expect(summary.find(s => s.id === grouped.id)!.sequenceId).toBe(lane.id);
+    expect(summary.find(s => s.id === loose.id)!.sequenceId).toBeUndefined();
+  });
+
+  it('plansSummary never carries a description, which is the point of it', () => {
+    pm.create(dir, 'First', 'a very long description that must not ride the wire');
+
+    const row = service.plansSummary(dir)[0] as Record<string, unknown>;
+    expect(row).not.toHaveProperty('description');
+  });
+
   it('returns [] for a directory with no plans', () => {
     expect(service.listPlans(normalizeProjectPath('/empty'))).toEqual([]);
     expect(service.plansSummary(normalizeProjectPath('/empty'))).toEqual([]);

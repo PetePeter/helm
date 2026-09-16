@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,6 +32,8 @@ import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.HelmProject
+import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
@@ -46,15 +49,29 @@ import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.HomeTab
+import com.potatomotato.helm.ui.components.HomeTabs
+import com.potatomotato.helm.ui.components.LoadNote
+import com.potatomotato.helm.ui.components.LoadView
+import com.potatomotato.helm.ui.components.LoadViews
+import com.potatomotato.helm.ui.components.ProjectPicker
 import com.potatomotato.helm.ui.components.ScrimDialog
 import com.potatomotato.helm.ui.components.SessionTab
 import com.potatomotato.helm.ui.components.SessionTabs
+import com.potatomotato.helm.ui.components.detailTitle
+import com.potatomotato.helm.ui.contexts.ContextDetail
+import com.potatomotato.helm.ui.contexts.ContextList
 import com.potatomotato.helm.ui.control.ActionNoticeBar
 import com.potatomotato.helm.ui.control.SessionSheet
 import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.pairing.AwaitingDesktopScreen
 import com.potatomotato.helm.ui.pairing.DesktopsScreen
+import com.potatomotato.helm.ui.plans.PlanDetail
+import com.potatomotato.helm.ui.plans.PlanList
+import com.potatomotato.helm.ui.plans.PlanScope
+import com.potatomotato.helm.ui.sequences.SequenceDetail
+import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.voice.VoiceScreen
 import kotlinx.coroutines.Dispatchers
@@ -71,7 +88,31 @@ import kotlinx.coroutines.withContext
  * (chat or artifact list, see [SessionTab]), which is why the artifact detail and
  * editor return to it rather than to a screen of their own.
  */
-private enum class Destination { Thread, Voice, Sheet, Snapshot, Spawn, ArtifactDetail, ArtifactEditor, Desktops, Pairing }
+private enum class Destination {
+    Thread,
+    Voice,
+    Sheet,
+    Snapshot,
+    Spawn,
+    ArtifactDetail,
+    ArtifactEditor,
+    Desktops,
+    Pairing,
+
+    /**
+     * The plan, sequence and context detail screens.
+     *
+     * They sit alongside [Spawn] and [Desktops] rather than under [Thread]
+     * because they are reachable WITH NO SESSION OPEN — the root's Plans and
+     * Contexts tabs lead here — and reachable again from inside a session's own
+     * Plans tab. Which surface opened one is not a distinction they make: the
+     * thing on screen is one plan, and back returns to [Thread], which is the
+     * root tab or the session tab depending only on whether a session is open.
+     */
+    PlanDetail,
+    SequenceDetail,
+    ContextDetail,
+}
 
 /**
  * The screens the user lives in, and the navigation between them.
@@ -103,6 +144,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactLanding by client.control.artifactLanding.collectAsState()
     val notificationsEnabled by client.alerts.enabled.collectAsState()
     val desktops by HelmPairing.desktops.collectAsState()
+    val planListState by client.plans.list.collectAsState()
+    val planDetailState by client.plans.detail.collectAsState()
+    val planContextsState by client.plans.contextRefs.collectAsState()
+    val sequenceListState by client.sequences.list.collectAsState()
+    val sequenceDetailState by client.sequences.detail.collectAsState()
+    val projectsState by client.contexts.projects.collectAsState()
+    val contextListState by client.contexts.list.collectAsState()
+    val contextDetailState by client.contexts.detail.collectAsState()
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     // Deliberately NOT saveable: a rotation must not redraw a question the user
     // never asked, and back is one tap away if they still mean it.
@@ -119,6 +168,27 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // artifact itself is re-derived from the list, which is re-pulled on arrival.
     var editingArtifactId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingShown by rememberSaveable { mutableStateOf<String?>(null) }
+    // Which of the ROOT's surfaces is showing, and the project the two
+    // project-scoped ones are about. Saveable for the same reason [tab] is: a
+    // rotation must not drop a user reading the plan board back onto the list,
+    // nor silently re-point it at a different project than the one they chose.
+    var homeTab by rememberSaveable { mutableStateOf(HomeTab.Sessions) }
+    var chosenProjectId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openPlanId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Which sequence lanes the reader has folded shut. SAVED, like every other
+    // fact about where the user is: a rotation that silently re-opens eight
+    // lanes undoes the tidying that was the point of folding them. Held here
+    // rather than in the board so both plan surfaces — the root tab and the
+    // in-session one — fold the same lanes, and so the board stays stateless
+    // enough to test.
+    var collapsedLanes by rememberSaveable(
+        stateSaver = listSaver(save = { it.toList() }, restore = { it.toSet() }),
+    ) { mutableStateOf(emptySet<String>()) }
+    val toggleLane: (String) -> Unit = { laneId ->
+        collapsedLanes = if (laneId in collapsedLanes) collapsedLanes - laneId else collapsedLanes + laneId
+    }
+    var openSequenceId by rememberSaveable { mutableStateOf<String?>(null) }
+    var openContextId by rememberSaveable { mutableStateOf<String?>(null) }
 
     PollSessions(client)
 
@@ -151,6 +221,81 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         // rather than leaving the user in a thread that can no longer be replied to.
         openSessionId = null
         where = Destination.Thread
+    }
+
+    // THE ONE PLACE SCOPE IS RESOLVED. Everything below — the effects that pull
+    // and the composables that draw — works from these two values and never asks
+    // again where they came from, which is what lets the plan board be ONE
+    // screen: the root points it at the chosen project's canonical path, an open
+    // session at its own working directory.
+    //
+    // Plans are project-scoped on the desktop (plan-manager resolves a dirPath to
+    // its project), so one plan_summary with the project's canonical path answers
+    // for the whole project. There is no fan-out over its directories.
+    val listedProjects = when (val state = projectsState) {
+        is ProjectList.Ready -> state.projects
+        is ProjectList.Refreshing -> state.cached
+        else -> emptyList()
+    }
+    // The chosen project, or the first one — a Plans tab that opens empty until
+    // the user picks from a list of one is a step that answers nothing. The
+    // CHOICE is still what is remembered; this is only the default.
+    val project = listedProjects.firstOrNull { it.id == chosenProjectId } ?: listedProjects.firstOrNull()
+    val planDirPath = PlanScope.resolve(open?.projectPath, project?.canonicalPath)
+    val contextProjectId = project?.id
+
+    // The projects are the KEY every other project-scoped ask needs, so they are
+    // pulled once, on arriving at a surface that needs them, and never polled.
+    // A FAILED ask must be able to come back. Gating only on Idle meant a
+    // projects ask attempted before the link was up stayed Failed forever — the
+    // effect never re-ran, because nothing in its key had changed. The link
+    // state is in the key so a link coming up re-asks, which is how every other
+    // pulled surface here already recovers.
+    //
+    // The KEY is the link, not the failure: keying on "has failed" would re-run
+    // the moment the ask failed again and spin. Keying on the link means one
+    // retry per link transition, which is exactly one per chance of succeeding.
+    LaunchedEffect(homeTab, openSessionId, linkState) {
+        val unasked = projectsState is ProjectList.Idle || projectsState is ProjectList.Failed
+        if (openSessionId == null && homeTab != HomeTab.Sessions && unasked) client.refreshProjects()
+    }
+
+    // The plan, sequence and context surfaces pull ON ARRIVAL, the artifacts
+    // way: a fresh ask every visit, never a stream and never a stale cache.
+    // Switching tab, switching project or opening a session all re-key this, so
+    // each is an arrival.
+    LaunchedEffect(where, tab, homeTab, openSessionId, planDirPath, contextProjectId) {
+        if (where != Destination.Thread) return@LaunchedEffect
+        val inSession = openSessionId != null
+        val showingPlans = if (inSession) tab == SessionTab.Plans else homeTab == HomeTab.Plans
+        val showingSequences = inSession && tab == SessionTab.Sequences
+        val showingContexts = !inSession && homeTab == HomeTab.Contexts
+        if (showingPlans && planDirPath != null) {
+            // Two asks, because they are two answers: the rows, and the lanes
+            // the rows group into. Either may land first. The frontier is not a
+            // third ask — the rows carry the edges it is read from.
+            client.refreshPlans(planDirPath)
+            client.refreshSequences(planDirPath)
+        }
+        if (showingSequences && planDirPath != null) client.refreshSequences(planDirPath)
+        if (showingContexts && contextProjectId != null) client.refreshContexts(contextProjectId)
+    }
+
+    // A detail screen pulls the thing it names, whichever surface opened it.
+    LaunchedEffect(where, openPlanId) {
+        val planId = openPlanId
+        if (where == Destination.PlanDetail && planId != null) {
+            client.readPlan(planId)
+            client.refreshPlanContexts(planId)
+        }
+    }
+    LaunchedEffect(where, openSequenceId) {
+        val sequenceId = openSequenceId
+        if (where == Destination.SequenceDetail && sequenceId != null) client.readSequence(sequenceId)
+    }
+    LaunchedEffect(where, openContextId) {
+        val contextId = openContextId
+        if (where == Destination.ContextDetail && contextId != null) client.readContext(contextId)
     }
 
     // The permitted surface is asked for when a control surface needs it and is
@@ -298,6 +443,24 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
 
     val toThread = { where = Destination.Thread }
+    // The retry/refresh affordances every pulled surface carries. They repeat
+    // the arrival pull rather than being a second, quieter kind of ask: what a
+    // retry must do is exactly what arriving does.
+    val refreshPlanBoard: () -> Unit = {
+        planDirPath?.let { dir ->
+            client.refreshPlans(dir)
+            client.refreshSequences(dir)
+        }
+        Unit
+    }
+    val refreshLanes: () -> Unit = {
+        planDirPath?.let { dir -> client.refreshSequences(dir) }
+        Unit
+    }
+    val refreshContextNodes: () -> Unit = {
+        contextProjectId?.let { id -> client.refreshContexts(id) }
+        Unit
+    }
     val listedArtifacts = when (val listed = artifactList) {
         is ArtifactList.Ready -> listed.artifacts
         is ArtifactList.Refreshing -> listed.cached
@@ -392,40 +555,152 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     )
                 }
 
-                open == null -> SessionListScreen(
-                    sessions = sessions,
-                    linkState = linkState,
-                    reach = reach,
-                    capabilities = capabilities,
-                    onOpen = {
-                        openSessionId = it.id
-                        // A freshly opened session starts on its conversation —
-                        // the tab the LAST session was left on is not a choice
-                        // the user made about this one.
-                        tab = SessionTab.Chat
-                    },
-                    // Long-press reuses the star exactly as it is: the pressed
-                    // session becomes the focused one with the sheet already up.
-                    // The thread behind the sheet names the session the actions
-                    // belong to — the same context the scrim gives on the chat.
-                    onLongPress = {
-                        openSessionId = it.id
-                        tab = SessionTab.Chat
-                        where = Destination.Sheet
-                    },
-                    onNewSession = {
-                        openSessionId = null
-                        where = Destination.Spawn
-                    },
-                    onPairDesktop = {
-                        HelmLinkService.forcePairingMode(context)
-                        where = Destination.Pairing
-                    },
-                    onDesktops = { where = Destination.Desktops },
-                    onExportLogs = exportLogs,
-                    notificationsEnabled = notificationsEnabled,
-                    onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
-                )
+                // The three detail screens sit here, above the null check, for
+                // the same reason Spawn does: they are reachable with no session
+                // open (the root's Plans and Contexts tabs lead to them), and
+                // they need no session to render. Back goes to Thread, which is
+                // the root tab row or the session's, whichever the user was on.
+                // Each one wears the app bar every other full-screen destination
+                // wears. The link badge matters MOST here: these are the screens
+                // that sit waiting on an answer from the desktop, so a dropped
+                // link has to be readable without leaving them.
+                where == Destination.PlanDetail -> {
+                    BackHandler(onBack = toThread)
+                    val plan = LoadViews.plan(planDetailState, openPlanId)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        HelmAppBar(
+                            title = detailTitle(plan, stringResource(R.string.plan_detail_title)) { it.title },
+                            linkState = linkState,
+                            onBack = toThread,
+                        )
+                        PlanDetail(
+                            plan = plan,
+                            contexts = LoadViews.planContexts(planContextsState, openPlanId),
+                            onRefresh = {
+                                openPlanId?.let { planId ->
+                                    client.readPlan(planId)
+                                    client.refreshPlanContexts(planId)
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                where == Destination.SequenceDetail -> {
+                    BackHandler(onBack = toThread)
+                    val sequence = LoadViews.sequence(sequenceDetailState, openSequenceId)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        HelmAppBar(
+                            title = detailTitle(sequence, stringResource(R.string.sequence_detail_title)) { it.title },
+                            linkState = linkState,
+                            onBack = toThread,
+                        )
+                        SequenceDetail(
+                            sequence = sequence,
+                            onRefresh = { openSequenceId?.let { client.readSequence(it) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                where == Destination.ContextDetail -> {
+                    BackHandler(onBack = toThread)
+                    val contextNode = LoadViews.context(contextDetailState, openContextId)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        HelmAppBar(
+                            title = detailTitle(contextNode, stringResource(R.string.context_detail_title)) { it.title },
+                            linkState = linkState,
+                            onBack = toThread,
+                        )
+                        ContextDetail(
+                            context = contextNode,
+                            onRefresh = { openContextId?.let { client.readContext(it) } },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                // The ROOT — the tab row and whichever of its three surfaces is
+                // selected. Back off a non-Sessions tab returns to Sessions
+                // rather than offering to quit; the root BackHandler further
+                // down is gated on the Sessions tab for exactly that reason.
+                open == null -> Column(modifier = Modifier.fillMaxSize()) {
+                    BackHandler(enabled = homeTab != HomeTab.Sessions) { homeTab = HomeTab.Sessions }
+                    HomeTabs(selected = homeTab, onSelect = { homeTab = it })
+                    Box(modifier = Modifier.weight(1f)) {
+                        when (homeTab) {
+                            HomeTab.Sessions -> SessionListScreen(
+                                sessions = sessions,
+                                linkState = linkState,
+                                reach = reach,
+                                capabilities = capabilities,
+                                onOpen = { session ->
+                                    openSessionId = session.id
+                                    tab = SessionTab.Chat
+                                },
+                                onLongPress = { session ->
+                                    openSessionId = session.id
+                                    tab = SessionTab.Chat
+                                    where = Destination.Sheet
+                                },
+                                onNewSession = {
+                                    openSessionId = null
+                                    where = Destination.Spawn
+                                },
+                                onPairDesktop = {
+                                    HelmLinkService.forcePairingMode(context)
+                                    where = Destination.Pairing
+                                },
+                                onDesktops = { where = Destination.Desktops },
+                                onExportLogs = exportLogs,
+                                notificationsEnabled = notificationsEnabled,
+                                onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
+                            )
+
+                            HomeTab.Plans -> ProjectScoped(
+                                projects = LoadViews.projects(projectsState),
+                                project = project,
+                                linkState = linkState,
+                                onSelectProject = { chosenProjectId = it.id },
+                                onRetryProjects = { client.refreshProjects() },
+                                onDesktops = { where = Destination.Desktops },
+                                noProjectText = stringResource(R.string.plans_no_project),
+                            ) {
+                                PlanList(
+                                    plans = LoadViews.plans(planListState, planDirPath),
+                                    sequences = LoadViews.sequences(sequenceListState, planDirPath),
+                                    collapsedLaneIds = collapsedLanes,
+                                    onToggleLane = toggleLane,
+                                    onOpen = { plan ->
+                                        openPlanId = plan.id
+                                        where = Destination.PlanDetail
+                                    },
+                                    onRefresh = refreshPlanBoard,
+                                )
+                            }
+
+                            HomeTab.Contexts -> ProjectScoped(
+                                projects = LoadViews.projects(projectsState),
+                                project = project,
+                                linkState = linkState,
+                                onSelectProject = { chosenProjectId = it.id },
+                                onRetryProjects = { client.refreshProjects() },
+                                onDesktops = { where = Destination.Desktops },
+                                noProjectText = stringResource(R.string.contexts_no_project),
+                            ) {
+                                ContextList(
+                                    contexts = LoadViews.contexts(contextListState, contextProjectId),
+                                    onOpen = { node ->
+                                        openContextId = node.id
+                                        where = Destination.ContextDetail
+                                    },
+                                    onRefresh = refreshContextNodes,
+                                )
+                            }
+                        }
+                    }
+                }
 
                 where == Destination.Voice -> VoiceScreen(
                     sessionName = open.name,
@@ -564,6 +839,46 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     where = Destination.ArtifactEditor
                                 },
                             )
+
+                            // The SAME composables the root's Plans tab renders,
+                            // pointed at this session's working directory
+                            // instead of a chosen project. No picker: the
+                            // session already answered which scope this is.
+                            // A session spawned without a working directory has
+                            // no plans to ask for, and the root's project picker
+                            // cannot stand in for one — an open session is the
+                            // scope. Say so, rather than leave a spinner that
+                            // nothing will ever answer. The tabs STAY: a tab
+                            // that vanishes for some sessions is a worse
+                            // explanation than a sentence.
+                            SessionTab.Plans -> if (planDirPath == null) {
+                                LoadNote(stringResource(R.string.plans_no_session_directory))
+                            } else {
+                                PlanList(
+                                    plans = LoadViews.plans(planListState, planDirPath),
+                                    sequences = LoadViews.sequences(sequenceListState, planDirPath),
+                                    collapsedLaneIds = collapsedLanes,
+                                    onToggleLane = toggleLane,
+                                    onOpen = { plan ->
+                                        openPlanId = plan.id
+                                        where = Destination.PlanDetail
+                                    },
+                                    onRefresh = refreshPlanBoard,
+                                )
+                            }
+
+                            SessionTab.Sequences -> if (planDirPath == null) {
+                                LoadNote(stringResource(R.string.sequences_no_session_directory))
+                            } else {
+                                SequenceList(
+                                    sequences = LoadViews.sequences(sequenceListState, planDirPath),
+                                    onOpen = { sequence ->
+                                        openSequenceId = sequence.id
+                                        where = Destination.SequenceDetail
+                                    },
+                                    onRefresh = refreshLanes,
+                                )
+                            }
                         }
                     }
                 }
@@ -618,7 +933,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // WHY ASK AT ALL: backgrounding keeps the foreground service, and
             // with it the BLE link and the notifications, alive. Quitting drops
             // them. A stray back used to take the destructive option silently.
-            val atRoot = openSessionId == null && where == Destination.Thread
+            // The Plans and Contexts tabs are NOT the root: back off one of them
+            // returns to Sessions (handled in that branch), and offering to quit
+            // from there would be the same silent destructive answer this
+            // dialog exists to stop.
+            val atRoot = openSessionId == null &&
+                where == Destination.Thread &&
+                homeTab == HomeTab.Sessions
             BackHandler(enabled = atRoot) { leaving = !leaving }
             // A notification tap can navigate out from under an open dialog.
             // Drop the question with the screen it was asked on, so returning
@@ -650,6 +971,49 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     onDismiss = { leaving = false },
                 )
             }
+        }
+    }
+}
+
+/**
+ * The chrome a project-scoped root surface wears: the app bar, the project
+ * picker, and then the surface itself.
+ *
+ * ONE OWNER FOR BOTH, for the reason [SessionTabScaffold] is one owner: the
+ * Plans and Contexts tabs must not drift into two different ways of saying which
+ * project you are looking at, and switching between them must re-lay-out only
+ * the body.
+ *
+ * A surface with NO project yet renders [noProjectText] instead of its body. Not
+ * an empty list — "no plans" and "you have not said which plans" are different
+ * sentences, and only one of them is about the plans.
+ */
+@Composable
+private fun ProjectScoped(
+    projects: LoadView<List<HelmProject>>,
+    project: HelmProject?,
+    linkState: LinkState,
+    onSelectProject: (HelmProject) -> Unit,
+    onRetryProjects: () -> Unit,
+    onDesktops: () -> Unit,
+    noProjectText: String,
+    body: @Composable () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        HelmAppBar(
+            title = stringResource(R.string.app_name),
+            linkState = linkState,
+            contextLabel = project?.name,
+            onLinkClick = onDesktops,
+        )
+        ProjectPicker(
+            projects = projects,
+            selected = project,
+            onSelect = onSelectProject,
+            onRetry = onRetryProjects,
+        )
+        Box(modifier = Modifier.weight(1f)) {
+            if (project == null) LoadNote(noProjectText) else body()
         }
     }
 }

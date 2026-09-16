@@ -4,7 +4,10 @@ import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
 import com.potatomotato.helm.data.CapabilityCache
 import com.potatomotato.helm.data.ChatRepository
+import com.potatomotato.helm.data.ContextRepository
 import com.potatomotato.helm.data.ControlRepository
+import com.potatomotato.helm.data.PlanRepository
+import com.potatomotato.helm.data.SequenceRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
@@ -52,6 +55,9 @@ class HelmClient(
     val capabilities: CapabilityCache = CapabilityCache(),
     val control: ControlRepository = ControlRepository(),
     val artifacts: ArtifactRepository = ArtifactRepository(),
+    val plans: PlanRepository = PlanRepository(),
+    val sequences: SequenceRepository = SequenceRepository(),
+    val contexts: ContextRepository = ContextRepository(),
     val alerts: AlertRouter = AlertRouter(),
 ) {
     /**
@@ -405,6 +411,156 @@ class HelmClient(
         }
     }
 
+    // ------------------------------------------------- plans, sequences, contexts
+
+    /**
+     * The plans of one directory as BOARD ROWS — `plan_summary`, never the
+     * full-record list. The summary carries status, ids, title and edges and
+     * leaves every description behind, which is what keeps the answer small
+     * enough for this link to finish delivering it. The prose arrives one plan
+     * at a time from [readPlan] when the reader opens one.
+     *
+     * READ-ONLY on this link for now — nothing here creates, claims or completes
+     * a plan — so a refusal is state the screen shows and never a half-written
+     * change on the desktop.
+     *
+     * ACTIVE IS FIXED, not a parameter: a finished plan is noise on a phone, and
+     * asking for all of them is what cost the link the reply in the first place.
+     */
+    fun refreshPlans(dirPath: String): Boolean {
+        plans.listRequested(dirPath)
+        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "filter" to FILTER_ACTIVE)
+        return call(METHOD_PLAN_SUMMARY, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!plans.listArrived(dirPath, outcome.result)) {
+                        plans.listFailed(dirPath, UNREADABLE_PLANS)
+                    }
+                is Outcome.Failed -> plans.listFailed(dirPath, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * One plan in full. The id rides as `uuid`, which is the only form the
+     * desktop's `plan_get` takes — a P-00xx humanId would be refused, and the
+     * board already holds the UUID for every row it drew.
+     */
+    fun readPlan(planId: String): Boolean {
+        plans.detailRequested(planId)
+        return call(METHOD_PLAN_GET, linkedMapOf("uuid" to planId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!plans.detailArrived(planId, outcome.result)) {
+                        plans.detailFailed(planId, UNREADABLE_PLAN)
+                    }
+                is Outcome.Failed -> plans.detailFailed(planId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * One plan's effective context refs — its own bindings merged with those
+     * inherited from its sequence. Refs only: the bodies are a `context_get`
+     * away, fetched when the reader opens one, which is why this answer stays
+     * small enough to pull on every visit.
+     */
+    fun refreshPlanContexts(planId: String): Boolean {
+        plans.contextRefsRequested(planId)
+        return call(METHOD_PLAN_CONTEXT_LIST, linkedMapOf("planId" to planId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!plans.contextRefsArrived(planId, outcome.result)) {
+                        plans.contextRefsFailed(planId, UNREADABLE_PLAN_CONTEXTS)
+                    }
+                is Outcome.Failed -> plans.contextRefsFailed(planId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * The sequence lanes of one directory, including the member plan ids the
+     * desktop computes per answer. `sequence_list` also accepts a `planId`; only
+     * the directory form is sent, because the board groups a whole directory and
+     * asking per plan would be one call per row.
+     */
+    fun refreshSequences(dirPath: String): Boolean {
+        sequences.listRequested(dirPath)
+        return call(METHOD_SEQUENCE_LIST, linkedMapOf("dirPath" to dirPath)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!sequences.listArrived(dirPath, outcome.result)) {
+                        sequences.listFailed(dirPath, UNREADABLE_SEQUENCES)
+                    }
+                is Outcome.Failed -> sequences.listFailed(dirPath, outcome.message)
+            }
+        }
+    }
+
+    /** One sequence lane in full. The id rides as `id`, as `sequence_get` takes it. */
+    fun readSequence(sequenceId: String): Boolean {
+        sequences.detailRequested(sequenceId)
+        return call(METHOD_SEQUENCE_GET, linkedMapOf("id" to sequenceId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!sequences.detailArrived(sequenceId, outcome.result)) {
+                        sequences.detailFailed(sequenceId, UNREADABLE_SEQUENCE)
+                    }
+                is Outcome.Failed -> sequences.detailFailed(sequenceId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * The projects Helm tracks. A BARE call — `project_list` takes no arguments —
+     * and the prerequisite for every context ask, since a context node is
+     * addressed by its project.
+     */
+    fun refreshProjects(): Boolean {
+        contexts.projectsRequested()
+        return call(METHOD_PROJECT_LIST) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!contexts.projectsArrived(outcome.result)) {
+                        contexts.projectsFailed(UNREADABLE_PROJECTS)
+                    }
+                is Outcome.Failed -> contexts.projectsFailed(outcome.message)
+            }
+        }
+    }
+
+    /** The context nodes of one project, bodies included — the desktop's list carries them. */
+    fun refreshContexts(projectId: String): Boolean {
+        contexts.listRequested(projectId)
+        return call(METHOD_CONTEXT_LIST, linkedMapOf("projectId" to projectId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!contexts.listArrived(projectId, outcome.result)) {
+                        contexts.listFailed(projectId, UNREADABLE_CONTEXTS)
+                    }
+                is Outcome.Failed -> contexts.listFailed(projectId, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * One context node in full. Asked for even though the list carries content,
+     * because a ref from `plan_context_list` names a node the project list may
+     * not have been pulled for — a ref is an id, not a row.
+     */
+    fun readContext(contextId: String): Boolean {
+        contexts.detailRequested(contextId)
+        return call(METHOD_CONTEXT_GET, linkedMapOf("id" to contextId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!contexts.detailArrived(contextId, outcome.result)) {
+                        contexts.detailFailed(contextId, UNREADABLE_CONTEXT)
+                    }
+                is Outcome.Failed -> contexts.detailFailed(contextId, outcome.message)
+            }
+        }
+    }
+
     /** One decrypted application message. Never throws: the link outlives its payloads. */
     fun onInbound(payload: ByteArray) {
         val record = MobileEnvelope.decode(payload)
@@ -609,6 +765,35 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
         private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
 
+        /**
+         * Helm's planning surface, READ side only. No `plan_create`,
+         * `plan_set_state` or `plan_complete` constant exists here on purpose:
+         * a method name that is never spelled is a call that cannot be made by
+         * accident.
+         */
+        /**
+         * The board's list tool is the SUMMARY one, never the full-record
+         * `plan_list`: that answers every plan's whole description, which for
+         * Helm's own project is a 419 KB reply the 512-byte-chunk link cannot
+         * survive. `plan_list` is not spelled anywhere here for the same reason
+         * the write methods are not — a name that is never written cannot be
+         * called by accident.
+         */
+        private const val METHOD_PLAN_SUMMARY = "plan_summary"
+
+        /**
+         * The only filter this app ever sends. Done plans are noise on a phone
+         * and their descriptions are what killed the link in UAT.
+         */
+        private const val FILTER_ACTIVE = "active"
+        private const val METHOD_PLAN_GET = "plan_get"
+        private const val METHOD_PLAN_CONTEXT_LIST = "plan_context_list"
+        private const val METHOD_SEQUENCE_LIST = "sequence_list"
+        private const val METHOD_SEQUENCE_GET = "sequence_get"
+        private const val METHOD_CONTEXT_LIST = "context_list"
+        private const val METHOD_CONTEXT_GET = "context_get"
+        private const val METHOD_PROJECT_LIST = "project_list"
+
         /** The ONLY kind the session-addressed create accepts; the desktop maps it to 'markdown'. */
         private const val CREATE_KIND = "md"
 
@@ -626,6 +811,17 @@ class HelmClient(
         /** Same failure, for the artifacts screen — an unreadable answer is not an empty list. */
         private const val UNREADABLE_ARTIFACTS = "Helm answered with an artifact list this app could not read"
         private const val UNREADABLE_ARTIFACT = "Helm answered with an artifact this app could not read"
+
+        /** Same failure, for each planning surface — an unreadable answer is not an empty one. */
+        private const val UNREADABLE_PLANS = "Helm answered with a plan list this app could not read"
+        private const val UNREADABLE_PLAN = "Helm answered with a plan this app could not read"
+        private const val UNREADABLE_PLAN_CONTEXTS =
+            "Helm answered with a plan's context list this app could not read"
+        private const val UNREADABLE_SEQUENCES = "Helm answered with a sequence list this app could not read"
+        private const val UNREADABLE_SEQUENCE = "Helm answered with a sequence this app could not read"
+        private const val UNREADABLE_CONTEXTS = "Helm answered with a context list this app could not read"
+        private const val UNREADABLE_CONTEXT = "Helm answered with a context this app could not read"
+        private const val UNREADABLE_PROJECTS = "Helm answered with a project list this app could not read"
 
         /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
         private const val SNAPSHOT_MODE = "stripped"

@@ -1,8 +1,5 @@
 package com.potatomotato.helm.ui.artifacts
 
-import android.graphics.BitmapFactory
-import android.util.Base64
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,20 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ArtifactList
@@ -58,6 +46,7 @@ import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.MarkdownBlock
 import com.potatomotato.helm.ui.components.SCRIM_ALPHA
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
@@ -501,73 +490,6 @@ private fun MarkdownBody(markdown: String) {
 }
 
 @Composable
-private fun MarkdownBlock(block: MdBlock) {
-    when (block) {
-        is MdBlock.Image -> InlineImage(block)
-        is MdBlock.Heading -> Text(
-            text = block.text,
-            color = HelmColors.Txt,
-            style = if (block.level <= 2) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-        )
-
-        is MdBlock.Paragraph -> Text(
-            text = annotate(block.spans),
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-
-        is MdBlock.Bullet -> Row {
-            Text(
-                text = BULLET_GLYPH,
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = annotate(block.spans),
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
-
-        is MdBlock.Quote -> Text(
-            text = annotate(block.spans),
-            color = HelmColors.Dim,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(start = HelmSpacing.Lg),
-        )
-
-        is MdBlock.Code -> Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(HelmRadius.Sm))
-                .background(HelmColors.Surface2)
-                .padding(HelmSpacing.Md),
-        ) {
-            block.lines.forEach { line ->
-                Text(
-                    text = line.ifEmpty { " " },
-                    color = HelmColors.Terminal,
-                    style = HelmType.Terminal,
-                )
-            }
-        }
-
-        MdBlock.Rule -> Hairline()
-    }
-}
-
-@Composable
-private fun InlineImage(image: MdBlock.Image) {
-    val bytes = try { Base64.decode(image.source.substringAfter(','), Base64.DEFAULT) } catch (_: IllegalArgumentException) { null }
-    val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-    if (bitmap == null) {
-        Text(text = image.alt.ifBlank { "Image unavailable" }, color = HelmColors.Faint, style = MaterialTheme.typography.bodySmall)
-    } else {
-        Image(bitmap = bitmap.asImageBitmap(), contentDescription = image.alt.ifBlank { null }, modifier = Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
 private fun PlainBody(content: String) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -579,24 +501,6 @@ private fun PlainBody(content: String) {
                 color = HelmColors.Txt,
                 style = MaterialTheme.typography.bodyMedium,
             )
-        }
-    }
-}
-
-/** The subset's spans become styles; a link is underlined accent text, not a jump. */
-@Composable
-private fun annotate(spans: List<MdSpan>): AnnotatedString = buildAnnotatedString {
-    for (span in spans) {
-        when (span) {
-            is MdSpan.Text -> append(span.text)
-            is MdSpan.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
-            is MdSpan.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(span.text) }
-            is MdSpan.CodeSpan -> withStyle(
-                SpanStyle(fontFamily = FontFamily.Monospace, background = HelmColors.Surface2),
-            ) { append(span.text) }
-            is MdSpan.Link -> withStyle(
-                SpanStyle(color = HelmColors.Accent, textDecoration = TextDecoration.Underline),
-            ) { append(span.text) }
         }
     }
 }
@@ -663,7 +567,6 @@ private const val KIND_MARKDOWN = "markdown"
 private const val KIND_HTML = "html"
 private const val SEPARATOR = " · "
 private const val CHEVRON = "›"
-private const val BULLET_GLYPH = "•  "
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f
