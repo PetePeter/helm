@@ -42,6 +42,8 @@ describe('NotificationCarousel', () => {
       props: { notifications: NOTIFICATIONS, sessionId: 's1' },
     });
     expect(w.findAll('.nav-arrow')).toHaveLength(2);
+    expect(w.findAll('.nav-arrow')[0].attributes('aria-label')).toBe('Previous notification');
+    expect(w.findAll('.nav-arrow')[1].attributes('aria-label')).toBe('Next notification');
   });
 
   it('next click advances; prev click decrements', async () => {
@@ -90,6 +92,7 @@ describe('NotificationCarousel', () => {
     });
 
     await w.find('.dismiss-btn').trigger('click');
+    expect(w.find('.dismiss-btn').attributes('aria-label')).toBe('Dismiss current notification');
     expect(w.emitted('dismiss')).toEqual([['n1']]);
   });
 
@@ -122,6 +125,7 @@ describe('NotificationCarousel', () => {
     });
 
     await w.find('.carousel-clear').trigger('click');
+    expect(w.find('.carousel-clear').attributes('aria-label')).toBe('Clear all notifications');
     expect(w.emitted('dismissAll')).toEqual([['s1']]);
   });
 

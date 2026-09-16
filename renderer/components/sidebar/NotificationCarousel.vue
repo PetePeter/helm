@@ -60,13 +60,21 @@ function formatTime(ts?: number): string {
     <div class="carousel-header">
       <span class="carousel-label">Notification{{ notifications.length > 1 ? 's' : '' }}</span>
       <span class="carousel-counter" v-if="notifications.length > 1">{{ currentIndex + 1 }} / {{ notifications.length }}</span>
-      <button class="carousel-clear" @click.stop="emit('dismissAll', sessionId)">&times;</button>
+      <button
+        class="carousel-clear"
+        type="button"
+        title="Clear all notifications"
+        aria-label="Clear all notifications"
+        @click.stop="emit('dismissAll', sessionId)"
+      >&times;</button>
     </div>
     <div class="carousel-body">
       <div class="carousel-nav">
         <div v-if="notifications.length > 1" class="nav-arrow-slot">
           <button
             class="nav-arrow"
+            type="button"
+            aria-label="Previous notification"
             :disabled="currentIndex === 0"
             @click.stop="prev"
           >&#9664;</button>
@@ -78,6 +86,8 @@ function formatTime(ts?: number): string {
         <div v-if="notifications.length > 1" class="nav-arrow-slot">
           <button
             class="nav-arrow"
+            type="button"
+            aria-label="Next notification"
             :disabled="currentIndex === notifications.length - 1"
             @click.stop="next"
           >&#9654;</button>
@@ -86,7 +96,12 @@ function formatTime(ts?: number): string {
     </div>
     <div class="carousel-footer">
       <span class="carousel-timestamp">{{ formatTime(current.createdAt) }}</span>
-      <button class="dismiss-btn" @click.stop="dismissCurrent">Dismiss</button>
+      <button
+        class="dismiss-btn"
+        type="button"
+        aria-label="Dismiss current notification"
+        @click.stop="dismissCurrent"
+      >Dismiss</button>
     </div>
   </div>
 </template>
@@ -94,11 +109,11 @@ function formatTime(ts?: number): string {
 <style scoped>
 .notification-carousel {
   margin-top: 8px;
-  border: 1px solid rgba(68, 204, 68, 0.55);
+  border: 1px solid rgba(68, 204, 68, 0.8);
   border-radius: 8px;
   background: rgba(20, 48, 28, 0.92);
   color: var(--text-primary);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.38);
   overflow: hidden;
 }
 
@@ -106,13 +121,16 @@ function formatTime(ts?: number): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-bottom: 1px solid rgba(68, 204, 68, 0.2);
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(68, 204, 68, 0.45);
+  background: rgba(68, 204, 68, 0.12);
 }
 
 .carousel-label {
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   flex: 1;
 }
 
@@ -125,12 +143,12 @@ function formatTime(ts?: number): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.16);
   color: var(--text-primary);
   cursor: pointer;
   font-size: 14px;
@@ -138,11 +156,11 @@ function formatTime(ts?: number): string {
 }
 
 .carousel-clear:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 .carousel-body {
-  padding: 6px 10px;
+  padding: 8px 10px;
 }
 
 .carousel-nav {
@@ -194,7 +212,7 @@ function formatTime(ts?: number): string {
 
 .carousel-title {
   font-size: var(--font-size-md);
-  font-weight: 600;
+  font-weight: 700;
   overflow-wrap: anywhere;
   line-height: 1.25;
 }
@@ -211,7 +229,8 @@ function formatTime(ts?: number): string {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 4px 10px 6px;
+  padding: 6px 10px 8px;
+  border-top: 1px solid rgba(68, 204, 68, 0.2);
 }
 
 .carousel-timestamp {
@@ -221,14 +240,16 @@ function formatTime(ts?: number): string {
 }
 
 .dismiss-btn {
-  padding: 2px 10px;
-  border: 1px solid rgba(68, 204, 68, 0.4);
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 1px solid rgba(68, 204, 68, 0.7);
   border-radius: 4px;
   background: rgba(68, 204, 68, 0.12);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: var(--font-size-xs);
-  line-height: 1.4;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .dismiss-btn:hover {

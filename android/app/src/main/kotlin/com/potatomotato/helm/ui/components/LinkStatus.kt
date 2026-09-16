@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
@@ -253,12 +252,10 @@ fun HelmAppBar(
                     .clickable(onClick = onExportLogs),
                 contentAlignment = Alignment.Center,
             ) {
-                // A real icon, not a glyph in a Text: ⤓ rendered as a stray
-                // character rather than a control, and an unlabelled one — a
-                // screen reader had nothing to announce for the only way out
-                // of a link problem.
+                // A real diagnostic icon, not a glyph in a Text. The earlier
+                // down-arrow read as navigation rather than exporting the log.
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    painter = painterResource(R.drawable.ic_bug_report),
                     contentDescription = stringResource(R.string.logs_export_description),
                     tint = HelmColors.Dim,
                     modifier = Modifier.size(HelmSize.Icon),
