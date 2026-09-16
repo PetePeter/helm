@@ -4,6 +4,7 @@ import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { SessionInfo } from '../../types/session.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
+import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
   buildLargeTextTempFileNotice,
@@ -32,15 +33,50 @@ const ACTION_WAIT_NOTE =
 function buildNonBlockingDirective(senderSessionId: string): string {
   return (
     '[HELM_MSG_RULES]\n' +
-    'This message came from another Helm session, not from a human at this terminal. ' +
+    `${describeSender(senderSessionId)} ` +
     'Nobody can see or answer an interactive prompt here.\n' +
     'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
-    'If you need a decision, send the question back to your caller with session_send_text ' +
-    `sessionId="${senderSessionId}", senderSessionId=<your HELM_SESSION_ID>, expectsResponse=true — ` +
+    `If you need a decision, ${buildReplyInstruction(senderSessionId)} — ` +
     'then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
     'While standing by, call session_set_aiagent_state with state="planning" so the wait is visible on your session row.\n' +
     '[/HELM_MSG_RULES]'
   );
+}
+
+/** One sentence of provenance, so the recipient knows who it is actually talking to. */
+function describeSender(senderSessionId: string): string {
+  return isMobileSessionId(senderSessionId)
+    ? 'This message came from the user on a paired phone, not from a human at this terminal.'
+    : 'This message came from another Helm session, not from a human at this terminal.';
+}
+
+/**
+ * How the recipient answers whoever sent the message.
+ *
+ * WHY the branch: a phone is not a session. Its sender address is the synthetic
+ * `mobile:<deviceId>` proxy identity (docs/mobile-gate.md), which nothing in
+ * session_send_text can resolve — a recipient told to reply there got "Session
+ * not found" every single time. The phone's surface is chat_send, which routes
+ * to the recipient's own bound chat (the phone over BLE, Telegram if
+ * configured), exactly as Telegram mode routes replies through telegram_chat.
+ * Local and fleet senders are real addressable sessions and keep send_text.
+ */
+function buildReplyInstruction(senderSessionId: string): string {
+  if (isMobileSessionId(senderSessionId)) {
+    return 'send the question back to the user with chat_send text="<your question>". Keep lines short — they are read on a phone';
+  }
+  return (
+    'send the question back to your caller with session_send_text ' +
+    `sessionId="${senderSessionId}", senderSessionId=<your HELM_SESSION_ID>, expectsResponse=true`
+  );
+}
+
+/** The reply-routing hint carried on the opening tag when a response is expected. */
+function buildExpectsResponseTag(senderSessionId: string): string {
+  if (isMobileSessionId(senderSessionId)) {
+    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It reaches the user on the phone they sent this from; keep lines short.]';
+  }
+  return `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${senderSessionId}", senderSessionId=<your env $HELM_SESSION_ID>, text="<your reply>". Your HELM_SESSION_ID is injected by Helm at startup.]`;
 }
 
 /**
@@ -161,7 +197,7 @@ export class HelmSessionDeliveryService {
       });
 
       const tag = expectsResponse
-        ? `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${options.senderSessionId}", senderSessionId=<your env $HELM_SESSION_ID>, text="<your reply>". Your HELM_SESSION_ID is injected by Helm at startup.]`
+        ? buildExpectsResponseTag(options.senderSessionId)
         : '[HELM_MSG]';
       // Envelope JSON braces will be smart-escaped by escapeUnrecognizedBraces
       // (unrecognized brace groups get {{/}}), while user text tokens like {Send}

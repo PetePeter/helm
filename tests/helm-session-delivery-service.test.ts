@@ -198,6 +198,66 @@ describe('HelmSessionDeliveryService', () => {
       expect(all).toContain(fleetSender);
     });
 
+    /**
+     * A phone is not a session. `mobile:<deviceId>` is a synthetic proxy
+     * identity (docs/mobile-gate.md) that session_send_text cannot resolve, so
+     * pointing a recipient at it guaranteed "Session not found" on every reply.
+     * The phone's own surface is chat_send, exactly as Telegram mode routes
+     * replies through telegram_chat.
+     */
+    it('routes a phone sender to chat_send instead of an unresolvable address', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      const phoneSender = 'mobile:008a8ddd-1c4a-4f5e-9a2b-000000000000';
+
+      await service.sendTextToSession(receiver.id, 'from my phone', {
+        senderSessionId: phoneSender,
+        senderSessionName: 'ThinkPhone',
+      });
+
+      const all = allDeliveredText(ptyManager);
+      expect(all).toContain('chat_send');
+      expect(all).toContain('AskUserQuestion');
+      // The directive must never hand the mobile address to session_send_text.
+      expect(all).not.toContain(`sessionId="${phoneSender}"`);
+      expect(all).not.toContain('session_send_text');
+    });
+
+    it('routes a phone sender to chat_send in the expectsResponse tag too', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      const phoneSender = 'mobile:008a8ddd-1c4a-4f5e-9a2b-000000000000';
+
+      await service.sendTextToSession(receiver.id, 'what branch?', {
+        senderSessionId: phoneSender,
+        senderSessionName: 'ThinkPhone',
+        expectsResponse: true,
+      });
+
+      const all = allDeliveredText(ptyManager);
+      expect(all).toContain('expectsResponse=true');
+      expect(all).toContain('chat_send');
+      expect(all).not.toContain('session_send_text');
+    });
+
+    /**
+     * Provenance is not routing: the envelope still records which phone sent the
+     * message, it just stops being advertised as a reply address.
+     */
+    it('keeps the phone address in the envelope as provenance', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      const phoneSender = 'mobile:008a8ddd-1c4a-4f5e-9a2b-000000000000';
+
+      await service.sendTextToSession(receiver.id, 'from my phone', {
+        senderSessionId: phoneSender,
+        senderSessionName: 'ThinkPhone',
+      });
+
+      const sent = ptyManager.deliverText.mock.calls.find((c: any[]) => String(c[1]).startsWith('[HELM_MSG'))?.[1] as string;
+      const envelopeText = sent.slice(sent.indexOf('{'));
+      const envelope = JSON.parse(envelopeText.slice(0, envelopeText.indexOf('}') + 1));
+      expect(envelope.fromSessionId).toBe(phoneSender);
+      expect(envelope.fromSessionName).toBe('ThinkPhone');
+    });
+
     it('omits the directive for recipients that opted out of the preamble', async () => {
       const { service, ptyManager, receiver, sender } = makeDeps({ helmPreambleForInterSession: false });
 
