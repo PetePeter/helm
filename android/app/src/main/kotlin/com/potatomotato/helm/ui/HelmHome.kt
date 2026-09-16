@@ -130,6 +130,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val sessions by client.sessions.sessions.collectAsState()
     val reach by client.sessions.reach.collectAsState()
     val threads by client.chats.threads.collectAsState()
+    val unreadCounts by client.chats.unreadCounts.collectAsState()
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
     val requestedLines by client.control.requestedLines.collectAsState()
@@ -207,12 +208,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // What the notifier needs to know to stay quiet about the thing on screen —
     // and to clear rows the user has just answered by opening them. The
     // artifacts screens count as reading the session too: opening the list is
-    // answering every artifact buzz for it.
+    // answering every artifact buzz for it. The same predicate drives the
+    // unread badge: a thread on screen is being read, so its count clears on
+    // the way in and nothing counts as read once the user leaves it.
     ReportVisibility(client)
     LaunchedEffect(openSessionId, where) {
         val reading = where == Destination.Thread ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
         client.alerts.opened(openSessionId?.takeIf { reading })
+        client.chats.reading(openSessionId?.takeIf { reading })
     }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
@@ -635,6 +639,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 linkState = linkState,
                                 reach = reach,
                                 capabilities = capabilities,
+                                unread = unreadCounts,
                                 onOpen = { session ->
                                     openSessionId = session.id
                                     tab = SessionTab.Chat

@@ -58,6 +58,17 @@ class SessionRowsTest {
         assertEquals(emptySet<String>(), SessionRows.toggle(setOf("alpha"), "alpha"))
     }
 
+    @Test
+    fun `an unread badge shows the count, caps at nine-plus, and hides at zero`() {
+        // A two-digit count breaks the pill's rhythm and buys nothing: past nine
+        // the row only has to say "more than you have read".
+        assertEquals("1", SessionRows.unreadBadgeLabel(1))
+        assertEquals("9", SessionRows.unreadBadgeLabel(9))
+        assertEquals("9+", SessionRows.unreadBadgeLabel(10))
+        assertEquals("9+", SessionRows.unreadBadgeLabel(42))
+        assertEquals(null, SessionRows.unreadBadgeLabel(0))
+    }
+
     private fun s(id: String, projectPath: String) = HelmSession(
         id = id,
         name = id,

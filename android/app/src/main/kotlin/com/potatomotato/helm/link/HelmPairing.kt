@@ -10,6 +10,7 @@ import com.potatomotato.helm.data.LanAddressStore
 import com.potatomotato.helm.data.PrefsLanAddressStore
 import com.potatomotato.helm.data.PairedDesktop
 import com.potatomotato.helm.data.PhoneIdentity
+import com.potatomotato.helm.data.PrefsUnreadStore
 import com.potatomotato.helm.data.PskStore
 import com.potatomotato.helm.data.pairedDesktops
 import com.potatomotato.helm.log.HelmLog
@@ -91,6 +92,9 @@ object HelmPairing {
         // the user chose before any alert can arrive to be judged against it.
         client.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
         client.alerts.port = AndroidNotifications(context)
+        // The unread counts, persisted the same late way: the store needs a
+        // Context and the client above predates one.
+        client.chats.useUnreadStore(PrefsUnreadStore(context))
         val keys = DeviceKeyStore(context)
         store = keys
         // Where the desktop says it can be reached (P-0752). Keyed on the LIVE

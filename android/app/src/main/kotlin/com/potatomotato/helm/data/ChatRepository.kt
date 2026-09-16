@@ -47,14 +47,49 @@ data class ChatMessage(
  * sorted every phone message into the past. `at` is display data only. A
  * reconnect backlog arrives from Helm in the order it was written, so arrival
  * order reads correctly there too.
+ *
+ * The threads are the one thing here that does NOT persist. What does is the
+ * unread count ([UnreadStore]): a badge that forgets itself on a process death
+ * lies in exactly the case it exists for.
  */
-class ChatRepository {
+class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     private val _threads = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     val threads: StateFlow<Map<String, List<ChatMessage>>> = _threads.asStateFlow()
 
+    private val _unreadCounts = MutableStateFlow(unread.counts())
+
+    /** Per-session unread counts, as the session list renders them. */
+    val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
+
     private var sequence = 0L
 
+    /** The session whose thread is on screen, when there is one. */
+    private var readingSessionId: String? = null
+
     fun thread(sessionId: String): List<ChatMessage> = _threads.value[sessionId].orEmpty()
+
+    /**
+     * Attach the persistent store and adopt what it remembers — the same late
+     * attachment as [com.potatomotato.helm.notify.AlertRouter.useSettings]: the
+     * store needs a Context and the client is built before there is one.
+     */
+    fun useUnreadStore(store: UnreadStore) {
+        unread = store
+        _unreadCounts.value = store.counts()
+    }
+
+    /**
+     * Say which thread the user is looking at — and mark it read on the way in:
+     * arriving at a thread IS reading it, backlog included. Null when the user
+     * is back on the list, so nothing reads as "being read" from there.
+     */
+    fun reading(sessionId: String?) {
+        readingSessionId = sessionId
+        if (sessionId != null) markRead(sessionId)
+    }
+
+    /** A thread the user has seen stops counting, whatever it got up to. */
+    fun markRead(sessionId: String) = setUnread(sessionId, 0)
 
     /** A `chat` record from Helm. */
     fun receive(record: MobileRecord.Chat) {
@@ -69,6 +104,12 @@ class ChatRepository {
                 voice = record.voice,
             ),
         )
+        // Only what arrives unseen counts. The thread the user is reading is
+        // being read by definition, and the user's own outgoing words were
+        // never news to them — they typed them.
+        if (record.sessionId != readingSessionId) {
+            setUnread(record.sessionId, (_unreadCounts.value[record.sessionId] ?: 0) + 1)
+        }
     }
 
     /**
@@ -100,6 +141,14 @@ class ChatRepository {
     private fun append(sessionId: String, message: ChatMessage) {
         val thread = (_threads.value[sessionId].orEmpty() + message).takeLast(MAX_THREAD)
         _threads.value = _threads.value + (sessionId to thread)
+    }
+
+    /** One write, to the flow the screens read and the store the app restarts from. */
+    private fun setUnread(sessionId: String, count: Int) {
+        val next = _unreadCounts.value.toMutableMap()
+        if (count <= 0) next.remove(sessionId) else next[sessionId] = count
+        _unreadCounts.value = next
+        unread.setCount(sessionId, count)
     }
 
     /** Monotonic, so two identical messages in the same millisecond stay distinct. */

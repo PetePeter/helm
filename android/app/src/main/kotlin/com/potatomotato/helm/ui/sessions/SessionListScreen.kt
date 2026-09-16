@@ -69,6 +69,8 @@ fun SessionListScreen(
     linkState: LinkState,
     reach: Reach,
     capabilities: Capabilities,
+    /** Per-session unread chat counts; a row with one wears the badge. */
+    unread: Map<String, Int>,
     onOpen: (HelmSession) -> Unit,
     /** Long-press acts on a session from the list — see HelmHome for the routing. */
     onLongPress: (HelmSession) -> Unit,
@@ -135,6 +137,7 @@ fun SessionListScreen(
                     is RowEntry.Session -> item(key = entry.session.id) {
                         SessionRow(
                             entry.session,
+                            unreadCount = unread[entry.session.id] ?: 0,
                             onClick = { onOpen(entry.session) },
                             onLongClick = { onLongPress(entry.session) },
                         )
@@ -227,7 +230,12 @@ private fun ProjectHeader(label: String, collapsed: Boolean, count: Int, onToggl
 }
 
 @Composable
-private fun SessionRow(session: HelmSession, onClick: () -> Unit, onLongClick: () -> Unit) {
+private fun SessionRow(
+    session: HelmSession,
+    unreadCount: Int,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     val labels = SessionRowText.Labels(
         needsDecision = stringResource(R.string.sessions_sub_needs_decision),
         working = stringResource(R.string.sessions_sub_working),
@@ -278,6 +286,22 @@ private fun SessionRow(session: HelmSession, onClick: () -> Unit, onLongClick: (
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // Unread chat is a count chip, not a sub-line word — it must be
+            // findable without reading anything, the same way a plan-claimed
+            // pill is. Same geometry as that pill, filled with the accent
+            // because it is the one thing on the row asking to be tapped.
+            SessionRows.unreadBadgeLabel(unreadCount)?.let { badge ->
+                Text(
+                    text = badge,
+                    color = HelmColors.OnAccent,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(HelmRadius.Pill))
+                        .background(HelmColors.Accent)
+                        .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
                 )
             }
             // A claimed plan is a pill, not a sub-line word: the desktop's plan

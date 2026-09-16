@@ -47,4 +47,18 @@ object SessionRows {
     /** The label set with one label flipped. */
     fun toggle(collapsed: Set<String>, label: String): Set<String> =
         if (label in collapsed) collapsed - label else collapsed + label
+
+    /**
+     * The words an unread badge shows, or null when there is no badge.
+     *
+     * A two-digit count breaks the pill's rhythm and buys nothing: past nine
+     * the row only has to say "more than you have read".
+     */
+    fun unreadBadgeLabel(count: Int): String? = when {
+        count <= 0 -> null
+        count > UNREAD_BADGE_CAP -> "$UNREAD_BADGE_CAP+"
+        else -> count.toString()
+    }
+
+    private const val UNREAD_BADGE_CAP = 9
 }
