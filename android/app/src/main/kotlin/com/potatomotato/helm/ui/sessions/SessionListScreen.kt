@@ -74,6 +74,9 @@ fun SessionListScreen(
     onLongPress: (HelmSession) -> Unit,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
+    /** Export the log to Downloads. The list is the screen the user is on when
+     *  they notice something is wrong, so the affordance lives here. */
+    onExportLogs: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // A Set is not Bundle-saveable; a List of the same strings is. The collapsed
@@ -86,6 +89,7 @@ fun SessionListScreen(
             title = stringResource(R.string.app_name),
             linkState = linkState,
             contextLabel = stringResource(R.string.sessions_context),
+            onExportLogs = onExportLogs,
         )
 
         // Only while there is nothing to pair WITH: once a desktop is connected

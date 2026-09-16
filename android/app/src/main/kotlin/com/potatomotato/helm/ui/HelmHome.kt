@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +11,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.potatomotato.helm.HelmApp
+import com.potatomotato.helm.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -28,8 +33,11 @@ import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.log.LogExport
+import com.potatomotato.helm.log.LogExportResult
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.save.AndroidArtifactFiles
+import com.potatomotato.helm.save.AndroidLogFiles
 import com.potatomotato.helm.ui.artifacts.ArtifactDetailScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
@@ -47,6 +55,7 @@ import com.potatomotato.helm.ui.voice.VoiceScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -250,6 +259,34 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
     }
 
+    // The log export deliberately does NOT go over the link: the reports it
+    // exists to serve are "it says Linked but nothing arrives", so an export
+    // that needed the desktop would be broken in exactly the case it is for.
+    // Strings are resolved here rather than in the callback — stringResource
+    // reads the composition, which a click handler is no longer inside.
+    val logFiles = remember { AndroidLogFiles(context) }
+    val scope = rememberCoroutineScope()
+    val exportSaved = stringResource(R.string.logs_export_saved)
+    val exportEmpty = stringResource(R.string.logs_export_empty)
+    val exportFailed = stringResource(R.string.logs_export_failed)
+    val exportLogs: () -> Unit = {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                LogExport.export(HelmApp.logs?.snapshot().orEmpty(), logFiles)
+            }
+            Toast.makeText(
+                context,
+                when (result) {
+                    is LogExportResult.Saved -> exportSaved.format(result.where)
+                    LogExportResult.Empty -> exportEmpty
+                    is LogExportResult.Failed -> exportFailed.format(result.reason)
+                },
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        Unit
+    }
+
     val toThread = { where = Destination.Thread }
     val listedArtifacts = when (val listed = artifactList) {
         is ArtifactList.Ready -> listed.artifacts
@@ -343,6 +380,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         where = Destination.Spawn
                     },
                     onPairDesktop = { HelmLinkService.forcePairingMode(context) },
+                    onExportLogs = exportLogs,
                 )
 
                 where == Destination.Voice -> VoiceScreen(

@@ -98,6 +98,13 @@ fun HelmAppBar(
      */
     onOverflow: (() -> Unit)? = null,
     overflowGlyphRes: Int = R.string.control_overflow_glyph,
+    /**
+     * Export the log to Downloads. It sits immediately after the link badge
+     * because the two are read together: what the user reports is almost always
+     * "it says Linked but nothing arrives", and the evidence for that sentence
+     * is one tap away from the words that prompted it.
+     */
+    onExportLogs: (() -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -157,6 +164,20 @@ fun HelmAppBar(
             }
         }
         LinkBadge(linkState)
+        if (onExportLogs != null) {
+            Box(
+                modifier = Modifier
+                    .size(HelmSize.TouchTarget)
+                    .clickable(onClick = onExportLogs),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.logs_export_glyph),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+        }
         if (onOverflow != null) {
             // Same centred touch-target box as the back affordance: sizing
             // the glyph Text directly left blank space after it, so the

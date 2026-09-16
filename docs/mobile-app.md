@@ -156,6 +156,48 @@ artifact you have already read does not buzz; only a change does. The new keys
 and the `'artifact'` kind are additive and omitted when absent, so the committed
 envelope vectors still match byte for byte.
 
+## Logs — always on, exportable without a cable
+
+The phone logs to disk in every build, and the session list carries a `⤓` next
+to the link badge that writes those logs to `Downloads/helm-log.txt`.
+
+This exists because of how the BLE chunk defect was diagnosed: the only run that
+mattered happened offsite, where nobody could attach `adb`, and logcat is a ring
+the system recycles within minutes. By the time a user can report something, the
+evidence is gone.
+
+```mermaid
+graph LR
+    CALL[HelmLog.v/d/i/w/e] --> FLS[FileLogSink]
+    FLS --> LOGCAT[AndroidLogSink → logcat]
+    FLS --> CUR[helm.log]
+    CUR -->|at 256 KB| PREV[helm.log.1]
+    BTN["⤓ on the session list"] --> EXP[LogExport]
+    CUR & PREV -->|snapshot, oldest first| EXP
+    EXP --> DL[Downloads/helm-log.txt]
+```
+
+Four decisions worth keeping:
+
+- **`FileLogSink` wraps the logcat sink rather than replacing it.** A developer
+  with the phone on a cable keeps the stream they already use; the file is an
+  addition.
+- **Two files, rotated, not one truncated.** The moment the log matters is the
+  moment it just got big. Truncating at the cap throws away exactly the history
+  that explains what happened. Disk stays bounded at ~512 KB.
+- **`debugEnabled` is on in release.** At INFO the chunk defect was invisible —
+  the sender logged every chunk as complete. A log that cannot show what went
+  over the radio is not worth its storage.
+- **The export never touches the link.** The report it serves is "it says Linked
+  but nothing arrives", so an export that needed the desktop would be broken in
+  precisely the case it exists for.
+
+The filename is fixed, so each export replaces the last one: a Downloads folder
+full of `helm-log(4).txt` makes it impossible to say which file is the run under
+discussion. [`HelmLog`'s one rule](../android/app/src/main/kotlin/com/potatomotato/helm/log/HelmLog.kt)
+matters more now that the file is something a user can mail onward — never log a
+secret or a payload, enforced by `NoPayloadInLogsTest` scanning every call site.
+
 ## Why it is built this way
 
 **Why BLE, and not LAN or a cloud relay.** Battery over range, and it works

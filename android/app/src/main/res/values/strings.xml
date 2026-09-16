@@ -77,6 +77,11 @@
     <string name="voice_permission_title">Microphone permission needed</string>
     <string name="voice_permission_body">Speech is recognised on the phone itself — nothing is recorded and nothing is uploaded. Without microphone permission the mic button cannot hear you.</string>
 
+    <string name="logs_export_glyph">⤓</string>
+    <string name="logs_export_saved">Log saved to %1$s</string>
+    <string name="logs_export_empty">Nothing logged yet</string>
+    <string name="logs_export_failed">Could not save the log: %1$s</string>
+
     <string name="control_overflow_glyph">⋮</string>
     <string name="control_action_snapshot">Terminal snapshot</string>
     <string name="control_action_rename">Rename session</string>

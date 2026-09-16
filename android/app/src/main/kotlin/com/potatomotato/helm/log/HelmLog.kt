@@ -62,9 +62,13 @@ object HelmLog {
     /**
      * Whether verbose and debug are emitted at all.
      *
-     * Defaults from [BuildConfig.DEBUG] so a release build is quiet without
-     * anyone having to remember. A `var` because tests exercise both branches —
-     * that gating is real behaviour and is worth asserting.
+     * Defaults from [BuildConfig.DEBUG] so a build that installs no sink of its
+     * own is quiet. The shipping app deliberately turns this ON in release —
+     * see `HelmApp.installFileLogging`, which explains why a release log that
+     * cannot show what crossed the radio is not worth its storage.
+     *
+     * A `var` because tests exercise both branches — that gating is real
+     * behaviour and is worth asserting.
      */
     @Volatile
     @JvmStatic
