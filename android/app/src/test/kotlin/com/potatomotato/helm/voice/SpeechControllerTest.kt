@@ -168,29 +168,6 @@ class SpeechControllerTest {
     }
 
     @Test
-    fun `editing the transcript keeps it captured and ready to send`() {
-        controller.start()
-        engine.emitFinal("send the plan to teh session")
-
-        controller.edit("send the plan to the session")
-
-        val state = controller.state.value
-        assertEquals("send the plan to the session", state.transcript)
-        assertEquals(VoicePhase.Captured, state.phase)
-    }
-
-    @Test
-    fun `clearing an edited transcript drops back out of the captured state`() {
-        controller.start()
-        engine.emitFinal("everything")
-
-        controller.edit("")
-
-        // Nothing to send, so the screen must not keep offering Send.
-        assertEquals(VoicePhase.Idle, controller.state.value.phase)
-    }
-
-    @Test
     fun `retrying is offered for a stumble but never for a denied permission`() {
         // Retrying a permission denial re-runs a request the system will refuse
         // without a prompt; the screen has to send the user to Settings instead.

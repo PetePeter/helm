@@ -2,6 +2,7 @@ package com.potatomotato.helm.ui.chat
 
 import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
@@ -30,18 +32,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
@@ -70,13 +76,17 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onRetry: (key: String, text: String) -> Unit,
     onDelete: (key: String) -> Unit,
-    onVoice: () -> Unit,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
-    // but must NEVER follow the user into a different session's thread.
-    var draft by rememberSaveable(sessionId) { mutableStateOf("") }
+    // but must NEVER follow the user into a different session's thread. The
+    // value carries its selection because dictation lands AT THE CARET, so the
+    // caret has to be something the composer knows rather than something the
+    // text field keeps to itself.
+    var draft by rememberSaveable(sessionId, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue())
+    }
     val listState = rememberLazyListState()
 
     // Every entry into a thread starts at the newest bubble. Seeding the list
@@ -143,13 +153,12 @@ fun ChatScreen(
         Composer(
             draft = draft,
             onDraft = { draft = it },
-            onVoice = onVoice,
             onTerminal = onTerminal,
             onSend = {
-                val text = draft.trim()
+                val text = draft.text.trim()
                 if (text.isNotEmpty()) {
                     onSend(text)
-                    draft = ""
+                    draft = TextFieldValue()
                 }
             },
         )
@@ -293,13 +302,14 @@ private fun BubbleAction(glyphRes: Int, labelRes: Int, color: Color, onClick: ()
 
 @Composable
 private fun Composer(
-    draft: String,
-    onDraft: (String) -> Unit,
-    onVoice: () -> Unit,
+    draft: TextFieldValue,
+    onDraft: (TextFieldValue) -> Unit,
     onTerminal: () -> Unit,
     onSend: () -> Unit,
 ) {
     Hairline()
+    val dictation = rememberDictation(draft = draft, onDraft = onDraft)
+    if (dictation.message != null) ComposerNote(dictation.message)
     // Which layout the action buttons sit in. The line count comes from the
     // field's own layout — wrap included, the thing that actually makes the
     // draft tall — and the debounced switch lives in [ComposerStack]: flipping
@@ -348,8 +358,8 @@ private fun Composer(
         when (mode) {
             ComposerStack.Mode.Row -> {
                 ComposerTerminal(guarded(onTerminal))
-                ComposerMic(guarded(onVoice))
-                ComposerSend(enabled = draft.isNotBlank(), onSend = send)
+                ComposerMic(dictation, guard = { stack.acceptsTap(SystemClock.elapsedRealtime()) })
+                ComposerSend(enabled = draft.text.isNotBlank(), onSend = send)
             }
             // A tall draft leaves no room beside it: the circles stack along the
             // right edge — same order, send still last.
@@ -358,17 +368,31 @@ private fun Composer(
                 horizontalAlignment = Alignment.End,
             ) {
                 ComposerTerminal(guarded(onTerminal))
-                ComposerMic(guarded(onVoice))
-                ComposerSend(enabled = draft.isNotBlank(), onSend = send)
+                ComposerMic(dictation, guard = { stack.acceptsTap(SystemClock.elapsedRealtime()) })
+                ComposerSend(enabled = draft.text.isNotBlank(), onSend = send)
             }
         }
     }
 }
 
+/** A line of voice trouble, said where the user is standing. */
+@Composable
+private fun ComposerNote(messageRes: Int) {
+    Text(
+        text = stringResource(messageRes),
+        color = HelmColors.Danger,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(HelmColors.Surface)
+            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
+    )
+}
+
 @Composable
 private fun ComposerDraft(
-    draft: String,
-    onDraft: (String) -> Unit,
+    draft: TextFieldValue,
+    onDraft: (TextFieldValue) -> Unit,
     onLines: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -379,7 +403,7 @@ private fun ComposerDraft(
             .border(HelmSize.Hairline, HelmColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(HelmRadius.Md))
             .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Md),
     ) {
-        if (draft.isEmpty()) {
+        if (draft.text.isEmpty()) {
             Text(
                 text = stringResource(R.string.chat_placeholder),
                 color = HelmColors.Faint,
@@ -420,17 +444,59 @@ private fun ComposerTerminal(onTerminal: () -> Unit) {
     }
 }
 
-// The mic is permanent and first-class, not an option inside a keyboard:
-// away from the desk it is the primary way a reply gets written, so it
-// holds the thumb position and send sits beside it.
+/**
+ * The mic is permanent and first-class, not an option inside a keyboard: away
+ * from the desk it is the primary way a reply gets written, so it holds the
+ * thumb position and send sits beside it.
+ *
+ * Hold to talk. It is a press, not a tap, because that is the gesture that has
+ * an obvious end — releasing — and because a dictation nobody ended is a
+ * microphone left open. While held it wears a halo that breathes with what the
+ * recogniser is hearing: a flat ring while someone speaks is how you tell the
+ * microphone is being held by something else.
+ */
 @Composable
-private fun ComposerMic(onVoice: () -> Unit) {
+private fun ComposerMic(dictation: DictationHandle, guard: () -> Boolean) {
+    val halo by animateFloatAsState(
+        targetValue = if (dictation.listening) MIN_HALO + (1f - MIN_HALO) * dictation.level else 0f,
+        label = "micHalo",
+    )
+    val accent = HelmColors.Accent
+    val micLabel = stringResource(R.string.voice_mic_hold)
+
+    // The handle changes on every loudness reading. Keying the gesture on it
+    // would restart the pointer filter mid-hold — cancelling the very press it
+    // is meant to be tracking — so the gesture is installed once and reads the
+    // latest handle through this.
+    val current by rememberUpdatedState(dictation)
+    val guardNow by rememberUpdatedState(guard)
+
     Box(
         modifier = Modifier
             .size(HelmSize.MicButton)
+            .drawBehind {
+                if (halo <= 0f) return@drawBehind
+                val core = size.minDimension / 2
+                // Wider is fainter, so the fall-off reads as light, not rings.
+                drawCircle(accent.copy(alpha = 0.10f * halo), radius = core + HALO_SPREAD.toPx() * halo)
+                drawCircle(accent.copy(alpha = 0.22f * halo), radius = core + HALO_SPREAD.toPx() * halo * 0.5f)
+            }
             .clip(CircleShape)
-            .background(HelmColors.Accent)
-            .clickable(onClick = onVoice),
+            .background(accent)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        if (!guardNow()) return@detectTapGestures
+                        current.onPress()
+                        // Both outcomes end the utterance: a finger lifted and a
+                        // gesture the system took away are the same "stop" to a
+                        // held microphone.
+                        tryAwaitRelease()
+                        current.onRelease()
+                    },
+                )
+            }
+            .semantics { contentDescription = micLabel },
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -475,6 +541,12 @@ private const val BUBBLE_WIDTH_FRACTION = 0.75f
 
 /** The pulled-in tail corner. See Bubble. */
 private val BUBBLE_TAIL = 5.dp
+
+/** How far the listening halo reaches past the mic at full loudness. */
+private val HALO_SPREAD = 14.dp
+
+/** A held mic glows even in silence: the halo says "open", the swell says "heard". */
+private const val MIN_HALO = 0.35f
 
 /** Immutable, so one instance serves every bubble. Compose is single-threaded anyway. */
 private val bubbleTime = java.time.format.DateTimeFormatter.ofPattern("HH:mm")

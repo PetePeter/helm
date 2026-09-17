@@ -84,13 +84,29 @@ removes.
   not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so
   switching tabs swaps only the body. A freshly opened session starts on Chat.
 - **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
+  Bubbles cap at three quarters of the width, and the URLs in them are tappable
+  (see **Links** below). The composer's mic is **push-to-talk**: hold it and the
+  recogniser's partials land in the draft at the caret, each guess replacing the
+  last, so what is dictated can be edited and re-read before the send tap that is
+  still the user's. The action buttons move between a row and a stack as the
+  draft wraps, debounced and then guarded for 250 ms so a button arriving under a
+  descending thumb cannot take the tap (`ComposerStack`).
 - **Artifacts** (tab) — the session's artifact list, re-pulled on every arrival.
   Opening a row pushes the artifact **detail**, which hangs off the tab and
   carries its own bar.
-- **Voice** — on-device speech to an editable transcript, then one confirmation
-  tap that sends into that session's thread. **No audio ever crosses the link**,
-  and the manifest carries no `INTERNET` permission, so the app is structurally
-  incapable of uploading any.
+- **Voice** — on-device speech, dictated straight into the chat composer rather
+  than a screen of its own: leaving the conversation to speak meant coming back
+  with a message already sent. **No audio ever crosses the link**, and the
+  manifest carries no `INTERNET` permission, so the app is structurally incapable
+  of uploading any.
+- **Links** — a URL in agent-written text (chat, a context body, plan prose, an
+  artifact) is tappable and opens in the system resolver. `LinkRules` is the one
+  allow-list — `http`/`https` only — so a `javascript:`, `intent:`, `file:` or
+  `data:` target renders as plain, unstyled text and is never handed on. That is
+  invariant 9 on the phone: the content may offer an address, never an action.
+- **Copy references** — the ⧉ button copies a reference that names its own kind:
+  `[helm plan P-0007]`, `[helm context ctx-9]`, `[helm artifact art-123]`. A bare
+  id pasted into a session says nothing about which tool should resolve it.
 - **Snapshot** — recent terminal output for a session, read on request.
 - **Spawn** — start a new session. The CLI choices come from `tool_list` (the
   desktop's full configured catalogue, with each type's display name), fetched

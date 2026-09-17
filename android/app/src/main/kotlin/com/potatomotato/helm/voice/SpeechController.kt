@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.asStateFlow
  * is a callback surface with no useful state of its own; the state that the
  * screen needs lives here.
  *
- * Nothing in here sends anything. Confirmation is the user's tap, on the screen.
+ * Nothing in here sends anything, and nothing in here edits: the words land in
+ * the chat composer's own draft, which is where the user corrects them and where
+ * the decision to send stays theirs.
  */
 class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener {
     private val _state = MutableStateFlow(VoiceState())
@@ -42,16 +44,6 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
     fun cancel() {
         engine.cancel()
         _state.value = VoiceState()
-    }
-
-    /**
-     * The user's correction. A transcript edited down to nothing is nothing to
-     * send, so it falls back to [VoicePhase.Idle] and the screen stops offering
-     * Send rather than offering to send blank text.
-     */
-    fun edit(text: String) {
-        val phase = if (text.isBlank()) VoicePhase.Idle else VoicePhase.Captured
-        _state.value = _state.value.copy(transcript = text, phase = phase, error = null, level = 0f)
     }
 
     /** Leaving the screen. The microphone must not stay held open behind it. */

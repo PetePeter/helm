@@ -75,7 +75,6 @@ import com.potatomotato.helm.ui.plans.PlanScope
 import com.potatomotato.helm.ui.sequences.SequenceDetail
 import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionListScreen
-import com.potatomotato.helm.ui.voice.VoiceScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -92,7 +91,6 @@ import kotlinx.coroutines.withContext
  */
 private enum class Destination {
     Thread,
-    Voice,
     Sheet,
     Snapshot,
     Spawn,
@@ -714,19 +712,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     }
                 }
 
-                where == Destination.Voice -> VoiceScreen(
-                    sessionName = open.name,
-                    linkState = linkState,
-                    onCancel = toThread,
-                    // Sending returns to the thread rather than the list: the
-                    // message lands there in its Sending state, so the user sees
-                    // where the words went and watches them deliver.
-                    onSend = { text ->
-                        client.sendChat(open.id, text)
-                        where = Destination.Thread
-                    },
-                )
-
                 where == Destination.Snapshot -> {
                     BackHandler(onBack = toThread)
                     SnapshotScreen(
@@ -839,7 +824,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 // take-back, so it goes straight to the store.
                                 onRetry = { key, text -> client.resendChat(open.id, key, text) },
                                 onDelete = { key -> client.chats.remove(open.id, key) },
-                                onVoice = { where = Destination.Voice },
                                 onTerminal = openTerminalPreview,
                             )
 

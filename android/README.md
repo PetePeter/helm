@@ -119,33 +119,44 @@ only thing that crosses the wire is the confirmed text, as an ordinary gated
 
 ```mermaid
 graph LR
-    MIC[Mic in the<br/>chat composer] --> VS[VoiceScreen]
-    VS --> SC[SpeechController<br/>state machine]
+    MIC[Mic held down<br/>in the composer] --> SC[SpeechController<br/>state machine]
     SC <--> AE[AndroidSpeechEngine<br/>SpeechRecognizer]
-    SC --> ED[Editable transcript]
-    ED -->|explicit Send tap| HC[HelmClient.sendChat]
+    SC -->|partials + final| DI[DictationInsert<br/>anchor at the caret]
+    DI --> DR[Chat draft<br/>editable, unsent]
+    DR -->|explicit Send tap| HC[HelmClient.sendChat]
     HC --> TH[Chat thread<br/>Sending → Sent]
 ```
 
-Three rules this layer exists to hold:
+Dictation is **push-to-talk in the composer**, not a screen. A screen of its own
+meant leaving the conversation to speak and returning with a message already
+sent; holding the mic puts the words in the box the user is already looking at.
+
+Four rules this layer exists to hold:
 
 - **Partial results replace, never append.** Each partial is the recogniser's
   whole current guess. Appending them is what turns one spoken phrase into
-  "test test test test".
-- **Nothing is sent without an explicit tap.** The transcript is an editable
-  field, not a label, because recognisers get names and jargon wrong and
+  "test test test test". `DictationInsert` anchors the press at the caret and
+  re-renders every guess against that anchor, so the text typed around it never
+  moves.
+- **Nothing is sent without an explicit tap.** The words land in the draft, which
+  is an editable field, because recognisers get names and jargon wrong and
   retyping a whole dictation to fix one word is worse than typing it.
+- **A press too short to carry a word changes nothing.** Under 200 ms the
+  utterance is cancelled and the draft is restored exactly — a brush past the
+  button is not a dictation.
 - **No failure strands the user on "Listening".** Every recogniser error lands
-  in `VoicePhase.Failed` with whatever was already heard still on screen.
-  `SpeechError.retryable` decides whether the screen offers another attempt or
-  sends the user to Settings — retrying a permission denial fails silently,
-  because the system stops prompting once a permission is refused for good.
+  in `VoicePhase.Failed`, and the ones the user can act on show as one line above
+  the composer. A permission denial says so rather than retrying, because the
+  system stops prompting once a permission is refused for good.
 
 Logic lives in `voice/SpeechController.kt` with no Android types in it, driven
 in tests by `FakeSpeechEngine`. `voice/AndroidSpeechEngine.kt` is translation
 only — the same split the BLE layer uses, for the same reason: the sequences
 that break this (a partial after a cancel, an empty final, an error
-mid-utterance) cannot be produced on demand by the real recogniser.
+mid-utterance) cannot be produced on demand by the real recogniser. Where the
+words land is `ui/chat/DictationInsert.kt`, pure in the same way and tested the
+same way; `ui/chat/ComposerDictation.kt` is the thin Compose wiring between them
+(permission launcher, recogniser, clock).
 
 `RECORD_AUDIO` is requested at the mic button, not at launch — the app is
 useful without it. The `<queries>` entry for `android.speech.RecognitionService`
