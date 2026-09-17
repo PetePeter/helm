@@ -2,7 +2,6 @@ package com.potatomotato.helm.ui.chat
 
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
@@ -60,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
+import com.potatomotato.helm.data.Draft
+import com.potatomotato.helm.data.PrefsDraftStore
 import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.log.HelmLog
@@ -98,12 +101,18 @@ fun ChatScreen(
     onOpenAttachment: (uri: String, mimeType: String) -> Unit = { _, _ -> },
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
-    // but must NEVER follow the user into a different session's thread. The
-    // value carries its selection because dictation lands AT THE CARET, so the
-    // caret has to be something the composer knows rather than something the
-    // text field keeps to itself.
+    // but must NEVER follow the user into a different session's thread. It also
+    // survives leaving the thread and the process itself — every edit lands in
+    // [drafts], so coming back to a chat finds the words (and the caret) where
+    // they were left. The value carries its selection because dictation lands
+    // AT THE CARET, so the caret has to be something the composer knows rather
+    // than something the text field keeps to itself.
+    val context = LocalContext.current
+    val drafts = remember { PrefsDraftStore(context) }
     var draft by rememberSaveable(sessionId, stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue())
+        mutableStateOf(
+            drafts.load(sessionId)?.let { TextFieldValue(it.text, TextRange(it.caret)) } ?: TextFieldValue(),
+        )
     }
     val listState = rememberLazyListState()
 
@@ -181,13 +190,20 @@ fun ChatScreen(
 
         Composer(
             draft = draft,
-            onDraft = { draft = it },
+            onDraft = { next ->
+                draft = next
+                // Persist as the user types: a draft only earns its keep if the
+                // app dying mid-sentence costs nothing. Saving an empty draft
+                // is the store's cue to clear (see DraftStore).
+                drafts.save(sessionId, Draft(next.text, next.selection.min))
+            },
             onTerminal = onTerminal,
             onSend = {
                 val text = draft.text.trim()
                 if (text.isNotEmpty()) {
                     onSend(text)
                     draft = TextFieldValue()
+                    drafts.clear(sessionId)
                 }
             },
         )
@@ -494,38 +510,13 @@ private fun Composer(
     Hairline()
     val dictation = rememberDictation(draft = draft, onDraft = onDraft)
     if (dictation.message != null) ComposerNote(dictation.message)
-    // Which layout the action buttons sit in. The line count comes from the
-    // field's own layout — wrap included, the thing that actually makes the
-    // draft tall — and the debounced switch lives in [ComposerStack]: flipping
-    // on a single reading lets one character crossing the wrap threshold
-    // jiggle the buttons under the thumb.
-    val stack = remember { ComposerStack() }
-    var mode by remember { mutableStateOf(ComposerStack.Mode.Row) }
-
-    // A tap is only the user's if the buttons have been still for a moment: the
-    // swap moves send to where mic just was, and a thumb already travelling
-    // would otherwise deliver a half-written draft. Elapsed time, not wall
-    // clock, so a clock change cannot open or close the window.
-    fun guarded(action: () -> Unit): () -> Unit = {
-        if (stack.acceptsTap(SystemClock.elapsedRealtime())) action()
-    }
-
-    // Sending empties the field, so the next layout is known rather than
-    // debounced — and the half-finished run toward a switch described a draft
-    // that no longer exists.
-    val send = guarded {
-        onSend()
-        stack.reset()
-        mode = ComposerStack.Mode.Row
-    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(HelmColors.Surface)
             .padding(HelmSpacing.Md)
-            // The circles slide between the two layouts instead of teleporting,
-            // which is also what makes the guarded window legible.
+            // A growing draft lifts the composer smoothly rather than snapping.
             .animateContentSize(),
         // Bottom-anchored: a multiline draft grows the field upward, and the
         // three circles stay where the thumb rests instead of riding to centre.
@@ -535,26 +526,19 @@ private fun Composer(
         ComposerDraft(
             draft = draft,
             onDraft = onDraft,
-            onLines = { mode = stack.onLineCount(it, SystemClock.elapsedRealtime()) },
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).heightIn(min = STACKED_CONTROLS_HEIGHT),
         )
 
-        when (mode) {
-            ComposerStack.Mode.Row -> {
-                ComposerTerminal(guarded(onTerminal))
-                ComposerMic(dictation, guard = { stack.acceptsTap(SystemClock.elapsedRealtime()) })
-                ComposerSend(enabled = draft.text.isNotBlank(), onSend = send)
-            }
-            // A tall draft leaves no room beside it: the circles stack along the
-            // right edge — same order, send still last.
-            ComposerStack.Mode.Stack -> Column(
-                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                horizontalAlignment = Alignment.End,
-            ) {
-                ComposerTerminal(guarded(onTerminal))
-                ComposerMic(dictation, guard = { stack.acceptsTap(SystemClock.elapsedRealtime()) })
-                ComposerSend(enabled = draft.text.isNotBlank(), onSend = send)
-            }
+        // The circles always stand on end along the right edge — the composer is
+        // one solid block at every draft size, never a row that reorganises
+        // under the thumb when the text wraps. Same order, send still last.
+        Column(
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            horizontalAlignment = Alignment.End,
+        ) {
+            ComposerTerminal(onTerminal)
+            ComposerMic(dictation)
+            ComposerSend(enabled = draft.text.isNotBlank(), onSend = onSend)
         }
     }
 }
@@ -577,7 +561,6 @@ private fun ComposerNote(messageRes: Int) {
 private fun ComposerDraft(
     draft: TextFieldValue,
     onDraft: (TextFieldValue) -> Unit,
-    onLines: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -599,7 +582,6 @@ private fun ComposerDraft(
             onValueChange = onDraft,
             textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
             cursorBrush = SolidColor(HelmColors.Accent),
-            onTextLayout = { onLines(it.lineCount) },
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -640,7 +622,7 @@ private fun ComposerTerminal(onTerminal: () -> Unit) {
  * microphone is being held by something else.
  */
 @Composable
-private fun ComposerMic(dictation: DictationHandle, guard: () -> Boolean) {
+private fun ComposerMic(dictation: DictationHandle) {
     val halo by animateFloatAsState(
         targetValue = if (dictation.listening) MIN_HALO + (1f - MIN_HALO) * dictation.level else 0f,
         label = "micHalo",
@@ -653,7 +635,6 @@ private fun ComposerMic(dictation: DictationHandle, guard: () -> Boolean) {
     // is meant to be tracking — so the gesture is installed once and reads the
     // latest handle through this.
     val current by rememberUpdatedState(dictation)
-    val guardNow by rememberUpdatedState(guard)
 
     Box(
         modifier = Modifier
@@ -670,7 +651,6 @@ private fun ComposerMic(dictation: DictationHandle, guard: () -> Boolean) {
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = {
-                        if (!guardNow()) return@detectTapGestures
                         current.onPress()
                         // Both outcomes end the utterance: a finger lifted and a
                         // gesture the system took away are the same "stop" to a
@@ -722,6 +702,12 @@ private fun ComposerSend(enabled: Boolean, onSend: () -> Unit) {
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private const val BUBBLE_WIDTH_FRACTION = 0.75f
+
+/**
+ * The three circles stacked with their gaps — the composer field's minimum
+ * height, so the box and the controls beside it always read as one block.
+ */
+private val STACKED_CONTROLS_HEIGHT = HelmSize.MicButton * 3 + HelmSpacing.Sm * 2
 
 /** The pulled-in tail corner. See Bubble. */
 private val BUBBLE_TAIL = 5.dp

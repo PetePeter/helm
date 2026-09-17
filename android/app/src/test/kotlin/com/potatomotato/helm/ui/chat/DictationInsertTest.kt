@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.chat
 
+import com.potatomotato.helm.data.Draft
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

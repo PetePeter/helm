@@ -88,9 +88,15 @@ removes.
   (see **Links** below). The composer's mic is **push-to-talk**: hold it and the
   recogniser's partials land in the draft at the caret, each guess replacing the
   last, so what is dictated can be edited and re-read before the send tap that is
-  still the user's. The action buttons move between a row and a stack as the
-  draft wraps, debounced and then guarded for 250 ms so a button arriving under a
-  descending thumb cannot take the tap (`ComposerStack`).
+  still the user's. The action buttons stand in a vertical stack along the right
+  edge at every draft size — they never reorganise under the thumb when the text
+  wraps — and the field's minimum height matches that stack, so the composer
+  reads as one solid block. A half-typed draft is
+  **phone-local and per-session** (`PrefsDraftStore`):
+  every edit persists, so leaving the thread — or killing the app — and coming
+  back finds the words and the caret where they were left, while a draft never
+  follows the user into another session's thread. Sending or backspacing to empty
+  clears it.
 - **Attachments** — a message carrying a file shows a tile with its name and
   size, and **nothing is fetched until it is tapped**: the bytes cross the same
   radio as the conversation, and a thread of photos fetching themselves would

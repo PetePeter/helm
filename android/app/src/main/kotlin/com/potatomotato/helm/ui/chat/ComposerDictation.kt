@@ -16,6 +16,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import com.potatomotato.helm.R
+import com.potatomotato.helm.data.Draft
 import com.potatomotato.helm.voice.AndroidSpeechEngine
 import com.potatomotato.helm.voice.SpeechController
 import com.potatomotato.helm.voice.SpeechError

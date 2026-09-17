@@ -1,5 +1,7 @@
 package com.potatomotato.helm.ui.chat
 
+import com.potatomotato.helm.data.Draft
+
 /**
  * Where dictated words go in a half-typed draft, and what a later guess replaces.
  *
@@ -56,6 +58,3 @@ data class Dictation(val prefix: String, val suffix: String) {
         return Draft(prefix + inserted + suffix, prefix.length + lead.length + spoken.length)
     }
 }
-
-/** A composer draft: its text, and where the caret is in it. */
-data class Draft(val text: String, val caret: Int)
