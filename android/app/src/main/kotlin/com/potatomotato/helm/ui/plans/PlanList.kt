@@ -19,8 +19,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
-import com.potatomotato.helm.ui.components.CHEVRON
+import com.potatomotato.helm.ui.HelmReferences
 import com.potatomotato.helm.ui.components.Hairline
+import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.Pill
@@ -176,55 +177,35 @@ private fun LaneHeader(
 
 @Composable
 private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .clickable(onClick = onClick)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = plan.title,
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    // Truncate, never wrap — the session list's rule, so the two
-                    // lists keep the same rhythm.
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm)) {
-                    // A plan with no P-00xx name yet shows none: the human id is
-                    // the desktop's to mint, and inventing one here would put a
-                    // label on screen no other surface would agree with.
-                    plan.humanId?.takeIf { it.isNotBlank() }?.let { humanId ->
-                        Text(
-                            text = humanId,
-                            color = HelmColors.Dim,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    if (startable) {
-                        Text(
-                            text = stringResource(R.string.plans_startable),
-                            color = HelmColors.Accent,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
+    HelmRow(
+        title = plan.title,
+        onClick = onClick,
+        copy = HelmReferences.plan(plan),
+        subtitle = {
+            Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm)) {
+                // A plan with no P-00xx name yet shows none: the human id is
+                // the desktop's to mint, and inventing one here would put a
+                // label on screen no other surface would agree with.
+                plan.humanId?.takeIf { it.isNotBlank() }?.let { humanId ->
+                    Text(
+                        text = humanId,
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (startable) {
+                    Text(
+                        text = stringResource(R.string.plans_startable),
+                        color = HelmColors.Accent,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
+        },
+        trailing = {
             Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
-            Text(
-                text = CHEVRON,
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.titleLarge,
-            )
-        }
-        Hairline(color = HelmColors.Separator)
-    }
+        },
+    )
 }
 
 /** The fold's own marker: pointing right is shut, pointing down is open. */

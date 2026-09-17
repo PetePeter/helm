@@ -31,7 +31,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ArtifactList
@@ -43,9 +42,11 @@ import com.potatomotato.helm.data.HelmArtifactRead
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
+import com.potatomotato.helm.ui.HelmReferences
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmAppBar
+import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.MarkdownBlock
 import com.potatomotato.helm.ui.components.SCRIM_ALPHA
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -128,35 +129,19 @@ private fun ArtifactRows(
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(artifacts, key = { it.id }) { artifact ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpen(artifact) }
-                    .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = artifact.title,
-                        color = HelmColors.Txt,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            HelmRow(
+                title = artifact.title,
+                onClick = { onOpen(artifact) },
+                copy = HelmReferences.artifact(artifact),
+                subtitle = {
                     Text(
                         text = listOf(kindLabel(artifact.kind), versionLabel(artifact.versionCount))
                             .joinToString(SEPARATOR),
                         color = HelmColors.Faint,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                }
-                Text(
-                    text = CHEVRON,
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
-            Hairline(color = HelmColors.Separator)
+                },
+            )
         }
         item {
             // The write affordance is a row like any other, so the gate's reason
@@ -566,7 +551,6 @@ private fun versionLabel(count: Int): String =
 private const val KIND_MARKDOWN = "markdown"
 private const val KIND_HTML = "html"
 private const val SEPARATOR = " · "
-private const val CHEVRON = "›"
 
 /** The mockup greys a forbidden row to 30%, on top of the Faint colour. */
 private const val FORBIDDEN_ALPHA = 0.3f

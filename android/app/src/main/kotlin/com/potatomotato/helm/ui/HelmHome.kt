@@ -47,10 +47,12 @@ import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.HomeTab
-import com.potatomotato.helm.ui.components.HomeTabs
+import com.potatomotato.helm.ui.components.glyphRes
+import com.potatomotato.helm.ui.components.labelRes
 import com.potatomotato.helm.ui.components.LoadNote
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.LoadViews
@@ -625,13 +627,26 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     }
                 }
 
-                // The ROOT — the tab row and whichever of its three surfaces is
-                // selected. Back off a non-Sessions tab returns to Sessions
-                // rather than offering to quit; the root BackHandler further
-                // down is gated on the Sessions tab for exactly that reason.
+                // The ROOT — one bar whose context label is the surface menu,
+                // and whichever of the three surfaces it selects. Back off a
+                // non-Sessions surface returns to Sessions rather than offering
+                // to quit; the root BackHandler further down is gated on the
+                // Sessions surface for exactly that reason.
                 open == null -> Column(modifier = Modifier.fillMaxSize()) {
                     BackHandler(enabled = homeTab != HomeTab.Sessions) { homeTab = HomeTab.Sessions }
-                    HomeTabs(selected = homeTab, onSelect = { homeTab = it })
+                    HelmAppBar(
+                        title = stringResource(R.string.app_name),
+                        linkState = linkState,
+                        contextLabel = stringResource(homeTab.labelRes),
+                        contextMenuItems = HomeTab.entries.map {
+                            ContextMenuItem(stringResource(it.labelRes), it.glyphRes)
+                        },
+                        onSelectContextItem = { homeTab = HomeTab.entries[it] },
+                        onLinkClick = { where = Destination.Desktops },
+                        onExportLogs = exportLogs,
+                        notificationsEnabled = notificationsEnabled,
+                        onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
+                    )
                     Box(modifier = Modifier.weight(1f)) {
                         when (homeTab) {
                             HomeTab.Sessions -> SessionListScreen(
@@ -657,19 +672,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     HelmLinkService.forcePairingMode(context)
                                     where = Destination.Pairing
                                 },
-                                onDesktops = { where = Destination.Desktops },
-                                onExportLogs = exportLogs,
-                                notificationsEnabled = notificationsEnabled,
-                                onToggleNotifications = { client.alerts.setEnabled(!notificationsEnabled) },
                             )
 
                             HomeTab.Plans -> ProjectScoped(
                                 projects = LoadViews.projects(projectsState),
                                 project = project,
-                                linkState = linkState,
                                 onSelectProject = { chosenProjectId = it.id },
                                 onRetryProjects = { client.refreshProjects() },
-                                onDesktops = { where = Destination.Desktops },
                                 noProjectText = stringResource(R.string.plans_no_project),
                             ) {
                                 PlanList(
@@ -688,10 +697,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             HomeTab.Contexts -> ProjectScoped(
                                 projects = LoadViews.projects(projectsState),
                                 project = project,
-                                linkState = linkState,
                                 onSelectProject = { chosenProjectId = it.id },
                                 onRetryProjects = { client.refreshProjects() },
-                                onDesktops = { where = Destination.Desktops },
                                 noProjectText = stringResource(R.string.contexts_no_project),
                             ) {
                                 ContextList(
@@ -827,6 +834,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 sessionId = open.id,
                                 messages = threads[open.id].orEmpty(),
                                 onSend = { text -> client.sendChat(open.id, text) },
+                                // Retry re-issues over the wire (the repository
+                                // swaps the dead row); delete is a purely local
+                                // take-back, so it goes straight to the store.
+                                onRetry = { key, text -> client.resendChat(open.id, key, text) },
+                                onDelete = { key -> client.chats.remove(open.id, key) },
                                 onVoice = { where = Destination.Voice },
                                 onTerminal = openTerminalPreview,
                             )
@@ -981,13 +993,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
 }
 
 /**
- * The chrome a project-scoped root surface wears: the app bar, the project
- * picker, and then the surface itself.
+ * The chrome a project-scoped root surface wears below the root bar: the
+ * project picker, and then the surface itself.
  *
  * ONE OWNER FOR BOTH, for the reason [SessionTabScaffold] is one owner: the
- * Plans and Contexts tabs must not drift into two different ways of saying which
- * project you are looking at, and switching between them must re-lay-out only
- * the body.
+ * Plans and Contexts surfaces must not drift into two different ways of saying
+ * which project you are looking at, and switching between them must re-lay-out
+ * only the body.
  *
  * A surface with NO project yet renders [noProjectText] instead of its body. Not
  * an empty list — "no plans" and "you have not said which plans" are different
@@ -997,20 +1009,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
 private fun ProjectScoped(
     projects: LoadView<List<HelmProject>>,
     project: HelmProject?,
-    linkState: LinkState,
     onSelectProject: (HelmProject) -> Unit,
     onRetryProjects: () -> Unit,
-    onDesktops: () -> Unit,
     noProjectText: String,
     body: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        HelmAppBar(
-            title = stringResource(R.string.app_name),
-            linkState = linkState,
-            contextLabel = project?.name,
-            onLinkClick = onDesktops,
-        )
         ProjectPicker(
             projects = projects,
             selected = project,

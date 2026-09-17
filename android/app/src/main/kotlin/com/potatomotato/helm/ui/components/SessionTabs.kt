@@ -44,16 +44,32 @@ private val SessionTab.labelRes: Int
  *
  * Sessions is first and is what the app opens on: the plan board and the context
  * browser are things you go and look at, while a session is the thing you came
- * to use. There is no Sequences tab here — a sequence with no plans beside it is
- * a lane header with nothing in it, and the board already draws the lanes.
+ * to use. There is no Sequences entry here — a sequence with no plans beside it
+ * is a lane header with nothing in it, and the board already draws the lanes.
+ *
+ * The switch between them lives in the root app bar's context-label menu, not a
+ * tab row: three whole surfaces is a place you go, and the bar's label names
+ * where you are.
  */
 enum class HomeTab { Sessions, Plans, Contexts }
 
-private val HomeTab.labelRes: Int
+internal val HomeTab.labelRes: Int
     get() = when (this) {
         HomeTab.Sessions -> R.string.home_tab_sessions
         HomeTab.Plans -> R.string.home_tab_plans
         HomeTab.Contexts -> R.string.home_tab_contexts
+    }
+
+/**
+ * The glyph that leads each surface in the root bar's menu — see [ContextMenuItem].
+ * It lives on the enum rather than beside the menu so a surface's name and its
+ * mark cannot drift apart.
+ */
+internal val HomeTab.glyphRes: Int
+    get() = when (this) {
+        HomeTab.Sessions -> R.string.context_glyph_sessions
+        HomeTab.Plans -> R.string.context_glyph_plans
+        HomeTab.Contexts -> R.string.context_glyph_contexts
     }
 
 /**
@@ -79,27 +95,11 @@ fun SessionTabs(
 }
 
 /**
- * The tab row at the app's root, above whichever surface it selects.
- *
- * Same row, same underline, same hairline as [SessionTabs] — one look for "these
- * are places side by side", whether the places belong to the app or to a
- * session. Forking it would be two rows to keep in step.
+ * The tab row at the app's root was retired: the root's surfaces switch through
+ * the app bar's context-label menu instead (see [HelmAppBar] contextMenuItems).
+ * [TabRow] remains owned by the session's own tabs — one look for "these are
+ * places side by side" where the places belong to a session.
  */
-@Composable
-fun HomeTabs(
-    selected: HomeTab,
-    onSelect: (HomeTab) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    TabRow(
-        tabs = HomeTab.entries,
-        selected = selected,
-        labelRes = { it.labelRes },
-        onSelect = onSelect,
-        modifier = modifier,
-    )
-}
-
 @Composable
 private fun <T> TabRow(
     tabs: List<T>,

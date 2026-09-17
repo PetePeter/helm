@@ -76,16 +76,6 @@ fun SessionListScreen(
     onLongPress: (HelmSession) -> Unit,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
-    /** Open the paired-desktops list. Reached by tapping the link badge. */
-    onDesktops: () -> Unit,
-    /** Export the log to Downloads. The list is the screen the user is on when
-     *  they notice something is wrong, so the affordance lives here. */
-    onExportLogs: () -> Unit,
-    /** The master notification switch. Same reasoning as the export affordance:
-     *  the list is where the user is standing when the phone buzzes once too
-     *  often, so silencing it must not be a trip into system settings. */
-    notificationsEnabled: Boolean,
-    onToggleNotifications: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // A Set is not Bundle-saveable; a List of the same strings is. The collapsed
@@ -94,16 +84,6 @@ fun SessionListScreen(
     val collapsed = collapsedList.toSet()
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
-        HelmAppBar(
-            title = stringResource(R.string.app_name),
-            linkState = linkState,
-            contextLabel = stringResource(R.string.sessions_context),
-            onLinkClick = onDesktops,
-            onExportLogs = onExportLogs,
-            notificationsEnabled = notificationsEnabled,
-            onToggleNotifications = onToggleNotifications,
-        )
-
         // Only while there is nothing to pair WITH: once a desktop is connected
         // (or connecting) the button is an answer to a question already answered,
         // and it was crowding the list on every poll.

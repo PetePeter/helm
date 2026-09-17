@@ -189,7 +189,7 @@ class HelmLinkService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(R.drawable.ic_notification_helm)
             .setContentIntent(open)
             .setOngoing(true)
             .build()

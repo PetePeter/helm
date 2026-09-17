@@ -138,6 +138,31 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
         _threads.value = _threads.value + (sessionId to settled)
     }
 
+    /**
+     * Take one message back out of the thread — the long-press delete. Arrival
+     * order of everything left is untouched: a removal is not a reordering.
+     * An unknown key or an absent thread is a no-op, and a no-op must not
+     * invent the thread it was asked about.
+     */
+    fun remove(sessionId: String, key: String) {
+        val thread = _threads.value[sessionId] ?: return
+        _threads.value = _threads.value + (sessionId to thread.filterNot { it.key == key })
+    }
+
+    /**
+     * Send the text again — the retry button on a FAILED message. The dead
+     * attempt is removed and a fresh optimistic one takes its place at the
+     * tail, because the retry is a new arrival, not a resurrection of the old
+     * one. Returns the new key for the caller to settle; null when there is
+     * nothing failed to retry.
+     */
+    fun retry(sessionId: String, key: String, at: Long): String? {
+        val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
+        if (failed.delivery != Delivery.Failed) return null
+        remove(sessionId, key)
+        return sending(sessionId, failed.text, at)
+    }
+
     private fun append(sessionId: String, message: ChatMessage) {
         val thread = (_threads.value[sessionId].orEmpty() + message).takeLast(MAX_THREAD)
         _threads.value = _threads.value + (sessionId to thread)

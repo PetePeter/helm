@@ -1,31 +1,22 @@
 package com.potatomotato.helm.ui.contexts
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmContext
-import com.potatomotato.helm.ui.components.CHEVRON
-import com.potatomotato.helm.ui.components.Hairline
+import com.potatomotato.helm.ui.HelmReferences
+import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.Pill
 import com.potatomotato.helm.ui.theme.HelmColors
-import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
 /**
@@ -67,39 +58,21 @@ fun ContextList(
 
 @Composable
 private fun ContextRow(context: HelmContext, onClick: () -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .clickable(onClick = onClick)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = context.title,
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = context.type.ifBlank { stringResource(R.string.context_type_none) },
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Pill(text = stringResource(context.permission.labelRes), color = context.permission.pillColor)
+    HelmRow(
+        title = context.title,
+        onClick = onClick,
+        copy = HelmReferences.context(context),
+        subtitle = {
             Text(
-                text = CHEVRON,
+                text = context.type.ifBlank { stringResource(R.string.context_type_none) },
                 color = HelmColors.Faint,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-        }
-        Hairline(color = HelmColors.Separator)
-    }
+        },
+        trailing = {
+            Pill(text = stringResource(context.permission.labelRes), color = context.permission.pillColor)
+        },
+    )
 }

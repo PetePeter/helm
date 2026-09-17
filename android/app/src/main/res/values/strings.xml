@@ -67,6 +67,17 @@
     <string name="home_tab_contexts">Contexts</string>
 
     <!--
+      The glyph that leads each surface in the app bar's surface menu. Three
+      plain words in a list are hard to tell apart at a glance; a leading mark
+      makes each row recognisable before it is read.
+    -->
+    <string name="context_glyph_sessions">▤</string>
+    <string name="context_glyph_plans">✦</string>
+    <string name="context_glyph_contexts">◈</string>
+    <!-- Marks the surface you are already on. -->
+    <string name="context_glyph_check">✓</string>
+
+    <!--
       The five states every pulled surface has, said once. See LoadBody.
     -->
     <string name="load_retry">Try again</string>
@@ -142,6 +153,17 @@
     <string name="detail_flag_yes">Yes</string>
     <string name="detail_flag_no">No</string>
 
+    <!--
+      Copy affordances, shared by the ⧉ on list rows and detail fields and the
+      long-tap menu on a chat bubble. One wording, so a copied thing is
+      confirmed the same way wherever it was copied from.
+    -->
+    <string name="copy_glyph">⧉</string>
+    <string name="copy">Copy</string>
+    <string name="copy_toast">Copied</string>
+    <!-- Announced for the ⧉ button, whose glyph says nothing on its own. -->
+    <string name="copy_content_description">Copy to clipboard</string>
+
     <string name="chat_empty">Nothing here yet. Anything this session says will appear here.</string>
     <string name="chat_placeholder">Reply…</string>
     <string name="chat_send">Send</string>
@@ -150,6 +172,11 @@
     <string name="chat_sent">✓ Sent</string>
     <string name="chat_failed">Not delivered</string>
     <string name="chat_attachment">Attachment</string>
+    <!-- Actions under a FAILED outgoing message: send it again, or drop it. -->
+    <string name="chat_retry">Send again</string>
+    <string name="chat_retry_glyph">↻</string>
+    <string name="chat_delete">Delete message</string>
+    <string name="chat_delete_glyph">✕</string>
 
     <string name="voice_title">Voice</string>
     <string name="voice_destination">→ %1$s</string>

@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +66,8 @@ fun ChatScreen(
     sessionId: String,
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
+    onRetry: (key: String, text: String) -> Unit,
+    onDelete: (key: String) -> Unit,
     onVoice: () -> Unit,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
@@ -131,7 +134,7 @@ fun ChatScreen(
                 contentPadding = PaddingValues(HelmSpacing.Gutter),
                 verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
             ) {
-                items(messages, key = { it.key }) { Bubble(it) }
+                items(messages, key = { it.key }) { Bubble(it, onRetry = onRetry, onDelete = onDelete) }
             }
         }
 
@@ -152,7 +155,11 @@ fun ChatScreen(
 }
 
 @Composable
-private fun Bubble(message: ChatMessage) {
+private fun Bubble(
+    message: ChatMessage,
+    onRetry: (key: String, text: String) -> Unit,
+    onDelete: (key: String) -> Unit,
+) {
     val fromPhone = message.fromPhone
 
     // The mockup's asymmetric tail: the corner nearest the speaker is pulled in
@@ -216,7 +223,24 @@ private fun Bubble(message: ChatMessage) {
             when (message.delivery) {
                 Delivery.Sending -> BubbleNote(R.string.chat_sending, HelmColors.Faint)
                 Delivery.Sent -> BubbleNote(R.string.chat_sent, HelmColors.Dim)
-                Delivery.Failed -> BubbleNote(R.string.chat_failed, HelmColors.Danger)
+                Delivery.Failed -> {
+                    BubbleNote(R.string.chat_failed, HelmColors.Danger)
+                    // A dead attempt gets one row of honest exits: send the same
+                    // text again, or take the row away. Delivered messages get no
+                    // delete — the desktop already holds a copy no tap here can
+                    // reach, so removing the bubble would only be a lie.
+                    Row(
+                        modifier = Modifier.padding(top = HelmSpacing.Xs),
+                        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                    ) {
+                        BubbleAction(R.string.chat_retry_glyph, R.string.chat_retry, HelmColors.Danger) {
+                            onRetry(message.key, message.text)
+                        }
+                        BubbleAction(R.string.chat_delete_glyph, R.string.chat_delete, HelmColors.Dim) {
+                            onDelete(message.key)
+                        }
+                    }
+                }
                 null -> Unit
             }
         }
@@ -233,6 +257,30 @@ private fun BubbleNote(textRes: Int, color: Color) {
     )
 }
 
+/** One under-bubble action: glyph, wording, tap. The glyph leads; the whole row is the target. */
+@Composable
+private fun BubbleAction(glyphRes: Int, labelRes: Int, color: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(HelmRadius.Md))
+            .clickable(onClick = onClick)
+            .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+    ) {
+        Text(
+            text = stringResource(glyphRes),
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Text(
+            text = stringResource(labelRes),
+            color = color,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
 @Composable
 private fun Composer(
     draft: String,
@@ -242,6 +290,13 @@ private fun Composer(
     onSend: () -> Unit,
 ) {
     Hairline()
+    // Which layout the action buttons sit in. The line count comes from the
+    // field's own layout — wrap included, the thing that actually makes the
+    // draft tall — and the debounced switch lives in [ComposerStack]: flipping
+    // on a single reading lets one character crossing the wrap threshold
+    // jiggle the buttons under the thumb.
+    val stack = remember { ComposerStack() }
+    var mode by remember { mutableStateOf(ComposerStack.Mode.Row) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -252,97 +307,135 @@ private fun Composer(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(HelmRadius.Md))
-                .background(HelmColors.Bg)
-                .border(HelmSize.Hairline, HelmColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(HelmRadius.Md))
-                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Md),
-        ) {
-            if (draft.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.chat_placeholder),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+        ComposerDraft(
+            draft = draft,
+            onDraft = onDraft,
+            onLines = { mode = stack.onLineCount(it) },
+            modifier = Modifier.weight(1f),
+        )
+
+        when (mode) {
+            ComposerStack.Mode.Row -> {
+                ComposerTerminal(onTerminal)
+                ComposerMic(onVoice)
+                ComposerSend(enabled = draft.isNotBlank(), onSend = onSend)
             }
-            BasicTextField(
-                value = draft,
-                onValueChange = onDraft,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
-                cursorBrush = SolidColor(HelmColors.Accent),
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // A tall draft leaves no room beside it: the circles stack along the
+            // right edge — same order, send still last.
+            ComposerStack.Mode.Stack -> Column(
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                horizontalAlignment = Alignment.End,
+            ) {
+                ComposerTerminal(onTerminal)
+                ComposerMic(onVoice)
+                ComposerSend(enabled = draft.isNotBlank(), onSend = onSend)
+            }
         }
+    }
+}
 
-        // The terminal preview is deliberately the same Snapshot journey as the
-        // overflow action: one pull/navigation path, merely reachable where a
-        // user is already composing a reply.
-        val terminalLabel = stringResource(R.string.control_action_snapshot)
-        Box(
-            modifier = Modifier
-                .size(HelmSize.MicButton)
-                .clip(CircleShape)
-                .background(HelmColors.Accent)
-                .clickable(onClick = onTerminal),
-            contentAlignment = Alignment.Center,
-        ) {
+@Composable
+private fun ComposerDraft(
+    draft: String,
+    onDraft: (String) -> Unit,
+    onLines: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(HelmRadius.Md))
+            .background(HelmColors.Bg)
+            .border(HelmSize.Hairline, HelmColors.Accent.copy(alpha = 0.65f), RoundedCornerShape(HelmRadius.Md))
+            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Md),
+    ) {
+        if (draft.isEmpty()) {
             Text(
-                text = "🖥",
-                color = HelmColors.OnAccent,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics { contentDescription = terminalLabel },
-            )
-        }
-
-        // The mic is permanent and first-class, not an option inside a keyboard:
-        // away from the desk it is the primary way a reply gets written, so it
-        // holds the thumb position and send sits beside it.
-        Box(
-            modifier = Modifier
-                .size(HelmSize.MicButton)
-                .clip(CircleShape)
-                .background(HelmColors.Accent)
-                .clickable(onClick = onVoice),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.voice_mic_glyph),
+                text = stringResource(R.string.chat_placeholder),
+                color = HelmColors.Faint,
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        BasicTextField(
+            value = draft,
+            onValueChange = onDraft,
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
+            cursorBrush = SolidColor(HelmColors.Accent),
+            onTextLayout = { onLines(it.lineCount) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
 
-        // Send is a circle like the mic, not a caption: the composer's controls
-        // read as one pair, and the one that delivers sits last — where a thumb
-        // already is. Until there is something to send it is dark — an enabled
-        // control that does nothing is worse than a visibly dead one.
-        val sendLabel = stringResource(R.string.chat_send)
-        Box(
-            modifier = Modifier
-                .size(HelmSize.MicButton)
-                .clip(CircleShape)
-                .background(if (draft.isNotBlank()) HelmColors.Accent else HelmColors.Surface2)
-                .then(
-                    if (draft.isBlank()) {
-                        Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape)
-                    } else {
-                        Modifier
-                    },
-                )
-                .clickable(enabled = draft.isNotBlank(), onClick = onSend),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(R.string.chat_send_glyph),
-                // Dim rather than Faint while disabled: Faint is the placeholder's
-                // colour, and a send arrow in it disappears against the Surface2
-                // circle — which reads as a layout hole, not a dead button.
-                color = if (draft.isNotBlank()) HelmColors.OnAccent else HelmColors.Dim,
-                style = HelmType.SendGlyph,
-                modifier = Modifier.semantics { contentDescription = sendLabel },
+// The terminal preview is deliberately the same Snapshot journey as the
+// overflow action: one pull/navigation path, merely reachable where a
+// user is already composing a reply.
+@Composable
+private fun ComposerTerminal(onTerminal: () -> Unit) {
+    val terminalLabel = stringResource(R.string.control_action_snapshot)
+    Box(
+        modifier = Modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(HelmColors.Accent)
+            .clickable(onClick = onTerminal),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "🖥",
+            color = HelmColors.OnAccent,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.semantics { contentDescription = terminalLabel },
+        )
+    }
+}
+
+// The mic is permanent and first-class, not an option inside a keyboard:
+// away from the desk it is the primary way a reply gets written, so it
+// holds the thumb position and send sits beside it.
+@Composable
+private fun ComposerMic(onVoice: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(HelmColors.Accent)
+            .clickable(onClick = onVoice),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.voice_mic_glyph),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+// Send is a circle like the mic, not a caption: the composer's controls
+// read as one pair, and the one that delivers sits last — where a thumb
+// already is. Until there is something to send it is dark — an enabled
+// control that does nothing is worse than a visibly dead one.
+@Composable
+private fun ComposerSend(enabled: Boolean, onSend: () -> Unit) {
+    val sendLabel = stringResource(R.string.chat_send)
+    Box(
+        modifier = Modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
+            .then(
+                if (enabled) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape),
             )
-        }
+            .clickable(enabled = enabled, onClick = onSend),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.chat_send_glyph),
+            // Dim rather than Faint while disabled: Faint is the placeholder's
+            // colour, and a send arrow in it disappears against the Surface2
+            // circle — which reads as a layout hole, not a dead button.
+            color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
+            style = HelmType.SendGlyph,
+            modifier = Modifier.semantics { contentDescription = sendLabel },
+        )
     }
 }
 

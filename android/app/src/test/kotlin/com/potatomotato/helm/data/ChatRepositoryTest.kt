@@ -2,6 +2,8 @@ package com.potatomotato.helm.data
 
 import com.potatomotato.helm.wire.MobileRecord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,6 +78,60 @@ class ChatRepositoryTest {
         val message = repository.thread("s1").single()
         assertEquals("C:\\tmp\\note.ogg", message.filePath)
         assertTrue(message.voice)
+    }
+
+    @Test
+    fun `removing a message deletes only the one it names and leaves the order intact`() {
+        val first = repository.sending("s1", "carry on", at = 10)
+        repository.receive(chat(text = "here you go", at = 165))
+        val third = repository.sending("s1", "thanks", at = 102)
+
+        repository.remove("s1", first)
+        repository.remove("s1", third)
+
+        assertEquals(listOf("here you go"), repository.thread("s1").map { it.text })
+    }
+
+    @Test
+    fun `removing an unknown key or from an absent thread touches nothing at all`() {
+        repository.sending("s1", "carry on", at = 10)
+
+        repository.remove("s1", "m99")
+        repository.remove("gone", "m0")
+
+        assertEquals(listOf("carry on"), repository.thread("s1").map { it.text })
+        // A no-op must not invent the thread it was asked about.
+        assertEquals(setOf("s1"), repository.threads.value.keys)
+    }
+
+    @Test
+    fun `retrying a failed message replaces it with an identical Sending one`() {
+        val failed = repository.sending("s1", "carry on", at = 10)
+        repository.settle("s1", failed, delivered = false)
+
+        val retried = repository.retry("s1", failed, at = 20)
+
+        val thread = repository.thread("s1")
+        assertEquals(1, thread.size)
+        assertEquals("carry on", thread.single().text)
+        assertEquals(Delivery.Sending, thread.single().delivery)
+        assertTrue(thread.single().fromPhone)
+        // A fresh key, so the caller settles this attempt without touching the old one.
+        assertEquals(retried, thread.single().key)
+        assertNotEquals(failed, retried)
+    }
+
+    @Test
+    fun `retry is refused for anything not sitting in Failed`() {
+        val sending = repository.sending("s1", "in flight", at = 10)
+        val sent = repository.sending("s1", "delivered", at = 20)
+        repository.settle("s1", sent, delivered = true)
+
+        assertNull(repository.retry("s1", sending, at = 30))
+        assertNull(repository.retry("s1", sent, at = 30))
+        assertNull(repository.retry("gone", "m0", at = 30))
+        // A refusal leaves the thread exactly as it was.
+        assertEquals(2, repository.thread("s1").size)
     }
 
     private fun chat(text: String, at: Long, sessionId: String = "s1") =

@@ -76,7 +76,7 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
     private fun builderFor(alert: Alert): Notification.Builder =
         Notification.Builder(context, alert.kind.channelId)
             .setContentTitle(alert.sessionName)
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(R.drawable.ic_notification_helm)
             .setColor(alert.kind.accent)
             .setColorized(false)
             .setContentIntent(openSession(alert))

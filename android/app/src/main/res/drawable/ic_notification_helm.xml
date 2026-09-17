@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The status-bar smallIcon, redrawn from the launcher boat
+  (ic_launcher_monochrome / ic_launcher_foreground): two sails over a hull,
+  rescaled from the 108dp adaptive canvas onto a 24dp viewport with the same
+  proportions and a small margin all round.
+
+  A notification smallIcon must be FLAT and SINGLE-COLOUR: the system silhouettes
+  it against its own tint (and on API 24+ ignores alpha channels entirely), so
+  the launcher mark's outline-over-fill treatment and its mint accents are
+  dropped here rather than adapted. The white fill is a placeholder — the system
+  recolours it — and the mast detail and wave of the launcher art are left out
+  because they vanish into mud below about 32dp.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Main sail (left of the mast). -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.1,2.5 L1.5,12.8 L11.1,12.8 Z" />
+    <!-- Jib (right of the mast). -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.1,2.5 L19.9,11.2 L14.7,12.8 L11.1,12.8 Z" />
+    <!-- Hull. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M1.5,12.8 L22.5,12.8 L19.3,16.8 L5.1,16.8 Z" />
+</vector>

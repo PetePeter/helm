@@ -131,8 +131,26 @@ class HelmClient(
      * the call comes back, so the user can see the difference between "sent" and
      * "the desktop never answered".
      */
-    fun sendChat(sessionId: String, text: String): Boolean {
-        val key = chats.sending(sessionId, text, now())
+    fun sendChat(sessionId: String, text: String): Boolean =
+        issueText(sessionId, text, key = chats.sending(sessionId, text, now()))
+
+    /**
+     * Send a FAILED message again — the ↻ under the bubble.
+     *
+     * The repository swaps the dead attempt for a fresh optimistic one (a retry
+     * is a new arrival, not a resurrection of the old row), and the wire ask
+     * settles THAT new message: the bubble the user pressed is already gone, so
+     * there is never a moment with two rows both claiming to be in flight.
+     * [text] comes from the bubble the retry was pressed on; the repository
+     * remains the authority on whether the attempt really failed.
+     */
+    fun resendChat(sessionId: String, key: String, text: String): Boolean {
+        val newKey = chats.retry(sessionId, key, now()) ?: return false
+        return issueText(sessionId, text, key = newKey)
+    }
+
+    /** One `session_send_text` ask, settling the optimistic row named by [key]. */
+    private fun issueText(sessionId: String, text: String, key: String): Boolean {
         val params = linkedMapOf("sessionId" to sessionId, "text" to text)
         val issued = call(METHOD_SESSION_SEND_TEXT, params) { outcome ->
             chats.settle(sessionId, key, outcome is Outcome.Ok)

@@ -1,29 +1,42 @@
 package com.potatomotato.helm.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ui.theme.HelmColors
+import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
@@ -116,6 +129,14 @@ fun HelmAppBar(
      * already says it (a session name, "Snapshot") leave this out.
      */
     contextLabel: String? = null,
+    /**
+     * The choices the context label can switch between, when the label is a menu
+     * rather than a caption. Empty (the default) renders the plain label; the
+     * app's root is the only bar whose label is a menu — the root's surfaces are
+     * places, and the label names the one you are in.
+     */
+    contextMenuItems: List<ContextMenuItem> = emptyList(),
+    onSelectContextItem: ((Int) -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     /**
      * Makes the link badge itself the way in to the desktops list.
@@ -203,7 +224,13 @@ fun HelmAppBar(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
-            if (contextLabel != null) {
+            if (contextLabel != null && contextMenuItems.isNotEmpty() && onSelectContextItem != null) {
+                ContextMenu(
+                    label = contextLabel,
+                    items = contextMenuItems,
+                    onSelect = onSelectContextItem,
+                )
+            } else if (contextLabel != null) {
                 Text(
                     text = contextLabel.uppercase(),
                     color = HelmColors.Faint,
@@ -282,6 +309,106 @@ fun HelmAppBar(
     }
     Hairline()
 }
+
+/** One choice in the root's surface menu: its name, and the glyph that marks its row. */
+data class ContextMenuItem(val label: String, val glyphRes: Int)
+
+/**
+ * The root's surface switch: the context label as a menu, not a caption.
+ *
+ * The anchor is a pill chip — the same Surface2-plus-hairline treatment as
+ * [Pill] — because plain eyebrow text gave no sign that it could be tapped.
+ * It runs shorter than a full [HelmSize.TouchTarget]: a 48dp control inside the
+ * app bar dwarfs the glyphs it sits between, and 32dp keeps a target the thumb
+ * still finds. Stateless but for the menu's own open flag — which surface is
+ * selected is the caller's hoisted state, exactly as the tab row it replaced was.
+ */
+@Composable
+private fun ContextMenu(
+    label: String,
+    items: List<ContextMenuItem>,
+    onSelect: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(HelmRadius.Pill)
+
+    Box {
+        // Label + chevron in one touch target: the chevron is part of the
+        // affordance, and a label-sized target next to a chevron-sized one asks
+        // "which did you mean" on a control this small.
+        Row(
+            modifier = Modifier
+                .heightIn(min = MenuChipMinHeight)
+                .clip(shape)
+                .background(HelmColors.Surface2)
+                .border(HelmSize.Hairline, HelmColors.Line, shape)
+                .clickable(onClick = { expanded = true })
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+        ) {
+            Text(
+                text = label,
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+            )
+            Text(
+                text = stringResource(R.string.projects_expand_glyph),
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            items.forEachIndexed { index, item ->
+                // Accent marks where you already are, the same signal the tab
+                // underline carried — now with a check beside it, because a
+                // colour alone must carry the answer for a colour-blind reader.
+                val current = item.label == label
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                        ) {
+                            Text(
+                                text = stringResource(item.glyphRes),
+                                color = HelmColors.Dim,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                text = item.label,
+                                color = if (current) HelmColors.Accent else HelmColors.Txt,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            if (current) {
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    text = stringResource(R.string.context_glyph_check),
+                                    color = HelmColors.Accent,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(index)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The pill anchor's floor. Below this one-handed taps start missing; above
+ * [HelmSize.TouchTarget] the control outgrows the bar it lives in.
+ */
+private val MenuChipMinHeight = 32.dp
 
 /**
  * The one unit of elevation this design system has.
