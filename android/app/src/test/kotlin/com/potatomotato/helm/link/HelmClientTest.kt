@@ -703,9 +703,12 @@ class HelmClientTest {
         assertFalse(params.has("version"))
 
         client.onInbound(
-            resultFor(
+            blobFor(
                 lastCallId(),
-                """{"filename":"Perf-report.md","mimeType":"text/markdown","base64":"aGVsbG8=","version":2,"size":5}""",
+                filename = "Perf-report.md",
+                mimeType = "text/markdown",
+                body = "hello".toByteArray(Charsets.UTF_8),
+                version = 2,
             ),
         )
 
@@ -777,9 +780,14 @@ class HelmClientTest {
         // The attachment shape: no `version` key — the desktop answers binary
         // files without one.
         client.onInbound(
-            resultFor(
+            blobFor(
                 lastCallId(),
-                """{"filename":"chart.png","mimeType":"image/png","base64":"aGVsbG8=","size":5}""",
+                filename = "chart.png",
+                mimeType = "image/png",
+                body = "hello".toByteArray(Charsets.UTF_8),
+                offset = 0,
+                total = 5,
+                eof = true,
             ),
         )
 
@@ -1091,6 +1099,43 @@ class HelmClientTest {
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */
     private fun resultFor(id: String, resultJson: String): ByteArray =
         """{"v":1,"t":"result","id":"$id","result":$resultJson}""".toByteArray(Charsets.UTF_8)
+
+    /**
+     * A binary download reply, built to the documented layout rather than with a
+     * helper from the production encoder — the phone has no blob ENCODER, so a
+     * test that used one would be testing itself.
+     *
+     *   marker | record version | uint16be header length | header | raw body
+     */
+    private fun blobFor(
+        id: String,
+        filename: String,
+        mimeType: String,
+        body: ByteArray,
+        version: Int? = null,
+        offset: Long? = null,
+        total: Long? = null,
+        eof: Boolean? = null,
+    ): ByteArray {
+        val header = StringBuilder()
+            .append("""{"v":1,"t":"blob","id":"$id","filename":"$filename"""")
+            .append(""","mimeType":"$mimeType","size":${body.size}""")
+            .apply {
+                if (version != null) append(""","version":$version""")
+                if (offset != null) append(""","offset":$offset""")
+                if (total != null) append(""","total":$total""")
+                if (eof != null) append(""","eof":$eof""")
+            }
+            .append('}')
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        return byteArrayOf(
+            0xb1.toByte(),
+            1,
+            ((header.size shr 8) and 0xff).toByte(),
+            (header.size and 0xff).toByte(),
+        ) + header + body
+    }
 
     private fun errorFor(id: String, message: String): ByteArray =
         """{"v":1,"t":"error","id":"$id","error":{"code":-32000,"message":"$message"}}""".toByteArray(Charsets.UTF_8)

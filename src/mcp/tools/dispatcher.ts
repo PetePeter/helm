@@ -2,6 +2,7 @@ import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
+import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import {
   asAiagentState,
   asArtifactKind,
@@ -784,18 +785,22 @@ export async function callMcpTool(
           // attachments are stored as files a window can be read from.
           throw new Error('offset and length apply to an attachmentId download');
         }
-        return service.downloadArtifact(
-          target,
-          asString(args.artifactId, 'artifactId is required'),
-          asOptionalArtifactVersion(args.version),
-          attachmentId
-            ? {
-                attachmentId,
-                ...(offset !== undefined ? { offset } : {}),
-                ...(length !== undefined ? { length } : {}),
-              }
-            : undefined,
-        );
+        const artifactId = asString(args.artifactId, 'artifactId is required');
+        const requestedVersion = asOptionalArtifactVersion(args.version);
+        const window = attachmentId
+          ? {
+              attachmentId,
+              ...(offset !== undefined ? { offset } : {}),
+              ...(length !== undefined ? { length } : {}),
+            }
+          : undefined;
+        // A paired phone takes the body as RAW BYTES: its reply rides the binary
+        // `blob` record, so base64 would cost a third of the wire for nothing.
+        // Every other caller — the local MCP contract — keeps the base64 JSON
+        // envelope unchanged. Same reader underneath; only the encoding differs.
+        return isMobileSessionId(authContext.sessionId)
+          ? service.downloadArtifactBinary(target, artifactId, requestedVersion, window)
+          : service.downloadArtifact(target, artifactId, requestedVersion, window);
       }
       case 'session_artifact_delete': {
         const target = requireTargetSession(service, args);

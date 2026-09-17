@@ -3,8 +3,8 @@
  * artifact, whether it asks for a file or for inline content.
  *
  * WHY A CAP: artifacts are unbounded markdown/HTML, but a phone reads them over
- * a SecureChannel whose frames ceiling is 128KiB (MAX_FRAME_BYTES). The two
- * envelopes inflate differently on the way, so each has its own authority:
+ * a SecureChannel whose frame ceiling is 1MiB (MAX_FRAME_BYTES). The envelopes
+ * inflate differently on the way, so each has its own authority:
  *
  *  - A DOWNLOAD body is base64 — 3 bytes become 4 chars, and the output alphabet
  *    is JSON-inert, so encoding is the ONLY inflation. The authority is the
@@ -37,7 +37,19 @@ export const DOWNLOAD_WRAPPER_HEADROOM_BYTES = 2 * 1024;
  * the wrapper headroom. Pinned to MAX_FRAME_BYTES (src/mobile/secure-channel.ts)
  * by a test, so raising either side alone fails loudly.
  */
-export const ARTIFACT_DOWNLOAD_MAX_ENCODED_BYTES = 128 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
+export const ARTIFACT_DOWNLOAD_MAX_ENCODED_BYTES = 1024 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
+
+/**
+ * The budget for ONE ATTACHMENT SLICE, which is a different body class from
+ * everything else here: it rides a binary `blob` record as RAW bytes, so the
+ * frame minus the wrapper headroom is the whole answer — no base64 3:4, no JSON
+ * escaping. Pinned to MAX_FRAME_BYTES by a test like its neighbours.
+ *
+ * The base64 arithmetic below still governs an ARTIFACT TEXT download, which is
+ * base64 inside a JSON result. Two body classes, two budgets; collapsing them
+ * into one would silently overflow whichever is encoded.
+ */
+export const ARTIFACT_SLICE_MAX_BYTES = 1024 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
 
 /**
  * The largest DECODED body that could fit the encoded budget (base64 is 4 chars
@@ -52,7 +64,7 @@ export const ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES = Math.floor(ARTIFACT_DOWNLOAD_
  * MAX_FRAME_BYTES (src/mobile/secure-channel.ts) by a test alongside the
  * download constants, so raising either side alone fails loudly.
  */
-export const ARTIFACT_INLINE_MAX_ESCAPED_BYTES = 128 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
+export const ARTIFACT_INLINE_MAX_ESCAPED_BYTES = 1024 * 1024 - DOWNLOAD_WRAPPER_HEADROOM_BYTES;
 
 const MIME_BY_KIND: Record<ArtifactKind, string> = {
   markdown: 'text/markdown',
@@ -84,6 +96,38 @@ export interface ArtifactDownload {
   eof?: boolean;
 }
 
+/**
+ * The SAME envelope with the body left as raw bytes, for a caller whose
+ * transport can carry them — today the paired phone, whose download replies ride
+ * the binary `blob` record. Base64 exists to survive JSON; a transport that does
+ * not need JSON should not pay a third of its bandwidth for it.
+ *
+ * The local MCP contract is unchanged: `ArtifactDownload` with `base64` is what
+ * every other caller still gets.
+ */
+export interface ArtifactDownloadBinary {
+  filename: string;
+  mimeType: string;
+  bytes: Buffer;
+  version?: number;
+  offset?: number;
+  total?: number;
+  eof?: boolean;
+}
+
+/**
+ * Whether a dispatched result is a binary download. The transport asks this
+ * rather than being told, so no new argument has to be threaded through the gate
+ * — and a tool that never produces one can never be mistaken for one.
+ */
+export function isArtifactDownloadBinary(value: unknown): value is ArtifactDownloadBinary {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as ArtifactDownloadBinary;
+  return Buffer.isBuffer(candidate.bytes)
+    && typeof candidate.filename === 'string'
+    && typeof candidate.mimeType === 'string';
+}
+
 /** One window of a file, resolved against its real length. */
 export interface SliceWindow {
   offset: number;
@@ -94,10 +138,10 @@ export interface SliceWindow {
 /**
  * Resolve a caller's `offset`/`length` against a file's real size.
  *
- * WHY THIS EXISTS: a frame carries ~96KiB decoded, but an attachment may be
- * 10MB. Without slicing the only honest answer for a photo is "fetch it on the
- * desktop", which is no answer at all for a phone. Slicing makes the SAME cap
- * a per-request budget instead of a per-file verdict.
+ * WHY THIS EXISTS: a frame carries just under 1MiB of raw slice, but an
+ * attachment may be 10MB. Without slicing the only honest answer for a photo is
+ * "fetch it on the desktop", which is no answer at all for a phone. Slicing
+ * makes the SAME cap a per-request budget instead of a per-file verdict.
  *
  * The rules that matter, and why each is a refusal rather than a silent fix:
  *  - A length past the frame budget is REFUSED, never truncated. Truncating
@@ -116,15 +160,15 @@ export function resolveSliceWindow(total: number, offset?: number, length?: numb
   if (length !== undefined && (!Number.isInteger(length) || length <= 0)) {
     throw new Error(`length must be a positive integer, got ${length}`);
   }
-  if (length !== undefined && length > ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES) {
+  if (length !== undefined && length > ARTIFACT_SLICE_MAX_BYTES) {
     throw new Error(
-      `length ${length} is past the ${ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES}-byte ` +
+      `length ${length} is past the ${ARTIFACT_SLICE_MAX_BYTES}-byte ` +
         'slice budget (the mobile wire frame) — ask for a smaller slice',
     );
   }
 
   const remaining = Math.max(0, total - from);
-  const want = length ?? ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES;
+  const want = length ?? ARTIFACT_SLICE_MAX_BYTES;
   const size = Math.min(want, remaining);
   return { offset: from, length: size, eof: from + size >= total };
 }

@@ -37,6 +37,7 @@ function makeDeps() {
     createArtifact: vi.fn(() => ({ id: 'a2' })),
     updateArtifact: vi.fn(() => ({ id: 'a1', versions: [{ version: 1 }, { version: 2 }] })),
     downloadArtifact: vi.fn(() => ({ filename: 'report.md', mimeType: 'text/markdown', base64: 'I2hp' })),
+    downloadArtifactBinary: vi.fn(() => ({ filename: 'report.md', mimeType: 'text/markdown', bytes: Buffer.from('#hi', 'utf8') })),
     deleteArtifact: vi.fn(() => ({ id: 'a1', deleted: true })),
   };
   return {
@@ -188,5 +189,39 @@ describe('session_artifact_* dispatch', () => {
     const deps = makeDeps();
     await callMcpTool(deps, 'session_artifact_delete', { sessionId: SESSION, artifactId: 'a1' }, {});
     expect(deps.serviceMocks.deleteArtifact).toHaveBeenCalledWith(SESSION, 'a1');
+  });
+});
+
+/**
+ * A download is the one tool whose ENCODING depends on who asked. A phone takes
+ * raw bytes (its reply rides the binary blob record); everyone else keeps the
+ * base64 JSON contract. Getting this backwards is silent: the local caller would
+ * receive a Buffer that JSON-serialises to `{"type":"Buffer",...}`, and the phone
+ * would pay a third of its wire for base64 it no longer needs.
+ */
+describe('session_artifact_download encoding by caller', () => {
+  const window = { sessionId: SESSION, artifactId: 'a1', attachmentId: 'f1', offset: 0, length: 1024 };
+
+  it('hands a paired phone raw bytes', async () => {
+    const deps = makeDeps();
+    const result = await callMcpTool(deps, 'session_artifact_download', window, { sessionId: 'mobile:dev-1' });
+    expect(deps.serviceMocks.downloadArtifactBinary)
+      .toHaveBeenCalledWith(SESSION, 'a1', undefined, { attachmentId: 'f1', offset: 0, length: 1024 });
+    expect(deps.serviceMocks.downloadArtifact).not.toHaveBeenCalled();
+    expect(Buffer.isBuffer((result as { bytes: Buffer }).bytes)).toBe(true);
+  });
+
+  it('leaves the local MCP contract on base64, unchanged', async () => {
+    const deps = makeDeps();
+    const result = await callMcpTool(deps, 'session_artifact_download', window, { sessionId: SESSION });
+    expect(deps.serviceMocks.downloadArtifact).toHaveBeenCalled();
+    expect(deps.serviceMocks.downloadArtifactBinary).not.toHaveBeenCalled();
+    expect((result as { base64: string }).base64).toBe('I2hp');
+  });
+
+  it('treats an anonymous caller as local, never as a phone', async () => {
+    const deps = makeDeps();
+    await callMcpTool(deps, 'session_artifact_download', window, {});
+    expect(deps.serviceMocks.downloadArtifact).toHaveBeenCalled();
   });
 });

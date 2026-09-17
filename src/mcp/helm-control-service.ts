@@ -53,7 +53,13 @@ import { fileURLToPath } from 'node:url';
 import { getTempDir } from '../utils/app-paths.js';
 import { sanitizeFilename } from '../session/artifact-temp-file.js';
 import { createArtifactFromBytes, updateArtifactFromBytes } from '../session/artifact-file-import.js';
-import { buildArtifactDownload, buildArtifactRead, type ArtifactDownload, type ArtifactRead } from '../session/artifact-download.js';
+import {
+  buildArtifactDownload,
+  buildArtifactRead,
+  type ArtifactDownload,
+  type ArtifactDownloadBinary,
+  type ArtifactRead,
+} from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
 import { HelmMemoryService, type MemoryExportResult } from './services/helm-memory-service.js';
@@ -646,6 +652,35 @@ export class HelmControlService extends EventEmitter {
     version?: number,
     options?: { attachmentId?: string; offset?: number; length?: number },
   ): ArtifactDownload {
+    const binary = this.downloadArtifactBinary(sessionId, id, version, options);
+    return {
+      filename: binary.filename,
+      mimeType: binary.mimeType,
+      base64: binary.bytes.toString('base64'),
+      size: binary.bytes.byteLength,
+      ...(binary.version !== undefined ? { version: binary.version } : {}),
+      ...(binary.offset !== undefined ? { offset: binary.offset } : {}),
+      ...(binary.total !== undefined ? { total: binary.total } : {}),
+      ...(binary.eof !== undefined ? { eof: binary.eof } : {}),
+    };
+  }
+
+  /**
+   * The SAME envelope with the body left raw, for a transport that can carry
+   * bytes — the paired phone, whose download replies ride the binary `blob`
+   * record instead of a JSON result. Base64 exists to survive JSON, and a link
+   * that does not need JSON should not spend a third of its bandwidth on it.
+   *
+   * This is the ONE reader: `downloadArtifact` is now a base64 view over it, so
+   * the ownership check, the slice rules and the size caps cannot drift between
+   * the two callers.
+   */
+  downloadArtifactBinary(
+    sessionId: string,
+    id: string,
+    version?: number,
+    options?: { attachmentId?: string; offset?: number; length?: number },
+  ): ArtifactDownloadBinary {
     const artifact = this.requireOwnedArtifact(sessionId, id);
     if (options?.attachmentId) {
       if (version !== undefined) throw new Error('attachmentId cannot be combined with version');
@@ -664,14 +699,22 @@ export class HelmControlService extends EventEmitter {
       return {
         filename: attachment.filename,
         mimeType: attachment.contentType ?? 'application/octet-stream',
-        base64: bytes.toString('base64'),
-        size: bytes.byteLength,
+        bytes,
         offset: window.offset,
         total,
         eof: window.eof,
       };
     }
-    return buildArtifactDownload(artifact, version);
+
+    // An artifact BODY, not a slice: still capped on its base64 length, because
+    // the local MCP contract encodes it and that is the bigger of the two forms.
+    const envelope = buildArtifactDownload(artifact, version);
+    return {
+      filename: envelope.filename,
+      mimeType: envelope.mimeType,
+      bytes: Buffer.from(envelope.base64, 'base64'),
+      ...(envelope.version !== undefined ? { version: envelope.version } : {}),
+    };
   }
 
   /**

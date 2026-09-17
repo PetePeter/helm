@@ -1,4 +1,8 @@
 package com.potatomotato.helm.data
+import com.potatomotato.helm.ble.BleFraming
+import com.potatomotato.helm.ble.RANK_BLE
+import com.potatomotato.helm.ble.RANK_LAN
+import com.potatomotato.helm.crypto.MAX_FRAME_BYTES
 
 import com.potatomotato.helm.wire.MobileRecord
 import org.junit.Assert.assertArrayEquals
@@ -208,12 +212,13 @@ class ChatRepositoryPullTest {
     }
 
     /** Drive the pipeline the way HelmClient does: ask for all it will give. */
-    private fun askAll(key: String): List<Long> = generateSequence { chats.nextAsk(key) }.toList()
+    private fun askAll(key: String): List<Long> =
+        generateSequence { chats.nextAsk(key, ATTACHMENT_SLICE_BYTES_BLE) }.toList()
 
     @Test
     fun `a fetch reports progress and completes with the whole file`() {
         // Two full slices, so the offsets are the ones the real loop asks for.
-        val slice = ATTACHMENT_SLICE_BYTES
+        val slice = ATTACHMENT_SLICE_BYTES_BLE
         val key = arriveWithFile(sizeBytes = slice * 2L)
         val attachment = chats.thread("s1").last().attachment!!
 
@@ -258,7 +263,7 @@ class ChatRepositoryPullTest {
         // On a slow link, restarting from zero is the difference between a lost
         // minute and a lost transfer.
         assertTrue(chats.pullStarted(key, attachment))
-        assertEquals(3L, chats.nextAsk(key))
+        assertEquals(3L, chats.nextAsk(key, ATTACHMENT_SLICE_BYTES_BLE))
     }
 
     @Test
@@ -288,6 +293,42 @@ class ChatRepositoryPullTest {
         assertEquals(PullState.Idle, chats.pullState(key))
         // Nothing half-written survives: the next attempt starts clean.
         assertTrue(chats.pullStarted(key, attachment))
-        assertEquals(0L, chats.nextAsk(key))
+        assertEquals(0L, chats.nextAsk(key, ATTACHMENT_SLICE_BYTES_BLE))
+    }
+}
+
+/**
+ * How big a slice to ask for. The link can change underneath a transfer — LAN
+ * preempts Bluetooth the moment it comes up — and a slice sized for the wrong
+ * transport is not a slow transfer but a refused one: BLE caps a message at
+ * 256KiB, so a megabyte ask over Bluetooth cannot be answered at all.
+ */
+class AttachmentSliceSizeTest {
+
+    @Test
+    fun `asks for a big slice over the network`() {
+        assertEquals(ATTACHMENT_SLICE_BYTES_LAN, attachmentSliceBytes(RANK_LAN, RANK_LAN))
+    }
+
+    @Test
+    fun `keeps to a small slice over bluetooth`() {
+        assertEquals(ATTACHMENT_SLICE_BYTES_BLE, attachmentSliceBytes(RANK_BLE, RANK_LAN))
+    }
+
+    @Test
+    fun `falls back to the small slice when nothing owns the link`() {
+        // A transfer issued as the link is changing hands must not gamble on the
+        // bigger size: the small one is answerable on either transport.
+        assertEquals(ATTACHMENT_SLICE_BYTES_BLE, attachmentSliceBytes(null, RANK_LAN))
+    }
+
+    @Test
+    fun `the bluetooth slice still fits one BLE message`() {
+        assertTrue(ATTACHMENT_SLICE_BYTES_BLE < BleFraming.MAX_MESSAGE_BYTES)
+    }
+
+    @Test
+    fun `the network slice still fits one wire frame`() {
+        assertTrue(ATTACHMENT_SLICE_BYTES_LAN < MAX_FRAME_BYTES)
     }
 }

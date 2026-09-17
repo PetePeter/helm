@@ -169,13 +169,33 @@ class AttachmentTransfer(val total: Long) {
 }
 
 /**
- * How much to ask for at a time. The desktop refuses anything past its slice
- * budget (`ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES`, 96,768 bytes — the largest
- * body that base64-encodes inside one 128KiB wire frame), so this sits just
- * under it. Asking for less would only buy more round trips, and round trips
- * are the expensive part: 64KiB used to cost one for every 64KiB of file.
+ * How much to ask for at a time OVER BLUETOOTH.
+ *
+ * BLE moves a message in MTU-sized notifications and caps one at 256KiB
+ * (`BleFraming.MAX_MESSAGE_BYTES`), so a megabyte slice is not merely slow here
+ * — it does not fit. 93KiB is what the link has always carried well.
  */
-const val ATTACHMENT_SLICE_BYTES = 93 * 1024
+const val ATTACHMENT_SLICE_BYTES_BLE = 93 * 1024
+
+/**
+ * How much to ask for at a time OVER THE NETWORK.
+ *
+ * The desktop refuses anything past its own slice budget
+ * (`ARTIFACT_SLICE_MAX_BYTES` = the 1MiB frame minus wrapper headroom), so this
+ * sits just under it. Round trips, not bytes, are what a transfer costs: at
+ * 93KiB a 10MB file spent 111 of them, and this spends ~11.
+ */
+const val ATTACHMENT_SLICE_BYTES_LAN = 1000 * 1024
+
+/**
+ * The slice size for whichever transport currently OWNS the link.
+ *
+ * Asked per request rather than fixed at startup, because the link can change
+ * underneath a transfer: LAN preempts BLE the moment it comes up. A slice sized
+ * for the wrong transport is not a slow transfer, it is a refused one.
+ */
+fun attachmentSliceBytes(holderRank: Int?, lanRank: Int): Int =
+    if (holderRank == lanRank) ATTACHMENT_SLICE_BYTES_LAN else ATTACHMENT_SLICE_BYTES_BLE
 
 /**
  * How many asks may be in flight at once.

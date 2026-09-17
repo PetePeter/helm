@@ -202,9 +202,12 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     /**
      * The next offset to ask for, or null when the window is full or there is
      * nothing left to ask. Several asks ride at once — see [AttachmentTransfer].
+     *
+     * [sliceBytes] is passed in rather than read here: it depends on which
+     * transport owns the link RIGHT NOW, and that is the caller's knowledge.
      */
-    fun nextAsk(key: String): Long? =
-        transfers[key]?.nextAsk(ATTACHMENT_SLICE_BYTES, ATTACHMENT_PIPELINE)
+    fun nextAsk(key: String, sliceBytes: Int): Long? =
+        transfers[key]?.nextAsk(sliceBytes, ATTACHMENT_PIPELINE)
 
     /**
      * Take one slice. Returns the complete file when that slice was the last

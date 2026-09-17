@@ -67,8 +67,19 @@ import {
   type ProtocolRefusalCode,
 } from './protocol-version';
 
-/** Upper bound on a single wire frame, so a hostile length cannot exhaust memory. */
-export const MAX_FRAME_BYTES = 128 * 1024;
+/**
+ * Upper bound on a single wire frame, so a hostile length cannot exhaust memory.
+ *
+ * 1 MiB, raised from 128 KiB when downloads stopped riding base64: the cost of a
+ * transfer on this link is ROUND TRIPS, not bytes, and a 128 KiB ceiling meant
+ * 111 of them for a 10 MB file. The number is mirrored in Kotlin's
+ * `crypto/Frames.kt` and is a WIRE BREAK — both ends ship together, which is why
+ * PROTOCOL_MIN moved with PROTOCOL_MAX.
+ *
+ * BLE is unaffected: its own `MAX_MESSAGE_BYTES` (256 KiB) still bounds a
+ * Bluetooth message, and the phone keeps asking for small slices there.
+ */
+export const MAX_FRAME_BYTES = 1024 * 1024;
 
 /** A PING/PONG body seals zero bytes: its content is its authentication. */
 const EMPTY_PAYLOAD = Buffer.alloc(0);

@@ -2,7 +2,7 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
-import com.potatomotato.helm.data.ATTACHMENT_SLICE_BYTES
+import com.potatomotato.helm.data.attachmentSliceBytes
 import com.potatomotato.helm.data.CapabilityCache
 import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.PullState
@@ -14,6 +14,8 @@ import com.potatomotato.helm.data.SequenceRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
+import com.potatomotato.helm.ble.HelmLink
+import com.potatomotato.helm.ble.RANK_LAN
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.log.HelmLog
@@ -417,9 +419,13 @@ class HelmClient(
     private fun fillPipeline(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
         var issued = false
         while (true) {
-            val offset = chats.nextAsk(key) ?: return issued
+            // Sized against the transport that owns the link right now: LAN
+            // preempts BLE mid-transfer, and a slice sized for the wrong one is
+            // refused, not merely slow.
+            val sliceBytes = attachmentSliceBytes(HelmLink.holderRank, RANK_LAN)
+            val offset = chats.nextAsk(key, sliceBytes) ?: return issued
             issued = true
-            if (!requestSlice(sessionId, key, attachment, offset)) return issued
+            if (!requestSlice(sessionId, key, attachment, offset, sliceBytes)) return issued
         }
     }
 
@@ -428,6 +434,7 @@ class HelmClient(
         key: String,
         attachment: ChatAttachment,
         offset: Long,
+        sliceBytes: Int,
     ): Boolean = call(
         METHOD_SESSION_ARTIFACT_DOWNLOAD,
         linkedMapOf(
@@ -435,7 +442,7 @@ class HelmClient(
             "artifactId" to attachment.artifactId,
             "attachmentId" to attachment.attachmentId,
             "offset" to offset,
-            "length" to ATTACHMENT_SLICE_BYTES,
+            "length" to sliceBytes,
         ),
     ) { outcome ->
         when (outcome) {
@@ -445,9 +452,10 @@ class HelmClient(
     }
 
     /**
-     * One slice's answer. A body that will not decode is a failure, not an
-     * empty slice: treating it as empty would leave the loop asking for the
-     * same offset forever.
+     * One slice's answer, which arrives as RAW BYTES in a [MobileRecord.Blob] —
+     * no base64, no JSON around the body. An answer of any other shape is a
+     * failure, not an empty slice: treating it as empty would leave the loop
+     * asking for the same offset forever.
      */
     private fun takeSlice(
         sessionId: String,
@@ -456,21 +464,14 @@ class HelmClient(
         offset: Long,
         result: Any?,
     ) {
-        val body = result as? JSONObject
-        val base64 = body?.opt("base64") as? String
-        if (base64 == null) {
-            chats.pullFailed(key, UNREADABLE_DOWNLOAD)
-            return
-        }
-        val bytes = try {
-            java.util.Base64.getDecoder().decode(base64)
-        } catch (error: IllegalArgumentException) {
-            HelmLog.w(HelmLog.CLIENT, "an attachment slice was not valid base64")
+        val blob = result as? MobileRecord.Blob
+        if (blob == null) {
+            HelmLog.w(HelmLog.CLIENT, "an attachment slice did not arrive as a binary record")
             chats.pullFailed(key, UNREADABLE_DOWNLOAD)
             return
         }
 
-        val whole = chats.sliceArrived(key, offset, bytes, body.opt("eof") == true)
+        val whole = chats.sliceArrived(key, offset, blob.bytes, blob.eof)
         if (whole == null) {
             // More to come. Top the window back up — a slot just freed.
             if (chats.pullState(key) is PullState.Pulling) {
@@ -720,6 +721,9 @@ class HelmClient(
         HelmLog.d(HelmLog.WIRE) { "inbound ${record.javaClass.simpleName} of ${payload.size} bytes" }
         when (record) {
             is MobileRecord.Result -> settle(record.id, Outcome.Ok(record.result))
+            // A download's answer. Correlated and settled exactly like a result —
+            // the caller that asked knows it asked for bytes.
+            is MobileRecord.Blob -> settle(record.id, Outcome.Ok(record))
             is MobileRecord.Failure -> settle(record.id, Outcome.Failed(record.message))
             // THE ONE place a chat record is split. A kind-bearing record is an
             // EVENT Helm is reporting, not something an agent said: routing it

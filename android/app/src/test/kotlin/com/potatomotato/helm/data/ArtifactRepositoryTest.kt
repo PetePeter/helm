@@ -1,5 +1,6 @@
 package com.potatomotato.helm.data
 
+import com.potatomotato.helm.wire.MobileRecord
 import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -287,7 +288,7 @@ class ArtifactRepositoryTest {
     @Test
     fun `a download answer decodes into the file it names`() {
         repo.downloadRequested("a1")
-        val ok = repo.downloadArrived("a1", parse(downloadJson()))
+        val ok = repo.downloadArrived("a1", downloadBlob())
 
         assertTrue(ok)
         val ready = repo.save.value as ArtifactSave.Ready
@@ -302,11 +303,19 @@ class ArtifactRepositoryTest {
     fun `an attachment's file envelope answers without a version and still lands`() {
         repo.downloadRequested("a1")
 
-        // The attachment shape: the same keys MINUS version — the desktop's
+        // The attachment shape: the same record MINUS version — the desktop's
         // answer for a binary file stored beside the artifact.
         val ok = repo.downloadArrived(
             "a1",
-            parse("""{"filename":"chart.png","mimeType":"image/png","base64":"aGVsbG8=","size":5}"""),
+            MobileRecord.Blob(
+                id = "c2",
+                filename = "chart.png",
+                mimeType = "image/png",
+                bytes = "hello".toByteArray(Charsets.UTF_8),
+                offset = 0,
+                total = 5,
+                eof = true,
+            ),
         )
 
         assertTrue(ok)
@@ -317,24 +326,20 @@ class ArtifactRepositoryTest {
     }
 
     @Test
-    fun `an answer with no base64 body is undecodable, not an empty file`() {
+    fun `an answer that is not a binary record is undecodable, not an empty file`() {
         repo.downloadRequested("a1")
 
-        assertFalse(repo.downloadArrived("a1", parse("""{"filename":"x.md","mimeType":"text/plain"}""")))
-        // Still the ask that is waiting — the file simply has not arrived.
-        assertTrue(repo.save.value is ArtifactSave.Downloading)
-    }
-
-    @Test
-    fun `a base64 body that is not base64 is a failure, not a corrupt file`() {
-        repo.downloadRequested("a1")
-
+        // The old base64 JSON envelope is exactly this case now: a desktop too
+        // old to speak protocol 3 must leave the ask waiting, not save 0 bytes.
         assertFalse(
             repo.downloadArrived(
                 "a1",
-                parse("""{"filename":"x.md","mimeType":"text/plain","base64":"!!not base64!!"}"""),
+                parse("""{"filename":"x.md","mimeType":"text/plain","base64":"aGVsbG8="}"""),
             ),
         )
+        // Still the ask that is waiting — the file simply has not arrived.
+        assertTrue(repo.save.value is ArtifactSave.Downloading)
+        assertFalse(repo.downloadArrived("a1", null))
         assertTrue(repo.save.value is ArtifactSave.Downloading)
     }
 
@@ -342,7 +347,7 @@ class ArtifactRepositoryTest {
     fun `a late file for another artifact never lands as this one's`() {
         repo.downloadRequested("a2")
 
-        repo.downloadArrived("a1", parse(downloadJson()))
+        repo.downloadArrived("a1", downloadBlob())
 
         assertEquals("a2", (repo.save.value as ArtifactSave.Downloading).artifactId)
     }
@@ -350,7 +355,7 @@ class ArtifactRepositoryTest {
     @Test
     fun `the file landing on disk is what completes the save`() {
         repo.downloadRequested("a1")
-        repo.downloadArrived("a1", parse(downloadJson()))
+        repo.downloadArrived("a1", downloadBlob())
 
         repo.saveLanded("a1", "Downloads/Perf-report.md")
 
@@ -370,7 +375,7 @@ class ArtifactRepositoryTest {
     @Test
     fun `a fresh ask replaces a finished save`() {
         repo.downloadRequested("a1")
-        repo.downloadArrived("a1", parse(downloadJson()))
+        repo.downloadArrived("a1", downloadBlob())
         repo.saveLanded("a1", "Downloads/Perf-report.md")
 
         repo.downloadRequested("a1")
@@ -411,7 +416,12 @@ class ArtifactRepositoryTest {
             // Done assertion compares against.
             """"requestedVersion":2,"requestedVersionContent":"# Report\n\nBody."}"""
 
-    /** `hello` in base64, the way the desktop's download envelope carries it. */
-    private fun downloadJson(): String =
-        """{"filename":"Perf-report.md","mimeType":"text/markdown","base64":"aGVsbG8=","version":2,"size":5}"""
+    /** A version's body, the way the desktop's binary download record carries it. */
+    private fun downloadBlob(): MobileRecord.Blob = MobileRecord.Blob(
+        id = "c1",
+        filename = "Perf-report.md",
+        mimeType = "text/markdown",
+        bytes = "hello".toByteArray(Charsets.UTF_8),
+        version = 2,
+    )
 }

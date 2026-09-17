@@ -14,7 +14,7 @@ import { EventEmitter } from 'node:events';
 import { MobileChatBridge } from '../src/mobile/mobile-chat-bridge';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store';
 import { MobileGate, MOBILE_DENY_MESSAGE, createDefaultMobileRateLimiter } from '../src/mobile/mobile-gate';
-import { decodeRecord, encodeCall } from '../src/mobile/mobile-envelope';
+import { decodeBlobResult, decodeRecord, encodeCall, isBlobPayload } from '../src/mobile/mobile-envelope';
 import type { MobileDevice } from '../src/types/mobile-device';
 
 /** The slice of MobileLinkManager the bridge drives, with a recorder attached. */
@@ -274,5 +274,86 @@ describe('MobileChatBridge inbound calls go through MobileGate and nowhere else'
 
     expect(dispatched).toEqual([]);
     expect(links.sent).toEqual([]);
+  });
+});
+
+/**
+ * The binary download reply. The bridge is the ONE place a result is turned into
+ * bytes, and the rule it must keep is narrow: downloads go out as a blob record,
+ * everything else stays JSON, and NOTHING skips the gate to get there.
+ */
+describe('MobileChatBridge answering a download', () => {
+  /** A bridge whose gate returns one fixed dispatch result. */
+  function bridgeReturning(result: unknown, allow: string[] = ['session_artifact_download']) {
+    const downloadLinks = new FakeLinks();
+    const store = new MobileDeviceStore(() => {});
+    store.add({
+      name: 'Pixel',
+      machineId: 'phone-machine',
+      deviceId: 'aa:bb:cc',
+      pskRef: 'secret-1',
+      allow,
+    });
+    const downloadBridge = new MobileChatBridge({
+      links: downloadLinks,
+      deviceStore: store,
+      gate: () => new MobileGate({
+        deviceStore: store,
+        dispatch: async () => result,
+        rateLimiter: createDefaultMobileRateLimiter(),
+      }),
+      sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null },
+    });
+    downloadBridge.start();
+    return downloadLinks;
+  }
+
+  const body = Buffer.from([0x00, 0x7b, 0xff, 0x10]);
+
+  it('answers a download with raw bytes in a blob record, not base64 JSON', async () => {
+    const downloadLinks = bridgeReturning({
+      filename: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      bytes: body,
+      offset: 0,
+      total: 9,
+      eof: false,
+    });
+
+    downloadLinks.receive('phone-machine', encodeCall('d1', 'session_artifact_download'));
+    await vi.waitFor(() => expect(downloadLinks.sent).toHaveLength(1));
+
+    const payload = downloadLinks.sent[0].payload;
+    const blob = decodeBlobResult(payload);
+    expect(blob).not.toBeNull();
+    expect(blob!.id).toBe('d1');
+    expect(blob!.bytes.equals(body)).toBe(true);
+    expect(blob!.total).toBe(9);
+    // No base64 anywhere on the wire — the whole point of the record.
+    expect(payload.toString('latin1')).not.toContain('base64');
+  });
+
+  it('leaves every other answer as a JSON result record', async () => {
+    const otherLinks = bridgeReturning({ sessions: [] }, ['session_list']);
+
+    otherLinks.receive('phone-machine', encodeCall('d2', 'session_list'));
+    await vi.waitFor(() => expect(otherLinks.sent).toHaveLength(1));
+
+    expect(otherLinks.records()[0]).toMatchObject({ t: 'result', id: 'd2' });
+    expect(isBlobPayload(otherLinks.sent[0].payload)).toBe(false);
+  });
+
+  it('still goes through the gate: a tool outside the allow-list gets an error, never bytes', async () => {
+    const deniedLinks = bridgeReturning({
+      filename: 'photo.jpg',
+      mimeType: 'image/jpeg',
+      bytes: body,
+    }, ['session_list']);
+
+    deniedLinks.receive('phone-machine', encodeCall('d3', 'session_artifact_download'));
+    await vi.waitFor(() => expect(deniedLinks.sent).toHaveLength(1));
+
+    expect(isBlobPayload(deniedLinks.sent[0].payload)).toBe(false);
+    expect(deniedLinks.records()[0]).toMatchObject({ t: 'error', error: { message: MOBILE_DENY_MESSAGE } });
   });
 });

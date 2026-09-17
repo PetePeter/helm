@@ -13,11 +13,19 @@ package com.potatomotato.helm.crypto
  * the same commit, and adds a row to the table in docs/mobile-secure-channel.md.
  */
 object ProtocolVersion {
-    /** Oldest wire protocol this build can still speak. */
-    const val MIN = 2
+    /**
+     * Oldest wire protocol this build can still speak.
+     *
+     * Moved to 3 WITH the max: protocol 3 raised the frame ceiling to 1 MiB and
+     * made download replies binary, and a version-2 Helm can do neither. Keeping
+     * 2 in range would let this app link to one and then silently drop every
+     * download — a failure that looks like success, which is what this
+     * negotiation exists to prevent.
+     */
+    const val MIN = 3
 
     /** Newest wire protocol this build speaks. */
-    const val MAX = 2
+    const val MAX = 3
 
     /** A version beyond this is corruption, not a future build. */
     private const val ABSURD = 4096

@@ -51,7 +51,14 @@ class SecureChannelVectorsTest {
     @Test
     fun `the carrier fingerprint and protocol version match the desktop`() {
         assertEquals(vectors.getString("carrierFingerprint"), CARRIER_FINGERPRINT)
-        assertEquals(vectors.getInt("version"), ProtocolVersion.MAX)
+        // The fixture pins ONE wire version forever (see VECTOR_PROTOCOL_VERSION
+        // in src/mobile/test-vectors.ts) and describes the HANDSHAKE CRYPTO,
+        // which protocol 3 did not touch — 3 changed the frame ceiling and made
+        // download replies binary. So the vector stays at 2 while the supported
+        // range moves on, and what must hold is that this build still speaks a
+        // version at least as new as the crypto it is pinned to.
+        assertEquals(2, vectors.getInt("version"))
+        assertTrue(ProtocolVersion.MAX >= vectors.getInt("version"))
     }
 
     @Test

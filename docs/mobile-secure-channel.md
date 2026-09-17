@@ -63,6 +63,7 @@ commit. Additive changes do neither.
 |---------|--------|
 | 1 | Initial wire format — range negotiation in HELLO, X25519 commit-reveal handshake, AES-256-GCM framing. |
 | 2 | AEAD frames carry an explicit `u64` sequence (nonce + AAD), so the receiver can detect a lost frame, resync, and continue instead of failing the next tag. New PING/PONG frame kinds for keepalive. |
+| 3 | `MAX_FRAME_BYTES` 128 KiB → 1 MiB, and download replies become a **binary record** — marker byte, small JSON header, raw bytes — instead of base64 inside a JSON result. Both are breaking in the same direction: a v2 peer can neither read a 1 MiB frame nor decode the record, so `PROTOCOL_MIN` moved to 3 with the max. The handshake crypto is unchanged, which is why the committed channel vectors still pin version 2. |
 
 ## Invariants
 

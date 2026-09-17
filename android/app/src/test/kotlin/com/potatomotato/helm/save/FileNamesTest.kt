@@ -26,6 +26,23 @@ class FileNamesTest {
     }
 
     @Test
+    fun `a second APK stays installable`() {
+        // The bug this closes: MediaStore's own de-duplication appends after the
+        // WHOLE display name, so a second download came back as
+        // "app-release.apk (1)" — which no installer, file manager or share
+        // sheet reads as an APK. MediaStoreDownloads now picks the name through
+        // here BEFORE the insert, so the extension stays last.
+        assertEquals(
+            "app-release (2).apk",
+            FileNames.disambiguated(setOf("app-release.apk"), "app-release.apk"),
+        )
+        assertEquals(
+            "app-release (3).apk",
+            FileNames.disambiguated(setOf("app-release.apk", "app-release (2).apk"), "app-release.apk"),
+        )
+    }
+
+    @Test
     fun `an extensionless name is suffixed plainly`() {
         assertEquals("report (2)", FileNames.disambiguated(setOf("report"), "report"))
     }

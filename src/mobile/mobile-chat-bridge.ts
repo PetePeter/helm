@@ -26,7 +26,8 @@
 
 import { logger } from '../utils/logger.js';
 import { GateError, MOBILE_DENY_MESSAGE } from './mobile-gate.js';
-import { decodeRecord, encodeChat, encodeError, encodeResult } from './mobile-envelope.js';
+import { decodeRecord, encodeBlobResult, encodeChat, encodeError, encodeResult } from './mobile-envelope.js';
+import { isArtifactDownloadBinary } from '../session/artifact-download.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
 import type { SessionAlertKind } from '../session/session-alert.js';
@@ -228,7 +229,14 @@ export class MobileChatBridge implements ChatBridge {
       logger.info(`[MobileChat] Dispatching ${record.method} id=${record.id} from ${machineId}`);
       const result = await gate.handle(device.id, record.method, record.params);
       logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
-      this.answer(machineId, encodeResult(record.id, result));
+      // A download answers with FILE BYTES, which JSON can only carry as base64.
+      // The gate has already run — this is purely how the ANSWER is written.
+      this.answer(
+        machineId,
+        isArtifactDownloadBinary(result)
+          ? encodeBlobResult({ id: record.id, ...result })
+          : encodeResult(record.id, result),
+      );
     } catch (err) {
       const code = err instanceof GateError ? err.code : JSONRPC_SERVER_ERROR;
       const message = err instanceof Error ? err.message : String(err);

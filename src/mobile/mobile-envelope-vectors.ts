@@ -21,8 +21,10 @@ import {
   encodeCall,
   encodeChat,
   encodeError,
+  encodeBlobResult,
   encodeLan,
   encodeResult,
+  type MobileBlobResult,
 } from './mobile-envelope.js';
 
 export const ENVELOPE_VECTORS_RELATIVE_PATH = 'tests/fixtures/mobile-envelope-vectors.json';
@@ -44,6 +46,28 @@ export interface EnvelopeRejectCase {
   reason: string;
 }
 
+/**
+ * A BINARY download reply. Kept apart from `cases` because it is not UTF-8 JSON
+ * and a decoder that treated it as such would be wrong in exactly the way these
+ * vectors exist to catch. The expected fields are spelled out so the Kotlin side
+ * asserts the DECODED record, not a byte comparison it could pass by echoing.
+ */
+export interface EnvelopeBlobCase {
+  name: string;
+  /** The exact bytes on the wire, hex encoded. */
+  bytesHex: string;
+  /** The JSON header, as text, so a mismatch is readable in a diff. */
+  header: string;
+  id: string;
+  filename: string;
+  mimeType: string;
+  /** The raw body a conformant decoder must recover, hex encoded. */
+  bodyHex: string;
+  offset?: number;
+  total?: number;
+  eof?: boolean;
+}
+
 export interface EnvelopeVectors {
   format: {
     version: number;
@@ -52,6 +76,7 @@ export interface EnvelopeVectors {
     recordTypes: string[];
   };
   cases: EnvelopeVectorCase[];
+  blobs: EnvelopeBlobCase[];
   rejects: EnvelopeRejectCase[];
 }
 
@@ -61,6 +86,23 @@ function vector(
   bytes: Buffer,
 ): EnvelopeVectorCase {
   return { name, direction, bytesHex: bytes.toString('hex'), json: bytes.toString('utf8') };
+}
+
+function blobVector(name: string, blob: MobileBlobResult): EnvelopeBlobCase {
+  const bytes = encodeBlobResult(blob);
+  const headerLength = bytes.readUInt16BE(2);
+  return {
+    name,
+    bytesHex: bytes.toString('hex'),
+    header: bytes.subarray(4, 4 + headerLength).toString('utf8'),
+    id: blob.id,
+    filename: blob.filename,
+    mimeType: blob.mimeType,
+    bodyHex: blob.bytes.toString('hex'),
+    ...(blob.offset !== undefined ? { offset: blob.offset } : {}),
+    ...(blob.total !== undefined ? { total: blob.total } : {}),
+    ...(blob.eof !== undefined ? { eof: blob.eof } : {}),
+  };
 }
 
 function reject(name: string, json: string, reason: string): EnvelopeRejectCase {
@@ -115,6 +157,48 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     vector('lan with no addresses', 'helm-to-phone', encodeLan([])),
   ];
 
+  // Deterministic bodies, chosen to be hostile to a JSON-shaped reader: byte 0x00
+  // and 0xff would both be mangled by a UTF-8 round trip, and a leading '{' in
+  // the BODY must not confuse a decoder that dispatches on the FIRST byte.
+  const blobs: EnvelopeBlobCase[] = [
+    blobVector(
+      'attachment slice, more to come',
+      {
+        id: 'c6',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.from([0x00, 0x7b, 0xff, 0x10, 0x20]),
+        offset: 0,
+        total: 11,
+        eof: false,
+      },
+    ),
+    blobVector(
+      'final attachment slice',
+      {
+        id: 'c7',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.from([0xfe, 0xed, 0xfa, 0xce, 0x01, 0x02]),
+        offset: 5,
+        total: 11,
+        eof: true,
+      },
+    ),
+    blobVector(
+      'empty tail slice',
+      {
+        id: 'c8',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.alloc(0),
+        offset: 11,
+        total: 11,
+        eof: true,
+      },
+    ),
+  ];
+
   const rejects: EnvelopeRejectCase[] = [
     reject('not JSON', 'not json at all', 'payload does not parse'),
     reject('a JSON array', '[1,2,3]', 'a record must be an object'),
@@ -133,9 +217,10 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
       version: MOBILE_ENVELOPE_VERSION,
       encoding: 'utf8-json',
       maxEnvelopeBytes: MAX_ENVELOPE_BYTES,
-      recordTypes: ['call', 'result', 'error', 'chat', 'lan'],
+      recordTypes: ['call', 'result', 'error', 'chat', 'lan', 'blob'],
     },
     cases,
+    blobs,
     rejects,
   };
 }

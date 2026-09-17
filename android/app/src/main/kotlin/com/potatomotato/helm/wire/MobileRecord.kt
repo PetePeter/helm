@@ -1,15 +1,15 @@
 package com.potatomotato.helm.wire
 
 /**
- * The four application records that ride inside a SecureChannel message.
+ * The application records that ride inside a SecureChannel message.
  *
  * This is the Kotlin half of `src/mobile/mobile-envelope.ts`, and the split is a
  * security boundary as much as a protocol one: everything the phone SENDS is a
  * [Call], including a chat reply, which is why "no path skips MobileGate" is
  * true by construction rather than by discipline.
  *
- * There are exactly four kinds and there will not be a fifth without a wire
- * break — the set is pinned by `tests/fixtures/mobile-envelope-vectors.json`.
+ * The SET of kinds is pinned by `tests/fixtures/mobile-envelope-vectors.json`;
+ * adding one is a wire break, which is what protocol 3 was for.
  */
 sealed interface MobileRecord {
 
@@ -26,6 +26,55 @@ sealed interface MobileRecord {
      * returned null.
      */
     data class Result(val id: String, val result: Any?) : MobileRecord
+
+    /**
+     * Helm -> phone. A download reply, and the ONE record that is not JSON.
+     *
+     * A download answers with FILE BYTES, and JSON can only carry those as
+     * base64 — a third more wire, plus an encode and a decode, for nothing. At
+     * 10 MB that was 111 round trips of inflated text; raw bytes make it ~11.
+     *
+     * Correlated by [id] exactly like a [Result], and settled through the same
+     * pending map: to everything above [com.potatomotato.helm.link.HelmClient]
+     * this is simply the answer to the call it issued.
+     */
+    data class Blob(
+        val id: String,
+        val filename: String,
+        val mimeType: String,
+        val bytes: ByteArray,
+        /** The artifact version, when the body is an artifact rather than a slice. */
+        val version: Int? = null,
+        /** Where this slice starts in the file. Sliced fetches only. */
+        val offset: Long? = null,
+        /** The whole file's length. Sliced fetches only. */
+        val total: Long? = null,
+        /** True when nothing follows this slice. Sliced fetches only. */
+        val eof: Boolean = false,
+    ) : MobileRecord {
+        // A ByteArray compares by identity, so the generated equals/hashCode
+        // would call two identical slices different. Overridden rather than left
+        // to surprise a future caller that puts one in a set.
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is Blob) return false
+            return id == other.id && filename == other.filename && mimeType == other.mimeType &&
+                version == other.version && offset == other.offset && total == other.total &&
+                eof == other.eof && bytes.contentEquals(other.bytes)
+        }
+
+        override fun hashCode(): Int {
+            var result = id.hashCode()
+            result = 31 * result + filename.hashCode()
+            result = 31 * result + mimeType.hashCode()
+            result = 31 * result + bytes.contentHashCode()
+            result = 31 * result + (version ?: 0)
+            result = 31 * result + (offset ?: 0L).hashCode()
+            result = 31 * result + (total ?: 0L).hashCode()
+            result = 31 * result + eof.hashCode()
+            return result
+        }
+    }
 
     /**
      * Helm -> phone. A failure for one call id.

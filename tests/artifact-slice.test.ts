@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
 import {
-  ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES,
+  ARTIFACT_SLICE_MAX_BYTES,
   resolveSliceWindow,
 } from '../src/session/artifact-download.js';
 
@@ -37,14 +37,14 @@ describe('resolveSliceWindow', () => {
   it('defaults to as much as a frame can carry when no length is asked for', () => {
     const window = resolveSliceWindow(10 * 1024 * 1024);
     expect(window.offset).toBe(0);
-    expect(window.length).toBe(ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES);
+    expect(window.length).toBe(ARTIFACT_SLICE_MAX_BYTES);
     expect(window.eof).toBe(false);
   });
 
   it('refuses a length past the frame budget instead of quietly shortening it', () => {
     // Truncating would be indistinguishable from a short tail, and a caller
     // advancing by what it ASKED for would skip bytes and save a corrupt file.
-    expect(() => resolveSliceWindow(10_000_000, 0, ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES + 1))
+    expect(() => resolveSliceWindow(10_000_000, 0, ARTIFACT_SLICE_MAX_BYTES + 1))
       .toThrow(/slice budget/);
   });
 
@@ -82,7 +82,7 @@ describe('ArtifactAttachmentManager.readSlice', () => {
   }
 
   it('reassembles a file larger than one frame from consecutive slices', () => {
-    const size = ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES * 2 + 1234;
+    const size = ARTIFACT_SLICE_MAX_BYTES * 2 + 1234;
     const { attachment, content } = addLargeAttachment(size);
 
     const parts: Buffer[] = [];

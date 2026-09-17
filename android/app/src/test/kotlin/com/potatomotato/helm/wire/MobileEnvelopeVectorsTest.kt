@@ -70,6 +70,10 @@ class MobileEnvelopeVectorsTest {
                     assertEquals(name, expected.optBoolean("voice", false), record.voice)
                 }
 
+                // `cases` holds only the UTF-8 JSON records; the binary blob
+                // records have their own fixture array and their own test below.
+                is MobileRecord.Blob -> throw AssertionError("$name: a JSON case decoded as a blob")
+
                 is MobileRecord.Lan -> {
                     val addresses = expected.getJSONArray("addresses")
                     assertEquals(name, addresses.length(), record.addresses.size)
@@ -106,6 +110,47 @@ class MobileEnvelopeVectorsTest {
             assertEquals(name, bytes.toHex(), produced.toHex())
         }
         assertTrue("the fixture must carry phone-to-helm calls", calls > 0)
+    }
+
+    /**
+     * The binary download reply. Asserting the DECODED fields rather than the
+     * hex is what makes this a contract: a byte comparison would pass on a
+     * decoder that never ran, and an attachment that silently fails to decode is
+     * a file the user watches never arrive.
+     */
+    @Test
+    fun `every blob vector decodes to the exact raw bytes`() {
+        val blobs = vectors.getJSONArray("blobs")
+        assertTrue("the fixture must carry blob cases", blobs.length() > 0)
+
+        for (i in 0 until blobs.length()) {
+            val case = blobs.getJSONObject(i)
+            val name = case.getString("name")
+            val record = MobileEnvelope.decode(case.getString("bytesHex").fromHex())
+                ?: throw AssertionError("$name: must decode")
+            assertTrue("$name: must decode as a blob", record is MobileRecord.Blob)
+            record as MobileRecord.Blob
+
+            assertEquals(name, case.getString("id"), record.id)
+            assertEquals(name, case.getString("filename"), record.filename)
+            assertEquals(name, case.getString("mimeType"), record.mimeType)
+            assertEquals(name, case.getString("bodyHex"), record.bytes.toHex())
+            assertEquals(name, case.optBoolean("eof", false), record.eof)
+            if (case.has("offset")) assertEquals(name, case.getLong("offset"), record.offset ?: -1L)
+            if (case.has("total")) assertEquals(name, case.getLong("total"), record.total ?: -1L)
+        }
+    }
+
+    /**
+     * The marker is the whole reason both codecs can dispatch on one byte. A
+     * blob whose BODY starts with '{' must still be read as a blob.
+     */
+    @Test
+    fun `a truncated blob is refused rather than reported as a short slice`() {
+        val whole = vectors.getJSONArray("blobs").getJSONObject(0).getString("bytesHex").fromHex()
+        assertNull(MobileEnvelope.decode(whole.copyOfRange(0, whole.size - 1)))
+        // Garbage after a valid marker is not a record either.
+        assertNull(MobileEnvelope.decode(byteArrayOf(MobileEnvelope.BLOB_MARKER, 1, 0, 3, 0x7b, 0x7d, 0x21)))
     }
 
     @Test

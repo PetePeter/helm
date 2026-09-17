@@ -154,10 +154,12 @@ store would have duplicated all four and given the user two places to look. All
 of a session's chat files sit under **one** artifact (`Chat files`), so a chatty
 afternoon does not bury the session's real reports.
 
-**Slices.** A frame carries ~94KiB and a photo is measured in megabytes, so
-`session_artifact_download` takes optional `offset`/`length` and answers
-`{ offset, total, eof }` for an attachment. The phone asks in 93KiB slices —
-just under the desktop's budget — and keeps **four asks in flight**, because a
+**Slices.** A frame carries just under 1MiB and a photo is measured in
+megabytes, so `session_artifact_download` takes optional `offset`/`length` and
+answers `{ offset, total, eof }` for an attachment. The phone asks in ~1MB
+slices over LAN and 93KiB over BLE — the Bluetooth message cap is 256KiB, so the
+size is chosen from whichever transport owns the link at the moment of the ask —
+and keeps **four asks in flight**, because a
 measured round trip on this link costs far more than the bytes in it. Answers
 may therefore arrive out of order; they are held until the gap ahead of them
 closes, and only a **whole** file is ever saved. A duplicate, or an answer to an
@@ -170,6 +172,15 @@ The first measurement of this path is worth keeping: 754KB took ~15s, and the
 cause was not base64 (a flat +33%) but round trips — 64KiB slices, strictly
 serial, with the phone's `session_list` poll landing between every one of them.
 Slice size and pipelining are second-order; **round trips are the cost**.
+
+That measurement is why the reply is now **binary**. A download answers with a
+marker byte, a small JSON header and the RAW bytes — see `encodeBlobResult` in
+`src/mobile/mobile-envelope.ts` — so nothing is base64'd and the 1MiB frame
+carries a 1MB slice. A 10MB file went from 111 round trips to ~11. The marker is
+never `{`, so a reader tells a blob from a JSON record by its first byte; the
+record is Helm→phone **only**, and `decodeRecord` refuses one, so the inbound
+surface is unchanged and every phone call is still a JSON `call` through
+MobileGate. This was a wire break, carried by protocol 3.
 
 `session_artifact_attachment_delete` bins one file without binning the artifact.
 

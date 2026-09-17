@@ -26,8 +26,14 @@ internal object MediaStoreDownloads {
      * Write [bytes] as [filename] and say where they landed.
      *
      * With [replaceExisting] the rows already using that name are removed first,
-     * so the name the user is told is the name they get. Without it MediaStore
-     * is free to disambiguate, and the name it settled on is read back.
+     * so the name the user is told is the name they get.
+     *
+     * Without it the name is disambiguated HERE, before the insert. MediaStore
+     * will happily de-duplicate on its own, but it appends after the whole
+     * display name — a second `app-release.apk` came back as
+     * `app-release.apk (1)`, which no file manager, installer or share sheet
+     * reads as an APK. Choosing the name first means MediaStore never has to
+     * rename, so the extension stays where it belongs.
      */
     @Throws(IOException::class)
     fun write(
@@ -54,8 +60,13 @@ internal object MediaStoreDownloads {
             }
         }
 
+        val wanted = if (replaceExisting) filename else FileNames.disambiguated(
+            takenNames(resolver, collection),
+            filename,
+        )
+
         val details = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.DISPLAY_NAME, wanted)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
             // Pending until the bytes are in: a crash halfway must not leave a
             // zero-byte file the file manager shows as real.
@@ -68,12 +79,14 @@ internal object MediaStoreDownloads {
                 ?: throw IOException("The phone would not open the file for writing")
             val released = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
             resolver.update(uri, released, null, null)
-            // MediaStore may have renamed the file to dodge a collision; the
-            // name it settled on is the one the user will look for.
+            // The name is read back regardless: the disambiguation above closes
+            // the common case, but another app may have taken the name in the
+            // moment between the query and the insert, and what the user is told
+            // must be what is actually on the phone.
             val settled = resolver
                 .query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
-                ?: filename
+                ?: wanted
             return SavedFile("Downloads/$settled", uri.toString())
         } catch (error: Exception) {
             // A half-written pending row is invisible clutter the file manager
@@ -85,5 +98,25 @@ internal object MediaStoreDownloads {
             }
             throw error
         }
+    }
+
+    /**
+     * Display names already in Downloads. An empty set on ANY failure: a query
+     * this app is not allowed to make must not stop a save — it only means
+     * MediaStore does the renaming, which is where this started, not a lost file.
+     */
+    private fun takenNames(
+        resolver: android.content.ContentResolver,
+        collection: android.net.Uri,
+    ): Set<String> = try {
+        resolver.query(collection, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                val names = HashSet<String>(cursor.count)
+                while (cursor.moveToNext()) cursor.getString(0)?.let(names::add)
+                names
+            }
+            ?: emptySet()
+    } catch (_: Exception) {
+        emptySet()
     }
 }

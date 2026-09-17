@@ -68,9 +68,22 @@ object MobileEnvelope {
         return json.toString().toByteArray(Charsets.UTF_8)
     }
 
+    /**
+     * First byte of a binary download reply. Never '{' (0x7b), so a reader tells
+     * a blob from a JSON record by ONE byte and neither codec has to guess.
+     */
+    const val BLOB_MARKER: Byte = 0xb1.toByte()
+
+    /** Bumped only for a breaking change to the binary layout. */
+    const val BLOB_RECORD_VERSION: Byte = 1
+
+    /** marker | version | uint16be header length. */
+    private const val BLOB_HEADER_PREFIX_BYTES = 4
+
     /** Parse one record, or null for anything this build does not understand. */
     fun decode(payload: ByteArray): MobileRecord? {
         if (payload.isEmpty() || payload.size > MAX_ENVELOPE_BYTES) return null
+        if (payload[0] == BLOB_MARKER) return decodeBlob(payload)
 
         // A ByteArray's own toString() is its object identity, never its text.
         val record = try {
@@ -104,6 +117,52 @@ object MobileEnvelope {
             addresses.add(array.opt(index) as? String ?: return null)
         }
         return MobileRecord.Lan(addresses)
+    }
+
+    /**
+     * One binary download reply:
+     *
+     *   byte 0      [BLOB_MARKER]
+     *   byte 1      [BLOB_RECORD_VERSION]
+     *   bytes 2..3  uint16be header length
+     *   header      UTF-8 JSON, the same fixed key order as every other record
+     *   rest        the RAW body
+     *
+     * The declared `size` is the authority on truncation. A body quietly shorter
+     * than promised is precisely the corruption the slice loop above cannot see:
+     * it would be appended, counted, and saved as a plausible broken file.
+     */
+    private fun decodeBlob(payload: ByteArray): MobileRecord.Blob? {
+        if (payload.size < BLOB_HEADER_PREFIX_BYTES) return null
+        if (payload[1] != BLOB_RECORD_VERSION) return null
+
+        val headerLength = ((payload[2].toInt() and 0xff) shl 8) or (payload[3].toInt() and 0xff)
+        val bodyStart = BLOB_HEADER_PREFIX_BYTES + headerLength
+        if (payload.size < bodyStart) return null
+
+        val header = try {
+            JSONObject(String(payload, BLOB_HEADER_PREFIX_BYTES, headerLength, Charsets.UTF_8))
+        } catch (_: Exception) {
+            return null
+        }
+        if (header.opt("v") != VERSION || header.opt("t") != "blob") return null
+
+        val id = header.string("id") ?: return null
+        val filename = header.string("filename") ?: return null
+        val mimeType = header.string("mimeType") ?: return null
+        val body = payload.copyOfRange(bodyStart, payload.size)
+        if ((header.opt("size") as? Number)?.toInt() != body.size) return null
+
+        return MobileRecord.Blob(
+            id = id,
+            filename = filename,
+            mimeType = mimeType,
+            bytes = body,
+            version = (header.opt("version") as? Number)?.toInt(),
+            offset = (header.opt("offset") as? Number)?.toLong(),
+            total = (header.opt("total") as? Number)?.toLong(),
+            eof = header.opt("eof") == true,
+        )
     }
 
     private fun decodeCall(record: JSONObject): MobileRecord.Call? {

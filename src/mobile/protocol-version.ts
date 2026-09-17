@@ -16,11 +16,18 @@
  * Additive changes do neither.
  */
 
-/** Oldest wire protocol this build can still speak. */
-export const PROTOCOL_MIN = 2;
+/**
+ * Oldest wire protocol this build can still speak.
+ *
+ * Moved to 3 WITH the max: protocol 3 raised the frame ceiling to 1 MiB and made
+ * download replies binary, and a version-2 phone can do neither. Keeping 2 in
+ * range would let such a phone connect and then silently drop every download —
+ * the "fails looking like success" failure this negotiation exists to prevent.
+ */
+export const PROTOCOL_MIN = 3;
 
 /** Newest wire protocol this build speaks. Bump on any breaking wire change. */
-export const PROTOCOL_MAX = 2;
+export const PROTOCOL_MAX = 3;
 
 /** Sanity ceiling — a version beyond this is corruption, not a future build. */
 const PROTOCOL_ABSURD = 4096;

@@ -1,7 +1,17 @@
 package com.potatomotato.helm.crypto
 
-/** Upper bound on a single wire frame, so a hostile length cannot exhaust memory. */
-const val MAX_FRAME_BYTES = 128 * 1024
+/**
+ * Upper bound on a single wire frame, so a hostile length cannot exhaust memory.
+ *
+ * 1 MiB, raised from 128 KiB when downloads stopped riding base64: the cost of a
+ * transfer on this link is ROUND TRIPS, not bytes, and 128 KiB meant 111 of them
+ * for a 10 MB file. Mirrors `MAX_FRAME_BYTES` in `src/mobile/secure-channel.ts`
+ * and is a WIRE BREAK — hence protocol 3, which both ends require.
+ *
+ * Bluetooth is unaffected: `BleFraming.MAX_MESSAGE_BYTES` (256 KiB) still bounds
+ * a GATT message, and this end keeps asking for small slices over BLE.
+ */
+const val MAX_FRAME_BYTES = 1024 * 1024
 
 /** Frame = uint32be length | type byte | payload. Values match secure-channel.ts. */
 enum class FrameType(val wire: Byte) {

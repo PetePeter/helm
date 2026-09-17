@@ -21,6 +21,9 @@
  *          messages stay uniform; nothing here widens what a phone learns.
  *   chat   Helm → phone. An unsolicited agent message for a session. Carries no
  *          id: it answers nothing.
+ *   blob   Helm → phone. A download reply, and the ONE record that is not JSON:
+ *          a marker byte, a small JSON header and then RAW bytes. See
+ *          `encodeBlobResult` for why.
  *   lan    Helm → phone. Where this desktop can be reached over the network.
  *          Carries no id: it answers nothing. See MobileAddressAdvertiser — it
  *          rides the ALREADY AUTHENTICATED channel, which is the only reason a
@@ -205,6 +208,125 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   return encode(record);
 }
 
+/**
+ * The download reply, and the ONE record on this wire that is not JSON.
+ *
+ * WHY: a download answers with FILE BYTES, and a JSON record can only carry them
+ * as base64 — 4 chars per 3 bytes, a third more wire for nothing, on top of an
+ * encode on one side and a decode on the other. At 10MB that was 111 round trips
+ * of inflated text. Raw bytes make the same transfer ~11.
+ *
+ * The frame is:
+ *
+ *   byte 0      BLOB_MARKER — never '{' (0x7b), so a reader can tell this from a
+ *               JSON record by its FIRST byte and neither codec has to guess.
+ *   byte 1      BLOB_RECORD_VERSION.
+ *   bytes 2..3  uint16be header length.
+ *   header      UTF-8 JSON, fixed key order, exactly like every other record.
+ *   rest        the RAW body. `size` in the header is its length.
+ *
+ * Helm → phone ONLY. A phone never writes one, and `decodeRecord` refuses one,
+ * so this adds no inbound surface: every phone call is still a JSON `call`
+ * through MobileGate.
+ */
+export const BLOB_MARKER = 0xb1;
+
+/** Bumped only for a breaking change to the binary layout above. */
+export const BLOB_RECORD_VERSION = 1;
+
+/** The header is length-prefixed as a uint16, so it cannot exceed one. */
+export const BLOB_HEADER_PREFIX_BYTES = 4;
+
+export interface MobileBlobResult {
+  /** The call id this answers — the same correlation a result record carries. */
+  id: string;
+  filename: string;
+  mimeType: string;
+  /** The raw body. */
+  bytes: Buffer;
+  /** The artifact version, when the body is an artifact rather than a slice. */
+  version?: number;
+  /** Where this slice starts in the file. Sliced fetches only. */
+  offset?: number;
+  /** The whole file's length. Sliced fetches only. */
+  total?: number;
+  /** True when nothing follows this slice. Sliced fetches only. */
+  eof?: boolean;
+}
+
+/** Key order is part of the format here too — optional keys last, never null. */
+export function encodeBlobResult(blob: MobileBlobResult): Buffer {
+  const header: Record<string, unknown> = {
+    v: MOBILE_ENVELOPE_VERSION,
+    t: 'blob',
+    id: blob.id,
+    filename: blob.filename,
+    mimeType: blob.mimeType,
+    size: blob.bytes.length,
+  };
+  if (blob.version !== undefined) header.version = blob.version;
+  if (blob.offset !== undefined) header.offset = blob.offset;
+  if (blob.total !== undefined) header.total = blob.total;
+  if (blob.eof !== undefined) header.eof = blob.eof;
+
+  const headerBytes = Buffer.from(JSON.stringify(header), 'utf8');
+  if (headerBytes.length > 0xffff) {
+    throw new Error(`blob header of ${headerBytes.length} bytes exceeds the uint16 length prefix`);
+  }
+  const prefix = Buffer.alloc(BLOB_HEADER_PREFIX_BYTES);
+  prefix[0] = BLOB_MARKER;
+  prefix[1] = BLOB_RECORD_VERSION;
+  prefix.writeUInt16BE(headerBytes.length, 2);
+  return Buffer.concat([prefix, headerBytes, blob.bytes]);
+}
+
+/** Whether a payload is a blob record, decided on its first byte alone. */
+export function isBlobPayload(payload: Buffer): boolean {
+  return payload.length > 0 && payload[0] === BLOB_MARKER;
+}
+
+/**
+ * Parse one blob record. Like `decodeRecord` it NEVER throws — a truncated or
+ * mislabelled body is dropped, because the link outlives its payloads.
+ */
+export function decodeBlobResult(payload: Buffer): MobileBlobResult | null {
+  if (!isBlobPayload(payload) || payload.length < BLOB_HEADER_PREFIX_BYTES) return null;
+  if (payload[1] !== BLOB_RECORD_VERSION) return null;
+
+  const headerLength = payload.readUInt16BE(2);
+  const bodyStart = BLOB_HEADER_PREFIX_BYTES + headerLength;
+  if (payload.length < bodyStart) return null;
+
+  let header: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(payload.subarray(BLOB_HEADER_PREFIX_BYTES, bodyStart).toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    header = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  if (header.v !== MOBILE_ENVELOPE_VERSION || header.t !== 'blob') return null;
+  if (!isString(header.id) || !isString(header.filename) || !isString(header.mimeType)) return null;
+
+  const bytes = payload.subarray(bodyStart);
+  // The declared size is the authority on truncation: a short body is a torn
+  // transfer, and a slice that is quietly shorter than promised is exactly the
+  // "plausible but corrupt file" the slice loop cannot detect on its own.
+  if (header.size !== bytes.length) return null;
+
+  return {
+    id: header.id,
+    filename: header.filename,
+    mimeType: header.mimeType,
+    bytes: Buffer.from(bytes),
+    ...(typeof header.version === 'number' ? { version: header.version } : {}),
+    ...(typeof header.offset === 'number' ? { offset: header.offset } : {}),
+    ...(typeof header.total === 'number' ? { total: header.total } : {}),
+    ...(typeof header.eof === 'boolean' ? { eof: header.eof } : {}),
+  };
+}
+
 /** Addresses are emitted in the order given; the phone must not assume one. */
 export function encodeLan(addresses: string[]): Buffer {
   return encode({ v: MOBILE_ENVELOPE_VERSION, t: 'lan', addresses });
@@ -220,6 +342,9 @@ function encode(record: MobileRecord): Buffer {
  */
 export function decodeRecord(payload: Buffer): MobileRecord | null {
   if (payload.length === 0 || payload.length > MAX_ENVELOPE_BYTES) return null;
+  // A blob is Helm → phone only. Refused HERE rather than left to JSON.parse,
+  // so the "a phone may only ASK" rule is stated where it is enforced.
+  if (isBlobPayload(payload)) return null;
 
   let parsed: unknown;
   try {

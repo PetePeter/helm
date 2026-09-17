@@ -199,8 +199,14 @@ re-advertises to every live phone. No restart.
 
 ## Frame size
 
-`MAX_FRAME_BYTES` is 128 KiB and is an **application** ceiling that applies to
-both transports identically. LAN is faster, not bigger.
+`MAX_FRAME_BYTES` is 1 MiB and is an **application** ceiling that applies to
+both transports identically — LAN is faster, not bigger.
+
+What differs is what the phone **asks for**. BLE caps a single GATT message at
+256 KiB (`BleFraming.MAX_MESSAGE_BYTES`), so an attachment slice stays ~93 KiB
+there, while over LAN it asks for ~1 MB. The size is chosen per request from
+whichever transport owns the link *right now*, because LAN preempts BLE mid
+transfer and a slice sized for the wrong transport is refused, not merely slow.
 
 ## Module reference
 

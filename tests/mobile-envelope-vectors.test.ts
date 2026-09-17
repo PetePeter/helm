@@ -10,7 +10,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { MAX_ENVELOPE_BYTES, MOBILE_ENVELOPE_VERSION, decodeRecord } from '../src/mobile/mobile-envelope';
+import {
+  MAX_ENVELOPE_BYTES,
+  MOBILE_ENVELOPE_VERSION,
+  decodeBlobResult,
+  decodeRecord,
+} from '../src/mobile/mobile-envelope';
 import {
   buildEnvelopeVectors,
   ENVELOPE_VECTORS_RELATIVE_PATH,
@@ -31,7 +36,7 @@ describe('committed mobile envelope vectors', () => {
       version: MOBILE_ENVELOPE_VERSION,
       encoding: 'utf8-json',
       maxEnvelopeBytes: MAX_ENVELOPE_BYTES,
-      recordTypes: ['call', 'result', 'error', 'chat', 'lan'],
+      recordTypes: ['call', 'result', 'error', 'chat', 'lan', 'blob'],
     });
   });
 
@@ -47,6 +52,22 @@ describe('committed mobile envelope vectors', () => {
   it('covers both directions — a one-way fixture would leave half the app unverified', () => {
     const directions = new Set(committed.cases.map((testCase) => testCase.direction));
     expect([...directions].sort()).toEqual(['helm-to-phone', 'phone-to-helm']);
+  });
+
+  it('decodes every committed BLOB case back to its exact bytes', () => {
+    // The mirror of MobileEnvelopeVectorsTest on the Kotlin side. Asserting the
+    // decoded fields rather than the hex is what makes the vector a contract:
+    // a byte comparison would pass on a decoder that never ran.
+    expect(committed.blobs.length).toBeGreaterThan(0);
+    for (const blobCase of committed.blobs) {
+      const decoded = decodeBlobResult(Buffer.from(blobCase.bytesHex, 'hex'));
+      expect(decoded, blobCase.name).not.toBeNull();
+      expect(decoded!.id, blobCase.name).toBe(blobCase.id);
+      expect(decoded!.filename, blobCase.name).toBe(blobCase.filename);
+      expect(decoded!.mimeType, blobCase.name).toBe(blobCase.mimeType);
+      expect(decoded!.bytes.toString('hex'), blobCase.name).toBe(blobCase.bodyHex);
+      expect(decoded!.eof, blobCase.name).toBe(blobCase.eof);
+    }
   });
 
   it('refuses every committed reject case', () => {

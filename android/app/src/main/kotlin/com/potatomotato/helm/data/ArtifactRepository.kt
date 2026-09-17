@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
+import com.potatomotato.helm.wire.MobileRecord
 import org.json.JSONObject
 
 /**
@@ -66,10 +67,10 @@ data class HelmArtifactRead(
  * data class because a byte array has no meaningful structural equality — two
  * downloads of the same file are still two files.
  *
- * The same envelope carries an artifact VERSION's body and an ATTACHMENT's
- * bytes — the desktop answers both with `{filename, mimeType, base64, size}`,
- * and a version answer adds `version` while an attachment answer does not —
- * which is why [version] defaults instead of being required.
+ * The same record carries an artifact VERSION's body and an ATTACHMENT's bytes —
+ * the desktop answers both with a binary blob whose body is raw, and a version
+ * answer adds `version` while an attachment answer does not — which is why
+ * [version] defaults instead of being required.
  */
 class HelmArtifactFile(
     val artifactId: String,
@@ -293,35 +294,24 @@ class ArtifactRepository {
     }
 
     /**
-     * Take a `session_artifact_download` result — `{filename, mimeType, base64,
-     * size}` for an ATTACHMENT, the same keys plus `version` for a version's
-     * body. The base64 body DECODES here, because the one thing worse than no
-     * file is a corrupt one saved to the phone's storage. Same contract as the
-     * other arrivals: true when settled (applied, or a stale arrival for
-     * another artifact dropped), false when the answer could not be read.
+     * Take a `session_artifact_download` answer, which arrives as a binary
+     * [MobileRecord.Blob]: filename, mime type and the body as RAW BYTES. The
+     * base64 the answer used to carry is gone — it cost a third of the wire and
+     * a decode at both ends for a body that was never text.
+     *
+     * Same contract as the other arrivals: true when settled (applied, or a
+     * stale arrival for another artifact dropped), false when the answer could
+     * not be read.
      */
     fun downloadArrived(artifactId: String, result: Any?): Boolean {
         val state = _save.value
         if (state is ArtifactSave.Downloading && state.artifactId != artifactId) return true
 
-        val body = result as? JSONObject
-        val filename = body?.opt("filename") as? String
-        val mimeType = body?.opt("mimeType") as? String
-        val base64 = body?.opt("base64") as? String
-        if (filename == null || mimeType == null || base64 == null) {
+        val blob = result as? MobileRecord.Blob
+        if (blob == null) {
             WireShape.undecodable<Unit>(
                 "a session_artifact_download result",
-                "a JSON object with `filename`, `mimeType` and `base64` strings",
-                result,
-            )
-            return false
-        }
-        val bytes = try {
-            java.util.Base64.getDecoder().decode(base64)
-        } catch (_: IllegalArgumentException) {
-            WireShape.undecodable<Unit>(
-                "a session_artifact_download result",
-                "a `base64` string that decodes",
+                "a binary blob record carrying the file bytes",
                 result,
             )
             return false
@@ -329,13 +319,13 @@ class ArtifactRepository {
         _save.value = ArtifactSave.Ready(
             HelmArtifactFile(
                 artifactId = artifactId,
-                filename = filename,
-                mimeType = mimeType,
-                // A shape that answers no version — an attachment's, always — is
-                // the latest; 1 is what a fresh artifact is, and a file does not
+                filename = blob.filename,
+                mimeType = blob.mimeType,
+                // An answer with no version — an attachment's, always — is the
+                // latest; 1 is what a fresh artifact is, and a file does not
                 // care either way.
-                version = (body.opt("version") as? Number)?.toInt() ?: 1,
-                bytes = bytes,
+                version = blob.version ?: 1,
+                bytes = blob.bytes,
             ),
         )
         return true

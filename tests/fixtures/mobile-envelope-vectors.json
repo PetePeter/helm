@@ -8,7 +8,8 @@
       "result",
       "error",
       "chat",
-      "lan"
+      "lan",
+      "blob"
     ]
   },
   "cases": [
@@ -89,6 +90,44 @@
       "direction": "helm-to-phone",
       "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b5d7d",
       "json": "{\"v\":1,\"t\":\"lan\",\"addresses\":[]}"
+    }
+  ],
+  "blobs": [
+    {
+      "name": "attachment slice, more to come",
+      "bytesHex": "b10100767b2276223a312c2274223a22626c6f62222c226964223a226336222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a352c226f6666736574223a302c22746f74616c223a31312c22656f66223a66616c73657d007bff1020",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"c6\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":5,\"offset\":0,\"total\":11,\"eof\":false}",
+      "id": "c6",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "007bff1020",
+      "offset": 0,
+      "total": 11,
+      "eof": false
+    },
+    {
+      "name": "final attachment slice",
+      "bytesHex": "b10100757b2276223a312c2274223a22626c6f62222c226964223a226337222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a362c226f6666736574223a352c22746f74616c223a31312c22656f66223a747275657dfeedface0102",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"c7\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":6,\"offset\":5,\"total\":11,\"eof\":true}",
+      "id": "c7",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "feedface0102",
+      "offset": 5,
+      "total": 11,
+      "eof": true
+    },
+    {
+      "name": "empty tail slice",
+      "bytesHex": "b10100767b2276223a312c2274223a22626c6f62222c226964223a226338222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a302c226f6666736574223a31312c22746f74616c223a31312c22656f66223a747275657d",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"c8\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":0,\"offset\":11,\"total\":11,\"eof\":true}",
+      "id": "c8",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "",
+      "offset": 11,
+      "total": 11,
+      "eof": true
     }
   ],
   "rejects": [
