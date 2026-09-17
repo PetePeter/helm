@@ -1455,7 +1455,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_download',
     title: 'Download Session Artifact',
     description:
-      'Save one of a NAMED session\'s artifacts as a file (sessionId argument). Returns { filename, mimeType, base64 } for the latest version, or the given version. Content past the wire-frame budget (~94KB decoded, the largest body that fits an encoded frame) is refused — fetch it on the desktop, where the artifact viewer renders it in full.',
+      'Save one of a NAMED session\'s artifacts as a file (sessionId argument). Returns { filename, mimeType, base64 } for the latest version, or the given version. Artifact CONTENT past the wire-frame budget (~94KB decoded, the largest body that fits an encoded frame) is refused — fetch it on the desktop, where the artifact viewer renders it in full. An ATTACHMENT is not refused for size: it answers in slices, adding { offset, total, eof }, so a file of any size crosses by calling again with offset advanced until eof is true.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1463,6 +1463,8 @@ export const MCP_TOOLS: McpTool[] = [
         artifactId: { type: 'string', description: 'The artifact id to download.' },
         version: { type: 'number', description: 'Optional 1-based version number; omit for the latest.' },
         attachmentId: { type: 'string', description: 'Optional managed attachment id; mutually exclusive with version.' },
+        offset: { type: 'number', description: 'Attachment downloads only: byte offset to start from. Omit for 0.' },
+        length: { type: 'number', description: 'Attachment downloads only: bytes wanted, up to the ~94KB frame budget. Omit for as much as fits.' },
       },
       required: ['sessionId', 'artifactId'],
       additionalProperties: false,
@@ -1480,6 +1482,22 @@ export const MCP_TOOLS: McpTool[] = [
         artifactId: { type: 'string', description: 'The artifact id to delete.' },
       },
       required: ['sessionId', 'artifactId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_attachment_delete',
+    title: 'Delete Session Artifact Attachment',
+    description:
+      'Delete ONE managed attachment from a NAMED session\'s artifact (sessionId argument), leaving the artifact and its other attachments intact. Deleting the whole artifact already removes every attachment with it; use this to bin a single file. Helm deletes only its own managed copy, never a caller-owned source file. An unknown attachment answers { deleted: false } rather than failing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact holding the attachment.' },
+        attachmentId: { type: 'string', description: 'The attachment id to delete.' },
+      },
+      required: ['sessionId', 'artifactId', 'attachmentId'],
       additionalProperties: false,
     },
   },

@@ -19,6 +19,7 @@
 
 import { logger } from '../../utils/logger.js';
 import type {
+  ChatAttachmentRef,
   ChatBridge,
   ChatDeliveryResult,
   ChatInboundMessage,
@@ -28,8 +29,19 @@ import type {
 /** Injected sink that puts an inbound message in front of its session's CLI. */
 export type ChatInboundDeliver = (message: ChatInboundMessage) => Promise<void>;
 
+/**
+ * Injected sink that takes Helm's own copy of an outbound file and returns the
+ * ids a fileless surface can fetch it by. Returns undefined when the file
+ * cannot be taken — a missing path, an oversized file — which is never fatal.
+ */
+export type ChatAttachmentRegistrar = (
+  sessionId: string,
+  filePath: string,
+) => ChatAttachmentRef | undefined;
+
 export interface ChatBrokerOptions {
   deliver?: ChatInboundDeliver;
+  registerAttachment?: ChatAttachmentRegistrar;
 }
 
 export class ChatBroker {
@@ -37,9 +49,11 @@ export class ChatBroker {
   /** Kept per provider so unregister detaches exactly the handler it attached. */
   private readonly inboundHandlers = new Map<string, (message: ChatInboundMessage) => void>();
   private readonly deliver: ChatInboundDeliver | undefined;
+  private readonly registerAttachment: ChatAttachmentRegistrar | undefined;
 
   constructor(options: ChatBrokerOptions = {}) {
     this.deliver = options.deliver;
+    this.registerAttachment = options.registerAttachment;
   }
 
   /** Add a surface. Re-registering a provider replaces the previous bridge. */
@@ -72,7 +86,30 @@ export class ChatBroker {
    */
   async send(message: ChatOutboundMessage): Promise<ChatDeliveryResult[]> {
     const bridges = this.list();
-    return Promise.all(bridges.map(bridge => this.sendVia(bridge, message)));
+    const addressed = this.withAttachment(message);
+    return Promise.all(bridges.map(bridge => this.sendVia(bridge, addressed)));
+  }
+
+  /**
+   * Take Helm's own copy of an outbound file ONCE, here, before fan-out.
+   *
+   * Once per SEND rather than once per bridge: doing it inside a bridge would
+   * store the same photo twice the moment two surfaces are live, and the two
+   * copies would carry different ids for one file the user sent once.
+   *
+   * A failure is logged and dropped, never thrown. The surfaces that can carry
+   * a path are unaffected by the surfaces that cannot, and a message that has
+   * lost its file is still worth far more than no message at all.
+   */
+  private withAttachment(message: ChatOutboundMessage): ChatOutboundMessage {
+    if (!message.filePath || message.attachment || !this.registerAttachment) return message;
+    try {
+      const attachment = this.registerAttachment(message.sessionId, message.filePath);
+      return attachment ? { ...message, attachment } : message;
+    } catch (err) {
+      logger.warn(`[ChatBroker] Could not register a chat attachment: ${err}`);
+      return message;
+    }
   }
 
   private async sendVia(bridge: ChatBridge, message: ChatOutboundMessage): Promise<ChatDeliveryResult> {

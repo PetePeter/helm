@@ -166,6 +166,33 @@ describe('MobileChatBridge as a chat surface', () => {
     expect(links.records()[0]).toMatchObject({ filePath: 'C:\\tmp\\note.ogg', voice: true });
   });
 
+  it('carries the ids a phone can fetch an attachment by', async () => {
+    links.online.add('phone-machine');
+
+    await bridge.sendToSession({
+      sessionId: 's1',
+      text: 'here it is',
+      filePath: 'C:\\tmp\\holiday.jpg',
+      attachment: {
+        artifactId: 'art-1',
+        attachmentId: 'att-1',
+        filename: 'holiday.jpg',
+        mimeType: 'image/jpeg',
+        sizeBytes: 2_400_000,
+      },
+    });
+
+    // The path rides along for an older phone build, but the ids are the only
+    // part this end of the link can ever act on.
+    expect(links.records()[0]).toMatchObject({
+      artifactId: 'art-1',
+      attachmentId: 'att-1',
+      filename: 'holiday.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 2_400_000,
+    });
+  });
+
   it('refuses to send for a session that does not exist', async () => {
     links.online.add('phone-machine');
 

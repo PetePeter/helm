@@ -130,6 +130,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val sessions by client.sessions.sessions.collectAsState()
     val reach by client.sessions.reach.collectAsState()
     val threads by client.chats.threads.collectAsState()
+    val pulls by client.chats.pulls.collectAsState()
     val unreadCounts by client.chats.unreadCounts.collectAsState()
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
@@ -825,6 +826,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 onRetry = { key, text -> client.resendChat(open.id, key, text) },
                                 onDelete = { key -> client.chats.remove(open.id, key) },
                                 onTerminal = openTerminalPreview,
+                                pulls = pulls,
+                                onPull = { key, attachment ->
+                                    client.pullChatAttachment(open.id, key, attachment)
+                                },
+                                onCancelPull = { key -> client.chats.pullCancelled(key) },
+                                onDeleteAttachment = { key, attachment ->
+                                    client.deleteChatAttachment(open.id, key, attachment)
+                                },
                             )
 
                             SessionTab.Artifacts -> ArtifactsScreen(

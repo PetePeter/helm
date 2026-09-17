@@ -12,17 +12,22 @@
 
 import { randomUUID } from 'node:crypto';
 import {
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
+  readSync,
   rmSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
-import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES } from './artifact-download.js';
+import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES, resolveSliceWindow } from './artifact-download.js';
+import type { SliceWindow } from './artifact-download.js';
 import { getConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 
@@ -126,6 +131,40 @@ export class ArtifactAttachmentManager {
       throw new Error(`Attachment exceeds the mobile wire budget — fetch it on the desktop instead`);
     }
     return bytes;
+  }
+
+  /**
+   * Read ONE window of an attachment, so a file far larger than a wire frame
+   * can still cross in order. Only the window is read off disk — a 10MB photo
+   * never becomes a 10MB Buffer here just to hand back 64KiB of it.
+   *
+   * `total` comes from the file on disk rather than the index: the index records
+   * what was written, and a caller looping to `eof` must agree with the bytes it
+   * is actually being given.
+   */
+  readSlice(
+    artifactId: string,
+    attachmentId: string,
+    offset?: number,
+    length?: number,
+  ): { bytes: Buffer; window: SliceWindow; total: number } {
+    const path = this.getPath(artifactId, attachmentId);
+    const total = statSync(path).size;
+    const window = resolveSliceWindow(total, offset, length);
+    if (window.length === 0) return { bytes: Buffer.alloc(0), window, total };
+
+    const buffer = Buffer.alloc(window.length);
+    const handle = openSync(path, 'r');
+    try {
+      const read = readSync(handle, buffer, 0, window.length, window.offset);
+      // A short read means the file changed under us; report what is true now
+      // rather than padding the tail with zeroes the caller would save as data.
+      return read === window.length
+        ? { bytes: buffer, window, total }
+        : { bytes: buffer.subarray(0, read), window: { ...window, length: read, eof: true }, total };
+    } finally {
+      closeSync(handle);
+    }
   }
 
   /** Delete one attachment, used to roll back a failed artifact update. */

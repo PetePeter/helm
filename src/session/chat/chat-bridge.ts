@@ -18,8 +18,27 @@ export interface ChatOutboundMessage {
   text: string;
   /** Absolute path to an attachment. Bridges that cannot carry files skip it. */
   filePath?: string;
+  /**
+   * The SAME file as `filePath`, registered as an artifact attachment so a
+   * surface that cannot read the desktop's filesystem can still fetch it.
+   *
+   * Two ways to name one file is deliberate, not duplication: Telegram uploads
+   * the bytes and needs a path; a phone has no path it could ever open and
+   * needs an id to ask for. Each bridge takes the half it can carry, which is
+   * the same rule that already lets a text-only bridge skip `filePath`.
+   */
+  attachment?: ChatAttachmentRef;
   /** Send an audio attachment as a native voice message where supported. */
   asVoice?: boolean;
+}
+
+/** Where a chat file lives once Helm owns a copy of it. */
+export interface ChatAttachmentRef {
+  artifactId: string;
+  attachmentId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 /** What one bridge reports about one send. Never throws out of a broker. */

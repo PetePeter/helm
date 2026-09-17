@@ -63,6 +63,21 @@ sealed interface MobileRecord {
          */
         val artifactId: String? = null,
         val title: String? = null,
+
+        /**
+         * An attached FILE, named by ids rather than by a path.
+         *
+         * [filePath] above is the desktop's own path for the same file and has
+         * never been openable from here — it is another machine's filesystem.
+         * These are what this end can act on: [artifactId] + [attachmentId]
+         * address a `session_artifact_download`, which answers in slices, so a
+         * file far larger than a frame still crosses. The name and size ride
+         * along so a tile can be drawn before anything is fetched.
+         */
+        val attachmentId: String? = null,
+        val filename: String? = null,
+        val mimeType: String? = null,
+        val sizeBytes: Long? = null,
     ) : MobileRecord
 
     /**

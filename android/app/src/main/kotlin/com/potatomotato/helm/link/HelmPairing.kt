@@ -15,6 +15,7 @@ import com.potatomotato.helm.data.PskStore
 import com.potatomotato.helm.data.pairedDesktops
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AndroidNotifications
+import com.potatomotato.helm.save.AndroidArtifactFiles
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,6 +96,10 @@ object HelmPairing {
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.
         client.chats.useUnreadStore(PrefsUnreadStore(context))
+        // Where a pulled chat file lands. Downloads, like an artifact download:
+        // a file the user cannot find in the place they look for files has not
+        // really arrived. Attached late for the same Context reason as above.
+        client.saveAttachment = AndroidArtifactFiles(context)::save
         val keys = DeviceKeyStore(context)
         store = keys
         // Where the desktop says it can be reached (P-0752). Keyed on the LIVE

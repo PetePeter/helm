@@ -32,6 +32,8 @@ data class ChatMessage(
     val delivery: Delivery? = null,
     val filePath: String? = null,
     val voice: Boolean = false,
+    /** A file Helm is offering. Null on an ordinary message. */
+    val attachment: ChatAttachment? = null,
 )
 
 /**
@@ -102,6 +104,7 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
                 fromPhone = false,
                 filePath = record.filePath,
                 voice = record.voice,
+                attachment = attachmentIn(record),
             ),
         )
         // Only what arrives unseen counts. The thread the user is reading is
@@ -163,6 +166,100 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
         return sending(sessionId, failed.text, at)
     }
 
+    // -------------------------------------------------------------------------
+    // Attachment pulls
+    //
+    // Kept HERE rather than in the screen because a fetch outruns its composable:
+    // scrolling a tile off screen, or leaving the thread and coming back, must
+    // not restart a transfer that is halfway across a BLE link.
+    // -------------------------------------------------------------------------
+
+    private val _pulls = MutableStateFlow<Map<String, PullState>>(emptyMap())
+
+    /** Per-message fetch state, keyed by [ChatMessage.key]. */
+    val pulls: StateFlow<Map<String, PullState>> = _pulls.asStateFlow()
+
+    private val transfers = mutableMapOf<String, AttachmentTransfer>()
+
+    fun pullState(key: String): PullState = _pulls.value[key] ?: PullState.Idle
+
+    /**
+     * Begin (or resume) a fetch. Returns the offset to ask from — which is not
+     * always zero: a retry after a stumble resumes from what already arrived.
+     * Returns null when a fetch is already running, so a double tap on the tile
+     * cannot start two loops writing into one buffer.
+     */
+    fun pullStarted(key: String, attachment: ChatAttachment): Long? {
+        if (_pulls.value[key] is PullState.Pulling) return null
+        val transfer = transfers.getOrPut(key) { AttachmentTransfer(attachment.sizeBytes) }
+        setPull(key, transfer.state())
+        return transfer.nextOffset()
+    }
+
+    /**
+     * Take one slice. Returns the complete file when that slice was the last
+     * one, and null while there is more to come — so the caller has exactly one
+     * signal for "now save it". A slice that does not fit where we are is
+     * reported as a failure rather than quietly dropped: silently ignoring it
+     * would leave the loop asking for the same offset forever.
+     */
+    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? {
+        val transfer = transfers[key] ?: return null
+        if (!transfer.accept(offset, bytes, eof)) {
+            pullFailed(key, OUT_OF_ORDER)
+            return null
+        }
+        if (!transfer.done) {
+            setPull(key, transfer.state())
+            return null
+        }
+        return transfer.bytes()
+    }
+
+    /** Where the next slice must start, or null when nothing is in flight. */
+    fun pullOffset(key: String): Long? = transfers[key]?.nextOffset()
+
+    /**
+     * The fetch stumbled. What arrived is KEPT: a retry resumes from there,
+     * which on a slow link is the difference between a lost minute and a lost
+     * transfer.
+     */
+    fun pullFailed(key: String, message: String) {
+        setPull(key, PullState.Failed(message))
+    }
+
+    /** The bytes reached the device. The tile becomes an open button. */
+    fun pullSaved(key: String, uri: String) {
+        transfers.remove(key)
+        setPull(key, PullState.Ready(uri))
+    }
+
+    /** Abandon a fetch and its part-file. Nothing half-written is kept. */
+    fun pullCancelled(key: String) {
+        transfers.remove(key)
+        setPull(key, PullState.Idle)
+    }
+
+    private fun setPull(key: String, state: PullState) {
+        _pulls.value = if (state is PullState.Idle) _pulls.value - key else _pulls.value + (key to state)
+    }
+
+    /** The attachment keys travel flat on the wire; they are one thing here. */
+    private fun attachmentIn(record: MobileRecord.Chat): ChatAttachment? {
+        val artifactId = record.artifactId ?: return null
+        val attachmentId = record.attachmentId ?: return null
+        return ChatAttachment(
+            artifactId = artifactId,
+            attachmentId = attachmentId,
+            // A record missing a name or a type is still fetchable; only the
+            // ids are load-bearing, so the rest falls back rather than
+            // discarding a file the desktop meant to send.
+            filename = record.filename ?: attachmentId,
+            mimeType = record.mimeType ?: "application/octet-stream",
+            sizeBytes = record.sizeBytes ?: 0L,
+        )
+    }
+
     private fun append(sessionId: String, message: ChatMessage) {
         val thread = (_threads.value[sessionId].orEmpty() + message).takeLast(MAX_THREAD)
         _threads.value = _threads.value + (sessionId to thread)
@@ -185,5 +282,8 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
          * Oldest goes first; scrollback beyond this is the desktop's job.
          */
         const val MAX_THREAD = 200
+
+        /** A slice that did not fit where the transfer was. See [sliceArrived]. */
+        const val OUT_OF_ORDER = "The file arrived out of order"
     }
 }

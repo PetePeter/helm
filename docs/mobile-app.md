@@ -91,6 +91,18 @@ removes.
   still the user's. The action buttons move between a row and a stack as the
   draft wraps, debounced and then guarded for 250 ms so a button arriving under a
   descending thumb cannot take the tap (`ComposerStack`).
+- **Attachments** — a message carrying a file shows a tile with its name and
+  size, and **nothing is fetched until it is tapped**: the bytes cross the same
+  radio as the conversation, and a thread of photos fetching themselves would
+  hold it for minutes. A tap pages the file down in 64KiB slices
+  (`session_artifact_download` with `offset`/`length`), showing progress and
+  offering a stop; a stumble retries and **resumes** from what arrived. A slice
+  that repeats or skips fails the tile rather than being appended, because a
+  corrupt file that opens is worse than a transfer that can be retried. The file
+  lands in **Downloads**, like an artifact download. Deleting it from the tile
+  deletes Helm's copy too. Inline image preview is **not** built yet — a photo is
+  opened from Downloads. See [chat-fan-out.md](chat-fan-out.md) for why the file
+  is an artifact attachment rather than bytes on the wire.
 - **Artifacts** (tab) — the session's artifact list, re-pulled on every arrival.
   Opening a row pushes the artifact **detail**, which hangs off the tab and
   carries its own bar.

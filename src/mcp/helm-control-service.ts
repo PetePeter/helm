@@ -558,6 +558,26 @@ export class HelmControlService extends EventEmitter {
     return { id, deleted: this.requireArtifactManager().delete(id) };
   }
 
+  /**
+   * Delete ONE attachment without touching the artifact that holds it.
+   *
+   * The whole-artifact delete already removes every attachment with it; this is
+   * the finer cut a chat file needs — binning one photo out of a thread should
+   * not bin the thread's artifact. Same ownership rule as every artifact call:
+   * an id belonging to another session answers not-found, and an unknown
+   * attachment answers `deleted: false` rather than throwing, so a phone that
+   * taps delete twice sees the second tap as "already gone", not an error.
+   */
+  deleteArtifactAttachment(
+    callerSessionId: string,
+    artifactId: string,
+    attachmentId: string,
+  ): { artifactId: string; attachmentId: string; deleted: boolean } {
+    const artifact = this.requireOwnedArtifact(callerSessionId, artifactId);
+    const deleted = this.requireArtifactAttachmentManager().delete(artifact.id, attachmentId);
+    return { artifactId: artifact.id, attachmentId, deleted };
+  }
+
   /** Summaries of this session's artifacts (no content) so the LLM can see its own. */
   listArtifacts(sessionId: string): Array<{
     id: string;
@@ -624,19 +644,31 @@ export class HelmControlService extends EventEmitter {
     sessionId: string,
     id: string,
     version?: number,
-    options?: { attachmentId?: string },
+    options?: { attachmentId?: string; offset?: number; length?: number },
   ): ArtifactDownload {
     const artifact = this.requireOwnedArtifact(sessionId, id);
     if (options?.attachmentId) {
       if (version !== undefined) throw new Error('attachmentId cannot be combined with version');
-      const attachment = this.requireArtifactAttachmentManager().get(artifact.id, options.attachmentId);
+      const attachments = this.requireArtifactAttachmentManager();
+      const attachment = attachments.get(artifact.id, options.attachmentId);
       if (!attachment) throw new Error(`Attachment not found: ${options.attachmentId}`);
-      const bytes = this.requireArtifactAttachmentManager().readBytes(artifact.id, attachment.id);
+      // Always sliced, even when the caller asked for no window: one path means
+      // a 40KiB note and a 4MB photo are fetched by the same loop, and the
+      // caller never has to know in advance which one it is holding.
+      const { bytes, window, total } = attachments.readSlice(
+        artifact.id,
+        attachment.id,
+        options.offset,
+        options.length,
+      );
       return {
         filename: attachment.filename,
         mimeType: attachment.contentType ?? 'application/octet-stream',
         base64: bytes.toString('base64'),
         size: bytes.byteLength,
+        offset: window.offset,
+        total,
+        eof: window.eof,
       };
     }
     return buildArtifactDownload(artifact, version);

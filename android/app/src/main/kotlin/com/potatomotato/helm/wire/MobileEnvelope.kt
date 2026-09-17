@@ -151,6 +151,13 @@ object MobileEnvelope {
             kind = record.string("kind"),
             artifactId = record.string("artifactId"),
             title = record.string("title"),
+            attachmentId = record.string("attachmentId"),
+            filename = record.string("filename"),
+            mimeType = record.string("mimeType"),
+            // A size that is not a number is dropped rather than guessed: it
+            // only drives a progress bar, and a wrong total there reads as a
+            // stalled transfer.
+            sizeBytes = (record.opt("sizeBytes") as? Number)?.toLong(),
         )
     }
 

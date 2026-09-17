@@ -112,6 +112,17 @@ export class MobileChatBridge implements ChatBridge {
       at: this.now(),
       ...(message.filePath ? { filePath: message.filePath } : {}),
       ...(message.asVoice ? { voice: true } : {}),
+      // The ids are what the phone can actually act on; the path beside them is
+      // another machine's filesystem and has never been fetchable from here.
+      ...(message.attachment
+        ? {
+            artifactId: message.attachment.artifactId,
+            attachmentId: message.attachment.attachmentId,
+            filename: message.attachment.filename,
+            mimeType: message.attachment.mimeType,
+            sizeBytes: message.attachment.sizeBytes,
+          }
+        : {}),
     });
 
     // Every linked phone gets it; one refusing does not cancel the others.

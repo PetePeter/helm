@@ -9,6 +9,7 @@ import {
   asContextBindingTargetType,
   asMdArtifactKind,
   asOptionalArtifactVersion,
+  asOptionalByteCount,
   asFiniteNumber,
   asDreamCandidateCount,
   asDreamPercentile,
@@ -776,16 +777,37 @@ export async function callMcpTool(
         const attachmentId = args.attachmentId === undefined
           ? undefined
           : asString(args.attachmentId, 'attachmentId must not be empty');
+        const offset = asOptionalByteCount(args.offset, 'offset', 0);
+        const length = asOptionalByteCount(args.length, 'length', 1);
+        if (attachmentId === undefined && (offset !== undefined || length !== undefined)) {
+          // Artifact bodies are versioned text with their own inline cap; only
+          // attachments are stored as files a window can be read from.
+          throw new Error('offset and length apply to an attachmentId download');
+        }
         return service.downloadArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
           asOptionalArtifactVersion(args.version),
-          attachmentId ? { attachmentId } : undefined,
+          attachmentId
+            ? {
+                attachmentId,
+                ...(offset !== undefined ? { offset } : {}),
+                ...(length !== undefined ? { length } : {}),
+              }
+            : undefined,
         );
       }
       case 'session_artifact_delete': {
         const target = requireTargetSession(service, args);
         return service.deleteArtifact(target, asString(args.artifactId, 'artifactId is required'));
+      }
+      case 'session_artifact_attachment_delete': {
+        const target = requireTargetSession(service, args);
+        return service.deleteArtifactAttachment(
+          target,
+          asString(args.artifactId, 'artifactId is required'),
+          asString(args.attachmentId, 'attachmentId is required'),
+        );
       }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');

@@ -22,6 +22,7 @@ import { PatternMatcher } from '../../session/pattern-matcher.js';
 import { HandoverDelivery } from '../../session/handover-delivery.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { ChatBroker } from '../../session/chat/chat-broker.js';
+import { createChatAttachmentRegistrar } from '../../session/chat/chat-attachment-registrar.js';
 import { setupHandoverHandlers } from './handover-handlers.js';
 import { ScheduledTaskManager } from '../../session/scheduled-task-manager.js';
 import { ScheduledTaskHistoryManager } from '../../session/scheduled-task-history-manager.js';
@@ -261,6 +262,13 @@ export function registerIPCHandlers(
         configLoader,
       });
     },
+    // A file sent over chat is copied into the session's artifact attachments
+    // so a surface with no filesystem access to this machine can still fetch
+    // it. Telegram keeps using the path; see chat-attachment-registrar.ts.
+    registerAttachment: createChatAttachmentRegistrar({
+      artifacts: artifactManager,
+      attachments: artifactAttachmentManager,
+    }),
   });
   chatBroker.register(telegramModules.relayService);
   helmControlService.setChatBroker(chatBroker);

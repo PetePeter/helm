@@ -2,7 +2,10 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
+import com.potatomotato.helm.data.ATTACHMENT_SLICE_BYTES
 import com.potatomotato.helm.data.CapabilityCache
+import com.potatomotato.helm.data.ChatAttachment
+import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.ChatRepository
 import com.potatomotato.helm.data.ContextRepository
 import com.potatomotato.helm.data.ControlRepository
@@ -373,6 +376,117 @@ class HelmClient(
             ),
         )
     }
+
+    /**
+     * Where a pulled chat attachment is written, and what to call the place it
+     * landed. A settable port for the same reason [onLanAddresses] is one: the
+     * device sink needs a Context and this client is built before there is one.
+     * The default refuses, so a build that never wires it fails legibly on the
+     * tile rather than pretending to have saved something.
+     */
+    var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> String = { _, _, _ ->
+        throw IllegalStateException(NO_FILE_SINK)
+    }
+
+    /**
+     * Fetch a chat attachment, slice by slice, and save it when the last one
+     * lands.
+     *
+     * The loop lives here rather than in the screen because a transfer outruns
+     * its composable: scrolling the tile away or leaving the thread must not
+     * restart a fetch that is halfway across a BLE link. Each slice's answer
+     * asks for the next one — no timer, no concurrency, and therefore no way
+     * for two slices to be in flight writing into one buffer.
+     *
+     * Returns false when there is nothing to start: no link, or a fetch for
+     * this message is already running.
+     */
+    fun pullChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
+        val offset = chats.pullStarted(key, attachment) ?: return false
+        return requestSlice(sessionId, key, attachment, offset)
+    }
+
+    private fun requestSlice(
+        sessionId: String,
+        key: String,
+        attachment: ChatAttachment,
+        offset: Long,
+    ): Boolean = call(
+        METHOD_SESSION_ARTIFACT_DOWNLOAD,
+        linkedMapOf(
+            "sessionId" to sessionId,
+            "artifactId" to attachment.artifactId,
+            "attachmentId" to attachment.attachmentId,
+            "offset" to offset,
+            "length" to ATTACHMENT_SLICE_BYTES,
+        ),
+    ) { outcome ->
+        when (outcome) {
+            is Outcome.Ok -> takeSlice(sessionId, key, attachment, offset, outcome.result)
+            is Outcome.Failed -> chats.pullFailed(key, outcome.message)
+        }
+    }
+
+    /**
+     * One slice's answer. A body that will not decode is a failure, not an
+     * empty slice: treating it as empty would leave the loop asking for the
+     * same offset forever.
+     */
+    private fun takeSlice(
+        sessionId: String,
+        key: String,
+        attachment: ChatAttachment,
+        offset: Long,
+        result: Any?,
+    ) {
+        val body = result as? JSONObject
+        val base64 = body?.opt("base64") as? String
+        if (base64 == null) {
+            chats.pullFailed(key, UNREADABLE_DOWNLOAD)
+            return
+        }
+        val bytes = try {
+            java.util.Base64.getDecoder().decode(base64)
+        } catch (error: IllegalArgumentException) {
+            HelmLog.w(HelmLog.CLIENT, "an attachment slice was not valid base64")
+            chats.pullFailed(key, UNREADABLE_DOWNLOAD)
+            return
+        }
+
+        val whole = chats.sliceArrived(key, offset, bytes, body.opt("eof") == true)
+        if (whole == null) {
+            // Either more to come, or the repository rejected a slice that did
+            // not fit — in which case it has already failed the tile.
+            if (chats.pullState(key) is PullState.Pulling) {
+                requestSlice(sessionId, key, attachment, chats.pullOffset(key) ?: return)
+            }
+            return
+        }
+
+        try {
+            chats.pullSaved(key, saveAttachment(attachment.filename, attachment.mimeType, whole))
+        } catch (error: Exception) {
+            HelmLog.w(HelmLog.CLIENT, "a pulled attachment could not be written to storage")
+            chats.pullFailed(key, error.message ?: NO_FILE_SINK)
+        }
+    }
+
+    /**
+     * Bin ONE attachment without binning the artifact that holds it. The tile
+     * goes with it; a file the desktop no longer has is not one to offer.
+     */
+    fun deleteChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
+        act(
+            SessionAction.DeleteArtifact,
+            METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE,
+            linkedMapOf(
+                "sessionId" to sessionId,
+                "artifactId" to attachment.artifactId,
+                "attachmentId" to attachment.attachmentId,
+            ),
+        ) { outcome ->
+            if (outcome is Outcome.Ok) chats.remove(sessionId, key)
+        }
 
     /** One `session_artifact_download` ask; [artifactId] is who the answer belongs to. */
     private fun fetchArtifactFile(artifactId: String, params: Map<String, Any>): Boolean =
@@ -782,6 +896,7 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_UPDATE = "session_artifact_update"
         private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
         private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
+        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"
 
         /**
          * Helm's planning surface, READ side only. No `plan_create`,
@@ -817,6 +932,7 @@ class HelmClient(
 
         /** Same failure, for the download — an unreadable answer is not a file. */
         private const val UNREADABLE_DOWNLOAD = "Helm answered with a file this app could not read"
+        private const val NO_FILE_SINK = "This build cannot write files to the device"
 
         /** Refused client-side, before the link is asked to carry bytes it cannot. */
         private const val TOO_LARGE = "That would not fit the link — trim it, or write it on the desktop"

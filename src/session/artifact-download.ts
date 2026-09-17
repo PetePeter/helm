@@ -74,8 +74,59 @@ export interface ArtifactDownload {
   base64: string;
   /** The version this envelope carries, when downloading artifact content. */
   version?: number;
-  /** Decoded byte length. */
+  /** Decoded byte length — of THIS envelope, which may be one slice of a file. */
   size: number;
+  /** Where this slice starts in the file. Present only for a sliced fetch. */
+  offset?: number;
+  /** The whole file's byte length. Present only for a sliced fetch. */
+  total?: number;
+  /** True when nothing follows this slice. Present only for a sliced fetch. */
+  eof?: boolean;
+}
+
+/** One window of a file, resolved against its real length. */
+export interface SliceWindow {
+  offset: number;
+  length: number;
+  eof: boolean;
+}
+
+/**
+ * Resolve a caller's `offset`/`length` against a file's real size.
+ *
+ * WHY THIS EXISTS: a frame carries ~96KiB decoded, but an attachment may be
+ * 10MB. Without slicing the only honest answer for a photo is "fetch it on the
+ * desktop", which is no answer at all for a phone. Slicing makes the SAME cap
+ * a per-request budget instead of a per-file verdict.
+ *
+ * The rules that matter, and why each is a refusal rather than a silent fix:
+ *  - A length past the frame budget is REFUSED, never truncated. Truncating
+ *    would hand back fewer bytes than asked with no way to tell that from a
+ *    short tail, and a caller looping on `eof` would stop early with a corrupt
+ *    file. A cap the caller can see beats one it cannot.
+ *  - An offset past the end is NOT an error: a loop that lands exactly on the
+ *    boundary asks once more, and answering "nothing, and that was the end" is
+ *    the cheapest correct reply.
+ */
+export function resolveSliceWindow(total: number, offset?: number, length?: number): SliceWindow {
+  const from = offset ?? 0;
+  if (!Number.isInteger(from) || from < 0) {
+    throw new Error(`offset must be a non-negative integer, got ${offset}`);
+  }
+  if (length !== undefined && (!Number.isInteger(length) || length <= 0)) {
+    throw new Error(`length must be a positive integer, got ${length}`);
+  }
+  if (length !== undefined && length > ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES) {
+    throw new Error(
+      `length ${length} is past the ${ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES}-byte ` +
+        'slice budget (the mobile wire frame) — ask for a smaller slice',
+    );
+  }
+
+  const remaining = Math.max(0, total - from);
+  const want = length ?? ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES;
+  const size = Math.min(want, remaining);
+  return { offset: from, length: size, eof: from + size >= total };
 }
 
 /**

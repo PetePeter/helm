@@ -51,7 +51,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
+import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
+import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.LinkedText
@@ -78,6 +80,11 @@ fun ChatScreen(
     onDelete: (key: String) -> Unit,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Per-message attachment fetch state, keyed like the thread. */
+    pulls: Map<String, PullState> = emptyMap(),
+    onPull: (key: String, attachment: ChatAttachment) -> Unit = { _, _ -> },
+    onCancelPull: (key: String) -> Unit = {},
+    onDeleteAttachment: (key: String, attachment: ChatAttachment) -> Unit = { _, _ -> },
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. The
@@ -146,7 +153,17 @@ fun ChatScreen(
                 contentPadding = PaddingValues(HelmSpacing.Gutter),
                 verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
             ) {
-                items(messages, key = { it.key }) { Bubble(it, onRetry = onRetry, onDelete = onDelete) }
+                items(messages, key = { it.key }) {
+                    Bubble(
+                        message = it,
+                        onRetry = onRetry,
+                        onDelete = onDelete,
+                        pulls = pulls,
+                        onPull = onPull,
+                        onCancelPull = onCancelPull,
+                        onDeleteAttachment = onDeleteAttachment,
+                    )
+                }
             }
         }
 
@@ -170,6 +187,10 @@ private fun Bubble(
     message: ChatMessage,
     onRetry: (key: String, text: String) -> Unit,
     onDelete: (key: String) -> Unit,
+    pulls: Map<String, PullState>,
+    onPull: (key: String, attachment: ChatAttachment) -> Unit,
+    onCancelPull: (key: String) -> Unit,
+    onDeleteAttachment: (key: String, attachment: ChatAttachment) -> Unit,
 ) {
     val fromPhone = message.fromPhone
 
@@ -224,6 +245,15 @@ private fun Bubble(
                             ),
                         )
                     }
+                    message.attachment?.let { attachment ->
+                        AttachmentTile(
+                            attachment = attachment,
+                            state = pulls[message.key] ?: PullState.Idle,
+                            onPull = { onPull(message.key, attachment) },
+                            onCancel = { onCancelPull(message.key) },
+                            onDelete = { onDeleteAttachment(message.key, attachment) },
+                        )
+                    }
                     Text(
                         text = formatBubbleTime(message.at),
                         color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,
@@ -264,6 +294,83 @@ private fun Bubble(
             }
         }
     }
+}
+
+/**
+ * The file a message is carrying, and the one tap that fetches it.
+ *
+ * TAP TO PULL, never automatic. The bytes cross the same BLE or LAN link the
+ * conversation uses, and a thread full of photos fetching themselves would hold
+ * that link for minutes at a time on a radio that manages a few KB a second.
+ * The name and size are on the wire, so the user decides with the facts in front
+ * of them rather than after the fact.
+ *
+ * Every state offers a way onward: a stumble retries (resuming, not restarting),
+ * a fetch in flight can be abandoned, and a file that is no longer wanted is
+ * deleted on the DESKTOP — the tile going away on its own would leave the file
+ * sitting in the session's artifacts where the user cannot see it.
+ */
+@Composable
+private fun AttachmentTile(
+    attachment: ChatAttachment,
+    state: PullState,
+    onPull: () -> Unit,
+    onCancel: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .padding(top = HelmSpacing.Sm)
+            .clip(RoundedCornerShape(HelmRadius.Md))
+            .background(HelmColors.Surface)
+            .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+            .padding(HelmSpacing.Sm),
+    ) {
+        Text(
+            text = attachment.filename,
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+        )
+        Text(
+            text = when (state) {
+                is PullState.Idle -> formatBytes(attachment.sizeBytes)
+                is PullState.Pulling -> stringResource(
+                    R.string.chat_attachment_pulling,
+                    formatBytes(state.received),
+                    formatBytes(state.total),
+                )
+                is PullState.Ready -> state.uri
+                is PullState.Failed -> state.message
+            },
+            color = if (state is PullState.Failed) HelmColors.Danger else HelmColors.Dim,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(top = HelmSpacing.Xs),
+        )
+        Row(
+            modifier = Modifier.padding(top = HelmSpacing.Xs),
+            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+        ) {
+            when (state) {
+                is PullState.Idle ->
+                    BubbleAction(R.string.chat_attachment_glyph, R.string.chat_attachment_get, HelmColors.Accent, onPull)
+                is PullState.Pulling ->
+                    BubbleAction(R.string.chat_delete_glyph, R.string.chat_attachment_cancel, HelmColors.Dim, onCancel)
+                is PullState.Ready -> Unit
+                is PullState.Failed ->
+                    BubbleAction(R.string.chat_retry_glyph, R.string.chat_attachment_get, HelmColors.Danger, onPull)
+            }
+            if (state !is PullState.Pulling) {
+                BubbleAction(R.string.chat_delete_glyph, R.string.chat_attachment_delete, HelmColors.Dim, onDelete)
+            }
+        }
+    }
+}
+
+/** Sizes as a person reads them. One decimal past KB — bytes are not news. */
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }
 
 @Composable

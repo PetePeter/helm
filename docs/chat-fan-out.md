@@ -97,7 +97,7 @@ than emitted as null, so two encoders in two languages produce identical bytes.
 | `call` | phone → Helm | A tool invocation. The only inbound kind. |
 | `result` | Helm → phone | The gate's return value for one call id. |
 | `error` | Helm → phone | JSON-RPC-shaped failure; deny messages stay uniform. |
-| `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. |
+| `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. Optionally carries an attachment's ids (see below). |
 
 Decoding never throws — a malformed record is dropped and logged.
 
@@ -116,6 +116,54 @@ encodes byte-identically and **no vector was regenerated** — the same preceden
 as `SessionSummary.activityLevel`. It is emitted last, after the other optional
 keys, because key order is part of the format. Routing happens once, at decode,
 in `HelmClient.onInbound`.
+
+## Attachments — one file, two ways to name it
+
+`chat_send` takes a `filePath`, and the two surfaces need opposite things from
+it. Telegram uploads the bytes to **its own servers**, which then carry them to
+the phone's Telegram client; it needs a path. The paired phone has no server in
+the middle — BLE or LAN direct is the only pipe — and a desktop path reaches it
+as a string naming another machine's filesystem. It needs an **id it can ask
+for**.
+
+So `ChatBroker.send` takes Helm's own copy of the file **once**, before fan-out,
+through the injected `ChatAttachmentRegistrar`
+(`src/session/chat/chat-attachment-registrar.ts`), and puts the ids on the
+message beside the path:
+
+```mermaid
+graph LR
+    CS["chat_send(filePath)"] --> CB[ChatBroker]
+    CB -->|registers once| AA[Artifact attachment<br/>'Chat files' artifact]
+    CB --> TG[Telegram bridge<br/>uses filePath]
+    CB --> MB[Mobile bridge<br/>uses attachmentId]
+    MB -.->|tap to pull| SAD[session_artifact_download<br/>offset/length slices]
+    SAD --> AA
+```
+
+Each bridge takes the half it can carry — the same rule that already lets a
+text-only bridge skip `filePath`. Registration is once per **send**, not once per
+bridge: doing it per bridge would store one photo twice and give two surfaces
+different ids for one file. A failure to take the copy is logged and dropped; a
+message that lost its file still beats no message.
+
+**Why artifact attachments and not a new store.** They are already per-session,
+already capped at 10MB, already pruned with the session, and already reachable
+from a phone through the allow-listed `session_artifact_*` family. A second
+store would have duplicated all four and given the user two places to look. All
+of a session's chat files sit under **one** artifact (`Chat files`), so a chatty
+afternoon does not bury the session's real reports.
+
+**Slices.** A frame carries ~94KiB and a photo is measured in megabytes, so
+`session_artifact_download` takes optional `offset`/`length` and answers
+`{ offset, total, eof }` for an attachment. The phone loops until `eof`
+(`HelmClient.pullChatAttachment`, 64KiB at a time), and only a **whole** file is
+saved. A slice that repeats or skips is refused rather than appended, because a
+corrupt file that opens is worse than a transfer the user can retry — and a
+retry resumes from what arrived. Fetching is always a **tap**, never automatic:
+a thread of photos fetching themselves would hold the radio for minutes.
+
+`session_artifact_attachment_delete` bins one file without binning the artifact.
 
 ## Alerts — the phone's notification path
 

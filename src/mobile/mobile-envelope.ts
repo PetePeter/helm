@@ -105,6 +105,24 @@ export interface MobileChatRecord {
    */
   artifactId?: string;
   title?: string;
+  /**
+   * An attached FILE the phone may fetch, named by ids rather than by a path.
+   *
+   * `filePath` above is the same file as the desktop sees it, and the phone has
+   * never been able to open it — it is another machine's filesystem. These keys
+   * are what the phone CAN act on: `artifactId` + `attachmentId` address a
+   * `session_artifact_download`, which answers in slices, so a file far larger
+   * than a frame still crosses. The metadata rides along so the tile can show a
+   * name and a size before anything is fetched.
+   *
+   * Emitted after `kind` to keep the byte-identical key order the cross-language
+   * vectors pin. `filePath` keeps being emitted beside them: it costs one string
+   * and it is what an older phone build already expects.
+   */
+  attachmentId?: string;
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 /**
@@ -141,6 +159,10 @@ export interface ChatRecordInput {
   kind?: MobileChatKind;
   artifactId?: string;
   title?: string;
+  attachmentId?: string;
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
 }
 
 /**
@@ -176,6 +198,10 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.artifactId !== undefined) record.artifactId = input.artifactId;
   if (input.title !== undefined) record.title = input.title;
   if (input.kind !== undefined) record.kind = input.kind;
+  if (input.attachmentId !== undefined) record.attachmentId = input.attachmentId;
+  if (input.filename !== undefined) record.filename = input.filename;
+  if (input.mimeType !== undefined) record.mimeType = input.mimeType;
+  if (input.sizeBytes !== undefined) record.sizeBytes = input.sizeBytes;
   return encode(record);
 }
 

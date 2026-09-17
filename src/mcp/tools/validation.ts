@@ -171,6 +171,21 @@ export function asOptionalArtifactVersion(value: unknown): number | undefined {
   return value;
 }
 
+/**
+ * An optional byte COUNT argument — a slice offset or length. Rejected the same
+ * way a version is: a fractional or non-finite count would reach the file read
+ * and produce a short or empty slice, which a caller looping on `eof` reads as
+ * a legitimate end of file and saves as a truncated download. Nonsense must
+ * fail where it is asked, not where it corrupts.
+ */
+export function asOptionalByteCount(value: unknown, name: string, min: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min) {
+    throw new Error(`${name} must be an integer >= ${min}`);
+  }
+  return value;
+}
+
 export function asMemoryExportFormat(value: unknown): MemoryExportFormat {
   if (value === 'markdown' || value === 'json') return value;
   throw new Error('format must be one of markdown or json');
