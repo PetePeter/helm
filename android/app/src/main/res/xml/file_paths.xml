@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the FileProvider may hand to another app.
+
+  ONLY the app's own external Download folder — the pre-API-29 landing place for
+  a pulled attachment. Nothing else is listed, so a bug in a uri cannot turn into
+  a grant over the app's private data.
+-->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+</paths>

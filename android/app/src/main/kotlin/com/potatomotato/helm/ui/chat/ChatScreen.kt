@@ -1,11 +1,14 @@
 package com.potatomotato.helm.ui.chat
 
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +45,10 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -55,6 +62,7 @@ import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.LinkedText
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -62,6 +70,8 @@ import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Mockup screen 2 — one session's conversation, and the reply box.
@@ -85,6 +95,7 @@ fun ChatScreen(
     onPull: (key: String, attachment: ChatAttachment) -> Unit = { _, _ -> },
     onCancelPull: (key: String) -> Unit = {},
     onDeleteAttachment: (key: String, attachment: ChatAttachment) -> Unit = { _, _ -> },
+    onOpenAttachment: (uri: String, mimeType: String) -> Unit = { _, _ -> },
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. The
@@ -162,6 +173,7 @@ fun ChatScreen(
                         onPull = onPull,
                         onCancelPull = onCancelPull,
                         onDeleteAttachment = onDeleteAttachment,
+                        onOpenAttachment = onOpenAttachment,
                     )
                 }
             }
@@ -191,6 +203,7 @@ private fun Bubble(
     onPull: (key: String, attachment: ChatAttachment) -> Unit,
     onCancelPull: (key: String) -> Unit,
     onDeleteAttachment: (key: String, attachment: ChatAttachment) -> Unit,
+    onOpenAttachment: (uri: String, mimeType: String) -> Unit,
 ) {
     val fromPhone = message.fromPhone
 
@@ -252,6 +265,7 @@ private fun Bubble(
                             onPull = { onPull(message.key, attachment) },
                             onCancel = { onCancelPull(message.key) },
                             onDelete = { onDeleteAttachment(message.key, attachment) },
+                            onOpen = onOpenAttachment,
                         )
                     }
                     Text(
@@ -317,6 +331,7 @@ private fun AttachmentTile(
     onPull: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
+    onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -326,6 +341,11 @@ private fun AttachmentTile(
             .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
             .padding(HelmSpacing.Sm),
     ) {
+        // An image that has landed shows itself. A file the user asked for and
+        // then has to go hunting for in Downloads is only half delivered.
+        if (state is PullState.Ready && attachment.mimeType.startsWith("image/")) {
+            AttachmentPreview(state.uri, attachment.filename)
+        }
         Text(
             text = attachment.filename,
             color = HelmColors.Txt,
@@ -339,7 +359,7 @@ private fun AttachmentTile(
                     formatBytes(state.received),
                     formatBytes(state.total),
                 )
-                is PullState.Ready -> state.uri
+                is PullState.Ready -> state.location
                 is PullState.Failed -> state.message
             },
             color = if (state is PullState.Failed) HelmColors.Danger else HelmColors.Dim,
@@ -355,7 +375,10 @@ private fun AttachmentTile(
                     BubbleAction(R.string.chat_attachment_glyph, R.string.chat_attachment_get, HelmColors.Accent, onPull)
                 is PullState.Pulling ->
                     BubbleAction(R.string.chat_delete_glyph, R.string.chat_attachment_cancel, HelmColors.Dim, onCancel)
-                is PullState.Ready -> Unit
+                is PullState.Ready ->
+                    BubbleAction(R.string.chat_attachment_open_glyph, R.string.chat_attachment_open, HelmColors.Accent) {
+                        onOpen(state.uri, attachment.mimeType)
+                    }
                 is PullState.Failed ->
                     BubbleAction(R.string.chat_retry_glyph, R.string.chat_attachment_get, HelmColors.Danger, onPull)
             }
@@ -365,6 +388,60 @@ private fun AttachmentTile(
         }
     }
 }
+
+/**
+ * The image itself, once it is on the phone.
+ *
+ * Decoded OFF the main thread and downsampled to a thumbnail: a 12MP photo
+ * decoded whole is ~48MB of bitmap, which is how a chat thread runs a phone out
+ * of memory. A decode that fails draws nothing — the tile beneath still names
+ * the file and still opens it, so a preview is a bonus, never the only route.
+ */
+@Composable
+private fun AttachmentPreview(uri: String, filename: String) {
+    val context = LocalContext.current
+    var preview by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(uri) {
+        preview = withContext(Dispatchers.IO) {
+            try {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(Uri.parse(uri))
+                    ?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSizeFor(bounds.outWidth, PREVIEW_MAX_PX)
+                }
+                context.contentResolver.openInputStream(Uri.parse(uri))
+                    ?.use { BitmapFactory.decodeStream(it, null, options) }
+                    ?.asImageBitmap()
+            } catch (error: Exception) {
+                HelmLog.w(HelmLog.CLIENT, "a pulled image could not be decoded for preview")
+                null
+            }
+        }
+    }
+
+    preview?.let { bitmap ->
+        Image(
+            bitmap = bitmap,
+            contentDescription = filename,
+            contentScale = ContentScale.FillWidth,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(HelmRadius.Sm))
+                .padding(bottom = HelmSpacing.Xs),
+        )
+    }
+}
+
+/** The smallest power-of-two shrink that gets the width under [target]. */
+private fun sampleSizeFor(width: Int, target: Int): Int {
+    var sample = 1
+    while (width > 0 && width / sample > target) sample *= 2
+    return sample
+}
+
+private const val PREVIEW_MAX_PX = 1080
 
 /** Sizes as a person reads them. One decimal past KB — bytes are not news. */
 private fun formatBytes(bytes: Long): String = when {

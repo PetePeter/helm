@@ -96,13 +96,21 @@ removes.
   radio as the conversation, and a thread of photos fetching themselves would
   hold it for minutes. A tap pages the file down in 64KiB slices
   (`session_artifact_download` with `offset`/`length`), showing progress and
-  offering a stop; a stumble retries and **resumes** from what arrived. A slice
-  that repeats or skips fails the tile rather than being appended, because a
-  corrupt file that opens is worse than a transfer that can be retried. The file
-  lands in **Downloads**, like an artifact download. Deleting it from the tile
-  deletes Helm's copy too. Inline image preview is **not** built yet — a photo is
-  opened from Downloads. See [chat-fan-out.md](chat-fan-out.md) for why the file
-  is an artifact attachment rather than bytes on the wire.
+  offering a stop; a stumble retries and **resumes** from what arrived. Up to
+  four asks ride at once, because a round trip costs far more than the bytes do;
+  answers may therefore arrive out of order and are held until the gap ahead of
+  them closes. A duplicate, or an answer to an abandoned attempt, is dropped. The
+  file lands in **Downloads**, an image draws itself in the tile (decoded off the
+  main thread and downsampled — a 12MP photo decoded whole is ~48MB of bitmap),
+  and **Open** hands it to whatever app the phone uses for that type. Deleting it
+  from the tile deletes Helm's copy too. See
+  [chat-fan-out.md](chat-fan-out.md) for why the file is an artifact attachment
+  rather than bytes on the wire.
+- **The session list poll runs only while the list is on screen.** It used to run
+  behind every screen, which put a `session_list` call between every slice of a
+  transfer — two round trips per slice, on a link where the round trip is most of
+  the cost. The trade is that an open session's row data stops refreshing while
+  the user is inside it; alerts and chat still arrive as pushes.
 - **Artifacts** (tab) — the session's artifact list, re-pulled on every arrival.
   Opening a row pushes the artifact **detail**, which hangs off the tab and
   carries its own bar.

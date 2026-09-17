@@ -25,8 +25,11 @@ sealed interface PullState {
     /** Slices are arriving. [received] of [total] bytes are in hand. */
     data class Pulling(val received: Long, val total: Long) : PullState
 
-    /** The bytes are on the device at [uri], ready to hand to a viewer. */
-    data class Ready(val uri: String) : PullState
+    /**
+     * The bytes are on the device. [location] is where a person will look for
+     * them; [uri] is what a viewer or a decoder needs to open them.
+     */
+    data class Ready(val location: String, val uri: String) : PullState
 
     /** Nothing was saved. Retryable — the tile offers it. */
     data class Failed(val message: String) : PullState
@@ -53,28 +56,96 @@ sealed interface PullState {
 class AttachmentTransfer(val total: Long) {
     private val parts = mutableListOf<ByteArray>()
 
-    /** Bytes accepted so far, which is also where the next slice must start. */
+    /** Slices that arrived ahead of the gap, keyed by where they start. */
+    private val early = mutableMapOf<Long, ByteArray>()
+
+    /** Offsets asked for and not yet answered. The pipeline's window. */
+    private val asked = mutableSetOf<Long>()
+
+    /** Where the file ends, once an `eof` slice has said so. */
+    private var end: Long? = null
+
+    /** The first offset never yet asked for. Rewound by [forgetAsks]. */
+    private var requested: Long = 0L
+
+    /** Contiguous bytes in hand — what the progress bar honestly shows. */
     var received: Long = 0L
         private set
 
-    /** True once a slice arrived marked as the last one. */
+    /** True once every byte up to the end has been taken in order. */
     var done: Boolean = false
         private set
 
-    /** Where to ask from next. Meaningless once [done]. */
+    /** Where to ask from next — the front of the gap. Used by a retry. */
     fun nextOffset(): Long = received
 
     /**
-     * Take one slice. Returns false when it was not the slice we were waiting
-     * for — the caller treats that as a stumble to retry, never as progress.
+     * The next offset to ASK for, or null when there is nothing to ask right
+     * now — the window is full, or the end is known and already requested.
+     *
+     * PIPELINING IS THE POINT. A round trip on this link costs far more than the
+     * bytes do, so up to [window] asks are kept in flight; a strictly serial
+     * loop spends most of its life waiting. Answers may then arrive out of
+     * order, which is why [accept] holds early slices instead of refusing them.
+     */
+    fun nextAsk(sliceBytes: Int, window: Int): Long? {
+        if (done || asked.size >= window) return null
+        // Once the end is known, there is nothing beyond it to ask for. Until
+        // then the advertised size is only a hint — the file on disk is the
+        // authority — so asking up to it, and once past it, is correct.
+        end?.let { if (requested >= it) return null }
+        if (end == null && requested > total) return null
+
+        val from = requested
+        requested += sliceBytes
+        asked += from
+        return from
+    }
+
+    /**
+     * Take one slice. Returns false only when the slice is not one we are
+     * waiting for — a duplicate, or an offset nobody asked for. Out-of-ORDER is
+     * expected and held, not refused: with several asks in flight the answers
+     * race each other, and refusing the fast one would throw away work.
      */
     fun accept(offset: Long, bytes: ByteArray, eof: Boolean): Boolean {
         if (done) return false
-        if (offset != received) return false
-        parts += bytes
-        received += bytes.size
-        if (eof) done = true
+        if (!asked.remove(offset)) return false
+        // The EARLIEST eof wins. An ask that was already in flight past the real
+        // tail answers empty-and-eof at a larger offset; letting that move the
+        // end would leave a transfer that can never complete.
+        if (eof) end = minOf(end ?: Long.MAX_VALUE, offset + bytes.size)
+
+        if (offset == received) {
+            parts += bytes
+            received += bytes.size
+            drain()
+        } else {
+            early[offset] = bytes
+        }
+
+        if (received >= (end ?: Long.MAX_VALUE)) done = true
         return true
+    }
+
+    /** Fold in whatever already arrived beyond the gap we have just closed. */
+    private fun drain() {
+        while (true) {
+            val next = early.remove(received) ?: return
+            parts += next
+            received += next.size
+        }
+    }
+
+    /**
+     * Abandon the asks in flight and rewind to the gap. Answers to the
+     * abandoned asks are refused on arrival, so a retry cannot double-count a
+     * slice that was merely late.
+     */
+    fun forgetAsks() {
+        asked.clear()
+        early.clear()
+        requested = received
     }
 
     /**
@@ -97,5 +168,21 @@ class AttachmentTransfer(val total: Long) {
     fun state(): PullState = PullState.Pulling(received, total)
 }
 
-/** How much to ask for at a time — inside the desktop's ~94KiB slice budget. */
-const val ATTACHMENT_SLICE_BYTES = 64 * 1024
+/**
+ * How much to ask for at a time. The desktop refuses anything past its slice
+ * budget (`ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES`, 96,768 bytes — the largest
+ * body that base64-encodes inside one 128KiB wire frame), so this sits just
+ * under it. Asking for less would only buy more round trips, and round trips
+ * are the expensive part: 64KiB used to cost one for every 64KiB of file.
+ */
+const val ATTACHMENT_SLICE_BYTES = 93 * 1024
+
+/**
+ * How many asks may be in flight at once.
+ *
+ * A round trip costs far more than the bytes on this link, so the win is in not
+ * waiting. Four is deliberate restraint rather than a tuned number: the
+ * desktop's per-device budget is 120 calls a minute, and a deeper window would
+ * spend it on one file while the rest of the app still has to work.
+ */
+const val ATTACHMENT_PIPELINE = 4

@@ -156,12 +156,20 @@ afternoon does not bury the session's real reports.
 
 **Slices.** A frame carries ~94KiB and a photo is measured in megabytes, so
 `session_artifact_download` takes optional `offset`/`length` and answers
-`{ offset, total, eof }` for an attachment. The phone loops until `eof`
-(`HelmClient.pullChatAttachment`, 64KiB at a time), and only a **whole** file is
-saved. A slice that repeats or skips is refused rather than appended, because a
-corrupt file that opens is worse than a transfer the user can retry — and a
-retry resumes from what arrived. Fetching is always a **tap**, never automatic:
-a thread of photos fetching themselves would hold the radio for minutes.
+`{ offset, total, eof }` for an attachment. The phone asks in 93KiB slices —
+just under the desktop's budget — and keeps **four asks in flight**, because a
+measured round trip on this link costs far more than the bytes in it. Answers
+may therefore arrive out of order; they are held until the gap ahead of them
+closes, and only a **whole** file is ever saved. A duplicate, or an answer to an
+attempt already abandoned, is dropped. A retry resumes from what arrived.
+
+Fetching is always a **tap**, never automatic: a thread of photos fetching
+themselves would hold the link for minutes.
+
+The first measurement of this path is worth keeping: 754KB took ~15s, and the
+cause was not base64 (a flat +33%) but round trips — 64KiB slices, strictly
+serial, with the phone's `session_list` poll landing between every one of them.
+Slice size and pipelining are second-order; **round trips are the cost**.
 
 `session_artifact_attachment_delete` bins one file without binning the artifact.
 

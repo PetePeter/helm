@@ -24,7 +24,10 @@ class AndroidLogFiles(private val context: Context) : LogFiles {
     override fun overwrite(filename: String, mimeType: String, text: String): String {
         val bytes = text.toByteArray()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStoreDownloads.write(context, filename, mimeType, bytes, replaceExisting = true)
+            // A log export is only ever read by a person, so only the location
+            // matters here; the uri the write also hands back is for the caller
+            // that needs to OPEN the file, which this one does not.
+            MediaStoreDownloads.write(context, filename, mimeType, bytes, replaceExisting = true).location
         } else {
             writeToAppFolder(filename, bytes)
         }

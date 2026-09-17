@@ -23,7 +23,7 @@ import java.io.IOException
 internal object MediaStoreDownloads {
 
     /**
-     * Write [bytes] as [filename] and return the user-facing location.
+     * Write [bytes] as [filename] and say where they landed.
      *
      * With [replaceExisting] the rows already using that name are removed first,
      * so the name the user is told is the name they get. Without it MediaStore
@@ -36,7 +36,7 @@ internal object MediaStoreDownloads {
         mimeType: String,
         bytes: ByteArray,
         replaceExisting: Boolean,
-    ): String {
+    ): SavedFile {
         val resolver = context.contentResolver
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
 
@@ -74,7 +74,7 @@ internal object MediaStoreDownloads {
                 .query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)
                 ?.use { if (it.moveToFirst()) it.getString(0) else null }
                 ?: filename
-            return "Downloads/$settled"
+            return SavedFile("Downloads/$settled", uri.toString())
         } catch (error: Exception) {
             // A half-written pending row is invisible clutter the file manager
             // keeps showing; clean it up before surfacing the failure.

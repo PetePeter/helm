@@ -11,11 +11,22 @@ package com.potatomotato.helm.save
 interface ArtifactFiles {
 
     /**
-     * Write the bytes to the device's storage and return where the user will
-     * find the file ("Downloads/Report.md"), phrased for the Save row to show.
+     * Write the bytes to the device's storage and say where they landed.
      * Throws when the file cannot be written; the caller turns that into the
      * failure the row reads.
      */
     @Throws(Exception::class)
-    fun save(filename: String, mimeType: String, bytes: ByteArray): String
+    fun save(filename: String, mimeType: String, bytes: ByteArray): SavedFile
 }
+
+/**
+ * A file that is now on the phone.
+ *
+ * TWO strings because they answer different questions. [location] is for a
+ * person — "Downloads/Report.md", the place they will look. [uri] is for the
+ * system: what an `ACTION_VIEW` intent or an image decoder needs to actually
+ * open it. Showing the uri would be unreadable; handing the location to an
+ * intent would fail. Deliberately plain strings so the layers that pass this
+ * around stay free of Android types.
+ */
+data class SavedFile(val location: String, val uri: String)

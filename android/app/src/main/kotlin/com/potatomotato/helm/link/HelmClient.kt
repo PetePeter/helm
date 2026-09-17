@@ -18,6 +18,7 @@ import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
+import com.potatomotato.helm.save.SavedFile
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.data.ArtifactRules
 
@@ -384,7 +385,7 @@ class HelmClient(
      * The default refuses, so a build that never wires it fails legibly on the
      * tile rather than pretending to have saved something.
      */
-    var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> String = { _, _, _ ->
+    var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
         throw IllegalStateException(NO_FILE_SINK)
     }
 
@@ -402,8 +403,24 @@ class HelmClient(
      * this message is already running.
      */
     fun pullChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
-        val offset = chats.pullStarted(key, attachment) ?: return false
-        return requestSlice(sessionId, key, attachment, offset)
+        if (!chats.pullStarted(key, attachment)) return false
+        return fillPipeline(sessionId, key, attachment)
+    }
+
+    /**
+     * Keep the window full. Called to start, and again as each answer lands.
+     *
+     * The repository decides what may be asked for; this only issues it. That
+     * keeps the one rule that matters — how much is in flight — in the place
+     * that can be tested without a link.
+     */
+    private fun fillPipeline(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
+        var issued = false
+        while (true) {
+            val offset = chats.nextAsk(key) ?: return issued
+            issued = true
+            if (!requestSlice(sessionId, key, attachment, offset)) return issued
+        }
     }
 
     private fun requestSlice(
@@ -455,16 +472,16 @@ class HelmClient(
 
         val whole = chats.sliceArrived(key, offset, bytes, body.opt("eof") == true)
         if (whole == null) {
-            // Either more to come, or the repository rejected a slice that did
-            // not fit — in which case it has already failed the tile.
+            // More to come. Top the window back up — a slot just freed.
             if (chats.pullState(key) is PullState.Pulling) {
-                requestSlice(sessionId, key, attachment, chats.pullOffset(key) ?: return)
+                fillPipeline(sessionId, key, attachment)
             }
             return
         }
 
         try {
-            chats.pullSaved(key, saveAttachment(attachment.filename, attachment.mimeType, whole))
+            val saved = saveAttachment(attachment.filename, attachment.mimeType, whole)
+            chats.pullSaved(key, saved.location, saved.uri)
         } catch (error: Exception) {
             HelmLog.w(HelmLog.CLIENT, "a pulled attachment could not be written to storage")
             chats.pullFailed(key, error.message ?: NO_FILE_SINK)

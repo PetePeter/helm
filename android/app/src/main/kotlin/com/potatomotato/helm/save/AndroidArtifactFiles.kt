@@ -3,6 +3,7 @@ package com.potatomotato.helm.save
 import android.content.Context
 import android.os.Build
 import android.os.Environment
+import androidx.core.content.FileProvider
 import java.io.File
 import java.io.IOException
 
@@ -23,21 +24,26 @@ import java.io.IOException
 class AndroidArtifactFiles(private val context: Context) : ArtifactFiles {
 
     @Throws(IOException::class)
-    override fun save(filename: String, mimeType: String, bytes: ByteArray): String =
+    override fun save(filename: String, mimeType: String, bytes: ByteArray): SavedFile =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             MediaStoreDownloads.write(context, filename, mimeType, bytes, replaceExisting = false)
         } else {
             saveToAppFolder(filename, bytes)
         }
 
-    /** The app's own Download folder; `FileNames` does the de-duplicating. */
+    /**
+     * The app's own Download folder; `FileNames` does the de-duplicating. The
+     * uri comes from a FileProvider rather than `Uri.fromFile`: a `file://` uri
+     * handed to another app throws FileUriExposedException on anything modern.
+     */
     @Throws(IOException::class)
-    private fun saveToAppFolder(filename: String, bytes: ByteArray): String {
+    private fun saveToAppFolder(filename: String, bytes: ByteArray): SavedFile {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: throw IOException("No storage on the phone to write into")
         val existing = dir.list()?.toSet() ?: emptySet()
         val file = File(dir, FileNames.disambiguated(existing, filename))
         file.writeBytes(bytes)
-        return "${file.name} (in Helm's app folder)"
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        return SavedFile("${file.name} (in Helm's app folder)", uri.toString())
     }
 }

@@ -18,12 +18,16 @@ import org.junit.Test
  */
 class AttachmentTransferTest {
 
+    /** Ask for everything the window allows, as the client's loop does. */
+    private fun AttachmentTransfer.askAll(slice: Int, window: Int = 4): List<Long> =
+        generateSequence { nextAsk(slice, window) }.toList()
+
     @Test
     fun `slices in order reassemble to the exact bytes`() {
         val transfer = AttachmentTransfer(total = 6)
+        transfer.askAll(slice = 3)
 
         assertTrue(transfer.accept(0, byteArrayOf(1, 2, 3), eof = false))
-        assertEquals(3L, transfer.nextOffset())
         assertTrue(transfer.accept(3, byteArrayOf(4, 5, 6), eof = true))
 
         assertTrue(transfer.done)
@@ -31,37 +35,88 @@ class AttachmentTransferTest {
     }
 
     @Test
-    fun `a repeated slice is refused rather than appended twice`() {
+    fun `several asks ride at once, up to the window`() {
+        // The whole point of pipelining: a round trip costs more than the bytes,
+        // so the next ask must not wait for the last answer.
+        val transfer = AttachmentTransfer(total = 1000)
+
+        assertEquals(listOf(0L, 10L, 20L, 30L), transfer.askAll(slice = 10, window = 4))
+        // Window full — nothing more until an answer frees a slot.
+        assertNull(transfer.nextAsk(10, 4))
+
+        transfer.accept(0, ByteArray(10), eof = false)
+        assertEquals(40L, transfer.nextAsk(10, 4))
+    }
+
+    @Test
+    fun `a slice that arrives ahead of the gap is held, not thrown away`() {
+        // With four asks in flight the answers race. Refusing the fast one would
+        // throw away a whole round trip's work.
+        val transfer = AttachmentTransfer(total = 9)
+        transfer.askAll(slice = 3)
+
+        assertTrue(transfer.accept(6, byteArrayOf(7, 8, 9), eof = true))
+        assertEquals(0L, transfer.received)
+
+        transfer.accept(3, byteArrayOf(4, 5, 6), eof = false)
+        assertEquals(0L, transfer.received)
+
+        // Closing the gap folds in everything that was waiting behind it.
+        transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
+        assertTrue(transfer.done)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9), transfer.bytes())
+    }
+
+    @Test
+    fun `a repeated slice is refused rather than counted twice`() {
         val transfer = AttachmentTransfer(total = 6)
+        transfer.askAll(slice = 3)
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
 
-        // A link that answers one ask twice would otherwise double the bytes and
-        // still report a plausible-looking total.
+        // One ask answered twice would otherwise double the bytes and still
+        // report a plausible-looking total.
         assertFalse(transfer.accept(0, byteArrayOf(1, 2, 3), eof = false))
         assertEquals(3L, transfer.received)
     }
 
     @Test
-    fun `a slice that skips ahead is refused rather than stitched over a hole`() {
+    fun `a slice nobody asked for is refused`() {
         val transfer = AttachmentTransfer(total = 9)
-        transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
+        transfer.nextAsk(3, 1)
 
-        assertFalse(transfer.accept(6, byteArrayOf(7, 8, 9), eof = true))
-        assertFalse(transfer.done)
+        assertFalse(transfer.accept(99, byteArrayOf(1), eof = false))
     }
 
     @Test
-    fun `nothing arrives after the end`() {
-        val transfer = AttachmentTransfer(total = 3)
-        transfer.accept(0, byteArrayOf(1, 2, 3), eof = true)
+    fun `the earliest end wins when an ask overshoots the tail`() {
+        // The advertised size is metadata; the file is the authority. An ask
+        // already in flight past the real tail answers empty-and-eof further
+        // along, and letting that move the end would strand the transfer.
+        val transfer = AttachmentTransfer(total = 12)
+        transfer.askAll(slice = 3)
 
-        assertFalse(transfer.accept(3, byteArrayOf(4), eof = true))
-        assertArrayEquals(byteArrayOf(1, 2, 3), transfer.bytes())
+        transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
+        transfer.accept(6, ByteArray(0), eof = true)
+        transfer.accept(3, byteArrayOf(4, 5, 6), eof = true)
+
+        assertTrue(transfer.done)
+        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), transfer.bytes())
+    }
+
+    @Test
+    fun `nothing is asked for once the end is known`() {
+        val transfer = AttachmentTransfer(total = 1000)
+        transfer.nextAsk(10, 4)
+        transfer.accept(0, ByteArray(10), eof = true)
+
+        assertNull(transfer.nextAsk(10, 4))
+        assertTrue(transfer.done)
     }
 
     @Test
     fun `an unfinished transfer refuses to hand over a truncated file`() {
         val transfer = AttachmentTransfer(total = 6)
+        transfer.nextAsk(3, 4)
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
 
         // Nothing downstream could tell a short file from a complete one.
@@ -71,13 +126,26 @@ class AttachmentTransferTest {
 
     @Test
     fun `an empty final slice ends the transfer without adding to it`() {
-        // The desktop answers an offset that lands exactly on the end with no
-        // bytes and eof — a correct loop asks once more.
         val transfer = AttachmentTransfer(total = 3)
+        transfer.askAll(slice = 3)
         transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
 
         assertTrue(transfer.accept(3, ByteArray(0), eof = true))
         assertArrayEquals(byteArrayOf(1, 2, 3), transfer.bytes())
+    }
+
+    @Test
+    fun `abandoning the asks rewinds to the gap and refuses the stragglers`() {
+        val transfer = AttachmentTransfer(total = 12)
+        transfer.askAll(slice = 3)
+        transfer.accept(0, byteArrayOf(1, 2, 3), eof = false)
+
+        transfer.forgetAsks()
+
+        // A retry re-asks from what actually arrived...
+        assertEquals(3L, transfer.nextAsk(3, 4))
+        // ...and a late answer to the dead attempt cannot be counted.
+        assertFalse(transfer.accept(6, byteArrayOf(7, 8, 9), eof = false))
     }
 }
 
@@ -85,7 +153,7 @@ class AttachmentTransferTest {
 class ChatRepositoryPullTest {
     private val chats = ChatRepository()
 
-    private fun arriveWithFile(): String {
+    private fun arriveWithFile(sizeBytes: Long = 6L): String {
         chats.receive(
             MobileRecord.Chat(
                 sessionId = "s1",
@@ -96,7 +164,7 @@ class ChatRepositoryPullTest {
                 attachmentId = "att-1",
                 filename = "holiday.jpg",
                 mimeType = "image/jpeg",
-                sizeBytes = 6,
+                sizeBytes = sizeBytes,
             ),
         )
         return chats.thread("s1").last().key
@@ -139,20 +207,32 @@ class ChatRepositoryPullTest {
         assertNull(chats.thread("s1").lastOrNull()?.attachment)
     }
 
+    /** Drive the pipeline the way HelmClient does: ask for all it will give. */
+    private fun askAll(key: String): List<Long> = generateSequence { chats.nextAsk(key) }.toList()
+
     @Test
     fun `a fetch reports progress and completes with the whole file`() {
-        val key = arriveWithFile()
+        // Two full slices, so the offsets are the ones the real loop asks for.
+        val slice = ATTACHMENT_SLICE_BYTES
+        val key = arriveWithFile(sizeBytes = slice * 2L)
         val attachment = chats.thread("s1").last().attachment!!
 
-        assertEquals(0L, chats.pullStarted(key, attachment))
-        assertNull(chats.sliceArrived(key, 0, byteArrayOf(1, 2, 3), eof = false))
-        assertEquals(PullState.Pulling(3, 6), chats.pullState(key))
+        assertTrue(chats.pullStarted(key, attachment))
+        askAll(key)
 
-        val whole = chats.sliceArrived(key, 3, byteArrayOf(4, 5, 6), eof = true)
-        assertArrayEquals(byteArrayOf(1, 2, 3, 4, 5, 6), whole)
+        assertNull(chats.sliceArrived(key, 0, ByteArray(slice) { 1 }, eof = false))
+        assertEquals(PullState.Pulling(slice.toLong(), slice * 2L), chats.pullState(key))
 
-        chats.pullSaved(key, "Downloads/holiday.jpg")
-        assertEquals(PullState.Ready("Downloads/holiday.jpg"), chats.pullState(key))
+        val whole = chats.sliceArrived(key, slice.toLong(), ByteArray(slice) { 2 }, eof = true)
+        assertEquals(slice * 2, whole?.size)
+        assertEquals(1.toByte(), whole?.first())
+        assertEquals(2.toByte(), whole?.last())
+
+        chats.pullSaved(key, "Downloads/holiday.jpg", "content://downloads/7")
+        assertEquals(
+            PullState.Ready("Downloads/holiday.jpg", "content://downloads/7"),
+            chats.pullState(key),
+        )
     }
 
     @Test
@@ -161,7 +241,7 @@ class ChatRepositoryPullTest {
         val attachment = chats.thread("s1").last().attachment!!
         chats.pullStarted(key, attachment)
 
-        assertNull(chats.pullStarted(key, attachment))
+        assertFalse(chats.pullStarted(key, attachment))
     }
 
     @Test
@@ -169,25 +249,30 @@ class ChatRepositoryPullTest {
         val key = arriveWithFile()
         val attachment = chats.thread("s1").last().attachment!!
         chats.pullStarted(key, attachment)
+        askAll(key)
         chats.sliceArrived(key, 0, byteArrayOf(1, 2, 3), eof = false)
 
         chats.pullFailed(key, "the link dropped")
         assertEquals(PullState.Failed("the link dropped"), chats.pullState(key))
 
-        // On a slow radio, restarting from zero is the difference between a lost
+        // On a slow link, restarting from zero is the difference between a lost
         // minute and a lost transfer.
-        assertEquals(3L, chats.pullStarted(key, attachment))
+        assertTrue(chats.pullStarted(key, attachment))
+        assertEquals(3L, chats.nextAsk(key))
     }
 
     @Test
-    fun `a slice that does not fit fails the tile instead of looping forever`() {
+    fun `a slice nobody is waiting for is dropped, not treated as progress`() {
         val key = arriveWithFile()
         val attachment = chats.thread("s1").last().attachment!!
         chats.pullStarted(key, attachment)
+        askAll(key)
         chats.sliceArrived(key, 0, byteArrayOf(1, 2, 3), eof = false)
 
+        // A duplicate answer must not advance anything — and must not fail the
+        // tile either, since the transfer itself is still healthy.
         assertNull(chats.sliceArrived(key, 0, byteArrayOf(1, 2, 3), eof = false))
-        assertTrue(chats.pullState(key) is PullState.Failed)
+        assertEquals(PullState.Pulling(3, 6), chats.pullState(key))
     }
 
     @Test
@@ -195,12 +280,14 @@ class ChatRepositoryPullTest {
         val key = arriveWithFile()
         val attachment = chats.thread("s1").last().attachment!!
         chats.pullStarted(key, attachment)
+        askAll(key)
         chats.sliceArrived(key, 0, byteArrayOf(1, 2, 3), eof = false)
 
         chats.pullCancelled(key)
 
         assertEquals(PullState.Idle, chats.pullState(key))
         // Nothing half-written survives: the next attempt starts clean.
-        assertEquals(0L, chats.pullStarted(key, attachment))
+        assertTrue(chats.pullStarted(key, attachment))
+        assertEquals(0L, chats.nextAsk(key))
     }
 }

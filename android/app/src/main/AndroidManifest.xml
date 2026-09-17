@@ -115,6 +115,21 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+        <!--
+          Hands a saved attachment to a viewer app on API < 29, where the file
+          lives in the app's own folder rather than MediaStore. A file:// uri
+          would throw FileUriExposedException; this grants read on exactly one
+          file, for exactly as long as the intent lives.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

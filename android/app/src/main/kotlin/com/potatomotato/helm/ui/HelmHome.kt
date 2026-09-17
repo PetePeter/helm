@@ -20,6 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.HelmApp
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import com.potatomotato.helm.R
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -192,7 +195,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var openSequenceId by rememberSaveable { mutableStateOf<String?>(null) }
     var openContextId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    PollSessions(client)
+    // ONLY while the session list is actually on screen. The poll used to run
+    // whenever the app was started, which put a session_list call between every
+    // slice of an attachment transfer — two round trips per slice instead of
+    // one. Everything else that matters arrives as a push.
+    PollSessions(
+        client,
+        active = openSessionId == null && where == Destination.Thread && homeTab == HomeTab.Sessions,
+    )
 
     // A notification tap lands in that session's THREAD — or, for an artifact
     // row, in its ARTIFACTS. Neither adds a row to the thread: an alert is an
@@ -402,6 +412,25 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // device sink is the only Android-typed step in the artifacts slice; it
     // lives here at the UI edge, and its outcome is both the Save row's state
     // and the notice the user reads.
+    // Hand a saved attachment to whatever the phone uses for that kind of file.
+    // The grant is per-intent and read-only; a phone with no viewer for the type
+    // says so on the notice bar rather than failing silently under the tap.
+    val openAttachment: (String, String) -> Unit = remember(context) {
+        { uri, mimeType ->
+            val intent = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(Uri.parse(uri), mimeType)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(intent)
+            } catch (error: ActivityNotFoundException) {
+                client.control.noticed(
+                    SessionAction.SaveArtifact,
+                    ActionOutcome.Failed(context.getString(R.string.chat_attachment_no_viewer)),
+                )
+            }
+        }
+    }
+
     val artifactFiles = remember { AndroidArtifactFiles(context) }
     LaunchedEffect(artifactSave) {
         val ready = artifactSave as? ArtifactSave.Ready ?: return@LaunchedEffect
@@ -409,7 +438,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             val path = withContext(Dispatchers.IO) {
                 artifactFiles.save(ready.file.filename, ready.file.mimeType, ready.file.bytes)
             }
-            client.artifacts.saveLanded(ready.file.artifactId, path)
+            client.artifacts.saveLanded(ready.file.artifactId, path.location)
             client.control.noticed(SessionAction.SaveArtifact, ActionOutcome.Done)
         } catch (error: Exception) {
             client.artifacts.saveFailed(
@@ -834,6 +863,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 onDeleteAttachment = { key, attachment ->
                                     client.deleteChatAttachment(open.id, key, attachment)
                                 },
+                                onOpenAttachment = openAttachment,
                             )
 
                             SessionTab.Artifacts -> ArtifactsScreen(
@@ -1063,15 +1093,26 @@ private fun SessionTabScaffold(
 /**
  * Keep the list fresh while the user can see it — and ONLY while they can.
  *
- * The desktop's per-device budget (120 calls/min) was sized for a visible
- * screen, not a background loop, so the poll is scoped to STARTED: a phone in a
- * pocket spends nothing, and the first poll after it comes out is immediate.
+ * TWO conditions, and the second was learned the hard way. The lifecycle scope
+ * (STARTED) keeps a phone in a pocket from spending the desktop's per-device
+ * budget, which was sized for a visible screen. [active] adds the screen
+ * itself: the poll used to run behind every other screen too, so a
+ * `session_list` landed between every slice of an attachment transfer — two
+ * round trips per slice instead of one, on a link where a round trip is most of
+ * the cost. Nothing else needs it; alerts and chat arrive as pushes.
+ *
+ * The trade, stated because it is real: an OPEN session's row data stops
+ * refreshing while the user is inside it.
+ *
+ * Keyed on [active], so returning to the list polls immediately rather than
+ * waiting out an interval.
  */
 @Composable
-private fun PollSessions(client: HelmClient) {
+private fun PollSessions(client: HelmClient, active: Boolean) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(lifecycle) {
+    LaunchedEffect(lifecycle, active) {
+        if (!active) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 client.refreshSessions()

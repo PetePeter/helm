@@ -189,12 +189,22 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
      * Returns null when a fetch is already running, so a double tap on the tile
      * cannot start two loops writing into one buffer.
      */
-    fun pullStarted(key: String, attachment: ChatAttachment): Long? {
-        if (_pulls.value[key] is PullState.Pulling) return null
+    fun pullStarted(key: String, attachment: ChatAttachment): Boolean {
+        if (_pulls.value[key] is PullState.Pulling) return false
         val transfer = transfers.getOrPut(key) { AttachmentTransfer(attachment.sizeBytes) }
+        // A retry rewinds to the gap: answers to the asks that died with the
+        // last attempt are refused rather than double-counted.
+        transfer.forgetAsks()
         setPull(key, transfer.state())
-        return transfer.nextOffset()
+        return true
     }
+
+    /**
+     * The next offset to ask for, or null when the window is full or there is
+     * nothing left to ask. Several asks ride at once — see [AttachmentTransfer].
+     */
+    fun nextAsk(key: String): Long? =
+        transfers[key]?.nextAsk(ATTACHMENT_SLICE_BYTES, ATTACHMENT_PIPELINE)
 
     /**
      * Take one slice. Returns the complete file when that slice was the last
@@ -206,7 +216,10 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? {
         val transfer = transfers[key] ?: return null
         if (!transfer.accept(offset, bytes, eof)) {
-            pullFailed(key, OUT_OF_ORDER)
+            // Not out of ORDER — that is expected with several asks in flight
+            // and is held. This is a slice nobody is waiting for: a duplicate,
+            // or an answer to an attempt that was already abandoned. Dropping
+            // it is right; failing the tile over it would be wrong.
             return null
         }
         if (!transfer.done) {
@@ -215,9 +228,6 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
         }
         return transfer.bytes()
     }
-
-    /** Where the next slice must start, or null when nothing is in flight. */
-    fun pullOffset(key: String): Long? = transfers[key]?.nextOffset()
 
     /**
      * The fetch stumbled. What arrived is KEPT: a retry resumes from there,
@@ -229,9 +239,9 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     }
 
     /** The bytes reached the device. The tile becomes an open button. */
-    fun pullSaved(key: String, uri: String) {
+    fun pullSaved(key: String, location: String, uri: String) {
         transfers.remove(key)
-        setPull(key, PullState.Ready(uri))
+        setPull(key, PullState.Ready(location, uri))
     }
 
     /** Abandon a fetch and its part-file. Nothing half-written is kept. */
@@ -282,8 +292,5 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
          * Oldest goes first; scrollback beyond this is the desktop's job.
          */
         const val MAX_THREAD = 200
-
-        /** A slice that did not fit where the transfer was. See [sliceArrived]. */
-        const val OUT_OF_ORDER = "The file arrived out of order"
     }
 }

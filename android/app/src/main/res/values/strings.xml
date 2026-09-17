@@ -176,6 +176,9 @@
     <string name="chat_attachment_get">Get file</string>
     <string name="chat_attachment_cancel">Stop</string>
     <string name="chat_attachment_delete">Delete file</string>
+    <string name="chat_attachment_open_glyph">▶</string>
+    <string name="chat_attachment_open">Open</string>
+    <string name="chat_attachment_no_viewer">No app on this phone can open that file</string>
     <string name="chat_attachment_pulling">%1$s of %2$s</string>
     <!-- Actions under a FAILED outgoing message: send it again, or drop it. -->
     <string name="chat_retry">Send again</string>
