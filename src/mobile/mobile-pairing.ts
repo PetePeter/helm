@@ -269,8 +269,8 @@ export class MobilePairing extends EventEmitter {
         // This used to be `allow: []` — deny-by-default. That read well and was
         // unusable in practice: pairing through the UI produced a phone that
         // connected, showed as online, and had EVERY call denied, with no way to
-        // grant anything from the UI at all. The audit log filled with denials
-        // that looked like a transport fault. A default nobody can lift is not a
+        // grant anything from the UI at all. Every call came back denied with the
+        // uniform message, which looked like a transport fault. A default nobody can lift is not a
         // security boundary, it is a broken feature.
         //
         // The real boundary is unchanged and still enforced elsewhere: the user

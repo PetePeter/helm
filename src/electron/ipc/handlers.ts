@@ -92,7 +92,6 @@ import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
 import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
-import { MobileAuditLog } from '../../mobile/mobile-audit-log.js';
 
 /**
  * The ONE MobileGate instance, built during handler setup. Exposed so whoever
@@ -743,13 +742,11 @@ export function registerIPCHandlers(
   // dispatchForPeer seam. It is deliberately the ONLY way a mobile frame may
   // reach a tool — whoever wires the BLE call path (P-0748) must route through
   // `mobileGate.handle`, never through callMcpTool directly.
-  const mobileAuditLog = new MobileAuditLog();
   activeMobileGate = new MobileGate({
     deviceStore: mobileDeviceStore,
     dispatch: (method, params, ctx) =>
       localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx),
     rateLimiter: createDefaultMobileRateLimiter(),
-    audit: mobileAuditLog,
     sessionLookup: sessionManager,
   });
 

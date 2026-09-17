@@ -78,10 +78,8 @@ src/
 │   ├── mobile-device-sanitize.ts   # The ONE sanitizer shared by the loader and importAll, so machineId can never be silently dropped
 │   ├── mobile-device-persistence.ts # The ONE reader/writer of mobile-devices.yaml + mobile-secrets.yaml (PSKs, mode 0600)
 │   ├── mobile-link-manager.ts  # Owns the BLE lifecycle — scan, authenticate with a STORED PSK, identify, keep or drop, report online state
-│   ├── mobile-gate.ts          # The security boundary for a phone's MCP calls: deny by default, no impersonation, rate limited, audited
+│   ├── mobile-gate.ts          # The security boundary for a phone's MCP calls: deny by default, no impersonation, rate limited
 │   ├── mobile-identity.ts      # Synthesizes the mobile:<deviceId> proxy AuthContext. The prefix is not part of any UUID, so it cannot impersonate
-│   ├── mobile-audit-log.ts     # 7-day rolling decision trail — argument KEY NAMES and error TYPES only, never values
-│   ├── mobile-audit-persistence.ts # The ONE reader/writer of mobile-audit.yaml, atomic at mode 0600, defensive prune on load
 │   ├── mobile-envelope.ts      # The four application records (call/result/error/chat). Deterministic encoding; a field or key-order change is a wire break
 │   ├── mobile-envelope-vectors.ts  # Generates tests/fixtures/mobile-envelope-vectors.json — regenerating is a WIRE BREAK
 │   ├── mobile-chat-bridge.ts   # The phone as a ChatBridge, and the ONE inbound path from a phone into Helm's tools (always via MobileGate)
@@ -295,7 +293,6 @@ config/
 ├── plans/incoming/             # Inbox for importable ready plan JSON artifacts
 ├── mobile-devices.yaml         # Paired-phone registry — non-secret, holds pskRef references only
 ├── mobile-secrets.yaml         # Mobile pairing PSKs, base64, mode 0600. Never logged, never sent to the renderer
-├── mobile-audit.yaml           # 7-day rolling trail of phone call decisions — argument key names and error types only
 └── profiles/
     └── default.yaml            # Self-contained: tools + workingDirectories + bindings + sticks + dpad
 ```

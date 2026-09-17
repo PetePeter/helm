@@ -12,7 +12,7 @@
  * INBOUND. Every record a phone sends is a `call`, and every call goes through
  * `MobileGate.handle` — there is no other route to a tool from here, and no
  * second gate. A phone's chat REPLY is therefore a `session_send_text` call,
- * gated and audited like any other, rather than a privileged side channel that
+ * gated like any other, rather than a privileged side channel that
  * would have to be trusted separately. Anything that is not a well-formed call
  * from a REGISTERED machine is dropped silently: answering would tell a stranger
  * their bytes were understood.

@@ -14,7 +14,6 @@ import { EventEmitter } from 'node:events';
 import { MobileChatBridge } from '../src/mobile/mobile-chat-bridge';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store';
 import { MobileGate, MOBILE_DENY_MESSAGE, createDefaultMobileRateLimiter } from '../src/mobile/mobile-gate';
-import { MobileAuditLog } from '../src/mobile/mobile-audit-log';
 import { decodeRecord, encodeCall } from '../src/mobile/mobile-envelope';
 import type { MobileDevice } from '../src/types/mobile-device';
 
@@ -72,7 +71,6 @@ beforeEach(() => {
       return { ok: method };
     },
     rateLimiter: createDefaultMobileRateLimiter(),
-    audit: new MobileAuditLog(() => {}),
   });
   bridge = new MobileChatBridge({
     links,

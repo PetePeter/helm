@@ -10,7 +10,7 @@
  *
  * The id used is the LOCAL RECORD id (`MobileDevice.id`), never the BLE address
  * and never the phone's machineId: the address rotates, and the record id is the
- * same key the allow-list and the audit log are written against.
+ * same key the allow-list is written against.
  *
  * The mapping is pure and deterministic: stable per device, distinct per device.
  */

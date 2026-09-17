@@ -1,14 +1,14 @@
-# MobileGate — proxy identity, capability allow-list and audit
+# MobileGate — proxy identity and capability allow-list
 
 A paired phone is an authenticated remote-code-execution surface that lives in a
 pocket. `MobileGate` is the boundary that stands **in front of** the MCP
 dispatcher for every inbound phone call: deny by default, no impersonation, rate
-limited, audited.
+limited.
 
 It is deliberately the fleet's `InboundCallGate` pattern one prefix along, not a
-second security model. See [fleet.md](fleet.md) for the original. Only three
-things differ: the identity prefix (`mobile:` vs `peer:`), the registry it reads
-(`MobileDeviceStore` vs `PeerConfigManager`) and the audit file.
+second security model. See [fleet.md](fleet.md) for the original. Only two
+things differ: the identity prefix (`mobile:` vs `peer:`) and the registry it
+reads (`MobileDeviceStore` vs `PeerConfigManager`).
 
 ## The boundary, not the dispatcher
 
@@ -20,7 +20,6 @@ exists. The gate wraps it. If a change to this feature requires editing
 graph LR
     P[Phone<br/>BLE peripheral] -->|SecureChannel frame| T[BLE call path<br/>P-0748]
     T -->|handle deviceId, method, params| G[MobileGate]
-    G -->|denied / rate-limited / ok| A[(mobile-audit.yaml<br/>7-day rolling)]
     G -->|dispatch under<br/>mobile:deviceId| D[callMcpTool<br/>UNCHANGED]
     G -.->|uniform<br/>Tool not permitted| P
 ```
@@ -31,8 +30,7 @@ route.
 
 ## Decision order
 
-Every inbound call runs the same ordered checks, and **every** outcome is
-audited:
+Every inbound call runs the same ordered checks:
 
 | # | Check | Denies when |
 |---|-------|-------------|
@@ -114,8 +112,8 @@ deliberately kept.
 A session spawned over the mobile proxy still records `createdByMobileDeviceId` on
 its `SessionInfo`, derived from the proxy identity in
 `HelmSessionService.spawnCli` and persisted through `serializeSession`
-(invariant 6 — the allow-list is explicit). The check, the uniform denial and the
-audit all still work; nothing is currently named in the set.
+(invariant 6 — the allow-list is explicit). The check and the uniform denial
+both still work; nothing is currently named in the set.
 
 `session_close` used to be, mirroring the fleet rule. **Ruled otherwise:** a
 SAS-paired phone is the user's own device, and closing a session from the kitchen
@@ -126,26 +124,13 @@ is precisely the failure the unreachable-tool audit above exists to remove.
 Closing is still governed by the allow-list: permissive about *which* session,
 unchanged about *whether*.
 
-## Audit
-
-`MobileAuditLog` keeps a 7-day rolling trail at `mobile-audit.yaml` in the
-per-user app-data dir (invariant 4), mode 0600.
-
-The security property is what it does **not** store. `argSummary` holds the
-sorted top-level argument **key names only** — `keys: sessionId,text`, never a
-value. An `error` outcome records the error **type** (`Error`), never the
-dispatcher's message, because several dispatcher errors embed argument values
-(`Session not found: <uuid>`). A reviewer must be able to read this file without
-leaking anything sensitive; tests assert a secret-looking value is provably
-absent.
-
 ## Permitted-tool discovery
 
 `__mobile_tools__` is a reserved, non-dispatchable meta-method that returns the
 intersection of the tool catalogue with the device's allow-list, minus the
 hard-deny set and the structurally unreachable families. It is the mechanism behind the ratified "grey out forbidden
 actions" rule in the app: the phone learns exactly what it may call and nothing
-about what it may not. It is rate-limited and audited like any other call, so it
+about what it may not. It is rate-limited like any other call, so it
 cannot be probed for free, and a disabled device gets the uniform denial.
 
 ## Rate limit
@@ -162,7 +147,5 @@ the poll. Still roomier than the fleet's 30 because a phone UI is interactive.
 |------|------|
 | `src/mobile/mobile-gate.ts` | The gate: ordered checks, dispatch, uniform denials |
 | `src/mobile/mobile-identity.ts` | `mobile:<deviceId>` proxy `AuthContext` |
-| `src/mobile/mobile-audit-log.ts` | 7-day rolling decision trail |
-| `src/mobile/mobile-audit-persistence.ts` | The one reader/writer of `mobile-audit.yaml` |
 | `src/mobile/mobile-device-store.ts` | Registry + allow-list ([mobile-pairing.md](mobile-pairing.md)) |
 | `src/mcp/peer/inbound-call-gate.ts` | Source of `HARD_DENY_TOOLS` ([fleet.md](fleet.md)) |

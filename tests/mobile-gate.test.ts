@@ -1,8 +1,8 @@
 /**
  * MobileGate — the security boundary in front of every inbound phone call.
  *
- * Real gate wired to a REAL MobileDeviceStore, a REAL PeerRateLimiter and a REAL
- * MobileAuditLog; only the dispatcher is an injected fake, so we can assert
+ * Real gate wired to a REAL MobileDeviceStore and a REAL PeerRateLimiter; only
+ * the dispatcher is an injected fake, so we can assert
  * exactly which identity and which arguments reach it without standing up the
  * whole MCP stack. Mirrors the fakes>mocks discipline of inbound-call-gate.test.
  */
@@ -21,7 +21,6 @@ import {
 } from '../src/mobile/mobile-gate.js';
 import { HARD_DENY_TOOLS } from '../src/mcp/peer/inbound-call-gate.js';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store.js';
-import { MobileAuditLog } from '../src/mobile/mobile-audit-log.js';
 import { PeerRateLimiter } from '../src/mcp/peer/rate-limiter.js';
 import { isMobileSessionId, deviceIdFromMobileSessionId } from '../src/mobile/mobile-identity.js';
 import { MCP_TOOLS } from '../src/mcp/tools/definitions.js';
@@ -34,7 +33,6 @@ vi.mock('../src/utils/logger.js', () => ({
 interface Built {
   gate: MobileGate;
   store: MobileDeviceStore;
-  audit: MobileAuditLog;
   calls: Array<{ method: string; params: unknown; ctx: AuthContext }>;
   /** Local record id of the device registered from `allow`. */
   deviceId: string;
@@ -63,9 +61,6 @@ function build(
     allow,
     ...(opts.enabled !== undefined ? { enabled: opts.enabled } : {}),
   });
-  // Persist sink is a no-op so nothing touches the user's real audit file.
-  const audit = new MobileAuditLog(() => {}, now);
-  audit.importAll([]);
   const gate = new MobileGate({
     deviceStore: store,
     dispatch: async (method, params, ctx) => {
@@ -74,11 +69,9 @@ function build(
       return { ok: true };
     },
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
-    audit,
-    now,
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
   });
-  return { gate, store, audit, calls, deviceId: device.id };
+  return { gate, store, calls, deviceId: device.id };
 }
 
 describe('MobileGate — default-deny', () => {
@@ -237,14 +230,10 @@ describe('MobileGate — rate limiting', () => {
     const clock = 0;
     const store = new MobileDeviceStore(undefined, () => clock);
     const device = store.add({ machineId: 'm', name: 'Pixel', pskRef: 'r', allow: ['session_list'] });
-    const audit = new MobileAuditLog(() => {}, () => clock);
-    audit.importAll([]);
     const gate = new MobileGate({
       deviceStore: store,
       dispatch: async () => ({}),
       rateLimiter: createDefaultMobileRateLimiter(() => clock),
-      audit,
-      now: () => clock,
     });
 
     for (let i = 0; i < DEFAULT_MOBILE_RATE_CAPACITY; i++) {
@@ -272,41 +261,6 @@ describe('MobileGate — uniform denials', () => {
     await push(narrow.gate.handle(narrow.deviceId, 'no_such_tool_at_all', {}));
 
     expect([...messages]).toEqual([MOBILE_DENY_MESSAGE]);
-  });
-});
-
-describe('MobileGate — audit', () => {
-  it('records the tool name and argument KEY names, never a value', async () => {
-    const secret = 'hunter2-super-secret-token';
-    const { gate, audit, deviceId } = build(['session_send_text']);
-    await gate.handle(deviceId, 'session_send_text', { sessionId: 's1', text: secret });
-
-    const entries = audit.list();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ deviceId, method: 'session_send_text', outcome: 'ok' });
-    expect(entries[0].argSummary).toBe('keys: sessionId,text');
-    expect(JSON.stringify(entries)).not.toContain(secret);
-  });
-
-  it('records a dispatcher failure as the error TYPE only, never its message', async () => {
-    const leak = 'Session not found: 11111111-2222-4333-8444-555555555555';
-    const { gate, audit, deviceId } = build(['session_get'], {
-      dispatchImpl: async () => {
-        throw new Error(leak);
-      },
-    });
-    await expect(gate.handle(deviceId, 'session_get', { sessionId: 'x' })).rejects.toThrow(leak);
-    expect(audit.list()[0]).toMatchObject({ outcome: 'error', error: 'Error' });
-    expect(JSON.stringify(audit.list())).not.toContain('11111111');
-  });
-
-  it('records denials and rate limits as distinct outcomes', async () => {
-    let clock = 0;
-    const { gate, audit, deviceId } = build(['session_list'], { capacity: 1, now: () => clock });
-    await gate.handle(deviceId, 'session_list', {});
-    await gate.handle(deviceId, 'helm_restart', {}).catch(() => undefined);
-    await gate.handle(deviceId, 'session_list', {}).catch(() => undefined);
-    expect(audit.list().map(e => e.outcome).sort()).toEqual(['denied', 'ok', 'rate-limited']);
   });
 });
 

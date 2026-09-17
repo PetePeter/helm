@@ -3,7 +3,7 @@
  *
  * An authenticated phone is a remote-code-execution surface reachable from a
  * pocket, so it gets the same treatment the fleet gives a peer: deny by default,
- * no impersonation, rate limited, audited. For every inbound call it, IN ORDER:
+ * no impersonation, rate limited. For every inbound call it, IN ORDER:
  *   1. rejects explicitly disabled devices,
  *   2. answers (never dispatches) the reserved permitted-tools meta-method,
  *   3. rejects hard-denied and structurally unreachable tools — even under a
@@ -12,8 +12,7 @@
  *   5. rejects tools outside the device's allow-list,
  *   6. rejects calls exceeding the per-device rate limit,
  *   7. otherwise dispatches through the EXISTING MCP dispatcher UNCHANGED, under
- *      a synthetic `mobile:<deviceId>` identity (never a real local session),
- * and audits the outcome of every one of those paths.
+ *      a synthetic `mobile:<deviceId>` identity (never a real local session).
  *
  * The boundary lives in FRONT of `callMcpTool`, never inside it: the dispatcher
  * signature is untouched, and dispatch is injected so this class is testable
@@ -25,7 +24,7 @@
  *
  * DELIBERATE REUSE, not a second model: the hard-deny set and the token-bucket
  * limiter are the fleet's own (see docs/fleet.md). One gate pattern for the
- * project; only the identity prefix, the registry and the audit file differ.
+ * project; only the identity prefix and the registry differ.
  */
 
 import { logger } from '../utils/logger.js';
@@ -35,7 +34,6 @@ import { HARD_DENY_TOOLS } from '../mcp/peer/inbound-call-gate.js';
 import { PeerRateLimiter } from '../mcp/peer/rate-limiter.js';
 import { mobileAuthContext } from './mobile-identity.js';
 import type { MobileDeviceStore } from './mobile-device-store.js';
-import type { MobileAuditLog, MobileAuditOutcome } from './mobile-audit-log.js';
 
 export { HARD_DENY_TOOLS };
 
@@ -84,8 +82,6 @@ export function isMobileUnreachableTool(tool: string): boolean {
 export const MOBILE_DENY_MESSAGE = 'Tool not permitted';
 const RATE_LIMIT_MESSAGE = 'Rate limit exceeded';
 const JSONRPC_SERVER_ERROR = -32000;
-/** Cap the audit summary so a huge arg-object cannot bloat the log. */
-const ARG_SUMMARY_MAX = 200;
 
 /**
  * Per-device bucket: ~120 calls/min with a burst of 120. The phone's session
@@ -147,7 +143,7 @@ export class GateError extends Error {
  *
  * The MECHANISM is kept, not deleted: the next tool that needs "only what you
  * created" (a phone-initiated destructive batch, say) adds a name here and gets
- * the check, the uniform denial and the audit for free. An empty set is one line;
+ * the check and the uniform denial for free. An empty set is one line;
  * re-deriving the check later is not.
  */
 const OWNERSHIP_GATED_TOOLS: ReadonlySet<string> = new Set<string>();
@@ -193,54 +189,46 @@ export interface MobileGateDeps {
    */
   dispatch: (method: string, params: unknown, ctx: AuthContext) => Promise<unknown>;
   rateLimiter: PeerRateLimiter;
-  audit: MobileAuditLog;
   /**
    * Optional session lookup for ownership-gated tools. Absent means those tools
    * are denied outright — the safe default.
    */
   sessionLookup?: MobileSessionLookup;
-  now?: () => number;
 }
 
 export class MobileGate {
   private readonly deviceStore: MobileGateDeps['deviceStore'];
   private readonly dispatch: MobileGateDeps['dispatch'];
   private readonly rateLimiter: PeerRateLimiter;
-  private readonly audit: MobileAuditLog;
   private readonly sessionLookup: MobileSessionLookup | undefined;
-  private readonly now: () => number;
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
     this.dispatch = deps.dispatch;
     this.rateLimiter = deps.rateLimiter;
-    this.audit = deps.audit;
     this.sessionLookup = deps.sessionLookup;
-    this.now = deps.now ?? Date.now;
   }
 
   /** Gate + dispatch one inbound phone call. */
   async handle(deviceId: string, method: string, params: unknown): Promise<unknown> {
-    const argSummary = summarizeArgKeys(params);
-
     // 1. Disabled device — off in BOTH directions: it cannot invoke tools NOR
     // enumerate the permitted surface. Same uniform message as any other deny so
     // "Off" cannot be told apart from "not permitted". An UNKNOWN device is not
     // handled here; it falls through to the allow-list, which denies by default.
     if (this.isDeviceDisabled(deviceId)) {
-      return this.denied(deviceId, method, argSummary);
+      return this.denied(deviceId, method);
     }
 
     // 2. Permitted-tool discovery. Answered in-gate, never dispatched, but still
-    // rate-limited and audited so it cannot be probed for free.
+    // rate-limited so it cannot be probed for free.
     if (method === RESERVED_MOBILE_TOOLS_METHOD) {
-      this.consumeOrThrow(deviceId, method, argSummary);
+      this.consumeOrThrow(deviceId, method);
       const tools = MCP_TOOLS
         .filter(t => !HARD_DENY_TOOLS.has(t.name)
           && !isMobileUnreachableTool(t.name)
           && this.deviceStore.isToolAllowed(deviceId, t.name))
         .map(t => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema }));
-      this.record(deviceId, method, argSummary, 'ok');
+      this.logOutcome(deviceId, method, 'ok');
       return { tools };
     }
 
@@ -248,37 +236,37 @@ export class MobileGate {
     // that can only return the proxy's own empty data must refuse legibly rather
     // than succeed emptily.
     if (HARD_DENY_TOOLS.has(method) || isMobileUnreachableTool(method)) {
-      return this.denied(deviceId, method, argSummary);
+      return this.denied(deviceId, method);
     }
 
     // 4. Ownership gate — a phone may only act on sessions it created itself.
     if (OWNERSHIP_GATED_TOOLS.has(method) && !ownsTargetSession(params, deviceId, this.sessionLookup)) {
-      return this.denied(deviceId, method, argSummary);
+      return this.denied(deviceId, method);
     }
 
     // 5. Per-device allow-list. Already deny-by-default for unknown, disabled and
     // empty-allow devices (MobileDeviceStore.isToolAllowed).
     if (!this.deviceStore.isToolAllowed(deviceId, method)) {
-      return this.denied(deviceId, method, argSummary);
+      return this.denied(deviceId, method);
     }
 
     // 6. Rate limit.
-    this.consumeOrThrow(deviceId, method, argSummary);
+    this.consumeOrThrow(deviceId, method);
 
     // 7. Dispatch under the synthetic proxy identity, with caller-identity
     // overrides stripped FIRST so the phone can never act as a real session.
     const safeParams = stripCallerIdentityOverrides(params);
     try {
       const result = await this.dispatch(method, safeParams, mobileAuthContext(deviceId));
-      this.record(deviceId, method, argSummary, 'ok');
+      this.logOutcome(deviceId, method, 'ok');
       return result;
     } catch (err) {
-      // The wire response may carry the full message, but the PERSISTED audit
-      // must be value-free: several dispatcher errors embed argument VALUES in
-      // their message (e.g. `Session not found: <id>`). Store the TYPE only.
+      // The wire response may carry the full message, but the log line must be
+      // value-free: several dispatcher errors embed argument VALUES in their
+      // message (e.g. `Session not found: <id>`). Log the TYPE only.
       const message = err instanceof Error ? err.message : String(err);
       const errorType = (err as { constructor?: { name?: string } })?.constructor?.name ?? 'Error';
-      this.record(deviceId, method, argSummary, 'error', errorType);
+      this.logOutcome(deviceId, method, 'error', errorType);
       throw new GateError(JSONRPC_SERVER_ERROR, message);
     }
   }
@@ -292,50 +280,21 @@ export class MobileGate {
     return this.deviceStore.get(deviceId)?.enabled === false;
   }
 
-  /** Consume a rate-limit token or audit + throw. */
-  private consumeOrThrow(deviceId: string, method: string, argSummary: string): void {
+  /** Consume a rate-limit token or throw. */
+  private consumeOrThrow(deviceId: string, method: string): void {
     if (this.rateLimiter.tryConsume(deviceId)) return;
-    this.record(deviceId, method, argSummary, 'rate-limited');
+    this.logOutcome(deviceId, method, 'rate-limited');
     throw new GateError(JSONRPC_SERVER_ERROR, RATE_LIMIT_MESSAGE);
   }
 
-  /** Audit a denial and throw the uniform deny error. Never returns. */
-  private denied(deviceId: string, method: string, argSummary: string): never {
-    this.record(deviceId, method, argSummary, 'denied');
+  /** Deny with the uniform message. Never returns. */
+  private denied(deviceId: string, method: string): never {
+    this.logOutcome(deviceId, method, 'denied');
     throw new GateError(JSONRPC_SERVER_ERROR, MOBILE_DENY_MESSAGE);
   }
 
-  private record(
-    deviceId: string,
-    method: string,
-    argSummary: string,
-    outcome: MobileAuditOutcome,
-    error?: string,
-  ): void {
-    this.audit.append({
-      deviceId,
-      method,
-      argSummary,
-      outcome,
-      ranAt: this.now(),
-      ...(error ? { error } : {}),
-    });
-    logger.info(`[mobile-gate] ${deviceId} ${method} → ${outcome}`);
+  /** Log the gate outcome to winston — key names and error types only, never values. */
+  private logOutcome(deviceId: string, method: string, outcome: string, error?: string): void {
+    logger.info(`[mobile-gate] ${deviceId} ${method} → ${outcome}${error ? ` (${error})` : ''}`);
   }
-}
-
-/**
- * Build the audit argSummary: the SORTED top-level argument KEY NAMES only —
- * NEVER any value. This is the mechanism that keeps secrets and payloads out of
- * the audit log. Truncated to a safe length.
- */
-function summarizeArgKeys(params: unknown): string {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) {
-    return 'keys: (none)';
-  }
-  const keys = Object.keys(params as Record<string, unknown>).sort();
-  const summary = `keys: ${keys.length ? keys.join(',') : '(none)'}`;
-  return summary.length > ARG_SUMMARY_MAX
-    ? `${summary.slice(0, ARG_SUMMARY_MAX - 1)}…`
-    : summary;
 }
