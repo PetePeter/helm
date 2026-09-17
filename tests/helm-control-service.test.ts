@@ -7,6 +7,7 @@ import { getAvailableTools } from '../src/mcp/guides/session-info-guide.js';
 import { parseSessionAuthToken } from '../src/mcp/session-auth.js';
 import { SkillManager } from '../src/session/skill-manager.js';
 import { SkillAnalyticsManager } from '../src/session/skill-analytics-manager.js';
+import { ArtifactManager } from '../src/session/artifact-manager.js';
 import { logger } from '../src/utils/logger.js';
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -1549,6 +1550,88 @@ describe('HelmControlService.restartHelm', () => {
 
     expect(() => service.restartHelm(true, { callerSessionId: 'caller-1', resumePrompt: 'Continue.' }))
       .toThrow('Scheduler is not available');
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('HelmControlService.restartHelmGated (helm_restart two-phase gate)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A real ArtifactManager — the ownership rule under test is production code. */
+  function makeGatedService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }) {
+    const made = makeService(schedulerManager);
+    made.service.setArtifactManager(new ArtifactManager());
+    return made;
+  }
+
+  it('phase 1 — no handoverArtifactId always refuses, teaching the ritual, and never restarts', () => {
+    const { service, sessionManager } = makeGatedService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelmGated('caller-1', undefined))
+      .toThrow(/mess_post[\s\S]*artifact_create[\s\S]*handoverArtifactId/);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('phase 2 — a valid caller-owned artifact restarts and its content becomes the self-resume prompt', () => {
+    const schedulerManager = { createTask: vi.fn((_params: unknown) => ({ id: 'task-1' })) };
+    const { service, sessionManager } = makeGatedService(schedulerManager);
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
+      id: 'caller-1', name: 'Caller', cliType: 'claude-code', workingDir: '/work',
+    });
+    const artifact = service.createArtifact('caller-1', 'Restart handover', 'markdown', 'Continue the deploy.');
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    const result = service.restartHelmGated('caller-1', artifact.id);
+
+    expect(result).toEqual({ sessionsClosed: 0, resume: true, resumeTaskId: 'task-1' });
+    const params = schedulerManager.createTask.mock.calls[0][0] as Record<string, unknown>;
+    expect(params.initialPrompt).toBe('Continue the deploy.');
+    expect(params.targetSessionId).toBe('caller-1');
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('phase 2 — an unknown artifact id fails without restarting', () => {
+    const { service, sessionManager } = makeGatedService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelmGated('caller-1', 'art-ghost'))
+      .toThrow('Artifact not found: art-ghost');
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('phase 2 — an artifact owned by another session answers not-found, without restarting', () => {
+    const { service, sessionManager } = makeGatedService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+    const artifact = service.createArtifact('other-session', 'Their handover', 'markdown', 'none of your business');
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    // Same message as a missing id — no cross-session existence leak.
+    expect(() => service.restartHelmGated('caller-1', artifact.id))
+      .toThrow(`Artifact not found: ${artifact.id}`);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('resume:false with a locked session refuses — absorbed force-restart behaviour', () => {
+    const { service, sessionManager } = makeGatedService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: 's1', name: 'Locked One', cliType: 'claude-code', locked: true },
+    ]);
+    const artifact = service.createArtifact('caller-1', 'Restart handover', 'markdown', 'Force it.');
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(() => service.restartHelmGated('caller-1', artifact.id, false))
+      .toThrow('Cannot force-restart while locked sessions exist');
     expect(listener).not.toHaveBeenCalled();
   });
 });

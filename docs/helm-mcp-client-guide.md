@@ -223,6 +223,40 @@ const envelope = JSON.parse(chunk.slice(10, chunk.indexOf('\n')));
 await replyViaHelm(envelope.fromSessionName, response);
 ```
 
+## Restarting Helm: the `helm_restart` ritual
+
+`helm_restart` is a two-phase gate. A restart destroys your own context, so the
+first call exists only to be told to leave a handover — it ALWAYS fails:
+
+```mermaid
+sequenceDiagram
+    participant S as Session
+    participant H as helm_restart
+    S->>H: helm_restart {} (phase 1)
+    H-->>S: refused — do the ritual first
+    Note over S: mess_post a pointer<br/>artifact_create the handover
+    S->>H: helm_restart { handoverArtifactId } (phase 2)
+    H->>H: artifact exists + owned by you?
+    H-->>S: restart approved (self-resume scheduled)
+```
+
+1. **Phase 1** — call without `handoverArtifactId`. It throws; nothing restarts.
+   Follow the error's instructions:
+   - `mess_post` a short message pointing teammates at your handover doc.
+   - `artifact_create` the handover itself: what was in flight, key decisions,
+     the next concrete step.
+   - Re-call `helm_restart` with `handoverArtifactId` set to that artifact id.
+2. **Phase 2** — the id must name an artifact YOUR session created (a foreign
+   or unknown id fails identically, with no cross-session existence leak).
+   The artifact's latest content becomes the self-resume prompt, re-delivered
+   to your session ~2 minutes after relaunch — the restart never strands the
+   work that asked for it.
+
+`resume` defaults to `true` (sessions preserved and auto-resumed). `resume:false`
+closes every session first — refused while any session is locked, and no
+self-resume is scheduled since your session is closed too. Remote peers and
+phones can never invoke `helm_restart` (hard-denied in both gates).
+
 ## Testing Your Envelope Handler
 
 ```bash

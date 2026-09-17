@@ -129,7 +129,7 @@ function makeService(): HelmControlService {
     })),
     notifyUser: vi.fn((sessionRef: string, title: string, content: string) => ({ delivered: 'bubble', sessionRef, title, content })),
     getAppVisibility: vi.fn(() => ({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's1' })),
-    restartHelm: vi.fn((resume = true, _options?: { callerSessionId?: string; resumePrompt?: string }) => ({ sessionsClosed: resume ? 0 : 2, resume })),
+    restartHelmGated: vi.fn((_callerSessionId: string, _handoverArtifactId: string | undefined, resume = true) => ({ sessionsClosed: resume ? 0 : 2, resume })),
     createScheduledTask: vi.fn((params: Record<string, unknown>) => ({ id: 'task-1', status: 'pending', ...params })),
     listScheduledTasks: vi.fn(() => [{ id: 'task-1', title: 'Follow up', status: 'pending' }]),
     getScheduledTask: vi.fn((id: string) => ({ id, title: 'Follow up', status: 'pending' })),
@@ -283,7 +283,8 @@ describe('LocalhostMcpServer', () => {
     const schedulerDeleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_delete');
     const notifyUserTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'notify_user');
     const appVisibilityTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'get_app_visibility');
-    const restartHelmTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'restart_helm');
+    const restartHelmTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'helm_restart');
+    expect(toolsJson.result.tools.some((tool: { name: string }) => tool.name === 'restart_helm')).toBe(false);
     const skillsUpdateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'skill_update');
     const skillsDeleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'skill_delete');
     const contextBindTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'context_bind');
@@ -328,8 +329,9 @@ describe('LocalhostMcpServer', () => {
     expect(notifyUserTool!.description).toContain('error');
     expect(appVisibilityTool!.description).toContain('screen-lock');
     expect(restartHelmTool!.description).toContain('restart');
-    expect(restartHelmTool!.description).toContain('resumePrompt');
-    expect(restartHelmTool!.inputSchema.required).toEqual(['resumePrompt']);
+    expect(restartHelmTool!.description).toContain('handoverArtifactId');
+    expect(restartHelmTool!.description).toContain('mess_post');
+    expect(restartHelmTool!.inputSchema.required).toEqual([]);
     expect(skillsUpdateTool!.inputSchema.properties.aiAmendable).toEqual({ type: 'boolean' });
     expect(skillsUpdateTool!.inputSchema.properties.projectIds).toEqual({ type: 'array', items: { type: 'string' } });
     expect(skillsDeleteTool!.description).toContain('Delete');
@@ -367,21 +369,18 @@ describe('LocalhostMcpServer', () => {
       id: 4,
       method: 'tools/call',
       params: {
-        name: 'restart_helm',
-        arguments: { resumePrompt: 'Continue after restart.' },
+        name: 'helm_restart',
+        arguments: { handoverArtifactId: 'art-1' },
       },
     }, {
       Accept: 'application/json, text/event-stream',
       'Mcp-Method': 'tools/call',
-      'Mcp-Name': 'restart_helm',
+      'Mcp-Name': 'helm_restart',
       'X-Helm-Session-Id': 'sender-1',
     });
     const restartJson = await restartResponse.json();
     // No resume arg → defaults to resume:true (sessions preserved for auto-resume).
-    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(true, {
-      callerSessionId: 'sender-1',
-      resumePrompt: 'Continue after restart.',
-    });
+    expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', 'art-1', true);
     expect(restartJson.result.structuredContent).toEqual({ sessionsClosed: 0, resume: true });
 
     const forceResponse = await rpc(port, 'secret-token', {
@@ -389,25 +388,34 @@ describe('LocalhostMcpServer', () => {
       id: 5,
       method: 'tools/call',
       params: {
-        name: 'restart_helm',
-        arguments: { resume: false, resumePrompt: 'Continue after restart.' },
+        name: 'helm_restart',
+        arguments: { handoverArtifactId: 'art-1', resume: false },
       },
     }, {
       Accept: 'application/json, text/event-stream',
       'Mcp-Method': 'tools/call',
-      'Mcp-Name': 'restart_helm',
+      'Mcp-Name': 'helm_restart',
       'X-Helm-Session-Id': 'sender-1',
     });
     const forceJson = await forceResponse.json();
-    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(false, {
-      callerSessionId: 'sender-1',
-      resumePrompt: 'Continue after restart.',
-    });
+    expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', 'art-1', false);
     expect(forceJson.result.structuredContent).toEqual({ sessionsClosed: 2, resume: false });
   });
 
-  it('rejects restart_helm without a resumePrompt — a restart must not strand the caller', async () => {
+  it('rejects helm_restart without a handoverArtifactId — phase 1 teaches the ritual, never restarts', async () => {
     const service = makeService();
+    // The server layer's job is coercion + error propagation; the phase-1
+    // contract itself is tested against the real service in
+    // helm-control-service.test.ts. This mock embodies it.
+    (service.restartHelmGated as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (_callerSessionId: string, handoverArtifactId: string | undefined) => {
+        if (handoverArtifactId !== undefined) return { sessionsClosed: 0, resume: true };
+        throw new Error(
+          'helm_restart refused — phase 1 of 2. mess_post a pointer, artifact_create the handover, ' +
+          'then re-call with handoverArtifactId. Nothing has restarted yet.',
+        );
+      },
+    );
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
     await server.start();
@@ -418,13 +426,47 @@ describe('LocalhostMcpServer', () => {
       id: 6,
       method: 'tools/call',
       params: {
-        name: 'restart_helm',
+        name: 'helm_restart',
         arguments: {},
       },
+    }, {
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': 'helm_restart',
+      'X-Helm-Session-Id': 'sender-1',
     });
     const json = await response.json();
-    expect(json.error.message).toContain('resumePrompt is required');
-    expect((service.restartHelm as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(json.error.message).toContain('mess_post');
+    expect(json.error.message).toContain('artifact_create');
+    expect(json.error.message).toContain('handoverArtifactId');
+    // The absent argument must reach the service as undefined, never coerced.
+    expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('sender-1', undefined, true);
+  });
+
+  it('no longer dispatches a tool named restart_helm', async () => {
+    const service = makeService();
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+    const port = server.getAddress()!.port;
+
+    const response = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'tools/call',
+      params: {
+        name: 'restart_helm',
+        arguments: { handoverArtifactId: 'art-1' },
+      },
+    }, {
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Method': 'tools/call',
+      'Mcp-Name': 'restart_helm',
+      'X-Helm-Session-Id': 'sender-1',
+    });
+    const json = await response.json();
+    expect(json.error).toBeDefined();
+    expect((service.restartHelmGated as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 
   it('dispatches skills tools through the MCP surface', async () => {

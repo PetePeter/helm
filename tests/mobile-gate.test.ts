@@ -264,7 +264,7 @@ describe('MobileGate — uniform denials', () => {
     await push(disabled.gate.handle(disabled.deviceId, 'session_list', {}));
 
     const wildcard = build(['*']);
-    await push(wildcard.gate.handle(wildcard.deviceId, 'restart_helm', {}));
+    await push(wildcard.gate.handle(wildcard.deviceId, 'helm_restart', {}));
     await push(wildcard.gate.handle('unknown-device', 'session_list', {}));
 
     const narrow = build(['session_list']);
@@ -304,7 +304,7 @@ describe('MobileGate — audit', () => {
     let clock = 0;
     const { gate, audit, deviceId } = build(['session_list'], { capacity: 1, now: () => clock });
     await gate.handle(deviceId, 'session_list', {});
-    await gate.handle(deviceId, 'restart_helm', {}).catch(() => undefined);
+    await gate.handle(deviceId, 'helm_restart', {}).catch(() => undefined);
     await gate.handle(deviceId, 'session_list', {}).catch(() => undefined);
     expect(audit.list().map(e => e.outcome).sort()).toEqual(['denied', 'ok', 'rate-limited']);
   });

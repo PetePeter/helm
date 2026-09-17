@@ -1259,6 +1259,41 @@ export class HelmControlService extends EventEmitter {
     return resumeTaskId !== undefined ? { sessionsClosed, resume, resumeTaskId } : { sessionsClosed, resume };
   }
 
+  /**
+   * The MCP-facing restart — a two-phase gate in front of [restartHelm].
+   *
+   * Phase 1 (no handoverArtifactId) ALWAYS refuses: a restart destroys the
+   * caller's own context, so the first call exists to be told the ritual —
+   * leave a mess pointer, write a handover artifact, come back with its id.
+   * Phase 2 proves the handover exists via the same ownership rule as every
+   * other artifact read, and the artifact's latest content becomes the
+   * self-resume prompt, so the relaunched app re-prompts this session with
+   * the handover it left itself.
+   */
+  restartHelmGated(
+    callerSessionId: string,
+    handoverArtifactId: string | undefined,
+    resume = true,
+  ): { sessionsClosed: number; resume: boolean; resumeTaskId?: string } {
+    if (!handoverArtifactId) {
+      throw new Error(
+        'helm_restart refused — this is phase 1 of 2, and a restart destroys your own context. ' +
+          'Leave a handover first: (1) mess_post a short message pointing teammates at your handover doc, ' +
+          '(2) artifact_create the handover itself — what was in flight, decisions made, the next concrete step — ' +
+          '(3) call helm_restart again with handoverArtifactId set to that artifact id. ' +
+          'Nothing has restarted yet.',
+      );
+    }
+    const artifact = this.requireOwnedArtifact(callerSessionId, handoverArtifactId);
+    const prompt = artifact.versions[artifact.versions.length - 1]?.content ?? '';
+    // resume:false closes the caller too, so there is no session to re-prompt —
+    // restartHelm rejects a resumePrompt there, and the artifact has done its
+    // job by existing: it is still readable from the next instance.
+    return resume
+      ? this.restartHelm(true, { callerSessionId, resumePrompt: prompt })
+      : this.restartHelm(false);
+  }
+
   setAiagentState(sessionRef: string, state: 'planning' | 'implementing' | 'completed' | 'idle') {
     return this.sessionService.setAiagentState(sessionRef, state);
   }

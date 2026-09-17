@@ -196,7 +196,7 @@ describe('MobilePairing', () => {
     expect(h.devices.isToolAllowed(device.id, 'session_list')).toBe(true);
     // `*` is not a bypass — the gate's hard-deny set is what keeps the dangerous
     // tools unreachable, and it is applied after this list.
-    for (const denied of ['restart_helm', 'mobile_pair_start', 'mobile_device_allow']) {
+    for (const denied of ['helm_restart', 'mobile_pair_start', 'mobile_device_allow']) {
       expect(HARD_DENY_TOOLS.has(denied), `${denied} must stay hard-denied`).toBe(true);
     }
 

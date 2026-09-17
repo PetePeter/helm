@@ -44,7 +44,9 @@ export const RESERVED_PEER_TOOLS_METHOD = '__peer_tools__';
  * allow-list — when adding new host/lifecycle tools that must stay local-only.
  */
 export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
-  'restart_helm',
+  // Host relaunch — gated by an owned handover artifact even locally, and a
+  // remote caller has no way to satisfy that gate honestly.
+  'helm_restart',
   // Mobile pairing + grant administration: LOCAL AI ONLY. A phone that could
   // reach these would pair further devices or widen its own allow-list — the
   // gate would be handing out the keys to itself. A peer has no business

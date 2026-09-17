@@ -80,7 +80,7 @@ describe('MobileDeviceStore', () => {
     const store = makeStore();
     const device = addPixel(store);
 
-    device.allow.push('restart_helm');
+    device.allow.push('helm_restart');
     device.name = 'tampered';
 
     const stored = store.get(device.id);

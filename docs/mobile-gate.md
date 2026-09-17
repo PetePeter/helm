@@ -59,7 +59,7 @@ message, since it is a retry signal rather than an authorisation answer.
 
 ### Hard deny
 
-`restart_helm` and `session_group_close` are never invocable from a phone,
+`helm_restart` and `session_group_close` are never invocable from a phone,
 whatever the allow-list says. The set is imported from the fleet gate — one list,
 one rationale. `session_close` is deliberately *not* in it.
 

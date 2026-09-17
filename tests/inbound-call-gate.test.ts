@@ -114,22 +114,22 @@ describe('InboundCallGate', () => {
     expect(audit.list()[0].outcome).toBe('denied');
   });
 
-  it('hard-denies restart_helm even with a wildcard allow-list', async () => {
+  it('hard-denies helm_restart even with a wildcard allow-list', async () => {
     const { gate, audit, calls } = build({ mac: ['*'] });
-    await expect(gate.handle('mac', 'restart_helm', {})).rejects.toMatchObject({
+    await expect(gate.handle('mac', 'helm_restart', {})).rejects.toMatchObject({
       code: -32000,
       message: 'Tool not permitted',
     });
     expect(calls).toHaveLength(0);
     expect(audit.list()[0].outcome).toBe('denied');
-    expect(HARD_DENY_TOOLS.has('restart_helm')).toBe(true);
+    expect(HARD_DENY_TOOLS.has('helm_restart')).toBe(true);
   });
 
   it('hard-deny and allow-list-deny are indistinguishable (no existence leak)', async () => {
     const { gate } = build({ mac: ['*'] });
     let hardMsg = '';
     let allowMsg = '';
-    await gate.handle('mac', 'restart_helm', {}).catch(e => { hardMsg = e.message; });
+    await gate.handle('mac', 'helm_restart', {}).catch(e => { hardMsg = e.message; });
     // deny a tool the wildcard would allow by using a peer with an empty list
     const { gate: gate2 } = build({ mac: [] });
     await gate2.handle('mac', 'artifact_get', {}).catch(e => { allowMsg = e.message; });
@@ -312,11 +312,11 @@ describe('InboundCallGate', () => {
 describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {
   it('returns MCP_TOOLS filtered by allow-list ∩ not-hard-denied; never dispatches', async () => {
     // Allow-list grants a set of session_* tools plus the hard-denied
-    // restart_helm: those must STILL be excluded (hard-deny),
+    // helm_restart: those must STILL be excluded (hard-deny),
     // a non-allowed tool (artifact_get) must be absent.
     // session_close is NOT hard-denied (ownership-gated), so it appears.
     const { gate, calls } = build({
-      mac: ['session_list', 'session_create', 'restart_helm', 'session_close'],
+      mac: ['session_list', 'session_create', 'helm_restart', 'session_close'],
     });
 
     const result = (await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {})) as {
@@ -329,7 +329,7 @@ describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {
     expect(names).toContain('session_create');
     expect(names).toContain('session_close'); // ownership-gated, NOT hard-denied
     // hard-denied tool EXCLUDED even though allow-listed
-    expect(names).not.toContain('restart_helm');
+    expect(names).not.toContain('helm_restart');
     // non-allowed tool absent
     expect(names).not.toContain('artifact_get');
 

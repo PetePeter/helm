@@ -449,7 +449,7 @@ Sessions a peer opens on this machine are **tinted light blue** in the sidebar, 
 
 Messages sent with `expectsResponse` round-trip across machines: the sender's identity is carried as a `fleet:<peerId>:<sessionId>` address and the reply is routed back over the same link into the asking session. The proxy identity is still what authorises the call, so a forged sender can at worst route a reply back to its own machine.
 
-Each peer has its own allow-list (deny-by-default), a rate limit, and a rolling 7-day **Audit** log of every inbound call. `restart_helm`, `session_close` and `session_group_close` are never remotely invocable, even for a peer allowed everything. Unpair forgets the key and the pinned certificate.
+Each peer has its own allow-list (deny-by-default), a rate limit, and a rolling 7-day **Audit** log of every inbound call. `helm_restart`, `session_close` and `session_group_close` are never remotely invocable, even for a peer allowed everything. Unpair forgets the key and the pinned certificate.
 
 See [fleet.md](docs/fleet.md) for the transport, pairing protocol and security model.
 

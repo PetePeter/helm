@@ -596,7 +596,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'project_create',
     title: 'Create Project',
-    description: 'Register a new project (working directory) so it becomes a valid target for plan_create, sequence_create, and context_create. The directory must exist on disk and must not already be registered (as a canonical or alternate path). Changes are persisted immediately. Note: the running app loads projects once at startup — a restart_helm may be required before the new directory is accepted by other tools.',
+    description: 'Register a new project (working directory) so it becomes a valid target for plan_create, sequence_create, and context_create. The directory must exist on disk and must not already be registered (as a canonical or alternate path). Changes are persisted immediately. Note: the running app loads projects once at startup — a helm_restart may be required before the new directory is accepted by other tools.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1077,16 +1077,16 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'restart_helm',
-    title: 'Restart Helm',
-    description: 'Restart the Helm application. By default sessions are preserved and auto-resume after relaunch. Pass resume:false to close all sessions first (force restart). MCP and Telegram resume after a 3-second delay. REQUIRED: pass resumePrompt — a compact handover to your post-restart self (what was being done, decisions made, the next concrete step). Helm creates a one-shot scheduled task that re-prompts this session ~2 minutes after relaunch, so the restart never strands your work. Returns the resumeTaskId so you can scheduler_cancel it if the restart turns out unnecessary.',
+    name: 'helm_restart',
+    title: 'Restart Helm (two-phase, handover-gated)',
+    description: 'Restart the Helm application through a deliberate two-phase ritual. Phase 1 — call WITHOUT handoverArtifactId: ALWAYS refused; the error tells you the ritual. Do it in order: (1) mess_post a short message pointing teammates at your handover doc, (2) artifact_create the handover itself — what was in flight, key decisions, the next concrete step, (3) re-call helm_restart with handoverArtifactId set to that artifact id. Phase 2 — the id must name an artifact YOUR session created; its latest content becomes the self-resume prompt, re-delivered to this session ~2 minutes after relaunch, so the restart never strands your work. Returns the resumeTaskId so you can scheduler_cancel it if the restart turns out unnecessary. resume defaults to true (sessions preserved and auto-resumed); resume:false closes every session first — refuses while any session is locked, and schedules no self-resume since your session is closed too.',
     inputSchema: {
       type: 'object',
       properties: {
-        resume: { type: 'boolean', description: 'Preserve and auto-resume existing sessions after relaunch. Defaults to true; set false to close all sessions first. resumePrompt is not allowed with resume:false — the calling session is closed and cannot be re-prompted.' },
-        resumePrompt: { type: 'string', description: 'Handover delivered back to this session after relaunch: what was in flight, key decisions, and the next concrete step.' },
+        handoverArtifactId: { type: 'string', description: 'Phase 2 only: the id of the handover artifact you created in phase 1. Must be owned by your session — a foreign or unknown id fails the same way.' },
+        resume: { type: 'boolean', description: 'Preserve and auto-resume existing sessions after relaunch. Defaults to true; set false to close all sessions first (force restart, refused while any session is locked).' },
       },
-      required: ['resumePrompt'],
+      required: [],
       additionalProperties: false,
     },
   },
