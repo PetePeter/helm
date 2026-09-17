@@ -40,6 +40,11 @@ class FakeGattPeripheral : GattPeripheral {
     override fun disconnect(centralAddress: String) {
         disconnected.add(centralAddress)
     }
+
+    /** The radio's connected list, as the real stack would report it. */
+    val connected = mutableSetOf<String>()
+
+    override fun connectedCentrals(): List<String> = connected.toList()
 }
 
 /** Collects deferred work so a test can run it without waiting on a clock. */

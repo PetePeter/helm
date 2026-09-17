@@ -126,6 +126,17 @@ export interface MobileLinkTransport {
   stop(): Promise<void>;
   /** Disconnect a link the manager refused, and go back to scanning. */
   reject(link: MobileLink, reason: string): Promise<void>;
+  /**
+   * Close a link the manager is RETIRING — displaced by a higher rank, dropped,
+   * or stopped — rather than refusing.
+   *
+   * The difference from [reject] is the penalty: reject marks the advertiser
+   * as unwelcome for a cooldown so a neighbour's phone is not reconnected on
+   * every rescan, and a link retired because LAN took over would pay that
+   * cooldown exactly when the phone might need Bluetooth back. Optional so
+   * existing fakes keep compiling; a transport without it falls back to reject.
+   */
+  disconnect?(link: MobileLink, reason: string): Promise<void>;
   on(event: 'link', handler: (link: MobileLink) => void): unknown;
   on(event: 'disconnected', handler: (deviceId: string) => void): unknown;
 }
@@ -340,7 +351,14 @@ export class MobileLinkManager extends EventEmitter {
     } catch (error) {
       this.log(`closing the channel for ${active.machineId} failed`, error);
     }
-    void active.transport?.reject(active.link, reason)
+    // disconnect rather than reject: teardown RETIRES links (rank displacement,
+    // drop, stop), and reject's cooldown would delay the very Bluetooth
+    // fallback a LAN handover exists to enable. refuse() keeps reject — a
+    // candidate that failed identification is who the cooldown is for.
+    const transport = active.transport;
+    if (!transport) return;
+    const close = (transport.disconnect ?? transport.reject).bind(transport);
+    void close(active.link, reason)
       .catch((error) => this.log(`dropping the link for ${active.machineId} failed`, error));
   }
 

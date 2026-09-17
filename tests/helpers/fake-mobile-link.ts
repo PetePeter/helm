@@ -89,6 +89,8 @@ export class FakeTransport extends EventEmitter implements MobileLinkTransport {
   startCount = 0;
   /** Every link the manager refused, with the reason it gave. */
   readonly rejected: Array<{ deviceId: string; reason: string }> = [];
+  /** Every link the manager RETIRED (displaced/dropped/stopped), not refused. */
+  readonly retired: Array<{ deviceId: string; reason: string }> = [];
 
   /** A radio remembers its address; a socket transport sets this false. */
   persistsAddressHint = true;
@@ -109,6 +111,13 @@ export class FakeTransport extends EventEmitter implements MobileLinkTransport {
 
   async reject(link: MobileLink, reason: string): Promise<void> {
     this.rejected.push({ deviceId: link.deviceId, reason });
+    link.pipe.close();
+    this.emit('disconnected', link.deviceId);
+  }
+
+  /** Retire a healthy link without the refusal penalty — mirrors BleLinkClient. */
+  async disconnect(link: MobileLink, reason: string): Promise<void> {
+    this.retired.push({ deviceId: link.deviceId, reason });
     link.pipe.close();
     this.emit('disconnected', link.deviceId);
   }

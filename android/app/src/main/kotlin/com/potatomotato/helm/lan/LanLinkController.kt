@@ -21,10 +21,13 @@ import java.util.concurrent.Executors
  * (the address push rides the authenticated channel — see
  * MobileAddressAdvertiser). Dialling at any other time would be guessing.
  *
- * It does NOT retry on a schedule. Every Bluetooth link is one attempt, and a
- * refreshed address list is another. Away from home that means one quiet failed
- * connect per link rather than a background loop draining the battery to
- * rediscover that the office wifi still isolates its clients.
+ * It ALSO retries on a backoff, but ONLY while nothing else carries the link
+ * (see [scheduleRetry]). The Bluetooth-triggered attempt alone strands a phone
+ * whose ONLY path is the network: away from home over a VPN there is no
+ * Bluetooth link coming to re-trigger the dial, so one dropped TCP connection
+ * used to be permanent. A phone whose Bluetooth link IS up is never retried —
+ * the next address push does that job better, and a background loop would drain
+ * the battery rediscovering that the office wifi still isolates its clients.
  *
  * The Bluetooth link is NOT torn down on success. It stays attached at its lower
  * rank so that LAN dropping is an instant handover rather than a reconnect —
@@ -42,13 +45,31 @@ class LanLinkController(
      * absorb the caller's thread exactly as the BLE queue does.
      */
     runWrite: ((() -> Unit) -> Unit)? = null,
+    /**
+     * Delayed execution for the redial curve. Injected so a test can step the
+     * schedule by hand; the default is a daemon thread, matching [runBlocking].
+     */
+    private val schedule: (delayMs: Long, action: () -> Unit) -> Unit =
+        { delayMs, action -> Thread({ Thread.sleep(delayMs); action() }, "helm-lan-retry").apply { isDaemon = true }.start() },
     private val log: (String) -> Unit = {},
 ) {
+    private companion object {
+        const val RETRY_MIN_MS = 15_000L
+        const val RETRY_MAX_MS = 60_000L
+    }
+
     private val lock = Any()
     @Volatile private var session: LanLinkSession? = null
 
     /** True while a dial is in flight, so stacked triggers make one attempt. */
     private var dialing = false
+
+    /** The desktop the last dial was for — who a redial is for. */
+    @Volatile private var lastMachineId: String? = null
+
+    private var retryPending = false
+    private var retryDelayMs = RETRY_MIN_MS
+    @Volatile private var stopped = false
 
     private val writer: ExecutorService by lazy {
         Executors.newSingleThreadExecutor { runnable ->
@@ -70,7 +91,14 @@ class LanLinkController(
      * teardown detaching the winner's link was a real flap on hardware.
      */
     fun tryConnect(machineId: String) {
-        val lan = dial(machineId) ?: return
+        lastMachineId = machineId
+        val lan = dial(machineId)
+        if (lan == null) {
+            // A failed attempt is retried later — but never when there is
+            // nothing to dial, which only a fresh address push can change.
+            if (addresses.load(machineId).isNotEmpty()) scheduleRetry()
+            return
+        }
 
         runBlocking {
             try {
@@ -112,6 +140,7 @@ class LanLinkController(
                 session = lan
                 HelmLink.attach(RANK_LAN) { data -> runWrite { lan.send(data) } }
             }
+            retryDelayMs = RETRY_MIN_MS
             HelmLink.publishState(RANK_LAN, LinkState.Linked)
             log("LAN link is up; it now carries the link")
             return lan
@@ -132,10 +161,37 @@ class LanLinkController(
             HelmLink.detachRank(RANK_LAN)
             log("LAN link ended; Bluetooth resumes if it is still up")
         }
+        // A phone whose only path was this socket has no link event coming to
+        // re-trigger a dial — the redial loop is that event.
+        scheduleRetry()
+    }
+
+    /**
+     * Redial later, and only when it can matter. While another transport
+     * carries the link the attempt is postponed rather than made: Bluetooth
+     * being up means the next address push dials better than a timer would,
+     * and away from home a quiet timer is the whole cost.
+     */
+    private fun scheduleRetry() {
+        val machineId = lastMachineId ?: return
+        if (retryPending || stopped) return
+        retryPending = true
+        val delay = retryDelayMs
+        retryDelayMs = minOf(retryDelayMs * 2, RETRY_MAX_MS)
+        schedule(delay) {
+            retryPending = false
+            if (stopped) return@schedule
+            when {
+                connected -> scheduleRetry()
+                HelmLink.state.value == LinkState.Linked -> scheduleRetry()
+                else -> tryConnect(machineId)
+            }
+        }
     }
 
     /** Drop any LAN link. Bluetooth takes over again on its own. */
     fun stop() {
+        stopped = true
         val open = synchronized(lock) {
             val current = session ?: return
             session = null

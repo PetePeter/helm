@@ -244,6 +244,25 @@ export class BleLinkClient extends EventEmitter {
    * after a handshake, so refusing AFTER connecting is the only filter possible
    * — see the identity note in mobile-link-manager.ts.
    */
+  /**
+   * Close a RETIRED link without the refusal penalty. The manager calls this
+   * when a healthy link is displaced (LAN took over) or the stack is stopping:
+   * the phone is welcome back over Bluetooth at any moment, so its advertiser
+   * id must not land in the ignore window reject() exists to impose on
+   * strangers. Same mechanics as reject, minus the cooldown.
+   */
+  async disconnect(link: MobileLink, reason: string): Promise<void> {
+    this.log(`BLE closing ${link.deviceId}: ${reason}`);
+
+    const active = this.active;
+    if (!active || active.deviceId !== link.deviceId) return;
+    await active.disconnect();
+    if (this.active !== active) return;
+    this.active = null;
+    this.emit('disconnected', active.deviceId);
+    this.scheduleRescan();
+  }
+
   async reject(link: MobileLink, reason: string): Promise<void> {
     this.ignored.set(link.deviceId, this.now() + this.rejectIgnoreMs);
     this.log(`BLE rejecting ${link.deviceId}: ${reason}`);

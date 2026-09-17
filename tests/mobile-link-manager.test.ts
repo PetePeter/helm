@@ -417,6 +417,29 @@ describe('MobileLinkManager transport preemption', () => {
     expect(h.manager.isOnline(PHONE)).toBe(true);
   });
 
+  it('retires the displaced BLE link without the refusal cooldown', async () => {
+    // reject() marks an advertiser unwelcome for a cooldown so a neighbour's
+    // phone is not reconnected on every rescan. A link retired because LAN
+    // took over must NOT pay that penalty — it is the phone Helm wants back
+    // over Bluetooth the moment LAN drops. teardown therefore goes through
+    // the transport's disconnect, never reject.
+    vi.useFakeTimers();
+    try {
+      const h = preemptHarness();
+      const ble = await linkOverBle(h);
+      await offerOn(h.transports[1], new FakeLink(LAN));
+
+      // Retirement waits out the drain grace, like every displacement.
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(h.transports[0].retired).toHaveLength(1);
+      expect(h.transports[0].rejected).toEqual([]);
+      expect(ble.link.closed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('refuses a BLE link while a LAN link is live', async () => {
     const h = preemptHarness();
     pair(h, PHONE);
@@ -640,7 +663,11 @@ describe('MobileLinkManager retires the old link after a drain grace', () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(bleChannel.closed).toBe(true);
-    expect(h.transports[0].rejected).toHaveLength(1);
+    // Retirement, not refusal: the displaced BLE link must not pay the
+    // rejection cooldown that exists for strangers — the phone may need
+    // Bluetooth back the moment LAN drops.
+    expect(h.transports[0].retired).toHaveLength(1);
+    expect(h.transports[0].rejected).toEqual([]);
     // And the retirement still did not disturb the live link.
     expect(h.manager.isOnline(PHONE)).toBe(true);
     expect(h.offline).toEqual([]);
@@ -1002,8 +1029,10 @@ describe('MobileLinkManager keepalive', () => {
     expect(channel.closed).toBe(true);
     expect(h.manager.isOnline(PHONE)).toBe(false);
     expect(h.offline).toEqual([PHONE]);
-    // Rejecting returns the transport's active-link slot, so the rescan recovers.
-    expect(h.transport.rejected.map((entry) => entry.deviceId)).toEqual([ADDR]);
+    // Dropping returns the transport's active-link slot, so the rescan recovers
+    // — as a retirement now, not a refusal: a keepalive drop is not a stranger.
+    expect(h.transport.retired.map((entry) => entry.deviceId)).toEqual([ADDR]);
+    expect(h.transport.rejected).toEqual([]);
   });
 
   it('never drops a healthy link that answers its probes', async () => {

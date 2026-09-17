@@ -168,6 +168,14 @@ object HelmPairing {
         // rather than being poked from every place that could change it: a new
         // pairing, a dropped link and a revocation all land here as one update.
         scope.launch { requireController().state.collect { refreshDesktops() } }
+
+        // A phone whose only path to the desktop is the network — the VPN case
+        // — never sees the Bluetooth link-up that triggers a dial, so startup
+        // makes one attempt per paired desktop and the controller's own
+        // backoff carries it from there.
+        scope.launch(Dispatchers.IO) {
+            for (desktopId in keys.pairedMachineIds()) lan?.tryConnect(desktopId)
+        }
     }
 
     /**

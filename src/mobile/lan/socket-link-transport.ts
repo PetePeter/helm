@@ -175,6 +175,11 @@ export class SocketLinkTransport extends EventEmitter {
     link.pipe.close();
   }
 
+  /** A retired socket is closed the same way a refused one is — no cooldown to skip. */
+  async disconnect(link: MobileLink, reason: string): Promise<void> {
+    this.reject(link, reason);
+  }
+
   private accept(socket: Socket): void {
     this.sockets.add(socket);
     // Terminal framing is the application's job; Nagle only adds latency to the

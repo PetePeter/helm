@@ -32,6 +32,9 @@ class BleLinkSessionTest {
         session.onCentralConnected(address)
         session.onMtuChanged(address, mtu)
         session.onTxSubscribed(address)
+        // A central that connected IS connected, as far as the radio knows —
+        // until a test empties the list to make it a ghost.
+        peripheral.connected += address
     }
 
     @Test
@@ -152,7 +155,9 @@ class BleLinkSessionTest {
         assertEquals(startsBefore + 1, peripheral.advertiseStarts)
         assertEquals(LinkState.Advertising, session.state)
         assertNull(session.centralAddress)
-        assertEquals(emptyList<Long>(), scheduler.delays)
+        // The only schedule left is the idle supervisor the link armed — its
+        // action no-ops now that no central is held.
+        assertEquals(listOf(15_000L), scheduler.delays)
     }
 
     @Test
@@ -255,8 +260,9 @@ class BleLinkSessionTest {
         session.send(Random(9).nextBytes(700))
         assertEquals(1, peripheral.notified.size)
 
-        // One deadline armed per chunk put on the wire, and none before.
-        assertEquals(listOf(10_000L), scheduler.delays)
+        // One deadline armed per chunk put on the wire, and none before —
+        // the 15s entry is the idle supervisor, not the ack deadline.
+        assertEquals(listOf(15_000L, 10_000L), scheduler.delays)
         scheduler.runPending()
 
         // A missing ack is a transport failure: the central is dropped, the
@@ -340,5 +346,58 @@ class BleLinkSessionTest {
             reassembled.map { it.toHex() }.sorted(),
         )
         assertEquals(emptyList<Exception>(), failures)
+    }
+
+    @Test
+    fun `verifyCentral drops a central the radio no longer sees and re-advertises`() {
+        // The ghost this exists for: the peer's stack died without an
+        // announcement, so the session's echo points at nobody.
+        link()
+        peripheral.connected.clear()
+        val startsBefore = peripheral.advertiseStarts
+
+        session.verifyCentral()
+
+        assertNull(session.centralAddress)
+        assertEquals(startsBefore + 1, peripheral.advertiseStarts)
+        assertTrue(logs.any { it.contains("without an announcement") })
+    }
+
+    @Test
+    fun `verifyCentral keeps a central the radio still reports`() {
+        link()
+        peripheral.connected += helm
+
+        session.verifyCentral()
+
+        assertEquals(helm, session.centralAddress)
+        assertEquals(LinkState.Linked, session.state)
+    }
+
+    @Test
+    fun `the idle supervisor drops a ghost central at its interval`() {
+        // Pure listening has no traffic to notice a loss with — the supervisor
+        // is the only probe. The radio's truth is emptied, as a silent central
+        // death leaves it.
+        link()
+        peripheral.connected.clear()
+
+        assertEquals(listOf(15_000L), scheduler.delays)
+        scheduler.runPending()
+
+        assertNull(session.centralAddress)
+        // It does not re-arm once no central is held.
+        assertEquals(listOf(15_000L), scheduler.delays)
+    }
+
+    @Test
+    fun `the idle supervisor re-arms while a live central holds the link`() {
+        link()
+        peripheral.connected += helm
+
+        scheduler.runPending()
+
+        assertEquals(helm, session.centralAddress)
+        assertEquals(listOf(15_000L, 15_000L), scheduler.delays)
     }
 }

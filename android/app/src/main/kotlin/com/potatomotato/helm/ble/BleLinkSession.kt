@@ -43,6 +43,15 @@ class BleLinkSession(
          * first chunk. Treat it as a dropped link rather than wait forever.
          */
         const val ACK_TIMEOUT_MS = 10_000L
+
+        /**
+         * How often the central's reality is re-checked while this session
+         * claims one. A phone that is only LISTENING has no traffic of its own
+         * to notice a silent loss with — the ack watchdog arms only after an
+         * outbound chunk — so the one probe available is a look at the radio
+         * itself, taken on the same scheduler everything else here defers to.
+         */
+        const val SUPERVISE_INTERVAL_MS = 15_000L
     }
 
     /**
@@ -184,6 +193,7 @@ class BleLinkSession(
         // central is never invited in the first place.
         safely("stopAdvertising") { peripheral.stopAdvertising() }
         transitionTo(LinkState.Connecting)
+        supervise()
     }
 
     fun onMtuChanged(address: String, mtu: Int) = synchronized(lock) {
@@ -259,6 +269,39 @@ class BleLinkSession(
 
     /** How long the current central has held the link. 0 when none has. */
     private fun millisLinked(): Long = if (connectedAt == 0L) 0L else now() - connectedAt
+
+    /**
+     * Ask the radio whether the central this session still remembers is really
+     * there. [centralAddress] is an ECHO of the stack's connected list, and the
+     * two can disagree: a central that died without an announcement — a wedged
+     * disconnect on the peer's stack does exactly this — leaves the echo
+     * pointing at nobody. A ghost like that gets promoted straight back into
+     * service when LAN releases the link, and nothing else ever surfaces it.
+     *
+     * The disconnect path is reused wholesale: reset, re-advertise, wait.
+     */
+    fun verifyCentral() = synchronized(lock) {
+        val address = centralAddress ?: return
+        if (peripheral.connectedCentrals().any { it == address }) return
+        log("central $address is gone from the radio without an announcement; dropping the stale link")
+        onCentralDisconnected(address, GattStatus.SUCCESS)
+    }
+
+    /**
+     * The idle half of liveness. Arms with each central and re-arms while one
+     * holds the link; [verifyCentral] decides what the look found.
+     */
+    private fun supervise() {
+        scheduler.schedule(SUPERVISE_INTERVAL_MS) {
+            synchronized(lock) {
+                if (!running || centralAddress == null) return@schedule
+                verifyCentral()
+                // Re-arm only while a central is still held: a look that found
+                // a ghost has already ended the thing being supervised.
+                if (centralAddress != null) supervise()
+            }
+        }
+    }
 
     // ---- internals --------------------------------------------------------
 
@@ -378,6 +421,13 @@ interface GattPeripheral {
     fun notifyTx(chunk: ByteArray): Boolean
 
     fun disconnect(centralAddress: String)
+
+    /**
+     * The centrals the RADIO says are connected — the truth [BleLinkSession]'s
+     * [centralAddress][BleLinkSession.centralAddress] is only an echo of, and
+     * what [verifyCentral][BleLinkSession.verifyCentral] checks it against.
+     */
+    fun connectedCentrals(): List<String>
 }
 
 /** Deferred execution, so advertising backoff is testable without a clock. */

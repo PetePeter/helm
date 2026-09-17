@@ -158,6 +158,9 @@ class GattServer(
         server.cancelConnection(device)
     }
 
+    /** The radio's truth about who is connected — see GattPeripheral. */
+    override fun connectedCentrals(): List<String> = connectedDevices().map { it.address }
+
     // ---- framework callbacks ----------------------------------------------
 
     private val advertiseCallback = object : AdvertiseCallback() {
