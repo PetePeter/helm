@@ -16,6 +16,68 @@ import org.junit.Test
 class MarkdownRulesTest {
 
     @Test
+    fun `a bare url in a paragraph becomes a link`() {
+        assertEquals(
+            listOf(
+                MdBlock.Paragraph(
+                    listOf(
+                        MdSpan.Text("see "),
+                        MdSpan.Link("https://example.com/a", "https://example.com/a"),
+                        MdSpan.Text(" now"),
+                    ),
+                ),
+            ),
+            MarkdownRules.blocks("see https://example.com/a now"),
+        )
+    }
+
+    @Test
+    fun `an explicit link still wins over the bare form`() {
+        assertEquals(
+            listOf(MdBlock.Paragraph(listOf(MdSpan.Link("docs", "https://example.com")))),
+            MarkdownRules.blocks("[docs](https://example.com)"),
+        )
+    }
+
+    @Test
+    fun `a url inside a code span stays code`() {
+        assertEquals(
+            listOf(MdBlock.Paragraph(listOf(MdSpan.CodeSpan("https://example.com")))),
+            MarkdownRules.blocks("`https://example.com`"),
+        )
+    }
+
+    @Test
+    fun `a word merely starting with h is ordinary text`() {
+        assertEquals(
+            listOf(MdBlock.Paragraph(listOf(MdSpan.Text("however http is a scheme")))),
+            MarkdownRules.blocks("however http is a scheme"),
+        )
+    }
+
+    @Test
+    fun `linksOnly finds the url and leaves the markers literal`() {
+        assertEquals(
+            listOf(
+                MdSpan.Text("**not bold** "),
+                MdSpan.Link("https://example.com", "https://example.com"),
+                MdSpan.Text(" ok"),
+            ),
+            MarkdownRules.linksOnly("**not bold** https://example.com ok"),
+        )
+    }
+
+    @Test
+    fun `linksOnly on text with no url is one plain span`() {
+        assertEquals(listOf(MdSpan.Text("just words")), MarkdownRules.linksOnly("just words"))
+    }
+
+    @Test
+    fun `linksOnly on empty text is nothing at all`() {
+        assertEquals(emptyList<MdSpan>(), MarkdownRules.linksOnly(""))
+    }
+
+    @Test
     fun `an ATX heading carries its level`() {
         assertEquals(
             listOf(MdBlock.Heading(1, "Report"), MdBlock.Heading(3, "Timings")),

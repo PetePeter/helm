@@ -77,7 +77,38 @@ object MarkdownRules {
         return blocks
     }
 
-    /** Parse `**bold**`, `*italic*`, `` `code` `` and `[text](target)`, left to right. */
+    /**
+     * The links in a piece of PLAIN text, with everything else left literal.
+     *
+     * For the surfaces that deliberately do not render markdown — chat bubbles,
+     * a context body — where a URL is still a URL and should be tappable. It
+     * shares [LinkRules] with the markdown path so both ends agree on where a
+     * URL stops and what may be opened; what it does NOT share is the rest of
+     * the subset, so `**stars**` in a chat message stay stars.
+     */
+    fun linksOnly(text: String): List<MdSpan> {
+        val out = mutableListOf<MdSpan>()
+        val plain = StringBuilder()
+        var i = 0
+        while (i < text.length) {
+            val link = LinkRules.autolink(text, i)
+            if (link == null) {
+                plain.append(text[i])
+                i++
+            } else {
+                if (plain.isNotEmpty()) {
+                    out += MdSpan.Text(plain.toString())
+                    plain.clear()
+                }
+                out += MdSpan.Link(link.url, link.url)
+                i = link.end
+            }
+        }
+        if (plain.isNotEmpty()) out += MdSpan.Text(plain.toString())
+        return out
+    }
+
+    /** Parse `**bold**`, `*italic*`, `` `code` ``, `[text](target)` and bare URLs, left to right. */
     private fun spans(text: String): List<MdSpan> {
         val out = mutableListOf<MdSpan>()
         val plain = StringBuilder()
@@ -97,6 +128,9 @@ object MarkdownRules {
                 rest.startsWith(BOLD_DELIM) -> matchMarker(text, i + 2, BOLD_DELIM)
                 rest.startsWith(ITALIC_DELIM) -> matchMarker(text, i + 1, ITALIC_DELIM)
                 rest.startsWith("[") -> matchLink(text, i)
+                // A URL written without brackets is still a link; the scanner
+                // only asks LinkRules at an 'h' so ordinary prose costs nothing.
+                rest.startsWith("h", ignoreCase = true) -> matchAutolink(text, i)
                 else -> null
             }
             if (match == null) {
@@ -138,6 +172,9 @@ object MarkdownRules {
         if (close <= body + 2) return null
         return Match(MdSpan.Link(text.substring(from + 1, body), text.substring(body + 2, close)), close + 1)
     }
+
+    private fun matchAutolink(text: String, from: Int): Match? =
+        LinkRules.autolink(text, from)?.let { Match(MdSpan.Link(it.url, it.url), it.end) }
 
     /** ``` or ~~~ — any fence marker, rendered the same. */
     private fun isFence(line: String): Boolean =

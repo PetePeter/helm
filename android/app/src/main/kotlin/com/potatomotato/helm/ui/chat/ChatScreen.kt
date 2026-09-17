@@ -1,5 +1,7 @@
 package com.potatomotato.helm.ui.chat
 
+import android.os.SystemClock
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,7 +16,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -47,6 +48,7 @@ import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.ui.components.Hairline
+import com.potatomotato.helm.ui.components.LinkedText
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -177,7 +179,12 @@ private fun Bubble(
     ) {
         Column(
             horizontalAlignment = if (fromPhone) Alignment.End else Alignment.Start,
-            modifier = Modifier.widthIn(max = BUBBLE_MAX_WIDTH),
+            // Three quarters of the thread's width, not a fixed dp: the bubble
+            // should read the same on a small phone and a tablet, and the
+            // quarter left over is what keeps the other speaker's side visible.
+            // The column is the ceiling; the bubble inside it still hugs its own
+            // text and sits on its speaker's edge.
+            modifier = Modifier.fillMaxWidth(BUBBLE_WIDTH_FRACTION),
         ) {
             Box(
                 modifier = Modifier
@@ -195,7 +202,10 @@ private fun Bubble(
                     // the least the user needs — long-press to copy what arrived —
                     // and the timestamp and delivery note stay outside it.
                     SelectionContainer {
-                        Text(
+                        // Linked, not markdown: a chat message is prose, and the
+                        // one thing in it worth a tap is a URL. LinkedText keeps
+                        // every other marker literal.
+                        LinkedText(
                             text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
                             color = if (fromPhone) HelmColors.OnAccent else HelmColors.Txt,
                             style = MaterialTheme.typography.bodyMedium.copy(
@@ -297,11 +307,32 @@ private fun Composer(
     // jiggle the buttons under the thumb.
     val stack = remember { ComposerStack() }
     var mode by remember { mutableStateOf(ComposerStack.Mode.Row) }
+
+    // A tap is only the user's if the buttons have been still for a moment: the
+    // swap moves send to where mic just was, and a thumb already travelling
+    // would otherwise deliver a half-written draft. Elapsed time, not wall
+    // clock, so a clock change cannot open or close the window.
+    fun guarded(action: () -> Unit): () -> Unit = {
+        if (stack.acceptsTap(SystemClock.elapsedRealtime())) action()
+    }
+
+    // Sending empties the field, so the next layout is known rather than
+    // debounced — and the half-finished run toward a switch described a draft
+    // that no longer exists.
+    val send = guarded {
+        onSend()
+        stack.reset()
+        mode = ComposerStack.Mode.Row
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(HelmColors.Surface)
-            .padding(HelmSpacing.Md),
+            .padding(HelmSpacing.Md)
+            // The circles slide between the two layouts instead of teleporting,
+            // which is also what makes the guarded window legible.
+            .animateContentSize(),
         // Bottom-anchored: a multiline draft grows the field upward, and the
         // three circles stay where the thumb rests instead of riding to centre.
         verticalAlignment = Alignment.Bottom,
@@ -310,15 +341,15 @@ private fun Composer(
         ComposerDraft(
             draft = draft,
             onDraft = onDraft,
-            onLines = { mode = stack.onLineCount(it) },
+            onLines = { mode = stack.onLineCount(it, SystemClock.elapsedRealtime()) },
             modifier = Modifier.weight(1f),
         )
 
         when (mode) {
             ComposerStack.Mode.Row -> {
-                ComposerTerminal(onTerminal)
-                ComposerMic(onVoice)
-                ComposerSend(enabled = draft.isNotBlank(), onSend = onSend)
+                ComposerTerminal(guarded(onTerminal))
+                ComposerMic(guarded(onVoice))
+                ComposerSend(enabled = draft.isNotBlank(), onSend = send)
             }
             // A tall draft leaves no room beside it: the circles stack along the
             // right edge — same order, send still last.
@@ -326,9 +357,9 @@ private fun Composer(
                 verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
                 horizontalAlignment = Alignment.End,
             ) {
-                ComposerTerminal(onTerminal)
-                ComposerMic(onVoice)
-                ComposerSend(enabled = draft.isNotBlank(), onSend = onSend)
+                ComposerTerminal(guarded(onTerminal))
+                ComposerMic(guarded(onVoice))
+                ComposerSend(enabled = draft.isNotBlank(), onSend = send)
             }
         }
     }
@@ -440,7 +471,7 @@ private fun ComposerSend(enabled: Boolean, onSend: () -> Unit) {
 }
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
-private val BUBBLE_MAX_WIDTH = 280.dp
+private const val BUBBLE_WIDTH_FRACTION = 0.75f
 
 /** The pulled-in tail corner. See Bubble. */
 private val BUBBLE_TAIL = 5.dp

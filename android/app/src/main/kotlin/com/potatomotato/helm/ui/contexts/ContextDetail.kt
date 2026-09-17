@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmContext
+import com.potatomotato.helm.ui.components.LinkedText
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.Pill
@@ -27,9 +28,12 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  *
  * THE BODY IS PLAIN TEXT, deliberately. Context nodes are written by agents as
  * often as by the user, and AI-authored content is untrusted by invariant 9 —
- * so it is not put through the markdown renderer and gains no links, no images
- * and no styling it could have asked for. A node that is genuinely empty says so
- * rather than showing a blank screen the user cannot tell from a failure.
+ * so it is not put through the markdown renderer and gains no images and no
+ * styling it could have asked for. The one exception is a bare URL, which
+ * LinkedText makes tappable through the same scheme allow-list the markdown path
+ * uses: the node cannot dress a link up as other words, only offer the address
+ * the reader can already see. A node that is genuinely empty says so rather than
+ * showing a blank screen the user cannot tell from a failure.
  */
 @Composable
 fun ContextDetail(
@@ -50,7 +54,7 @@ fun ContextDetail(
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             item(key = "head") { ContextHead(shown) }
             item(key = "body") {
-                Text(
+                LinkedText(
                     text = shown.content.ifBlank { stringResource(R.string.context_empty_content) },
                     color = if (shown.content.isBlank()) HelmColors.Faint else HelmColors.Txt,
                     style = MaterialTheme.typography.bodyMedium,

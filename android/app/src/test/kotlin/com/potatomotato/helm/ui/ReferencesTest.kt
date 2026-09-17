@@ -8,18 +8,23 @@ import com.potatomotato.helm.data.PlanStatus
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** What the ⧉ button puts on the clipboard for each kind of detail screen. */
+/**
+ * What the ⧉ button puts on the clipboard for each kind of detail screen.
+ *
+ * Every reference carries its KIND as well as its id: what is pasted has to say
+ * what it is, since the ids alone do not tell each other apart.
+ */
 class ReferencesTest {
 
     @Test
     fun `a plan copies its human id`() {
-        assertEquals("P-0007", HelmReferences.plan(plan(humanId = "P-0007")))
+        assertEquals("[helm plan P-0007]", HelmReferences.plan(plan(humanId = "P-0007")))
     }
 
     @Test
     fun `a plan without a human id falls back to its uuid`() {
         assertEquals(
-            "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+            "[helm plan 6f9619ff-8b86-d011-b42d-00c04fc964ff]",
             HelmReferences.plan(plan(humanId = null)),
         )
     }
@@ -27,7 +32,7 @@ class ReferencesTest {
     @Test
     fun `an artifact copies its id`() {
         assertEquals(
-            "art-123",
+            "[helm artifact art-123]",
             HelmReferences.artifact(HelmArtifact(id = "art-123", title = "Report", kind = "md", versionCount = 1, createdAtEpochMs = 0, updatedAtEpochMs = 0)),
         )
     }
@@ -35,7 +40,7 @@ class ReferencesTest {
     @Test
     fun `a context copies its id`() {
         assertEquals(
-            "ctx-9",
+            "[helm context ctx-9]",
             HelmReferences.context(HelmContext(id = "ctx-9", projectId = "p1", title = "Notes", type = "Testing", permission = ContextPermission.Readonly, content = "", x = null, y = null, createdAtEpochMs = 0, updatedAtEpochMs = 0)),
         )
     }

@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.components
 
+import android.content.ActivityNotFoundException
 import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
@@ -15,17 +16,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.potatomotato.helm.R
+import com.potatomotato.helm.log.HelmLog
+import com.potatomotato.helm.ui.artifacts.LinkRules
 import com.potatomotato.helm.ui.artifacts.MarkdownRules
 import com.potatomotato.helm.ui.artifacts.MdBlock
 import com.potatomotato.helm.ui.artifacts.MdSpan
@@ -140,20 +149,78 @@ private fun InlineImage(image: MdBlock.Image) {
     }
 }
 
-/** The subset's spans become styles; a link is underlined accent text, not a jump. */
+/**
+ * Plain text, except that the URLs in it are tappable.
+ *
+ * For the surfaces that deliberately do NOT render markdown — a chat bubble, a
+ * context body — where a link is still the one thing worth following. It reuses
+ * [annotate], so a link here opens exactly the way a link in an artifact does,
+ * and it reuses [MarkdownRules.linksOnly], so markdown markers around it stay
+ * literal characters rather than quietly gaining a second renderer.
+ */
 @Composable
-private fun annotate(spans: List<MdSpan>): AnnotatedString = buildAnnotatedString {
-    for (span in spans) {
-        when (span) {
-            is MdSpan.Text -> append(span.text)
-            is MdSpan.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
-            is MdSpan.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(span.text) }
-            is MdSpan.CodeSpan -> withStyle(
-                SpanStyle(fontFamily = FontFamily.Monospace, background = HelmColors.Surface2),
-            ) { append(span.text) }
-            is MdSpan.Link -> withStyle(
-                SpanStyle(color = HelmColors.Accent, textDecoration = TextDecoration.Underline),
-            ) { append(span.text) }
+fun LinkedText(
+    text: String,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = annotate(MarkdownRules.linksOnly(text)),
+        color = color,
+        style = style,
+        modifier = modifier,
+    )
+}
+
+/**
+ * The subset's spans become styles, and an allowed link becomes a jump.
+ *
+ * Allowed is [LinkRules]' word: an agent writes these targets, and invariant 9
+ * says that content is untrusted, so only the schemes on its allow-list are
+ * handed to the system resolver. A refused target renders as PLAIN text — not
+ * accent, not underlined — because styling a link the phone will not follow
+ * advertises a tap that does nothing.
+ *
+ * Opening goes through the platform's own handler, which shows the user's
+ * resolver; a device with nothing able to open the URL throws, and a dead tap is
+ * the honest outcome there — better than a crash on someone's phone.
+ */
+@Composable
+private fun annotate(spans: List<MdSpan>): AnnotatedString {
+    val uriHandler = LocalUriHandler.current
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(color = HelmColors.Accent, textDecoration = TextDecoration.Underline),
+    )
+    return buildAnnotatedString {
+        for (span in spans) {
+            when (span) {
+                is MdSpan.Text -> append(span.text)
+                is MdSpan.Bold -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(span.text) }
+                is MdSpan.Italic -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(span.text) }
+                is MdSpan.CodeSpan -> withStyle(
+                    SpanStyle(fontFamily = FontFamily.Monospace, background = HelmColors.Surface2),
+                ) { append(span.text) }
+
+                is MdSpan.Link -> {
+                    val url = LinkRules.resolve(span.target)
+                    if (url == null) {
+                        append(span.text)
+                    } else {
+                        withLink(
+                            LinkAnnotation.Url(url, linkStyles) {
+                                try {
+                                    uriHandler.openUri(url)
+                                } catch (error: IllegalArgumentException) {
+                                    HelmLog.w("markdown", "no app could open a link")
+                                } catch (error: ActivityNotFoundException) {
+                                    HelmLog.w("markdown", "no app could open a link")
+                                }
+                            },
+                        ) { append(span.text) }
+                    }
+                }
+            }
         }
     }
 }
