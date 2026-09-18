@@ -140,12 +140,19 @@ removes.
   desktop, a refused call — the form falls back to harvesting the distinct CLI
   types out of `session_list`, so it can only offer a kind of session already
   running. The name is optional: a blank name is omitted from the wire and the
-  desktop names the session after the CLI type.
+  desktop names the session after the CLI type. The submit button — and the
+  session list's New session button — grey while a spawn is **in flight**
+  (`ControlRepository.spawnInFlight`): two taps are two sessions, and the flag
+  settles on every outcome, refusal and dead link included, so it never greys
+  forever.
 - **Session sheet** — the per-session actions. Forbidden ones are greyed with
   "not permitted", read from the reserved `__mobile_tools__` meta-method and
   never a hardcoded list. Actions that are *reachable but meaningless* to a
   phone are **absent rather than greyed** — greying would claim you lack
-  permission, when the truth is there is nothing there to call.
+  permission, when the truth is there is nothing there to call. How an action
+  ended is said once in the notice bar under the app bar: tap to dismiss, or
+  it dismisses itself after 30 seconds, because a stale outcome left standing
+  starts describing an action the user has already moved past.
 
 ### Back, and what it costs
 
@@ -206,8 +213,8 @@ rules, drawn where the thing acted on is visible — and Delete is the one actio
 that confirms, naming the artifact. There is deliberately **no bulk delete**:
 `session_artifact_delete` is the only delete on the wire and the phone offers
 nothing bigger. A create mints markdown only (the wire kind is `md`); a revise
-inherits the artifact's kind and an HTML body is edited as the source it is shown
-as, because the phone never renders HTML. A save lands in `MediaStore.Downloads`
+inherits the artifact's kind and an HTML body is edited as source even though the
+viewer now renders it (below). A save lands in `MediaStore.Downloads`
 on API 29+ — user-visible, and no storage permission — falling back to the app's
 own Download folder below 29; the notice waits until the file is actually on
 disk, because "saved" before that would be a lie. An authored body is measured
@@ -216,6 +223,26 @@ against the same 128KiB frame the desktop caps its answers with
 that would not fit is refused at the submit button instead of tearing the link.
 The screens re-pull on every visit, so a write needs no refresh of its own —
 returning from one reconciles the list for free.
+
+**How artifacts render.** Markdown gets the phone's deliberate subset
+(`ui/artifacts/MarkdownRules.kt`), and ` ```mermaid ` fences render as diagrams
+rather than code: each becomes a `MdBlock.Diagram` drawn in a small WebView
+running the mermaid bundle **shipped inside the APK** (`assets/mermaid/`), never
+fetched from a network. HTML artifacts render in that same WebView, with
+"view source" one tap away. Containment is invariant 9 again, the mobile answer
+to the desktop's opaque-origin iframe: the CSP the desktop sends as a response
+header rides INSIDE the document (`ui/artifacts/HtmlContainment.kt` —
+`default-src 'none'`, inline script/style, `data:` images, `form-action 'none'`,
+`base-uri 'none'`), the load uses a null base URL so the page runs on an opaque
+origin, file/content access and every network load are switched off, and all
+navigation is refused by the client. There is deliberately **no JS bridge**: the
+one thing a contained page can ask for is a diagram-height report via a
+`helm-diagram://height/<px>` navigation the WebView intercepts and swallows,
+which is how a diagram sizes itself in the list. One WebView per fence, each
+destroyed on dispose; the accepted cost of that simplicity is that every
+diagram shell embeds its own copy of the ~3.5MB mermaid bundle — fine at the
+one-or-two diagrams an artifact actually has, and pooling is the fix if that
+ever stops being true.
 
 Artifacts also **push**. `MobileArtifactNotifier` (sibling of the state-alert
 notifier) listens to the ArtifactManager and emits a chat record with the

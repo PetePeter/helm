@@ -74,6 +74,8 @@ fun SessionListScreen(
     onOpen: (HelmSession) -> Unit,
     /** Long-press acts on a session from the list — see HelmHome for the routing. */
     onLongPress: (HelmSession) -> Unit,
+    /** A spawn is already crossing the wire; opening the form would ask for a second. */
+    spawnInFlight: Boolean,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
     modifier: Modifier = Modifier,
@@ -126,7 +128,7 @@ fun SessionListScreen(
             }
         }
 
-        NewSessionButton(capabilities = capabilities, onClick = onNewSession)
+        NewSessionButton(capabilities = capabilities, spawnInFlight = spawnInFlight, onClick = onNewSession)
     }
 }
 
@@ -137,7 +139,7 @@ fun SessionListScreen(
  * once the gate has answered no.
  */
 @Composable
-private fun NewSessionButton(capabilities: Capabilities, onClick: () -> Unit) {
+private fun NewSessionButton(capabilities: Capabilities, spawnInFlight: Boolean, onClick: () -> Unit) {
     val permitted = capabilities.permits(SessionAction.Spawn)
 
     Column {
@@ -154,7 +156,7 @@ private fun NewSessionButton(capabilities: Capabilities, onClick: () -> Unit) {
                 PrimaryButton(
                     text = stringResource(R.string.sessions_new_session),
                     onClick = onClick,
-                    enabled = permitted,
+                    enabled = permitted && !spawnInFlight,
                 )
             }
             if (!permitted) {

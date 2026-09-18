@@ -83,13 +83,33 @@ class ControlRepositoryTest {
     @Test
     fun `a refusal and a dead link are different notices, because they mean opposite things`() {
         control.noticed(SessionAction.Close, ActionOutcome.Refused)
-        assertEquals(ActionNotice(SessionAction.Close, ActionOutcome.Refused), control.notice.value)
+        assertEquals(
+            ActionNotice(seq = 1, action = SessionAction.Close, outcome = ActionOutcome.Refused),
+            control.notice.value,
+        )
 
         control.noticed(SessionAction.Compact, ActionOutcome.Failed("No link to Helm"))
         assertEquals(
-            ActionNotice(SessionAction.Compact, ActionOutcome.Failed("No link to Helm")),
+            ActionNotice(seq = 2, action = SessionAction.Compact, outcome = ActionOutcome.Failed("No link to Helm")),
             control.notice.value,
         )
+    }
+
+    @Test
+    fun `two identical outcomes are two notices, because the second must still be said`() {
+        control.noticed(SessionAction.Spawn, ActionOutcome.Refused)
+        val first = control.notice.value
+
+        control.noticed(SessionAction.Spawn, ActionOutcome.Refused)
+        val second = control.notice.value
+
+        // Byte-identical to the first, yet NOT the first: the bar keys its
+        // dismiss timer on the notice, and an equal second would dedup against
+        // the first and never be shown.
+        assertTrue(first != second)
+        assertEquals(first!!.action, second!!.action)
+        assertEquals(first.outcome, second.outcome)
+        assertTrue(second.seq > first.seq)
     }
 
     @Test
@@ -99,6 +119,24 @@ class ControlRepositoryTest {
         control.clearNotice()
 
         assertNull(control.notice.value)
+    }
+
+    @Test
+    fun `a spawn raises the in-flight flag and nothing else does`() {
+        assertFalse(control.spawnInFlight.value)
+
+        control.spawnStarted()
+
+        assertTrue(control.spawnInFlight.value)
+    }
+
+    @Test
+    fun `a settled spawn clears the in-flight flag`() {
+        control.spawnStarted()
+
+        control.spawnSettled()
+
+        assertFalse(control.spawnInFlight.value)
     }
 
     @Test

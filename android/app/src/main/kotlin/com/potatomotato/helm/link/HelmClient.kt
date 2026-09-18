@@ -864,7 +864,12 @@ class HelmClient(
     fun spawn(dirPath: String, cliType: String, name: String): Boolean {
         val params = linkedMapOf<String, Any>("dirPath" to dirPath, "cliType" to cliType)
         if (name.isNotBlank()) params["name"] = name.trim()
+        control.spawnStarted()
         return act(SessionAction.Spawn, METHOD_SESSION_CREATE, params) { outcome ->
+            // Every outcome path settles — act() delivers the verdict whatever it
+            // was, including the no-link failure that answers before anything was
+            // sent — so the flag cannot outlive the tap that raised it.
+            control.spawnSettled()
             if (outcome is Outcome.Ok) {
                 control.spawnCreated(idIn(outcome.result))
                 refreshSessions()

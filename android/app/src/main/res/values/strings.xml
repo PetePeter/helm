@@ -253,7 +253,8 @@
     <string name="artifacts_loading">Pulling the artifact list…</string>
     <string name="artifacts_empty">Nothing here yet. Anything this session writes appears here.</string>
     <string name="artifacts_detail_loading">Pulling the artifact…</string>
-    <string name="artifacts_source_note">HTML is shown as source — open it on the desktop for the rendered page.</string>
+    <string name="artifacts_view_source">View source</string>
+    <string name="artifacts_view_rendered">View rendered</string>
     <plurals name="artifacts_version_count">
         <item quantity="one">%1$d version</item>
         <item quantity="other">%1$d versions</item>
@@ -265,7 +266,7 @@
     <!--
       The artifact writes. Create is markdown-only by desktop rule (session_artifact_create
       refuses every other kind in v1); a revise inherits the artifact's own kind, and an
-      HTML body stays SOURCE — shown and edited as text, never rendered on the phone.
+      HTML body is edited as source even though the viewer renders it contained.
     -->
     <string name="artifacts_action_new">New artifact</string>
     <string name="artifacts_glyph_new">✚</string>

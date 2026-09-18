@@ -64,6 +64,8 @@ fun SpawnScreen(
     directoriesError: String?,
     sessions: List<HelmSession>,
     linkState: LinkState,
+    /** A spawn is already crossing the wire; a second cannot be asked for. */
+    spawnInFlight: Boolean,
     onSpawn: (dirPath: String, cliType: String, name: String) -> Unit,
     onRetryDirectories: () -> Unit,
     onBack: () -> Unit,
@@ -157,10 +159,11 @@ fun SpawnScreen(
 
             PrimaryButton(
                 text = stringResource(R.string.spawn_start),
-                // Disabled until the two REQUIRED choices are real. The name is
-                // optional on the wire: a blank one is omitted and the desktop
-                // names the session after the CLI type.
-                enabled = chosenDir != null && chosenCli != null,
+                // Disabled until the two REQUIRED choices are real, and until the
+                // last spawn's answer came back: two taps are two sessions.
+                // The name is optional on the wire: a blank one is omitted and
+                // the desktop names the session after the CLI type.
+                enabled = chosenDir != null && chosenCli != null && !spawnInFlight,
                 onClick = { onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName) },
             )
             GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)

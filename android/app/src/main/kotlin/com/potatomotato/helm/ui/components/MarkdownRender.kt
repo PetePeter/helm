@@ -35,6 +35,7 @@ import androidx.compose.ui.text.withStyle
 import com.potatomotato.helm.R
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.artifacts.LinkRules
+import com.potatomotato.helm.ui.artifacts.MermaidDiagram
 import com.potatomotato.helm.ui.artifacts.MarkdownRules
 import com.potatomotato.helm.ui.artifacts.MdBlock
 import com.potatomotato.helm.ui.artifacts.MdSpan
@@ -125,6 +126,10 @@ fun MarkdownBlock(block: MdBlock) {
                 )
             }
         }
+
+        // A mermaid fence is a diagram, not code to read — the same contained
+        // shell the desktop renders it in, sized to the drawing it produces.
+        is MdBlock.Diagram -> MermaidDiagram(block.source)
 
         MdBlock.Rule -> Hairline()
     }

@@ -36,6 +36,7 @@ object MarkdownRules {
             when {
                 isFence(line) -> {
                     flushParagraph()
+                    val info = fenceInfo(line)
                     val body = mutableListOf<String>()
                     index++
                     while (index < lines.size && !isFence(lines[index])) {
@@ -44,7 +45,11 @@ object MarkdownRules {
                     }
                     // An unclosed fence runs to the end of the body; the closing
                     // fence (if any) is consumed and never rendered.
-                    blocks += MdBlock.Code(body)
+                    blocks += if (info.equals(MERMAID_INFO, ignoreCase = true)) {
+                        MdBlock.Diagram(body.joinToString("\n"))
+                    } else {
+                        MdBlock.Code(body)
+                    }
                 }
 
                 line.isBlank() -> flushParagraph()
@@ -180,6 +185,14 @@ object MarkdownRules {
     private fun isFence(line: String): Boolean =
         line.trimStart().startsWith("```")
 
+    /**
+     * The fence's info string, reduced to its FIRST word — the language.
+     * ```` ```mermaid title ```` names mermaid and then decorates; the desktop
+     * reads it the same way.
+     */
+    private fun fenceInfo(line: String): String =
+        line.trimStart().removePrefix("```").trim().substringBefore(' ')
+
     private fun isHeading(line: String): Boolean =
         line.startsWith("#") && line.takeWhile { it == '#' }.length in 1..6 && isSpaceAfter(line, line.takeWhile { it == '#' }.length)
 
@@ -211,6 +224,7 @@ object MarkdownRules {
     private const val CODE_DELIM = "`"
     private const val BOLD_DELIM = "**"
     private const val ITALIC_DELIM = "*"
+    private const val MERMAID_INFO = "mermaid"
     private val IMAGE = Regex("!\\[([^]]*)]\\((.+)\\)")
     private val SAFE_DATA_IMAGE = Regex("data:image/(png|jpe?g|gif|webp|bmp|avif);base64,[A-Za-z0-9+/=]+", RegexOption.IGNORE_CASE)
 }
@@ -232,6 +246,14 @@ sealed interface MdBlock {
 
     /** A fenced block; its lines are VERBATIM — no inline parsing inside. */
     data class Code(val lines: List<String>) : MdBlock
+
+    /**
+     * A ` ```mermaid ` fence, whose text is a DIAGRAM and not code to read. The
+     * source is carried whole; [com.potatomotato.helm.ui.components.MarkdownBlock]
+     * hands it to the contained WebView shell ([HtmlContainment.diagramDocument])
+     * the way the desktop renders it.
+     */
+    data class Diagram(val source: String) : MdBlock
 
     /** A `---` / `***` / `___` rule. */
     data object Rule : MdBlock

@@ -154,6 +154,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val directoriesError by client.control.directoriesError.collectAsState()
     val clis by client.control.clis.collectAsState()
     val createdSessionId by client.control.createdSessionId.collectAsState()
+    val spawnInFlight by client.control.spawnInFlight.collectAsState()
     val artifactList by client.artifacts.list.collectAsState()
     val artifactRead by client.artifacts.read.collectAsState()
     val artifactSave by client.artifacts.save.collectAsState()
@@ -654,6 +655,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         directoriesError = directoriesError,
                         sessions = sessions,
                         linkState = linkState,
+                        spawnInFlight = spawnInFlight,
                         onSpawn = { dirPath, cliType, name ->
                             // Navigation is decided by the OUTCOME, not by the
                             // tap: success arrives as createdSessionId above,
@@ -760,6 +762,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 reach = reach,
                                 capabilities = capabilities,
                                 unread = unreadCounts,
+                                spawnInFlight = spawnInFlight,
                                 onOpen = { session ->
                                     openSessionId = session.id
                                     tab = SessionTab.Chat

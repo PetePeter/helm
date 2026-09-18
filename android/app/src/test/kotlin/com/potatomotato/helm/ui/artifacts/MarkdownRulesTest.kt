@@ -169,6 +169,39 @@ class MarkdownRulesTest {
     }
 
     @Test
+    fun `a mermaid fence becomes a diagram carrying its source`() {
+        assertEquals(
+            listOf(MdBlock.Diagram("flowchart TD\n  A --> B")),
+            MarkdownRules.blocks("```mermaid\nflowchart TD\n  A --> B\n```"),
+        )
+    }
+
+    @Test
+    fun `an unclosed mermaid fence still becomes a diagram`() {
+        assertEquals(
+            listOf(MdBlock.Diagram("graph LR")),
+            MarkdownRules.blocks("```mermaid\ngraph LR"),
+        )
+    }
+
+    @Test
+    fun `the fence's first info word decides — decorations after it are ignored`() {
+        // ```mermaid title: the desktop reads the FIRST word as the language.
+        assertEquals(
+            listOf(MdBlock.Diagram("graph TD")),
+            MarkdownRules.blocks("```mermaid title\ngraph TD\n```"),
+        )
+    }
+
+    @Test
+    fun `a fence naming another language stays code`() {
+        assertEquals(
+            listOf(MdBlock.Code(listOf("println()"))),
+            MarkdownRules.blocks("```kotlin\nprintln()\n```"),
+        )
+    }
+
+    @Test
     fun `bullets and quotes become their own blocks`() {
         assertEquals(
             listOf(

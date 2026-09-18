@@ -137,7 +137,7 @@ class HelmClientTest {
         assertEquals("kitchen", record.getJSONObject("params").getString("newName"))
 
         client.onInbound(resultFor(lastCallId(), "null"))
-        assertEquals(ActionNotice(SessionAction.Rename, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.Rename, ActionOutcome.Done)
 
         // The list is the only place the new name shows, so success pulls it.
         assertEquals(2, sent.size)
@@ -150,7 +150,7 @@ class HelmClientTest {
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(ActionNotice(SessionAction.Rename, ActionOutcome.Refused), client.control.notice.value)
+        assertNotice(SessionAction.Rename, ActionOutcome.Refused)
     }
 
     @Test
@@ -160,6 +160,37 @@ class HelmClientTest {
 
         assertEquals(2, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+    }
+
+    @Test
+    fun `a spawn is in flight from the tap until an answer comes back`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+
+        assertTrue(client.control.spawnInFlight.value)
+
+        client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
+
+        assertFalse(client.control.spawnInFlight.value)
+    }
+
+    @Test
+    fun `a refused spawn is still settled`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+
+        assertFalse(client.control.spawnInFlight.value)
+    }
+
+    @Test
+    fun `a spawn with no link never raises the flag at all`() {
+        linked = false
+
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+
+        // The call never crossed, so no answer is coming; the flag that greys the
+        // button must not outlive a tap that already failed.
+        assertFalse(client.control.spawnInFlight.value)
     }
 
     @Test
@@ -415,10 +446,7 @@ class HelmClientTest {
         client.closeSession("s1")
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(
-            ActionNotice(SessionAction.Close, ActionOutcome.Refused),
-            client.control.notice.value,
-        )
+        assertNotice(SessionAction.Close, ActionOutcome.Refused)
     }
 
     @Test
@@ -444,7 +472,7 @@ class HelmClientTest {
         // The real wire shape: spawnCli answers {id: ...}, and that id is what
         // opens the new thread.
         client.onInbound(resultFor(lastCallId(), """{"id":"s9"}"""))
-        assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.Spawn, ActionOutcome.Done)
         assertEquals("s9", client.control.createdSessionId.value)
     }
 
@@ -466,7 +494,7 @@ class HelmClientTest {
 
         // Done is still Done — the session exists — but navigation must not
         // guess at an id that never arrived.
-        assertEquals(ActionNotice(SessionAction.Spawn, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.Spawn, ActionOutcome.Done)
         assertNull(client.control.createdSessionId.value)
     }
 
@@ -640,7 +668,7 @@ class HelmClientTest {
         // The real wire shape: createArtifact answers the full Artifact, and the
         // id inside it is what opens the new artifact's detail screen.
         client.onInbound(resultFor(lastCallId(), """{"id":"a9","title":"Note","kind":"markdown","versions":[]}"""))
-        assertEquals(ActionNotice(SessionAction.CreateArtifact, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.CreateArtifact, ActionOutcome.Done)
         // The minted id is parked as a LANDING — the one-shot the artifacts
         // screens navigate on — because two identical notices must both count.
         assertEquals(
@@ -657,7 +685,7 @@ class HelmClientTest {
 
         // Done is still Done — the artifact exists — but navigation must not
         // guess at an id that never arrived.
-        assertEquals(ActionNotice(SessionAction.CreateArtifact, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.CreateArtifact, ActionOutcome.Done)
         // A landing is parked even when the answer named no id, so the editor
         // still closes for the list, where the new row is one pull away.
         assertEquals(
@@ -695,7 +723,7 @@ class HelmClientTest {
         assertEquals("# v2", params.getString("content"))
 
         client.onInbound(resultFor(lastCallId(), """{"id":"a1","versions":[]}"""))
-        assertEquals(ActionNotice(SessionAction.ReviseArtifact, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.ReviseArtifact, ActionOutcome.Done)
         // The artifacts screens re-pull on every visit, so a write adds no
         // refresh of its own — the next visit reconciles the list for free.
         assertEquals(1, sent.size)
@@ -707,7 +735,7 @@ class HelmClientTest {
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(ActionNotice(SessionAction.ReviseArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertNotice(SessionAction.ReviseArtifact, ActionOutcome.Refused)
     }
 
     @Test
@@ -724,7 +752,7 @@ class HelmClientTest {
         assertEquals(setOf("sessionId", "artifactId"), params.keySet().toSet())
 
         client.onInbound(resultFor(lastCallId(), """{"id":"a1","deleted":true}"""))
-        assertEquals(ActionNotice(SessionAction.DeleteArtifact, ActionOutcome.Done), client.control.notice.value)
+        assertNotice(SessionAction.DeleteArtifact, ActionOutcome.Done)
         assertEquals(1, sent.size)
     }
 
@@ -734,7 +762,7 @@ class HelmClientTest {
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(ActionNotice(SessionAction.DeleteArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertNotice(SessionAction.DeleteArtifact, ActionOutcome.Refused)
     }
 
     @Test
@@ -780,7 +808,7 @@ class HelmClientTest {
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(ActionNotice(SessionAction.SaveArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertNotice(SessionAction.SaveArtifact, ActionOutcome.Refused)
         assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
     }
 
@@ -851,7 +879,7 @@ class HelmClientTest {
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertEquals(ActionNotice(SessionAction.SaveArtifact, ActionOutcome.Refused), client.control.notice.value)
+        assertNotice(SessionAction.SaveArtifact, ActionOutcome.Refused)
         assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
     }
 
@@ -1240,6 +1268,18 @@ class HelmClientTest {
             .toByteArray(Charsets.UTF_8)
 
     private fun lastCallId(): String = JSONObject(String(sent.last(), Charsets.UTF_8)).getString("id")
+
+    /**
+     * The last notice said THIS action ended THIS way. The notice carries a
+     * sequence nonce so the bar can tell a repeated outcome from the one before
+     * it — that nonce is the repository's business, not what these tests claim.
+     */
+    private fun assertNotice(action: SessionAction, outcome: ActionOutcome) {
+        with(client.control.notice.value!!) {
+            assertEquals(action, this.action)
+            assertEquals(outcome, this.outcome)
+        }
+    }
 
     /** Timeout control stays deterministic: tests advance it, never wall time. */
     private class TestScheduler : ChannelScheduler {

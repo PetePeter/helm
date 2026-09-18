@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -20,6 +21,7 @@ import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
+import kotlinx.coroutines.delay
 
 /**
  * How a control action ended, said once and dismissible.
@@ -37,6 +39,14 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  */
 @Composable
 fun ActionNoticeBar(notice: ActionNotice, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+    // The bar dismisses ITSELF after a while. Keyed on the notice, so a new
+    // outcome replaces the bar and restarts the wait; a tap still dismisses
+    // immediately, for the reader who is already done with it.
+    LaunchedEffect(notice) {
+        delay(NOTICE_LINGER_MS)
+        onDismiss()
+    }
+
     val (text, color) = when (val outcome = notice.outcome) {
         ActionOutcome.Done -> stringResource(notice.action.doneRes) to HelmColors.Dim
         ActionOutcome.Refused -> stringResource(R.string.control_notice_refused) to HelmColors.State.Flash
@@ -85,3 +95,6 @@ private val SessionAction.doneRes: Int
         SessionAction.Snapshot -> R.string.snapshot_title
         SessionAction.Artifacts -> R.string.artifacts_title
     }
+
+/** Long enough to read a sentence, short enough to stop being scenery. */
+private const val NOTICE_LINGER_MS = 30_000L

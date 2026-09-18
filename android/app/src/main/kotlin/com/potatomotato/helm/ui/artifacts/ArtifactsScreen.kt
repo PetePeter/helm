@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,12 +71,17 @@ import com.potatomotato.helm.ui.control.labelRes
  * the list, Revise/Save/Delete under the open artifact — because an artifacts
  * section inside the sheet would name nothing.
  *
- * RENDERING IS STILL LIMITED. Markdown gets the [MarkdownRules] subset; HTML is
- * shown as SOURCE and nothing else. A WebView would be a sandbox escape the
- * phone's threat model never bought — artifact content is AI-authored, which
- * is untrusted by invariant 9 — and rendering HTML as text with a note pointing
- * at the desktop is the honest version of "this needs the big screen". The
- * revise editor inherits the same limitation: an HTML body is edited as source.
+ * RENDERING IS CONTAINED. Markdown gets the [MarkdownRules] subset, mermaid
+ * fences render as diagrams, and HTML renders in a WebView that the document
+ * cannot escape: the CSP rides inside it ([HtmlContainment.injectCsp]), the
+ * load is opaque-origin, the network is off, and nothing the page asks for —
+ * links, forms, frames — survives [ContainedWebView]'s client. Artifact
+ * content is AI-authored, which invariant 9 makes untrusted, and containment
+ * is what makes rendering it honest; the source view stays one tap away
+ * because a phone-width render is still not the desktop's page. Each rendered
+ * piece is its own WebView ([ContainedWebView] carries the cost note), so a
+ * document of many fences carries the mermaid bundle once per fence — fine at
+ * one-or-two diagrams, and worth knowing before adding a third renderer.
  */
 @Composable
 fun ArtifactsScreen(
@@ -470,7 +476,7 @@ private fun GatedRow(
 @Composable
 private fun ArtifactBody(read: HelmArtifactRead) {
     when (read.artifact.kind) {
-        KIND_HTML -> HtmlSource(read.content)
+        KIND_HTML -> HtmlViewer(read.content)
         KIND_MARKDOWN -> MarkdownBody(read.content)
         // A kind this build has never met is still text a reader can read;
         // refusing the whole artifact over its label would protect nobody.
@@ -478,20 +484,36 @@ private fun ArtifactBody(read: HelmArtifactRead) {
     }
 }
 
-/** HTML is shown as source, with the reason said out loud rather than implied. */
+/**
+ * An HTML artifact: the rendered page, contained, with the source one tap away.
+ *
+ * Rendering is the point of the artifact; the WebView it renders in is the
+ * [ContainedWebView] kind whose settings and client do the containing, and the
+ * CSP the document carries is the [HtmlContainment] one. The source view stays
+ * because a phone-width render of a desktop page can hide things — a reader
+ * checking WHAT was written reads the text.
+ */
 @Composable
-private fun HtmlSource(source: String) {
+private fun HtmlViewer(source: String) {
+    var showSource by rememberSaveable { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = stringResource(R.string.artifacts_source_note),
-            color = HelmColors.Faint,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(HelmColors.Surface)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
-        )
-        SourceLines(source)
+        Row(modifier = Modifier.fillMaxWidth().background(HelmColors.Surface)) {
+            GhostButton(
+                text = stringResource(
+                    if (showSource) R.string.artifacts_view_rendered else R.string.artifacts_view_source,
+                ),
+                onClick = { showSource = !showSource },
+            )
+        }
+        if (showSource) {
+            SourceLines(source)
+        } else {
+            ContainedWebView(
+                html = HtmlContainment.injectCsp(source),
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

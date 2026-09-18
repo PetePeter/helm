@@ -1,6 +1,7 @@
 package com.potatomotato.helm.data
 
 import com.potatomotato.helm.wire.WireShape
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,7 +55,16 @@ sealed interface ActionOutcome {
     data class Failed(val message: String) : ActionOutcome
 }
 
-data class ActionNotice(val action: SessionAction, val outcome: ActionOutcome)
+/**
+ * How the last control action ended.
+ *
+ * [seq] is a monotonically increasing nonce, and it exists because two
+ * outcomes can be byte-identical (spawn twice, be refused twice) while the
+ * bar that shows them must still count as TWO: the UI keys its 30-second
+ * dismiss timer on this value, and an equal second notice would silently
+ * dedup against the first and never be said again.
+ */
+data class ActionNotice(val seq: Long, val action: SessionAction, val outcome: ActionOutcome)
 
 /**
  * The artifact write that just landed, parked for the artifacts screens to
@@ -97,6 +107,12 @@ class ControlRepository {
     val notice: StateFlow<ActionNotice?> = _notice.asStateFlow()
 
     /**
+     * Monotonic; never reused, so a repeated outcome is still a NEW notice.
+     * Atomic because [noticed] runs on the link's and the scheduler's threads.
+     */
+    private val nextSeq = AtomicInteger(FIRST_SEQ.toInt())
+
+    /**
      * The last line count a terminal peek was asked for — what the screen 7 chip
      * row highlights and what its refresh re-pulls. It lives HERE rather than in
      * the [Snapshot] state on purpose: a Loading, a Failed, navigation away and
@@ -130,6 +146,25 @@ class ControlRepository {
      */
     private val _createdSessionId = MutableStateFlow<String?>(null)
     val createdSessionId: StateFlow<String?> = _createdSessionId.asStateFlow()
+
+    /**
+     * A spawn is crossing the wire. The spawn form and the list's New session
+     * button grey on it: two taps are two sessions, and neither tap can see the
+     * other's answer coming. Raised on the tap, settled on EVERY outcome — a
+     * refusal and a dead link end the ask just as surely as a success does.
+     */
+    private val _spawnInFlight = MutableStateFlow(false)
+    val spawnInFlight: StateFlow<Boolean> = _spawnInFlight.asStateFlow()
+
+    /** The tap just became a `session_create` call. */
+    fun spawnStarted() {
+        _spawnInFlight.value = true
+    }
+
+    /** The spawn's answer arrived — or the ask died trying. Either way it is over. */
+    fun spawnSettled() {
+        _spawnInFlight.value = false
+    }
 
     fun snapshotRequested(lines: Int) {
         _snapshot.value = Snapshot.Loading(lines)
@@ -166,7 +201,7 @@ class ControlRepository {
     }
 
     fun noticed(action: SessionAction, outcome: ActionOutcome) {
-        _notice.value = ActionNotice(action, outcome)
+        _notice.value = ActionNotice(seq = nextSeq.getAndIncrement().toLong(), action = action, outcome = outcome)
     }
 
     /** One notice is shown once. Dismissing it must not resurrect it on recompose. */
@@ -268,6 +303,9 @@ class ControlRepository {
         const val DEFAULT_REQUESTED_LINES = 50
 
         const val UNREADABLE_TAIL = "Helm answered without a terminal tail"
+
+        /** [ActionNotice.seq] starts at the first notice and only ever climbs. */
+        const val FIRST_SEQ = 1L
     }
 }
 
