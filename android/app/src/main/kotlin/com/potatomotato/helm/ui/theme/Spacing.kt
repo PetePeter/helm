@@ -62,4 +62,12 @@ object HelmSize {
 
     /** Selected-tab underline. Thicker than a hairline so it reads as state. */
     val TabIndicator = 2.dp
+
+    /**
+     * The upload chip's progress bar. Narrow, because it sits INSIDE a chip row
+     * beside the filename rather than under it, and one notch thicker than
+     * [TabIndicator] so it reads as a measure and not as a rule.
+     */
+    val ChipProgressWidth = 64.dp
+    val ChipProgressHeight = 3.dp
 }

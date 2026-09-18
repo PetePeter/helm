@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +33,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.AttachmentUploadState
@@ -295,10 +298,32 @@ private fun ChipState(
             humanSize(attachment.sizeBytes),
             modifier,
         )
-        is AttachmentUploadState.Uploading -> ChipLine(
-            stringResource(R.string.artifacts_chip_uploading, "${percent(state.sent, state.totalBytes)}%"),
-            modifier,
-        )
+        // The one state with a BAR as well as a line. A percentage alone reads
+        // as stuck on a link that takes minutes for a photo — the bar is what
+        // says the transfer is alive between two readings of the same number.
+        is AttachmentUploadState.Uploading -> Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+        ) {
+            val reading = "${percent(state.sent, state.totalBytes)}%"
+            ChipLine(stringResource(R.string.artifacts_chip_uploading, reading))
+            val spoken = stringResource(R.string.artifacts_chip_uploading_bar, attachment.filename, reading)
+            LinearProgressIndicator(
+                progress = { uploadFraction(state.sent, state.totalBytes) },
+                modifier = Modifier
+                    .width(HelmSize.ChipProgressWidth)
+                    .height(HelmSize.ChipProgressHeight)
+                    .clip(RoundedCornerShape(HelmRadius.Pill))
+                    .semantics { contentDescription = spoken },
+                color = HelmColors.Accent,
+                trackColor = HelmColors.Line,
+                // No gap and no stop dot: at this size they read as artefacts
+                // rather than as the two marks Material means them to be.
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+            )
+        }
         is AttachmentUploadState.Done -> ChipLine(
             stringResource(R.string.artifacts_chip_done),
             modifier,
@@ -373,8 +398,12 @@ private fun AttachToolbar(
     }
 }
 
-/** Bytes a human reads: KB under a megabyte, MB from there. One decimal at most. */
-private fun humanSize(bytes: Long): String = when {
+/**
+ * Bytes a human reads: KB under a megabyte, MB from there. One decimal at most.
+ * Package-visible because the detail screen's attachment rows size the SAME
+ * files this editor stages, and two spellings of a megabyte would read as a bug.
+ */
+internal fun humanSize(bytes: Long): String = when {
     bytes >= 1024 * 1024 -> {
         val mb = bytes / (1024f * 1024f)
         if (mb >= 10f) "${mb.toInt()} MB" else "${(mb * 10).toInt() / 10f} MB"
@@ -383,8 +412,15 @@ private fun humanSize(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-private fun percent(sent: Long, total: Long): Int =
-    if (total > 0) ((sent.coerceIn(0, total) * 100) / total).toInt() else 0
+/**
+ * How much of a file has gone, 0..1. The bar and the percentage read the SAME
+ * number — two spellings of "how far" would disagree at the edges and look like
+ * a bug in whichever one the user was watching.
+ */
+private fun uploadFraction(sent: Long, total: Long): Float =
+    if (total > 0) sent.coerceIn(0, total).toFloat() / total else 0f
+
+private fun percent(sent: Long, total: Long): Int = (uploadFraction(sent, total) * 100).toInt()
 
 @Composable
 private fun FieldLabel(text: String) {

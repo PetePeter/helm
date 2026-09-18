@@ -38,6 +38,7 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmArtifact
+import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.HelmArtifactRead
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.answered
@@ -168,6 +169,7 @@ fun ArtifactDetailScreen(
     onPull: (version: Int?) -> Unit,
     onRevise: () -> Unit,
     onDownload: () -> Unit,
+    onDownloadAttachment: (HelmArtifactAttachment) -> Unit,
     onDelete: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -198,6 +200,14 @@ fun ArtifactDetailScreen(
                     is ArtifactRead.Failed -> Placeholder(state.message, HelmColors.Danger)
                     ArtifactRead.Idle -> Placeholder(stringResource(R.string.artifacts_detail_loading))
                 }
+            }
+
+            // The files stored BESIDE the artifact, read from the list row rather
+            // than from the body: the read answer carries no attachments by
+            // design (see HelmArtifact.attachments), so the list cache is the only
+            // place they exist on the phone. No row, and no header, without it.
+            artifact?.attachments?.takeIf { it.isNotEmpty() }?.let { attachments ->
+                AttachmentSection(attachments, onDownloadAttachment)
             }
 
             // The actions the session-addressed tools bought, one row each, greyed
@@ -259,6 +269,45 @@ private fun title(artifact: HelmArtifact?, state: ArtifactRead): String = when {
     state is ArtifactRead.Done -> state.read.artifact.title
     state is ArtifactRead.Refreshing -> state.cached.artifact.title
     else -> ""
+}
+
+/**
+ * The artifact's attachments, one row each, under a header that only exists when
+ * there is something under it. Tapping a row asks for THAT file's bytes; the ask
+ * lands in the same [ArtifactSave] machine the Save row uses, so the line under
+ * the action rows narrates an attachment exactly the way it narrates a version.
+ */
+@Composable
+private fun AttachmentSection(
+    attachments: List<HelmArtifactAttachment>,
+    onDownload: (HelmArtifactAttachment) -> Unit,
+) {
+    Hairline()
+    Text(
+        text = stringResource(R.string.artifacts_attachments_header),
+        color = HelmColors.Faint,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(HelmColors.Surface)
+            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
+    )
+    for (attachment in attachments) {
+        HelmRow(
+            title = attachment.filename,
+            onClick = { onDownload(attachment) },
+            // No chevron: the tap fetches a file onto the phone, it does not
+            // open another screen, and a chevron would promise one.
+            chevron = false,
+            subtitle = {
+                Text(
+                    text = humanSize(attachment.sizeBytes),
+                    color = HelmColors.Faint,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+        )
+    }
 }
 
 /** The body on screen: settled, or the cached one a refresh is re-checking. */

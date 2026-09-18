@@ -390,6 +390,48 @@ class BleLinkSessionTest {
         assertEquals(listOf(15_000L), scheduler.delays)
     }
 
+    /**
+     * The backpressure an upload paces itself against. It has to fall only as
+     * the STACK acknowledges chunks — counting a chunk as gone the moment it was
+     * queued is exactly the lie that made a phone-to-PC upload read 100% in
+     * milliseconds and then sit there for minutes.
+     */
+    @Test
+    fun `pending bytes fall only as the stack acknowledges chunks`() {
+        link(mtu = 40)
+        val message = Random(7).nextBytes(200)
+
+        session.send(message)
+        val queued = session.pendingBytes
+        assertTrue("a queued message is pending in full", queued >= message.size)
+
+        // The first chunk is on the air but NOT yet acknowledged.
+        assertEquals(queued, session.pendingBytes)
+
+        session.onNotificationSent(helm, true)
+        val afterOne = session.pendingBytes
+        assertTrue("an ack must reduce it", afterOne < queued)
+        assertTrue("and only by the one chunk", afterOne > 0)
+
+        while (session.pendingChunks > 0) session.onNotificationSent(helm, true)
+        session.onNotificationSent(helm, true)
+        assertEquals("a fully drained queue holds nothing", 0L, session.pendingBytes)
+    }
+
+    @Test
+    fun `a dropped link reports nothing pending rather than a stale backlog`() {
+        link(mtu = 40)
+        session.send(Random(9).nextBytes(400))
+        assertTrue(session.pendingBytes > 0)
+
+        session.onCentralDisconnected(helm)
+
+        // The queue was discarded with the link. A sender still watching this
+        // number must see it go to zero, or it waits for a drain that will
+        // never come.
+        assertEquals(0L, session.pendingBytes)
+    }
+
     @Test
     fun `the idle supervisor re-arms while a live central holds the link`() {
         link()

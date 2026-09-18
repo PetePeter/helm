@@ -108,10 +108,19 @@ object HelmLink {
      */
     val owner: StateFlow<Int?> = _owner.asStateFlow()
 
-    private data class Attached(val send: (ByteArray) -> Unit, val state: LinkState)
+    private data class Attached(
+        val send: (ByteArray) -> Unit,
+        val state: LinkState,
+        val pending: () -> Long,
+    )
 
     /**
      * Register a transport of [rank]. Returns whether it currently OWNS the link.
+     *
+     * [pending] is the transport's own answer to "how many bytes have I taken
+     * but not yet put on the wire" — see [pendingBytes]. It defaults to nothing
+     * pending, which is the right answer for any transport whose send blocks
+     * until the bytes are gone.
      *
      * Attaching always succeeds — a lower-ranked transport stays registered so it
      * can take over the moment the better one goes. The return value answers a
@@ -122,9 +131,15 @@ object HelmLink {
      * being sent, and the desktop retires its end of that transport on its own
      * (see MobileLinkManager's retire grace).
      */
-    internal fun attach(rank: Int, send: (ByteArray) -> Unit): Boolean = synchronized(lock) {
+    internal fun attach(
+        rank: Int,
+        // BEFORE [send], so that [send] is the trailing lambda every call site
+        // already writes it as.
+        pending: () -> Long = { 0L },
+        send: (ByteArray) -> Unit,
+    ): Boolean = synchronized(lock) {
         inboundByRank.getOrPut(rank) { Channel(Channel.UNLIMITED) }
-        transports[rank] = Attached(send, transports[rank]?.state ?: LinkState.Disconnected)
+        transports[rank] = Attached(send, transports[rank]?.state ?: LinkState.Disconnected, pending)
         republish()
         holderRank == rank
     }
@@ -162,6 +177,27 @@ object HelmLink {
         holder.send(message)
         return true
     }
+
+    /**
+     * How many bytes the owning transport has accepted but not yet put on the
+     * wire. Zero when nothing is attached, or when the owner flushes as it sends.
+     *
+     * WHY THIS IS PUBLIC: [send] is fire-and-forget over Bluetooth — it queues
+     * and returns — so a caller streaming a file learns nothing from its own
+     * return values about how far the file has actually got. This is the only
+     * honest answer available without a per-slice ack from the desktop, which
+     * this link deliberately does not have (round trips are its expensive part).
+     * Subtract it from what you handed over and you have what has really gone.
+     */
+    val pendingBytes: Long
+        get() {
+            // Read the entry under the lock but ASK outside it, exactly as [send]
+            // does: a transport's own monitor is below this one (BLE reports
+            // inbound bytes from inside its lock), so calling into it while
+            // holding this lock is the two orderings that deadlock.
+            val holder = synchronized(lock) { transports.entries.lastOrNull()?.value } ?: return 0L
+            return holder.pending()
+        }
 
     /**
      * Report a transport's own state. What the UI shows is the state of whichever

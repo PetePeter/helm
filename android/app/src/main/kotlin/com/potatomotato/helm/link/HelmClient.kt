@@ -26,6 +26,13 @@ import com.potatomotato.helm.save.SavedFile
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.data.ArtifactRules
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+
 import org.json.JSONObject
 import com.potatomotato.helm.wire.MobileRecord
 
@@ -58,6 +65,18 @@ class HelmClient(
     private val send: (ByteArray) -> Boolean,
     private val now: () -> Long = System::currentTimeMillis,
     private val scheduler: ChannelScheduler,
+    /**
+     * Bytes the link has taken but not yet put on the wire — the backpressure
+     * an upload paces itself against. See [HelmLink.pendingBytes] for why the
+     * link has to be asked rather than inferred from [send]'s return value.
+     */
+    private val linkPending: () -> Long = { HelmLink.pendingBytes },
+    /**
+     * Where a file's slices are pumped. Its own scope, because that pump is the
+     * one thing here that BLOCKS: it waits on the radio between slices, and the
+     * inbound path it used to run on must never wait for anything.
+     */
+    private val uploadScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     val sessions: SessionRepository = SessionRepository(),
     val chats: ChatRepository = ChatRepository(),
     val capabilities: CapabilityCache = CapabilityCache(),
@@ -470,6 +489,21 @@ class HelmClient(
         staged: StagedAttachment,
         offer: UploadOffer,
     ) {
+        // LAUNCHED, not run here. This is called from the inbound path — the
+        // collector that delivers every frame the desktop sends — and a file's
+        // worth of slices took that path hostage for the whole transfer, so
+        // nothing else the desktop said could be heard meanwhile. It also has to
+        // be able to WAIT (see [awaitFlushed]), which the inbound path must not.
+        uploadScope.launch { streamArtifactUploadSlices(sessionId, artifactId, key, staged, offer) }
+    }
+
+    private suspend fun streamArtifactUploadSlices(
+        sessionId: String,
+        artifactId: String,
+        key: String,
+        staged: StagedAttachment,
+        offer: UploadOffer,
+    ) {
         val input = openStagedAttachment(staged)
         if (input == null) {
             uploads.uploadFailed(key, STAGE_GONE)
@@ -501,10 +535,18 @@ class HelmClient(
                     eof = eof,
                     bytes = chunk,
                 )
+                val before = linkPending()
                 if (!send(frame)) {
                     uploads.uploadFailed(key, NOT_LINKED)
                     return
                 }
+                // Wait for the link to actually carry it before queueing more.
+                // The percentage is reported from HERE, never from the send
+                // above: over Bluetooth a send only enqueues, so a loop that
+                // believed itself would drain a 10MB file into the queue in
+                // milliseconds, show 100% at once, and then sit there for the
+                // several minutes the radio really takes.
+                awaitFlushed(key, base = offset, sliceBytes = filled, floor = before)
                 offset += filled
                 uploads.uploadProgress(key, offset)
             }
@@ -528,6 +570,52 @@ class HelmClient(
         // A commit the link refused to carry fails the chip here rather than
         // leaving it Uploading against a slot the desktop will evict.
         if (!issued) uploads.uploadFailed(key, NOT_LINKED)
+    }
+
+    /**
+     * Block until the slice just sent has left the phone, reporting what has
+     * really gone as it drains.
+     *
+     * [floor] is what was already pending before the slice was handed over, so
+     * the wait is for THIS slice and not for the queue to reach zero. The
+     * reported figure interpolates inside the slice: a slice is up to a megabyte
+     * and a Bluetooth link takes minutes over one, so a bar that moved only at
+     * slice boundaries would be indistinguishable from a frozen one.
+     *
+     * POLLED rather than pushed. A drained-to-here callback would have to be
+     * threaded from the GATT queue through HelmLink to here, fire on a binder
+     * thread, and be unsubscribed on every failure path — all to learn a number
+     * that is already readable. The cost is one cheap read per tick of a
+     * transfer measured in minutes.
+     *
+     * Returns when the slice is gone OR when the link discarded its queue (a
+     * dropped link empties it): both leave nothing of this slice pending, and
+     * the commit that follows is what tells the user which one happened.
+     */
+    private suspend fun awaitFlushed(key: String, base: Long, sliceBytes: Int, floor: Long) {
+        val queued = (linkPending() - floor).coerceAtLeast(0L)
+        // Nothing waiting means the transport flushes as it sends — LAN does —
+        // and there is nothing to wait for.
+        if (queued <= 0L) return
+        while (true) {
+            pause(FLUSH_POLL_MS)
+            val outstanding = (linkPending() - floor).coerceAtLeast(0L)
+            if (outstanding <= 0L) return
+            val gone = (queued - outstanding) * sliceBytes / queued
+            uploads.uploadProgress(key, base + gone)
+        }
+    }
+
+    /**
+     * Sleep on the class's OWN clock — [scheduler] — rather than on `delay`.
+     *
+     * Every other deadline here is already the scheduler's, so a test that can
+     * drive a call timeout can drive this too, and the pacing loop above stays
+     * as testable as the rest of the file instead of needing wall time.
+     */
+    private suspend fun pause(delayMs: Long) = suspendCancellableCoroutine { continuation ->
+        val armed = scheduler.schedule(delayMs) { continuation.resume(Unit) }
+        continuation.invokeOnCancellation { armed.cancel() }
     }
 
     /** The whole stage landed: NOW the create moves the user, like a bare create. */
@@ -1216,6 +1304,13 @@ class HelmClient(
 
         /** When a staged file never named a type. */
         private const val DEFAULT_MIME = "application/octet-stream"
+
+        /**
+         * How often an in-flight slice asks the link how far it has got. Slow
+         * enough to cost nothing on a transfer measured in minutes, fast enough
+         * that the bar moves rather than steps.
+         */
+        private const val FLUSH_POLL_MS = 100L
 
         /** The staged copy vanished before its upload could read it. */
         private const val STAGE_GONE = "The staged file is no longer readable — attach it again"

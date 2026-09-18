@@ -303,6 +303,7 @@
     <string name="artifacts_attach_open">Open this attachment</string>
     <string name="artifacts_chip_waiting">Waiting to send</string>
     <string name="artifacts_chip_uploading">Sending… %1$s</string>
+    <string name="artifacts_chip_uploading_bar">Sending %1$s, %2$s done</string>
     <string name="artifacts_chip_done">Attached</string>
     <string name="artifacts_chip_failed">Failed</string>
     <string name="artifacts_attach_unsupported_offline">No link to Helm — attachments need one.</string>
@@ -310,6 +311,7 @@
     <string name="artifacts_attach_unsupported_denied">This desktop has not allowed attachments from your phone.</string>
     <string name="artifacts_attach_too_large">That file is past the 10 MB attachment limit.</string>
     <string name="artifacts_attach_refused">That file could not be read.</string>
+    <string name="artifacts_attachments_header">Attachments</string>
 
     <string name="artifacts_confirm_delete">Delete “%1$s”? Every version goes with it.</string>
     <string name="artifacts_confirm_delete_yes">Delete it</string>

@@ -151,7 +151,11 @@ class LanLinkController(
             // registered but cannot carry bytes would silently swallow every send.
             synchronized(lock) {
                 session = lan
-                HelmLink.attach(RANK_LAN) { data -> runWrite { lan.send(data) } }
+                HelmLink.attach(
+                    rank = RANK_LAN,
+                    send = { data -> runWrite { lan.send(data) } },
+                    pending = { lan.pendingBytes },
+                )
             }
             retryDelayMs = RETRY_MIN_MS
             HelmLink.publishState(RANK_LAN, LinkState.Linked)

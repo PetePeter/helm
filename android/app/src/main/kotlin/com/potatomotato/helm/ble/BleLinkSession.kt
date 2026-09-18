@@ -101,6 +101,18 @@ class BleLinkSession(
     private var awaitingNotificationAck = false
 
     /**
+     * Wire bytes this session has accepted but the stack has not acknowledged —
+     * the queue below plus whichever chunk is in flight.
+     *
+     * Kept as a counter rather than summed on demand because it is READ far more
+     * often than it changes: an upload watches it to pace itself (see
+     * [HelmLink.pendingBytes]), and walking a deque of thousands of chunks on
+     * every poll would be the expensive half of the transfer.
+     */
+    private var outboundBytes = 0L
+    private var inFlightBytes = 0
+
+    /**
      * Identity of the deadline currently armed for the chunk in flight. Each
      * send arms a new one; an ack or a teardown invalidates the old ones, so a
      * stale [LinkScheduler] action can never tear down a healthy link.
@@ -157,11 +169,23 @@ class BleLinkSession(
                 "${outbound.size} were already waiting"
         }
         outbound.addAll(chunks)
+        outboundBytes += chunks.sumOf { it.size.toLong() }
         drain()
     }
 
     /** Bytes still waiting for a notification slot. Test and diagnostics hook. */
     val pendingChunks: Int get() = synchronized(lock) { outbound.size }
+
+    /**
+     * Wire bytes queued or in flight, i.e. accepted here but not yet on the air.
+     *
+     * This is the BLE half of the link's backpressure contract (see
+     * [HelmLink.pendingBytes]). It matters because [send] RETURNS IMMEDIATELY:
+     * a caller that measures its own progress by what it has handed over is
+     * measuring the queue, not the radio, and over a link that carries a few
+     * hundred bytes per notification those are minutes apart.
+     */
+    val pendingBytes: Long get() = synchronized(lock) { outboundBytes }
 
     // ---- events from the peripheral ---------------------------------------
 
@@ -235,9 +259,13 @@ class BleLinkSession(
             // truncated secure frame fails the peer's AEAD check, which is the
             // notice.
             log("notification failed; discarding ${outbound.size} queued chunks")
-            outbound.clear()
+            discardOutbound()
             return
         }
+        // Acked, so those bytes are no longer pending — counted here rather than
+        // at dequeue so "pending" means "not yet on the air", not "not yet tried".
+        outboundBytes -= inFlightBytes
+        inFlightBytes = 0
         drain()
     }
 
@@ -309,6 +337,7 @@ class BleLinkSession(
         if (state != LinkState.Linked || awaitingNotificationAck) return
         val chunk = outbound.removeFirstOrNull() ?: return
         awaitingNotificationAck = true
+        inFlightBytes = chunk.size
         chunksSent++
         HelmLog.v(HelmLog.BLE) { "tx chunk #$chunksSent, ${chunk.size} bytes, ${outbound.size} left" }
         val accepted = safely("notifyTx") { peripheral.notifyTx(chunk) } ?: false
@@ -317,10 +346,21 @@ class BleLinkSession(
             // here or the queue stalls forever.
             awaitingNotificationAck = false
             log("notification rejected; discarding ${outbound.size} queued chunks")
-            outbound.clear()
+            discardOutbound()
             return
         }
         armAckDeadline()
+    }
+
+    /**
+     * Drop everything queued. One place, because the byte counter and the queue
+     * going out of step would leave an upload pacing itself against a backlog
+     * that no longer exists — i.e. stalled forever.
+     */
+    private fun discardOutbound() {
+        outbound.clear()
+        outboundBytes = 0
+        inFlightBytes = 0
     }
 
     /**
@@ -346,7 +386,7 @@ class BleLinkSession(
                 "treating the transport as dropped, discarding ${outbound.size} queued chunks",
         )
         disconnectRequested = true
-        outbound.clear()
+        discardOutbound()
         awaitingNotificationAck = false
         ackWatch++
         safely("disconnect after ack timeout") { peripheral.disconnect(address) }
@@ -374,7 +414,7 @@ class BleLinkSession(
         chunksSent = 0
         chunksReceived = 0
         chunkSize = BleFraming.MIN_CHUNK_BYTES
-        outbound.clear()
+        discardOutbound()
         awaitingNotificationAck = false
         // Invalidate any ack deadline still in flight from the dead connection;
         // LinkScheduler has no cancel, so the stale action simply no-ops.

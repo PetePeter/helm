@@ -7,6 +7,8 @@ import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.wire.MobileRecord
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,10 +35,21 @@ class HelmClientArtifactUploadTest {
     private var clock = 1_700_000_000_000L
     private val scheduler = TestScheduler()
     private val files = mutableMapOf<String, ByteArray>()
+
+    /**
+     * The fake link's backlog: bytes it has taken but not yet put on the wire.
+     * Zero is a transport that flushes as it sends — LAN — and is what the
+     * ordering tests below want, because then the chain runs straight through.
+     */
+    private var pending = 0L
     private val client = HelmClient(
         send = { bytes -> if (linked) sent.add(bytes) else false },
         now = { clock },
         scheduler = scheduler,
+        linkPending = { pending },
+        // Unconfined, so a launched upload runs inline and the ORDER of the
+        // chain stays assertable; the waiting is the scheduler's, not a clock's.
+        uploadScope = CoroutineScope(Dispatchers.Unconfined),
     ).apply {
         openStagedAttachment = { staged -> files[staged.key]?.let { ByteArrayInputStream(it) } }
     }

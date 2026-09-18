@@ -37,7 +37,7 @@ class HelmLinkOwnershipTest {
 
     /** Attach a transport and declare it connected, as a real one would. */
     private fun live(rank: Int, into: MutableList<ByteArray>) {
-        HelmLink.attach(rank, sink(into))
+        HelmLink.attach(rank, send = sink(into))
         HelmLink.publishState(rank, LinkState.Linked)
     }
 
@@ -77,7 +77,7 @@ class HelmLinkOwnershipTest {
         val ble = mutableListOf<ByteArray>()
         live(RANK_LAN, lan)
 
-        assertFalse("attaching is not owning", HelmLink.attach(RANK_BLE, sink(ble)))
+        assertFalse("attaching is not owning", HelmLink.attach(RANK_BLE, send = sink(ble)))
 
         HelmLink.send(byteArrayOf(3))
         assertArrayEquals(byteArrayOf(3), lan.single())
@@ -116,7 +116,7 @@ class HelmLinkOwnershipTest {
         val ble = mutableListOf<ByteArray>()
         val lan = mutableListOf<ByteArray>()
         live(RANK_LAN, lan)
-        HelmLink.attach(RANK_BLE, sink(ble))
+        HelmLink.attach(RANK_BLE, send = sink(ble))
 
         HelmLink.publishState(RANK_BLE, LinkState.Advertising)
 
@@ -127,7 +127,7 @@ class HelmLinkOwnershipTest {
     fun `the state reverts to the surviving transport's own state on a drop`() {
         val ble = mutableListOf<ByteArray>()
         val lan = mutableListOf<ByteArray>()
-        HelmLink.attach(RANK_BLE, sink(ble))
+        HelmLink.attach(RANK_BLE, send = sink(ble))
         HelmLink.publishState(RANK_BLE, LinkState.Advertising)
         live(RANK_LAN, lan)
         assertEquals(LinkState.Linked, HelmLink.state.value)
@@ -147,7 +147,7 @@ class HelmLinkOwnershipTest {
         val ble = mutableListOf<ByteArray>()
         live(RANK_BLE, ble)
 
-        HelmLink.attach(RANK_BLE, sink(ble))
+        HelmLink.attach(RANK_BLE, send = sink(ble))
 
         assertEquals(LinkState.Linked, HelmLink.state.value)
         assertTrue(HelmLink.send(byteArrayOf(7)))
@@ -156,7 +156,7 @@ class HelmLinkOwnershipTest {
     @Test
     fun `a send goes nowhere while the owning transport is not yet linked`() {
         val sent = mutableListOf<ByteArray>()
-        HelmLink.attach(RANK_LAN, sink(sent))
+        HelmLink.attach(RANK_LAN, send = sink(sent))
         HelmLink.publishState(RANK_LAN, LinkState.Connecting)
 
         assertFalse(HelmLink.send(byteArrayOf(8)))

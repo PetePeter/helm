@@ -923,6 +923,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 client.downloadArtifact(session, openArtifactId!!, version = null)
                             }
                         },
+                        onDownloadAttachment = { attachment ->
+                            openSessionId?.let { session ->
+                                client.downloadArtifactAttachment(session, openArtifactId!!, attachment.id)
+                            }
+                        },
                         onDelete = {
                             openSessionId?.let { session ->
                                 client.deleteArtifact(session, openArtifactId!!)

@@ -115,7 +115,7 @@ class HelmLinkService : Service() {
         // Registered UP FRONT so its state reports are never dropped, and so it
         // is already in place to resume the moment a better transport goes away.
         // Attaching is not the same as being connected — see HelmLink.attach.
-        HelmLink.attach(RANK_BLE, link::send)
+        HelmLink.attach(RANK_BLE, pending = { link.pendingBytes }, send = link::send)
 
         recovery = BleRadioRecovery(
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
@@ -128,7 +128,7 @@ class HelmLinkService : Service() {
                 try {
                     val opened = server.open()
                     if (opened) {
-                        HelmLink.attach(RANK_BLE, link::send)
+                        HelmLink.attach(RANK_BLE, pending = { link.pendingBytes }, send = link::send)
                         link.start()
                     }
                     opened

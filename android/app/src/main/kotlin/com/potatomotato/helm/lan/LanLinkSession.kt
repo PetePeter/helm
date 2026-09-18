@@ -50,6 +50,16 @@ class LanLinkSession(
     val connected: Boolean get() = connection != null
 
     /**
+     * The LAN half of the link's backpressure contract (see
+     * [com.potatomotato.helm.ble.HelmLink.pendingBytes]). Always zero, and that
+     * is the honest answer rather than a stub: [send] writes and FLUSHES before
+     * it returns, so by the time a caller can ask, everything it handed over has
+     * gone to the socket. Backpressure on this transport is the blocking write
+     * itself — there is no queue of ours for anything to wait in.
+     */
+    val pendingBytes: Long get() = 0L
+
+    /**
      * Try each address in turn and keep the first that answers.
      *
      * FIRST WINS, and the list is tried in the order the desktop sent it. There
