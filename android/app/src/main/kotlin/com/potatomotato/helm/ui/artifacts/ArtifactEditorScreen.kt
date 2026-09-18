@@ -2,25 +2,29 @@ package com.potatomotato.helm.ui.artifacts
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -29,12 +33,16 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ArtifactRules.Verdict
 import com.potatomotato.helm.data.HelmArtifact
+import com.potatomotato.helm.data.StagedAttachment
+import com.potatomotato.helm.data.UploadSupport
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.PrimaryButton
+import com.potatomotato.helm.ui.components.RoundAccentButton
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -55,12 +63,17 @@ sealed interface ArtifactEdit {
 }
 
 /**
- * The one writing surface in the artifacts slice: a title and a body, nothing
- * else. Create is markdown-only because the desktop's session-addressed create
- * refuses every other kind (HTML authored from a phone keyboard is a
- * sanitization question nobody has answered — invariant 9), so the form offers
- * no kind choice at all; a revise inherits the artifact's own kind, and an HTML
- * body is edited as the source it is shown as.
+ * The one writing surface in the artifacts slice: a title, a body, and — for a
+ * create — the files riding along with it. Create is markdown-only because the
+ * desktop's session-addressed create refuses every other kind (HTML authored
+ * from a phone keyboard is a sanitization question nobody has answered —
+ * invariant 9), so the form offers no kind choice at all; a revise inherits the
+ * artifact's own kind, and an HTML body is edited as the source it is shown as.
+ *
+ * The body is a TALL FIXED box rather than a growing one, deliberate: with
+ * attachments staged below it, a body that grows would shove the chips and the
+ * attach toolbar under the keyboard, and the controls the user is reaching for
+ * are the ones that must stay where the thumb left them.
  *
  * The rules come from [ArtifactRules], the same object the client enforces
  * before the radio, so the submit is dark for exactly the reasons the wire
@@ -74,6 +87,21 @@ fun ArtifactEditorScreen(
     onSubmit: (title: String, content: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** The staged files, in staged order. A create only. */
+    staged: List<StagedAttachment> = emptyList(),
+    /** Per-chip upload state, keyed by [StagedAttachment.key]. */
+    uploadStates: Map<String, AttachmentUploadState> = emptyMap(),
+    /** Why the attach toolbar is dark, when it is. Null hides the toolbar entirely. */
+    attachSupport: UploadSupport? = null,
+    onAttachCamera: () -> Unit = {},
+    onAttachGallery: () -> Unit = {},
+    onAttachFiles: () -> Unit = {},
+    /** Open a staged file locally — the chip tap. */
+    onOpenStaged: (StagedAttachment) -> Unit = {},
+    /** Take a staged file back off the create. */
+    onRemoveStaged: (key: String) -> Unit = {},
+    /** Send a failed attachment again. */
+    onRetryStaged: (key: String) -> Unit = {},
 ) {
     // Bound to a local before any lambda captures it: Compose slot lambdas run
     // again on recomposition, and a parameter smart cast does not survive being
@@ -86,11 +114,14 @@ fun ArtifactEditorScreen(
     var title by rememberSaveable { mutableStateOf(revision?.artifact?.title ?: "") }
     var body by rememberSaveable { mutableStateOf(revision?.shown ?: "") }
 
-    val verdict = when (edit) {
-        is ArtifactEdit.New -> ArtifactRules.judgeCreate(title, body)
+    val verdict = when (edit) {        is ArtifactEdit.New -> ArtifactRules.judgeCreate(title, body)
         is ArtifactEdit.Revision -> ArtifactRules.judgeRevision(edit.shown, body)
     }
     val sendable = verdict == Verdict.Ok
+    // Anything past Waiting is a create already in motion; Create must not fire
+    // a second artifact into the one being assembled.
+    val uploadsRunning = staged.any { it.key !in uploadStates || uploadStates[it.key] is AttachmentUploadState.Uploading }
+    val isCreate = revision == null
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
@@ -103,11 +134,13 @@ fun ArtifactEditorScreen(
             onBack = onBack,
         )
 
+        // Fixed-height body: the outer column no longer scrolls, so the body
+        // takes the space between the fields and the composer panel and scrolls
+        // INTERNALLY once the text outgrows it.
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
@@ -144,17 +177,29 @@ fun ArtifactEditorScreen(
                 )
                 FieldLabel(stringResource(R.string.artifacts_body_label))
             }
-            Field(
-                value = body,
-                onValue = { body = it },
-                singleLine = false,
-                label = if (revision == null) {
-                    stringResource(R.string.artifacts_body_markdown)
-                } else {
-                    stringResource(R.string.artifacts_body_label)
-                },
-                semanticsError = null,
-            )
+            val bodyLabel = stringResource(R.string.artifacts_body_label)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(HelmRadius.Md))
+                    .background(HelmColors.Surface2)
+                    .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+                    .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+            ) {
+                BasicTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    singleLine = false,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
+                    cursorBrush = SolidColor(HelmColors.Accent),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics {
+                            contentDescription = bodyLabel
+                        },
+                )
+            }
             when (verdict) {
                 Verdict.Unchanged -> Hint(stringResource(R.string.artifacts_body_unchanged))
                 Verdict.TooLarge -> Hint(stringResource(R.string.artifacts_too_large))
@@ -169,11 +214,21 @@ fun ArtifactEditorScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
+            if (isCreate) {
+                StagedChips(
+                    staged = staged,
+                    uploadStates = uploadStates,
+                    onOpen = onOpenStaged,
+                    onRemove = onRemoveStaged,
+                    onRetry = onRetryStaged,
+                )
+                AttachToolbar(attachSupport, onAttachCamera, onAttachGallery, onAttachFiles)
+            }
             PrimaryButton(
                 text = stringResource(
                     if (revision == null) R.string.artifacts_submit_create else R.string.artifacts_submit_revise,
                 ),
-                enabled = sendable,
+                enabled = sendable && !uploadsRunning,
                 // The client enforces the same rules again before the radio; the
                 // trim here is the one place the title is settled.
                 onClick = { onSubmit(ArtifactRules.title(title), body) },
@@ -182,6 +237,154 @@ fun ArtifactEditorScreen(
         }
     }
 }
+
+/**
+ * The staged files, one chip each, under the body and above the attach toolbar
+ * — the order the user works in: pick, see it named, then send.
+ */
+@Composable
+private fun StagedChips(
+    staged: List<StagedAttachment>,
+    uploadStates: Map<String, AttachmentUploadState>,
+    onOpen: (StagedAttachment) -> Unit,
+    onRemove: (String) -> Unit,
+    onRetry: (String) -> Unit,
+) {
+    for (attachment in staged) {
+        val state = uploadStates[attachment.key] ?: AttachmentUploadState.Waiting
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(HelmRadius.Pill))
+                .background(HelmColors.Surface2)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
+                .clickable { onOpen(attachment) }
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = attachment.filename,
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.width(HelmSpacing.Sm))
+            ChipState(attachment, state, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(HelmSpacing.Xs))
+            if (state is AttachmentUploadState.Failed) {
+                ChipGlyph(stringResource(R.string.artifacts_attach_retry_glyph)) { onRetry(attachment.key) }
+            }
+            if (state is AttachmentUploadState.Waiting) {
+                ChipGlyph(stringResource(R.string.artifacts_attach_remove_glyph)) { onRemove(attachment.key) }
+            }
+        }
+    }
+}
+
+/** The one state line a chip carries: its size while it waits, progress in flight. */
+@Composable
+private fun ChipState(
+    attachment: StagedAttachment,
+    state: AttachmentUploadState,
+    modifier: Modifier = Modifier,
+) {
+    when (state) {
+        is AttachmentUploadState.Waiting -> ChipLine(
+            humanSize(attachment.sizeBytes),
+            modifier,
+        )
+        is AttachmentUploadState.Uploading -> ChipLine(
+            stringResource(R.string.artifacts_chip_uploading, "${percent(state.sent, state.totalBytes)}%"),
+            modifier,
+        )
+        is AttachmentUploadState.Done -> ChipLine(
+            stringResource(R.string.artifacts_chip_done),
+            modifier,
+            color = HelmColors.Dim,
+        )
+        is AttachmentUploadState.Failed -> ChipLine(
+            stringResource(R.string.artifacts_chip_failed),
+            modifier,
+            color = HelmColors.Danger,
+        )
+    }
+}
+
+@Composable
+private fun ChipLine(text: String, modifier: Modifier = Modifier, color: Color = HelmColors.Faint) {
+    Text(
+        text = text,
+        color = color,
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 1,
+        modifier = modifier,
+    )
+}
+
+/** A glyph acting as a chip button, the way the version bar's controls do. */
+@Composable
+private fun ChipGlyph(glyph: String, onClick: () -> Unit) {
+    Text(
+        text = glyph,
+        color = HelmColors.Dim,
+        style = MaterialTheme.typography.labelLarge,
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(HelmSpacing.Xs),
+    )
+}
+
+/**
+ * The attach toolbar: three circles — camera, gallery, files. Dark with a
+ * REASON whenever this desktop cannot take attachments; a greyed control with
+ * no reason reads as a broken app.
+ */
+@Composable
+private fun AttachToolbar(
+    support: UploadSupport?,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+    onFiles: () -> Unit,
+) {
+    when (support) {
+        null -> {}
+        UploadSupport.Available -> Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm)) {
+            RoundAccentButton(
+                glyph = stringResource(R.string.artifacts_attach_camera_glyph),
+                contentDescription = stringResource(R.string.artifacts_attach_camera),
+                onClick = onCamera,
+            )
+            RoundAccentButton(
+                glyph = stringResource(R.string.artifacts_attach_gallery_glyph),
+                contentDescription = stringResource(R.string.artifacts_attach_gallery),
+                onClick = onGallery,
+            )
+            RoundAccentButton(
+                glyph = stringResource(R.string.artifacts_attach_files_glyph),
+                contentDescription = stringResource(R.string.artifacts_attach_files),
+                onClick = onFiles,
+            )
+        }
+        UploadSupport.Offline -> Hint(stringResource(R.string.artifacts_attach_unsupported_offline))
+        UploadSupport.DesktopTooOld -> Hint(stringResource(R.string.artifacts_attach_unsupported_old))
+        UploadSupport.NotPermitted -> Hint(stringResource(R.string.artifacts_attach_unsupported_denied))
+    }
+}
+
+/** Bytes a human reads: KB under a megabyte, MB from there. One decimal at most. */
+private fun humanSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> {
+        val mb = bytes / (1024f * 1024f)
+        if (mb >= 10f) "${mb.toInt()} MB" else "${(mb * 10).toInt() / 10f} MB"
+    }
+    bytes >= 1024 -> "${bytes / 1024} KB"
+    else -> "$bytes B"
+}
+
+private fun percent(sent: Long, total: Long): Int =
+    if (total > 0) ((sent.coerceIn(0, total) * 100) / total).toInt() else 0
 
 @Composable
 private fun FieldLabel(text: String) {

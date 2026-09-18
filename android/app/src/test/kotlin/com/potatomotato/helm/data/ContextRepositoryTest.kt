@@ -35,12 +35,32 @@ class ContextRepositoryTest {
             ),
         )
 
+        // Rows come back A-Z by name, whatever order the desktop answered in.
         assertEquals(
             listOf(
-                HelmProject("proj1", "Helm", "x:\\coding\\gamepad-cli-hub"),
                 HelmProject("proj2", "Charger", "/c"),
+                HelmProject("proj1", "Helm", "x:\\coding\\gamepad-cli-hub"),
             ),
             (repo.projects.value as ProjectList.Ready).projects,
+        )
+    }
+
+    @Test
+    fun `projects arrive sorted by name, case-insensitive`() {
+        // The desktop answers in creation order; the picker reads A-Z.
+        assertTrue(
+            repo.projectsArrived(
+                parse(
+                    """[{"id":"p3","name":"zed","canonicalPath":"/z"},""" +
+                        """{"id":"p1","name":"Alpha","canonicalPath":"/a"},""" +
+                        """{"id":"p2","name":"beta","canonicalPath":"/b"}]""",
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf("p1", "p2", "p3"),
+            (repo.projects.value as ProjectList.Ready).projects.map { it.id },
         )
     }
 

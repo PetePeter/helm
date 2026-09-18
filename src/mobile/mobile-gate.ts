@@ -48,6 +48,16 @@ export { HARD_DENY_TOOLS };
 export const RESERVED_MOBILE_TOOLS_METHOD = '__mobile_tools__';
 
 /**
+ * A second reserved, non-dispatchable meta-method: the phone reporting the seq
+ * of the last chat message it has, so the hub can replay the journal gap. It
+ * carries no tool name and dispatches nothing, but it is answered IN-GATE all
+ * the same — a disabled device must not be able to pull the journal by simply
+ * asking, and this is what keeps that rule true by construction. Sentinel
+ * underscores keep it clear of every real tool name.
+ */
+export const RESERVED_CHAT_CURSOR_METHOD = '__chat_cursor__';
+
+/**
  * Tool-name prefixes that are STRUCTURALLY UNREACHABLE from a phone.
  *
  * These families resolve their subject from `authContext.sessionId` alone — they
@@ -230,6 +240,17 @@ export class MobileGate {
         .map(t => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema }));
       this.logOutcome(deviceId, method, 'ok');
       return { tools };
+    }
+
+    // 2b. The chat catch-up cursor. The body of the answer means nothing — the
+    // replay itself is the bridge's job, over the link the call arrived on — but
+    // the CHECK is everything: a disabled or unrecognised device gets the same
+    // denial here as any tool would, so the journal is reachable only by a
+    // device the registry currently trusts.
+    if (method === RESERVED_CHAT_CURSOR_METHOD) {
+      this.consumeOrThrow(deviceId, method);
+      this.logOutcome(deviceId, method, 'ok');
+      return { ok: true };
     }
 
     // 3. Hard-deny, and the structurally unreachable families with it: a tool

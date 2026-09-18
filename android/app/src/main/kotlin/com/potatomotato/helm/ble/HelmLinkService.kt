@@ -19,7 +19,15 @@ import android.os.IBinder
 import android.os.Looper
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
+import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.log.HelmLog
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * HelmLinkService — keeps the phone advertising while backgrounded or
@@ -57,6 +65,12 @@ class HelmLinkService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Lives as long as the service does. Only the transport preference is
+     * collected here; everything else in this class is callback-driven.
+     */
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var gattServer: GattServer? = null
     private var session: BleLinkSession? = null
     private lateinit var recovery: BleRadioRecovery
@@ -132,7 +146,18 @@ class HelmLinkService : Service() {
 
         registerReceiver(radioReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         recovery.onBluetoothState(isBluetoothOn())
+        // The user's choice is a SECOND gate on the peripheral, alongside the
+        // radio's own state — LAN-only means stop advertising, which is where
+        // the battery saving actually comes from. Applied before the first
+        // attempt so a LAN-only phone never advertises once on the way up.
+        recovery.onTransportAllowed(TransportPreferences.preference.value.allowsBluetooth)
         recovery.start()
+        serviceScope.launch {
+            TransportPreferences.preference
+                .map { it.allowsBluetooth }
+                .distinctUntilChanged()
+                .collect { allowed -> recovery.onTransportAllowed(allowed) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -148,6 +173,7 @@ class HelmLinkService : Service() {
         session?.stop()
         gattServer?.close()
         handler.removeCallbacksAndMessages(null)
+        serviceScope.cancel()
         runCatching { unregisterReceiver(radioReceiver) }
         session = null
         gattServer = null

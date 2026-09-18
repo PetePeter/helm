@@ -35,11 +35,12 @@ class PairingControllerTest {
             .also { it.start() }
     }
 
-    private fun controller() = PairingController(
+    private fun controller(onLinked: () -> Unit = {}) = PairingController(
         store = store,
         machineId = "phone-test",
         scheduler = TestScheduler(),
         onInbound = { inbound.add(it) },
+        onLinked = onLinked,
     )
 
     @Test
@@ -88,8 +89,7 @@ class PairingControllerTest {
     }
 
     @Test
-    fun `a paired desktop reconnects straight to linked, with no second SAS prompt`() {
-        val first = controller()
+    fun `a paired desktop reconnects straight to linked, with no second SAS prompt`() {        val first = controller()
         connect(first)
         first.confirm(true)
         val storedPsk = store.load("desktop-test")
@@ -101,6 +101,25 @@ class PairingControllerTest {
         assertTrue(second.send("hello again".toByteArray()))
         assertEquals("hello again", String(desktop.received.single()))
         assertArrayEquals("the PSK survives the reconnect", storedPsk, store.load("desktop-test"))
+    }
+
+    @Test
+    fun `the link announces itself upward on both roads to Linked`() {
+        // First pairing: Linked only after the SAS verdict.
+        val confirmCalls = mutableListOf<Int>()
+        val first = controller(onLinked = { confirmCalls.add(1) })
+        connect(first)
+        assertTrue(first.state.value is PairingState.Comparing)
+        assertEquals("a handshake alone is not a usable link", 0, confirmCalls.size)
+
+        first.confirm(true)
+        assertEquals(1, confirmCalls.size)
+
+        // Reconnect: Linked the moment the stored PSK authenticates, no SAS.
+        val reconnectCalls = mutableListOf<Int>()
+        val second = controller(onLinked = { reconnectCalls.add(1) })
+        connect(second)
+        assertEquals(1, reconnectCalls.size)
     }
 
     @Test

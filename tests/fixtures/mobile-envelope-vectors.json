@@ -130,6 +130,44 @@
       "eof": true
     }
   ],
+  "uploads": [
+    {
+      "name": "upload slice, more to come",
+      "bytesHex": "b10100767b2276223a312c2274223a22626c6f62222c226964223a227531222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a352c226f6666736574223a302c22746f74616c223a31312c22656f66223a66616c73657d007bff1020",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"u1\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":5,\"offset\":0,\"total\":11,\"eof\":false}",
+      "id": "u1",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "007bff1020",
+      "offset": 0,
+      "total": 11,
+      "eof": false
+    },
+    {
+      "name": "final upload slice",
+      "bytesHex": "b10100757b2276223a312c2274223a22626c6f62222c226964223a227532222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a362c226f6666736574223a352c22746f74616c223a31312c22656f66223a747275657dfeedface0102",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"u2\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":6,\"offset\":5,\"total\":11,\"eof\":true}",
+      "id": "u2",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "feedface0102",
+      "offset": 5,
+      "total": 11,
+      "eof": true
+    },
+    {
+      "name": "empty tail upload slice",
+      "bytesHex": "b10100767b2276223a312c2274223a22626c6f62222c226964223a227533222c2266696c656e616d65223a2270686f746f2e6a7067222c226d696d6554797065223a22696d6167652f6a706567222c2273697a65223a302c226f6666736574223a31312c22746f74616c223a31312c22656f66223a747275657d",
+      "header": "{\"v\":1,\"t\":\"blob\",\"id\":\"u3\",\"filename\":\"photo.jpg\",\"mimeType\":\"image/jpeg\",\"size\":0,\"offset\":11,\"total\":11,\"eof\":true}",
+      "id": "u3",
+      "filename": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "bodyHex": "",
+      "offset": 11,
+      "total": 11,
+      "eof": true
+    }
+  ],
   "rejects": [
     {
       "name": "not JSON",

@@ -12,6 +12,7 @@ the concept is lifted out into a bridge interface and a broker.
 | `src/session/chat/chat-bindings.ts` | Per-provider session bindings + `topicId` migration |
 | `src/telegram/relay-service.ts` | `provider: 'telegram'` — the first implementation |
 | `src/mobile/mobile-chat-bridge.ts` | `provider: 'mobile'` — the phone, and the inbound call path |
+| `src/mobile/mobile-chat-journal.ts` | The 24h rolling record every phone catches up from |
 | `src/mobile/mobile-envelope.ts` | The records that cross the BLE wire |
 
 ```mermaid
@@ -97,7 +98,7 @@ than emitted as null, so two encoders in two languages produce identical bytes.
 | `call` | phone → Helm | A tool invocation. The only inbound kind. |
 | `result` | Helm → phone | The gate's return value for one call id. |
 | `error` | Helm → phone | JSON-RPC-shaped failure; deny messages stay uniform. |
-| `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. Optionally carries an attachment's ids (see below). |
+| `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. Messages carry the journal `seq`; alerts never do. Replayed journal records add `replay: true`; a phone's own echoed reply adds `originId` (see below). Optionally carries an attachment's ids (see below). |
 
 Decoding never throws — a malformed record is dropped and logged.
 
@@ -116,6 +117,90 @@ encodes byte-identically and **no vector was regenerated** — the same preceden
 as `SessionSummary.activityLevel`. It is emitted last, after the other optional
 keys, because key order is part of the format. Routing happens once, at decode,
 in `HelmClient.onInbound`.
+
+`seq` followed the same precedent when the journal arrived (emitted after
+`sizeBytes`, no vector regenerated). It is the one field that turns a message
+into something a phone can be *reminded of* — see below. Two more keys rode the
+same precedent, emitted after `seq`: `originId` and `replay`, both omitted when
+absent.
+
+- **`originId`** marks a record as a PHONE'S OWN message, echoed into the journal
+  (below) — the value is the phone's `session_send_text` call id, prefixed with
+  its machineId so two phones that number their calls alike can never drop each
+  other's echoes.
+- **`replay: true`** is stamped ONLY on records streamed from the journal during
+  catch-up; live fan-out never carries it.
+
+## The journal — why a phone never misses a message
+
+Live fan-out answers "was it sent?", never "was it received". A phone out of
+Bluetooth range, or an app whose process died with its in-memory threads, missed
+everything — and Telegram was quietly carrying the whole burden of *was I
+told?*, which is a heavier job than the duplicate buzz it was ratified for.
+
+So every **message** the mobile bridge fans out is appended to ONE global
+journal (`mobile-chat-journal.json`, under the user config dir) before anyone is
+told, and the wire record gains its `seq`. The journal keeps **delivered**
+entries too, for 24h, because a fresh APK install is *designed* to refetch its
+history; pruning is purely age-based, with a hard 5,000-entry ceiling as the
+only runaway guard.
+
+Each phone keeps just its own cursor — the seq of the last message it holds,
+in memory beside the threads it counts. On every link up the phone reports it
+via a second reserved in-gate meta-method, `__chat_cursor__` (the
+`__mobile_tools__` precedent: answered in the gate, never dispatched, so a
+disabled device cannot pull the journal), and Helm streams everything after
+that seq over the same link, oldest first. One global sequence means the hub
+tracks nothing per phone — a fourth paired phone needs no new hub state.
+
+The cursor is deliberately NOT persisted. An app restart wipes the threads, so
+a persisted cursor would describe history the restarted process no longer holds
+and the link-up report would talk Helm out of the very replay a cold start
+needs — the thread would come back empty. Instead a fresh process reports zero,
+Helm replays the whole 24h journal, and the refilled threads are why delivered
+messages survive the restart. A mid-process reconnect (out of Bluetooth range
+and back) reports the real position, so only the gap is re-sent.
+
+Two deliberate edges:
+
+- **A refused send stops the stream.** The phone reports its cursor again on the
+  next link up and takes the remainder then; the re-request *is* the retry
+  story, so none is attempted inline.
+- **The phone dedupes by seq.** Messages fanned out live while the cursor was in
+  flight can race the replay; the cursor is the only order both sends share, so
+  the phone drops anything at or below what it already holds. A record with no
+  `seq` (an older hub) updates nothing — catch-up degrades to live-only rather
+  than advancing past history nobody held.
+
+### Phone-origin echoes
+
+The journal would otherwise hold only half of every conversation: the agent's
+messages. So when the gate ACCEPTS a phone's `session_send_text` call, the
+bridge appends an echo to the journal — `journalPhoneReply` — stamped with
+`originId` (`<machineId>:<callId>`). The echo is **journaled only**: nothing is
+live-fanned to the other phones, whose own catch-up picks it up naturally, so
+fan-out rows stay as honest as ever. A reply the gate denies, or one naming a
+session that no longer exists, is answered but journaled as nothing.
+
+The phone that sent it recognises its own words on replay and drops the echo —
+after the cursor advanced, so the history it now holds is never re-requested.
+`HelmClient` registers the originId the moment a send is *carried* (an unsent
+call claims nothing), keeping a bounded recent-sends set; `ChatRepository`
+compares against it. Other phones' echoes land in the thread as phone-side
+messages (`fromPhone`), because an originId names a phone and rendering it as an
+agent bubble would fabricate a speaker the desktop never had.
+
+### No buzz on catch-up
+
+Everything in a replay is old news the phone *asked* to be given, so the bridge
+stamps replayed records with `replay: true` — never live fan-out — and the
+phone's `AlertRouter` files them silently. The message still reaches the thread
+and still marks unread; only the notification is suppressed. A hub old enough to
+never send the key degrades to today's behaviour: a backlog replays and buzzes,
+which is annoying but honest.
+
+Alerts are **not** journaled. They are only true while they happen; the table
+below is unchanged for them.
 
 ## Attachments — one file, two ways to name it
 
@@ -182,6 +267,10 @@ record is Helm→phone **only**, and `decodeRecord` refuses one, so the inbound
 surface is unchanged and every phone call is still a JSON `call` through
 MobileGate. This was a wire break, carried by protocol 3.
 
+Measured on the first build that shipped it: **9.9MB over LAN in 2–3 seconds**,
+against a baseline of 754KB in ~15s. Roughly 3–5 MB/s where it had been ~50KB/s.
+The bytes were never the problem.
+
 `session_artifact_attachment_delete` bins one file without binning the artifact.
 
 ## Alerts — the phone's notification path
@@ -211,7 +300,7 @@ What the mobile path deliberately does **not** do:
 | Not done | Why |
 |----------|-----|
 | Deduplication | The phone keys its notification on the session id, so ten alerts from one session replace into one row. Better than the desktop guessing a suppression window — and distinct from the ratified Telegram/app double-buzz, which stays. |
-| Retry | An alert is only true when it happens. A queue would deliver "needs input" about something that finished an hour ago. |
+| Journaling / retry | An alert is only true when it happens, so it is in no journal and is replayed by nothing — a queue would deliver "needs input" about something that finished an hour ago. Catch-up (above) is for **messages** only. |
 | Preferences | See above. |
 
 **Cross-language contract:** `tests/fixtures/mobile-envelope-vectors.json` pins

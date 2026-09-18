@@ -1502,6 +1502,39 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_artifact_attachment_add',
+    title: 'Open Session Artifact Attachment Upload',
+    description:
+      'Open an upload slot for a file a PAIRED PHONE is attaching to a NAMED session\'s artifact (protocol 4). Returns { uploadId, maxSliceBytes, total }; the phone then streams raw blob records keyed by uploadId and finishes with session_artifact_attachment_commit, which verifies the declared sizeBytes and sha256 before the attachment exists. Not for local callers — a desktop CLI attaches files with artifact_create/artifact_update filePath instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact the file will be attached to.' },
+        filename: { type: 'string', description: 'Display filename for the attachment.' },
+        contentType: { type: 'string', description: 'Optional MIME type, e.g. image/jpeg.' },
+        sizeBytes: { type: 'number', description: 'The whole file\'s size in bytes — the upload\'s hard ceiling.' },
+        sha256: { type: 'string', description: 'Lowercase hex sha256 of the WHOLE file; verified at commit.' },
+      },
+      required: ['sessionId', 'artifactId', 'filename', 'sizeBytes', 'sha256'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_attachment_commit',
+    title: 'Commit Session Artifact Attachment Upload',
+    description:
+      'Finish one upload: verify every declared byte arrived and matched its sha256, store the file as a Helm-managed attachment on the artifact the slot was opened for, and drop the slot. Answers with { artifactId, attachment }; a short or mismatched upload answers an error and leaves nothing behind. A slot idle past two minutes is evicted on its own.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uploadId: { type: 'string', description: 'The uploadId session_artifact_attachment_add returned.' },
+      },
+      required: ['uploadId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'memory_dream',
     title: 'Dream Memories',
     description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. This tool only identifies candidates; it never decides what to forget or merge.',

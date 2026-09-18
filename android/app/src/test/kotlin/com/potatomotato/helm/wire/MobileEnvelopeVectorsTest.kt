@@ -142,6 +142,55 @@ class MobileEnvelopeVectorsTest {
     }
 
     /**
+     * The upload half (protocol 4): the phone ENCODES these, so this is a byte
+     * comparison — the desktop's committed bytes are what the PC's
+     * decodeBlobResult will read, and a key-order or header drift here is a
+     * photo that crosses the link looking complete and lands corrupt. The frame
+     * is deliberately identical to a download blob; the `uploads` array pins
+     * that equivalence rather than trusting it.
+     */
+    @Test
+    fun `the phone re-encodes every upload vector byte for byte`() {
+        val uploads = vectors.getJSONArray("uploads")
+        assertTrue("the fixture must carry upload cases", uploads.length() > 0)
+
+        for (i in 0 until uploads.length()) {
+            val case = uploads.getJSONObject(i)
+            val name = case.getString("name")
+            val produced = MobileEnvelope.encodeBlobUpload(
+                id = case.getString("id"),
+                filename = case.getString("filename"),
+                mimeType = case.getString("mimeType"),
+                offset = case.getLong("offset"),
+                total = case.getLong("total"),
+                eof = case.optBoolean("eof", false),
+                bytes = case.getString("bodyHex").fromHex(),
+            )
+            assertEquals(name, case.getString("bytesHex"), produced.toHex())
+        }
+    }
+
+    /** An upload slice survives its own round trip: encode, then read it back. */
+    @Test
+    fun `an encoded upload slice decodes back to the same record`() {
+        val bytes = byteArrayOf(0x00, 0x7b, (0xff).toByte(), 0x10)
+        val frame = MobileEnvelope.encodeBlobUpload(
+            id = "u9", filename = "photo.jpg", mimeType = "image/jpeg",
+            offset = 5, total = 9, eof = true, bytes = bytes,
+        )
+        val record = MobileEnvelope.decode(frame)
+        assertTrue("must decode as a blob", record is MobileRecord.Blob)
+        record as MobileRecord.Blob
+        assertEquals("u9", record.id)
+        assertEquals("photo.jpg", record.filename)
+        assertEquals("image/jpeg", record.mimeType)
+        assertEquals(bytes.toHex(), record.bytes.toHex())
+        assertEquals(5L, record.offset)
+        assertEquals(9L, record.total)
+        assertTrue(record.eof)
+    }
+
+    /**
      * The marker is the whole reason both codecs can dispatch on one byte. A
      * blob whose BODY starts with '{' must still be read as a blob.
      */

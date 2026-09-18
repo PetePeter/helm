@@ -1,7 +1,9 @@
 package com.potatomotato.helm.wire
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -80,6 +82,69 @@ class MobileEnvelopeChatFieldsTest {
         ) as MobileRecord.Chat
 
         assertNull(record.title)
+    }
+
+    @Test
+    fun `a journaled message decodes the seq it is caught up from`() {
+        // The desktop emits seq LAST, after sizeBytes; the key order here is
+        // byte-for-byte what mobile-chat-bridge.ts produces for a replayed record.
+        val record = MobileEnvelope.decode(
+            (
+                """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"x","at":5,""" +
+                    """"seq":42}"""
+                ).toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertEquals(42L, record.seq)
+    }
+
+    @Test
+    fun `a record without a seq decodes as before, so an old desktop degrades safely`() {
+        val record = MobileEnvelope.decode(
+            """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"hello","at":5}"""
+                .toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertNull(record.seq)
+    }
+
+    @Test
+    fun `an echoed phone reply decodes its origin id and replay flag`() {
+        // The desktop emits them after `seq`, last of all; key order is byte-for-byte
+        // what mobile-chat-bridge.ts produces for a replayed phone-origin echo.
+        val record = MobileEnvelope.decode(
+            (
+                """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"x","at":5,""" +
+                    """"seq":3,"originId":"phone-machine:p2","replay":true}"""
+                ).toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertEquals("phone-machine:p2", record.originId)
+        assertTrue(record.replay)
+        assertEquals(3L, record.seq)
+    }
+
+    @Test
+    fun `a live record decodes with no origin id and replay false`() {
+        val record = MobileEnvelope.decode(
+            """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"hello","at":5}"""
+                .toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertNull(record.originId)
+        assertFalse(record.replay)
+    }
+
+    @Test
+    fun `a non-string originId is dropped rather than coerced`() {
+        val record = MobileEnvelope.decode(
+            (
+                """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"x","at":5,""" +
+                    """"originId":7}"""
+                ).toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertNull(record.originId)
     }
 
     /** The desktop's exact key order for an artifact push, from mobile-chat-bridge.ts. */

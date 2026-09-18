@@ -69,8 +69,62 @@ object MobileEnvelope {
     }
 
     /**
-     * First byte of a binary download reply. Never '{' (0x7b), so a reader tells
-     * a blob from a JSON record by ONE byte and neither codec has to guess.
+     * Encode one UPLOAD slice (protocol 4, phone -> Helm).
+     *
+     * The frame is BYTE-IDENTICAL to the download blob the desktop already
+     * decodes — same marker, same header key order (v, t, id, filename,
+     * mimeType, size, then version/offset/total/eof when present). That
+     * equivalence is the design: the PC needed no second decoder, and the
+     * committed `uploads` vectors pin these bytes on both sides. Only `id`
+     * changes meaning — it names an upload slot, not a call awaiting a result;
+     * nothing is ever settled against it.
+     *
+     * [offset] and [total] are always sent for a slice, and [eof] always — an
+     * upload with no bounds is not an upload, so the defaults of the download
+     * path (omit-when-null) do not apply here.
+     */
+    fun encodeBlobUpload(
+        id: String,
+        filename: String,
+        mimeType: String,
+        offset: Long,
+        total: Long,
+        eof: Boolean,
+        bytes: ByteArray,
+    ): ByteArray {
+        val header = StringBuilder()
+        header.append("{\"v\":").append(VERSION)
+        header.append(",\"t\":\"blob\"")
+        header.append(",\"id\":")
+        header.appendJsonString(id)
+        header.append(",\"filename\":")
+        header.appendJsonString(filename)
+        header.append(",\"mimeType\":")
+        header.appendJsonString(mimeType)
+        header.append(",\"size\":").append(bytes.size)
+        header.append(",\"offset\":").append(offset)
+        header.append(",\"total\":").append(total)
+        header.append(",\"eof\":").append(if (eof) "true" else "false")
+        header.append('}')
+
+        val headerBytes = header.toString().toByteArray(Charsets.UTF_8)
+        require(headerBytes.size <= 0xffff) {
+            "blob header of ${headerBytes.size} bytes exceeds the uint16 length prefix"
+        }
+        val out = ByteArray(BLOB_HEADER_PREFIX_BYTES + headerBytes.size + bytes.size)
+        out[0] = BLOB_MARKER
+        out[1] = BLOB_RECORD_VERSION
+        out[2] = ((headerBytes.size shr 8) and 0xff).toByte()
+        out[3] = (headerBytes.size and 0xff).toByte()
+        headerBytes.copyInto(out, BLOB_HEADER_PREFIX_BYTES)
+        bytes.copyInto(out, BLOB_HEADER_PREFIX_BYTES + headerBytes.size)
+        return out
+    }
+
+    /**
+     * First byte of a binary blob record — a download reply inbound, an upload
+     * slice outbound under protocol 4. Never '{' (0x7b), so a reader tells a
+     * blob from a JSON record by ONE byte and neither codec has to guess.
      */
     const val BLOB_MARKER: Byte = 0xb1.toByte()
 
@@ -217,6 +271,12 @@ object MobileEnvelope {
             // only drives a progress bar, and a wrong total there reads as a
             // stalled transfer.
             sizeBytes = (record.opt("sizeBytes") as? Number)?.toLong(),
+            seq = (record.opt("seq") as? Number)?.toLong(),
+            // Same non-coercion rule as every additive key: originId is only ever
+            // a string, replay only ever a boolean. Anything else decodes as its
+            // absent default rather than as a plausible lie.
+            originId = record.string("originId"),
+            replay = record.opt("replay") == true,
         )
     }
 

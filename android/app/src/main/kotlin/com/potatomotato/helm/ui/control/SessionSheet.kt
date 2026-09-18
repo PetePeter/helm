@@ -86,11 +86,10 @@ fun SessionSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Close is the only destructive action, so it alone confirms — and it names
-    // the session, because "are you sure?" answers nothing. Nothing else
-    // confirms: a prompt on every action trains people to tap through the one
-    // that matters.
-    var confirming by remember { mutableStateOf(false) }
+    // Only what is hard to undo confirms, and each prompt names the session,
+    // because "are you sure?" answers nothing. Nothing else confirms: a prompt
+    // on every action trains people to tap through the one that matters.
+    var confirming by remember { mutableStateOf<SessionAction?>(null) }
     var renaming by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -121,14 +120,16 @@ fun SessionSheet(
             )
             Hairline()
 
-            if (confirming) {
-                ConfirmClose(
+            val confirmed = confirming
+            if (confirmed != null) {
+                ConfirmAction(
+                    action = confirmed,
                     sessionName = sessionName,
                     onConfirm = {
-                        confirming = false
-                        onAction(SessionAction.Close)
+                        confirming = null
+                        onAction(confirmed)
                     },
-                    onCancel = { confirming = false },
+                    onCancel = { confirming = null },
                 )
             } else {
                 for (action in SHEET_ACTIONS) {
@@ -136,11 +137,12 @@ fun SessionSheet(
                         action = action,
                         capabilities = capabilities,
                         onClick = {
-                            when (action) {
-                                SessionAction.Close -> confirming = true
+                            when {
+                                // Hard-to-undo actions stop here first.
+                                requiresConfirmation(action) -> confirming = action
                                 // Rename needs a name before it can act, so it
                                 // opens the dialog instead of firing at once.
-                                SessionAction.Rename -> renaming = true
+                                action == SessionAction.Rename -> renaming = true
                                 else -> onAction(action)
                             }
                         },
@@ -232,22 +234,33 @@ private fun ActionRow(
     }
 }
 
+/**
+ * The confirmation row: what will happen, then the answer that does it and the
+ * one that does not. The confirm's colour carries the verdict — Danger for the
+ * action that loses something, Accent for one that is merely expensive.
+ */
 @Composable
-private fun ConfirmClose(sessionName: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
+private fun ConfirmAction(
+    action: SessionAction,
+    sessionName: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val copy = confirmCopy(action)
     Column(
         modifier = Modifier.fillMaxWidth().padding(HelmSpacing.Gutter),
         verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
     ) {
         Text(
-            text = stringResource(R.string.control_confirm_close, sessionName),
+            text = stringResource(copy.messageRes, sessionName),
             color = HelmColors.Txt,
             style = MaterialTheme.typography.bodyLarge,
         )
         // The destructive one is NOT the loud accent button: the accent means
         // "the thing you came here to do", and that is never losing a session.
         Text(
-            text = stringResource(R.string.control_confirm_close_yes),
-            color = HelmColors.Danger,
+            text = stringResource(copy.yesRes),
+            color = copy.confirmColor,
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier
                 .fillMaxWidth()
@@ -255,8 +268,31 @@ private fun ConfirmClose(sessionName: String, onConfirm: () -> Unit, onCancel: (
                 .clickable(onClick = onConfirm)
                 .padding(vertical = HelmSpacing.Md),
         )
-        GhostButton(text = stringResource(R.string.control_confirm_close_no), onClick = onCancel)
+        GhostButton(text = stringResource(copy.noRes), onClick = onCancel)
     }
+}
+
+/** The actions a tap does not spend straight away — the ones that are hard to undo. */
+internal fun requiresConfirmation(action: SessionAction): Boolean =
+    action == SessionAction.Close || action == SessionAction.Compact
+
+/** The prompt copy of a confirming action, and the colour its confirm earns. */
+private data class ConfirmCopy(val messageRes: Int, val yesRes: Int, val noRes: Int, val confirmColor: Color)
+
+private fun confirmCopy(action: SessionAction): ConfirmCopy = when (action) {
+    SessionAction.Close -> ConfirmCopy(
+        messageRes = R.string.control_confirm_close,
+        yesRes = R.string.control_confirm_close_yes,
+        noRes = R.string.control_confirm_close_no,
+        confirmColor = HelmColors.Danger,
+    )
+    SessionAction.Compact -> ConfirmCopy(
+        messageRes = R.string.control_confirm_compact,
+        yesRes = R.string.control_confirm_compact_yes,
+        noRes = R.string.control_confirm_compact_no,
+        confirmColor = HelmColors.Accent,
+    )
+    else -> throw IllegalArgumentException("$action never confirms")
 }
 
 /**

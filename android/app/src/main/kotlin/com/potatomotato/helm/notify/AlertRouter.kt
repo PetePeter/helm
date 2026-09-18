@@ -134,6 +134,11 @@ class AlertRouter {
      * conversation, not a diversion of it.
      */
     fun onMessage(record: MobileRecord.Chat) {
+        // A replay is the backlog THIS PHONE asked the desktop to be given — old
+        // news by construction, and buzzing for it would misrepresent when it
+        // happened. The record has already reached the thread and the unread
+        // count in HelmClient before this line; only the buzz is suppressed.
+        if (record.replay) return
         post(record, AlertKind.Message)
     }
 

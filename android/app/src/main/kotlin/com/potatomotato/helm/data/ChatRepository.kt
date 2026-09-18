@@ -50,11 +50,17 @@ data class ChatMessage(
  * reconnect backlog arrives from Helm in the order it was written, so arrival
  * order reads correctly there too.
  *
- * The threads are the one thing here that does NOT persist. What does is the
- * unread count ([UnreadStore]): a badge that forgets itself on a process death
- * lies in exactly the case it exists for.
+ * The threads are the one thing here that does NOT persist. The unread count
+ * ([UnreadStore]) does, but the catch-up cursor deliberately does NOT: a cursor
+ * that survives a restart describes history the restarted process no longer
+ * holds, and the link-up report of it would talk Helm out of the very replay
+ * the restart needs. So the cursor lives in memory beside the threads it
+ * counts — an empty repository reports zero, and a cold start refetches the
+ * whole 24h journal, which is the requirement.
  */
-class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
+class ChatRepository(
+    private var unread: UnreadStore = MemoryUnreadStore(),
+) {
     private val _threads = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     val threads: StateFlow<Map<String, List<ChatMessage>>> = _threads.asStateFlow()
 
@@ -64,6 +70,12 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     val unreadCounts: StateFlow<Map<String, Int>> = _unreadCounts.asStateFlow()
 
     private var sequence = 0L
+
+    /**
+     * The catch-up cursor: the highest seq this process has actually held. Not
+     * persisted — an app restart must report zero so the journal replays.
+     */
+    private var lastSeqValue = 0L
 
     /** The session whose thread is on screen, when there is one. */
     private var readingSessionId: String? = null
@@ -81,6 +93,32 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
     }
 
     /**
+     * The seq of the last chat message held — what the desktop replays after.
+     * In memory, on purpose: see the class doc. A populated repository reports
+     * its real position on reconnect; an empty one reports zero and gets the
+     * full journal.
+     */
+    fun lastSeq(): Long = lastSeqValue
+
+    /**
+     * Record that a call carrying this phone's own words was SENT, so the echoed
+     * journal copy the desktop replays later can be recognised and dropped. The
+     * id is the call id the desktop journaled, prefixed with this phone's
+     * machineId — see [MobileRecord.Chat.originId].
+     *
+     * Bounded like every other unbounded-here structure: a phone left running
+     * for a week must not grow a set that never shrinks. The oldest id falls out
+     * first, which is safe — an echo older than the set predates every message
+     * the cursor would replay anyway.
+     */
+    fun sent(originId: String) {
+        sentIds[originId] = Unit
+        while (sentIds.size > MAX_SENT_IDS) sentIds.remove(sentIds.keys.first())
+    }
+
+    private val sentIds = linkedMapOf<String, Unit>()
+
+    /**
      * Say which thread the user is looking at — and mark it read on the way in:
      * arriving at a thread IS reading it, backlog included. Null when the user
      * is back on the list, so nothing reads as "being read" from there.
@@ -95,13 +133,33 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
 
     /** A `chat` record from Helm. */
     fun receive(record: MobileRecord.Chat) {
+        // THE CURSOR ADVANCES BEFORE ANYTHING ELSE, and it is also the dedupe:
+        // a record the desktop replays after a link stumble can race its own
+        // live copy here, and seq is the only order the two sends share. A
+        // record WITHOUT a seq — an old desktop build, an alert — updates
+        // nothing, so catch-up degrades to today's live-only behaviour rather
+        // than to a cursor that claims history it never held.
+        val seq = record.seq
+        if (seq != null) {
+            if (seq <= lastSeqValue) return
+            lastSeqValue = seq
+        }
+        // This phone's OWN words, echoed back from the journal. Dropped AFTER the
+        // cursor advanced: the message is history this phone holds either way,
+        // and a cursor that refused it would ask for it again on every link up.
+        // The optimistic copy the user watched leave is still on screen — one
+        // row, as typed, not two.
+        if (record.originId != null && sentIds.containsKey(record.originId)) return
         append(
             record.sessionId,
             ChatMessage(
                 key = nextKey(),
                 text = record.text,
                 at = record.at,
-                fromPhone = false,
+                // An originId names a phone, so it can only be a phone's words —
+                // never an agent's. Rendering it as an agent bubble would
+                // fabricate a speaker the desktop never had.
+                fromPhone = record.originId != null,
                 filePath = record.filePath,
                 voice = record.voice,
                 attachment = attachmentIn(record),
@@ -295,5 +353,8 @@ class ChatRepository(private var unread: UnreadStore = MemoryUnreadStore()) {
          * Oldest goes first; scrollback beyond this is the desktop's job.
          */
         const val MAX_THREAD = 200
+
+        /** How many of this phone's own recently sent ids stay recognisable. */
+        private const val MAX_SENT_IDS = 256
     }
 }

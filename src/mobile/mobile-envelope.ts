@@ -21,9 +21,13 @@
  *          messages stay uniform; nothing here widens what a phone learns.
  *   chat   Helm → phone. An unsolicited agent message for a session. Carries no
  *          id: it answers nothing.
- *   blob   Helm → phone. A download reply, and the ONE record that is not JSON:
- *          a marker byte, a small JSON header and then RAW bytes. See
- *          `encodeBlobResult` for why.
+ *   blob   Helm → phone by default: a download reply, and the ONE record that
+ *          is not JSON — a marker byte, a small JSON header and then RAW bytes.
+ *          See `encodeBlobResult` for why. Under PROTOCOL 4 the SAME frame may
+ *          travel phone → Helm as an UPLOAD slice; `decodeRecord` still refuses
+ *          it there, because an upload is never dispatched through the gate —
+ *          the bridge hands it to the upload service by its slot id. See
+ *          `mobile-artifact-upload.ts`.
  *   lan    Helm → phone. Where this desktop can be reached over the network.
  *          Carries no id: it answers nothing. See MobileAddressAdvertiser — it
  *          rides the ALREADY AUTHENTICATED channel, which is the only reason a
@@ -126,6 +130,34 @@ export interface MobileChatRecord {
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
+  /**
+   * The message's place in the hub's global chat journal — what a phone's
+   * catch-up cursor is measured against. Present on every JOURNALED message;
+   * absent on alerts, which are never journaled and never replayed. A phone
+   * treats a record without one as "no cursor update", so an old hub degrades
+   * to live-only behaviour rather than to a stuck cursor.
+   *
+   * Additive and omitted when absent, so every committed vector still encodes
+   * byte-identically and no vector was regenerated. Emitted after `sizeBytes`,
+   * before the keys that postdate it, because key order is part of this format.
+   */
+  seq?: number;
+  /**
+   * Marks a record as a PHONE'S OWN message, echoed into the journal when the
+   * hub accepted its `session_send_text` call — the value is that call's id,
+   * prefixed with the phone's machineId so two phones that happen to number
+   * their calls alike can never collide. The phone that sent it drops the
+   * replayed echo by this id; other phones render it as a phone-side message.
+   * Absent on agent messages and alerts.
+   */
+  originId?: string;
+  /**
+   * True ONLY on records streamed from the journal during catch-up — live
+   * fan-out never carries it. It is the phone's cue to file the message without
+   * buzzing: everything in a replay is, by construction, old news. Absent
+   * (the default) means live.
+   */
+  replay?: boolean;
 }
 
 /**
@@ -166,6 +198,9 @@ export interface ChatRecordInput {
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
+  seq?: number;
+  originId?: string;
+  replay?: boolean;
 }
 
 /**
@@ -205,6 +240,12 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.filename !== undefined) record.filename = input.filename;
   if (input.mimeType !== undefined) record.mimeType = input.mimeType;
   if (input.sizeBytes !== undefined) record.sizeBytes = input.sizeBytes;
+  // Last, always: these postdate every committed vector, and emitting any of
+  // them in an earlier slot would reorder the bytes an older phone build
+  // already expects. Order among themselves: seq, originId, replay.
+  if (input.seq !== undefined) record.seq = input.seq;
+  if (input.originId !== undefined) record.originId = input.originId;
+  if (input.replay !== undefined) record.replay = input.replay;
   return encode(record);
 }
 
@@ -225,9 +266,11 @@ export function encodeChat(input: ChatRecordInput): Buffer {
  *   header      UTF-8 JSON, fixed key order, exactly like every other record.
  *   rest        the RAW body. `size` in the header is its length.
  *
- * Helm → phone ONLY. A phone never writes one, and `decodeRecord` refuses one,
- * so this adds no inbound surface: every phone call is still a JSON `call`
- * through MobileGate.
+ * Helm → phone ONLY — except under protocol 4, where the same frame carries an
+ * UPLOAD slice the other way (see `BLOB_UPLOAD_MIN_PROTOCOL` in
+ * protocol-version.ts). The JSON `call` path never sees a blob either way:
+ * `decodeRecord` refuses the marker byte, and the bridge routes an inbound one
+ * to the upload service instead of the gate.
  */
 export const BLOB_MARKER = 0xb1;
 
@@ -373,6 +416,9 @@ export function decodeRecord(payload: Buffer): MobileRecord | null {
     case 'chat':
       return isString(record.sessionId) && isString(record.sessionName)
         && isString(record.text) && typeof record.at === 'number'
+        && (record.seq === undefined || typeof record.seq === 'number')
+        && (record.originId === undefined || isString(record.originId))
+        && (record.replay === undefined || typeof record.replay === 'boolean')
         ? ({ ...record } as unknown as MobileChatRecord)
         : null;
     case 'lan':

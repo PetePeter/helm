@@ -2,7 +2,7 @@ import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
-import { isMobileSessionId } from '../../mobile/mobile-identity.js';
+import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
 import {
   asAiagentState,
   asArtifactKind,
@@ -812,6 +812,42 @@ export async function callMcpTool(
           target,
           asString(args.artifactId, 'artifactId is required'),
           asString(args.attachmentId, 'attachmentId is required'),
+        );
+      }
+      // The UPLOAD half of the attachment surface (protocol 4). Slots are bound
+      // to the paired device that opened them — the synthetic proxy identity is
+      // one-to-one with that device, so it is resolved HERE and no local caller
+      // can open one. The bytes themselves ride binary blob records to the
+      // upload service; the commit below is what makes the file exist.
+      case 'session_artifact_attachment_add': {
+        const target = requireTargetSession(service, args);
+        const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);
+        if (deviceId === undefined) {
+          throw new Error('session_artifact_attachment_add is the paired-phone upload surface');
+        }
+        const sizeBytes = asOptionalByteCount(args.sizeBytes, 'sizeBytes', 0);
+        if (sizeBytes === undefined) {
+          throw new Error('sizeBytes is required');
+        }
+        return service.openArtifactAttachmentUpload(target, deviceId, {
+          artifactId: asString(args.artifactId, 'artifactId is required'),
+          filename: asString(args.filename, 'filename is required'),
+          ...(args.contentType !== undefined
+            ? { contentType: asString(args.contentType, 'contentType must not be empty') }
+            : {}),
+          sizeBytes,
+          sha256: asString(args.sha256, 'sha256 is required'),
+        });
+      }
+      case 'session_artifact_attachment_commit': {
+        const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);
+        if (deviceId === undefined) {
+          throw new Error('session_artifact_attachment_commit is the paired-phone upload surface');
+        }
+        return service.commitArtifactAttachmentUpload(
+          authContext.sessionId!,
+          deviceId,
+          asString(args.uploadId, 'uploadId is required'),
         );
       }
       case 'memory_list': {

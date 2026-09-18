@@ -32,7 +32,13 @@ import { getConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The cap on ONE attachment file, shared by every writer: desktop imports
+ * (`add`) and phone uploads (`mobile-artifact-upload.ts`) refuse past it, so an
+ * attachment's size never depends on which door it came through.
+ */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const INDEX_FILE = 'index.json';
 
 interface AttachmentIndex {

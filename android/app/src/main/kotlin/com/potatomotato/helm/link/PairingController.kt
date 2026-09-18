@@ -45,6 +45,13 @@ class PairingController(
     private val machineId: String,
     private val scheduler: ChannelScheduler,
     private val onInbound: (ByteArray) -> Unit = {},
+    /**
+     * The link just became usable (handshake done AND SAS confirmed). Fired on
+     * BOTH paths to [PairingState.Linked] — a first pairing and every reconnect
+     * — because the client's link-up work must run whichever way the link
+     * arrived. Empty by default so existing wiring and tests compile untouched.
+     */
+    private val onLinked: () -> Unit = {},
     private val openChannel: (
         pipe: BytePipe,
         listener: SecureChannelListener,
@@ -63,6 +70,14 @@ class PairingController(
     val state: StateFlow<PairingState> = _state.asStateFlow()
 
     private var channel: SecureChannel? = null
+
+    /**
+     * The wire protocol the live link negotiated — 0 with no link. The upload
+     * surface greys from THIS (a protocol-3 desktop links fine and simply has no
+     * upload half), so it must be readable without asking the channel.
+     */
+    val protocolVersion: Int
+        get() = channel?.negotiatedVersion ?: 0
 
     /** Run a handshake over a freshly linked pipe. Replaces any previous one. */
     fun attach(pipe: BytePipe) {
@@ -92,6 +107,7 @@ class PairingController(
         HelmLog.i(HelmLog.CHANNEL, "SAS confirmed for $desktopId; the pairing is now stored")
         store.save(desktopId, psk)
         _state.value = PairingState.Linked(desktopId)
+        onLinked()
     }
 
     /** Abort the in-flight handshake without changing the stored pairings. */
@@ -138,10 +154,11 @@ class PairingController(
             "channel established with ${channel.peerMachine}; " +
                 "SAS confirmation required: ${channel.sasConfirmationRequired}",
         )
-        _state.value = if (channel.sasConfirmationRequired) {
-            PairingState.Comparing(channel.peerMachine, channel.sas)
+        if (channel.sasConfirmationRequired) {
+            _state.value = PairingState.Comparing(channel.peerMachine, channel.sas)
         } else {
-            PairingState.Linked(channel.peerMachine)
+            _state.value = PairingState.Linked(channel.peerMachine)
+            onLinked()
         }
     }
 

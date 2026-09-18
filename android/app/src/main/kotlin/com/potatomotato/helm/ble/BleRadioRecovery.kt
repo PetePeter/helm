@@ -43,6 +43,17 @@ class BleRadioRecovery(
     /** The radio's last known state, reported by the service before starting. */
     private var radioOn = true
 
+    /**
+     * Whether the USER is letting Bluetooth carry the link (LAN-only turns this
+     * off). A second, independent reason the peripheral may not come up, kept
+     * apart from [radioOn] because they are undone by different events: the
+     * system turning the radio back on, and the user changing their mind.
+     *
+     * Defaults to true so a build that never wires the setting behaves exactly
+     * as before.
+     */
+    private var allowed = true
+
     private var retriesLeft = RETRY_BUDGET
     private var retryDelayMs = RETRY_MIN_MS
 
@@ -79,8 +90,38 @@ class BleRadioRecovery(
         standDown()
     }
 
+    /**
+     * The user allowed or forbade Bluetooth (the LAN-only setting).
+     *
+     * Forbidding TEARS THE LINK DOWN rather than waiting for it to end on its
+     * own: the point of the setting is the radio going quiet, and a peripheral
+     * that keeps advertising until something else happens would make the
+     * battery saving a claim instead of a fact.
+     */
+    fun onTransportAllowed(allowed: Boolean) {
+        if (this.allowed == allowed) return
+        this.allowed = allowed
+        if (!allowed) {
+            retryGeneration++
+            if (!up) return
+            log("bluetooth was switched off by preference; standing the link down")
+            up = false
+            standDown()
+            return
+        }
+        // Being allowed again is a fresh chance, exactly like a fresh radio.
+        retriesLeft = RETRY_BUDGET
+        retryDelayMs = RETRY_MIN_MS
+        attempt("bluetooth allowed")
+    }
+
     private fun attempt(why: String) {
         if (up) return
+        if (!allowed) {
+            // Not a failure and not worth a retry: only the user changes this.
+            log("the link stays down ($why); bluetooth is switched off by preference")
+            return
+        }
         if (bringUp()) {
             log("the link came up ($why)")
             up = true

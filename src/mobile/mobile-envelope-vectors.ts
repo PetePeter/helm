@@ -77,6 +77,13 @@ export interface EnvelopeVectors {
   };
   cases: EnvelopeVectorCase[];
   blobs: EnvelopeBlobCase[];
+  /**
+   * UPLOAD slices (protocol 4, phone → Helm). The frame is byte-identical to a
+   * download blob — same marker, same header key order — so these are what both
+   * sides pin the phone's `encodeBlobUpload` against and what the PC proves its
+   * `decodeBlobResult` reads back. `id` names an upload slot, not a call.
+   */
+  uploads: EnvelopeBlobCase[];
   rejects: EnvelopeRejectCase[];
 }
 
@@ -199,6 +206,49 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     ),
   ];
 
+  // Protocol 4 upload slices. Byte-for-byte the same frame a download uses —
+  // that equivalence IS the design, so the vectors pin it rather than trusting
+  // it — but the ids name upload slots, and the final case is the empty
+  // end-of-file slice an exactly-sized file ends with.
+  const uploads: EnvelopeBlobCase[] = [
+    blobVector(
+      'upload slice, more to come',
+      {
+        id: 'u1',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.from([0x00, 0x7b, 0xff, 0x10, 0x20]),
+        offset: 0,
+        total: 11,
+        eof: false,
+      },
+    ),
+    blobVector(
+      'final upload slice',
+      {
+        id: 'u2',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.from([0xfe, 0xed, 0xfa, 0xce, 0x01, 0x02]),
+        offset: 5,
+        total: 11,
+        eof: true,
+      },
+    ),
+    blobVector(
+      'empty tail upload slice',
+      {
+        id: 'u3',
+        filename: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        bytes: Buffer.alloc(0),
+        offset: 11,
+        total: 11,
+        eof: true,
+      },
+    ),
+  ];
+
   const rejects: EnvelopeRejectCase[] = [
     reject('not JSON', 'not json at all', 'payload does not parse'),
     reject('a JSON array', '[1,2,3]', 'a record must be an object'),
@@ -221,6 +271,7 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     },
     cases,
     blobs,
+    uploads,
     rejects,
   };
 }

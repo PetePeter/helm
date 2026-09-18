@@ -127,6 +127,37 @@ sealed interface MobileRecord {
         val filename: String? = null,
         val mimeType: String? = null,
         val sizeBytes: Long? = null,
+
+        /**
+         * This message's place in the desktop's global chat journal — what this
+         * phone's catch-up cursor is measured against. Present on every message
+         * the desktop journaled; ABSENT on alerts, which are never replayed, and
+         * on records from an older desktop build. Absence must update nothing:
+         * advancing the cursor past a message that was never held is exactly the
+         * gap this field exists to close. The desktop emits it last, after
+         * `sizeBytes`, so the additive rule held without regenerating vectors.
+         */
+        val seq: Long? = null,
+
+        /**
+         * Marks this record as a PHONE'S OWN message, echoed into the desktop's
+         * journal when it accepted this phone's `session_send_text` call — the
+         * value is that call's id, prefixed with the phone's machineId so two
+         * phones that number their calls alike can never drop each other's
+         * echoes. This end compares it against the ids it registered when it
+         * SENT ([com.potatomotato.helm.data.ChatRepository.sent]) to drop its
+         * own words on replay; absent on agent messages and alerts.
+         */
+        val originId: String? = null,
+
+        /**
+         * True ONLY on records streamed from the journal during catch-up — live
+         * fan-out never carries it. Everything in a replay is, by construction,
+         * old news this phone asked to be given, so it files without buzzing.
+         * Absent (the default) means live. The message still reaches the thread
+         * and the unread count either way.
+         */
+        val replay: Boolean = false,
     ) : MobileRecord
 
     /**

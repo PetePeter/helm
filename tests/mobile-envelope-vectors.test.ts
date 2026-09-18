@@ -70,6 +70,24 @@ describe('committed mobile envelope vectors', () => {
     }
   });
 
+  it('decodes every committed UPLOAD case through the same reader', () => {
+    // Protocol 4 upload slices are byte-identical to download blobs by design,
+    // so the PC decodes them with decodeBlobResult — this asserts that design
+    // rather than a second decoder.
+    expect(committed.uploads.length).toBeGreaterThan(0);
+    for (const uploadCase of committed.uploads) {
+      const decoded = decodeBlobResult(Buffer.from(uploadCase.bytesHex, 'hex'));
+      expect(decoded, uploadCase.name).not.toBeNull();
+      expect(decoded!.id, uploadCase.name).toBe(uploadCase.id);
+      expect(decoded!.filename, uploadCase.name).toBe(uploadCase.filename);
+      expect(decoded!.mimeType, uploadCase.name).toBe(uploadCase.mimeType);
+      expect(decoded!.bytes.toString('hex'), uploadCase.name).toBe(uploadCase.bodyHex);
+      expect(decoded!.offset, uploadCase.name).toBe(uploadCase.offset);
+      expect(decoded!.total, uploadCase.name).toBe(uploadCase.total);
+      expect(decoded!.eof, uploadCase.name).toBe(uploadCase.eof);
+    }
+  });
+
   it('refuses every committed reject case', () => {
     expect(committed.rejects.length).toBeGreaterThan(0);
     for (const rejectCase of committed.rejects) {

@@ -91,6 +91,14 @@ const DEFAULT_RETIRE_GRACE_MS = 500;
  */
 export interface MobileChannel {
   readonly peerMachine: string;
+  /**
+   * The protocol version the handshake agreed, when the channel tracks one.
+   * `SecureChannel` always does; a test fake may omit it, and EVERY consumer
+   * must treat absence as 0 — "nothing was negotiated, so nothing new may be
+   * tried". Absence permitting a feature would let an unnegotiated link grow
+   * one silently.
+   */
+  readonly negotiatedVersion?: number;
   close(reason?: string): void;
   /** Encrypt and send one application message. */
   send?(message: Buffer): void;
@@ -317,6 +325,16 @@ export class MobileLinkManager extends EventEmitter {
   /** Whether this machine currently holds a live link to `machineId`. */
   isOnline(machineId: string): boolean {
     return this.links.has(machineId);
+  }
+
+  /**
+   * The protocol version the live link to `machineId` negotiated, or 0 when
+   * there is no link or the channel does not report one. 0 is the honest answer
+   * rather than a floor: a feature gated on "this link agreed at least N" must
+   * be refused, not permitted, when nobody negotiated anything.
+   */
+  negotiatedProtocol(machineId: string): number {
+    return this.links.get(machineId)?.channel?.negotiatedVersion ?? 0;
   }
 
   /**

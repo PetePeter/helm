@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.data.TransportPreference
+import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
@@ -79,14 +79,18 @@ val LinkState.dot: SessionState
  */
 @Composable
 fun LinkBadge(state: LinkState, modifier: Modifier = Modifier, rank: Int? = null) {
+    // The forced choices change what "no link" MEANS, so the badge has to know
+    // which one is in force — see [labelUnder].
+    val preference by TransportPreferences.preference.collectAsState()
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
     ) {
-        StateDot(state = state.dot, size = HelmSize.DotSmall)
+        StateDot(state = dotUnder(state, preference), size = HelmSize.DotSmall)
         Text(
-            text = stringResource(state.labelRes),
+            text = stringResource(labelUnder(state, preference)),
             color = HelmColors.Dim,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -101,6 +105,34 @@ fun LinkBadge(state: LinkState, modifier: Modifier = Modifier, rank: Int? = null
         }
     }
 }
+
+
+/**
+ * What "no link" is called, which depends on which transport is allowed.
+ *
+ * Under LAN-only there is no peripheral to advertise, so the link state the
+ * layers below report is Disconnected — and "Link off" is the wrong word for it.
+ * The phone is not off; it is retrying the network on a backoff, exactly as a
+ * Bluetooth-only phone is advertising and waiting. Saying "Link off" made a
+ * transfer that was one retry away look like a broken app.
+ *
+ * Every other state is reported as it is. This substitution is deliberately
+ * narrow: it renames a WAIT, and must never rename a live link or a failure.
+ */
+private fun labelUnder(state: LinkState, preference: TransportPreference): Int =
+    if (state == LinkState.Disconnected && preference == TransportPreference.LanOnly) {
+        R.string.link_state_waiting_lan
+    } else {
+        state.labelRes
+    }
+
+/** The dot that goes with [labelUnder] — a wait is amber, not grey. */
+private fun dotUnder(state: LinkState, preference: TransportPreference): SessionState =
+    if (state == LinkState.Disconnected && preference == TransportPreference.LanOnly) {
+        SessionState.Waiting
+    } else {
+        state.dot
+    }
 
 /**
  * The app bar both screens share: an optional back affordance, a title, and the
@@ -240,19 +272,15 @@ fun HelmAppBar(
                 )
             }
         }
-        LinkBadge(
-            state = linkState,
-            rank = linkRank,
-            modifier = if (onLinkClick == null) {
-                Modifier
-            } else {
-                Modifier
-                    .clickable(onClick = onLinkClick)
-                    // The badge is short; without padding its touch target is
-                    // thinner than a finger.
-                    .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Xs)
-            },
-        )
+        if (onLinkClick == null) {
+            LinkBadge(state = linkState, rank = linkRank)
+        } else {
+            TransportMenu(
+                linkState = linkState,
+                linkRank = linkRank,
+                onOpenDesktops = onLinkClick,
+            )
+        }
         if (onToggleNotifications != null) {
             Box(
                 modifier = Modifier
@@ -310,18 +338,73 @@ fun HelmAppBar(
     Hairline()
 }
 
+/**
+ * The link badge as a menu: which transport to use, and the way through to the
+ * paired desktops.
+ *
+ * WHY HERE: the badge is already the thing a user looks at to ask "what am I
+ * connected over", so the control that answers it belongs in the same place
+ * rather than buried in a settings screen they would have to know about. The
+ * desktops row keeps the route the badge has always had — tapping it used to go
+ * straight there, and losing that to make room for a setting would be a trade.
+ *
+ * The badge keeps naming the LIVE transport, never the preference: under
+ * Bluetooth-only with the network unreachable, "LAN" would be a claim about
+ * what the phone is doing rather than a fact.
+ */
+@Composable
+private fun TransportMenu(
+    linkState: LinkState,
+    linkRank: Int?,
+    onOpenDesktops: () -> Unit,
+) {
+    val preference by TransportPreferences.preference.collectAsState()
+    val choices = TransportPreference.entries
+
+    HelmDropdown(
+        items = choices.map { choice ->
+            HelmDropdownItem(
+                label = stringResource(choice.labelRes),
+                selected = choice == preference,
+            )
+        } + HelmDropdownItem(
+            label = stringResource(R.string.transport_menu_desktops),
+            separatorBefore = true,
+        ),
+        onSelect = { index ->
+            if (index < choices.size) TransportPreferences.set(choices[index]) else onOpenDesktops()
+        },
+    ) { _, open ->
+        LinkBadge(
+            state = linkState,
+            rank = linkRank,
+            modifier = Modifier
+                .clickable(onClick = open)
+                // The badge is short; without padding its touch target is
+                // thinner than a finger.
+                .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Xs),
+        )
+    }
+}
+
+/** The user-facing name for a transport choice. */
+private val TransportPreference.labelRes: Int
+    get() = when (this) {
+        TransportPreference.Auto -> R.string.transport_auto
+        TransportPreference.LanOnly -> R.string.transport_lan_only
+        TransportPreference.BluetoothOnly -> R.string.transport_bluetooth_only
+    }
+
 /** One choice in the root's surface menu: its name, and the glyph that marks its row. */
 data class ContextMenuItem(val label: String, val glyphRes: Int)
 
 /**
  * The root's surface switch: the context label as a menu, not a caption.
  *
- * The anchor is a pill chip — the same Surface2-plus-hairline treatment as
- * [Pill] — because plain eyebrow text gave no sign that it could be tapped.
- * It runs shorter than a full [HelmSize.TouchTarget]: a 48dp control inside the
- * app bar dwarfs the glyphs it sits between, and 32dp keeps a target the thumb
- * still finds. Stateless but for the menu's own open flag — which surface is
- * selected is the caller's hoisted state, exactly as the tab row it replaced was.
+ * Stateless but for the menu's own open flag — which surface is selected is the
+ * caller's hoisted state, exactly as the tab row it replaced was. Everything
+ * about how it LOOKS lives in [HelmDropdown], so this menu and the transport
+ * picker beside it cannot drift apart.
  */
 @Composable
 private fun ContextMenu(
@@ -329,86 +412,19 @@ private fun ContextMenu(
     items: List<ContextMenuItem>,
     onSelect: (Int) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(HelmRadius.Pill)
-
-    Box {
-        // Label + chevron in one touch target: the chevron is part of the
-        // affordance, and a label-sized target next to a chevron-sized one asks
-        // "which did you mean" on a control this small.
-        Row(
-            modifier = Modifier
-                .heightIn(min = MenuChipMinHeight)
-                .clip(shape)
-                .background(HelmColors.Surface2)
-                .border(HelmSize.Hairline, HelmColors.Line, shape)
-                .clickable(onClick = { expanded = true })
-                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
-        ) {
-            Text(
-                text = label,
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
+    HelmDropdown(
+        items = items.map { item ->
+            HelmDropdownItem(
+                label = item.label,
+                glyph = stringResource(item.glyphRes),
+                selected = item.label == label,
             )
-            Text(
-                text = stringResource(R.string.projects_expand_glyph),
-                color = HelmColors.Dim,
-                style = MaterialTheme.typography.labelSmall,
-            )
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            items.forEachIndexed { index, item ->
-                // Accent marks where you already are, the same signal the tab
-                // underline carried — now with a check beside it, because a
-                // colour alone must carry the answer for a colour-blind reader.
-                val current = item.label == label
-                DropdownMenuItem(
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                        ) {
-                            Text(
-                                text = stringResource(item.glyphRes),
-                                color = HelmColors.Dim,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            Text(
-                                text = item.label,
-                                color = if (current) HelmColors.Accent else HelmColors.Txt,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            if (current) {
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    text = stringResource(R.string.context_glyph_check),
-                                    color = HelmColors.Accent,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelect(index)
-                    },
-                )
-            }
-        }
+        },
+        onSelect = onSelect,
+    ) { expanded, open ->
+        HelmDropdownAnchor(label = label, expanded = expanded, onClick = open)
     }
 }
-
-/**
- * The pill anchor's floor. Below this one-handed taps start missing; above
- * [HelmSize.TouchTarget] the control outgrows the bar it lives in.
- */
-private val MenuChipMinHeight = 32.dp
 
 /**
  * The one unit of elevation this design system has.

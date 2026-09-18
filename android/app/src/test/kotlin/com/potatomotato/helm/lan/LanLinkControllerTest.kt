@@ -333,4 +333,79 @@ class LanLinkControllerTest {
 
         assertEquals(1, dialer.attempts.size)
     }
+
+    /**
+     * The Bluetooth-only setting. The rule that matters is that a forced choice
+     * is HONOURED: a preference the code quietly works around is worse than no
+     * preference, because the badge would then name a pipe the user switched off.
+     */
+    @Test
+    fun `does not dial while the network is switched off by preference`() {
+        val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+
+        LanLinkController(store, dialer, DeferredPump(), schedule = never, allowDial = { false })
+            .tryConnect("desk")
+
+        assertTrue(dialer.attempts.isEmpty())
+    }
+
+    @Test
+    fun `switching the network off drops a live LAN link back to Bluetooth`() {
+        HelmLink.attach(RANK_BLE) { }
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val connection = FakeConnection()
+        var allowed = true
+        val controller = LanLinkController(
+            store,
+            FakeDialer(mapOf("192.168.1.20:47475" to connection)),
+            DeferredPump(),
+            schedule = never,
+            allowDial = { allowed },
+        )
+        controller.tryConnect("desk")
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+
+        allowed = false
+        controller.applyPreference(allowed = false)
+
+        // Dropped now, not when the socket happens to fail on its own.
+        assertTrue(connection.closed)
+        assertFalse(controller.connected)
+        assertEquals(RANK_BLE, HelmLink.holderRank)
+    }
+
+    @Test
+    fun `switching the network back on redials without waiting for bluetooth`() {
+        // Otherwise the only way back is a Bluetooth reconnect, which for a
+        // phone whose Bluetooth is out of range never comes.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        var allowed = false
+        val controller = LanLinkController(
+            store, dialer, DeferredPump(), schedule = never, allowDial = { allowed },
+        )
+        controller.tryConnect("desk")
+        assertTrue(dialer.attempts.isEmpty())
+
+        allowed = true
+        controller.applyPreference(allowed = true)
+
+        assertEquals(listOf("192.168.1.20:47475"), dialer.attempts)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+    }
+
+    @Test
+    fun `a preference change after teardown dials nothing`() {
+        // stop() is the end of the controller's life; the setting must not
+        // resurrect a socket the app is shutting down.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        val controller = LanLinkController(store, dialer, DeferredPump(), schedule = never)
+
+        controller.stop()
+        controller.applyPreference(allowed = true)
+
+        assertTrue(dialer.attempts.isEmpty())
+    }
 }

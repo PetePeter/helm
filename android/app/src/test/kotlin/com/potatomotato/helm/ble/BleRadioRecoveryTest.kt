@@ -162,4 +162,77 @@ class BleRadioRecoveryTest {
 
         assertEquals(1_000L, scheduler.delays.last())
     }
+
+    /**
+     * The LAN-only setting, which is a SECOND reason the peripheral may not be
+     * up. It is kept apart from the radio's own state because the two are undone
+     * by different events — the system turning Bluetooth back on, and the user
+     * changing their mind — and conflating them let one resurrect the other.
+     */
+    @Test
+    fun `forbidding bluetooth stands a live link down at once`() {
+        bringUpResult = true
+        recovery.onBluetoothState(true)
+        recovery.start()
+        assertTrue(recovery.up)
+
+        recovery.onTransportAllowed(false)
+
+        // Torn down NOW, not whenever the link happens to end: the battery
+        // saving is the whole point of the setting.
+        assertFalse(recovery.up)
+        assertEquals(1, standDowns)
+    }
+
+    @Test
+    fun `while forbidden nothing is brought up and nothing is retried`() {
+        recovery.onBluetoothState(true)
+        recovery.onTransportAllowed(false)
+
+        recovery.start()
+        recovery.onBluetoothOn()
+
+        assertEquals(0, bringUps)
+        assertFalse(recovery.up)
+        // Only the user changes this, so a timer would spin for nothing.
+        assertEquals(emptyList<Long>(), scheduler.delays)
+    }
+
+    @Test
+    fun `allowing bluetooth again brings the link straight back`() {
+        bringUpResult = true
+        recovery.onBluetoothState(true)
+        recovery.start()
+        recovery.onTransportAllowed(false)
+        assertFalse(recovery.up)
+
+        recovery.onTransportAllowed(true)
+
+        assertTrue(recovery.up)
+    }
+
+    @Test
+    fun `being allowed does not override a radio that is off`() {
+        // Two independent gates: the user permitting Bluetooth cannot make a
+        // switched-off radio work, and must not spam it with attempts either.
+        recovery.onBluetoothState(false)
+        recovery.onTransportAllowed(false)
+
+        recovery.onTransportAllowed(true)
+
+        assertFalse(recovery.up)
+        assertEquals(emptyList<Long>(), scheduler.delays)
+    }
+
+    @Test
+    fun `repeating the same choice changes nothing`() {
+        bringUpResult = true
+        recovery.onBluetoothState(true)
+        recovery.start()
+
+        recovery.onTransportAllowed(true)
+
+        assertEquals(1, bringUps)
+        assertEquals(0, standDowns)
+    }
 }

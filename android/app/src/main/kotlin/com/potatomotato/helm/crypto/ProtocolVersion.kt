@@ -24,8 +24,15 @@ object ProtocolVersion {
      */
     const val MIN = 3
 
-    /** Newest wire protocol this build speaks. */
-    const val MAX = 3
+    /**
+     * Newest wire protocol this build speaks.
+     *
+     * MIN stays at 3: nothing about protocol 3 records changed at 4 — the blob
+     * frame turned AROUND, from a download reply to an upload slice too. A
+     * protocol-3 Helm still links, and both sides independently gate the upload
+     * feature on the NEGOTIATED version reaching 4.
+     */
+    const val MAX = 4
 
     /** A version beyond this is corruption, not a future build. */
     private const val ABSURD = 4096

@@ -87,6 +87,8 @@ import { SocketLinkTransport } from '../../mobile/lan/socket-link-transport.js';
 import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
+import { MobileArtifactUploadService } from '../../mobile/mobile-artifact-upload.js';
+import { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
 import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.js';
 import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
@@ -105,6 +107,7 @@ export function getMobileGate(): MobileGate | undefined {
 }
 import {
   loadMobileDevices, saveMobileDevices, loadMobileSecrets, saveMobileSecrets,
+  loadMobileChatJournal, saveMobileChatJournal,
 } from '../../mobile/mobile-device-persistence.js';
 import { FleetController } from '../../mcp/peer/fleet-controller.js';
 import type { FleetConfig } from '../../config/loader.js';
@@ -215,6 +218,14 @@ export function registerIPCHandlers(
   helmControlService.setNotificationManager(notificationManager);
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
+  // The phone's upload reassembler (protocol 4): slots opened by the gated
+  // session_artifact_attachment_add, filled by binary blob records, committed
+  // by session_artifact_attachment_commit into the SAME managed storage the
+  // desktop's own imports use.
+  const artifactUploadService = new MobileArtifactUploadService({
+    attachments: artifactAttachmentManager,
+  });
+  helmControlService.setArtifactUploadService(artifactUploadService);
   helmControlService.setMemoryManager(memoryManager, memoryAttachmentManager, artifactTempRegistry);
 
   const telegramBot = new TelegramBotCore();
@@ -750,6 +761,12 @@ export function registerIPCHandlers(
     sessionLookup: sessionManager,
   });
 
+  // The rolling record of chat messages fanned out to phones, so a phone that
+  // was offline — or an app whose process lost its in-memory threads — refetches
+  // what it missed when its link next comes up. Hydrated here, pruned on load.
+  const mobileChatJournal = new MobileChatJournal({ persist: saveMobileChatJournal });
+  mobileChatJournal.hydrate(loadMobileChatJournal());
+
   // The phone as a chat surface, and the ONE path an inbound phone call takes to
   // a tool. The gate is resolved through getMobileGate() rather than captured, so
   // there is a single instance and no way for a second one to appear.
@@ -757,12 +774,15 @@ export function registerIPCHandlers(
     links: mobileLinkManager,
     deviceStore: mobileDeviceStore,
     gate: () => getMobileGate(),
+    uploads: artifactUploadService,
+    negotiatedProtocol: (machineId) => mobileLinkManager.negotiatedProtocol(machineId),
     sessions: {
       getSession: (sessionId) => {
         const session = sessionManager.getSession(sessionId);
         return session ? { id: session.id, name: session.name } : null;
       },
     },
+    journal: mobileChatJournal,
   });
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);

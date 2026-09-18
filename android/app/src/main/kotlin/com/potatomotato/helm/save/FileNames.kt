@@ -10,21 +10,34 @@ object FileNames {
 
     /** A name nothing in the folder holds is used exactly as asked for. */
     fun disambiguated(existing: Set<String>, wanted: String): String {
-        if (wanted !in existing) return wanted
+        var attempt = 1
+        var candidate = wanted
+        while (candidate in existing) {
+            attempt += 1
+            candidate = suffixed(wanted, attempt)
+        }
+        return candidate
+    }
 
-        // ".report" is a dotfile-shaped name, not an extension to split around,
-        // so the suffix goes after the whole thing.
+    /**
+     * The [attempt]-th spelling of [wanted]: `Report.md` at 2 is `Report (2).md`.
+     * Attempt 1 is the name itself.
+     *
+     * The suffix goes INSIDE the extension, which is the whole point. A name
+     * suffixed after the extension — `Report.md (2)` — is what MediaStore
+     * produces on its own, and nothing downstream reads it as a `.md` at all:
+     * an APK named that way will not install.
+     *
+     * Split on the LAST dot, and only when something precedes it — `.report` is
+     * a dotfile-shaped name, not an extension, so its suffix goes after the
+     * whole thing.
+     */
+    fun suffixed(wanted: String, attempt: Int): String {
+        if (attempt <= 1) return wanted
         val dot = wanted.lastIndexOf('.')
         val hasExtension = dot > 0
         val base = if (hasExtension) wanted.substring(0, dot) else wanted
         val extension = if (hasExtension) wanted.substring(dot) else ""
-
-        var candidate = wanted
-        var n = 1
-        while (candidate in existing) {
-            n += 1
-            candidate = "$base ($n)$extension"
-        }
-        return candidate
+        return "$base ($attempt)$extension"
     }
 }

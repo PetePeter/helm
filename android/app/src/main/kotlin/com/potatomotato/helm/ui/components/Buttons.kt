@@ -1,15 +1,26 @@
 package com.potatomotato.helm.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSize
+import com.potatomotato.helm.ui.theme.HelmType
 
 /**
  * The mockup has exactly two button shapes, and every screen uses them. They
@@ -55,5 +66,50 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         colors = ButtonDefaults.outlinedButtonColors(contentColor = HelmColors.Dim),
     ) {
         Text(text = text)
+    }
+}
+
+/**
+ * The round one — the composer's send/mic circles, promoted here because a
+ * second screen now needs them: the artifact editor's attach toolbar. Same
+ * 40dp circle, same accent fill, same disabled treatment (Surface2 + hairline,
+ * never a half-opacity accent), so a lime circle means the same thing at
+ * whatever screen it stands on.
+ *
+ * [glyph] is a text glyph from strings.xml, not an icon asset — the app's
+ * controls are drawn from the type ramp the same way the composer's are.
+ */
+@Composable
+fun RoundAccentButton(
+    glyph: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
+            .then(
+                if (enabled) {
+                    Modifier
+                } else {
+                    Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape)
+                },
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = glyph,
+            // Dim rather than Faint while disabled, for the composer's reason:
+            // Faint is the placeholder colour and disappears against Surface2,
+            // which reads as a layout hole, not a dead control.
+            color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
+            style = HelmType.SendGlyph,
+            modifier = Modifier.semantics { this.contentDescription = contentDescription },
+        )
     }
 }

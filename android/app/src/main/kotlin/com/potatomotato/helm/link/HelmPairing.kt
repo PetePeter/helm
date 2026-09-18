@@ -7,6 +7,8 @@ import com.potatomotato.helm.ble.RANK_BLE
 import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.LanAddressStore
+import com.potatomotato.helm.data.PrefsTransportPreferenceStore
+import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.data.PrefsLanAddressStore
 import com.potatomotato.helm.data.PairedDesktop
 import com.potatomotato.helm.data.PhoneIdentity
@@ -16,6 +18,7 @@ import com.potatomotato.helm.data.pairedDesktops
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.save.AndroidArtifactFiles
+import com.potatomotato.helm.save.AndroidAttachmentStaging
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +28,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -96,10 +101,23 @@ object HelmPairing {
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.
         client.chats.useUnreadStore(PrefsUnreadStore(context))
+        // The machineId the desktop prefixes onto an echoed reply's originId —
+        // without it this phone cannot recognise its own words in a replay.
+        client.machineId = PhoneIdentity.machineId(context)
         // Where a pulled chat file lands. Downloads, like an artifact download:
         // a file the user cannot find in the place they look for files has not
         // really arrived. Attached late for the same Context reason as above.
         client.saveAttachment = AndroidArtifactFiles(context)::save
+        // Where the attach toolbar's greying reads the negotiated protocol from.
+        // A lookup, not a captured number: the version changes when the transport
+        // swaps, and a stale 4 would offer uploads to a desktop that has none.
+        client.negotiatedProtocol = { controller?.protocolVersion ?: 0 }
+        // Staging copies a pick into a Context-owned cache dir; the stream port
+        // is what an upload attempt reopens it with. Both need the Context, so
+        // they attach here like saveAttachment above.
+        val staging = AndroidAttachmentStaging(context)
+        client.stageAttachment = staging::stage
+        client.openStagedAttachment = staging::open
         val keys = DeviceKeyStore(context)
         store = keys
         // Where the desktop says it can be reached (P-0752). Keyed on the LIVE
@@ -108,10 +126,22 @@ object HelmPairing {
         // authenticated channel this callback hangs off.
         val addresses = PrefsLanAddressStore(context)
         lanAddresses = addresses
+        // The user's transport choice, adopted before anything dials so a
+        // Bluetooth-only phone never makes one attempt it was told not to.
+        TransportPreferences.bind(PrefsTransportPreferenceStore(context))
         lan = LanLinkController(
             addresses = addresses,
+            allowDial = { TransportPreferences.preference.value.allowsLan },
             log = { message -> HelmLog.i(HelmLog.WIRE, message) },
         )
+        // A change has to reach the live socket: gating the next dial alone
+        // would leave a LAN link running for hours after it was switched off.
+        scope.launch {
+            TransportPreferences.preference
+                .map { it.allowsLan }
+                .distinctUntilChanged()
+                .collect { allowed -> withContext(Dispatchers.IO) { lan?.applyPreference(allowed) } }
+        }
         client.onLanAddresses = { pushed ->
             val desktopId = (controller?.state?.value as? PairingState.Linked)?.desktopId
             if (desktopId == null) {
@@ -139,6 +169,10 @@ object HelmPairing {
             machineId = PhoneIdentity.machineId(context),
             scheduler = CoroutineScheduler(scope),
             onInbound = client::onInbound,
+            // LAUNCHED, not inline: onEstablished fires from inside the channel's
+            // own machinery, and sending bytes back into it from that stack frame
+            // is re-entrancy the channel never promised to survive.
+            onLinked = { scope.launch { client.onLinkUp() } },
         )
 
         // A handshake belongs to ONE TRANSPORT, not merely to one connection.

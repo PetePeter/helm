@@ -174,7 +174,13 @@ class ControlRepository {
         _notice.value = null
     }
 
-    /** Take a `directory_list` result. False when the payload is not a directory list. */
+    /**
+     * Take a `directory_list` result. False when the payload is not a directory list.
+     *
+     * The desktop answers in registration order; the phone sorts by project
+     * label so every consumer — the spawner especially — reads A-Z. A folder
+     * with no project sorts under its own name, which is what its row shows.
+     */
     fun directoriesArrived(result: Any?): Boolean {
         val array = result as? JSONArray ?: run {
             WireShape.undecodable<Unit>("a directory_list result", "a JSON array", result)
@@ -188,7 +194,9 @@ class ControlRepository {
                 name = entry.opt("name") as? String ?: lastPathSegment(path),
                 projectName = entry.opt("projectName") as? String,
             )
-        }
+        }.sortedWith(
+            compareBy({ (it.projectName ?: it.name).lowercase() }, { it.path }),
+        )
         return true
     }
 
@@ -206,6 +214,9 @@ class ControlRepository {
      * Take a `tool_list` result — the desktop's full CLI catalogue. False when
      * the payload is not a catalogue at all, in which case the previous answer
      * stands and the spawn form falls back to harvesting `session_list`.
+     *
+     * Sorted by display name — the wire arrives in the desktop's config order,
+     * and the phone is where the list is read, not authored.
      */
     fun clisArrived(result: Any?): Boolean {
         val array = result as? JSONArray ?: run {
@@ -221,7 +232,7 @@ class ControlRepository {
                 name = entry.opt("name") as? String ?: cliType,
                 supportedDirPaths = (0 until (paths?.length() ?: 0)).mapNotNull { paths?.opt(it) as? String },
             )
-        }
+        }.sortedBy { it.name.lowercase() }
         return true
     }
 

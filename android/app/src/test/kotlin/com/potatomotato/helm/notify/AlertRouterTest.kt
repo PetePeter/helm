@@ -262,7 +262,9 @@ class AlertRouterTest {
         sessionId: String = "s1",
         sessionName: String = "ble-transport",
         text: String = "I have pushed the fix",
+        replay: Boolean = false,
     ) = alert(sessionId = sessionId, sessionName = sessionName, text = text, kind = null)
+        .copy(replay = replay)
 
     @Test
     fun `a message posts a row on the message channel`() {
@@ -299,6 +301,27 @@ class AlertRouterTest {
         router.onMessage(message(text = "  "))
 
         assertTrue(port.shade.isEmpty())
+    }
+
+    /**
+     * A record streamed from the desktop's journal during catch-up is old news
+     * the PHONE asked to be given — buzzing for a backlog misrepresents when it
+     * happened. It must still reach the thread and the unread count, which is
+     * [com.potatomotato.helm.link.HelmClient]'s job before the router is consulted.
+     */
+    @Test
+    fun `a replayed catch-up message files without a buzz`() {
+        router.onMessage(message(text = "from this morning", replay = true))
+
+        assertTrue(port.shade.isEmpty())
+    }
+
+    @Test
+    fun `a live message after a replay still buzzes`() {
+        router.onMessage(message(text = "old", replay = true))
+        router.onMessage(message(text = "fresh"))
+
+        assertEquals("fresh", port.showing("s1")?.text)
     }
 
     // ---- replying from the shade -------------------------------------------

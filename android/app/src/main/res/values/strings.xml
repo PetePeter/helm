@@ -9,9 +9,17 @@
     <string name="link_state_connecting">Connecting…</string>
     <string name="link_state_linked">Linked</string>
     <string name="link_state_disconnected">Link off</string>
+    <!-- LAN-only with nothing reached yet: the dialler is retrying, so this is a
+         wait, not an off switch. Same promise as link_state_advertising. -->
+    <string name="link_state_waiting_lan">Waiting for Helm</string>
     <string name="link_transport_ble">BT</string>
     <string name="link_transport_lan">LAN</string>
     <string name="link_transport_separator">·</string>
+
+    <string name="transport_auto">Auto</string>
+    <string name="transport_lan_only">LAN only</string>
+    <string name="transport_bluetooth_only">Bluetooth only</string>
+    <string name="transport_menu_desktops">Paired desktops</string>
 
     <string name="pairing_title">Pairing with</string>
     <string name="pairing_prompt">Do these six digits match the ones on your desktop?</string>
@@ -223,6 +231,9 @@
     <string name="control_confirm_close">Close “%1$s”? Its CLI stops.</string>
     <string name="control_confirm_close_yes">Close it</string>
     <string name="control_confirm_close_no">Keep it</string>
+    <string name="control_confirm_compact">Compact “%1$s”? Its context is rewritten.</string>
+    <string name="control_confirm_compact_yes">Compact it</string>
+    <string name="control_confirm_compact_no">Not now</string>
 
     <string name="control_notice_refused">Helm did not allow that. It is a rule on this device, not a fault — change what this phone may do in Helm\'s Mobile settings.</string>
     <string name="control_notice_done_rename">Session renamed.</string>
@@ -277,6 +288,28 @@
     <string name="artifacts_too_large">Too large for the link — trim it, or write it on the desktop.</string>
     <string name="artifacts_submit_create">Create</string>
     <string name="artifacts_submit_revise">Add version</string>
+
+    <!-- Attach toolbar: three circles above Create, staged chips below the body. -->
+    <string name="artifacts_attach_camera">Take a photo to attach</string>
+    <string name="artifacts_attach_camera_glyph">📷</string>
+    <string name="artifacts_attach_gallery">Choose a photo to attach</string>
+    <string name="artifacts_attach_gallery_glyph">🖼</string>
+    <string name="artifacts_attach_files">Choose a file to attach</string>
+    <string name="artifacts_attach_files_glyph">📎</string>
+    <string name="artifacts_attach_remove">Remove this attachment</string>
+    <string name="artifacts_attach_remove_glyph">✕</string>
+    <string name="artifacts_attach_retry">Send this attachment again</string>
+    <string name="artifacts_attach_retry_glyph">↻</string>
+    <string name="artifacts_attach_open">Open this attachment</string>
+    <string name="artifacts_chip_waiting">Waiting to send</string>
+    <string name="artifacts_chip_uploading">Sending… %1$s</string>
+    <string name="artifacts_chip_done">Attached</string>
+    <string name="artifacts_chip_failed">Failed</string>
+    <string name="artifacts_attach_unsupported_offline">No link to Helm — attachments need one.</string>
+    <string name="artifacts_attach_unsupported_old">This Helm is an older version — update it to attach files.</string>
+    <string name="artifacts_attach_unsupported_denied">This desktop has not allowed attachments from your phone.</string>
+    <string name="artifacts_attach_too_large">That file is past the 10 MB attachment limit.</string>
+    <string name="artifacts_attach_refused">That file could not be read.</string>
 
     <string name="artifacts_confirm_delete">Delete “%1$s”? Every version goes with it.</string>
     <string name="artifacts_confirm_delete_yes">Delete it</string>

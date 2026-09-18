@@ -2,21 +2,14 @@ package com.potatomotato.helm.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,7 +17,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmProject
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.potatomotato.helm.ui.theme.HelmColors
+import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
@@ -53,8 +48,6 @@ fun ProjectPicker(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
     Column(modifier = modifier.fillMaxWidth().background(HelmColors.Surface)) {
         when (projects) {
             LoadView.Loading -> PickerLine(stringResource(R.string.projects_loading), HelmColors.Faint)
@@ -70,33 +63,24 @@ fun ProjectPicker(
             is LoadView.Ready -> if (projects.data.isEmpty()) {
                 PickerLine(stringResource(R.string.projects_none), HelmColors.Faint)
             } else {
-                Box {
+                // The row IS the anchor here — a full-width line rather than a
+                // pill — but the menu itself comes from [HelmDropdown], so this
+                // picker cannot drift from the rest of the app's dropdowns.
+                HelmDropdown(
+                    items = projects.data.map { project ->
+                        HelmDropdownItem(
+                            label = project.name,
+                            selected = project.id == selected?.id,
+                        )
+                    },
+                    onSelect = { index -> onSelect(projects.data[index]) },
+                ) { expanded, open ->
                     PickerLine(
                         text = selected?.name ?: stringResource(R.string.projects_choose),
                         color = if (selected == null) HelmColors.Dim else HelmColors.Txt,
-                        onClick = { expanded = true },
-                        trailing = stringResource(R.string.projects_expand_glyph),
-                    )
-                    DropdownMenu(
+                        onClick = open,
                         expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                    ) {
-                        projects.data.forEach { project ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = project.name,
-                                        color = if (project.id == selected?.id) HelmColors.Accent else HelmColors.Txt,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                },
-                                onClick = {
-                                    expanded = false
-                                    onSelect(project)
-                                },
-                            )
-                        }
-                    }
+                    )
                 }
             }
         }
@@ -104,18 +88,27 @@ fun ProjectPicker(
     }
 }
 
+/**
+ * One line of the picker: the PROJECT caption, then the value.
+ *
+ * When it is a CONTROL ([expanded] is non-null) the value and its chevron sit
+ * inside the shared dropdown skin — the same fill and hairline the pill anchors
+ * wear. Before that they were bare text on the page, which is exactly what made
+ * this row unreadable as a dropdown: the menu below had an edge and the thing
+ * you tap did not. The caption stays outside the box; it labels the control
+ * rather than being part of it.
+ */
 @Composable
 private fun PickerLine(
     text: String,
     color: Color,
     onClick: (() -> Unit)? = null,
-    trailing: String? = null,
+    expanded: Boolean? = null,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = HelmSize.TouchTarget)
-            .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
             .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -125,20 +118,27 @@ private fun PickerLine(
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(end = HelmSpacing.Sm),
         )
-        Text(
-            text = text,
-            color = color,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (trailing != null) {
+        val shape = RoundedCornerShape(HelmRadius.Md)
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .then(if (expanded == null) Modifier else Modifier.dropdownAnchorSurface(shape))
+                .then(if (onClick == null) Modifier else Modifier.clickable(onClick = onClick))
+                .then(
+                    if (expanded == null) Modifier
+                    else Modifier.padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = trailing,
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.labelMedium,
+                text = text,
+                color = color,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (expanded != null) HelmDropdownChevron(expanded = expanded)
         }
     }
 }

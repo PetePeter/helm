@@ -261,6 +261,52 @@ class HelmClientTest {
         assertFalse(client.refreshSessions())
     }
 
+    /**
+     * The desktop journals an ACCEPTED reply and this phone's own catch-up hands
+     * it back. The copy the user typed must win: the echoed one is dropped by
+     * the originId this client registered from its own call id.
+     */
+    @Test
+    fun `an echoed copy of this phone's own reply is dropped by its call id`() {
+        client.machineId = "phone-machine"
+        client.sendChat("s1", "carry on")
+        val callId = lastCallId()
+        client.onInbound(resultFor(callId, "null"))
+        assertEquals(Delivery.Sent, client.chats.thread("s1").single().delivery)
+
+        client.onInbound(
+            chatBytes(sessionId = "s1", text = "carry on", at = 6, seq = 1, originId = "phone-machine:$callId"),
+        )
+
+        assertEquals(1, client.chats.thread("s1").size)
+        assertEquals(Delivery.Sent, client.chats.thread("s1").single().delivery)
+    }
+
+    @Test
+    fun `a call the link refused never claims its echo`() {
+        client.machineId = "phone-machine"
+        linked = false
+        client.sendChat("s1", "carry on")
+        linked = true
+
+        // p0 was never carried, so nothing was registered for it — an echo named
+        // "phone-machine:p0" is somebody else's history and must still land.
+        client.onInbound(chatBytes(sessionId = "s1", text = "carry on", at = 6, seq = 1, originId = "phone-machine:p0"))
+
+        assertEquals(2, client.chats.thread("s1").size)
+    }
+
+    @Test
+    fun `another phone's echoed reply joins the thread as a phone message`() {
+        client.machineId = "phone-machine"
+
+        client.onInbound(
+            chatBytes(sessionId = "s1", text = "from tablet", at = 6, seq = 2, originId = "tablet-machine:p1"),
+        )
+
+        assertTrue(client.chats.thread("s1").single().fromPhone)
+    }
+
     @Test
     fun `everything outstanding fails when the link drops`() {
         client.sendChat("s1", "carry on")
@@ -1097,13 +1143,48 @@ class HelmClientTest {
     }
 
     /** Helm's side of the wire, built with the same codec the desktop is pinned to. */
+    @Test
+    fun `link up reports the chat cursor the phone holds, as a number param`() {
+        client.chats.receive(
+            com.potatomotato.helm.wire.MobileRecord.Chat(
+                sessionId = "s1", sessionName = "work", text = "kept", at = 1, seq = 12,
+            ),
+        )
+        sent.clear()
+
+        assertTrue(client.onLinkUp())
+
+        val frame = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("__chat_cursor__", frame.getString("method"))
+        assertEquals(12L, frame.getJSONObject("params").getLong("seq"))
+    }
+
+    @Test
+    fun `link up with nothing held reports a cursor of zero, asking for the whole journal`() {
+        sent.clear()
+
+        assertTrue(client.onLinkUp())
+
+        val frame = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals(0L, frame.getJSONObject("params").getLong("seq"))
+    }
+
+    @Test
+    fun `link up without a usable link reports nothing rather than throwing`() {
+        linked = false
+
+        assertFalse(client.onLinkUp())
+        assertTrue(sent.isEmpty())
+    }
+
     private fun resultFor(id: String, resultJson: String): ByteArray =
         """{"v":1,"t":"result","id":"$id","result":$resultJson}""".toByteArray(Charsets.UTF_8)
 
     /**
-     * A binary download reply, built to the documented layout rather than with a
-     * helper from the production encoder — the phone has no blob ENCODER, so a
-     * test that used one would be testing itself.
+     * A binary download reply, built to the documented layout rather than with
+     * the production encoder — these are download tests, and the encoder is the
+     * upload direction's (pinned by MobileEnvelopeVectorsTest); a download test
+     * that round-tripped through it would be testing itself.
      *
      *   marker | record version | uint16be header length | header | raw body
      */
@@ -1140,9 +1221,20 @@ class HelmClientTest {
     private fun errorFor(id: String, message: String): ByteArray =
         """{"v":1,"t":"error","id":"$id","error":{"code":-32000,"message":"$message"}}""".toByteArray(Charsets.UTF_8)
 
-    private fun chatBytes(sessionId: String, text: String, at: Long, kind: String? = null): ByteArray =
+    private fun chatBytes(
+        sessionId: String,
+        text: String,
+        at: Long,
+        kind: String? = null,
+        seq: Long? = null,
+        originId: String? = null,
+    ): ByteArray =
         (StringBuilder("""{"v":1,"t":"chat","sessionId":"$sessionId","sessionName":"work","text":"$text","at":$at""")
-            .apply { if (kind != null) append(""","kind":"$kind"""") }
+            .apply {
+                if (kind != null) append(""","kind":"$kind"""")
+                if (seq != null) append(""","seq":$seq""")
+                if (originId != null) append(""","originId":"$originId"""")
+            }
             .append('}'))
             .toString()
             .toByteArray(Charsets.UTF_8)

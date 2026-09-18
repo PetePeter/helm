@@ -26,14 +26,22 @@ object HelmColors {
     /** Inset fills — input fields, chips, the SAS digit cells. */
     val Surface2 = Color(0xFF121215)
 
-    /** Hairline borders. This is how elevation is expressed. */
-    val Line = Color(0xFF1E1E23)
+    /**
+     * Hairline borders. This is how elevation is expressed.
+     *
+     * Raised from the mockup's #1E1E23, which was two steps off a near-black
+     * surface and effectively invisible on a phone in daylight — an edge nobody
+     * can see is not an edge, and every control drawn this way read as flat
+     * text. Bright enough to find, still quiet enough not to become a grid.
+     */
+    val Line = Color(0xFF35353E)
 
     /**
-     * Row separators — the mockup's #101013, a shade BETWEEN Bg and [Line].
-     * List rows want to be divided more quietly than components want to be edged.
+     * Row separators — a shade BETWEEN Bg and [Line]. List rows want to be
+     * divided more quietly than components want to be edged, so this tracks
+     * [Line] upward without catching it.
      */
-    val Separator = Color(0xFF101013)
+    val Separator = Color(0xFF1E1E23)
 
     val Txt = Color(0xFFFFFFFF)
     val Dim = Color(0xFF8B8B95)

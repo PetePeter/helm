@@ -55,6 +55,18 @@ class FileNamesTest {
     }
 
     @Test
+    fun `suffixed numbers the name without consulting a folder`() {
+        // MediaStoreDownloads cannot enumerate Downloads under scoped storage —
+        // it claims a name by inserting it and retries on a rename — so the
+        // numbering has to be derivable from the attempt alone.
+        assertEquals("app-release.apk", FileNames.suffixed("app-release.apk", 1))
+        assertEquals("app-release (2).apk", FileNames.suffixed("app-release.apk", 2))
+        assertEquals("app-release (3).apk", FileNames.suffixed("app-release.apk", 3))
+        assertEquals("report (2)", FileNames.suffixed("report", 2))
+        assertEquals(".report (2)", FileNames.suffixed(".report", 2))
+    }
+
+    @Test
     fun `a case difference is still a different file`() {
         // The target filesystems here are case-insensitive, but the rule reads
         // names literally: report.md and Report.md can coexist on the desktop's

@@ -164,8 +164,11 @@ class ContextRepository {
                 canonicalPath = entry.opt("canonicalPath") as? String ?: "",
             )
         }
-        projectCache = parsed
-        _projects.value = ProjectList.Ready(parsed)
+        // The desktop answers in creation order; the pickers read A-Z, so the
+        // sort lives here where the rows are minted.
+        val sorted = parsed.sortedBy { it.name.lowercase() }
+        projectCache = sorted
+        _projects.value = ProjectList.Ready(sorted)
         return true
     }
 

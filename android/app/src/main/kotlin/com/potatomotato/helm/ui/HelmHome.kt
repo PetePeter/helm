@@ -3,6 +3,9 @@ package com.potatomotato.helm.ui
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.HelmApp
 import android.content.ActivityNotFoundException
@@ -34,16 +38,22 @@ import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
+import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmProject
 import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.SessionAction
+import com.potatomotato.helm.data.StagedAttachment
+import com.potatomotato.helm.data.StageVerdict
+import com.potatomotato.helm.data.stageVerdict
+import com.potatomotato.helm.data.uploadSupport
 import com.potatomotato.helm.link.HelmClient
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.log.LogExport
 import com.potatomotato.helm.log.LogExportResult
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.save.AndroidArtifactFiles
+import com.potatomotato.helm.save.AndroidAttachmentStaging
 import com.potatomotato.helm.save.AndroidLogFiles
 import com.potatomotato.helm.ui.artifacts.ArtifactDetailScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactEdit
@@ -83,6 +93,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Where an open session can take you. One straight path still — the sheet and the
@@ -147,6 +158,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactRead by client.artifacts.read.collectAsState()
     val artifactSave by client.artifacts.save.collectAsState()
     val artifactLanding by client.control.artifactLanding.collectAsState()
+    // The staged files of the artifact create in flight, and where each has got
+    // to. Owned by the client, not the editor, for the same reason every
+    // transfer on this link is: an upload outruns its screen.
+    val stagedAttachments by client.uploads.staged.collectAsState()
+    val uploadStates by client.uploads.states.collectAsState()
     val notificationsEnabled by client.alerts.enabled.collectAsState()
     val desktops by HelmPairing.desktops.collectAsState()
     val planListState by client.plans.list.collectAsState()
@@ -397,6 +413,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     editingShown = null
                     where = Destination.ArtifactDetail
                 }
+                // The landing that arrives here AFTER a staged create is the
+                // chain's own "everything is attached" moment (the client
+                // defers it until then) — so this is where the chips retire.
+                // Waiting chips of a plain create go with them: they described
+                // one create, which is over.
+                client.uploads.clear()
             }
             SessionAction.ReviseArtifact -> {
                 editingArtifactId = null
@@ -432,6 +454,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
 
     val artifactFiles = remember { AndroidArtifactFiles(context) }
+
     LaunchedEffect(artifactSave) {
         val ready = artifactSave as? ArtifactSave.Ready ?: return@LaunchedEffect
         try {
@@ -475,6 +498,60 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
         Unit
     }
+
+    // The artifact editor's attach half: pickers at the UI edge, staging through
+    // the client's port, chips driven by the client's own upload state.
+    val staging = remember { AndroidAttachmentStaging(context) }
+    var cameraTarget by remember { mutableStateOf<Uri?>(null) }
+    val attachNote: (Int) -> Unit = { res ->
+        Toast.makeText(context, context.getString(res), Toast.LENGTH_LONG).show()
+    }
+    // A pick becomes a chip only if it can be READ (here, now — a revoked grant
+    // must not become a chip that fails later) and is within the size the
+    // desktop would accept. Both refusals are toasts: they are about one tap,
+    // not about the editor.
+    val stagePick: (Uri) -> Unit = { uri ->
+        scope.launch {
+            val picked = staging.stage(uri.toString(), displayName = null, mimeType = null)
+            when {
+                picked == null -> attachNote(R.string.artifacts_attach_refused)
+                stageVerdict(picked.sizeBytes) is StageVerdict.TooLarge -> {
+                    staging.discard(picked)
+                    attachNote(R.string.artifacts_attach_too_large)
+                }
+                else -> client.uploads.stage(picked)
+            }
+        }
+        Unit
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+        val target = cameraTarget
+        cameraTarget = null
+        if (captured && target != null) stagePick(target)
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) stagePick(uri)
+    }
+    val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) stagePick(uri)
+    }
+    // The chip tap opens the LOCAL copy through the provider — the picker's own
+    // uri may be long dead by the time the user taps.
+    val openStagedFile: (StagedAttachment) -> Unit = { staged ->
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", File(staged.localPath))
+        openAttachment(uri.toString(), staged.mimeType ?: DEFAULT_OPEN_MIME)
+    }
+    // The greying verdict for the toolbar: both gates — the negotiated protocol
+    // AND the desktop's permitted-tools answer — read live, so revoking either
+    // side turns the circles off the moment this screen recomposes.
+    val attachSupport = uploadSupport(
+        toolPermitted = when (val caps = capabilities) {
+            is Capabilities.Known -> METHOD_ATTACHMENT_ADD in caps.tools
+            else -> null
+        },
+        negotiatedProtocol = client.negotiatedProtocol(),
+        linked = linkState == LinkState.Linked,
+    )
 
     val toThread = { where = Destination.Thread }
     // The retry/refresh affordances every pulled surface carries. They repeat
@@ -754,36 +831,61 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 }
 
                 where == Destination.ArtifactEditor && edit != null -> {
+                    val leaveEditor = {
+                        // Leaving retires the stage ONLY while nothing is being
+                        // sent: mid-upload the chips are the only surface that
+                        // shows a failure, and the chain itself must finish —
+                        // the landing that closes the editor arrives later.
+                        if (uploadStates.values.none { it is AttachmentUploadState.Uploading }) {
+                            client.uploads.clear()
+                        }
+                        where = if (editingArtifactId == null) {
+                            Destination.Thread
+                        } else {
+                            Destination.ArtifactDetail
+                        }
+                        Unit
+                    }
                     BackHandler(
                         // Back undoes the edit without a wire call: a create
                         // returns to the list it came from, a revise to the
                         // artifact it was revising.
-                        onBack = {
-                            where = if (editingArtifactId == null) {
-                                Destination.Thread
-                            } else {
-                                Destination.ArtifactDetail
-                            }
-                        },
+                        onBack = leaveEditor,
                     )
                     ArtifactEditorScreen(
                         edit = edit,
                         linkState = linkState,
+                        staged = stagedAttachments,
+                        uploadStates = uploadStates,
+                        attachSupport = attachSupport,
+                        onAttachCamera = {
+                            val dir = File(context.cacheDir, CAMERA_DIRECTORY).apply { mkdirs() }
+                            val file = File(dir, "capture-${System.nanoTime()}.jpg")
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                            cameraTarget = uri
+                            cameraLauncher.launch(uri)
+                        },
+                        onAttachGallery = {
+                            galleryLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                        onAttachFiles = { filesLauncher.launch(ANY_MIME) },
+                        onOpenStaged = openStagedFile,
+                        onRemoveStaged = client.uploads::unstage,
+                        onRetryStaged = { client.retryArtifactUploads() },
                         onSubmit = { title, content ->
                             if (edit is ArtifactEdit.New) {
-                                client.createArtifact(open.id, title, content)
+                                // The staged keys ride the create; the client
+                                // chains the uploads and lands the notice only
+                                // when the last commit has answered.
+                                client.createArtifact(open.id, title, content, client.uploads.pendingKeys())
                             } else {
                                 val artifactId = editingArtifactId
                                 if (artifactId != null) client.reviseArtifact(open.id, artifactId, content)
                             }
                         },
-                        onBack = {
-                            where = if (editingArtifactId == null) {
-                                Destination.Thread
-                            } else {
-                                Destination.ArtifactDetail
-                            }
-                        },
+                        onBack = leaveEditor,
                     )
                 }
 
@@ -1158,3 +1260,15 @@ private const val CREATED_SESSION_POLLS = 10
 
 /** The sink threw with no message of its own; the row still needs a reason. */
 private const val CANNOT_WRITE_FILE = "The phone could not write the file"
+
+/** Where camera captures wait to become staged attachments (a FileProvider path). */
+private const val CAMERA_DIRECTORY = "artifact-capture"
+
+/** The pickers' ask: anything the user can name, the desktop's size gate judges. */
+private const val ANY_MIME = "*/*"
+
+/** A staged file that never said what it is still opens as SOMETHING. */
+private const val DEFAULT_OPEN_MIME = "application/octet-stream"
+
+/** The upload slot-open tool — the one the toolbar's greying must see granted. */
+private const val METHOD_ATTACHMENT_ADD = "session_artifact_attachment_add"

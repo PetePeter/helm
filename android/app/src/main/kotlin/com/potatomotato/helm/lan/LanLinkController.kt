@@ -51,6 +51,14 @@ class LanLinkController(
      */
     private val schedule: (delayMs: Long, action: () -> Unit) -> Unit =
         { delayMs, action -> Thread({ Thread.sleep(delayMs); action() }, "helm-lan-retry").apply { isDaemon = true }.start() },
+    /**
+     * Whether the user is letting the network carry the link — false under the
+     * Bluetooth-only setting. Read at each decision rather than captured, so a
+     * change takes effect on the next dial without re-wiring anything.
+     *
+     * Defaults to true: a build that never wires the setting dials as before.
+     */
+    private val allowDial: () -> Boolean = { true },
     private val log: (String) -> Unit = {},
 ) {
     private companion object {
@@ -92,6 +100,11 @@ class LanLinkController(
      */
     fun tryConnect(machineId: String) {
         lastMachineId = machineId
+        // Remembered FIRST, so switching back to Auto has a desktop to redial.
+        if (!allowDial()) {
+            log("not dialling: the network is switched off by preference")
+            return
+        }
         val lan = dial(machineId)
         if (lan == null) {
             // A failed attempt is retried later — but never when there is
@@ -192,6 +205,34 @@ class LanLinkController(
     /** Drop any LAN link. Bluetooth takes over again on its own. */
     fun stop() {
         stopped = true
+        closeSession()
+    }
+
+    /**
+     * The user allowed or forbade the network (the Bluetooth-only setting).
+     *
+     * Forbidding DROPS a live socket rather than letting it run until it fails
+     * on its own: the setting says which pipe is in use, and one that keeps
+     * carrying traffic after being switched off makes the readout a lie.
+     * Allowing redials the desktop the last attempt was for — without it the
+     * user would have to wait for a Bluetooth reconnect to get the network back.
+     *
+     * Distinct from [stop], which is teardown and never resumes.
+     */
+    fun applyPreference(allowed: Boolean) {
+        if (stopped) return
+        if (!allowed) {
+            log("the network was switched off by preference; dropping any LAN link")
+            closeSession()
+            return
+        }
+        val machineId = lastMachineId ?: return
+        retryDelayMs = RETRY_MIN_MS
+        tryConnect(machineId)
+    }
+
+    /** Close the live session, if any, and release the rank. Never throws. */
+    private fun closeSession() {
         val open = synchronized(lock) {
             val current = session ?: return
             session = null

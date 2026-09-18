@@ -113,10 +113,12 @@ class ControlRepositoryTest {
             ),
         )
 
+        // Sorted by project label (or the folder's own name when there is
+        // none), which is what the row shows.
         assertEquals(
             listOf(
-                HelmDirectory("x:\\coding\\gamepad-cli-hub", "Helm"),
                 HelmDirectory("/home/o/work/api", "api"),
+                HelmDirectory("x:\\coding\\gamepad-cli-hub", "Helm"),
             ),
             control.directories.value,
         )
@@ -159,6 +161,48 @@ class ControlRepositoryTest {
         assertFalse(control.clisArrived(JSONObject("""{"cliType":"x"}""")))
 
         assertTrue(control.clis.value.isEmpty())
+    }
+
+    @Test
+    fun `the CLI catalogue arrives sorted by display name, case-insensitive`() {
+        // tool_list answers in the desktop's config order; the phone is the one
+        // surface where the list is long enough to read, so it sorts.
+        assertTrue(
+            control.clisArrived(
+                JSONArray(
+                    """[{"cliType":"zed","name":"Zed"},
+                       {"cliType":"claudecode","name":"claude"},
+                       {"cliType":"copilotcli","name":"Copilot"}]""",
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf("claudecode", "copilotcli", "zed"),
+            control.clis.value.map { it.cliType },
+        )
+    }
+
+    @Test
+    fun `directories arrive sorted by project label then path`() {
+        assertTrue(
+            control.directoriesArrived(
+                JSONArray(
+                    """[{"dirPath":"/w/zeta/alt","name":"alt","projectName":"Zeta"},
+                       {"dirPath":"/w/api","name":"api","projectName":"Alpha"},
+                       {"dirPath":"/w/zed","name":"zed"},
+                       {"dirPath":"/w/zeta","name":"zeta","projectName":"Alpha"},
+                       {"dirPath":"/w/alpha2","name":"alpha2","projectName":"alpha"}]""",
+                ),
+            ),
+        )
+
+        // Project label sorts case-insensitively and the folder breaks ties; a
+        // folder with no project sorts under its own name.
+        assertEquals(
+            listOf("/w/alpha2", "/w/api", "/w/zeta", "/w/zed", "/w/zeta/alt"),
+            control.directories.value.map { it.path },
+        )
     }
 
     @Test

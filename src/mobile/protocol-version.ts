@@ -23,11 +23,26 @@
  * download replies binary, and a version-2 phone can do neither. Keeping 2 in
  * range would let such a phone connect and then silently drop every download —
  * the "fails looking like success" failure this negotiation exists to prevent.
+ *
+ * Protocol 4 did NOT move it: an upload is a phone-side capability, and a
+ * version-3 phone simply never sends one.
  */
 export const PROTOCOL_MIN = 3;
 
-/** Newest wire protocol this build speaks. Bump on any breaking wire change. */
-export const PROTOCOL_MAX = 3;
+/**
+ * Newest wire protocol this build speaks. Bump on any breaking wire change.
+ *
+ * 4 — the binary `blob` record may travel phone → Helm. Its frame bytes are
+ * unchanged; what changed is the DIRECTION, which is a boundary change (a phone
+ * now pushes bytes at us) and so a bump, not an additive field. A version-3
+ * peer never sends one, and Helm refuses any inbound blob whose link did not
+ * negotiate 4 — so the old rule "every inbound record is a JSON call" holds for
+ * every link that did not explicitly outgrow it.
+ */
+export const PROTOCOL_MAX = 4;
+
+/** The protocol a link must have negotiated before an inbound blob is accepted. */
+export const BLOB_UPLOAD_MIN_PROTOCOL = 4;
 
 /** Sanity ceiling — a version beyond this is corruption, not a future build. */
 const PROTOCOL_ABSURD = 4096;

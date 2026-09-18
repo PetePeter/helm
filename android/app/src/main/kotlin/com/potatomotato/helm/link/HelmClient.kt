@@ -2,6 +2,8 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
+import com.potatomotato.helm.data.ArtifactUploads
+import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.attachmentSliceBytes
 import com.potatomotato.helm.data.CapabilityCache
 import com.potatomotato.helm.data.ChatAttachment
@@ -65,6 +67,7 @@ class HelmClient(
     val sequences: SequenceRepository = SequenceRepository(),
     val contexts: ContextRepository = ContextRepository(),
     val alerts: AlertRouter = AlertRouter(),
+    val uploads: ArtifactUploads = ArtifactUploads(),
 ) {
     /**
      * Where a pushed LAN address list lands (P-0752).
@@ -76,6 +79,41 @@ class HelmClient(
      */
     var onLanAddresses: (List<String>) -> Unit = {}
 
+    /**
+     * This phone's machineId — the prefix the desktop puts on an echoed reply's
+     * `originId` (see [MobileRecord.Chat.originId]). Settable like
+     * [onLanAddresses] for the same reason: the identity needs a Context, and
+     * this client is built before one exists. Empty means the echo-matching is
+     * off, which costs nothing but a duplicate row in a build that never wires it.
+     */
+    var machineId: String = ""
+
+    /**
+     * The wire protocol the live link negotiated — 0 with no link. Uploads are a
+     * protocol-4 feature, so the editor's attach toolbar greys from THIS rather
+     * than from this build's own maximum: a protocol-3 desktop links fine and
+     * simply has no upload half to offer.
+     */
+    var negotiatedProtocol: () -> Int = { 0 }
+
+    /**
+     * A staged file's bytes, opened fresh for one upload attempt. Settable like
+     * [saveAttachment] — the staged copy lives in a Context-owned cache dir and
+     * this client is built before there is a Context. Null means the copy is
+     * gone (the system swept the cache mid-upload), which fails the chip rather
+     * than the link.
+     */
+    var openStagedAttachment: (StagedAttachment) -> java.io.InputStream? = { null }
+
+    /**
+     * Copy a pick into the app's own cache and measure it — size and whole-file
+     * sha256 — returning the staged file, or null when the pick could not be
+     * read. Suspends because the copy is disk I/O a tap must not do on the main
+     * thread. Settable for the same Context reason as [openStagedAttachment].
+     */
+    var stageAttachment: suspend (source: String, displayName: String, mimeType: String?) -> StagedAttachment? =
+        { _, _, _ -> null }
+
     /** Outstanding calls, oldest first, each with a deadline that owns its cleanup. */
     private val pending = LinkedHashMap<String, PendingCall>()
     private var sequence = 0L
@@ -85,6 +123,13 @@ class HelmClient(
     private data class PendingCall(
         val onOutcome: (Outcome) -> Unit,
         val deadline: Cancellable,
+    )
+
+    /** A desktop's answer to a slot-open: where to send the bytes and how big a slice may be. */
+    private data class UploadOffer(
+        val uploadId: String,
+        val maxSliceBytes: Long,
+        val total: Long,
     )
 
     /** How a call ended. A denial and a dead link are both [Failed] — by design. */
@@ -158,10 +203,21 @@ class HelmClient(
     /** One `session_send_text` ask, settling the optimistic row named by [key]. */
     private fun issueText(sessionId: String, text: String, key: String): Boolean {
         val params = linkedMapOf("sessionId" to sessionId, "text" to text)
-        val issued = call(METHOD_SESSION_SEND_TEXT, params) { outcome ->
+        // The call id is chosen HERE rather than inside [call] because the
+        // desktop derives the echo's originId from it — this end must know it to
+        // recognise its own words when the journal replays them back.
+        val id = nextCallId()
+        val issued = call(METHOD_SESSION_SEND_TEXT, params, id = id) { outcome ->
             chats.settle(sessionId, key, outcome is Outcome.Ok)
         }
-        if (!issued) chats.settle(sessionId, key, delivered = false)
+        if (issued) {
+            // Only a call the link actually carried is registered: the desktop
+            // journals only what it accepted, so claiming an echo for an unsent
+            // call would drop somebody else's history.
+            chats.sent("$machineId:$id")
+        } else {
+            chats.settle(sessionId, key, delivered = false)
+        }
         return issued
     }
 
@@ -292,7 +348,12 @@ class HelmClient(
      * same 128KiB frame the desktop caps its answers with: a request the link
      * cannot carry dies as a torn link, not as a refusal.
      */
-    fun createArtifact(sessionId: String, title: String, content: String): Boolean {
+    fun createArtifact(
+        sessionId: String,
+        title: String,
+        content: String,
+        attachmentKeys: List<String> = emptyList(),
+    ): Boolean {
         if (!ArtifactRules.fitsCreate(title, content)) {
             control.noticed(SessionAction.CreateArtifact, ActionOutcome.Failed(TOO_LARGE))
             return false
@@ -308,9 +369,171 @@ class HelmClient(
             ),
         ) { outcome ->
             if (outcome is Outcome.Ok) {
-                control.artifactLanded(SessionAction.CreateArtifact, idIn(outcome.result))
+                val artifactId = idIn(outcome.result)
+                if (attachmentKeys.isEmpty() || artifactId == null) {
+                    control.artifactLanded(SessionAction.CreateArtifact, artifactId)
+                } else {
+                    // THE one deferral in this client: the notice that moves the
+                    // user waits until the staged files have crossed too. An
+                    // editor that closed on create would strand a half-sent
+                    // attachment with nowhere to show its failure.
+                    uploads.beginUploads(artifactId, sessionId)
+                    startArtifactUploads(sessionId, artifactId)
+                }
             }
         }
+    }
+
+    /**
+     * Send the staged files of one create, one at a time, in staged order.
+     *
+     * Serial is a constraint, not a taste: the link's frame budget is small and
+     * its round trips expensive, and interleaving two files would spend both on
+     * progress nobody can read. Each file's chain is
+     * open-a-slot → stream slices → commit, and the next file starts only when
+     * this one's commit has ANSWERED — so a failure leaves exactly one chip to
+     * explain itself.
+     */
+    private fun startArtifactUploads(sessionId: String, artifactId: String) {
+        val next = uploads.pendingKeys().firstOrNull()
+        if (next == null) {
+            finishArtifactUploads(sessionId, artifactId)
+        } else {
+            sendArtifactAttachment(sessionId, artifactId, next)
+        }
+    }
+
+    /**
+     * Try the failed files again, first staged first. The editor's retry tap
+     * lands here; the repository remains the authority on what is still owed —
+     * this never re-sends a file the desktop has already committed.
+     */
+    fun retryArtifactUploads(): Boolean {
+        val artifactId = uploads.targetArtifactId ?: return false
+        val sessionId = uploads.targetSessionId ?: return false
+        if (uploads.pendingKeys().isEmpty()) return false
+        return sendArtifactAttachment(sessionId, artifactId, uploads.pendingKeys().first())
+    }
+
+    /**
+     * One file's chain, first half: open a slot on the desktop. The offer that
+     * comes back names the slot the raw slices address — the slices carry NO
+     * session, artifact or filename authority beyond that id, which is why the
+     * desktop can refuse a slice from any other device without guessing.
+     */
+    private fun sendArtifactAttachment(sessionId: String, artifactId: String, key: String): Boolean {
+        val staged = uploads.stagedAttachment(key)
+        if (staged == null) {
+            uploads.uploadFailed(key, STAGE_GONE)
+            return false
+        }
+        uploads.uploadStarted(key, staged.sizeBytes)
+        val params = linkedMapOf<String, Any>(
+            "sessionId" to sessionId,
+            "artifactId" to artifactId,
+            "filename" to staged.filename,
+            "sizeBytes" to staged.sizeBytes,
+            "sha256" to staged.sha256,
+        )
+        staged.mimeType?.takeIf { it.isNotBlank() }?.let { params["contentType"] = it }
+        return call(METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> {
+                    val offer = uploadOffer(outcome.result)
+                    if (offer == null) {
+                        uploads.uploadFailed(key, UNREADABLE_UPLOAD_OFFER)
+                    } else {
+                        streamArtifactUpload(sessionId, artifactId, key, staged, offer)
+                    }
+                }
+                is Outcome.Failed -> uploads.uploadFailed(key, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * One file's chain, middle: the bytes, as raw blob records addressed to the
+     * slot. Slice budget comes from the desktop's offer, clipped to a local
+     * ceiling so a generous offer can never push a frame past what this link's
+     * transports carry — the advertised number is the RECEIVER's tolerance, not
+     * a promise about our own radio.
+     *
+     * The file is re-read from zero on every attempt, and every attempt opens a
+     * NEW slot: a retry after a failed commit cannot know how much of the old
+     * slot survived, and an append into a slot of unknown depth is how a file
+     * arrives plausible and wrong.
+     */
+    private fun streamArtifactUpload(
+        sessionId: String,
+        artifactId: String,
+        key: String,
+        staged: StagedAttachment,
+        offer: UploadOffer,
+    ) {
+        val input = openStagedAttachment(staged)
+        if (input == null) {
+            uploads.uploadFailed(key, STAGE_GONE)
+            return
+        }
+        input.use { stream ->
+            val buffer = ByteArray(sliceBudget(offer.maxSliceBytes))
+            var offset = 0L
+            while (offset < staged.sizeBytes) {
+                val want = minOf(buffer.size.toLong(), staged.sizeBytes - offset).toInt()
+                var filled = 0
+                while (filled < want) {
+                    val read = stream.read(buffer, filled, want - filled)
+                    if (read < 0) break
+                    filled += read
+                }
+                if (filled <= 0) {
+                    uploads.uploadFailed(key, STAGE_SHORT)
+                    return
+                }
+                val chunk = if (filled == buffer.size) buffer else buffer.copyOf(filled)
+                val eof = offset + filled >= staged.sizeBytes
+                val frame = MobileEnvelope.encodeBlobUpload(
+                    id = offer.uploadId,
+                    filename = staged.filename,
+                    mimeType = staged.mimeType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
+                    offset = offset,
+                    total = staged.sizeBytes,
+                    eof = eof,
+                    bytes = chunk,
+                )
+                if (!send(frame)) {
+                    uploads.uploadFailed(key, NOT_LINKED)
+                    return
+                }
+                offset += filled
+                uploads.uploadProgress(key, offset)
+            }
+        }
+        // One file's chain, last half: the commit. The desktop verifies the size
+        // and the sha256 declared at slot-open against what actually arrived —
+        // the slices themselves are silent, so this is the only moment the
+        // phone learns whether the file exists on the other end.
+        val issued = call(
+            METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT,
+            linkedMapOf("uploadId" to offer.uploadId),
+        ) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> {
+                    uploads.uploadDone(key, attachmentIdIn(outcome.result))
+                    startArtifactUploads(sessionId, artifactId)
+                }
+                is Outcome.Failed -> uploads.uploadFailed(key, outcome.message)
+            }
+        }
+        // A commit the link refused to carry fails the chip here rather than
+        // leaving it Uploading against a slot the desktop will evict.
+        if (!issued) uploads.uploadFailed(key, NOT_LINKED)
+    }
+
+    /** The whole stage landed: NOW the create moves the user, like a bare create. */
+    private fun finishArtifactUploads(sessionId: String, artifactId: String) {
+        control.artifactLanded(SessionAction.CreateArtifact, artifactId)
+        refreshArtifacts(sessionId)
     }
 
     /**
@@ -802,6 +1025,21 @@ class HelmClient(
     }
 
     /**
+     * The link just became usable. Report the seq of the last chat message this
+     * phone holds, so the desktop can replay everything after it — the catch-up
+     * that covers both a phone that was out of range and an app restart whose
+     * threads are gone. The answer carries nothing this app acts on: the replay
+     * arrives afterwards as ordinary `chat` records, deduped by seq in
+     * [ChatRepository.receive].
+     *
+     * Sent FIRST on link up, ahead of the session refresh: the journal replay
+     * and the session list are independent, and the cursor is the one request
+     * whose answer cannot be re-derived later by a poll.
+     */
+    fun onLinkUp(): Boolean =
+        call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq())) { }
+
+    /**
      * Issue one control action and record how it ended, so every outcome is
      * something the user can read. A refusal is told apart from a dead link
      * because they mean opposite things: one is a rule that will hold, the other
@@ -835,13 +1073,43 @@ class HelmClient(
     private fun idIn(result: Any?): String? =
         (result as? JSONObject)?.opt("id") as? String
 
+    /** A slot-open answer: `{uploadId, maxSliceBytes, total}`. */
+    private fun uploadOffer(result: Any?): UploadOffer? {
+        json(result)?.let { json ->
+            val uploadId = json.opt("uploadId") as? String ?: return null
+            val maxSlice = (json.opt("maxSliceBytes") as? Number)?.toLong() ?: return null
+            val total = (json.opt("total") as? Number)?.toLong() ?: return null
+            return UploadOffer(uploadId, maxSlice, total)
+        }
+        return null
+    }
+
+    /**
+     * The committed attachment's id. The commit answer is
+     * `{artifactId, attachment:{id,…}}`; the attachment id is all this app does
+     * with it, and an answer of an unexpected shape still counts as DONE — the
+     * desktop verified the bytes, which is what the chip is claiming.
+     */
+    private fun attachmentIdIn(result: Any?): String =
+        json(result)?.let { json ->
+            (json.optJSONObject("attachment")?.opt("id") as? String)
+                ?: (json.opt("id") as? String)
+        }.orEmpty()
+
+    private fun json(result: Any?): JSONObject? = result as? JSONObject
+
+    /** The offer clipped to what this phone will put in one frame. */
+    private fun sliceBudget(advertised: Long): Int =
+        minOf(advertised, MAX_UPLOAD_SLICE_BYTES.toLong()).toInt().coerceIn(1, MAX_FRAME_BYTES)
+
     private fun call(
         method: String,
         params: Map<String, Any>? = null,
+        id: String? = null,
         onOutcome: (Outcome) -> Unit,
     ): Boolean {
-        val id = "p${sequence++}"
-        val frame = MobileEnvelope.encodeCall(id, method, params)
+        val callId = id ?: nextCallId()
+        val frame = MobileEnvelope.encodeCall(callId, method, params)
         // Key NAMES only, never values — the same rule the desktop's audit keeps.
         HelmLog.d(HelmLog.CLIENT) {
             "call $id $method, ${frame.size} bytes, args ${params?.keys?.sorted() ?: emptyList<String>()}"
@@ -850,18 +1118,21 @@ class HelmClient(
         // sent has no answer coming, and leaving it pending would hold a callback
         // — and the message it closes over — until the link drops.
         if (!send(frame)) {
-            HelmLog.w(HelmLog.CLIENT, "call $id $method was not sent; there is no usable link")
+            HelmLog.w(HelmLog.CLIENT, "call $callId $method was not sent; there is no usable link")
             onOutcome(Outcome.Failed(NOT_LINKED))
             return false
         }
         evictOldestIfFull()
         lateinit var deadline: Cancellable
         deadline = scheduler.schedule(REQUEST_DEADLINE_MS) {
-            settle(id, Outcome.Failed(REQUEST_TIMED_OUT))
+            settle(callId, Outcome.Failed(REQUEST_TIMED_OUT))
         }
-        pending[id] = PendingCall(onOutcome, deadline)
+        pending[callId] = PendingCall(onOutcome, deadline)
         return true
     }
+
+    /** Monotonic call ids — the same "p<n>" the desktop's audit already sees. */
+    private fun nextCallId(): String = "p${sequence++}"
 
     /**
      * The pending map is bounded because nothing else bounds it: Helm answers
@@ -901,6 +1172,13 @@ class HelmClient(
         private const val METHOD_SESSION_LIST = "session_list"
         private const val METHOD_SESSION_SEND_TEXT = "session_send_text"
 
+        /**
+         * The gate's reserved chat-cursor meta-method (see the desktop's
+         * `RESERVED_CHAT_CURSOR_METHOD`). In-gate answered, never dispatched —
+         * which is also why it needs no allow-list entry.
+         */
+        private const val METHOD_CHAT_CURSOR = "__chat_cursor__"
+
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
@@ -918,6 +1196,35 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
         private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"
+
+        /**
+         * The upload half (protocol 4). `add` opens a slot and answers with the
+         * slice budget; the slices then travel as raw blob records answered by
+         * nothing; `commit` is the one moment the desktop says whether the file
+         * exists. There is deliberately no abort — an abandoned slot evicts
+         * itself on the desktop, which is one less call to make and one less
+         * way to be wrong about a slot that already died.
+         */
+        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
+        private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
+
+        /** The local ceiling on one upload slice, inside this link's frame cap. */
+        private const val MAX_UPLOAD_SLICE_BYTES = 64 * 1024
+
+        /** The secure channel's own frame ceiling, mirrored from crypto/Frames.kt. */
+        private const val MAX_FRAME_BYTES = 1024 * 1024
+
+        /** When a staged file never named a type. */
+        private const val DEFAULT_MIME = "application/octet-stream"
+
+        /** The staged copy vanished before its upload could read it. */
+        private const val STAGE_GONE = "The staged file is no longer readable — attach it again"
+
+        /** The staged copy ended before it had given the bytes it declared. */
+        private const val STAGE_SHORT = "The staged file changed while it was being sent"
+
+        /** A slot-open answer of a shape this app cannot read. */
+        private const val UNREADABLE_UPLOAD_OFFER = "Helm answered with an upload slot this app could not read"
 
         /**
          * Helm's planning surface, READ side only. No `plan_create`,

@@ -127,6 +127,8 @@ fun SpawnScreen(
                 }
                 directories.isEmpty() -> Hint(stringResource(R.string.spawn_no_directories))
                 else -> {
+                    // Row order is the repository's — project label A-Z, path
+                    // breaking ties — so the list reads as projects first.
                     for (directory in directories) {
                         Choice(
                             label = directoryLabel(directory),

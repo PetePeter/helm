@@ -410,7 +410,9 @@ describe('SecureChannel version gate against old peers', () => {
         role: 'initiator',
         machineId: 'phone',
         sessionId: SESSION_ID,
-        protocolRange: { min: 1, max: PROTOCOL_MAX - 1 },
+        // Below our MIN entirely — "previous wire protocol", not merely a
+        // lower max that still overlaps (a 3-max peer negotiates 3 fine).
+        protocolRange: { min: 1, max: PROTOCOL_MIN - 1 },
       }),
       SecureChannel.open({ pipe: b, role: 'responder', machineId: 'desktop' }),
     ]);

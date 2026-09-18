@@ -64,6 +64,7 @@ commit. Additive changes do neither.
 | 1 | Initial wire format — range negotiation in HELLO, X25519 commit-reveal handshake, AES-256-GCM framing. |
 | 2 | AEAD frames carry an explicit `u64` sequence (nonce + AAD), so the receiver can detect a lost frame, resync, and continue instead of failing the next tag. New PING/PONG frame kinds for keepalive. |
 | 3 | `MAX_FRAME_BYTES` 128 KiB → 1 MiB, and download replies become a **binary record** — marker byte, small JSON header, raw bytes — instead of base64 inside a JSON result. Both are breaking in the same direction: a v2 peer can neither read a 1 MiB frame nor decode the record, so `PROTOCOL_MIN` moved to 3 with the max. The handshake crypto is unchanged, which is why the committed channel vectors still pin version 2. |
+| 4 | The binary record turns **around**: a phone may send blob frames (artifact attachment upload slices), which protocol 3 only ever carried Helm→phone. The frame layout, `MAX_FRAME_BYTES` and the handshake are unchanged, so `PROTOCOL_MIN` stays at 3 — but the direction change is the boundary, so `PROTOCOL_MAX` moves to 4. Both ends gate the upload feature on the **negotiated** version reaching 4, never on their own build max: an old desktop plus a new phone links fine at protocol 3 and the phone's attach toolbar simply stays dark. Uncommitted upload slots expire after two minutes; there is no abort tool. |
 
 ## Invariants
 

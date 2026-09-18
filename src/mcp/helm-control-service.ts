@@ -221,6 +221,7 @@ export class HelmControlService extends EventEmitter {
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
+  private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
   private memoryService?: HelmMemoryService;
   private memoryManager: MemoryManager | null = null;
   private messService?: HelmMessService;
@@ -384,6 +385,15 @@ export class HelmControlService extends EventEmitter {
   ): void {
     this.artifactManager = manager;
     this.artifactAttachmentManager = attachmentManager;
+  }
+
+  /**
+   * Wire the phone-upload reassembler so the session-addressed attachment tools
+   * can open and commit upload slots. Separate from the managers above because
+   * it is stateful per upload, and only the phone ever speaks to it.
+   */
+  setArtifactUploadService(service: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService): void {
+    this.artifactUploadService = service;
   }
 
   /** Wire the durable, authenticated-session-scoped memory MCP facade. */
@@ -582,6 +592,49 @@ export class HelmControlService extends EventEmitter {
     const artifact = this.requireOwnedArtifact(callerSessionId, artifactId);
     const deleted = this.requireArtifactAttachmentManager().delete(artifact.id, attachmentId);
     return { artifactId: artifact.id, attachmentId, deleted };
+  }
+
+  /**
+   * Move 1 of a phone upload: open a slot on an artifact this caller owns.
+   *
+   * The ownership rule is the one every artifact call makes — a cross-session
+   * artifact id answers not-found — and the slot is then bound to the DEVICE
+   * that opened it, so only that phone's slices may fill it and only that
+   * phone's commit may finish it.
+   */
+  openArtifactAttachmentUpload(
+    callerSessionId: string,
+    deviceId: string,
+    input: import('../mobile/mobile-artifact-upload.js').ArtifactUploadOpenInput,
+  ): import('../mobile/mobile-artifact-upload.js').ArtifactUploadOffer {
+    const artifact = this.requireOwnedArtifact(callerSessionId, input.artifactId);
+    return this.requireArtifactUploadService().open(deviceId, { ...input, artifactId: artifact.id });
+  }
+
+  /**
+   * Move 3 of a phone upload: verify the bytes and commit the attachment.
+   * Throws unless every declared byte arrived and matched the sha256 the phone
+   * declared at open time; the slot is dropped either way, so a retry starts
+   * clean. No second ownership check: the slot was opened against an artifact
+   * THIS caller already owned, and it is bound to the same device — a proxy
+   * identity is stable per device, so the open-time check is the commit-time
+   * check.
+   */
+  commitArtifactAttachmentUpload(
+    callerSessionId: string,
+    deviceId: string,
+    uploadId: string,
+  ): { artifactId: string; attachment: ArtifactAttachment } {
+    void callerSessionId;
+    const attachment = this.requireArtifactUploadService().commit(deviceId, uploadId);
+    return { artifactId: attachment.artifactId, attachment };
+  }
+
+  private requireArtifactUploadService(): import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService {
+    if (!this.artifactUploadService) {
+      throw new Error('Artifact uploads are not available: the upload service is not configured.');
+    }
+    return this.artifactUploadService;
   }
 
   /** Summaries of this session's artifacts (no content) so the LLM can see its own. */
