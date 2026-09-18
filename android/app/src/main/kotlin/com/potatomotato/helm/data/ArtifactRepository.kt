@@ -173,6 +173,15 @@ class ArtifactRepository {
     private val _save = MutableStateFlow<ArtifactSave>(ArtifactSave.Idle)
     val save: StateFlow<ArtifactSave> = _save.asStateFlow()
 
+    /**
+     * The attachment fetches this screen has running, keyed by
+     * [artifactAttachmentKey]. A SEPARATE machine from [save] on purpose: a body
+     * download is one answer and narrates in a single line under the action rows,
+     * while an attachment is a sliced transfer whose progress belongs on its own
+     * row — and several rows can be pulling at once.
+     */
+    val attachmentPulls = AttachmentPulls()
+
     /** Last parsed list answer per session — what a re-visit shows while it refreshes. */
     private val listCache = HashMap<String, List<HelmArtifact>>()
 

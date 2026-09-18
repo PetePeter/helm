@@ -109,6 +109,22 @@ The approved mockup is the attachment on plans P-0740 and P-0742–P-0746. It is
 deliberately **not** copied into the working tree — a copy is a second source of
 truth waiting to drift.
 
+## Saving files
+
+Everything user-visible this app writes goes through `save/`, and always into
+**`Downloads/Helm`** (`DownloadFolder.kt`) — artifact bodies, pulled
+attachments, log exports. Never write loose into Downloads: under scoped storage
+a `MediaStore.Downloads` query returns only what *this app* contributed, so in a
+shared folder the de-collision check is blind to other apps' files and collides
+anyway. A folder only Helm writes into makes that query authoritative.
+
+Two rules a new sink must keep. Suffix **before** the extension
+(`FileNames.disambiguated` → `photo (1).jpg`); MediaStore's own de-duplication
+appends after the whole display name, and `photo.jpg (1)` is not readable as a
+jpg by any viewer, installer or share sheet. And below API 29 fall back to the
+app's own external Download folder with no subfolder — `MediaStore.Downloads`
+does not exist there, and no storage permission is worth asking for.
+
 ## Voice input
 
 Dictation uses the platform `SpeechRecognizer` with `EXTRA_PREFER_OFFLINE`:

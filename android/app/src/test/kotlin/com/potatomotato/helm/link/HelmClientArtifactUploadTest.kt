@@ -168,6 +168,78 @@ class HelmClientArtifactUploadTest {
         assertNull("a failed chain must not navigate", client.control.artifactLanding.value)
     }
 
+    /**
+     * THE REGRESSION on the edit half: the editor's submit chained uploads only
+     * for a NEW artifact. Revising one with files attached sent the text and
+     * silently dropped every staged file — indistinguishable, from the chips, to
+     * an upload that failed without saying so.
+     */
+    @Test
+    fun `a revise with staged files uploads them against the artifact it edited`() {
+        files["a"] = byteArrayOf(1, 2, 3)
+        stage("a")
+
+        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+
+        assertEquals("session_artifact_update", methodOf(sent.first()))
+        client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
+
+        // No create was needed: the artifact already existed, so the SAME chain
+        // opens its slot straight against the id being edited.
+        assertEquals("session_artifact_attachment_add", methodOf(sent[1]))
+        assertEquals("artifact-9", paramsOf(sent[1]).getString("artifactId"))
+        // And the editor has not moved yet — the landing waits for the commit.
+        assertNull(client.control.artifactLanding.value)
+
+        client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
+        val blob = MobileEnvelope.decode(sent[2]) as MobileRecord.Blob
+        assertEquals("slot-a", blob.id)
+        assertEquals("010203", blob.bytes.toHex())
+        assertEquals("session_artifact_attachment_commit", methodOf(sent[3]))
+
+        client.onInbound(
+            resultFor(callIdOf(sent[3]), """{"artifactId":"artifact-9","attachment":{"id":"att-a"}}"""),
+        )
+
+        // The notice names what the user DID — revised, not created.
+        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
+        assertEquals("artifact-9", client.control.artifactLanding.value?.artifactId)
+        assertTrue(client.uploads.allDone())
+    }
+
+    @Test
+    fun `a revise with nothing staged lands immediately, as it always did`() {
+        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+
+        client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
+
+        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
+        assertEquals(1, sent.size)
+    }
+
+    @Test
+    fun `a retry after a revise re-sends the whole file into a fresh slot`() {
+        files["a"] = byteArrayOf(1, 2, 3)
+        stage("a")
+        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+        client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
+        client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
+
+        client.onInbound(errorFor(callIdOf(sent[3]), "upload checksum mismatch"))
+
+        assertTrue(client.retryArtifactUploads())
+        assertEquals("session_artifact_attachment_add", methodOf(sent[4]))
+        client.onInbound(resultFor(callIdOf(sent[4]), """{"uploadId":"slot-a2","maxSliceBytes":64,"total":3}"""))
+        // From zero, into the NEW slot: an append into a slot of unknown depth is
+        // how a file arrives plausible and wrong.
+        val blob = MobileEnvelope.decode(sent[5]) as MobileRecord.Blob
+        assertEquals("slot-a2", blob.id)
+        assertEquals("010203", blob.bytes.toHex())
+        // The commit declares the digest the phone took while staging the copy.
+        assertEquals("session_artifact_attachment_commit", methodOf(sent[6]))
+        assertEquals("ab".repeat(32), paramsOf(sent[4]).getString("sha256"))
+    }
+
     // ------------------------------------------------------------- the harness
 
     private fun stage(key: String) {

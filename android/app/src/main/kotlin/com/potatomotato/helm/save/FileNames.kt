@@ -9,14 +9,22 @@ package com.potatomotato.helm.save
 object FileNames {
 
     /** A name nothing in the folder holds is used exactly as asked for. */
-    fun disambiguated(existing: Set<String>, wanted: String): String {
+    fun disambiguated(existing: Set<String>, wanted: String): String =
+        suffixed(wanted, firstFreeAttempt(existing, wanted))
+
+    /**
+     * The lowest attempt number whose spelling of [wanted] is free — 1 when the
+     * name itself is.
+     *
+     * Separate from [disambiguated] because the MediaStore path needs the NUMBER:
+     * it picks a name from what the folder holds, then keeps claiming upwards
+     * from there when the insert is renamed under it. Resuming from the number
+     * rather than from the chosen name is what stops `photo (2) (2).jpg`.
+     */
+    fun firstFreeAttempt(existing: Set<String>, wanted: String): Int {
         var attempt = 1
-        var candidate = wanted
-        while (candidate in existing) {
-            attempt += 1
-            candidate = suffixed(wanted, attempt)
-        }
-        return candidate
+        while (suffixed(wanted, attempt) in existing) attempt += 1
+        return attempt
     }
 
     /**

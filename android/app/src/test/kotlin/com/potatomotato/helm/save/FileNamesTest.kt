@@ -1,6 +1,7 @@
 package com.potatomotato.helm.save
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
@@ -64,6 +65,34 @@ class FileNamesTest {
         assertEquals("app-release (3).apk", FileNames.suffixed("app-release.apk", 3))
         assertEquals("report (2)", FileNames.suffixed("report", 2))
         assertEquals(".report (2)", FileNames.suffixed(".report", 2))
+    }
+
+    @Test
+    fun `the first free attempt is where the claim loop starts`() {
+        // MediaStoreDownloads picks a name from what the folder holds, then keeps
+        // claiming UPWARDS if the insert is renamed under it. Resuming from the
+        // number rather than from the chosen name is what stops the second pass
+        // producing "chart (2) (2).png".
+        assertEquals(1, FileNames.firstFreeAttempt(emptySet(), "chart.png"))
+        assertEquals(2, FileNames.firstFreeAttempt(setOf("chart.png"), "chart.png"))
+        assertEquals(
+            3,
+            FileNames.firstFreeAttempt(setOf("chart.png", "chart (2).png"), "chart.png"),
+        )
+        // A hole in the run is filled rather than skipped past.
+        assertEquals(2, FileNames.firstFreeAttempt(setOf("chart.png", "chart (3).png"), "chart.png"))
+    }
+
+    @Test
+    fun `a download never overwrites a file already in the folder`() {
+        // The whole rule in one line: a name the folder holds is not the name the
+        // next save gets, and the one it gets keeps its extension.
+        val existing = setOf("holiday.jpg", "holiday (2).jpg")
+
+        val chosen = FileNames.disambiguated(existing, "holiday.jpg")
+
+        assertEquals("holiday (3).jpg", chosen)
+        assertFalse(chosen in existing)
     }
 
     @Test

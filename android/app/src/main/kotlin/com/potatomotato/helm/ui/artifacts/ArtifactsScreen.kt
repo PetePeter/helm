@@ -41,7 +41,9 @@ import com.potatomotato.helm.data.Capabilities
 import com.potatomotato.helm.data.HelmArtifact
 import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.HelmArtifactRead
+import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.SessionAction
+import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.ui.HelmReferences
@@ -175,7 +177,9 @@ fun ArtifactDetailScreen(
     onPull: (version: Int?) -> Unit,
     onRevise: () -> Unit,
     onDownload: () -> Unit,
+    attachmentPulls: Map<String, PullState>,
     onDownloadAttachment: (HelmArtifactAttachment) -> Unit,
+    onOpenAttachment: (uri: String, mimeType: String) -> Unit,
     onDelete: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -213,7 +217,13 @@ fun ArtifactDetailScreen(
             // design (see HelmArtifact.attachments), so the list cache is the only
             // place they exist on the phone. No row, and no header, without it.
             artifact?.attachments?.takeIf { it.isNotEmpty() }?.let { attachments ->
-                AttachmentSection(attachments, onDownloadAttachment)
+                AttachmentSection(
+                    artifactId = artifact.id,
+                    attachments = attachments,
+                    pulls = attachmentPulls,
+                    onDownload = onDownloadAttachment,
+                    onOpen = onOpenAttachment,
+                )
             }
 
             // The actions the session-addressed tools bought, one row each, greyed
@@ -279,14 +289,22 @@ private fun title(artifact: HelmArtifact?, state: ArtifactRead): String = when {
 
 /**
  * The artifact's attachments, one row each, under a header that only exists when
- * there is something under it. Tapping a row asks for THAT file's bytes; the ask
- * lands in the same [ArtifactSave] machine the Save row uses, so the line under
- * the action rows narrates an attachment exactly the way it narrates a version.
+ * there is something under it.
+ *
+ * Tapping a row starts a SLICED fetch of that file — the same transfer a chat
+ * attachment makes — so each row narrates itself: bytes-of-bytes while it runs,
+ * where it landed when it finishes, why not when it does not. That is why the
+ * progress is here and not in the single Save line under the action rows: several
+ * rows can be pulling at once, and one line cannot say so. A finished row becomes
+ * an open button rather than re-fetching what is already on the phone.
  */
 @Composable
 private fun AttachmentSection(
+    artifactId: String,
     attachments: List<HelmArtifactAttachment>,
+    pulls: Map<String, PullState>,
     onDownload: (HelmArtifactAttachment) -> Unit,
+    onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     Hairline()
     Text(
@@ -299,22 +317,54 @@ private fun AttachmentSection(
             .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
     )
     for (attachment in attachments) {
+        val pull = pulls[artifactAttachmentKey(artifactId, attachment.id)] ?: PullState.Idle
         HelmRow(
             title = attachment.filename,
-            onClick = { onDownload(attachment) },
+            onClick = {
+                // A pulled file opens; anything else asks for the bytes. A row
+                // mid-transfer ignores the tap rather than starting a second
+                // loop into the same buffer.
+                when (pull) {
+                    is PullState.Ready -> onOpen(pull.uri, attachment.contentType ?: DEFAULT_ATTACHMENT_MIME)
+                    is PullState.Pulling -> Unit
+                    else -> onDownload(attachment)
+                }
+            },
             // No chevron: the tap fetches a file onto the phone, it does not
             // open another screen, and a chevron would promise one.
             chevron = false,
             subtitle = {
+                val (line, tint) = attachmentLine(pull, attachment.sizeBytes)
                 Text(
-                    text = humanSize(attachment.sizeBytes),
-                    color = HelmColors.Faint,
+                    text = line,
+                    color = tint,
                     style = MaterialTheme.typography.bodySmall,
                 )
             },
         )
     }
 }
+
+/**
+ * The one line under an attachment's name: its size until something is happening
+ * to it, then what is happening. Bytes-of-bytes rather than a percentage, because
+ * on this link a percentage that has not moved in a minute is indistinguishable
+ * from a frozen one.
+ */
+@Composable
+private fun attachmentLine(pull: PullState, sizeBytes: Long): Pair<String, Color> = when (pull) {
+    is PullState.Pulling -> stringResource(
+        R.string.chat_attachment_pulling,
+        humanSize(pull.received),
+        humanSize(maxOf(pull.total, sizeBytes)),
+    ) to HelmColors.Faint
+    is PullState.Ready -> stringResource(R.string.artifacts_save_saved, pull.location) to HelmColors.Dim
+    is PullState.Failed -> pull.message to HelmColors.Danger
+    PullState.Idle -> humanSize(sizeBytes) to HelmColors.Faint
+}
+
+/** What a file with no declared type opens as. The system picks from the name. */
+private const val DEFAULT_ATTACHMENT_MIME = "application/octet-stream"
 
 /** The body on screen: settled, or the cached one a refresh is re-checking. */
 private fun shownRead(state: ArtifactRead): HelmArtifactRead? = when (state) {

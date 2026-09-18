@@ -6,8 +6,12 @@ import com.potatomotato.helm.data.ArtifactUploads
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.attachmentSliceBytes
 import com.potatomotato.helm.data.CapabilityCache
+import com.potatomotato.helm.data.AttachmentPulls
 import com.potatomotato.helm.data.ChatAttachment
+import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.PullState
+import com.potatomotato.helm.data.PullTarget
+import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.ChatRepository
 import com.potatomotato.helm.data.ContextRepository
 import com.potatomotato.helm.data.ControlRepository
@@ -396,11 +400,36 @@ class HelmClient(
                     // user waits until the staged files have crossed too. An
                     // editor that closed on create would strand a half-sent
                     // attachment with nowhere to show its failure.
-                    uploads.beginUploads(artifactId, sessionId)
-                    startArtifactUploads(sessionId, artifactId)
+                    beginArtifactUploads(SessionAction.CreateArtifact, sessionId, artifactId)
                 }
             }
         }
+    }
+
+    /**
+     * Which action the staged-file chain is finishing, so the notice that lands
+     * when the last commit answers names what the user actually did.
+     *
+     * A field rather than an argument threaded through the chain because a retry
+     * tap arrives long after the chain began and has to land under the same
+     * heading; the repository already keeps the artifact and session for the same
+     * reason.
+     */
+    private var uploadAction: SessionAction = SessionAction.CreateArtifact
+
+    /**
+     * Start the staged-file chain against an artifact that now EXISTS.
+     *
+     * The one entry point for both halves of the editor: a create reaches it once
+     * the new id lands, a revise reaches it with the id it was already editing.
+     * Revise had no attachment path at all before this — staged files were
+     * silently dropped on submit, which looked exactly like an upload that failed
+     * without saying so.
+     */
+    fun beginArtifactUploads(action: SessionAction, sessionId: String, artifactId: String) {
+        uploadAction = action
+        uploads.beginUploads(artifactId, sessionId)
+        startArtifactUploads(sessionId, artifactId)
     }
 
     /**
@@ -618,9 +647,9 @@ class HelmClient(
         continuation.invokeOnCancellation { armed.cancel() }
     }
 
-    /** The whole stage landed: NOW the create moves the user, like a bare create. */
+    /** The whole stage landed: NOW the edit moves the user, like a bare one would. */
     private fun finishArtifactUploads(sessionId: String, artifactId: String) {
-        control.artifactLanded(SessionAction.CreateArtifact, artifactId)
+        control.artifactLanded(uploadAction, artifactId)
         refreshArtifacts(sessionId)
     }
 
@@ -629,8 +658,17 @@ class HelmClient(
      * (`session_artifact_update` takes content only) and no follow-up ask is
      * made: returning to the detail screen re-pulls the body the way every
      * visit does, and that re-pull is the reconciliation.
+     *
+     * Staged files ride a revise exactly as they ride a create — the artifact
+     * already exists, so the chain can start the moment the update is
+     * acknowledged.
      */
-    fun reviseArtifact(sessionId: String, artifactId: String, content: String): Boolean {
+    fun reviseArtifact(
+        sessionId: String,
+        artifactId: String,
+        content: String,
+        attachmentKeys: List<String> = emptyList(),
+    ): Boolean {
         if (!ArtifactRules.fitsRevise(content)) {
             control.noticed(SessionAction.ReviseArtifact, ActionOutcome.Failed(TOO_LARGE))
             return false
@@ -640,7 +678,16 @@ class HelmClient(
             METHOD_SESSION_ARTIFACT_UPDATE,
             linkedMapOf("sessionId" to sessionId, "artifactId" to artifactId, "content" to content),
         ) { outcome ->
-            if (outcome is Outcome.Ok) control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
+            if (outcome is Outcome.Ok) {
+                if (attachmentKeys.isEmpty()) {
+                    control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
+                } else {
+                    // Same deferral a create makes: the notice that closes the
+                    // editor waits for the last commit, so a failed upload still
+                    // has a chip to explain itself on.
+                    beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
+                }
+            }
         }
     }
 
@@ -674,22 +721,35 @@ class HelmClient(
     /**
      * Fetch one artifact's ATTACHMENT — a binary file the desktop stores beside
      * the artifact and the list names as metadata — by the same
-     * `session_artifact_download` tool, with `attachmentId` instead of
-     * `version` (the desktop refuses the two together). The ask lands in the
-     * SAME [ArtifactSave] machine a version download uses, because the phone
-     * saves both as files and neither is saved until the device sink says so.
+     * `session_artifact_download` tool, with `attachmentId` instead of `version`
+     * (the desktop refuses the two together).
+     *
+     * SLICED, exactly like a chat attachment, and for a reason that was once a
+     * bug: the desktop always slices an attachment and DEFAULTS the length to one
+     * slice budget, so a single ask with no offset answers the first slice and
+     * nothing more. This screen used to save that answer as if it were the whole
+     * file, which is how a multi-megabyte image arrived truncated and opened
+     * corrupt. An artifact BODY download stays single-shot — it has its own
+     * inline cap and is answered whole.
      */
-    fun downloadArtifactAttachment(sessionId: String, artifactId: String, attachmentId: String): Boolean {
-        artifacts.downloadRequested(artifactId)
-        return fetchArtifactFile(
-            artifactId,
-            linkedMapOf(
-                "sessionId" to sessionId,
-                "artifactId" to artifactId,
-                "attachmentId" to attachmentId,
-            ),
-        )
-    }
+    fun downloadArtifactAttachment(
+        sessionId: String,
+        artifactId: String,
+        attachment: HelmArtifactAttachment,
+    ): Boolean = pullAttachment(
+        sessionId,
+        artifacts.attachmentPulls,
+        PullTarget(
+            key = artifactAttachmentKey(artifactId, attachment.id),
+            artifactId = artifactId,
+            attachmentId = attachment.id,
+            filename = attachment.filename,
+            // The desktop's content type is a hint it may never have had; a file
+            // with no type still saves, as the generic one.
+            mimeType = attachment.contentType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
+            sizeBytes = attachment.sizeBytes,
+        ),
+    )
 
     /**
      * Where a pulled chat attachment is written, and what to call the place it
@@ -715,50 +775,73 @@ class HelmClient(
      * Returns false when there is nothing to start: no link, or a fetch for
      * this message is already running.
      */
-    fun pullChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
-        if (!chats.pullStarted(key, attachment)) return false
-        return fillPipeline(sessionId, key, attachment)
+    fun pullChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
+        pullAttachment(
+            sessionId,
+            chats.attachmentPulls,
+            PullTarget(
+                key = key,
+                artifactId = attachment.artifactId,
+                attachmentId = attachment.attachmentId,
+                filename = attachment.filename,
+                mimeType = attachment.mimeType,
+                sizeBytes = attachment.sizeBytes,
+            ),
+        )
+
+    /**
+     * Fetch ANY attachment, slice by slice, and save it when the last one lands.
+     *
+     * [pulls] is which set of rows is watching — a chat thread's or an artifact
+     * screen's. Nothing below this line knows the difference, which is the point:
+     * the slicing rules are hard-won (out-of-order answers, duplicate answers,
+     * resume-at-the-gap) and a second copy of them would be a second chance to
+     * get them wrong.
+     */
+    fun pullAttachment(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
+        if (!pulls.pullStarted(target.key, target.sizeBytes)) return false
+        return fillPipeline(sessionId, pulls, target)
     }
 
     /**
      * Keep the window full. Called to start, and again as each answer lands.
      *
-     * The repository decides what may be asked for; this only issues it. That
-     * keeps the one rule that matters — how much is in flight — in the place
-     * that can be tested without a link.
+     * The driver decides what may be asked for; this only issues it. That keeps
+     * the one rule that matters — how much is in flight — in the place that can
+     * be tested without a link.
      */
-    private fun fillPipeline(sessionId: String, key: String, attachment: ChatAttachment): Boolean {
+    private fun fillPipeline(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
         var issued = false
         while (true) {
             // Sized against the transport that owns the link right now: LAN
             // preempts BLE mid-transfer, and a slice sized for the wrong one is
             // refused, not merely slow.
             val sliceBytes = attachmentSliceBytes(HelmLink.holderRank, RANK_LAN)
-            val offset = chats.nextAsk(key, sliceBytes) ?: return issued
+            val offset = pulls.nextAsk(target.key, sliceBytes) ?: return issued
             issued = true
-            if (!requestSlice(sessionId, key, attachment, offset, sliceBytes)) return issued
+            if (!requestSlice(sessionId, pulls, target, offset, sliceBytes)) return issued
         }
     }
 
     private fun requestSlice(
         sessionId: String,
-        key: String,
-        attachment: ChatAttachment,
+        pulls: AttachmentPulls,
+        target: PullTarget,
         offset: Long,
         sliceBytes: Int,
     ): Boolean = call(
         METHOD_SESSION_ARTIFACT_DOWNLOAD,
         linkedMapOf(
             "sessionId" to sessionId,
-            "artifactId" to attachment.artifactId,
-            "attachmentId" to attachment.attachmentId,
+            "artifactId" to target.artifactId,
+            "attachmentId" to target.attachmentId,
             "offset" to offset,
             "length" to sliceBytes,
         ),
     ) { outcome ->
         when (outcome) {
-            is Outcome.Ok -> takeSlice(sessionId, key, attachment, offset, outcome.result)
-            is Outcome.Failed -> chats.pullFailed(key, outcome.message)
+            is Outcome.Ok -> takeSlice(sessionId, pulls, target, offset, outcome.result)
+            is Outcome.Failed -> pulls.pullFailed(target.key, outcome.message)
         }
     }
 
@@ -770,33 +853,37 @@ class HelmClient(
      */
     private fun takeSlice(
         sessionId: String,
-        key: String,
-        attachment: ChatAttachment,
+        pulls: AttachmentPulls,
+        target: PullTarget,
         offset: Long,
         result: Any?,
     ) {
         val blob = result as? MobileRecord.Blob
         if (blob == null) {
             HelmLog.w(HelmLog.CLIENT, "an attachment slice did not arrive as a binary record")
-            chats.pullFailed(key, UNREADABLE_DOWNLOAD)
+            pulls.pullFailed(target.key, UNREADABLE_DOWNLOAD)
             return
         }
 
-        val whole = chats.sliceArrived(key, offset, blob.bytes, blob.eof)
+        val whole = pulls.sliceArrived(target.key, offset, blob.bytes, blob.eof)
         if (whole == null) {
             // More to come. Top the window back up — a slot just freed.
-            if (chats.pullState(key) is PullState.Pulling) {
-                fillPipeline(sessionId, key, attachment)
+            if (pulls.pullState(target.key) is PullState.Pulling) {
+                fillPipeline(sessionId, pulls, target)
             }
             return
         }
 
         try {
-            val saved = saveAttachment(attachment.filename, attachment.mimeType, whole)
-            chats.pullSaved(key, saved.location, saved.uri)
+            // The desktop's own filename for the slice wins where it has one: it
+            // is the name the file was stored under, and the metadata row may be
+            // older than a rename.
+            val name = blob.filename.takeIf { it.isNotBlank() } ?: target.filename
+            val saved = saveAttachment(name, target.mimeType, whole)
+            pulls.pullSaved(target.key, saved.location, saved.uri)
         } catch (error: Exception) {
             HelmLog.w(HelmLog.CLIENT, "a pulled attachment could not be written to storage")
-            chats.pullFailed(key, error.message ?: NO_FILE_SINK)
+            pulls.pullFailed(target.key, error.message ?: NO_FILE_SINK)
         }
     }
 

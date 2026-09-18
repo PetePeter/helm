@@ -232,88 +232,35 @@ class ChatRepository(
     // not restart a transfer that is halfway across a BLE link.
     // -------------------------------------------------------------------------
 
-    private val _pulls = MutableStateFlow<Map<String, PullState>>(emptyMap())
+    /**
+     * The fetches themselves live in the SHARED driver — a chat tile and an
+     * artifact attachment row are the same transfer with a different key. What
+     * remains here is only the chat-shaped spelling of it.
+     */
+    val attachmentPulls = AttachmentPulls()
 
     /** Per-message fetch state, keyed by [ChatMessage.key]. */
-    val pulls: StateFlow<Map<String, PullState>> = _pulls.asStateFlow()
+    val pulls: StateFlow<Map<String, PullState>> = attachmentPulls.pulls
 
-    private val transfers = mutableMapOf<String, AttachmentTransfer>()
+    fun pullState(key: String): PullState = attachmentPulls.pullState(key)
 
-    fun pullState(key: String): PullState = _pulls.value[key] ?: PullState.Idle
+    /** Begin (or resume) a fetch of the file hanging off one message. */
+    fun pullStarted(key: String, attachment: ChatAttachment): Boolean =
+        attachmentPulls.pullStarted(key, attachment.sizeBytes)
 
-    /**
-     * Begin (or resume) a fetch. Returns the offset to ask from — which is not
-     * always zero: a retry after a stumble resumes from what already arrived.
-     * Returns null when a fetch is already running, so a double tap on the tile
-     * cannot start two loops writing into one buffer.
-     */
-    fun pullStarted(key: String, attachment: ChatAttachment): Boolean {
-        if (_pulls.value[key] is PullState.Pulling) return false
-        val transfer = transfers.getOrPut(key) { AttachmentTransfer(attachment.sizeBytes) }
-        // A retry rewinds to the gap: answers to the asks that died with the
-        // last attempt are refused rather than double-counted.
-        transfer.forgetAsks()
-        setPull(key, transfer.state())
-        return true
-    }
+    fun nextAsk(key: String, sliceBytes: Int): Long? = attachmentPulls.nextAsk(key, sliceBytes)
 
-    /**
-     * The next offset to ask for, or null when the window is full or there is
-     * nothing left to ask. Several asks ride at once — see [AttachmentTransfer].
-     *
-     * [sliceBytes] is passed in rather than read here: it depends on which
-     * transport owns the link RIGHT NOW, and that is the caller's knowledge.
-     */
-    fun nextAsk(key: String, sliceBytes: Int): Long? =
-        transfers[key]?.nextAsk(sliceBytes, ATTACHMENT_PIPELINE)
+    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? =
+        attachmentPulls.sliceArrived(key, offset, bytes, eof)
 
-    /**
-     * Take one slice. Returns the complete file when that slice was the last
-     * one, and null while there is more to come — so the caller has exactly one
-     * signal for "now save it". A slice that does not fit where we are is
-     * reported as a failure rather than quietly dropped: silently ignoring it
-     * would leave the loop asking for the same offset forever.
-     */
-    fun sliceArrived(key: String, offset: Long, bytes: ByteArray, eof: Boolean): ByteArray? {
-        val transfer = transfers[key] ?: return null
-        if (!transfer.accept(offset, bytes, eof)) {
-            // Not out of ORDER — that is expected with several asks in flight
-            // and is held. This is a slice nobody is waiting for: a duplicate,
-            // or an answer to an attempt that was already abandoned. Dropping
-            // it is right; failing the tile over it would be wrong.
-            return null
-        }
-        if (!transfer.done) {
-            setPull(key, transfer.state())
-            return null
-        }
-        return transfer.bytes()
-    }
-
-    /**
-     * The fetch stumbled. What arrived is KEPT: a retry resumes from there,
-     * which on a slow link is the difference between a lost minute and a lost
-     * transfer.
-     */
-    fun pullFailed(key: String, message: String) {
-        setPull(key, PullState.Failed(message))
-    }
+    fun pullFailed(key: String, message: String) = attachmentPulls.pullFailed(key, message)
 
     /** The bytes reached the device. The tile becomes an open button. */
-    fun pullSaved(key: String, location: String, uri: String) {
-        transfers.remove(key)
-        setPull(key, PullState.Ready(location, uri))
-    }
+    fun pullSaved(key: String, location: String, uri: String) =
+        attachmentPulls.pullSaved(key, location, uri)
 
     /** Abandon a fetch and its part-file. Nothing half-written is kept. */
-    fun pullCancelled(key: String) {
-        transfers.remove(key)
-        setPull(key, PullState.Idle)
-    }
-
-    private fun setPull(key: String, state: PullState) {
-        _pulls.value = if (state is PullState.Idle) _pulls.value - key else _pulls.value + (key to state)
-    }
+    fun pullCancelled(key: String) = attachmentPulls.pullCancelled(key)
 
     /** The attachment keys travel flat on the wire; they are one thing here. */
     private fun attachmentIn(record: MobileRecord.Chat): ChatAttachment? {

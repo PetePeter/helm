@@ -25,7 +25,7 @@ not restate what already has a home:
 graph TB
     subgraph "Phone — Kotlin + Compose"
         UI[Compose screens<br/>HelmHome owns navigation + the poll]
-        REPO[data/<br/>SessionRepository · ChatRepository<br/>ControlRepository · CapabilityCache]
+        REPO[data/<br/>SessionRepository · ChatRepository · ArtifactRepository<br/>ControlRepository · CapabilityCache<br/>AttachmentPulls — every sliced fetch]
         HC[link/HelmClient<br/>the ONE call-id correlation point]
         PC[link/PairingController]
         SCK[crypto/SecureChannel<br/>responder half only]
@@ -100,13 +100,17 @@ removes.
 - **Attachments** — a message carrying a file shows a tile with its name and
   size, and **nothing is fetched until it is tapped**: the bytes cross the same
   radio as the conversation, and a thread of photos fetching themselves would
-  hold it for minutes. A tap pages the file down in 64KiB slices
-  (`session_artifact_download` with `offset`/`length`), showing progress and
+  hold it for minutes. A tap pages the file down in slices sized to whichever
+  transport owns the link (`session_artifact_download` with `offset`/`length`),
+  showing progress and
   offering a stop; a stumble retries and **resumes** from what arrived. Up to
   four asks ride at once, because a round trip costs far more than the bytes do;
   answers may therefore arrive out of order and are held until the gap ahead of
-  them closes. A duplicate, or an answer to an abandoned attempt, is dropped. The
-  file lands in **Downloads**, an image draws itself in the tile (decoded off the
+  them closes. A duplicate, or an answer to an abandoned attempt, is dropped.
+  That loop is not chat's own — it lives in `data/AttachmentPulls.kt`, shared
+  with the artifact screen's attachment rows (below), because a second copy of
+  these rules is a second chance to get them wrong. The
+  file lands in **`Downloads/Helm`**, an image draws itself in the tile (decoded off the
   main thread and downsampled — a 12MP photo decoded whole is ~48MB of bitmap),
   and **Open** hands it to whatever app the phone uses for that type. Deleting it
   from the tile deletes Helm's copy too. See
@@ -214,15 +218,50 @@ that confirms, naming the artifact. There is deliberately **no bulk delete**:
 `session_artifact_delete` is the only delete on the wire and the phone offers
 nothing bigger. A create mints markdown only (the wire kind is `md`); a revise
 inherits the artifact's kind and an HTML body is edited as source even though the
-viewer now renders it (below). A save lands in `MediaStore.Downloads`
-on API 29+ — user-visible, and no storage permission — falling back to the app's
-own Download folder below 29; the notice waits until the file is actually on
+viewer now renders it (below). A save lands in **`Downloads/Helm`** through
+`MediaStore.Downloads` on API 29+ — user-visible, and no storage permission —
+falling back to the app's own Download folder (no subfolder) below 29; the
+notice waits until the file is actually on
 disk, because "saved" before that would be a lie. An authored body is measured
 against the same 128KiB frame the desktop caps its answers with
 (`data/ArtifactRules.kt` mirrors `ARTIFACT_INLINE_MAX_ESCAPED_BYTES`), so a body
 that would not fit is refused at the submit button instead of tearing the link.
 The screens re-pull on every visit, so a write needs no refresh of its own —
 returning from one reconciles the list for free.
+
+**The editor can attach files, on a create and on a revise alike.** Both halves
+enter the same staged-file chain (`HelmClient.beginArtifactUploads`) once the
+artifact is known to exist — the new id for a create, the id already being
+edited for a revise. Revise previously had no attachment path at all, so staged
+files were dropped on submit, which is indistinguishable to a user from an
+upload that failed silently. The editor stays open until the last file has
+crossed, because a notice that closed it would strand a half-sent file with
+nowhere to report itself.
+
+**An artifact's attachments are rows, and a tap pulls one down in slices.** This
+is the same transfer a chat attachment makes, on the same shared driver. It has
+to be: the desktop ALWAYS slices an attachment and defaults `length` to one
+slice budget, so a single ask with no offset answers the first slice and nothing
+more — and this screen used to save that answer as the whole file, which is how
+a multi-megabyte image arrived truncated and opened corrupt. An artifact BODY
+download stays single-shot; it has its own inline cap and is answered whole.
+Progress, the saved location and any failure are drawn **on the row itself**
+rather than in the single notice line under the action rows, because several
+rows can be pulling at once and one line cannot say so. A finished row becomes
+an open button instead of re-fetching what is already on the phone.
+
+**Everything the phone saves goes to `Downloads/Helm`** (`save/DownloadFolder.kt`)
+— artifact bodies, pulled attachments, log exports. Two reasons, and the second
+is the load-bearing one. For the user, Helm's files were unfindable loose among
+a browser's downloads. For the code, de-collision was guesswork: under scoped
+storage a query of `MediaStore.Downloads` returns only what *this app*
+contributed, so a name the browser had already taken was invisible and the save
+collided anyway. A folder only Helm writes into makes that query the truth, so
+the names chosen are the names that exist. The suffix goes before the
+extension (`photo (1).jpg`), because MediaStore's own de-duplication appends
+after the whole display name — `photo.jpg (1)`, which no viewer, installer or
+share sheet reads as a jpg. Below API 29 nothing changes: the app's own external
+Download folder, no `Helm` subfolder.
 
 **How artifacts render.** Markdown gets the phone's deliberate subset
 (`ui/artifacts/MarkdownRules.kt`), and ` ```mermaid ` fences render as diagrams
@@ -328,7 +367,7 @@ cannot be noticed is the silent one.
 ## Logs — always on, exportable without a cable
 
 The phone logs to disk in every build, and the session list carries a `⤓` next
-to the link badge that writes those logs to `Downloads/helm-log.txt`.
+to the link badge that writes those logs to `Downloads/Helm/helm-log.txt`.
 
 This exists because of how the BLE chunk defect was diagnosed: the only run that
 mattered happened offsite, where nobody could attach `adb`, and logcat is a ring
@@ -343,7 +382,7 @@ graph LR
     CUR -->|at 256 KB| PREV[helm.log.1]
     BTN["⤓ on the session list"] --> EXP[LogExport]
     CUR & PREV -->|snapshot, oldest first| EXP
-    EXP --> DL[Downloads/helm-log.txt]
+    EXP --> DL[Downloads/Helm/helm-log.txt]
 ```
 
 Four decisions worth keeping:

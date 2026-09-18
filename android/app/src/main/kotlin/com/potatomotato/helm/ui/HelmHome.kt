@@ -158,6 +158,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val artifactList by client.artifacts.list.collectAsState()
     val artifactRead by client.artifacts.read.collectAsState()
     val artifactSave by client.artifacts.save.collectAsState()
+    val artifactPulls by client.artifacts.attachmentPulls.pulls.collectAsState()
     val artifactLanding by client.control.artifactLanding.collectAsState()
     // The staged files of the artifact create in flight, and where each has got
     // to. Owned by the client, not the editor, for the same reason every
@@ -885,7 +886,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 client.createArtifact(open.id, title, content, client.uploads.pendingKeys())
                             } else {
                                 val artifactId = editingArtifactId
-                                if (artifactId != null) client.reviseArtifact(open.id, artifactId, content)
+                                // A revise chains its staged files too: the
+                                // artifact already exists, so the keys ride the
+                                // same chain a create's do.
+                                if (artifactId != null) {
+                                    client.reviseArtifact(
+                                        open.id,
+                                        artifactId,
+                                        content,
+                                        client.uploads.pendingKeys(),
+                                    )
+                                }
                             }
                         },
                         onBack = leaveEditor,
@@ -926,11 +937,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 client.downloadArtifact(session, openArtifactId!!, version = null)
                             }
                         },
+                        attachmentPulls = artifactPulls,
                         onDownloadAttachment = { attachment ->
                             openSessionId?.let { session ->
-                                client.downloadArtifactAttachment(session, openArtifactId!!, attachment.id)
+                                client.downloadArtifactAttachment(session, openArtifactId!!, attachment)
                             }
                         },
+                        onOpenAttachment = openAttachment,
                         onDelete = {
                             openSessionId?.let { session ->
                                 client.deleteArtifact(session, openArtifactId!!)

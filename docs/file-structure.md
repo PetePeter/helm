@@ -245,7 +245,7 @@ android/
     │   ├── AndroidManifest.xml  # BLUETOOTH_ADVERTISE (the phone is the peripheral), CONNECT, foreground-service, notifications, audio
     │   ├── kotlin/com/potatomotato/helm/
     │   │   ├── HelmApp.kt       # Application — starts the process-scoped singletons
-    │   │   ├── MainActivity.kt  # Compose shell placeholder + permission gate (real UI: P-0740+)
+    │   │   ├── MainActivity.kt  # Activity host — Compose shell + permission gate
     │   │   ├── crypto/
     │   │   │   ├── Hkdf.kt            # RFC 5869 HMAC-SHA256, pinned to Node's hkdfSync
     │   │   │   ├── X25519Keys.kt      # Ephemeral keys + strict SPKI-DER (Bouncy Castle; JCE XDH is API 33)
@@ -254,16 +254,36 @@ android/
     │   │   │   ├── ProtocolVersion.kt # Ranges, refusal codes and their wording
     │   │   │   ├── Frames.kt          # uint32be length | type | payload; length read through a Long
     │   │   │   └── SecureChannel.kt   # Responder half only — Helm is always the initiator
-    │   │   ├── data/
+    │   │   ├── data/                  # Repositories + pure rules — no Android types, JVM-testable
     │   │   │   ├── PskStore.kt        # Pairing persistence seam, keyed on machineId
     │   │   │   ├── DeviceKeyStore.kt  # Keystore-wrapped PSK; only ciphertext reaches prefs
-    │   │   │   └── PhoneIdentity.kt   # Stable machineId, generated once (never the BLE address)
+    │   │   │   ├── PhoneIdentity.kt   # Stable machineId, generated once (never the BLE address)
+    │   │   │   ├── SessionRepository.kt / ChatRepository.kt / ArtifactRepository.kt / PlanRepository.kt / ContextRepository.kt / SequenceRepository.kt
+    │   │   │   ├── ControlRepository.kt / CapabilityCache.kt   # Action notices; which tools this pairing may call
+    │   │   │   ├── AttachmentPulls.kt # THE sliced-download driver — chat tiles AND artifact rows (see docs/chat-fan-out.md)
+    │   │   │   ├── ChatAttachmentPull.kt # AttachmentTransfer: gaps, out-of-order, resume-at-the-gap
+    │   │   │   ├── ArtifactUploads.kt / ArtifactRules.kt       # Staged phone→desktop files; the 128KiB body budget
+    │   │   │   └── TransportPreference* / LanAddressStore* / DraftStore / UnreadStore / PairedDesktops
+    │   │   ├── save/                  # Everything user-visible this app writes
+    │   │   │   ├── DownloadFolder.kt        # `Downloads/Helm` — why a folder only we write into
+    │   │   │   ├── MediaStoreDownloads.kt   # API 29+ writer: choose a free name, then claim it
+    │   │   │   ├── FileNames.kt             # `photo (1).jpg` — suffix before the extension
+    │   │   │   ├── AndroidArtifactFiles.kt / AndroidLogFiles.kt  # Sinks + the pre-29 app-folder fallback
+    │   │   │   └── AndroidAttachmentStaging.kt # Picked files staged for upload
     │   │   ├── link/
+    │   │   │   ├── HelmClient.kt        # The ONE call-id correlation point; upload + download chains
     │   │   │   ├── PairingController.kt # PSK choice, screen state, persist-on-confirm. No Android types
     │   │   │   ├── HelmLinkPipe.kt      # HelmLink as a BytePipe + the timeout's coroutine clock
     │   │   │   └── HelmPairing.kt       # Process-scoped wiring: link up → handshake
-    │   │   ├── ui/pairing/
-    │   │   │   └── PairingScreen.kt   # Mockup screen 5 — the six-digit SAS comparison
+    │   │   ├── lan/                   # LanLinkController/Session — the LAN transport half
+    │   │   ├── wire/                  # MobileEnvelope/MobileRecord — the protocol, with cross-language vectors
+    │   │   ├── notify/                # Alerts, notification channels, inline reply delivery
+    │   │   ├── voice/                 # On-device speech only — no audio crosses the link
+    │   │   ├── log/                   # HelmLog + rotating FileLogSink + LogExport
+    │   │   ├── ui/                    # Compose — HelmHome owns navigation; screens by feature
+    │   │   │   ├── sessions/ chat/ artifacts/ plans/ contexts/ sequences/ control/ pairing/
+    │   │   │   ├── components/        # Shared primitives (rows, dropdowns, markdown, dots)
+    │   │   │   └── theme/             # Colors, spacing, type — guarded by NoRawColorLiteralTest
     │   │   └── ble/
     │   │       ├── BleFraming.kt      # Chunker/reassembler — byte-for-byte port of ble-framing.ts
     │   │       ├── HelmGatt.kt        # Service/characteristic UUIDs, mirroring characteristics.ts
@@ -272,13 +292,17 @@ android/
     │   │       ├── GattServer.kt      # BluetoothGattServer + BluetoothLeAdvertiser adapter
     │   │       ├── HelmLinkService.kt # Foreground service, type connectedDevice
     │   │       ├── HelmLink.kt        # The duplex byte-stream seam for the layers above
-    │   │       └── BlePermissions.kt  # Runtime permissions (no BLUETOOTH_SCAN, by design)
+    │   │       ├── BlePermissions.kt  # Runtime permissions (no BLUETOOTH_SCAN, by design)
+    │   │       ├── BleRadioRecovery.kt # Adapter bounce recovery
+    │   │       └── BootReceiver.kt    # Re-advertise after a reboot
+    │   ├── assets/mermaid/      # The mermaid bundle, shipped IN the APK — never fetched
     │   └── res/values/          # strings.xml, themes.xml (true-black window chrome)
-    └── src/test/kotlin/…/      # JVM unit tests — no device, no Robolectric
+    └── src/test/kotlin/…/      # JVM unit tests — no device, no Robolectric, mirroring the packages above
         ├── Fixtures.kt         # Reads tests/fixtures/ IN PLACE via helm.fixtures.dir
         ├── ble/                # Framing + link session, incl. the shared-fixture conformance test
         ├── crypto/             # SecureChannelVectorsTest pins every derivation to the desktop
-        └── link/               # PairingController against a real channel and a fake store
+        ├── data/ save/         # Transfer bookkeeping, name de-collision, the download folder
+        └── link/               # PairingController and HelmClient against fakes, no radio
 ```
 
 ## Config (`config/`)

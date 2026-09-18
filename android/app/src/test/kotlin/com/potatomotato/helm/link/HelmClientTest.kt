@@ -12,7 +12,12 @@ import com.potatomotato.helm.data.ContextList
 import com.potatomotato.helm.data.ContextPermission
 import com.potatomotato.helm.data.Delivery
 import com.potatomotato.helm.data.HelmCli
+import com.potatomotato.helm.data.ATTACHMENT_SLICE_BYTES_BLE
+import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.HelmDirectory
+import com.potatomotato.helm.data.PullState
+import com.potatomotato.helm.data.artifactAttachmentKey
+import com.potatomotato.helm.save.SavedFile
 import com.potatomotato.helm.data.HelmProject
 import com.potatomotato.helm.data.PlanContextRefs
 import com.potatomotato.helm.data.PlanDetail
@@ -832,56 +837,121 @@ class HelmClientTest {
 
     // -------------------------------------------------------- artifact attachments
 
-    @Test
-    fun `an attachment download asks the same tool for one named file`() {
-        client.downloadArtifactAttachment("s1", "a1", "att7")
+    private fun attachment(sizeBytes: Long) =
+        HelmArtifactAttachment(
+            id = "att7",
+            filename = "chart.png",
+            contentType = "image/png",
+            sizeBytes = sizeBytes,
+            createdAtEpochMs = 1L,
+        )
 
-        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+    private val attachmentKey = artifactAttachmentKey("a1", "att7")
+
+    /**
+     * THE REGRESSION. The desktop ALWAYS slices an attachment download and
+     * defaults the length to one slice budget, so an ask with no offset answers
+     * the FIRST slice only. This screen used to make exactly that ask and save
+     * the answer as the whole file — which is why large images arrived corrupt.
+     */
+    @Test
+    fun `an attachment download asks for a slice, with an offset and a length`() {
+        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
+
+        val record = JSONObject(String(sent.first(), Charsets.UTF_8))
         assertEquals("session_artifact_download", record.getString("method"))
         val params = record.getJSONObject("params")
-        // Targeted, and nothing else: attachmentId REPLACES version on the wire
-        // — the desktop refuses the two together.
-        assertEquals(setOf("sessionId", "artifactId", "attachmentId"), params.keySet().toSet())
+        // attachmentId REPLACES version on the wire — the desktop refuses the two
+        // together — and offset/length are what make the answer a known quantity.
+        assertEquals(
+            setOf("sessionId", "artifactId", "attachmentId", "offset", "length"),
+            params.keySet().toSet(),
+        )
         assertEquals("s1", params.getString("sessionId"))
         assertEquals("a1", params.getString("artifactId"))
         assertEquals("att7", params.getString("attachmentId"))
+        assertEquals(0L, params.getLong("offset"))
+        assertTrue(params.getInt("length") > 0)
     }
 
     @Test
-    fun `an attachment's answer lands in the same save state a version download uses`() {
-        client.downloadArtifactAttachment("s1", "a1", "att7")
+    fun `an attachment bigger than one slice is fetched in more than one ask`() {
+        // Three slices' worth over Bluetooth, which is the transport a test link
+        // reports: one ask could only ever answer a third of it.
+        val slice = ATTACHMENT_SLICE_BYTES_BLE
+        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = slice * 3L))
 
-        // The attachment shape: no `version` key — the desktop answers binary
-        // files without one.
-        client.onInbound(
-            blobFor(
-                lastCallId(),
-                filename = "chart.png",
-                mimeType = "image/png",
-                body = "hello".toByteArray(Charsets.UTF_8),
-                offset = 0,
-                total = 5,
-                eof = true,
-            ),
+        val offsets = sent.map { JSONObject(String(it, Charsets.UTF_8)).getJSONObject("params").getLong("offset") }
+        assertTrue("a multi-slice file must take more than one ask", offsets.size > 1)
+        assertEquals(listOf(0L, slice.toLong()), offsets.take(2))
+    }
+
+    @Test
+    fun `an attachment's slices assemble into the file the sink is handed`() {
+        val slice = ATTACHMENT_SLICE_BYTES_BLE
+        val source = ByteArray(slice + 10) { (it % 251).toByte() }
+        var saved: ByteArray? = null
+        var savedName: String? = null
+        client.saveAttachment = { name, _, bytes ->
+            savedName = name
+            saved = bytes
+            SavedFile("Downloads/Helm/chart.png", "content://downloads/7")
+        }
+
+        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
+        answerSlice(offsetOf(sent[0]), source, slice)
+        answerSlice(offsetOf(sent[1]), source, slice)
+
+        // Byte for byte, not merely the right length: a truncation that lands on
+        // a slice boundary has the right prefix and the wrong file.
+        assertTrue(source.contentEquals(saved))
+        assertEquals("chart.png", savedName)
+        assertEquals(
+            PullState.Ready("Downloads/Helm/chart.png", "content://downloads/7"),
+            client.artifacts.attachmentPulls.pullState(attachmentKey),
         )
-
-        val ready = client.artifacts.save.value as ArtifactSave.Ready
-        assertEquals("chart.png", ready.file.filename)
-        assertEquals("image/png", ready.file.mimeType)
-        assertEquals("hello", String(ready.file.bytes, Charsets.UTF_8))
-        // Same silence-until-saved rule: the bytes are not on disk yet.
-        assertNull(client.control.notice.value)
     }
 
     @Test
-    fun `a refused attachment download is a rule and leaves no file`() {
-        client.downloadArtifactAttachment("s1", "a1", "att7")
+    fun `a refused attachment download says so on the row it belongs to`() {
+        client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 
-        assertNotice(SessionAction.SaveArtifact, ActionOutcome.Refused)
-        assertTrue(client.artifacts.save.value is ArtifactSave.Failed)
+        assertEquals(
+            PullState.Failed("Tool not permitted"),
+            client.artifacts.attachmentPulls.pullState(attachmentKey),
+        )
+        // The body download's save state is a different machine and is untouched:
+        // an attachment is not what the Save row is narrating.
+        assertEquals(ArtifactSave.Idle, client.artifacts.save.value)
     }
+
+    /** Answer the ask at [offset] with the slice of [source] it named. */
+    private fun answerSlice(offset: Long, source: ByteArray, slice: Int) {
+        val from = offset.toInt()
+        val to = minOf(from + slice, source.size)
+        client.onInbound(
+            blobFor(
+                callIdAt(offset),
+                filename = "chart.png",
+                mimeType = "image/png",
+                body = source.copyOfRange(from, to),
+                offset = offset,
+                total = source.size.toLong(),
+                eof = to >= source.size,
+            ),
+        )
+    }
+
+    private fun offsetOf(frame: ByteArray): Long =
+        JSONObject(String(frame, Charsets.UTF_8)).getJSONObject("params").getLong("offset")
+
+    /** The call id of the ask that named [offset] — the pipeline has several out. */
+    private fun callIdAt(offset: Long): String =
+        sent.map { JSONObject(String(it, Charsets.UTF_8)) }
+            .first { it.optJSONObject("params")?.optLong("offset", -1L) == offset }
+            .getString("id")
 
     @Test
     fun `the artifact list hands the repository each artifact's attachments`() {

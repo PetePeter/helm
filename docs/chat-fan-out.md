@@ -250,6 +250,14 @@ may therefore arrive out of order; they are held until the gap ahead of them
 closes, and only a **whole** file is ever saved. A duplicate, or an answer to an
 attempt already abandoned, is dropped. A retry resumes from what arrived.
 
+There is no such thing as an *unsliced* attachment download: `length` defaults
+to one slice budget, so an ask without an offset answers the FIRST slice and
+nothing more. A caller that saves that answer as the file writes a truncated,
+plausible-looking one. That is why the phone runs every attachment fetch —
+chat tile or artifact-screen row — through the one driver
+(`data/AttachmentPulls.kt` over `AttachmentTransfer`); the second
+implementation it replaced was producing corrupt images.
+
 Fetching is always a **tap**, never automatic: a thread of photos fetching
 themselves would hold the link for minutes.
 
