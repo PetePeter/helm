@@ -50,7 +50,10 @@ export class HookReceiver extends EventEmitter {
     }
 
     const correlated: HookEvent = { ...event, helmSessionId };
-    logger.info(
+    // PreToolUse/PostToolUse fire on EVERY tool call — two lines per tool use
+    // at info would bury the log's real signal. The happy path is debug; the
+    // abnormal paths below stay visible.
+    logger.debug(
       `[Hook] ${correlated.cli} ${correlated.event}` +
         ` session=${correlated.helmSessionId ?? '?'}` +
         `${correlated.toolName ? ` tool=${correlated.toolName}` : ''}` +
