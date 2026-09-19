@@ -1,13 +1,12 @@
 # CLI Hooks
 
-**Status: G1 shipped (transport + installer). Policy (deny, injection, compaction handover) is later work — G1 decides nothing.**
+**Status: G1 (transport + installer) and G2 (PreToolUse deny policy) shipped. Injection and compaction handover are later groups.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
 event reaches Helm over one shared transport, is correlated to the session,
-normalised to one shape, logged, and offered to subscribers. Nothing is ever
-denied, blocked or injected yet — the whole of G1 is proving the wire and
-making hook traffic visible.
+normalised to one shape, logged, and offered to subscribers. G1 proved the
+wire; G2 added the first decision on it — PreToolUse denies (below).
 
 ## Transport — one shim, `type: "command"`
 
@@ -79,6 +78,48 @@ canonical PascalCase common-core set (`agentStop` → `Stop`,
 `userPromptSubmitted` → `UserPromptSubmit`, …). Events outside the common
 core are logged and ignored.
 
+## Enforcement (G2) — PreToolUse denies
+
+Rules arrive as prompt text today ("don't use AskUserQuestion on mobile") —
+an agent can ignore them. The `PreToolUse` hook makes them physical: a deny
+cancels the tool call in all three CLIs, and the **deny reason is fed back to
+the model**, so it redirects rather than merely fails. A reason that names the
+Helm alternative ("use `chat_send`") IS the feature.
+
+```mermaid
+flowchart LR
+    H[PreToolUse HookEvent] --> P["decideHookPolicy<br/>(event, session, rules)<br/>PURE"]
+    P -->|allow| R1["200 {}"]
+    P -->|deny + reason| E["encodeDenyResponse(cli, reason)"]
+    E --> R2[200 deny body]
+```
+
+- **Policy** — `src/session/hooks/hook-policy.ts`. Pure function of
+  `(HookEvent, SessionInfo, rules) -> Decision`; no I/O, so it tests with real
+  objects. The receiver owns all I/O (live `getSession` and config rule
+  lookups) and wraps the call in the fail-open catch.
+- **Rules** — per CLI type in `cli-types.yaml` under `hooks.denyRules`
+  (`ConfigLoader.getHookDenyRules(provider)`). Shipped defaults:
+  1. `AskUserQuestion` while `interactionChannel === 'telegram'` (phone or
+     Telegram — G1's mobile-bridge affinity feeds this) → use `chat_send`
+  2. native `Artifact` tool → use `session_artifact_create`
+  3. command guardrails: `rm -rf` (either flag order), `git push`
+  4. writes outside the session's working directory
+- **Rule shape** — `tools` (case-insensitive match) plus any of `onlyWhenAway`,
+  `commandPattern` (regex over the shell command; uncompilable = never
+  matches), `outsideSessionDir`, and the required `reason`. First matching
+  rule wins.
+- **Deny encoding** (`encodeDenyResponse`): Claude
+  `hookSpecificOutput.permissionDecision:"deny"` + reason; Copilot flat
+  `permissionDecision` + reason; Codex `{decision:"block", reason}`.
+
+**Fail open, everywhere.** Unknown tools, unknown events, absent rules,
+malformed rule objects, and ANY internal error allow. A crashed or confused
+policy must never brick a session — matching the CLIs' own timeout
+behaviour. (Seeding note: like all `cli-types.yaml` defaults, `denyRules`
+reach fresh installs only; existing files are never overwritten, and no
+rules configured simply denies nothing.)
+
 ## Config locations (user-level, install once)
 
 | CLI | File | Shape |
@@ -137,12 +178,13 @@ for both surfaces.
 
 | Module | Role |
 |--------|------|
-| `src/session/hooks/hook-normaliser.ts` | per-CLI fields → one `HookEvent`; canonical event set; Copilot aliases |
-| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; always replies `{}` |
+| `src/session/hooks/hook-normaliser.ts` | per-CLI fields → one `HookEvent`; canonical event set; Copilot aliases; per-CLI deny encoding |
+| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; routes PreToolUse through the policy |
+| `src/session/hooks/hook-policy.ts` | PURE `(event, session, rules) -> allow / deny+reason`; fail open on everything unexpected |
 | `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk |
 | `src/config/hooks/helm-hook-shim.py` | the shared transport shim (fail-open) |
 | `src/mcp/localhost-mcp-server.ts` | `POST /hooks` route, session-token auth |
-| `src/config/cli-types.yaml` | `hooks:` block per CLI (provider, configPath, events) |
+| `src/config/cli-types.yaml` | `hooks:` block per CLI (provider, configPath, events, denyRules) |
 
 Later groups subscribe to `HookReceiver`'s `hook` events; StateDetector and
 every existing session behaviour are untouched.

@@ -8,7 +8,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { normaliseHookEvent, type HookInboundBody } from '../../../src/session/hooks/hook-normaliser';
+import {
+  encodeDenyResponse,
+  normaliseHookEvent,
+  type HookInboundBody,
+} from '../../../src/session/hooks/hook-normaliser';
 
 const NOW = 1_789_000_000_000;
 
@@ -108,5 +112,54 @@ describe('normaliseHookEvent', () => {
   it('keeps the raw payload for logging', () => {
     const payload = { session_id: 's', hook_event_name: 'Stop' };
     expect(normalise({ cli: 'claude', event: 'Stop', payload })?.raw).toEqual(payload);
+  });
+
+  it('extracts tool_input from either snake_case or camelCase payloads', () => {
+    expect(
+      normalise({ cli: 'claude', event: 'PreToolUse', payload: { tool_input: { file_path: '/repo/a.ts' } } })
+        ?.toolInput,
+    ).toEqual({ file_path: '/repo/a.ts' });
+    expect(
+      normalise({ cli: 'copilot', event: 'preToolUse', payload: { toolInput: { command: 'ls' } } })?.toolInput,
+    ).toEqual({ command: 'ls' });
+  });
+
+  it('omits toolInput when the payload carries none', () => {
+    expect(normalise({ cli: 'claude', event: 'PreToolUse', payload: {} })?.toolInput).toBeUndefined();
+    expect(
+      normalise({ cli: 'claude', event: 'PreToolUse', payload: { tool_input: 'not-an-object' } })?.toolInput,
+    ).toBeUndefined();
+  });
+});
+
+describe('encodeDenyResponse — one decision, three wire shapes', () => {
+  // Each fixture is the exact deny shape that CLI's docs specify for a
+  // PreToolUse hook reply. The reason text is the same everywhere; only the
+  // envelope differs.
+  it('wraps the deny in hookSpecificOutput for Claude', () => {
+    const event = normalise({ cli: 'claude', event: 'PreToolUse', payload: {} });
+    expect(encodeDenyResponse(event!, 'use chat_send')).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'use chat_send',
+      },
+    });
+  });
+
+  it('returns the flat permissionDecision shape for Copilot', () => {
+    const event = normalise({ cli: 'copilot', event: 'preToolUse', payload: {} });
+    expect(encodeDenyResponse(event!, 'use chat_send')).toEqual({
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'use chat_send',
+    });
+  });
+
+  it('returns the PreToolUse block form for Codex', () => {
+    const event = normalise({ cli: 'codex', event: 'PreToolUse', payload: {} });
+    expect(encodeDenyResponse(event!, 'use chat_send')).toEqual({
+      decision: 'block',
+      reason: 'use chat_send',
+    });
   });
 });

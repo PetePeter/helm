@@ -122,7 +122,6 @@ import { getConfigDir } from '../../utils/app-paths.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
-import type { HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
 const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
@@ -328,10 +327,14 @@ export function registerIPCHandlers(
   }
 
   const incomingWatcher = new IncomingPlansWatcher(planManager);
-  // G1 hook plumbing: receives CLI lifecycle hooks on POST /hooks, correlates
-  // them by session token and logs them. Decides nothing — later groups
-  // subscribe to its 'hook' events.
-  const hookReceiver = new HookReceiver();
+  // G1 transport + G2 enforcement: receives CLI lifecycle hooks on POST /hooks,
+  // correlates them by session token, logs them, and routes PreToolUse through
+  // the deny policy. Session/rules lookups are live reads — no cached policy
+  // state — and every failure inside them fails open to allow.
+  const hookReceiver = new HookReceiver({
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getDenyRules: (provider) => configLoader.getHookDenyRules(provider),
+  });
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,

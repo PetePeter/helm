@@ -45,6 +45,8 @@ export interface HookEvent {
   cliSessionId?: string;
   cwd?: string;
   toolName?: string;
+  /** The tool's arguments object (tool_input / toolInput), when present. */
+  toolInput?: Record<string, unknown>;
   prompt?: string;
   receivedAt: number;
   /** The raw payload, kept for logging and future groups. */
@@ -80,6 +82,15 @@ function str(payload: Record<string, unknown>, keys: string[]): string | undefin
   return undefined;
 }
 
+/** Pick the first object value under any of the given keys (snake or camel). */
+function obj(payload: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    const value = payload[key];
+    if (!!value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  }
+  return undefined;
+}
+
 /**
  * Normalise one shim envelope into a HookEvent, or return null when the CLI
  * or event is not one Helm knows. Never throws: a malformed payload yields a
@@ -99,8 +110,34 @@ export function normaliseHookEvent(
     cliSessionId: str(input.payload, ['session_id', 'sessionId']),
     cwd: str(input.payload, ['cwd']),
     toolName: str(input.payload, ['tool_name', 'toolName']),
+    toolInput: obj(input.payload, ['tool_input', 'toolInput']),
     prompt: str(input.payload, ['prompt']),
     receivedAt: now(),
     raw: input.payload,
   };
+}
+
+/**
+ * Wrap one deny decision in the wire shape the sending CLI's docs specify for
+ * a PreToolUse reply. The decision is identical everywhere; only the envelope
+ * differs. This is what /hooks returns as its body — the shim prints it on
+ * stdout and the CLI reads its deny (and the reason) from there.
+ */
+export function encodeDenyResponse(event: HookEvent, reason: string): Record<string, unknown> {
+  switch (event.cli) {
+    case 'claude':
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: reason,
+        },
+      };
+    case 'copilot':
+      return { permissionDecision: 'deny', permissionDecisionReason: reason };
+    case 'codex':
+      // Codex's PreToolUse block form — the same shape its UserPromptSubmit
+      // decision:"block" uses.
+      return { decision: 'block', reason };
+  }
 }

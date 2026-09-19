@@ -120,7 +120,7 @@ export interface PatternRule {
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * System-wide CLI hook integration for a CLI type (G1: transport only).
+ * System-wide CLI hook integration for a CLI type (G1 transport, G2 deny rules).
  * `configPath` is user-level, `~`-relative, and points into the CLI's OWN
  * config dir — the one directory outside Helm's tree that Helm ever writes.
  */
@@ -131,6 +131,12 @@ export interface CliHooksIntegration {
   configPath: string;
   /** Event names to register, spelled the way this CLI spells them. */
   events: string[];
+  /**
+   * G2 PreToolUse deny rules (see HookDenyRule in session/hooks/hook-policy).
+   * User-editable yaml — the policy validates each rule's shape itself and
+   * skips anything malformed, so this stays loosely typed on purpose.
+   */
+  denyRules?: unknown[];
 }
 
 export interface CliTypeConfig {
@@ -564,6 +570,20 @@ export class ConfigLoader {
   getCliTypes(): string[] {
     this.ensureLoaded();
     return this.cliTypeStore.list();
+  }
+
+  /**
+   * G2 deny rules for a hook provider. A HookEvent names the CLI family, not
+   * the config key, so this scans for the first CLI type whose hooks block
+   * carries that provider. No match or no rules configured = deny nothing
+   * (fail open), so an empty return is a valid answer, not an error.
+   */
+  getHookDenyRules(provider: 'claude' | 'codex' | 'copilot'): unknown[] {
+    this.ensureLoaded();
+    for (const config of Object.values(this.cliTypeStore.getAll())) {
+      if (config.hooks?.provider === provider) return config.hooks.denyRules ?? [];
+    }
+    return [];
   }
 
   /** Get all named sequence groups for a CLI type */
