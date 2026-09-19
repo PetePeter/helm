@@ -102,7 +102,14 @@ fun SpawnScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
-            // CLI FIRST. What you are launching is the decision you actually
+            // NAME FIRST. It is the only field that has to be typed, and typing
+            // is what the soft keyboard buries: put it at the top and the
+            // keyboard covers the selectors below it, which are scrollable,
+            // rather than the field itself.
+            FieldLabel(stringResource(R.string.spawn_name))
+            NameField(name = name, onName = { name = it })
+
+            // Then the CLI. What you are launching is the decision you actually
             // make; where it runs is usually already settled. The short list
             // also means the long directory list never buries it off-screen.
             FieldLabel(stringResource(R.string.spawn_which_cli))
@@ -141,9 +148,6 @@ fun SpawnScreen(
                     }
                 }
             }
-
-            FieldLabel(stringResource(R.string.spawn_name))
-            NameField(name = name, onName = { name = it })
         }
 
         Column(
