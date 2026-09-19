@@ -120,6 +120,9 @@ import { MessNotifier } from '../../session/mess-notifier.js';
 import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir } from '../../utils/app-paths.js';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { HookReceiver } from '../../session/hooks/hook-receiver.js';
+import type { HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
 const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
@@ -325,11 +328,15 @@ export function registerIPCHandlers(
   }
 
   const incomingWatcher = new IncomingPlansWatcher(planManager);
+  // G1 hook plumbing: receives CLI lifecycle hooks on POST /hooks, correlates
+  // them by session token and logs them. Decides nothing — later groups
+  // subscribe to its 'hook' events.
+  const hookReceiver = new HookReceiver();
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
     token: configLoader.getMcpConfig().authToken,
-  }, ptyManager);
+  }, ptyManager, hookReceiver);
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
   const patternMatcher = new PatternMatcher(
@@ -362,6 +369,12 @@ export function registerIPCHandlers(
     projectStore,
     applyFleetConfig,
     () => fleetController!.status(),
+    // The shim is seeded into the user config dir alongside the other shipped
+    // defaults; the installer writes CLI configs that point HERE at it.
+    {
+      homeDir: () => homedir(),
+      shimPath: join(getConfigDir(dirname ?? process.cwd()), 'hooks', 'helm-hook-shim.py'),
+    },
   );
   setupEditorHandlers(configLoader);
   setupToolsHandlers(configLoader);
@@ -779,8 +792,13 @@ export function registerIPCHandlers(
     sessions: {
       getSession: (sessionId) => {
         const session = sessionManager.getSession(sessionId);
-        return session ? { id: session.id, name: session.name } : null;
+        return session
+          ? { id: session.id, name: session.name, interactionChannel: session.interactionChannel }
+          : null;
       },
+      // A phone message moves the conversation off the desktop — same value the
+      // Telegram relay sets, so phone and Telegram are one "not at the desk".
+      updateSession: (sessionId, patch) => sessionManager.updateSession(sessionId, patch),
     },
     journal: mobileChatJournal,
   });

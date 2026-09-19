@@ -82,6 +82,9 @@ export const PRELOAD_API_DOMAINS = {
     'configGetEditorPrefs',
     'configSetEditorPrefs',
     'configGetWorkingDirs',
+    'hooksGetStatus',
+    'hooksInstall',
+    'hooksUninstall',
   ],
   tools: [
     'toolsGetAll',

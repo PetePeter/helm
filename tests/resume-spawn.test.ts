@@ -363,6 +363,7 @@ describe('pty:spawn resume logic', () => {
           COPILOT_MODEL: 'qwen/qwen3.6-35b-a3b',
           HELM_MCP_TOKEN: expect.any(String),
           HELM_MCP_URL: 'http://127.0.0.1:47373/mcp',
+          HELM_HOOK_URL: 'http://127.0.0.1:47373/hooks',
           HELM_SESSION_ID: 'sid-1',
           HELM_SESSION_NAME: 'Ollama Copilot',
         }),

@@ -21,6 +21,10 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  hooks:
+    provider: claude
+    configPath: ~/.claude/settings.json
+    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop]
 
 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22:
   id: 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22
@@ -40,6 +44,10 @@
     clear: /new{Enter}
     compact: /compact{Enter}
     export: ''
+  hooks:
+    provider: codex
+    configPath: ~/.codex/hooks.json
+    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop]
 
 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33:
   id: 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33
@@ -59,6 +67,10 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  hooks:
+    provider: copilot
+    configPath: ~/.copilot/hooks/helm.json
+    events: [sessionStart, userPromptSubmitted, preToolUse, postToolUse, preCompact, agentStop]
 
 # Plain shell — the escape hatch when you want a terminal rather than an agent.
 7f4b0a25-8e36-4c19-a2f7-4b1d6c9e2a44:

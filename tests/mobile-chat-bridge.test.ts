@@ -61,7 +61,10 @@ let bridge: MobileChatBridge;
 let journal: MobileChatJournal;
 let phone: MobileDevice;
 
-const SESSIONS = new Map([['s1', { id: 's1', name: 'work' }]]);
+const SESSIONS = new Map<string, { id: string; name: string; interactionChannel: 'telegram' | 'desktop' }>([
+  ['s1', { id: 's1', name: 'work', interactionChannel: 'desktop' }],
+]);
+const sessionUpdates: Array<{ sessionId: string; patch: Record<string, unknown> }> = [];
 const NOW = 1_700_000_000_000;
 
 beforeEach(() => {
@@ -75,6 +78,8 @@ beforeEach(() => {
     allow: ['session_list', 'session_send_text'],
   });
   dispatched = [];
+  sessionUpdates.length = 0;
+  SESSIONS.get('s1')!.interactionChannel = 'desktop';
   gate = new MobileGate({
     deviceStore,
     dispatch: async (method, params, ctx) => {
@@ -90,7 +95,14 @@ beforeEach(() => {
     links,
     deviceStore,
     gate: () => gate,
-    sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null },
+    sessions: {
+      getSession: (id: string) => SESSIONS.get(id) ?? null,
+      updateSession: (sessionId: string, patch: { interactionChannel: 'telegram' | 'desktop' }) => {
+        sessionUpdates.push({ sessionId, patch: { ...patch } });
+        const session = SESSIONS.get(sessionId);
+        if (session) session.interactionChannel = patch.interactionChannel;
+      },
+    },
     journal,
     now: () => NOW,
   });
@@ -427,6 +439,28 @@ describe('MobileChatBridge journaling a phone reply', () => {
     expect(journal.since(0)).toEqual([]);
   });
 
+  it('an inbound phone message sets the session channel to telegram, exactly as the Telegram relay does', async () => {
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall('r3', 'session_send_text', { sessionId: 's1', text: 'from the phone' }));
+    await vi.waitFor(() => expect(journal.latestSeq()).toBe(1));
+
+    // Same value the Telegram relay sets (relay-service.ts) — deliberately NOT
+    // a new enum member: the G2 deny keys on "not at the desktop".
+    expect(sessionUpdates).toEqual([{ sessionId: 's1', patch: { interactionChannel: 'telegram' } }]);
+    expect(SESSIONS.get('s1')!.interactionChannel).toBe('telegram');
+  });
+
+  it('does not rewrite the channel when the session is already telegram', async () => {
+    SESSIONS.get('s1')!.interactionChannel = 'telegram';
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall('r4', 'session_send_text', { sessionId: 's1', text: 'again' }));
+    await vi.waitFor(() => expect(journal.latestSeq()).toBe(1));
+
+    expect(sessionUpdates).toEqual([]);
+  });
+
   it('a reply the gate denied is journaled as nothing — a refusal is not conversation', async () => {
     deviceStore.update(phone.id, { allow: [] });
     links.online.add('phone-machine');
@@ -508,7 +542,10 @@ describe('MobileChatBridge inbound calls go through MobileGate and nowhere else'
       links: ungatedLinks,
       deviceStore,
       gate: () => undefined,
-      sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null },
+      sessions: {
+        getSession: (id: string) => SESSIONS.get(id) ?? null,
+        updateSession: () => undefined,
+      },
     });
     ungated.start();
 
@@ -555,7 +592,10 @@ describe('MobileChatBridge answering a download', () => {
         dispatch: async () => result,
         rateLimiter: createDefaultMobileRateLimiter(),
       }),
-      sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null },
+      sessions: {
+        getSession: (id: string) => SESSIONS.get(id) ?? null,
+        updateSession: () => undefined,
+      },
     });
     downloadBridge.start();
     return downloadLinks;

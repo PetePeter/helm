@@ -119,6 +119,20 @@ export interface PatternRule {
 /** A bare CLI-type identity. Matching this means the reference is an id, not a label. */
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * System-wide CLI hook integration for a CLI type (G1: transport only).
+ * `configPath` is user-level, `~`-relative, and points into the CLI's OWN
+ * config dir — the one directory outside Helm's tree that Helm ever writes.
+ */
+export interface CliHooksIntegration {
+  /** Which CLI family's payload shape and config format to use. */
+  provider: 'claude' | 'codex' | 'copilot';
+  /** User-level config file the installer writes the Helm-owned block into. */
+  configPath: string;
+  /** Event names to register, spelled the way this CLI spells them. */
+  events: string[];
+}
+
 export interface CliTypeConfig {
   /** Stable UUID v4 identity — also the map key in cli-types.yaml. Renaming never changes it.
    *  Optional in the type only so legacy YAML and older literals still parse; every entry that
@@ -170,6 +184,8 @@ export interface CliTypeConfig {
   helmActions?: HelmActionMap;
   /** User-defined regex patterns that trigger automated actions when matched against PTY output. */
   patterns?: PatternRule[];
+  /** System-wide hook integration (Settings → CLI Integrations). Absent = this type has none (e.g. cmd). */
+  hooks?: CliHooksIntegration;
 }
 
 export interface ButtonBindings {

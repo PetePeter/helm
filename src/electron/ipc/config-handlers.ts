@@ -7,10 +7,12 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { type ConfigLoader, type PlanFilterConfig, type EditorPrefs, type FleetConfig, type WorkspaceLayoutProfile } from '../../config/loader.js';
+import { type ConfigLoader, type PlanFilterConfig, type EditorPrefs, type FleetConfig, type WorkspaceLayoutProfile, type CliHooksIntegration } from '../../config/loader.js';
 import type { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import type { ProjectStore } from '../../session/project-store.js';
 import type { FleetStatus } from '../../mcp/peer/fleet-controller.js';
+import type { HookInstallerDeps, HookIntegrationStatus } from '../../session/hooks/hook-installer.js';
+import { installCliHooks, readHookIntegrationStatus, uninstallCliHooks } from '../../session/hooks/hook-installer.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../../session/project-identity.js';
 import { logger } from '../../utils/logger.js';
 
@@ -20,6 +22,7 @@ export function setupConfigHandlers(
   projectStore?: ProjectStore,
   applyFleetConfig?: (config: FleetConfig) => Promise<void>,
   getFleetStatus?: () => FleetStatus,
+  hookDeps?: HookInstallerDeps,
 ): void {
   ipcMain.handle('config:getAll', () => {
     try {
@@ -512,6 +515,65 @@ export function setupConfigHandlers(
       return { success: true };
     } catch (error) {
       logger.error(`[IPC] Failed to set chipbar actions: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // ========================================================================
+  // CLI hook integrations (G1: transport only — install/remove/observe)
+  // ========================================================================
+
+  /** Resolve a CLI type's hooks block, or null when it has none. */
+  const resolveHooks = (cliTypeId: string): { id: string; label: string; hooks: CliHooksIntegration } | null => {
+    const entry = configLoader.getCliTypeEntry(cliTypeId);
+    if (!entry?.hooks) return null;
+    return { id: cliTypeId, label: entry.displayName ?? entry.name, hooks: entry.hooks };
+  };
+
+  ipcMain.handle('hooks:getStatus', async () => {
+    if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
+    try {
+      const items: Array<{ cliTypeId: string; label: string; status: HookIntegrationStatus }> = [];
+      for (const cliTypeId of configLoader.getCliTypes()) {
+        const resolved = resolveHooks(cliTypeId);
+        if (!resolved) continue;
+        items.push({
+          cliTypeId: resolved.id,
+          label: resolved.label,
+          status: await readHookIntegrationStatus(resolved.hooks, hookDeps),
+        });
+      }
+      return { success: true, items };
+    } catch (error) {
+      logger.error(`[IPC] Failed to read hook integration status: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('hooks:install', async (_event, cliTypeId: string) => {
+    if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
+    try {
+      const resolved = resolveHooks(cliTypeId);
+      if (!resolved) return { success: false, error: `CLI type has no hooks config: ${cliTypeId}` };
+      const result = await installCliHooks(resolved.hooks, hookDeps);
+      logger.info(`[IPC] Hook install for ${resolved.label}: ${result.status} (written=${result.written})`);
+      return { success: true, ...result };
+    } catch (error) {
+      logger.error(`[IPC] Failed to install hooks for ${cliTypeId}: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('hooks:uninstall', (_event, cliTypeId: string) => {
+    if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
+    try {
+      const resolved = resolveHooks(cliTypeId);
+      if (!resolved) return { success: false, error: `CLI type has no hooks config: ${cliTypeId}` };
+      const result = uninstallCliHooks(resolved.hooks, hookDeps);
+      logger.info(`[IPC] Hook uninstall for ${resolved.label}: changed=${result.changed}`);
+      return { success: true, ...result };
+    } catch (error) {
+      logger.error(`[IPC] Failed to uninstall hooks for ${cliTypeId}: ${error}`);
       return { success: false, error: String(error) };
     }
   });

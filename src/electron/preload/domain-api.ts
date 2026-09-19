@@ -466,6 +466,18 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   configGetWorkingDirs: () => ipcRenderer.invoke('config:getWorkingDirs'),
 
+  /**
+   * CLI hook integrations (G1): per-CLI install state, read off the CLI's own
+   * config file on disk. installed / outdated / not-installed / interpreter-missing.
+   */
+  hooksGetStatus: () => ipcRenderer.invoke('hooks:getStatus'),
+
+  /** Install (or bring current) Helm's hook block in a CLI's user-level config. */
+  hooksInstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:install', cliTypeId),
+
+  /** Remove Helm's hook block from a CLI's user-level config. Reversible. */
+  hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
+
   // ========================================================================
   // Project Management
   // ========================================================================

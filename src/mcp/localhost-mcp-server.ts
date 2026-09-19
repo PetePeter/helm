@@ -24,6 +24,7 @@ import {
 } from './tools/validation.js';
 import { PlanReadTracker } from '../session/plan-read-tracker.js';
 import type { PtyManager } from '../session/pty-manager.js';
+import type { HookReceiver } from '../session/hooks/hook-receiver.js';
 
 type JsonRpcId = string | number | null;
 
@@ -44,6 +45,7 @@ const MCP_PROTOCOL_VERSION = '2025-06-18';
 const DEFAULT_PORT = 47373;
 const DEFAULT_HOST = '127.0.0.1';
 const MCP_PATH = '/mcp';
+const HOOKS_PATH = '/hooks';
 
 
 const TOOLS = MCP_TOOLS;
@@ -82,13 +84,16 @@ export class LocalhostMcpServer {
   private enabled: boolean;
   private readonly planReadTracker = new PlanReadTracker();
   private ptyManager?: PtyManager;
+  private hookReceiver?: HookReceiver;
 
   constructor(
     private readonly service: HelmControlService,
     options: LocalhostMcpServerOptions = {},
     ptyManager?: PtyManager,
+    hookReceiver?: HookReceiver,
   ) {
     this.ptyManager = ptyManager;
+    this.hookReceiver = hookReceiver;
     const env = options.env ?? process.env;
     this.host = options.host ?? env.HELM_MCP_HOST ?? DEFAULT_HOST;
     this.port = options.port ?? parsePort(env.HELM_MCP_PORT) ?? DEFAULT_PORT;
@@ -186,7 +191,12 @@ export class LocalhostMcpServer {
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if ((req.url ?? '') !== MCP_PATH) {
+    const pathname = (req.url ?? '').split('?')[0];
+    if (pathname === HOOKS_PATH) {
+      await this.handleHookRequest(req, res);
+      return;
+    }
+    if (pathname !== MCP_PATH) {
       this.writeJson(res, 404, { error: 'Not found' });
       return;
     }
@@ -286,6 +296,42 @@ export class LocalhostMcpServer {
     }
   }
 
+
+  /**
+   * POST /hooks — where the CLI shims land. Session tokens ONLY: a hook
+   * belongs to exactly one spawned session, so the shared bearer (anonymous
+   * MCP access) is not enough here. The reply is the receiver's no-op
+   * decision — G1 observes, it never steers.
+   */
+  private async handleHookRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end();
+      return;
+    }
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+    const auth = token ? parseSessionAuthToken(this.token, token) : null;
+    if (!auth) {
+      logger.warn('[MCP] Hook post rejected: not a session token');
+      this.writeJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(await this.readBody(req));
+    } catch {
+      this.writeJson(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+
+    // No receiver wired (older construction) still fails open, like the shim.
+    const result = this.hookReceiver
+      ? this.hookReceiver.receive(body, auth.sessionId)
+      : { statusCode: 200, body: {} };
+    this.writeJson(res, result.statusCode, result.body);
+  }
 
   /**
    * Dispatch a tool call through the EXACT same path as the localhost server —
