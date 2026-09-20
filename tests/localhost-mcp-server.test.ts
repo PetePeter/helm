@@ -851,6 +851,28 @@ describe('LocalhostMcpServer', () => {
     });
   });
 
+  it('dispatches session_set_loop_driving (G8 opt-in) through the MCP surface', async () => {
+    const service = makeService();
+    const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+    servers.push(server);
+    await server.start();
+    const port = server.getAddress()!.port;
+
+    const response = await rpc(port, 'secret-token', {
+      jsonrpc: '2.0',
+      id: 56,
+      method: 'tools/call',
+      params: {
+        name: 'session_set_loop_driving',
+        arguments: { sessionId: 's1', enabled: true },
+      },
+    });
+    const json = await response.json();
+
+    expect((service.setLoopDriving as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', true);
+    expect(json.result.structuredContent).toEqual({ ok: true, sessionId: 's1', name: 'Claude', loopDriving: true });
+  });
+
   it('adds ownership reminders to plan_create and plan_set_state text without changing structured content', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
@@ -1914,6 +1936,72 @@ describe('LocalhostMcpServer', () => {
         'All tests pass and feature works',
       );
     });
+
+    it('notifies the G8 loop driver of the completion and its follow-ups', async () => {
+      const service = makeService();
+      // No completionRecap flag: keeps the plan_read recap gate out of the
+      // way — the flag's passthrough is covered by loop-driver.test.ts.
+      (service.getPlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', dirPath: '/proj', title: 'Task', description: 'Desc', status: 'coding' });
+      (service.completePlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', humanId: 'P-0001', dirPath: '/proj', title: 'Task', description: 'Desc', status: 'done', completionNotes: 'All tests pass' });
+      (service.exportDirectory as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+        dirPath: '/proj',
+        items: [
+          { id: 'p1', humanId: 'P-0001', dirPath: '/proj', title: 'Task', description: 'Desc', status: 'done' },
+          { id: 'p2', humanId: 'P-0002', dirPath: '/proj', title: 'Follow up', description: 'More', status: 'ready', autoImplement: true },
+        ],
+        dependencies: [{ fromId: 'p1', toId: 'p2' }],
+      });
+
+      const noteCompletion = vi.fn();
+      const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+      server.setLoopDriver({ noteCompletion });
+      servers.push(server);
+      await server.start();
+      const port = server.getAddress()!.port;
+
+      await rpc(port, 'secret-token', {
+        jsonrpc: '2.0',
+        id: 54,
+        method: 'tools/call',
+        params: {
+          name: 'plan_complete',
+          arguments: { uuid: 'p1', documentation: 'All tests pass and feature works' },
+        },
+      }, { 'x-helm-session-id': 's1' });
+
+      expect(noteCompletion).toHaveBeenCalledWith('s1', {
+        planId: 'p1',
+        humanId: 'P-0001',
+        title: 'Task',
+        completionRecap: false,
+        followUps: [{ id: 'p2', humanId: 'P-0002', title: 'Follow up' }],
+      });
+    });
+
+    it('completes without a loop driver wired (fail-open)', async () => {
+      const service = makeService();
+      (service.getPlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', dirPath: '/proj', title: 'Task', description: 'Desc', status: 'coding' });
+      (service.completePlan as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'p1', dirPath: '/proj', title: 'Task', description: 'Desc', status: 'done', completionNotes: 'All tests pass' });
+      (service.exportDirectory as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ dirPath: '/proj', items: [], dependencies: [] });
+
+      const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
+      servers.push(server);
+      await server.start();
+      const port = server.getAddress()!.port;
+
+      const response = await rpc(port, 'secret-token', {
+        jsonrpc: '2.0',
+        id: 55,
+        method: 'tools/call',
+        params: {
+          name: 'plan_complete',
+          arguments: { uuid: 'p1', documentation: 'All tests pass and feature works' },
+        },
+      }, { 'x-helm-session-id': 's1' });
+      const json = await response.json();
+      expect(json.result.structuredContent.followUpPlans).toEqual([]);
+    });
+
 
     it('does not throw when notifyUser fails during plan completion', async () => {
       const service = makeService();
