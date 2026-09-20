@@ -1,6 +1,6 @@
 # CLI Hooks
 
-**Status: G1 (transport + installer), G2 (PreToolUse deny policy) and G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot) shipped. Prompt injection is a later group.**
+**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot) and G4 (context injection, nudges, hint-only suggester, dual-path rules delivery) shipped. Loop driving was deliberately dropped.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
@@ -215,6 +215,99 @@ session age, draft memos, any pending handover note, and the PreCompact
   and the handover delivered at the announcement, but nothing delays the
   compaction on those two.
 
+## Injection (G4) — the ContextInjector
+
+PreToolUse denies are one half of steering; the other half is giving the agent
+context it would otherwise not have. `ContextInjector`
+(`src/session/hooks/context-injector.ts`) answers every non-policy event and
+can say THREE things, each independently optional — and **null** (send
+nothing) is the common case by design:
+
+- **SessionStart** — the session's claimed plan, its draft memos, and any
+  pending handover note, out-of-band at startup. Nothing is preloaded
+  wholesale; each source is capped at 800 chars, the whole payload at 2500,
+  and whole parts are dropped from the end before anything is cut mid-line.
+- **UserPromptSubmit** — for a prompt carrying a `[HELM_MSG]` /
+  `[HELM_TELEGRAM]` envelope, the inter-session rules as additionalContext
+  instead of prepended prompt text (dual-path, below); the hint-only
+  suggester pointer; conditional one-shot nudges (unset AIAGENT state, one
+  startable plan). Copilot is excluded entirely — its CLI drops this event's
+  command-hook output, so injecting there is writing into the void.
+- **Stop** — the one-shot nudge: a claimed-but-open plan item or an unset
+  AIAGENT state blocks the turn ONCE with a reason naming the alternative
+  (`plan_complete` / `session_plan_claim` / `session_set_aiagent_state`).
+  The second Stop always passes; the cap is 1 by decision and not
+  configurable. `StopFailure` is NEVER answered — a usage-limit stall is
+  reported fact, not something to retry in a loop.
+
+```mermaid
+flowchart LR
+    H[HookEvent<br/>SessionStart / UserPromptSubmit / Stop] --> I{ContextInjector}
+    I -->|SessionStart| A["plan + drafts + handover<br/>800/2500 caps"]
+    I -->|UserPromptSubmit| B["envelope rules<br/>+ suggester pointer<br/>+ one-shot nudges"]
+    I -->|Stop| C["stop block, ONCE<br/>cap = 1"]
+    A --> E["encodeAdditionalContext<br/>claude/codex: nested under<br/>hookSpecificOutput.hookEventName<br/>copilot: flat"]
+    B --> E
+    C --> D["encodeStopBlock"]
+    E --> R[200 reply body]
+    D --> R
+    I -->|nothing worth saying| N[null → 200 {}]
+```
+
+The encoders (`src/session/hooks/hook-encoder.ts`) matter: Claude and Codex
+silently IGNORE a top-level `additionalContext` — it must nest under
+`hookSpecificOutput.hookEventName`. Copilot wants it flat. Getting the shape
+wrong is a silent no-op, which is the worst kind of bug: everything looks
+wired and nothing arrives.
+
+### The hint-only suggester
+
+`src/session/hooks/suggestion-scorer.ts`. On UserPromptSubmit, skills and
+memories are scored against the prompt — **BM25 over name + description +
+declared triggers**, pure TypeScript, no model, no download, no worker. The
+payload is `(type/id)` TUPLES ONLY:
+
+```
+possibly related: skill/graphify, memory/helm-chain-stall-recovery
+```
+
+The agent fetches what it wants via `skill_get` / `memory_get`, or ignores it.
+A miss costs nothing; a hit costs ~10 tokens. There is no "inject body" tier
+to tune and never will be. A prompt that NAMES a candidate bypasses scoring.
+Caps: top-3, 400 bytes; once per item per session; below threshold sends
+nothing (that is the common case and it must be free). Candidates are
+pre-filtered to the session's project — skills visible to that project, plus
+that project's live (non-dormant) memories. `Trigger:` phrases declared in a
+description (`Trigger: /graphify`) beat any inference. Known, accepted
+weakness: BM25 misses oblique phrasing; revisit only with evidence from real
+use.
+
+### Dual-path rules delivery
+
+The inter-session rules reach a session two ways, per recipient:
+
+1. **Prepended** into the message (the path that works everywhere — today's
+   behaviour, kept byte-identical).
+2. **Injected** out-of-band via the UserPromptSubmit hook when the recipient
+   can — the transcript stays clean.
+
+The choice is ONE capability check (`src/session/hooks/hook-capability.ts`)
+consulted by BOTH delivery surfaces — the MCP delivery service
+(`HelmSessionDeliveryService.setRulesViaHooks`) and the Telegram relay
+(`TelegramRelayService.setRulesViaHooks`, which drops only the envelope's
+trailing instruction line). Hooks block present AND provider injects on
+UserPromptSubmit (claude, codex) AND the block reads back
+`installed`/`outdated` from disk — otherwise false, which means "prepend as
+today". Every failure answers false: a disk error can degrade to the old
+behaviour, never break delivery. Sessions without hooks see zero change, and
+both paths coexist because the check is read live per recipient.
+
+**Loop driving (Stop + block restarting the turn) was deliberately dropped**
+from G4 — remote control of the agent loop with a credit card attached is not
+shipped, not built, and its guards (max auto-continues, visible counter, kill
+switches) were never implemented. If it ever lands, it inherits the
+StopFailure-never-retried rule above.
+
 ## Config locations (user-level, install once)
 
 | CLI | File | Shape |
@@ -275,8 +368,13 @@ for both surfaces.
 | Module | Role |
 |--------|------|
 | `src/session/hooks/hook-normaliser.ts` | per-CLI fields → one `HookEvent`; canonical event set; Copilot aliases; per-CLI deny encoding |
-| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; routes PreToolUse through the policy |
+| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; PreToolUse → policy, everything else → the (late-bound) G4 responder |
 | `src/session/hooks/hook-policy.ts` | PURE `(event, session, rules) -> allow / deny+reason`; fail open on everything unexpected |
+| `src/session/hooks/context-injector.ts` | G4: SessionStart context, UserPromptSubmit rules + nudges, one-shot Stop block; silent when there is nothing worth saying |
+| `src/session/hooks/suggestion-scorer.ts` | G4 hint-only suggester: BM25, tuples only, caps + once-per-item ledger |
+| `src/session/hooks/hook-encoder.ts` | per-CLI additionalContext nesting and the stop-block form |
+| `src/session/hooks/hook-capability.ts` | the ONE rules-via-hooks check behind both delivery paths; false on every failure |
+| `src/session/intersession-directive.ts` | the inter-session rules in both delivery forms — prepended builder + static injected blocks |
 | `src/session/hooks/hook-tracker.ts` | G3: the `hook` stream's first subscriber — activity edges, durable `hookStall`, plan progress, the PreCompact snapshot (composed by Helm, transcript attached) |
 | `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk |
 | `src/config/hooks/helm-hook-shim.py` | the shared transport shim (fail-open) |
