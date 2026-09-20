@@ -29,6 +29,8 @@ import { OpenWhisprTranscriber, type AudioTranscriber, type AudioTranscriptionRe
 import { resolveFfmpegPath } from './ffmpeg.js';
 import { buildFrameSeekHint, extractVideoFrames } from './video-frames.js';
 import type { SessionInfo } from '../types/session.js';
+import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
+import { HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../session/intersession-directive.js';
 import { TELEGRAM_CHAT_PROVIDER } from '../session/chat/chat-bindings.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import type {
@@ -99,18 +101,29 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
   }
 
   /**
-   * Late-bind the G4 rules-injection capability check (same fn the MCP
-   * delivery service uses). When it answers true for a recipient — hooks
-   * installed AND the provider injects on UserPromptSubmit — the envelope's
-   * trailing instruction line is skipped: the hook supplies the same rules
-   * out-of-band the moment the message is submitted. Every other session
+   * Late-bind the G9 reminder-delivery resolver (same fn the MCP delivery
+   * service and the ContextInjector use). Per reminder, per recipient:
+   * 'hook' skips the envelope's trailing instruction line (the hook supplies
+   * the same rules out-of-band the moment the message is submitted) and skips
+   * the first-contact Telegram mode block (the injector announces it instead);
+   * 'pty' prepends both as today; 'off' suppresses both. Every other session
    * keeps the instruction line, byte for byte as today.
    */
-  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
-    this.rulesViaHooks = rulesViaHooks;
+  setReminderDelivery(reminderDelivery: ReminderDeliveryFn): void {
+    this.reminderDelivery = reminderDelivery;
   }
 
-  private rulesViaHooks?: (session: SessionInfo) => Promise<boolean>;
+  /**
+   * The telegramInstruction reminder's channel for one recipient — shared by
+   * the topic-input fallback wrapper so every surface carrying that line
+   * follows the same mode. Unwired resolver = today's prepend.
+   */
+  async telegramInstructionChannel(session: SessionInfo | null): Promise<'hook' | 'pty' | 'off'> {
+    if (!this.reminderDelivery || !session) return 'pty';
+    return (await this.reminderDelivery(session, 'telegramInstruction')).channel;
+  }
+
+  private reminderDelivery?: ReminderDeliveryFn;
 
   isRunning(): boolean {
     return this.telegramBot.isRunning();
@@ -265,15 +278,22 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
       return true;
     }
 
-    // G4 dual-path: a recipient that injects the Telegram rules via hooks
-    // does not need the envelope's trailing instruction line too.
-    const skipInstruction = (await this.rulesViaHooks?.(session)) ?? false;
-    const wrapped = wrapTelegramEnvelope(this.resolveTelegramTextPayload(session, msg.text), from, chatId, skipInstruction);
-    // Set channel affinity and inject first-contact instructions
+    // G9: both standing texts on this surface are per-reminder deliveries —
+    // the envelope's trailing instruction line and the first-contact Telegram
+    // mode block. pty prepends them as today; hook hands them to the injector;
+    // off suppresses them. Unset resolver = today's dual-path defaults.
+    const instruction = this.reminderDelivery
+      ? (await this.reminderDelivery(session, 'telegramInstruction')).channel
+      : 'pty';
+    const wrapped = wrapTelegramEnvelope(this.resolveTelegramTextPayload(session, msg.text), from, chatId, instruction !== 'pty');
+    // Channel affinity is state, not text — it flips on entry regardless.
     let text = wrapped;
     if (session.interactionChannel !== 'telegram') {
       this.sessionManager.updateSession(session.id, { interactionChannel: 'telegram' });
-      text = TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + wrapped;
+      const mode = this.reminderDelivery
+        ? (await this.reminderDelivery(session, 'telegramModeInstructions')).channel
+        : 'pty';
+      if (mode === 'pty') text = HELM_TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + wrapped;
     }
     await deliverPromptSequenceToSession({
       sessionId: session.id,
@@ -343,6 +363,15 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     const targetSession = session ?? this.sessionManager.getActiveSession();
     if (!targetSession) return false;
 
+    // G9: the attachment envelope carries the same two standing texts as the
+    // text-message envelope — same per-reminder resolution, same defaults.
+    const instructionChannel = this.reminderDelivery
+      ? (await this.reminderDelivery(targetSession, 'telegramInstruction')).channel
+      : 'pty';
+    const modeChannel = this.reminderDelivery
+      ? (await this.reminderDelivery(targetSession, 'telegramModeInstructions')).channel
+      : 'pty';
+
     const destDir = path.join(process.env.APPDATA || process.env.HOME || '.', 'Helm', 'tmp', 'telegram-attachments');
     const from = msg.from?.username ? `@${msg.from.username}` : 'unknown';
     const chatId = msg.chat.id;
@@ -380,13 +409,13 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
         ] : []),
         ...(caption ? [`caption: ${caption}`] : []),
         `[/HELM_TELEGRAM_ATTACHMENT]`,
-        `Respond via telegram_chat MCP tool.`,
+        ...(instructionChannel === 'pty' ? [`Respond via telegram_chat MCP tool.`] : []),
       ].join('\n');
 
       let text = envelope;
       if (targetSession.interactionChannel !== 'telegram') {
         this.sessionManager.updateSession(targetSession.id, { interactionChannel: 'telegram' });
-        text = TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + envelope;
+        if (modeChannel === 'pty') text = HELM_TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + envelope;
       }
 
       await deliverPromptSequenceToSession({
@@ -779,12 +808,4 @@ function wrapTelegramEnvelope(text: string, from: string, chatId: number, skipIn
   const instruction = skipInstruction ? '' : '\nRespond via telegram_chat MCP tool.';
   return `[HELM_TELEGRAM${fromTag} chat:${chatId}]\n${text}\n[/HELM_TELEGRAM]${instruction}`;
 }
-
-const TELEGRAM_MODE_INSTRUCTIONS =
-  '[HELM_TELEGRAM_MODE]\n' +
-  'This session is now in Telegram mode. The user is interacting via Telegram and CANNOT see the terminal.\n' +
-  'ALL responses MUST go through the telegram_chat MCP tool.\n' +
-  'ALL questions and confirmations MUST go through telegram_chat — do NOT use AskUserQuestion.\n' +
-  'The user will return to their desk when they type in the terminal, which automatically exits Telegram mode.\n' +
-  '[/HELM_TELEGRAM_MODE]';
 

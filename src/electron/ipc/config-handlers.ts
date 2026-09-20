@@ -13,6 +13,8 @@ import type { ProjectStore } from '../../session/project-store.js';
 import type { FleetStatus } from '../../mcp/peer/fleet-controller.js';
 import type { HookInstallerDeps, HookIntegrationStatus } from '../../session/hooks/hook-installer.js';
 import { installCliHooks, readHookIntegrationStatus, uninstallCliHooks } from '../../session/hooks/hook-installer.js';
+import { PROMPT_INJECTION_PROVIDERS } from '../../session/hooks/context-injector.js';
+import { REMINDER_IDS, isReminderDeliveryMode, type ReminderDeliveryMode, type ReminderId } from '../../session/reminder-delivery.js';
 import { summarizeSuggestionUsage, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../../session/project-identity.js';
 import { logger } from '../../utils/logger.js';
@@ -535,7 +537,16 @@ export function setupConfigHandlers(
   ipcMain.handle('hooks:getStatus', async () => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
-      const items: Array<{ cliTypeId: string; label: string; status: HookIntegrationStatus }> = [];
+      const items: Array<{
+        cliTypeId: string;
+        label: string;
+        status: HookIntegrationStatus;
+        provider: string;
+        /** G9: false = this CLI can never receive injected reminders on
+         *  UserPromptSubmit (Copilot drops that event's output) — the pane
+         *  shows the fallback instead of pretending 'hook' is available. */
+        canInject: boolean;
+      }> = [];
       for (const cliTypeId of configLoader.getCliTypes()) {
         const resolved = resolveHooks(cliTypeId);
         if (!resolved) continue;
@@ -543,6 +554,8 @@ export function setupConfigHandlers(
           cliTypeId: resolved.id,
           label: resolved.label,
           status: await readHookIntegrationStatus(resolved.hooks, hookDeps),
+          provider: resolved.hooks.provider,
+          canInject: PROMPT_INJECTION_PROVIDERS.has(resolved.hooks.provider),
         });
       }
       return { success: true, items };
@@ -582,6 +595,36 @@ export function setupConfigHandlers(
 
   // G5 suggester usage feedback — inspectable and resettable from the pane.
   // The summary is ids and term counts only, by construction of the store.
+
+  // ========================================================================
+  // Reminder delivery (G9): per-reminder hook / pty / off, visible and
+  // settable from the CLI Integrations pane.
+  // ========================================================================
+
+  ipcMain.handle('config:getReminderDelivery', () => {
+    try {
+      return { success: true, modes: configLoader.getReminderDelivery() };
+    } catch (error) {
+      logger.error(`[IPC] Failed to read reminder delivery: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:setReminderDelivery', (_event, updates: Record<string, unknown>) => {
+    try {
+      const validated: Partial<Record<ReminderId, ReminderDeliveryMode>> = {};
+      for (const id of REMINDER_IDS) {
+        const value = updates?.[id];
+        if (isReminderDeliveryMode(value)) validated[id] = value;
+      }
+      configLoader.setReminderDelivery(validated);
+      return { success: true, modes: configLoader.getReminderDelivery() };
+    } catch (error) {
+      logger.error(`[IPC] Failed to set reminder delivery: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('hooks:getSuggestionUsage', () => {
     if (!suggestionUsage) return { success: false, error: 'Suggestion usage store not wired' };
     try {

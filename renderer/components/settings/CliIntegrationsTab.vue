@@ -11,8 +11,14 @@
  * refuses rather than writing a hook config that points at an interpreter
  * that isn't there.
  */
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { configClient } from '../../ipc/clients.js';
+import {
+  DEFAULT_REMINDER_MODES,
+  REMINDER_IDS,
+  type ReminderDeliveryMode,
+  type ReminderId,
+} from '../../../src/session/reminder-delivery.js';
 
 type HookStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
@@ -20,7 +26,31 @@ interface HookIntegrationItem {
   cliTypeId: string;
   label: string;
   status: HookStatus;
+  /** G9: false = this CLI can never take injected reminders (Copilot). */
+  canInject?: boolean;
 }
+
+/** One settings row per standing reminder (docs/cli-hooks.md, G9). */
+const REMINDER_META: Record<ReminderId, { label: string; detail: string }> = {
+  helmMsgRules: {
+    label: 'Inter-session rules',
+    detail: 'The [HELM_MSG_RULES] block on messages from other sessions',
+  },
+  telegramInstruction: {
+    label: 'Telegram reply instruction',
+    detail: 'The "Respond via telegram_chat" line on Telegram messages',
+  },
+  telegramModeInstructions: {
+    label: 'Telegram mode block',
+    detail: 'The one-time announcement when a session enters Telegram mode',
+  },
+};
+
+const MODE_TEXT: Record<ReminderDeliveryMode, string> = {
+  hook: 'Hook (out-of-band)',
+  pty: 'Prepend (prompt text)',
+  off: 'Off',
+};
 
 /** G5 suggester usage feedback — what the store has learned (ids + terms only). */
 interface SuggestionUsageSummary {
@@ -78,6 +108,57 @@ async function remove(item: HookIntegrationItem): Promise<void> {
   await loadStatus();
 }
 
+const reminderModes = ref<Partial<Record<ReminderId, ReminderDeliveryMode>>>({});
+const reminderBusy = ref(false);
+
+const reminders = computed(() =>
+  REMINDER_IDS.map((id) => ({
+    id,
+    ...REMINDER_META[id],
+    saved: reminderModes.value[id],
+    effective: reminderModes.value[id] ?? DEFAULT_REMINDER_MODES[id],
+  })),
+);
+
+/**
+ * "hook" that cannot be honoured falls back to prepend — and the pane SAYS
+ * so. A setting that quietly means something else is worse than no setting.
+ */
+function fallbackText(effective: ReminderDeliveryMode): string {
+  if (effective !== 'hook') return '';
+  const falling = items.value.filter(
+    (item) => item.canInject === false || item.status === 'not-installed' || item.status === 'interpreter-missing',
+  );
+  if (falling.length === 0) return '';
+  return (
+    'Falls back to prepend for: ' +
+    falling
+      .map((item) => `${item.label} (${item.canInject === false ? 'cannot inject' : STATUS_TEXT[item.status].toLowerCase()})`)
+      .join(', ') +
+    '.'
+  );
+}
+
+async function loadReminderModes(): Promise<void> {
+  const result = await configClient.configGetReminderDelivery();
+  if (result.success) reminderModes.value = result.modes ?? {};
+}
+
+async function setReminderMode(id: ReminderId, mode: ReminderDeliveryMode): Promise<void> {
+  reminderBusy.value = true;
+  try {
+    const result = await configClient.configSetReminderDelivery({ [id]: mode });
+    if (result.success) {
+      reminderModes.value = result.modes ?? {};
+      errorText.value = '';
+    } else {
+      errorText.value = result.error ?? 'Could not save reminder delivery';
+    }
+  } finally {
+    reminderBusy.value = false;
+  }
+}
+
 async function loadUsage(): Promise<void> {
   const result = await configClient.hooksGetSuggestionUsage();
   if (result.success) {
@@ -105,6 +186,7 @@ function formatAt(at: number): string {
 onMounted(() => {
   void loadStatus();
   void loadUsage();
+  void loadReminderModes();
 });
 </script>
 
@@ -160,6 +242,47 @@ onMounted(() => {
         A working Python interpreter is required — Helm ships without one. Install Python
         (python.org or the Microsoft Store) and reload this pane.
       </p>
+    </div>
+
+    <div class="tg-section">
+      <h3 class="tg-section-title">Reminder delivery</h3>
+      <p class="settings-form__hint">
+        How standing reminders reach a session. Hook delivers them out-of-band via the
+        CLI's own hooks — the transcript stays clean and nothing is spent per message;
+        a recipient without usable hooks falls back to prepend automatically, as shown
+        per row. Prepend keeps today's behaviour exactly. Off suppresses the reminder
+        on both paths.
+      </p>
+      <div
+        v-for="reminder in reminders"
+        :key="reminder.id"
+        class="settings-list-item"
+      >
+        <div class="settings-list-item__info">
+          <span class="settings-list-item__name">
+            {{ reminder.label }}
+            <em v-if="!reminder.saved" class="settings-cli-integrations-panel__default">(default)</em>
+          </span>
+          <span class="settings-list-item__detail">{{ reminder.detail }}</span>
+          <span
+            v-if="fallbackText(reminder.effective)"
+            class="settings-list-item__detail settings-cli-integrations-panel__fallback"
+          >
+            {{ fallbackText(reminder.effective) }}
+          </span>
+        </div>
+        <div class="tg-btn-row">
+          <select
+            class="focusable"
+            :value="reminder.effective"
+            :disabled="reminderBusy"
+            :aria-label="`Delivery mode for ${reminder.label}`"
+            @change="setReminderMode(reminder.id, ($event.target as HTMLSelectElement).value as ReminderDeliveryMode)"
+          >
+            <option v-for="(text, mode) in MODE_TEXT" :key="mode" :value="mode">{{ text }}</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div class="tg-section">
@@ -228,5 +351,14 @@ onMounted(() => {
 
 .settings-cli-integrations-panel__error {
   color: var(--danger, #e5534b);
+}
+
+.settings-cli-integrations-panel__default {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.settings-cli-integrations-panel__fallback {
+  color: var(--warning, #b58900);
 }
 </style>

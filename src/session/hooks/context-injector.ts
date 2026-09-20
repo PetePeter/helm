@@ -26,7 +26,12 @@
 import type { SessionInfo } from '../../types/session.js';
 import { encodeAdditionalContext, encodeStopBlock } from './hook-encoder.js';
 import type { HookEvent } from './hook-normaliser.js';
-import { HELM_MSG_HOOK_RULES, HELM_TELEGRAM_HOOK_RULES } from '../intersession-directive.js';
+import { HELM_MSG_HOOK_RULES, HELM_TELEGRAM_HOOK_RULES, HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../intersession-directive.js';
+import {
+  resolveReminderDelivery,
+  type ReminderDeliveryMode,
+  type ReminderId,
+} from '../reminder-delivery.js';
 import { logger } from '../../utils/logger.js';
 
 /** A claimed plan reduced to what a nudge names. */
@@ -51,6 +56,13 @@ export interface ContextInjectorDeps {
   suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null>;
   /** Directory → project id, for pre-filtering suggester candidates. */
   getProjectIdForDirectory(dirPath: string): string | null;
+  /**
+   * G9: the user's per-reminder delivery mode from settings. Absent means
+   * every reminder keeps its default — inject, as G4 already did. The hook
+   * FIRING is the capability proof, so capability is always true here; mode
+   * 'pty' means the prepend path owns the reminder and nothing is injected.
+   */
+  getReminderMode?(reminder: ReminderId): ReminderDeliveryMode | undefined;
 }
 
 /** One hook reply: 200 with a body the CLI reads, or null (send nothing). */
@@ -78,6 +90,8 @@ export class ContextInjector {
   private readonly nudged = new Map<string, Set<string>>();
   /** The one-shot Stop ledger: a session is nudged at most once. CAP = 1. */
   private readonly stopNudged = new Set<string>();
+  /** Sessions whose telegram-mode entry the injected mode block covered. */
+  private readonly telegramModeAnnounced = new Set<string>();
 
   constructor(deps: ContextInjectorDeps) {
     this.deps = deps;
@@ -87,6 +101,7 @@ export class ContextInjector {
   forgetSession(sessionId: string): void {
     this.nudged.delete(sessionId);
     this.stopNudged.delete(sessionId);
+    this.telegramModeAnnounced.delete(sessionId);
   }
 
   /** Route one normalised hook event, or null when there is nothing to say. */
@@ -94,6 +109,11 @@ export class ContextInjector {
     if (!event.helmSessionId) return null;
     const session = this.deps.getSession(event.helmSessionId);
     if (!session) return null;
+
+    // Leaving Telegram mode re-arms the one-shot mode block: the next entry
+    // is a new mode entry and must be announced again, exactly as the
+    // prepended first-contact block would be.
+    if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
 
     switch (event.event) {
       case 'SessionStart':
@@ -151,9 +171,29 @@ export class ContextInjector {
     const parts: string[] = [];
 
     // The rules ride along with the message they govern — a prompt that is
-    // not an inter-session envelope gets no rules block.
-    if (prompt.includes('[HELM_MSG')) parts.push(HELM_MSG_HOOK_RULES);
-    else if (prompt.includes('[HELM_TELEGRAM')) parts.push(HELM_TELEGRAM_HOOK_RULES);
+    // not an inter-session envelope gets no rules block. G9: only when the
+    // reminder's delivery resolves to hook; 'pty' leaves them to the prepend,
+    // 'off' suppresses them, so one message never carries both forms.
+    const mode = (reminder: ReminderId) => this.deps.getReminderMode?.(reminder);
+    if (prompt.includes('[HELM_MSG')) {
+      if (resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), true).channel === 'hook') {
+        parts.push(HELM_MSG_HOOK_RULES);
+      }
+    } else if (prompt.includes('[HELM_TELEGRAM')) {
+      if (resolveReminderDelivery('telegramInstruction', mode('telegramInstruction'), true).channel === 'hook') {
+        parts.push(HELM_TELEGRAM_HOOK_RULES);
+      }
+      // The mode block is announced once per entry into Telegram mode — the
+      // injected twin of the relay's first-contact prepend.
+      if (
+        session.interactionChannel === 'telegram' &&
+        !this.telegramModeAnnounced.has(session.id) &&
+        resolveReminderDelivery('telegramModeInstructions', mode('telegramModeInstructions'), true).channel === 'hook'
+      ) {
+        this.telegramModeAnnounced.add(session.id);
+        parts.push(HELM_TELEGRAM_MODE_INSTRUCTIONS);
+      }
+    }
 
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);

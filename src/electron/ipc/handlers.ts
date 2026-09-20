@@ -127,6 +127,7 @@ import { ContextInjector } from '../../session/hooks/context-injector.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
+import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
@@ -596,6 +597,7 @@ export function registerIPCHandlers(
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
+    getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
   });
   hookReceiver.setResponder((event) => contextInjector.respond(event));
   // A closed session takes its nudger and suggester ledgers with it — a
@@ -605,11 +607,17 @@ export function registerIPCHandlers(
     suggestionService.forgetSession(event.sessionId);
     suggestionUsage.forgetSession(event.sessionId);
   });
-  // Dual-path rules delivery: when the recipient injects the rules itself via
-  // hooks, both surfaces skip the prepended copies. Sessions without hooks
-  // (or Copilot, which drops UserPromptSubmit output) keep them, unchanged.
-  helmControlService.setRulesViaHooks(rulesViaHooks);
-  telegramModules.relayService.setRulesViaHooks(rulesViaHooks);
+  // Dual-path rules delivery (G9): every surface resolves each standing
+  // reminder from the same settings + capability — the delivery services
+  // decide whether to prepend, the injector decides whether to inject, and
+  // 'off' suppresses both. Defaults reproduce today, so nothing changes until
+  // the user sets a mode in the CLI Integrations pane.
+  const reminderDelivery = createReminderDeliveryFn(
+    rulesViaHooks,
+    (reminder) => configLoader.getReminderDelivery()[reminder],
+  );
+  helmControlService.setReminderDelivery(reminderDelivery);
+  telegramModules.relayService.setReminderDelivery(reminderDelivery);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
   const cleanupPromptTemplates = promptTemplatesPath

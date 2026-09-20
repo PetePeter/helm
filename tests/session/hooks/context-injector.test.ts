@@ -221,6 +221,68 @@ describe('UserPromptSubmit', () => {
   });
 });
 
+describe('UserPromptSubmit reminder delivery modes (G9)', () => {
+  const msgPrompt = '[HELM_MSG]{"type":"inter_llm_message"}do the thing';
+  const tgPrompt = '[HELM_TELEGRAM from:u chat:1]\nhello\n[/HELM_TELEGRAM]';
+
+  it('mode pty skips the injected rules — the prepend carries them instead', async () => {
+    const { injector } = makeInjector({ getReminderMode: () => 'pty' });
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: msgPrompt }));
+    // Nothing else outstanding → fully silent, not just rule-less.
+    expect(result).toBeNull();
+  });
+
+  it('mode off skips the injected rules too — suppressed means both paths', async () => {
+    const { injector } = makeInjector({ getReminderMode: () => 'off' });
+    expect(await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: msgPrompt }))).toBeNull();
+    expect(await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }))).toBeNull();
+  });
+
+  it('mode pty for one reminder does not silence the other', async () => {
+    const { injector } = makeInjector({ getReminderMode: (r) => (r === 'helmMsgRules' ? 'pty' : undefined) });
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+    expect(contextOf(result!.body)).toContain('[HELM_TELEGRAM_RULES]');
+  });
+
+  it('injects the rules with no mode wired at all — the hook firing is the capability proof', async () => {
+    const { injector } = makeInjector();
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: msgPrompt }));
+    expect(contextOf(result!.body)).toContain('[HELM_MSG_RULES]');
+  });
+
+  describe('Telegram mode block (telegramModeInstructions)', () => {
+    it('mode hook injects the mode block ONCE per telegram-mode entry', async () => {
+      const { injector } = makeInjector(
+        { getReminderMode: (r) => (r === 'telegramModeInstructions' ? 'hook' : undefined) },
+        { interactionChannel: 'telegram' },
+      );
+      const first = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      expect(contextOf(first!.body)).toContain('[HELM_TELEGRAM_MODE]');
+      const second = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      expect(contextOf(second!.body)).not.toContain('[HELM_TELEGRAM_MODE]');
+    });
+
+    it('mode pty (the default) never injects the mode block — the prepend owns it', async () => {
+      const { injector } = makeInjector({}, { interactionChannel: 'telegram' });
+      const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      expect(contextOf(result!.body)).not.toContain('[HELM_TELEGRAM_MODE]');
+    });
+
+    it('leaving telegram mode re-arms the block for the next entry', async () => {
+      let channel: string | undefined = 'telegram';
+      const { injector } = makeInjector(
+        { getReminderMode: (r) => (r === 'telegramModeInstructions' ? 'hook' : undefined), getSession: () => session({ interactionChannel: channel as never }) },
+      );
+      await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      channel = 'desktop';
+      await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      channel = 'telegram';
+      const again = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: tgPrompt }));
+      expect(contextOf(again!.body)).toContain('[HELM_TELEGRAM_MODE]');
+    });
+  });
+});
+
 describe('Stop — the one-shot nudge', () => {
   it('blocks ONCE when a claimed plan is still open; the second Stop always passes', async () => {
     const { injector } = makeInjector({

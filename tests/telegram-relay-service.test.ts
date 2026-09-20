@@ -103,9 +103,9 @@ describe('TelegramRelayService', () => {
     expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('Respond via telegram_chat MCP tool.'));
   });
 
-  it('keeps the instruction line when rulesViaHooks says no — no hooks, prepend as always', async () => {
+  it('keeps the instruction line when the reminder resolves to pty — no hooks, prepend as always', async () => {
     const { relay, ptyManager } = makeRelay();
-    relay.setRulesViaHooks(async () => false);
+    relay.setReminderDelivery(async () => ({ channel: 'pty', fellBack: true }));
 
     await relay.handleIncomingTelegramMessage({
       message_id: 78,
@@ -119,9 +119,11 @@ describe('TelegramRelayService', () => {
     expect(text).toContain('Respond via telegram_chat MCP tool.');
   });
 
-  it('drops the instruction line when rulesViaHooks says yes — the hook injects the rules itself', async () => {
+  it('drops the instruction line when the reminder resolves to hook — the hook injects the rules itself', async () => {
     const { relay, ptyManager } = makeRelay();
-    relay.setRulesViaHooks(async (session) => session.id === 's1');
+    relay.setReminderDelivery(async (_session, reminder) => (
+      reminder === 'telegramInstruction' ? { channel: 'hook', fellBack: false } : { channel: 'pty', fellBack: false }
+    ));
 
     await relay.handleIncomingTelegramMessage({
       message_id: 79,
@@ -135,6 +137,42 @@ describe('TelegramRelayService', () => {
     // The envelope itself is untouched — only the trailing instruction goes.
     expect(text).toContain('[HELM_TELEGRAM from:@testuser');
     expect(text).toContain('Ship it');
+    expect(text).not.toContain('Respond via telegram_chat');
+  });
+
+  /** G9: mode pty beats capability — the visible setting means what it says. */
+  it('mode pty keeps the instruction line even for a hook-capable recipient', async () => {
+    const { relay, ptyManager } = makeRelay();
+    relay.setReminderDelivery(async () => ({ channel: 'pty', fellBack: false }));
+
+    await relay.handleIncomingTelegramMessage({
+      message_id: 87,
+      message_thread_id: 42,
+      text: 'Prefer prepend',
+      chat: { id: 12345 },
+      from: { username: 'testuser' },
+    } as any);
+
+    const text = ptyManager.deliverText.mock.calls[0][1] as string;
+    expect(text).toContain('Respond via telegram_chat MCP tool.');
+  });
+
+  /** G9: off suppresses the reminder on both paths — the message still lands. */
+  it('mode off drops the instruction line even though the recipient cannot inject', async () => {
+    const { relay, ptyManager } = makeRelay();
+    relay.setReminderDelivery(async () => ({ channel: 'off', fellBack: false }));
+
+    await relay.handleIncomingTelegramMessage({
+      message_id: 88,
+      message_thread_id: 42,
+      text: 'Bare envelope',
+      chat: { id: 12345 },
+      from: { username: 'testuser' },
+    } as any);
+
+    const text = ptyManager.deliverText.mock.calls[0][1] as string;
+    expect(text).toContain('[HELM_TELEGRAM from:@testuser');
+    expect(text).toContain('Bare envelope');
     expect(text).not.toContain('Respond via telegram_chat');
   });
 
@@ -869,6 +907,39 @@ describe('TelegramRelayService', () => {
       // Should not call updateSession again
       expect(sessionManager.updateSession).not.toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
       expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.not.stringContaining('HELM_TELEGRAM_MODE'));
+    });
+
+    it('skips the first-contact mode block when telegramModeInstructions resolves to hook — the injector owns it', async () => {
+      const { relay, ptyManager, sessionManager } = makeRelay();
+      relay.setReminderDelivery(async (_session, reminder) => (
+        reminder === 'telegramModeInstructions' ? { channel: 'hook', fellBack: false } : { channel: 'pty', fellBack: false }
+      ));
+
+      await relay.handleIncomingTelegramMessage({
+        message_id: 89, message_thread_id: 42,
+        text: 'Enter mode quietly',
+        chat: { id: 12345 }, from: { username: 'tguser' },
+      } as any);
+
+      // Channel affinity is state, not text — it still flips.
+      expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
+      const text = ptyManager.deliverText.mock.calls[0][1] as string;
+      expect(text).not.toContain('HELM_TELEGRAM_MODE');
+      expect(text).toContain('Enter mode quietly');
+    });
+
+    it('suppresses the first-contact mode block entirely when it resolves to off', async () => {
+      const { relay, ptyManager } = makeRelay();
+      relay.setReminderDelivery(async () => ({ channel: 'off', fellBack: false }));
+
+      await relay.handleIncomingTelegramMessage({
+        message_id: 90, message_thread_id: 42,
+        text: 'No mode block',
+        chat: { id: 12345 }, from: { username: 'tguser' },
+      } as any);
+
+      const text = ptyManager.deliverText.mock.calls[0][1] as string;
+      expect(text).not.toContain('HELM_TELEGRAM_MODE');
     });
 
     it('injects first-contact instructions for attachment messages too', async () => {

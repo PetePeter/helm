@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HelmSessionDeliveryService } from '../src/mcp/services/helm-session-delivery-service.js';
+import { buildHelmMsgDirective } from '../src/session/intersession-directive.js';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -310,7 +311,9 @@ describe('HelmSessionDeliveryService', () => {
 
     it('omits the prepended directive when the recipient injects rules via hooks (G4 dual-path)', async () => {
       const { service, ptyManager, receiver, sender } = makeDeps();
-      service.setRulesViaHooks(async (session) => session.id === receiver.id);
+      service.setReminderDelivery(async (_session, reminder) => (
+        reminder === 'helmMsgRules' ? { channel: 'hook', fellBack: false } : { channel: 'pty', fellBack: false }
+      ));
 
       await service.sendTextToSession(receiver.id, 'do the thing', {
         senderSessionId: sender.id,
@@ -326,7 +329,7 @@ describe('HelmSessionDeliveryService', () => {
 
     it('keeps prepending the directive when the recipient has no hooks installed', async () => {
       const { service, ptyManager, receiver, sender } = makeDeps();
-      service.setRulesViaHooks(async () => false);
+      service.setReminderDelivery(async () => ({ channel: 'pty', fellBack: true }));
 
       await service.sendTextToSession(receiver.id, 'do the thing', {
         senderSessionId: sender.id,
@@ -334,6 +337,60 @@ describe('HelmSessionDeliveryService', () => {
       });
 
       expect(allDeliveredText(ptyManager)).toContain('[HELM_MSG_RULES]');
+    });
+
+    /**
+     * G9: mode pty is the user's choice — it prepends even when the recipient
+     * COULD inject, because the visible setting must mean what it says.
+     */
+    it('mode pty prepends the directive even for a hook-capable recipient', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      service.setReminderDelivery(async () => ({ channel: 'pty', fellBack: false }));
+
+      await service.sendTextToSession(receiver.id, 'do the thing', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+
+      expect(allDeliveredText(ptyManager)).toContain('[HELM_MSG_RULES]');
+    });
+
+    /** G9: off suppresses the reminder on both paths — the message still lands. */
+    it('mode off sends the envelope and text with no directive at all', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      service.setReminderDelivery(async () => ({ channel: 'off', fellBack: false }));
+
+      await service.sendTextToSession(receiver.id, 'do the thing', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+
+      const sent = allDeliveredText(ptyManager);
+      expect(sent).toContain('[HELM_MSG]');
+      expect(sent).toContain('do the thing');
+      expect(sent).not.toContain('[HELM_MSG_RULES]');
+      expect(sent).not.toContain('AskUserQuestion');
+    });
+
+    /**
+     * The zero-change pin: with no resolver wired (and for every session whose
+     * resolved channel is pty — which is every session without hooks), the
+     * delivered bytes are EXACTLY today's framing, directive included.
+     */
+    it('a pty-channel recipient gets the directive byte-identical to the builder output', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      service.setReminderDelivery(async () => ({ channel: 'pty', fellBack: true }));
+
+      await service.sendTextToSession(receiver.id, 'byte for byte', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+        expectsResponse: false,
+      });
+
+      const sent = allDeliveredText(ptyManager);
+      const expectedDirective = buildHelmMsgDirective(sender.id);
+      // The builder's exact bytes ride in the message, after the user text.
+      expect(sent).toContain('byte for byte' + expectedDirective);
     });
 
     it('prepends as always when no capability check is wired at all', async () => {

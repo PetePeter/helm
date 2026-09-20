@@ -5,6 +5,7 @@ import type { PtyManager } from '../../session/pty-manager.js';
 import type { SessionInfo } from '../../types/session.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
+import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
@@ -89,7 +90,7 @@ export interface HandoverArming {
 }
 
 export class HelmSessionDeliveryService {
-  private rulesViaHooks?: (session: SessionInfo) => Promise<boolean>;
+  private reminderDelivery?: ReminderDeliveryFn;
 
   constructor(
     private readonly sessionManager: SessionManager,
@@ -110,17 +111,16 @@ export class HelmSessionDeliveryService {
   }
 
   /**
-   * Late-bind the G4 rules-injection capability check.
+   * Late-bind the G9 reminder-delivery resolver (same fn the Telegram relay
+   * and the ContextInjector use).
    *
-   * When it answers true for a recipient — hooks installed AND the provider
-   * can inject on UserPromptSubmit — the prepended directive is redundant
-   * transcript filler: the hook supplies the same rules out-of-band the
-   * moment the message is submitted. Sessions whose CLI has no hooks, or a
-   * provider that drops UserPromptSubmit output (Copilot), keep the
-   * prepended header. Both paths coexist; the choice is per recipient.
+   * For the `helmMsgRules` reminder: 'pty' prepends the directive as today;
+   * 'hook' skips it — the recipient's hook supplies the same rules
+   * out-of-band the moment the message is submitted; 'off' suppresses it on
+   * both paths. No resolver wired = prepend, byte-identical to pre-G4.
    */
-  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
-    this.rulesViaHooks = rulesViaHooks;
+  setReminderDelivery(reminderDelivery: ReminderDeliveryFn): void {
+    this.reminderDelivery = reminderDelivery;
   }
 
   /**
@@ -185,10 +185,14 @@ export class HelmSessionDeliveryService {
       // three bracketed pastes into the recipient's composer, each one a chance
       // for a full-screen TUI to still be ingesting when the submit lands. Same
       // bytes, one race instead of three.
-      // G4 dual-path: when the recipient injects the rules via hooks, the
-      // message carries only the tag, envelope and text.
-      const inlineRules = this.rulesViaHooks ? await this.rulesViaHooks(session) : false;
-      const directive = inlineRules ? '' : buildNonBlockingDirective(options.senderSessionId);
+      // G9 reminder delivery: pty prepends the directive as today (the
+      // no-hooks default, byte-identical); hook leaves it to the recipient's
+      // own injection; off drops it entirely. One message never carries both
+      // forms — both sides resolve from the same fn and settings.
+      const channel = this.reminderDelivery
+        ? (await this.reminderDelivery(session, 'helmMsgRules')).channel
+        : 'pty';
+      const directive = channel === 'pty' ? buildNonBlockingDirective(options.senderSessionId) : '';
       const message = `${tag}${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({
