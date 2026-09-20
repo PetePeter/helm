@@ -117,6 +117,19 @@ export class HandoverDelivery extends EventEmitter {
     this.drop(sessionId, 'cancelled');
   }
 
+  /**
+   * PreCompact hook (G3): the CLI just announced its own compaction, so the
+   * old context is being discarded right now — deliver immediately, ignoring
+   * the lull floor. `deliverNow` removes the pending entry before it awaits,
+   * so the fallback heuristic's later `inactive` edge finds nothing: no double
+   * delivery by construction. The heuristic itself stays armed only for
+   * sessions without hooks.
+   */
+  deliverFromPreCompact(sessionId: string): void {
+    if (this.disposed) return;
+    void this.deliverNow(sessionId, 'precompact');
+  }
+
   isPending(sessionId: string): boolean {
     return this.pending.has(sessionId);
   }
@@ -135,7 +148,7 @@ export class HandoverDelivery extends EventEmitter {
     this.pending.clear();
   }
 
-  private async deliverNow(sessionId: string, trigger: 'idle' | 'ceiling'): Promise<void> {
+  private async deliverNow(sessionId: string, trigger: 'idle' | 'ceiling' | 'precompact'): Promise<void> {
     const entry = this.pending.get(sessionId);
     if (!entry) return;
     // Taken before the await so a racing edge cannot paste the same text twice.
