@@ -29,6 +29,12 @@ import {
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
 import { DEFAULT_SUGGESTION_SCORING, type SuggestionScoringWeights } from '../session/hooks/suggestion-scorer.js';
+import {
+  REMINDER_IDS,
+  isReminderDeliveryMode,
+  type ReminderDeliveryMode,
+  type ReminderId,
+} from '../session/reminder-delivery.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
 export type { CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
@@ -349,6 +355,12 @@ export interface SettingsConfig {
    * without declaring the rest. Weights are configuration, not buried magic.
    */
   suggestionScoring?: Partial<SuggestionScoringWeights>;
+  /**
+   * G9 per-reminder delivery modes (docs/cli-hooks.md, G9): hook / pty / off
+   * for each standing reminder. Absent field = that reminder's shipped
+   * default, which reproduces today's behaviour exactly.
+   */
+  reminderDelivery?: Partial<Record<ReminderId, ReminderDeliveryMode>>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
   /** Pre-rename key, read-only migration input for `fleet`. Never written. */
@@ -991,6 +1003,34 @@ export class ConfigLoader {
     const raw = this.settings?.suggestionScoring;
     const overrides = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     return { ...DEFAULT_SUGGESTION_SCORING, ...overrides };
+  }
+
+  /**
+   * G9 reminder delivery: only VALID overrides survive — a malformed value is
+   * dropped, never an error, so a hand-edited settings.yaml can only make a
+   * reminder revert to its default, never misroute it.
+   */
+  getReminderDelivery(): Partial<Record<ReminderId, ReminderDeliveryMode>> {
+    const raw = this.settings?.reminderDelivery;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const result: Partial<Record<ReminderId, ReminderDeliveryMode>> = {};
+    for (const id of REMINDER_IDS) {
+      const value = (raw as Record<string, unknown>)[id];
+      if (isReminderDeliveryMode(value)) result[id] = value;
+    }
+    return result;
+  }
+
+  /** Merge (and validate) per-reminder delivery modes into settings.yaml. */
+  setReminderDelivery(updates: Partial<Record<ReminderId, ReminderDeliveryMode>>): void {
+    this.ensureLoaded();
+    const merged = { ...this.getReminderDelivery() };
+    for (const id of REMINDER_IDS) {
+      const value = updates[id];
+      if (isReminderDeliveryMode(value)) merged[id] = value;
+    }
+    this.settings!.reminderDelivery = merged;
+    this.saveSettings();
   }
 
   /** Update the localhost MCP configuration (partial merge). */

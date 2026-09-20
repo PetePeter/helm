@@ -78,7 +78,7 @@ export function setupTopicInput(
       return;
     }
 
-    await forwardToSession(bot, ptyManager, configLoader, sessionManager, sessionId, msg.message_thread_id, msg.text, msg);
+    await forwardToSession(bot, ptyManager, configLoader, sessionManager, sessionId, msg.message_thread_id, msg.text, msg, relayService);
   };
 
   bot.on('message', handler);
@@ -98,6 +98,7 @@ async function forwardToSession(
   replyTopicId: number | undefined,
   text: string,
   msg: TelegramBot.Message,
+  relayService?: TelegramRelayService,
 ): Promise<void> {
   const from = msg.from?.username ? `@${msg.from.username}` : 'unknown';
   const fromTag = from === 'unknown' ? '' : ` from:${from}`;
@@ -110,7 +111,12 @@ async function forwardToSession(
     payload = buildLargeTextTempFileNotice(tempPath, 'Telegram message');
     logger.info(`[TopicInput] Wrote large Telegram message to temp file for ${sessionId}: ${tempPath}`);
   }
-  const wrapped = `[HELM_TELEGRAM${fromTag} chat:${msg.chat.id}]\n${payload}\n[/HELM_TELEGRAM]\nRespond via telegram_chat MCP tool.`;
+  // G9: the trailing instruction line is the telegramInstruction reminder —
+  // same mode, same resolver as the relay's own envelope. 'hook' leaves it to
+  // the recipient's injection; 'off' drops it; 'pty' (the default) prepends.
+  const instructionChannel = (await relayService?.telegramInstructionChannel(session ?? null)) ?? 'pty';
+  const instruction = instructionChannel === 'pty' ? '\nRespond via telegram_chat MCP tool.' : '';
+  const wrapped = `[HELM_TELEGRAM${fromTag} chat:${msg.chat.id}]\n${payload}\n[/HELM_TELEGRAM]${instruction}`;
   await deliverPromptSequenceToSession({
     sessionId,
     text: wrapped,

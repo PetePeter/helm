@@ -106,3 +106,18 @@ export const HELM_TELEGRAM_HOOK_RULES =
   'This message came from the user on Telegram. The user CANNOT see the terminal.\n' +
   'ALL responses and ALL questions MUST go through the telegram_chat MCP tool — do NOT use AskUserQuestion.\n' +
   '[/HELM_TELEGRAM_RULES]';
+
+/**
+ * The Telegram-mode block, announced once per entry into Telegram mode.
+ * ONE source of truth: the relay prepends it (reminder `telegramModeInstructions`
+ * resolving to pty) and the ContextInjector injects it out-of-band (hook).
+ * The wording is shared verbatim by both paths — they say the same thing,
+ * only the delivery differs.
+ */
+export const HELM_TELEGRAM_MODE_INSTRUCTIONS =
+  '[HELM_TELEGRAM_MODE]\n' +
+  'This session is now in Telegram mode. The user is interacting via Telegram and CANNOT see the terminal.\n' +
+  'ALL responses MUST go through the telegram_chat MCP tool.\n' +
+  'ALL questions and confirmations MUST go through telegram_chat — do NOT use AskUserQuestion.\n' +
+  'The user will return to their desk when they type in the terminal, which automatically exits Telegram mode.\n' +
+  '[/HELM_TELEGRAM_MODE]';

@@ -180,7 +180,7 @@ vi.mock('../src/telegram/orchestrator.js', () => ({
     terminalMirror: {},
     dashboard: { start: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() },
     // The relay is a ChatBridge now — handler setup registers it with the broker.
-    relayService: { provider: 'telegram', isAvailable: () => false, sendToSession: vi.fn(), setRulesViaHooks: vi.fn() },
+    relayService: { provider: 'telegram', isAvailable: () => false, sendToSession: vi.fn(), setReminderDelivery: vi.fn() },
     feedPtyOutput: vi.fn(),
     cleanup: vi.fn(),
   }),
@@ -243,7 +243,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
     this.setHandoverDelivery = vi.fn();
-    this.setRulesViaHooks = vi.fn();
+    this.setReminderDelivery = vi.fn();
     this.setChatBroker = vi.fn();
     this.setMobileDeps = vi.fn();
   }),

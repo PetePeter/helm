@@ -6,7 +6,7 @@ import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalOutputMode } from '../session/terminal-output-buffer.js';
 import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanType } from '../types/plan.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
-import type { SessionInfo } from '../types/session.js';
+import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import type { Artifact, ArtifactKind } from '../types/artifact.js';
 import type {
   TelegramBridge,
@@ -924,9 +924,9 @@ export class HelmControlService extends EventEmitter {
     this.sessionDelivery.setHandoverDelivery(handover);
   }
 
-  /** Wire the G4 rules-via-hooks capability check (see HelmSessionDeliveryService). */
-  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
-    this.sessionDelivery.setRulesViaHooks(rulesViaHooks);
+  /** Wire the G9 reminder-delivery resolver (see HelmSessionDeliveryService). */
+  setReminderDelivery(reminderDelivery: ReminderDeliveryFn): void {
+    this.sessionDelivery.setReminderDelivery(reminderDelivery);
   }
 
   // ---------------------------------------------------------------------------
