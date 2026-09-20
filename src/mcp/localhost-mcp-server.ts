@@ -272,7 +272,7 @@ export class LocalhostMcpServer {
                 this.planReadTracker.recordRead(planId, authContext.sessionId);
               }
             },
-            onItemFetched: (sessionId, type, id) => this.onItemFetched?.(sessionId, type, id),
+            onItemFetched: (sessionId: string, type: 'skill' | 'memory', id: string) => this.onItemFetched?.(sessionId, type, id),
           };
           const result = await callMcpTool(deps, name, args, authContext);
           const structuredContent = normalizeStructuredContent(result);
@@ -356,7 +356,7 @@ export class LocalhostMcpServer {
           this.planReadTracker.recordRead(planId, authContext.sessionId);
         }
       },
-      onItemFetched: (sessionId, type, id) => this.onItemFetched?.(sessionId, type, id),
+      onItemFetched: (sessionId: string, type: 'skill' | 'memory', id: string) => this.onItemFetched?.(sessionId, type, id),
     };
     return callMcpTool(deps, name, args, authContext);
   }

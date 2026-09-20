@@ -94,6 +94,16 @@ const mockConfigLoader = {
     getPatterns: vi.fn().mockReturnValue([]),
     addBookmarkedDir: vi.fn(),
     setProjectStore: vi.fn(),
+    // G5 suggester weights: the fixture hands back the defaults.
+    getSuggestionScoring: vi.fn().mockReturnValue({
+      adjacencyPerAnchor: 1.0,
+      adjacencyMax: 2.0,
+      scope: 0.75,
+      recencyMax: 0.75,
+      recencyWindowDays: 30,
+      usagePerCooccurrence: 1.0,
+      usageMax: 2.0,
+    }),
 };
 
 vi.mock('../src/config/loader.js', () => ({

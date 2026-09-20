@@ -85,6 +85,8 @@ export const PRELOAD_API_DOMAINS = {
     'hooksGetStatus',
     'hooksInstall',
     'hooksUninstall',
+    'hooksGetSuggestionUsage',
+    'hooksResetSuggestionUsage',
   ],
   tools: [
     'toolsGetAll',

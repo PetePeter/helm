@@ -215,3 +215,33 @@ export class SuggestionUsageStore {
     }
   }
 }
+
+export interface SuggestionUsageSummary {
+  /** Items with any learned weight. */
+  items: number;
+  /** Σ of all co-occurrence counts across items. */
+  totalWeight: number;
+  /** The strongest associations, strongest first. */
+  top: Array<{ key: string; weight: number; topTerms: Array<{ term: string; count: number }> }>;
+  /** Recent learning events, oldest first (as stored). */
+  recent: Array<{ at: number; key: string }>;
+}
+
+/** What the CLI Integrations pane shows — the store's snapshot, ranked. */
+export function summarizeSuggestionUsage(state: SuggestionUsageState, topN = 10, recentN = 20): SuggestionUsageSummary {
+  const items = Object.entries(state.weights).map(([key, terms]) => {
+    const entries = Object.entries(terms).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return {
+      key,
+      weight: entries.reduce((sum, [, count]) => sum + count, 0),
+      topTerms: entries.slice(0, 5).map(([term, count]) => ({ term, count })),
+    };
+  });
+  items.sort((a, b) => b.weight - a.weight || a.key.localeCompare(b.key));
+  return {
+    items: items.length,
+    totalWeight: items.reduce((sum, item) => sum + item.weight, 0),
+    top: items.slice(0, topN),
+    recent: state.recent.slice(-recentN),
+  };
+}

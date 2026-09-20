@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SuggestionUsageStore, usageTerms } from '../../../src/session/hooks/suggestion-usage-store';
+import { SuggestionUsageStore, summarizeSuggestionUsage, usageTerms } from '../../../src/session/hooks/suggestion-usage-store';
 
 function freshDir(): string {
   return join(tmpdir(), `g5-store-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -130,5 +130,21 @@ describe('SuggestionUsageStore', () => {
     // And nothing is written until something is actually learned.
     expect(existsSync(join(store.filePath))).toBe(false);
     rmSync(store.filePath, { force: true });
+  });
+
+  it('the pane summary ranks items by weight and shows their top terms', () => {
+    const dir = freshDir();
+    const store = new SuggestionUsageStore({ configDir: dir });
+    store.noteSuggestion('s1', ['skill/deploy-check', 'skill/pdf-extract'], ['deploy', 'checklist', 'pdf']);
+    store.recordFetch('s1', 'skill/deploy-check');
+    store.recordFetch('s1', 'skill/deploy-check');
+    store.recordFetch('s1', 'skill/pdf-extract');
+    const summary = summarizeSuggestionUsage(store.snapshot());
+    expect(summary.items).toBe(2);
+    expect(summary.top[0]?.key).toBe('skill/deploy-check');
+    expect(summary.top[0]?.weight).toBe(2 * 3);
+    // 'deploy' and 'checklist' tie at 2 — ties break alphabetically.
+    expect(summary.top[0]?.topTerms[0]).toEqual({ term: 'checklist', count: 2 });
+    expect(summary.recent).toHaveLength(3);
   });
 });

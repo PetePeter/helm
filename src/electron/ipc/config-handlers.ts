@@ -13,6 +13,7 @@ import type { ProjectStore } from '../../session/project-store.js';
 import type { FleetStatus } from '../../mcp/peer/fleet-controller.js';
 import type { HookInstallerDeps, HookIntegrationStatus } from '../../session/hooks/hook-installer.js';
 import { installCliHooks, readHookIntegrationStatus, uninstallCliHooks } from '../../session/hooks/hook-installer.js';
+import { summarizeSuggestionUsage, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../../session/project-identity.js';
 import { logger } from '../../utils/logger.js';
 
@@ -23,6 +24,7 @@ export function setupConfigHandlers(
   applyFleetConfig?: (config: FleetConfig) => Promise<void>,
   getFleetStatus?: () => FleetStatus,
   hookDeps?: HookInstallerDeps,
+  suggestionUsage?: SuggestionUsageStore,
 ): void {
   ipcMain.handle('config:getAll', () => {
     try {
@@ -574,6 +576,30 @@ export function setupConfigHandlers(
       return { success: true, ...result };
     } catch (error) {
       logger.error(`[IPC] Failed to uninstall hooks for ${cliTypeId}: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  // G5 suggester usage feedback — inspectable and resettable from the pane.
+  // The summary is ids and term counts only, by construction of the store.
+  ipcMain.handle('hooks:getSuggestionUsage', () => {
+    if (!suggestionUsage) return { success: false, error: 'Suggestion usage store not wired' };
+    try {
+      return { success: true, usage: summarizeSuggestionUsage(suggestionUsage.snapshot()) };
+    } catch (error) {
+      logger.error(`[IPC] Failed to read suggestion usage: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('hooks:resetSuggestionUsage', () => {
+    if (!suggestionUsage) return { success: false, error: 'Suggestion usage store not wired' };
+    try {
+      suggestionUsage.reset();
+      logger.info('[IPC] Suggestion usage store reset');
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to reset suggestion usage: ${error}`);
       return { success: false, error: String(error) };
     }
   });

@@ -124,7 +124,8 @@ import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ContextInjector } from '../../session/hooks/context-injector.js';
-import { SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
@@ -357,10 +358,41 @@ export function registerIPCHandlers(
     (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
     (hooks) => readHookIntegrationStatus(hooks, hookDeps),
   );
+  // G5: ranking signals behind the same scorer interface. The usage store is
+  // ids + term co-occurrence ONLY — never prompt text (docs/cli-hooks.md, G5);
+  // the scorer reorders passers only, so nothing crosses the threshold on
+  // signal strength. The store is constructed here (not with the suggester
+  // below) because the MCP server's fetch recording feeds it.
+  const suggestionUsage = new SuggestionUsageStore({ configDir: getConfigDir(dirname ?? process.cwd()) });
+  const suggestionScorer = new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
+    getMemoryEdges: () => memoryManager.listEdges(),
+    getWorkspacePlanIds: (sessionId) => {
+      const claimed = planManager.claimedPlanFor(sessionId);
+      if (!claimed) return new Set<string>();
+      const ids = new Set<string>([claimed.id]);
+      if (claimed.projectId && claimed.sequenceId) {
+        for (const item of planManager.getForProject(claimed.projectId)) {
+          if (item.sequenceId === claimed.sequenceId) ids.add(item.id);
+        }
+      }
+      const boundContexts = [
+        ...contextManager.getContextsForPlan(claimed.id),
+        ...(claimed.sequenceId ? contextManager.getContextsForSequence(claimed.sequenceId) : []),
+      ];
+      for (const context of boundContexts) {
+        for (const planId of contextManager.getPlanIdsForContext(context.id)) ids.add(planId);
+      }
+      return ids;
+    },
+    usageBoost: (key, terms) => suggestionUsage.boostFor(key, terms),
+  }, configLoader.getSuggestionScoring());
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
     token: configLoader.getMcpConfig().authToken,
+    // G5 usage feedback: correlate a fetch with a recent suggestion. Only
+    // identifiable sessions land here; anonymous peers learn nothing.
+    onItemFetched: (sessionId, type, id) => suggestionUsage.recordFetch(sessionId, `${type}/${id}`),
   }, ptyManager, hookReceiver);
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
@@ -395,6 +427,7 @@ export function registerIPCHandlers(
     applyFleetConfig,
     () => fleetController!.status(),
     hookDeps,
+    suggestionUsage,
   );
   setupEditorHandlers(configLoader);
   setupToolsHandlers(configLoader);
@@ -522,6 +555,9 @@ export function registerIPCHandlers(
   // as before. The suggester's candidates are built per prompt: skills visible
   // to the session's project (globals included), plus that project's live
   // (non-dormant) memories. Pointers only, capped, once per item.
+  //
+  // G5: the suggester now runs on the boosted scorer above, and feeds the
+  // usage store what was actually sent.
   const suggestionService = new SuggestionService({
     getCandidates: (projectId) => {
       const skills = skillManager.listForProject(projectId).map((skill) => ({
@@ -529,13 +565,23 @@ export function registerIPCHandlers(
         id: skill.id,
         name: skill.name,
         description: skill.description,
+        allProjects: skill.allProjects,
       }));
       if (!projectId) return skills;
       const memories = memoryManager.listRecords()
         .filter((record) => record.projectId === projectId && record.dormantSince === undefined)
-        .map((record) => ({ type: 'memory' as const, id: record.id, name: record.tldr, description: record.content }));
+        .map((record) => ({
+          type: 'memory' as const,
+          id: record.id,
+          name: record.tldr,
+          description: record.content,
+          createdAt: record.createdAt,
+          ...(record.planId ? { planId: record.planId } : {}),
+        }));
       return [...skills, ...memories];
     },
+    scorer: suggestionScorer,
+    onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),
   });
   const contextInjector = new ContextInjector({
     getSession: (sessionId) => sessionManager.getSession(sessionId),
@@ -557,6 +603,7 @@ export function registerIPCHandlers(
   sessionManager.on('session:removed', (event) => {
     contextInjector.forgetSession(event.sessionId);
     suggestionService.forgetSession(event.sessionId);
+    suggestionUsage.forgetSession(event.sessionId);
   });
   // Dual-path rules delivery: when the recipient injects the rules itself via
   // hooks, both surfaces skip the prepended copies. Sessions without hooks

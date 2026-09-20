@@ -478,6 +478,15 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Remove Helm's hook block from a CLI's user-level config. Reversible. */
   hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
 
+  /**
+   * G5 suggester usage feedback: the learned co-occurrence associations
+   * (item ids + terms, never prompt text) and the recent learning events.
+   */
+  hooksGetSuggestionUsage: () => ipcRenderer.invoke('hooks:getSuggestionUsage'),
+
+  /** Forget everything the suggester has learned. The store starts empty. */
+  hooksResetSuggestionUsage: () => ipcRenderer.invoke('hooks:resetSuggestionUsage'),
+
   // ========================================================================
   // Project Management
   // ========================================================================

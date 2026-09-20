@@ -28,6 +28,7 @@ import {
   SettingsManager,
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
+import { DEFAULT_SUGGESTION_SCORING, type SuggestionScoringWeights } from '../session/hooks/suggestion-scorer.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
 export type { CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
@@ -342,6 +343,12 @@ export interface SettingsConfig {
   telegram?: TelegramConfig;
   mcp?: McpConfig;
   fleet?: FleetConfig;
+  /**
+   * G5 suggester signal weights (docs/cli-hooks.md, G5). Absent means the
+   * shipped defaults; every field is optional so a user can tune one signal
+   * without declaring the rest. Weights are configuration, not buried magic.
+   */
+  suggestionScoring?: Partial<SuggestionScoringWeights>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
   /** Pre-rename key, read-only migration input for `fleet`. Never written. */
@@ -973,6 +980,17 @@ export class ConfigLoader {
       port: normalizeMcpPort(this.settings?.mcp?.port),
       authToken: typeof this.settings?.mcp?.authToken === 'string' ? this.settings.mcp.authToken : '',
     };
+  }
+
+  /**
+   * G5 suggester signal weights: shipped defaults, overridden field-by-field
+   * from settings.yaml. A malformed section degrades to the defaults — bad
+   * tuning must never break scoring, only make it duller.
+   */
+  getSuggestionScoring(): SuggestionScoringWeights {
+    const raw = this.settings?.suggestionScoring;
+    const overrides = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return { ...DEFAULT_SUGGESTION_SCORING, ...overrides };
   }
 
   /** Update the localhost MCP configuration (partial merge). */
