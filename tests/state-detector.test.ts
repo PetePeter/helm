@@ -1077,4 +1077,86 @@ describe('StateDetector', () => {
       // No errors, no state changes
     });
   });
+
+  describe('hook-reported activity (G3 second producer)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('markHookWorking promotes to active with the same activity-change contract as PTY output', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookWorking('s1');
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's1', level: 'active' }),
+      );
+    });
+
+    it('markHookTurnEnded leaves green immediately, without waiting out the silence timer', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookWorking('s1');
+      handler.mockClear();
+
+      // Zero elapsed time — the drop comes from the Stop hook, not a timer.
+      detector.markHookTurnEnded('s1');
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's1', level: 'inactive' }),
+      );
+    });
+
+    it('markHookTurnEnded restarts the idle countdown from the turn end', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookWorking('s1');
+      vi.advanceTimersByTime(120_000); // two minutes of pre-turn silence decay timers
+      detector.markHookTurnEnded('s1');
+
+      handler.mockClear();
+      vi.advanceTimersByTime(299_999);
+      expect(handler).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(2);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's1', level: 'idle' }),
+      );
+    });
+
+    it('markHookTurnEnded emits nothing when already inactive', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookWorking('s1');
+      detector.markHookTurnEnded('s1');
+      handler.mockClear();
+
+      detector.markHookTurnEnded('s1');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('PTY output still promotes after a hook turn end — hooks going silent cannot stick the dot', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookTurnEnded('s1');
+      handler.mockClear();
+
+      detector.processOutput('s1', 'a genuinely large chunk of fresh terminal output');
+      vi.advanceTimersByTime(200); // past the small-chunk debounce, well under 10s
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's1', level: 'active' }),
+      );
+    });
+  });
 });

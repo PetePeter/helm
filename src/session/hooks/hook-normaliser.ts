@@ -24,6 +24,11 @@ export const CANONICAL_HOOK_EVENTS = [
   'Stop',
   'SubagentStart',
   'SubagentStop',
+  // Claude-only, but Helm registers it just for Claude: the turn died on an
+  // API error (the usage-limit stall) reported as fact rather than guessed
+  // from silence. Codex and Copilot never spell this event, so their
+  // normalisation returns null and the timing fallback covers the case.
+  'StopFailure',
 ] as const;
 
 export type CanonicalHookEvent = (typeof CANONICAL_HOOK_EVENTS)[number];
@@ -48,6 +53,8 @@ export interface HookEvent {
   /** The tool's arguments object (tool_input / toolInput), when present. */
   toolInput?: Record<string, unknown>;
   prompt?: string;
+  /** PreCompact only: "auto" (context filled) or "manual" (/compact command). */
+  trigger?: string;
   receivedAt: number;
   /** The raw payload, kept for logging and future groups. */
   raw: Record<string, unknown>;
@@ -103,6 +110,9 @@ export function normaliseHookEvent(
   const event = canonicalEventName(input.cli as HookProvider, input.event);
   if (input.cli !== 'claude' && input.cli !== 'codex' && input.cli !== 'copilot') return null;
   if (event === null) return null;
+  // StopFailure is Claude's alone — the others never send it, and Helm only
+  // registers it in Claude's config, so a stray one elsewhere is noise.
+  if (event === 'StopFailure' && input.cli !== 'claude') return null;
   return {
     cli: input.cli,
     event,
@@ -112,6 +122,7 @@ export function normaliseHookEvent(
     toolName: str(input.payload, ['tool_name', 'toolName']),
     toolInput: obj(input.payload, ['tool_input', 'toolInput']),
     prompt: str(input.payload, ['prompt']),
+    trigger: str(input.payload, ['trigger']),
     receivedAt: now(),
     raw: input.payload,
   };

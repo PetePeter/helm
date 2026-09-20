@@ -130,6 +130,39 @@ describe('normaliseHookEvent', () => {
       normalise({ cli: 'claude', event: 'PreToolUse', payload: { tool_input: 'not-an-object' } })?.toolInput,
     ).toBeUndefined();
   });
+
+  it('normalises the Claude-only StopFailure event — the reported stall', () => {
+    const event = normalise({
+      cli: 'claude',
+      event: 'StopFailure',
+      payload: {
+        session_id: 'claude-sess-1',
+        cwd: '/repo',
+        hook_event_name: 'StopFailure',
+        error: 'API Error: usage limit reached',
+      },
+    });
+
+    expect(event).toMatchObject({
+      cli: 'claude',
+      event: 'StopFailure',
+      cliSessionId: 'claude-sess-1',
+      receivedAt: NOW,
+    });
+    // Only Claude reports it; the other providers never spell this event.
+    expect(normalise({ cli: 'codex', event: 'StopFailure', payload: {} })).toBeNull();
+    expect(normalise({ cli: 'copilot', event: 'StopFailure', payload: {} })).toBeNull();
+  });
+
+  it('extracts the PreCompact trigger — auto (context filled) vs manual (/compact)', () => {
+    expect(
+      normalise({ cli: 'claude', event: 'PreCompact', payload: { trigger: 'auto' } })?.trigger,
+    ).toBe('auto');
+    expect(
+      normalise({ cli: 'codex', event: 'PreCompact', payload: { trigger: 'manual' } })?.trigger,
+    ).toBe('manual');
+    expect(normalise({ cli: 'claude', event: 'PreCompact', payload: {} })?.trigger).toBeUndefined();
+  });
 });
 
 describe('encodeDenyResponse — one decision, three wire shapes', () => {
