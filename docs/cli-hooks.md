@@ -107,7 +107,13 @@ flowchart LR
      deliberately NOT in the shipped defaults — Helm's own release workflow
      (`sendDeploy.py`) pushes from inside a Helm session; a push guard is a
      one-line user rule, not a default.
-  4. writes outside the session's working directory
+
+  `outsideSessionDir` is SUPPORTED but likewise not shipped on by default. A
+  session legitimately reaches outside its cwd — its own scratchpad lives in the
+  per-user temp dir, and cross-repo work is normal — so denying every such write
+  blocked ordinary working behaviour, not just the mistakes it was aimed at. The
+  rule remains available for anyone who wants it; it is a user choice, not a
+  default. Same reasoning as `git push`.
 - **Rule shape** — `tools` (case-insensitive match) plus any of `onlyWhenAway`,
   `commandPattern` (regex over the shell command; uncompilable = never
   matches), `outsideSessionDir`, and the required `reason`. First matching

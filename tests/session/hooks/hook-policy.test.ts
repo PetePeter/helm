@@ -30,6 +30,15 @@ const DEFAULT_RULES: HookDenyRule[] = [
     commandPattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b',
     reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions.',
   },
+];
+
+/**
+ * The write guard is SUPPORTED but no longer shipped on by default, so it is
+ * opted into here rather than living in DEFAULT_RULES — the mechanism still
+ * needs proving.
+ */
+const WRITE_GUARD_RULES: HookDenyRule[] = [
+  ...DEFAULT_RULES,
   {
     tools: ['Write', 'Edit', 'NotebookEdit', 'write', 'edit', 'apply_patch'],
     outsideSessionDir: true,
@@ -151,13 +160,28 @@ describe('decideHookPolicy — command guardrails', () => {
 
 describe('decideHookPolicy — writes outside the session directory', () => {
   const workingDir = process.platform === 'win32' ? 'C:\\repo' : '/repo';
+  const outside = process.platform === 'win32' ? 'C:\\Windows\\system32\\evil.dll' : '/etc/passwd';
 
-  it('denies a write outside the session working directory', () => {
-    const outside = process.platform === 'win32' ? 'C:\\Windows\\system32\\evil.dll' : '/etc/passwd';
+  it('does NOT guard writes in the shipped defaults — a session legitimately reaches outside its cwd', () => {
+    // Pinned after the guard shipped on and immediately blocked a session from
+    // writing to its OWN scratchpad, which lives in the per-user temp dir. The
+    // rule cannot tell "my scratch space" from "someone else's project", and
+    // cross-repo work is normal. Same call as git push: mechanism stays, the
+    // default goes.
     const decision = decideHookPolicy(
       preToolUse({ toolName: 'Write', toolInput: { file_path: outside } }),
       session({ workingDir }),
       DEFAULT_RULES,
+    );
+
+    expect(decision.decision).toBe('allow');
+  });
+
+  it('denies a write outside the session working directory when the guard is opted into', () => {
+    const decision = decideHookPolicy(
+      preToolUse({ toolName: 'Write', toolInput: { file_path: outside } }),
+      session({ workingDir }),
+      WRITE_GUARD_RULES,
     );
 
     expect(decision.decision).toBe('deny');
@@ -168,7 +192,7 @@ describe('decideHookPolicy — writes outside the session directory', () => {
     const decision = decideHookPolicy(
       preToolUse({ toolName: 'Write', toolInput: { file_path: inside } }),
       session({ workingDir }),
-      DEFAULT_RULES,
+      WRITE_GUARD_RULES,
     );
 
     expect(decision.decision).toBe('allow');
@@ -178,7 +202,7 @@ describe('decideHookPolicy — writes outside the session directory', () => {
     const decision = decideHookPolicy(
       preToolUse({ toolName: 'Edit', cwd: workingDir, toolInput: { file_path: 'src/app.ts' } }),
       session({ workingDir }),
-      DEFAULT_RULES,
+      WRITE_GUARD_RULES,
     );
 
     expect(decision.decision).toBe('allow');
@@ -188,7 +212,7 @@ describe('decideHookPolicy — writes outside the session directory', () => {
     const decision = decideHookPolicy(
       preToolUse({ toolName: 'Write', toolInput: { file_path: '/some/where.txt' } }),
       session(),
-      DEFAULT_RULES,
+      WRITE_GUARD_RULES,
     );
 
     expect(decision.decision).toBe('allow');

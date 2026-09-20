@@ -40,9 +40,6 @@
       - tools: [Bash, bash, shell, Shell]
         commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
         reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
-      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
-        outsideSessionDir: true
-        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22:
   id: 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22
@@ -75,9 +72,6 @@
       - tools: [Bash, bash, shell, Shell, local_shell]
         commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
         reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
-      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
-        outsideSessionDir: true
-        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33:
   id: 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33
@@ -110,9 +104,6 @@
       - tools: [Bash, bash, shell, Shell]
         commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
         reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
-      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
-        outsideSessionDir: true
-        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 # Plain shell — the escape hatch when you want a terminal rather than an agent.
 7f4b0a25-8e36-4c19-a2f7-4b1d6c9e2a44:
