@@ -1,6 +1,6 @@
 # CLI Hooks
 
-**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot) and G4 (context injection, nudges, hint-only suggester, dual-path rules delivery) shipped. Loop driving was deliberately dropped.**
+**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot), G4 (context injection, nudges, hint-only suggester, dual-path rules delivery) and G9 (reminder delivery: the inventory below, plus per-reminder hook/pty/off modes) shipped. Loop driving was deliberately dropped.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
@@ -308,9 +308,10 @@ The inter-session rules reach a session two ways, per recipient:
    can — the transcript stays clean.
 
 The choice is ONE capability check (`src/session/hooks/hook-capability.ts`)
-consulted by BOTH delivery surfaces — the MCP delivery service
-(`HelmSessionDeliveryService.setRulesViaHooks`) and the Telegram relay
-(`TelegramRelayService.setRulesViaHooks`, which drops only the envelope's
+wrapped by the G9 reminder-delivery resolver (`src/session/reminder-delivery.ts`)
+and consulted by EVERY delivery surface — the MCP delivery service
+(`HelmSessionDeliveryService.setReminderDelivery`) and the Telegram relay
+(`TelegramRelayService.setReminderDelivery`, which drops only the envelope's
 trailing instruction line). Hooks block present AND provider injects on
 UserPromptSubmit (claude, codex) AND the block reads back
 `installed`/`outdated` from disk — otherwise false, which means "prepend as
@@ -323,6 +324,67 @@ from G4 — remote control of the agent loop with a credit card attached is not
 shipped, not built, and its guards (max auto-continues, visible counter, kill
 switches) were never implemented. If it ever lands, it inherits the
 StopFailure-never-retried rule above.
+
+## Reminder delivery (G9) — the inventory, and a visible mode per reminder
+
+Helm accumulated several ways of telling a session something, all predating
+hooks and all spending prompt tokens on every message. G9 migrated the
+STANDING ones onto the hook channel and made the choice visible. **This is a
+migration of delivery, not a cull** — the message still needs saying; only
+how it reaches the session changed.
+
+### The inventory — every place Helm injects standing text into a session
+
+| # | Standing text | Defined in | Delivered by | Classification |
+|---|---------------|-----------|--------------|----------------|
+| R1 | Inter-session rules `[HELM_MSG_RULES]` (prepend builder + injected static) | `src/session/intersession-directive.ts` | `HelmSessionDeliveryService` prepend / `ContextInjector` inject; gated per CLI type by `helmPreambleForInterSession` | **move** — dual-path since G4, now mode `helmMsgRules` |
+| R2 | Telegram reply instruction `"Respond via telegram_chat MCP tool."` — text envelope, attachment envelope, and the topic-input fallback line | `src/telegram/relay-service.ts` (`wrapTelegramEnvelope` + attachment envelope), `src/telegram/topic-input.ts` | same three surfaces / `ContextInjector` (`HELM_TELEGRAM_HOOK_RULES`) | **move** — dual-path since G4, now mode `telegramInstruction`; one mode covers all three carrying surfaces |
+| R3 | Telegram mode block `[HELM_TELEGRAM_MODE]`, announced once per entry into Telegram mode | `src/session/intersession-directive.ts` (`HELM_TELEGRAM_MODE_INSTRUCTIONS` — ONE constant, both paths) | relay first-contact prepend / `ContextInjector` (once per mode entry, re-armed on leaving) | **move** — default `pty` (today's always-prepend); mode `telegramModeInstructions` opts it onto the hook channel |
+| — | `expectsResponse` reply-routing tag on the envelope opening | `helm-session-delivery-service.ts` | prepend only | **keep inline** — per-sender dynamic content, not a standing rule |
+| — | Mess pokes (`[HELM_MESS] N new — call mess_check`, join line) | `src/session/mess-notifier.ts` | `sendSystemReminder` PTY write | **keep inline** — the unread count IS the message (per-event content); the per-CLI-type `messReminders` flag already is its off-switch |
+| — | Spawn init prompt (`Call session_info…`) | `cli-types.yaml` `initialPrompt` | PTY after spawn | **keep inline** — it triggers the CLI's first turn; injection alone would leave nothing to respond to |
+| — | Handover paste, `session_clear` context note, large-text temp-file notices | handover-delivery / delivery service | PTY | **keep inline** — one-shot per-message payloads |
+| — | G2 deny reasons | `cli-types.yaml` `hooks.denyRules` | PreToolUse deny response | not injected text — event-driven enforcement, delivered exactly when relevant |
+
+**Deletions: none.** A reminder is deleted only when a PreToolUse deny now
+ENFORCES it, making the please-remember text pure duplication. The nearest
+candidate — the AskUserQuestion prohibition inside R1/R2 — is enforced only
+`onlyWhenAway` (interactionChannel `'telegram'`): between two local sessions
+while the user is at the desk, a blocking prompt is answerable at the
+terminal, so the rule still carries information the deny does not deliver.
+Partial enforcement is not duplication; the text stays.
+
+### Delivery modes
+
+Per reminder, in Settings → 🪝 CLI Integrations → **Reminder delivery**:
+
+- **hook** — injected out-of-band; costs nothing per message. Falls back to
+  prepend when the recipient's CLI cannot inject (no hooks installed, or a
+  provider that drops UserPromptSubmit output — Copilot) and the pane SHOWS
+  the fallback per CLI rather than silently doing it.
+- **pty** — prepended, as today. The user's choice beats the capability: a
+  hook-capable recipient still gets the prepend.
+- **off** — suppressed on both paths.
+
+The defaults reproduce today exactly, so an upgrade changes nothing until the
+user chooses: `helmMsgRules`/`telegramInstruction` default to `hook`
+(G4's auto dual-path IS today's behaviour), `telegramModeInstructions`
+defaults to `pty` (always-prepended). Settings live in `settings.yaml` under
+`reminderDelivery`; malformed values are dropped, never misrouted. IPC:
+`config:getReminderDelivery` / `config:setReminderDelivery` via the preload
+`config` domain (invariant 3).
+
+One resolver decides everything (`src/session/reminder-delivery.ts`):
+`resolveReminderDelivery(reminder, mode, capable)` is PURE; the per-recipient
+factory wraps the ONE capability check from G4 (no second notion of "can this
+session receive injected rules"), and every surface consumes it — the
+delivery services decide whether to prepend, the injector decides whether to
+inject, so **one message never carries a prepended rule and its injected
+twin**. Inside the injector capability is always true (a hook firing IS the
+proof). Injected reminders share the existing G4 byte budget (800/source,
+2500 total) and are pushed first in the payload, so they cannot silently
+crowd out the suggester pointer or nudges; plan/draft/handover ride
+SessionStart, a different event with its own budget.
 
 ## Ranking signals (G5) — adjacency, scope, recency, usage
 
@@ -444,9 +506,11 @@ be a few lines later — deliberately not built (YAGNI).
 Settings → 🪝 CLI Integrations (`renderer/components/settings/CliIntegrationsTab.vue`):
 one row per CLI type with a `hooks` block in its config. Status is read off
 disk every time — never a stored flag — and reports `installed` /
-`outdated` / `not-installed` / `interpreter-missing`. IPC:
+`outdated` / `not-installed` / `interpreter-missing`, plus the G9 `canInject`
+flag (false for providers that drop UserPromptSubmit output). IPC:
 `hooks:getStatus` / `hooks:install` / `hooks:uninstall` via the preload
 `config` domain (`hooksGetStatus` / `hooksInstall` / `hooksUninstall`).
+Below the install rows: the **Reminder delivery** section (G9, above).
 
 ## Mobile/Telegram channel affinity (G2 enabler)
 
@@ -468,6 +532,7 @@ for both surfaces.
 | `src/session/hooks/suggestion-scorer.ts` | G4 hint-only suggester: BM25, tuples only, caps + once-per-item ledger |
 | `src/session/hooks/hook-encoder.ts` | per-CLI additionalContext nesting and the stop-block form |
 | `src/session/hooks/hook-capability.ts` | the ONE rules-via-hooks check behind both delivery paths; false on every failure |
+| `src/session/reminder-delivery.ts` | G9: pure hook/pty/off resolution per reminder + the per-recipient factory wrapping the capability check |
 | `src/session/intersession-directive.ts` | the inter-session rules in both delivery forms — prepended builder + static injected blocks |
 | `src/session/hooks/hook-tracker.ts` | G3: the `hook` stream's first subscriber — activity edges, durable `hookStall`, plan progress, the PreCompact snapshot (composed by Helm, transcript attached) |
 | `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk |

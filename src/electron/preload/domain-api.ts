@@ -479,6 +479,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
 
   /**
+   * G9 reminder delivery: the user's per-reminder mode overrides
+   * ('hook' | 'pty' | 'off'). Absent reminder = its shipped default.
+   */
+  configGetReminderDelivery: () => ipcRenderer.invoke('config:getReminderDelivery'),
+
+  /** Set per-reminder delivery modes (partial merge; invalid values ignored). */
+  configSetReminderDelivery: (modes: Record<string, string>) =>
+    ipcRenderer.invoke('config:setReminderDelivery', modes),
+
+  /**
    * G5 suggester usage feedback: the learned co-occurrence associations
    * (item ids + terms, never prompt text) and the recent learning events.
    */
