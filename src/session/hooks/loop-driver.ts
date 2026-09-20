@@ -1,7 +1,9 @@
 /**
  * LoopDriver — G8's Stop-block continuation, gated on consent that already
  * exists (plan P-0789; decided context node "Hook — loop driving: what
- * decides go vs stop").
+ * decides go vs stop"). G10 removed the per-session opt-in: autoImplement
+ * on the plan IS the consent — one surface, ticked deliberately when the
+ * plan was written — and the global kill switch is the only opt-out.
  *
  * THE PRINCIPLE: loop driving NEVER decides for itself whether to continue.
  * It reads three facts something external already recorded:
@@ -16,10 +18,10 @@
  *
  * TWO separate gates on the same Stop event, and the distinction is the
  * heart of the design:
- *   CONTINUATION — gated on autoImplement, may repeat to the cap, OFF by
- *                  default (per-session opt-in + global kill switch)
+ *   CONTINUATION — gated on autoImplement + the global kill switch, may
+ *                  repeat to the cap
  *   VERIFICATION — gated on completionRecap, capped at 1, NOT configurable,
- *                  and must work when loop driving is off
+ *                  and must work when the kill switch is off
  * Continuation is checked FIRST; exactly one block is ever emitted per Stop.
  *
  * HARD STOPS, all enforced in stopBlock:
@@ -187,7 +189,9 @@ export class LoopDriver {
     if (!state) return null;
 
     const config = this.deps.getLoopConfig();
-    const optedIn = session.loopDriving === true && config.enabled;
+    // G10: autoImplement on the plan is the only consent. The global kill
+    // switch is the emergency brake and is read live on every Stop.
+    const optedIn = config.enabled;
     const next = this.pickFollowUp(state);
 
     // Snapshot progress for the NEXT Stop before any branch returns.

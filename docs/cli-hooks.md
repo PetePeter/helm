@@ -481,7 +481,11 @@ exist, recorded before the loop started:
 1. **`autoImplement` on a follow-up plan is the go/no-go.** Its existing
    meaning — "this ready follow-up may be picked up automatically once its
    prerequisite completes" — is already consent, per plan, in the DAG.
-   Unticked means the loop stops there. There is NO new consent UI.
+   Unticked means the loop stops there. There is NO other consent surface:
+   **ticking auto is consent to unattended continuation** of the chain.
+   (G10 removed the brief per-session `session_set_loop_driving` opt-in —
+   it was a second place to say yes, and therefore a second place to
+   forget.)
 2. **`followUpPlans`, already returned by `plan_complete`, is the what-next.**
    `plan_complete` reports the completion (and its follow-ups) to the
    `LoopDriver`; Stop asks the DAG rather than guessing. An empty list is a
@@ -498,9 +502,9 @@ it is done:
 
 | | CONTINUATION | VERIFICATION |
 |---|---|---|
-| gated on | `autoImplement` (follow-up) + session opt-in | `completionRecap` (completed plan) |
+| gated on | `autoImplement` (follow-up) + global kill switch | `completionRecap` (completed plan) |
 | may repeat | yes, to the cap (default 5) | no — capped at 1, not configurable |
-| default | **OFF** — opt-in per session | always on (works with loop driving off) |
+| default | on unless the kill switch is set | always on (works with the kill switch off) |
 | asks | "start P-xxxx" | "confirm what you verified" |
 
 Continuation is checked FIRST. Exactly one block is ever emitted per Stop
@@ -511,7 +515,7 @@ untouched, and independently.
 flowchart TD
     S[Stop fires] --> L{completion recorded<br/>by plan_complete?}
     L -->|no| N[allow the stop]
-    L -->|yes| O{session opted in AND<br/>global switch on?}
+    L -->|yes| O{global kill switch on?<br/>(hooks.loopDriving.enabled)}
     O -->|no| R{completionRecap set<br/>and not yet asked?}
     O -->|yes| F{follow-up live: ready,<br/>autoImplement, unclaimed?}
     F -->|no| R
@@ -541,16 +545,20 @@ flowchart TD
   (Our own block reason coming back as a prompt is consumed, not counted.)
 - **Visible counter.** `SessionInfo.loopContinues` (ephemeral) drives a 🔁
   badge on the session row — an active loop must never be invisible.
-- **OFF by default**, opt-in per session via the `session_set_loop_driving`
-  MCP tool (`SessionInfo.loopDriving`, durable across restarts), plus a
-  global kill switch (`hooks.loopDriving.enabled: false` in settings.yaml)
-  that outranks every opt-in and is read live mid-loop.
+- **One consent surface, one brake.** `autoImplement` on the plan is the
+  ONLY opt-in — ticking it means consenting to unattended continuation of
+  the chain. The global kill switch (`hooks.loopDriving.enabled: false` in
+  settings.yaml) is the ONLY opt-out: it outranks every ticked box and is
+  read live mid-loop. (G10 removed the per-session opt-in; a stale
+  `loopDriving` key in a pre-G10 sessions.yaml is silently dropped on load.)
 - The verification block never counts toward the continuation cap, and vice
   versa; the recap is also skipped on the Stop the cap itself ends.
 
-A session that has not opted in behaves exactly as today — the only visible
-difference for anyone is the recap verification block, which fires whether
-or not loop driving is on.
+> **Sweep your plans before relying on this.** `autoImplement` predates
+> auto-continuation, and it may already be ticked on plans whose authors did
+> not mean "chain into this unattended". Review ticked boxes on existing
+> plans and untick any that should not continue — Helm will not do that for
+> you.
 
 ## Config locations (user-level, install once)
 

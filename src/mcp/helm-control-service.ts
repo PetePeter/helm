@@ -1431,11 +1431,6 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.setAiagentState(sessionRef, state);
   }
 
-  /** G8 loop-driving opt-in (per-session switch; see helm-session-service). */
-  setLoopDriving(sessionRef: string, enabled: boolean) {
-    return this.sessionService.setLoopDriving(sessionRef, enabled);
-  }
-
   readSessionTerminal(sessionRef: string, requestedLines?: number, mode?: TerminalOutputMode, stripBlankLines?: boolean) {
     return this.sessionService.readSessionTerminal(sessionRef, requestedLines, mode, stripBlankLines);
   }

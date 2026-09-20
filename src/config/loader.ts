@@ -366,8 +366,9 @@ export interface SettingsConfig {
   mobileLan?: MobileLanConfig;
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
-   * consecutive auto-continue cap. Absent means allowed at the shipped cap;
-   * off-by-default lives on the per-session opt-in instead.
+   * consecutive auto-continue cap. Absent means allowed at the shipped cap —
+   * the only opt-in is autoImplement on the plan (G10), so this switch is
+   * opt-OUT, the emergency brake.
    */
   hooks?: {
     loopDriving?: { enabled?: boolean; maxAutoContinues?: number };
@@ -1045,9 +1046,9 @@ export class ConfigLoader {
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
    * consecutive auto-continue cap. Malformed values degrade to the shipped
-   * defaults — a junk cap can never silently uncap the loop. OFF-by-default
-   * lives on the per-session opt-in, NOT here: `enabled` defaults true so the
-   * kill switch is opt-OUT, matching how the rest of the hard stops read.
+   * defaults — a junk cap can never silently uncap the loop. `enabled`
+   * defaults true: the only opt-in is autoImplement on the plan (G10), so
+   * this switch is opt-OUT, matching how the rest of the hard stops read.
    */
   getLoopDrivingConfig(): LoopConfig {
     const raw = this.settings?.hooks?.loopDriving;
