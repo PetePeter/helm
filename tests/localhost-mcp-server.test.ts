@@ -128,6 +128,7 @@ function makeService(): HelmControlService {
       sent: true,
     })),
     notifyUser: vi.fn((sessionRef: string, title: string, content: string) => ({ delivered: 'bubble', sessionRef, title, content })),
+    setLoopDriving: vi.fn((sessionRef: string, enabled: boolean) => ({ ok: true, sessionId: sessionRef, name: 'Claude', loopDriving: enabled })),
     getAppVisibility: vi.fn(() => ({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's1' })),
     restartHelmGated: vi.fn((_callerSessionId: string, _handoverArtifactId: string | undefined, resume = true) => ({ sessionsClosed: resume ? 0 : 2, resume })),
     createScheduledTask: vi.fn((params: Record<string, unknown>) => ({ id: 'task-1', status: 'pending', ...params })),
