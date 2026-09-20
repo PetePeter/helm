@@ -56,6 +56,8 @@ export interface LocalhostMcpServerOptions {
   token?: string;
   enabled?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** G5 usage feedback: a caller actually fetched a skill/memory. */
+  onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
 }
 
 export interface McpStartRetryOptions {
@@ -83,6 +85,7 @@ export class LocalhostMcpServer {
   private token: string;
   private enabled: boolean;
   private readonly planReadTracker = new PlanReadTracker();
+  private readonly onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
   private ptyManager?: PtyManager;
   private hookReceiver?: HookReceiver;
 
@@ -94,6 +97,7 @@ export class LocalhostMcpServer {
   ) {
     this.ptyManager = ptyManager;
     this.hookReceiver = hookReceiver;
+    this.onItemFetched = options.onItemFetched;
     const env = options.env ?? process.env;
     this.host = options.host ?? env.HELM_MCP_HOST ?? DEFAULT_HOST;
     this.port = options.port ?? parsePort(env.HELM_MCP_PORT) ?? DEFAULT_PORT;
@@ -268,6 +272,7 @@ export class LocalhostMcpServer {
                 this.planReadTracker.recordRead(planId, authContext.sessionId);
               }
             },
+            onItemFetched: (sessionId, type, id) => this.onItemFetched?.(sessionId, type, id),
           };
           const result = await callMcpTool(deps, name, args, authContext);
           const structuredContent = normalizeStructuredContent(result);
@@ -351,6 +356,7 @@ export class LocalhostMcpServer {
           this.planReadTracker.recordRead(planId, authContext.sessionId);
         }
       },
+      onItemFetched: (sessionId, type, id) => this.onItemFetched?.(sessionId, type, id),
     };
     return callMcpTool(deps, name, args, authContext);
   }
