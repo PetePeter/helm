@@ -55,6 +55,9 @@ export interface HookEvent {
   prompt?: string;
   /** PreCompact only: "auto" (context filled) or "manual" (/compact command). */
   trigger?: string;
+  /** Path to the CLI's raw transcript (Claude and Codex; Copilot sends none).
+   *  The PreCompact snapshot attaches this file rather than inlining it. */
+  transcriptPath?: string;
   receivedAt: number;
   /** The raw payload, kept for logging and future groups. */
   raw: Record<string, unknown>;
@@ -123,6 +126,7 @@ export function normaliseHookEvent(
     toolInput: obj(input.payload, ['tool_input', 'toolInput']),
     prompt: str(input.payload, ['prompt']),
     trigger: str(input.payload, ['trigger']),
+    transcriptPath: str(input.payload, ['transcript_path', 'transcriptPath']),
     receivedAt: now(),
     raw: input.payload,
   };

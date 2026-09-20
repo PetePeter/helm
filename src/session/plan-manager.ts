@@ -467,6 +467,20 @@ export class PlanManager extends EventEmitter {
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null;
   }
 
+  /**
+   * The plan a session has CLAIMED, whatever its lifecycle status — including
+   * 'ready' items that have not gone active yet. The hook tracker uses this:
+   * the first edit under a fresh claim is the transition ready → coding, and
+   * claimedPlanFor (active work only) cannot see the claim before it exists.
+   * 'done' is excluded because the work is finished; 'blocked' because that
+   * state is a deliberate human decision only a human or MCP should undo.
+   */
+  claimedItemFor(sessionId: string): PlanItem | null {
+    return [...this.items.values()]
+      .filter(i => i.sessionId === sessionId && i.status !== 'done' && i.status !== 'blocked')
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0] ?? null;
+  }
+
   /** Record a session claim on a plan. Unconditional — overrides any prior claim. */
   claimPlan(id: string, sessionId: string): void {
     const item = this.items.get(id);

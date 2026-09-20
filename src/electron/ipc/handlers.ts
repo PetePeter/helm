@@ -122,6 +122,7 @@ import { getConfigDir } from '../../utils/app-paths.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
+import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { hostname } from 'node:os';
 
 const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
@@ -481,6 +482,24 @@ export function registerIPCHandlers(
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
   const cleanupHandover = setupHandoverHandlers(handoverDelivery, windowManager);
+
+  // G3: hook-reported truth. The tracker turns canonical hook events into the
+  // SAME state channels the timing fallback already drives — activity edges
+  // through StateDetector, session mutations through updateSession, plan
+  // moves through PlanManager — plus the PreCompact snapshot artifact. A
+  // session without hooks never produces hook events, so for it nothing here
+  // runs and behaviour is exactly as before.
+  const hookTracker = new HookTracker({
+    stateDetector,
+    sessionManager,
+    planManager,
+    flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
+    handoverDelivery,
+    draftManager,
+    artifactManager,
+    artifactAttachments: artifactAttachmentManager,
+  });
+  hookTracker.watch(hookReceiver);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
   const cleanupPromptTemplates = promptTemplatesPath
@@ -863,6 +882,7 @@ export function registerIPCHandlers(
       cancelAllPrompts();
       messNotifier?.dispose();
       cleanupMess();
+      hookTracker.dispose();
       cleanupHandover();
       handoverDelivery.dispose();
       stateDetector.dispose();

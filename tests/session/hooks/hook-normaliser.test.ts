@@ -163,6 +163,25 @@ describe('normaliseHookEvent', () => {
     ).toBe('manual');
     expect(normalise({ cli: 'claude', event: 'PreCompact', payload: {} })?.trigger).toBeUndefined();
   });
+
+  it('extracts transcript_path — Claude and Codex carry it, Copilot does not', () => {
+    expect(
+      normalise({
+        cli: 'claude',
+        event: 'PreCompact',
+        payload: { transcript_path: '/home/u/.claude/projects/x/transcript.jsonl' },
+      })?.transcriptPath,
+    ).toBe('/home/u/.claude/projects/x/transcript.jsonl');
+    expect(
+      normalise({
+        cli: 'codex',
+        event: 'PreCompact',
+        payload: { transcriptPath: '/home/u/.codex/x/transcript.jsonl' },
+      })?.transcriptPath,
+    ).toBe('/home/u/.codex/x/transcript.jsonl');
+    // Copilot sends no transcript; the snapshot falls back to the summary alone.
+    expect(normalise({ cli: 'copilot', event: 'PreCompact', payload: {} })?.transcriptPath).toBeUndefined();
+  });
 });
 
 describe('encodeDenyResponse — one decision, three wire shapes', () => {
