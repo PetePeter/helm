@@ -924,6 +924,11 @@ export class HelmControlService extends EventEmitter {
     this.sessionDelivery.setHandoverDelivery(handover);
   }
 
+  /** Wire the G4 rules-via-hooks capability check (see HelmSessionDeliveryService). */
+  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
+    this.sessionDelivery.setRulesViaHooks(rulesViaHooks);
+  }
+
   // ---------------------------------------------------------------------------
   // Plan CRUD
   // ---------------------------------------------------------------------------

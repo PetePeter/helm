@@ -631,6 +631,14 @@ export class MemoryManager extends EventEmitter {
     return record ? cloneMemoryRecord(record) : null;
   }
 
+  /**
+   * The graph edges, read-only (G5 adjacency). A copy — callers must not be
+   * able to mutate the graph through it. Cheap at real store sizes.
+   */
+  listEdges(): Array<{ fromId: string; toId: string }> {
+    return this.state.edges.map((edge) => ({ ...edge }));
+  }
+
   listRecords(): MemoryRecord[] {
     return this.state.records.map(cloneMemoryRecord);
   }

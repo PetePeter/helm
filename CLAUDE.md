@@ -66,7 +66,7 @@ These hold repo-wide. Breaking one is a design change, not a refactor.
 5. **Input is expressed as sequence syntax** — `{Enter}`, `{Ctrl+C}`, `{Wait 500}`, plain text — parsed to PTY escape codes rather than simulating keys. One parser serves bindings, initial prompts, prompt templates, and plan delivery.
 6. **A session's identity survives restarts** — `cliSessionName` (UUID v4) maps 1:1 between a hub session and the CLI's own session. Fresh spawn chain `spawnCommand → command`; resume chain `resumeCommand → continueCommand → command`. Persistence is an explicit allow-list: a new `SessionInfo` field must be added to `serializeSession` or it will not survive a restart.
 7. **PTY errors never kill the PTY** — session state lives in the main process, so the renderer can crash and reload freely. All PTY operations are wrapped in try-catch that logs and continues; the process may still be alive.
-8. **Dots reflect activity, not pipeline state** — green/blue/grey are derived from PTY I/O timing, with colours centralized in `renderer/state-colors.ts`. Never hardcode a dot colour. See [docs/terminal-architecture.md](docs/terminal-architecture.md).
+8. **Dots reflect activity, not pipeline state** — green/blue/grey are derived from PTY I/O timing, or from hook-reported activity when CLI hooks are installed (hooks are a second producer of the same events; timing stays as the fallback). Colours stay centralized in `renderer/state-colors.ts`. Never hardcode a dot colour. See [docs/terminal-architecture.md](docs/terminal-architecture.md) and [docs/cli-hooks.md](docs/cli-hooks.md).
 9. **AI-authored content is untrusted** — anything an AI produces that gets rendered is contained before display: sanitized against an allow-list when it lands in the app DOM (markdown artifacts), or isolated in an opaque-origin document under its own CSP when it needs full fidelity (HTML artifacts — see [docs/artifact-viewer.md](docs/artifact-viewer.md)). Remote peers act under a synthetic proxy identity that can never impersonate a local session.
 10. **Vue 3 migration is in progress** — new renderer code is Composition API + Pinia; legacy imperative TS modules coexist during the transition. xterm.js stays imperative. Vite builds the renderer; esbuild builds main/preload.
 
@@ -181,6 +181,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |
 | [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit |
 | [docs/fleet.md](docs/fleet.md) | Cross-machine peer MCP proxy — TLS-WS transport, PSK + TOFU pinning, SAS pairing, InboundCallGate |
+| [docs/cli-hooks.md](docs/cli-hooks.md) | CLI lifecycle hooks — one Python shim transport (command type), /hooks endpoint, system-wide installer, G2 deny policy, G3 reported truth, G4 injection + dual-path rules delivery, G5 ranking signals (passers only) |
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |
 | [docs/helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Guide for AI clients using the Helm MCP tools |
 | [docs/helm-session-info.md](docs/helm-session-info.md) | `session_info` surface |

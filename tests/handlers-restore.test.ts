@@ -94,6 +94,16 @@ const mockConfigLoader = {
     getPatterns: vi.fn().mockReturnValue([]),
     addBookmarkedDir: vi.fn(),
     setProjectStore: vi.fn(),
+    // G5 suggester weights: the fixture hands back the defaults.
+    getSuggestionScoring: vi.fn().mockReturnValue({
+      adjacencyPerAnchor: 1.0,
+      adjacencyMax: 2.0,
+      scope: 0.75,
+      recencyMax: 0.75,
+      recencyWindowDays: 30,
+      usagePerCooccurrence: 1.0,
+      usageMax: 2.0,
+    }),
 };
 
 vi.mock('../src/config/loader.js', () => ({
@@ -170,7 +180,7 @@ vi.mock('../src/telegram/orchestrator.js', () => ({
     terminalMirror: {},
     dashboard: { start: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() },
     // The relay is a ChatBridge now — handler setup registers it with the broker.
-    relayService: { provider: 'telegram', isAvailable: () => false, sendToSession: vi.fn() },
+    relayService: { provider: 'telegram', isAvailable: () => false, sendToSession: vi.fn(), setRulesViaHooks: vi.fn() },
     feedPtyOutput: vi.fn(),
     cleanup: vi.fn(),
   }),
@@ -233,6 +243,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
     this.setHandoverDelivery = vi.fn();
+    this.setRulesViaHooks = vi.fn();
     this.setChatBroker = vi.fn();
     this.setMobileDeps = vi.fn();
   }),

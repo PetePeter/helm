@@ -64,6 +64,20 @@ describe('MemoryManager', () => {
     expect(manager.exportState().edges).toEqual([{ fromId: 'a', toId: 'c' }]);
   });
 
+  it('lists edges read-only — a copy, so callers cannot mutate the graph', () => {
+    const manager = new MemoryManager({ idFactory: (() => { const ids = ['a', 'b']; return () => ids.shift()!; })() });
+    manager.create({ tldr: 'a', content: '' });
+    manager.create({ tldr: 'b', content: '' });
+    manager.link('a', 'b');
+
+    const edges = manager.listEdges();
+    expect(edges).toEqual([{ fromId: 'a', toId: 'b' }]);
+    edges[0]!.fromId = 'tampered';
+    edges.pop();
+    expect(manager.listEdges()).toEqual([{ fromId: 'a', toId: 'b' }]);
+    expect(manager.exportState().edges).toEqual([{ fromId: 'a', toId: 'b' }]);
+  });
+
   it('searches literal by default and returns graph expansion per matching root', () => {
     const manager = new MemoryManager({ idFactory: (() => { const ids = ['a', 'b']; return () => ids.shift()!; })() });
     manager.create({ tldr: 'Alpha', content: 'plain' });

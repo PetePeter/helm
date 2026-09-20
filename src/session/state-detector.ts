@@ -228,6 +228,34 @@ export class StateDetector extends EventEmitter {
     this.resetActivityTimers(sessionId);
   }
 
+  /**
+   * Hook-reported work (G3): the CLI's own hooks say real work is happening —
+   * a tool is running, a prompt was accepted. A second producer of the same
+   * activity events as PTY output, with an identical contract, so downstream
+   * consumers cannot tell the two apart. Sessions without hooks installed
+   * simply never call this and keep the timing behaviour unchanged.
+   */
+  markHookWorking(sessionId: string): void {
+    this.markActive(sessionId);
+  }
+
+  /**
+   * Hook-reported turn end (Stop). The agent SAID it finished, so the dot
+   * leaves green immediately rather than after the 10s silence timer, and the
+   * idle countdown restarts from this moment. Trailing PTY output still
+   * promotes normally — the timing path is never disabled, so hooks going
+   * silent mid-session cannot stick the dot in any state.
+   */
+  markHookTurnEnded(sessionId: string): void {
+    const tracking = this.getOrCreate(sessionId);
+    tracking.lastOutputAt = Date.now();
+    if (tracking.activityLevel !== 'inactive') {
+      tracking.activityLevel = 'inactive';
+      this.emit('activity-change', { sessionId, level: 'inactive', lastOutputAt: tracking.lastOutputAt } satisfies ActivityChange);
+    }
+    this.resetActivityTimers(sessionId);
+  }
+
   /** Feed output data from a session's PTY. */
   processOutput(sessionId: string, data: string): void {
     const tracking = this.getOrCreate(sessionId);

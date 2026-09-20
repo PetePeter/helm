@@ -149,4 +149,56 @@ describe('HandoverDelivery', () => {
 
     handover.dispose();
   });
+
+  describe('PreCompact hook (G3)', () => {
+    it('delivers immediately, ignoring the lull floor', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered } = setup();
+
+      // Armed less than one floor ago — the heuristic would refuse this edge;
+      // PreCompact must not. The CLI said the context is being discarded NOW.
+      handover.arm('s1', 'precompact text');
+      handover.deliverFromPreCompact('s1');
+      await flush();
+
+      expect(delivered).toEqual([{ sessionId: 's1', text: 'precompact text' }]);
+      expect(handover.isPending('s1')).toBe(false);
+
+      handover.dispose();
+    });
+
+    it('never double-delivers — the fallback lull edge finds nothing afterwards', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered, goInactive } = setup();
+
+      handover.arm('s1', 'once only');
+      handover.deliverFromPreCompact('s1');
+      await flush();
+
+      // Post-compaction the terminal goes quiet again: the heuristic edge for
+      // a session without hooks. The entry is already gone, so this is inert.
+      goInactive('s1');
+      vi.advanceTimersByTime(CEILING_MS);
+      await flush();
+
+      expect(delivered).toEqual([{ sessionId: 's1', text: 'once only' }]);
+
+      handover.dispose();
+    });
+
+    it('is a no-op when no handover is pending', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered, losses } = setup();
+
+      // PreCompact fires on every compaction, hooked or not, armed or not —
+      // a session that never armed a handover must not lose or error here.
+      handover.deliverFromPreCompact('s1');
+      await flush();
+
+      expect(delivered).toEqual([]);
+      expect(losses).toEqual([]);
+
+      handover.dispose();
+    });
+  });
 });

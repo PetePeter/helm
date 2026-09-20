@@ -4,6 +4,7 @@ import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { SessionInfo } from '../../types/session.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
+import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
@@ -21,64 +22,11 @@ const ACTION_WAIT_NOTE =
   'Command delivered. The CLI may take up to ~1 minute to finish — wait before reading its output.';
 
 /**
- * Directive appended to every enveloped inter-session message.
- *
- * Why: the recipient is driven by another LLM — local or across the fleet — and
- * nobody is watching its terminal. An AskUserQuestion modal there blocks
- * forever, unseen. Questions must travel back over the same wire the work came
- * in on. Mirrors the guarantee Telegram mode already gives (relay-service.ts).
- *
- * Contains no brace tokens: the sequence parser would rewrite them.
+ * Directive appended to every enveloped inter-session message — now shared
+ * with the hook-injected form (src/session/intersession-directive.ts), so
+ * both delivery paths carry the same rules.
  */
-function buildNonBlockingDirective(senderSessionId: string): string {
-  // A phone sender cannot read the recipient's terminal at all. Observed
-  // 2026-09-17: without a hard channel rule, interim updates went to the
-  // terminal only and the phone user had to ask for replies. Local and fleet
-  // peers CAN tail the terminal, so their directive stays unchanged.
-  const mobileChannelRule = isMobileSessionId(senderSessionId)
-    ? 'The user reads ONLY chat_send: your terminal output is invisible to them. ' +
-      'Reply to EVERY message from the phone with chat_send — ack, plan, result, or error, not just questions.\n'
-    : '';
-  return (
-    '[HELM_MSG_RULES]\n' +
-    mobileChannelRule +
-    `${describeSender(senderSessionId)} ` +
-    'Nobody can see or answer an interactive prompt here.\n' +
-    'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
-    `If you need a decision, ${buildReplyInstruction(senderSessionId)} — ` +
-    'then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
-    'While standing by, call session_set_aiagent_state with state="planning" so the wait is visible on your session row.\n' +
-    '[/HELM_MSG_RULES]'
-  );
-}
-
-/** One sentence of provenance, so the recipient knows who it is actually talking to. */
-function describeSender(senderSessionId: string): string {
-  return isMobileSessionId(senderSessionId)
-    ? 'This message came from the user on a paired phone, not from a human at this terminal.'
-    : 'This message came from another Helm session, not from a human at this terminal.';
-}
-
-/**
- * How the recipient answers whoever sent the message.
- *
- * WHY the branch: a phone is not a session. Its sender address is the synthetic
- * `mobile:<deviceId>` proxy identity (docs/mobile-gate.md), which nothing in
- * session_send_text can resolve — a recipient told to reply there got "Session
- * not found" every single time. The phone's surface is chat_send, which routes
- * to the recipient's own bound chat (the phone over BLE, Telegram if
- * configured), exactly as Telegram mode routes replies through telegram_chat.
- * Local and fleet senders are real addressable sessions and keep send_text.
- */
-function buildReplyInstruction(senderSessionId: string): string {
-  if (isMobileSessionId(senderSessionId)) {
-    return 'send the question back to the user with chat_send text="<your question>". Keep lines short — they are read on a phone';
-  }
-  return (
-    'send the question back to your caller with session_send_text ' +
-    `sessionId="${senderSessionId}", senderSessionId=<your HELM_SESSION_ID>, expectsResponse=true`
-  );
-}
+const buildNonBlockingDirective = buildHelmMsgDirective;
 
 /** The reply-routing hint carried on the opening tag when a response is expected. */
 function buildExpectsResponseTag(senderSessionId: string): string {
@@ -141,6 +89,8 @@ export interface HandoverArming {
 }
 
 export class HelmSessionDeliveryService {
+  private rulesViaHooks?: (session: SessionInfo) => Promise<boolean>;
+
   constructor(
     private readonly sessionManager: SessionManager,
     private readonly ptyManager: PtyManager,
@@ -157,6 +107,20 @@ export class HelmSessionDeliveryService {
    */
   setHandoverDelivery(handover: HandoverArming): void {
     this.handover = handover;
+  }
+
+  /**
+   * Late-bind the G4 rules-injection capability check.
+   *
+   * When it answers true for a recipient — hooks installed AND the provider
+   * can inject on UserPromptSubmit — the prepended directive is redundant
+   * transcript filler: the hook supplies the same rules out-of-band the
+   * moment the message is submitted. Sessions whose CLI has no hooks, or a
+   * provider that drops UserPromptSubmit output (Copilot), keep the
+   * prepended header. Both paths coexist; the choice is per recipient.
+   */
+  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
+    this.rulesViaHooks = rulesViaHooks;
   }
 
   /**
@@ -221,7 +185,10 @@ export class HelmSessionDeliveryService {
       // three bracketed pastes into the recipient's composer, each one a chance
       // for a full-screen TUI to still be ingesting when the submit lands. Same
       // bytes, one race instead of three.
-      const directive = buildNonBlockingDirective(options.senderSessionId);
+      // G4 dual-path: when the recipient injects the rules via hooks, the
+      // message carries only the tag, envelope and text.
+      const inlineRules = this.rulesViaHooks ? await this.rulesViaHooks(session) : false;
+      const directive = inlineRules ? '' : buildNonBlockingDirective(options.senderSessionId);
       const message = `${tag}${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({

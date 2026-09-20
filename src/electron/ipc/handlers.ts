@@ -120,6 +120,14 @@ import { MessNotifier } from '../../session/mess-notifier.js';
 import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir } from '../../utils/app-paths.js';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { HookReceiver } from '../../session/hooks/hook-receiver.js';
+import { HookTracker } from '../../session/hooks/hook-tracker.js';
+import { ContextInjector } from '../../session/hooks/context-injector.js';
+import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
+import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
+import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
 const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
@@ -325,11 +333,67 @@ export function registerIPCHandlers(
   }
 
   const incomingWatcher = new IncomingPlansWatcher(planManager);
+  // The shim is seeded into the user config dir alongside the other shipped
+  // defaults; the installer writes CLI configs that point HERE at it. Shared by
+  // the settings handlers (below) and the G4 rules-via-hooks capability check.
+  const hookDeps: HookInstallerDeps = {
+    homeDir: () => homedir(),
+    shimPath: join(getConfigDir(dirname ?? process.cwd()), 'hooks', 'helm-hook-shim.py'),
+  };
+  // G1 transport + G2 enforcement: receives CLI lifecycle hooks on POST /hooks,
+  // correlates them by session token, logs them, and routes PreToolUse through
+  // the deny policy. Session/rules lookups are live reads — no cached policy
+  // state — and every failure inside them fails open to allow. The G4
+  // responder (ContextInjector) is bound after construction below — it needs
+  // managers built later in this setup.
+  const hookReceiver = new HookReceiver({
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getDenyRules: (provider) => configLoader.getHookDenyRules(provider),
+  });
+  // G4 dual-path capability: does a recipient session inject its inter-session
+  // rules via hooks (so the prepended header can be skipped)? Read live, on
+  // disk, shared by the MCP delivery service and the Telegram relay. A check
+  // that fails answers false — prepend as today, never break delivery.
+  const rulesViaHooks = createRulesViaHooksFn(
+    (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
+    (hooks) => readHookIntegrationStatus(hooks, hookDeps),
+  );
+  // G5: ranking signals behind the same scorer interface. The usage store is
+  // ids + term co-occurrence ONLY — never prompt text (docs/cli-hooks.md, G5);
+  // the scorer reorders passers only, so nothing crosses the threshold on
+  // signal strength. The store is constructed here (not with the suggester
+  // below) because the MCP server's fetch recording feeds it.
+  const suggestionUsage = new SuggestionUsageStore({ configDir: getConfigDir(dirname ?? process.cwd()) });
+  const suggestionScorer = new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
+    getMemoryEdges: () => memoryManager.listEdges(),
+    getWorkspacePlanIds: (sessionId) => {
+      const claimed = planManager.claimedPlanFor(sessionId);
+      if (!claimed) return new Set<string>();
+      const ids = new Set<string>([claimed.id]);
+      if (claimed.projectId && claimed.sequenceId) {
+        for (const item of planManager.getForProject(claimed.projectId)) {
+          if (item.sequenceId === claimed.sequenceId) ids.add(item.id);
+        }
+      }
+      const boundContexts = [
+        ...contextManager.getContextsForPlan(claimed.id),
+        ...(claimed.sequenceId ? contextManager.getContextsForSequence(claimed.sequenceId) : []),
+      ];
+      for (const context of boundContexts) {
+        for (const planId of contextManager.getPlanIdsForContext(context.id)) ids.add(planId);
+      }
+      return ids;
+    },
+    usageBoost: (key, terms) => suggestionUsage.boostFor(key, terms),
+  }, configLoader.getSuggestionScoring());
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
     token: configLoader.getMcpConfig().authToken,
-  }, ptyManager);
+    // G5 usage feedback: correlate a fetch with a recent suggestion. Only
+    // identifiable sessions land here; anonymous peers learn nothing.
+    onItemFetched: (sessionId, type, id) => suggestionUsage.recordFetch(sessionId, `${type}/${id}`),
+  }, ptyManager, hookReceiver);
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
   const patternMatcher = new PatternMatcher(
@@ -362,6 +426,8 @@ export function registerIPCHandlers(
     projectStore,
     applyFleetConfig,
     () => fleetController!.status(),
+    hookDeps,
+    suggestionUsage,
   );
   setupEditorHandlers(configLoader);
   setupToolsHandlers(configLoader);
@@ -465,6 +531,85 @@ export function registerIPCHandlers(
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
   const cleanupHandover = setupHandoverHandlers(handoverDelivery, windowManager);
+
+  // G3: hook-reported truth. The tracker turns canonical hook events into the
+  // SAME state channels the timing fallback already drives — activity edges
+  // through StateDetector, session mutations through updateSession, plan
+  // moves through PlanManager — plus the PreCompact snapshot artifact. A
+  // session without hooks never produces hook events, so for it nothing here
+  // runs and behaviour is exactly as before.
+  const hookTracker = new HookTracker({
+    stateDetector,
+    sessionManager,
+    planManager,
+    flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
+    handoverDelivery,
+    draftManager,
+    artifactManager,
+    artifactAttachments: artifactAttachmentManager,
+  });
+  hookTracker.watch(hookReceiver);
+
+  // G4: the injection brain, bound to the receiver built above. SILENT for a
+  // session without hook events — nothing here runs, so behaviour is exactly
+  // as before. The suggester's candidates are built per prompt: skills visible
+  // to the session's project (globals included), plus that project's live
+  // (non-dormant) memories. Pointers only, capped, once per item.
+  //
+  // G5: the suggester now runs on the boosted scorer above, and feeds the
+  // usage store what was actually sent.
+  const suggestionService = new SuggestionService({
+    getCandidates: (projectId) => {
+      const skills = skillManager.listForProject(projectId).map((skill) => ({
+        type: 'skill' as const,
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        allProjects: skill.allProjects,
+      }));
+      if (!projectId) return skills;
+      const memories = memoryManager.listRecords()
+        .filter((record) => record.projectId === projectId && record.dormantSince === undefined)
+        .map((record) => ({
+          type: 'memory' as const,
+          id: record.id,
+          name: record.tldr,
+          description: record.content,
+          createdAt: record.createdAt,
+          ...(record.planId ? { planId: record.planId } : {}),
+        }));
+      return [...skills, ...memories];
+    },
+    scorer: suggestionScorer,
+    onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),
+  });
+  const contextInjector = new ContextInjector({
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getClaimedPlan: (sessionId) => {
+      const plan = planManager.claimedPlanFor(sessionId);
+      return plan ? { humanId: plan.humanId, title: plan.title, status: plan.status } : null;
+    },
+    getStartablePlans: (dirPath) => planManager.getStartableForDirectory(dirPath).map((plan) => ({
+      humanId: plan.humanId, title: plan.title, status: plan.status,
+    })),
+    getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
+    getHandover: (sessionId) => handoverDelivery.peek(sessionId),
+    suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
+    getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
+  });
+  hookReceiver.setResponder((event) => contextInjector.respond(event));
+  // A closed session takes its nudger and suggester ledgers with it — a
+  // restored session (same id) starts with clean slates.
+  sessionManager.on('session:removed', (event) => {
+    contextInjector.forgetSession(event.sessionId);
+    suggestionService.forgetSession(event.sessionId);
+    suggestionUsage.forgetSession(event.sessionId);
+  });
+  // Dual-path rules delivery: when the recipient injects the rules itself via
+  // hooks, both surfaces skip the prepended copies. Sessions without hooks
+  // (or Copilot, which drops UserPromptSubmit output) keep them, unchanged.
+  helmControlService.setRulesViaHooks(rulesViaHooks);
+  telegramModules.relayService.setRulesViaHooks(rulesViaHooks);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
   const cleanupPromptTemplates = promptTemplatesPath
@@ -779,8 +924,13 @@ export function registerIPCHandlers(
     sessions: {
       getSession: (sessionId) => {
         const session = sessionManager.getSession(sessionId);
-        return session ? { id: session.id, name: session.name } : null;
+        return session
+          ? { id: session.id, name: session.name, interactionChannel: session.interactionChannel }
+          : null;
       },
+      // A phone message moves the conversation off the desktop — same value the
+      // Telegram relay sets, so phone and Telegram are one "not at the desk".
+      updateSession: (sessionId, patch) => sessionManager.updateSession(sessionId, patch),
     },
     journal: mobileChatJournal,
   });
@@ -842,6 +992,7 @@ export function registerIPCHandlers(
       cancelAllPrompts();
       messNotifier?.dispose();
       cleanupMess();
+      hookTracker.dispose();
       cleanupHandover();
       handoverDelivery.dispose();
       stateDetector.dispose();

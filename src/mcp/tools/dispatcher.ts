@@ -61,6 +61,25 @@ function requireTargetSession(service: HelmControlService, args: Record<string, 
 }
 
 /**
+ * G5 usage feedback: note that THIS session actually fetched an item. Only
+ * identifiable callers count — an anonymous peer fetch correlates with
+ * nothing, and a failed fetch (thrown before this point) is not a fetch.
+ */
+function recordFetched(
+  deps: McpToolDispatcherDeps,
+  authContext: AuthContext,
+  type: 'skill' | 'memory',
+  id: string,
+): void {
+  if (!deps.onItemFetched || !authContext.sessionId) return;
+  try {
+    deps.onItemFetched(authContext.sessionId, type, id);
+  } catch (error) {
+    logger.warn(`[MCP] onItemFetched failed for ${type}/${id}: ${String(error)}`);
+  }
+}
+
+/**
  * Resolve who a session_send_* call is FROM, for the delivery envelope.
  *
  * Three cases, in order:
@@ -112,6 +131,8 @@ export interface McpToolDispatcherDeps {
   completePlanWithValidation: (id: string, documentation: string) => unknown;
   /** Optional hook called after plan_get succeeds; used to record a read for the recap gate. */
   onPlanRead?: (planId: string) => void;
+  /** G5 usage feedback: a skill/memory was actually FETCHED by this session. */
+  onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
 }
 
 export async function callMcpTool(
@@ -141,18 +162,23 @@ export async function callMcpTool(
           throw new Error('Pass either id or type to skill_get, not both');
         }
         if (type) {
-          return requireResult(
+          const resolved = requireResult(
             service.resolveSkill(type, {
               ...(typeof args.projectId === 'string' ? { projectId: args.projectId } : {}),
               ...(typeof args.dirPath === 'string' ? { dirPath: args.dirPath } : {}),
             }),
             `Skill not found for type: ${type}`,
           );
+          recordFetched(deps, authContext, 'skill', resolved.id);
+          return resolved;
         }
-        return requireResult(
-          service.getSkill(asString(args.id, 'id is required')),
-          `Skill not found: ${asString(args.id, 'id is required')}`,
+        const skillId = asString(args.id, 'id is required');
+        const skill = requireResult(
+          service.getSkill(skillId),
+          `Skill not found: ${skillId}`,
         );
+        recordFetched(deps, authContext, 'skill', skill.id);
+        return skill;
       }
       case 'skill_submit_feedback':
         return service.submitSkillFeedback(
@@ -882,10 +908,13 @@ export async function callMcpTool(
       }
       case 'memory_get': {
         const sessionId = requireCallerSession(authContext, 'memory_get');
-        return requireResult(
-          service.getMemory(sessionId, asString(args.id, 'id is required'), asGraphDepth(args.graphDepth)),
-          `Memory not found: ${String(args.id)}`,
+        const memoryId = asString(args.id, 'id is required');
+        const traversal = requireResult(
+          service.getMemory(sessionId, memoryId, asGraphDepth(args.graphDepth)),
+          `Memory not found: ${memoryId}`,
         );
+        recordFetched(deps, authContext, 'memory', memoryId);
+        return traversal;
       }
       case 'memory_create': {
         const sessionId = requireCallerSession(authContext, 'memory_create');

@@ -21,6 +21,28 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  hooks:
+    provider: claude
+    configPath: ~/.claude/settings.json
+    # StopFailure is Claude's alone — the turn died on an API error (the
+    # usage-limit stall), reported as fact instead of guessed from silence.
+    # Codex and Copilot have no equivalent event, so they never register one.
+    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop, StopFailure]
+    # G2 PreToolUse deny rules. The reason is fed back to the model, so it must
+    # NAME the Helm alternative — that redirect is the feature. Unknown tools,
+    # malformed rules and internal errors always ALLOW (fail open).
+    denyRules:
+      - tools: [AskUserQuestion]
+        onlyWhenAway: true
+        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+      - tools: [Artifact]
+        reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
+      - tools: [Bash, bash, shell, Shell]
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
+        outsideSessionDir: true
+        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22:
   id: 3b7d9c1e-5f42-4b8e-9a3c-2d6e8f0a7b22
@@ -40,6 +62,22 @@
     clear: /new{Enter}
     compact: /compact{Enter}
     export: ''
+  hooks:
+    provider: codex
+    configPath: ~/.codex/hooks.json
+    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop]
+    denyRules:
+      - tools: [AskUserQuestion, ask_user]
+        onlyWhenAway: true
+        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+      - tools: [Artifact, artifact]
+        reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
+      - tools: [Bash, bash, shell, Shell, local_shell]
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
+        outsideSessionDir: true
+        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33:
   id: 5e2a8d63-9c17-4f05-b6d1-3a9c4e7b1d33
@@ -59,6 +97,22 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  hooks:
+    provider: copilot
+    configPath: ~/.copilot/hooks/helm.json
+    events: [sessionStart, userPromptSubmitted, preToolUse, postToolUse, preCompact, agentStop]
+    denyRules:
+      - tools: [AskUserQuestion, askUserQuestion]
+        onlyWhenAway: true
+        reason: 'The user is away from the desk (phone or Telegram). Ask them with the Helm MCP tool chat_send instead — it reaches their phone and they will reply through it.'
+      - tools: [Artifact, artifact]
+        reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
+      - tools: [Bash, bash, shell, Shell]
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+      - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
+        outsideSessionDir: true
+        reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
 
 # Plain shell — the escape hatch when you want a terminal rather than an agent.
 7f4b0a25-8e36-4c19-a2f7-4b1d6c9e2a44:

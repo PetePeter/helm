@@ -105,6 +105,7 @@ import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
+import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
 import MobilePairingDialog from './components/modals/MobilePairingDialog.vue';
 import { usePeers } from './composables/usePeers.js';
 import SkillsTab from './components/sidebar/SkillsTab.vue';
@@ -1242,6 +1243,9 @@ onUnmounted(() => {
             />
             <MobileTab
               v-else-if="activeTab === 'mobile'"
+            />
+            <CliIntegrationsTab
+              v-else-if="activeTab === 'cli-integrations'"
             />
             <BindingsTab
               v-else

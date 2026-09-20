@@ -103,6 +103,41 @@ describe('TelegramRelayService', () => {
     expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('Respond via telegram_chat MCP tool.'));
   });
 
+  it('keeps the instruction line when rulesViaHooks says no — no hooks, prepend as always', async () => {
+    const { relay, ptyManager } = makeRelay();
+    relay.setRulesViaHooks(async () => false);
+
+    await relay.handleIncomingTelegramMessage({
+      message_id: 78,
+      message_thread_id: 42,
+      text: 'Still there?',
+      chat: { id: 12345 },
+      from: { username: 'testuser' },
+    } as any);
+
+    const text = ptyManager.deliverText.mock.calls[0][1] as string;
+    expect(text).toContain('Respond via telegram_chat MCP tool.');
+  });
+
+  it('drops the instruction line when rulesViaHooks says yes — the hook injects the rules itself', async () => {
+    const { relay, ptyManager } = makeRelay();
+    relay.setRulesViaHooks(async (session) => session.id === 's1');
+
+    await relay.handleIncomingTelegramMessage({
+      message_id: 79,
+      message_thread_id: 42,
+      text: 'Ship it',
+      chat: { id: 12345 },
+      from: { username: 'testuser' },
+    } as any);
+
+    const text = ptyManager.deliverText.mock.calls[0][1] as string;
+    // The envelope itself is untouched — only the trailing instruction goes.
+    expect(text).toContain('[HELM_TELEGRAM from:@testuser');
+    expect(text).toContain('Ship it');
+    expect(text).not.toContain('Respond via telegram_chat');
+  });
+
   it('handleIncomingTelegramMessage() does NOT set 👀 on inject — only verification can produce 👀', async () => {
     // 👀 must only appear when verification reports confirmed. With a fake ptyManager
     // that has no getTerminalTail, verification returns unverifiable → ❓ (never 👀).

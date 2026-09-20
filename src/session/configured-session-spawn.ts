@@ -288,6 +288,9 @@ export function resolveConfiguredSpawnEnv(
     // header-legal by construction — see toHeaderSafeName.
     env.HELM_SESSION_NAME = toHeaderSafeName(helmSession.sessionName);
     env.HELM_MCP_URL = `http://127.0.0.1:${mcpPort}/mcp`;
+    // The CLI hook shim reads this (and the token above) from its inherited
+    // environment — correlation for hooks needs no other plumbing.
+    env.HELM_HOOK_URL = `http://127.0.0.1:${mcpPort}/hooks`;
   }
   return Object.keys(env).length > 0 ? env : undefined;
 }

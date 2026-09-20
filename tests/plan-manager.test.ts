@@ -1274,4 +1274,39 @@ describe('PlanManager', () => {
       expect(handler).toHaveBeenCalledWith('/proj');
     });
   });
+  // ─── claimed item lookups ───────────────────────────────
+
+  describe('claimed item lookups', () => {
+    it('claimedItemFor sees a claimed item whatever its lifecycle status', () => {
+      // ready is NOT an active status — claimedPlanFor (the "doing" lookup)
+      // must keep excluding it, but the hook tracker needs to move a claimed
+      // item from ready to coding on the first edit, so it must be able to
+      // see the claim first.
+      const item = pm.create('/proj', 'Claimed early', '');
+      pm.setState(item.id, 'ready');
+      pm.claimPlan(item.id, 'sess-1');
+
+      expect(pm.claimedItemFor('sess-1')?.id).toBe(item.id);
+      expect(pm.claimedPlanFor('sess-1')).toBeNull();
+    });
+
+    it('claimedItemFor ignores done and blocked claims — neither is resumable work', () => {
+      const done = pm.create('/proj', 'Finished', '');
+      pm.setState(done.id, 'ready');
+      pm.setState(done.id, 'coding');
+      pm.completeItem(done.id, 'a completed piece of work');
+      pm.claimPlan(done.id, 'sess-1');
+
+      const blocked = pm.create('/proj', 'Walled off', '');
+      pm.setState(blocked.id, 'ready');
+      pm.setState(blocked.id, 'blocked', 'waiting on upstream API');
+      pm.claimPlan(blocked.id, 'sess-1');
+
+      expect(pm.claimedItemFor('sess-1')).toBeNull();
+    });
+
+    it('claimedItemFor returns null for an unclaimed session', () => {
+      expect(pm.claimedItemFor('nobody')).toBeNull();
+    });
+  });
 });

@@ -466,6 +466,27 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   configGetWorkingDirs: () => ipcRenderer.invoke('config:getWorkingDirs'),
 
+  /**
+   * CLI hook integrations (G1): per-CLI install state, read off the CLI's own
+   * config file on disk. installed / outdated / not-installed / interpreter-missing.
+   */
+  hooksGetStatus: () => ipcRenderer.invoke('hooks:getStatus'),
+
+  /** Install (or bring current) Helm's hook block in a CLI's user-level config. */
+  hooksInstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:install', cliTypeId),
+
+  /** Remove Helm's hook block from a CLI's user-level config. Reversible. */
+  hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
+
+  /**
+   * G5 suggester usage feedback: the learned co-occurrence associations
+   * (item ids + terms, never prompt text) and the recent learning events.
+   */
+  hooksGetSuggestionUsage: () => ipcRenderer.invoke('hooks:getSuggestionUsage'),
+
+  /** Forget everything the suggester has learned. The store starts empty. */
+  hooksResetSuggestionUsage: () => ipcRenderer.invoke('hooks:resetSuggestionUsage'),
+
   // ========================================================================
   // Project Management
   // ========================================================================

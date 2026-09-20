@@ -28,6 +28,7 @@ import {
   SettingsManager,
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
+import { DEFAULT_SUGGESTION_SCORING, type SuggestionScoringWeights } from '../session/hooks/suggestion-scorer.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
 export type { CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
@@ -119,6 +120,26 @@ export interface PatternRule {
 /** A bare CLI-type identity. Matching this means the reference is an id, not a label. */
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * System-wide CLI hook integration for a CLI type (G1 transport, G2 deny rules).
+ * `configPath` is user-level, `~`-relative, and points into the CLI's OWN
+ * config dir — the one directory outside Helm's tree that Helm ever writes.
+ */
+export interface CliHooksIntegration {
+  /** Which CLI family's payload shape and config format to use. */
+  provider: 'claude' | 'codex' | 'copilot';
+  /** User-level config file the installer writes the Helm-owned block into. */
+  configPath: string;
+  /** Event names to register, spelled the way this CLI spells them. */
+  events: string[];
+  /**
+   * G2 PreToolUse deny rules (see HookDenyRule in session/hooks/hook-policy).
+   * User-editable yaml — the policy validates each rule's shape itself and
+   * skips anything malformed, so this stays loosely typed on purpose.
+   */
+  denyRules?: unknown[];
+}
+
 export interface CliTypeConfig {
   /** Stable UUID v4 identity — also the map key in cli-types.yaml. Renaming never changes it.
    *  Optional in the type only so legacy YAML and older literals still parse; every entry that
@@ -170,6 +191,8 @@ export interface CliTypeConfig {
   helmActions?: HelmActionMap;
   /** User-defined regex patterns that trigger automated actions when matched against PTY output. */
   patterns?: PatternRule[];
+  /** System-wide hook integration (Settings → CLI Integrations). Absent = this type has none (e.g. cmd). */
+  hooks?: CliHooksIntegration;
 }
 
 export interface ButtonBindings {
@@ -320,6 +343,12 @@ export interface SettingsConfig {
   telegram?: TelegramConfig;
   mcp?: McpConfig;
   fleet?: FleetConfig;
+  /**
+   * G5 suggester signal weights (docs/cli-hooks.md, G5). Absent means the
+   * shipped defaults; every field is optional so a user can tune one signal
+   * without declaring the rest. Weights are configuration, not buried magic.
+   */
+  suggestionScoring?: Partial<SuggestionScoringWeights>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
   /** Pre-rename key, read-only migration input for `fleet`. Never written. */
@@ -548,6 +577,20 @@ export class ConfigLoader {
   getCliTypes(): string[] {
     this.ensureLoaded();
     return this.cliTypeStore.list();
+  }
+
+  /**
+   * G2 deny rules for a hook provider. A HookEvent names the CLI family, not
+   * the config key, so this scans for the first CLI type whose hooks block
+   * carries that provider. No match or no rules configured = deny nothing
+   * (fail open), so an empty return is a valid answer, not an error.
+   */
+  getHookDenyRules(provider: 'claude' | 'codex' | 'copilot'): unknown[] {
+    this.ensureLoaded();
+    for (const config of Object.values(this.cliTypeStore.getAll())) {
+      if (config.hooks?.provider === provider) return config.hooks.denyRules ?? [];
+    }
+    return [];
   }
 
   /** Get all named sequence groups for a CLI type */
@@ -937,6 +980,17 @@ export class ConfigLoader {
       port: normalizeMcpPort(this.settings?.mcp?.port),
       authToken: typeof this.settings?.mcp?.authToken === 'string' ? this.settings.mcp.authToken : '',
     };
+  }
+
+  /**
+   * G5 suggester signal weights: shipped defaults, overridden field-by-field
+   * from settings.yaml. A malformed section degrades to the defaults — bad
+   * tuning must never break scoring, only make it duller.
+   */
+  getSuggestionScoring(): SuggestionScoringWeights {
+    const raw = this.settings?.suggestionScoring;
+    const overrides = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return { ...DEFAULT_SUGGESTION_SCORING, ...overrides };
   }
 
   /** Update the localhost MCP configuration (partial merge). */

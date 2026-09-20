@@ -98,6 +98,20 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     super();
   }
 
+  /**
+   * Late-bind the G4 rules-injection capability check (same fn the MCP
+   * delivery service uses). When it answers true for a recipient — hooks
+   * installed AND the provider injects on UserPromptSubmit — the envelope's
+   * trailing instruction line is skipped: the hook supplies the same rules
+   * out-of-band the moment the message is submitted. Every other session
+   * keeps the instruction line, byte for byte as today.
+   */
+  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
+    this.rulesViaHooks = rulesViaHooks;
+  }
+
+  private rulesViaHooks?: (session: SessionInfo) => Promise<boolean>;
+
   isRunning(): boolean {
     return this.telegramBot.isRunning();
   }
@@ -251,7 +265,10 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
       return true;
     }
 
-    const wrapped = wrapTelegramEnvelope(this.resolveTelegramTextPayload(session, msg.text), from, chatId);
+    // G4 dual-path: a recipient that injects the Telegram rules via hooks
+    // does not need the envelope's trailing instruction line too.
+    const skipInstruction = (await this.rulesViaHooks?.(session)) ?? false;
+    const wrapped = wrapTelegramEnvelope(this.resolveTelegramTextPayload(session, msg.text), from, chatId, skipInstruction);
     // Set channel affinity and inject first-contact instructions
     let text = wrapped;
     if (session.interactionChannel !== 'telegram') {
@@ -757,9 +774,10 @@ function extractAttachmentInfo(msg: TelegramBot.Message): {
   return null;
 }
 
-function wrapTelegramEnvelope(text: string, from: string, chatId: number): string {
+function wrapTelegramEnvelope(text: string, from: string, chatId: number, skipInstruction = false): string {
   const fromTag = from === 'unknown' ? '' : ` from:${from}`;
-  return `[HELM_TELEGRAM${fromTag} chat:${chatId}]\n${text}\n[/HELM_TELEGRAM]\nRespond via telegram_chat MCP tool.`;
+  const instruction = skipInstruction ? '' : '\nRespond via telegram_chat MCP tool.';
+  return `[HELM_TELEGRAM${fromTag} chat:${chatId}]\n${text}\n[/HELM_TELEGRAM]${instruction}`;
 }
 
 const TELEGRAM_MODE_INSTRUCTIONS =
