@@ -26,6 +26,9 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
       return chatBindings ? { chatBindings } : {};
     })(),
     ...(s.aiagentState ? { aiagentState: s.aiagentState } : {}),
+    // Durable G8 opt-in; the ephemeral loopContinues counter is deliberately
+    // NOT here (invariant 6: persistence is an explicit allow-list).
+    ...(s.loopDriving ? { loopDriving: true } : {}),
     ...(s.createdAt != null ? { createdAt: s.createdAt } : {}),
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),

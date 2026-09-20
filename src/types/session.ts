@@ -80,6 +80,15 @@ export interface SessionInfo {
    *  happened while you were away is still visible; unlike a silent terminal,
    *  this is fact, not a guess from timing. */
   hookStall?: { at: number; reason: string };
+  /** G8 loop-driving opt-in: the Stop hook may auto-continue this session
+   *  into auto-implement follow-ups of plans it completes (docs/cli-hooks.md,
+   *  G8). OFF by default; consent is recorded per session before the loop
+   *  starts. Persists across restarts. */
+  loopDriving?: boolean;
+  /** Consecutive G8 auto-continues issued. Session-row visibility for an
+   *  in-progress loop — an active loop must never be invisible. Ephemeral:
+   *  NOT persisted; cleared when a Stop is finally allowed. */
+  loopContinues?: number;
 }
 
 /**

@@ -204,6 +204,16 @@ describe('persistence', () => {
       const parsed = YAML.parse(content);
       expect(parsed.sessions[0]).not.toHaveProperty('hookStall');
     });
+
+    it('persists the G8 loop-driving opt-in, never the ephemeral counter', () => {
+      saveSessions([{ ...mockSession1, loopDriving: true, loopContinues: 3 }]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[0];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions[0].loopDriving).toBe(true);
+      // The counter is session-row state, not durable consent.
+      expect(parsed.sessions[0]).not.toHaveProperty('loopContinues');
+    });
   });
 
   describe('loadSessions', () => {

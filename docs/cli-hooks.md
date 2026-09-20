@@ -1,6 +1,6 @@
 # CLI Hooks
 
-**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot), G4 (context injection, nudges, hint-only suggester, dual-path rules delivery) and G9 (reminder delivery: the inventory below, plus per-reminder hook/pty/off modes) shipped. Loop driving was deliberately dropped.**
+**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot), G4 (context injection, nudges, hint-only suggester, dual-path rules delivery), G5 (ranking signals) and G9 (reminder delivery: the inventory below, plus per-reminder hook/pty/off modes) shipped. G8 (loop driving, below) shipped after being deliberately dropped from G4 — revived only once its exit condition became a fact Helm already records.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
@@ -244,7 +244,9 @@ nothing) is the common case by design:
   (`plan_complete` / `session_plan_claim` / `session_set_aiagent_state`).
   The second Stop always passes; the cap is 1 by decision and not
   configurable. `StopFailure` is NEVER answered — a usage-limit stall is
-  reported fact, not something to retry in a loop.
+  reported fact, not something to retry in a loop. G8's loop decision
+  (below) runs BEFORE this nudge on the same event; exactly one block is
+  ever emitted per Stop.
 
 ```mermaid
 flowchart LR
@@ -464,6 +466,92 @@ identify, failed fetches — records nothing.
   adjacency, and all-zero signals produce output **identical to bare G4** —
   pinned by a whole-layer regression test, not just a unit.
 
+## Loop driving (G8) — Stop-block continuation gated on `autoImplement`
+
+The Stop hook can decline to end a turn: reply `{"decision":"block",
+"reason":...}` and the CLI starts another turn with the reason as its prompt.
+That is remote control of the agent loop without touching the PTY — and, left
+ungated, an infinite loop with a credit card. G8
+(`src/session/hooks/loop-driver.ts`) ships it only because the exit condition
+turned out to be a question Helm already answers.
+
+**Loop driving never decides for itself.** It reads three facts that already
+exist, recorded before the loop started:
+
+1. **`autoImplement` on a follow-up plan is the go/no-go.** Its existing
+   meaning — "this ready follow-up may be picked up automatically once its
+   prerequisite completes" — is already consent, per plan, in the DAG.
+   Unticked means the loop stops there. There is NO new consent UI.
+2. **`followUpPlans`, already returned by `plan_complete`, is the what-next.**
+   `plan_complete` reports the completion (and its follow-ups) to the
+   `LoopDriver`; Stop asks the DAG rather than guessing. An empty list is a
+   natural terminator. Eligibility is re-read LIVE at Stop time — still
+   `ready` (precursors done), still `autoImplement`, and not claimed by
+   anyone (another session claiming the follow-up kills the chain).
+3. **`completionRecap` is a QUALITY gate, never a continuation gate.**
+
+### Two separate gates on the same Stop event
+
+"Is this finished properly" and "should we keep going" feel similar and must
+not be merged — conflate them and the loop argues with itself about whether
+it is done:
+
+| | CONTINUATION | VERIFICATION |
+|---|---|---|
+| gated on | `autoImplement` (follow-up) + session opt-in | `completionRecap` (completed plan) |
+| may repeat | yes, to the cap (default 5) | no — capped at 1, not configurable |
+| default | **OFF** — opt-in per session | always on (works with loop driving off) |
+| asks | "start P-xxxx" | "confirm what you verified" |
+
+Continuation is checked FIRST. Exactly one block is ever emitted per Stop
+event — never two stacked. The G4 one-shot Stop nudge still runs after both,
+untouched, and independently.
+
+```mermaid
+flowchart TD
+    S[Stop fires] --> L{completion recorded<br/>by plan_complete?}
+    L -->|no| N[allow the stop]
+    L -->|yes| O{session opted in AND<br/>global switch on?}
+    O -->|no| R{completionRecap set<br/>and not yet asked?}
+    O -->|yes| F{follow-up live: ready,<br/>autoImplement, unclaimed?}
+    F -->|no| R
+    F -->|yes| P{progress since last Stop?<br/>edit / commit / completion}
+    P -->|no| N2[allow the stop — spinning is the failure]
+    P -->|yes| C{under the cap?}
+    C -->|no| FL[allow + flash the user once]
+    C -->|yes| B[block: start P-xxxx]
+    R -->|yes| RB[block ONCE: do your recap]
+    R -->|no| N
+```
+
+### Hard stops — all of them required
+
+- **Cap**: consecutive auto-continues, default 5 (`hooks.loopDriving.
+  maxAutoContinues` in settings.yaml). At the cap the stop is allowed and the
+  user is flashed once — even with work still outstanding.
+- **Never auto-continue on `StopFailure`.** The turn died on an API error;
+  retrying a usage-limit stall in a loop is the worst case this feature can
+  produce. `StopFailure` also resets the loop state outright.
+- **No measurable progress since the last Stop → stop.** Progress ticks are
+  edit-shaped tools, `git commit` commands, and plan completions. Spinning
+  is the real failure; stopping early is not.
+- **A genuine user prompt ends the chain.** The user typing is the strongest
+  signal they have taken the wheel — the recorded completion is cleared, not
+  just the counter. The chain re-arms naturally on the next `plan_complete`.
+  (Our own block reason coming back as a prompt is consumed, not counted.)
+- **Visible counter.** `SessionInfo.loopContinues` (ephemeral) drives a 🔁
+  badge on the session row — an active loop must never be invisible.
+- **OFF by default**, opt-in per session via the `session_set_loop_driving`
+  MCP tool (`SessionInfo.loopDriving`, durable across restarts), plus a
+  global kill switch (`hooks.loopDriving.enabled: false` in settings.yaml)
+  that outranks every opt-in and is read live mid-loop.
+- The verification block never counts toward the continuation cap, and vice
+  versa; the recap is also skipped on the Stop the cap itself ends.
+
+A session that has not opted in behaves exactly as today — the only visible
+difference for anyone is the recap verification block, which fires whether
+or not loop driving is on.
+
 ## Config locations (user-level, install once)
 
 | CLI | File | Shape |
@@ -529,6 +617,7 @@ for both surfaces.
 | `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; PreToolUse → policy, everything else → the (late-bound) G4 responder |
 | `src/session/hooks/hook-policy.ts` | PURE `(event, session, rules) -> allow / deny+reason`; fail open on everything unexpected |
 | `src/session/hooks/context-injector.ts` | G4: SessionStart context, UserPromptSubmit rules + nudges, one-shot Stop block; silent when there is nothing worth saying |
+| `src/session/hooks/loop-driver.ts` | G8: Stop-block continuation (autoImplement-gated, live follow-up reads, hard stops) + the one-shot completionRecap verification block |
 | `src/session/hooks/suggestion-scorer.ts` | G4 hint-only suggester: BM25, tuples only, caps + once-per-item ledger |
 | `src/session/hooks/hook-encoder.ts` | per-CLI additionalContext nesting and the stop-block form |
 | `src/session/hooks/hook-capability.ts` | the ONE rules-via-hooks check behind both delivery paths; false on every failure |

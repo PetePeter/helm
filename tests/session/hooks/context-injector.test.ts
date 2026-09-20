@@ -337,3 +337,53 @@ describe('Stop — the one-shot nudge', () => {
     expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
   });
 });
+
+describe('Stop — G8 loop driving, stacked on the same event', () => {
+  it('emits the loop block as the ONE Stop reply when the decider blocks', async () => {
+    let blocksLeft = 1;
+    const decider = {
+      stopBlock: () => (blocksLeft-- > 0 ? 'Continue the plan chain: P-0002 "Follow up" is ready.' : null),
+    };
+    const { injector } = makeInjector({
+      loop: decider,
+      // The nudge would ALSO fire here — exactly one block means it must not.
+      getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }),
+    });
+    const result = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect(result!.body).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('P-0002'),
+    });
+    // Exactly one block per Stop EVENT: the next Stop gets the nudge (its
+    // ledger was not consumed by the loop block), not a stacked second block.
+    const second = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect((second!.body as { reason: string }).reason).toContain('still claimed and open');
+  });
+
+  it('falls through to the one-shot nudge when the decider allows', async () => {
+    const decider = { stopBlock: () => null };
+    const { injector } = makeInjector({
+      loop: decider,
+      getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }),
+    });
+    const result = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect((result!.body as { reason: string }).reason).toContain('still claimed and open');
+  });
+
+  it('NEVER asks the loop decider on StopFailure — the worst thing G8 could do is retry a stall', async () => {
+    const decider = { stopBlock: () => 'continue forever' };
+    const { injector } = makeInjector({ loop: decider });
+    expect(await injector.respond(hookEvent({ event: 'StopFailure' }))).toBeNull();
+  });
+
+  it('a missing loop dep is today\'s behaviour — byte-identical Stop path', async () => {
+    const { injector } = makeInjector({
+      getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }),
+    });
+    const result = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect(result!.body).toEqual({
+      decision: 'block',
+      reason: expect.stringContaining('P-0785 "Hook G4" still claimed and open'),
+    });
+  });
+});

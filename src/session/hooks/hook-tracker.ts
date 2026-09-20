@@ -47,8 +47,10 @@ import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.j
 import { MAX_ATTACHMENT_BYTES } from '../artifact-attachment-manager.js';
 import { logger } from '../../utils/logger.js';
 
-/** Tools whose use means files are actually being changed (not just read). */
-const EDIT_TOOL_PATTERN = /(edit|write|apply.?patch|create_file|str_replace)/i;
+/** Tools whose use means files are actually being changed (not just read).
+ *  Shared with loop-driver.ts: G8's no-progress Stop reads the same notion
+ *  of "an edit happened" the plan tracker advances on. */
+export const EDIT_TOOL_PATTERN = /(edit|write|apply.?patch|create_file|str_replace)/i;
 
 /** toolInput keys whose string values are touched file paths. */
 const FILE_INPUT_KEYS = ['file_path', 'notebook_path', 'filePath', 'notebookPath', 'path'];

@@ -25,6 +25,7 @@ import {
 import { PlanReadTracker } from '../session/plan-read-tracker.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { HookReceiver } from '../session/hooks/hook-receiver.js';
+import type { LoopDriver } from '../session/hooks/loop-driver.js';
 
 type JsonRpcId = string | number | null;
 
@@ -88,6 +89,9 @@ export class LocalhostMcpServer {
   private readonly onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
   private ptyManager?: PtyManager;
   private hookReceiver?: HookReceiver;
+  /** G8 loop driving — late-bound like the receiver: the LoopDriver needs
+   *  managers constructed after this server. Null until then, and in tests. */
+  private loopDriver?: Pick<LoopDriver, 'noteCompletion'>;
 
   constructor(
     private readonly service: HelmControlService,
@@ -107,6 +111,11 @@ export class LocalhostMcpServer {
 
   isEnabled(): boolean {
     return this.enabled && this.token.trim().length > 0;
+  }
+
+  /** Bind the G8 loop driver (see the field note). Fail-open when absent. */
+  setLoopDriver(loopDriver: Pick<LoopDriver, 'noteCompletion'>): void {
+    this.loopDriver = loopDriver;
   }
 
   async start(retry: McpStartRetryOptions = {}): Promise<boolean> {
@@ -411,6 +420,23 @@ export class LocalhostMcpServer {
         autoImplement: Boolean(item.autoImplement),
       }));
     const autoFollowUpPlans = followUpPlans.filter((item) => item.autoImplement && item.status === 'ready');
+
+    // G8: the completion is the loop's re-arm signal — what Stop reads to
+    // decide go vs stop. Fail-open: a missing driver or unidentifiable
+    // caller just means no loop driving for this completion.
+    if (authContext.sessionId) {
+      try {
+        this.loopDriver?.noteCompletion(authContext.sessionId, {
+          planId: completed.id,
+          humanId: completed.humanId,
+          title: completed.title,
+          completionRecap: current.completionRecap === true,
+          followUps: followUpPlans.map((item) => ({ id: item.id, humanId: item.humanId, title: item.title })),
+        });
+      } catch (error) {
+        logger.warn(`[MCP] Loop completion note failed open: ${String(error)}`);
+      }
+    }
 
     if (authContext.sessionId) {
       try {

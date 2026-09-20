@@ -40,6 +40,8 @@ export interface SessionCardProps {
   displayName: string;
   draftCount: number;
   artifactCount: number;
+  /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
+  loopContinues: number;
   elapsedText: string;
   workingPlanLabel: string;
   workingPlanTooltip: string;
@@ -284,6 +286,13 @@ function onCardClick(e: MouseEvent): void {
       <!-- Draft badge -->
       <span v-if="draftCount > 0" class="draft-badge">📝{{ draftCount }}</span>
 
+      <!-- G8 loop badge — an in-progress auto-continue loop must never be invisible -->
+      <span
+        v-if="loopContinues > 0"
+        class="loop-badge"
+        title="Loop driving: consecutive Stop-hook auto-continues in flight. A user prompt or the kill switch ends it."
+      >🔁{{ loopContinues }}</span>
+
       <!-- Artifact badge — click to show this session's artifact panel -->
       <button
         v-if="artifactCount > 0"
@@ -415,6 +424,22 @@ function onCardClick(e: MouseEvent): void {
   font-size: 10px;
   color: var(--text-secondary);
   margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Same badge anatomy as the draft badge, but accent-tinted: an active loop
+   is machinery running on the user's behalf and deserves the eye. */
+.loop-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  background: #2a2a3a;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--accent);
   flex-shrink: 0;
   white-space: nowrap;
 }

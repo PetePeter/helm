@@ -587,6 +587,11 @@ export async function callMcpTool(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
           asAiagentState(args.state, 'state must be one of planning, implementing, completed, or idle'),
         );
+      case 'session_set_loop_driving':
+        return service.setLoopDriving(
+          asString(args.sessionId ?? args.name, 'sessionId or name is required'),
+          asBoolean(args.enabled, 'enabled must be true or false'),
+        );
       case 'session_set_locked':
         return service.setSessionLocked(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
