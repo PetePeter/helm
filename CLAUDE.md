@@ -181,7 +181,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |
 | [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit |
 | [docs/fleet.md](docs/fleet.md) | Cross-machine peer MCP proxy — TLS-WS transport, PSK + TOFU pinning, SAS pairing, InboundCallGate |
-| [docs/cli-hooks.md](docs/cli-hooks.md) | CLI lifecycle hooks — one Python shim transport (command type), /hooks endpoint, system-wide installer, G1 observe-only |
+| [docs/cli-hooks.md](docs/cli-hooks.md) | CLI lifecycle hooks — one Python shim transport (command type), /hooks endpoint, system-wide installer, G2 deny policy, G3 reported truth, G4 injection + dual-path rules delivery |
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |
 | [docs/helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Guide for AI clients using the Helm MCP tools |
 | [docs/helm-session-info.md](docs/helm-session-info.md) | `session_info` surface |
