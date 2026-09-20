@@ -1,6 +1,6 @@
 # CLI Hooks
 
-**Status: G1 (transport + installer) and G2 (PreToolUse deny policy) shipped. Injection and compaction handover are later groups.**
+**Status: G1 (transport + installer), G2 (PreToolUse deny policy) and G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot) shipped. Prompt injection is a later group.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
@@ -123,6 +123,98 @@ behaviour. (Seeding note: like all `cli-types.yaml` defaults, `denyRules`
 reach fresh installs only; existing files are never overwritten, and no
 rules configured simply denies nothing.)
 
+## Reported truth (G3) — the HookTracker
+
+Four things Helm previously inferred from timing — dots, stalls, handover
+timing, plan progress — are REPORTED as fact when hooks are installed. One
+subscriber consumes the receiver's `hook` stream and pushes each fact through
+the channel that already owns it. It is a **second producer, not a new
+channel**: a session without hooks never produces hook events, so for it
+nothing here runs and StateDetector's timing remains the producer of record.
+
+```mermaid
+flowchart LR
+    R[HookEvent] --> T{HookTracker}
+    T -->|SessionStart / UserPromptSubmit / Pre+PostToolUse| W["StateDetector<br/>markHookWorking"]
+    T -->|Stop| E["StateDetector<br/>markHookTurnEnded"]
+    W --> A[activity-change events<br/>→ dots, flash timers, Telegram]
+    E --> A
+    T -->|StopFailure| S["updateSession<br/>hookStall {at, reason} — DURABLE"]
+    T -->|Stop / StopFailure| F[flash-attention]
+    T -->|PostToolUse edit| P["PlanManager<br/>claim → coding"]
+    T -->|Stop under claim| P2["PlanManager<br/>coding → review"]
+    T -->|PreCompact| C["snapshot artifact<br/>+ deliverFromPreCompact"]
+```
+
+- **Activity** — `markHookWorking` / `markHookTurnEnded` emit the same
+  `activity-change` events PTY timing does, so dots, question flow and
+  Telegram flushing are untouched. Stop drops the dot out of green
+  immediately (the agent said it finished) and restarts the idle countdown
+  from that moment; trailing PTY output still promotes normally, so hooks
+  going silent mid-session cannot stick the dot anywhere.
+- **Stalls** — Claude-only `StopFailure` (Claude registers it in
+  `hooks.events`; Codex and Copilot have no equivalent event) is the turn
+  died on an API error — the usage-limit stall reported as fact instead of
+  guessed from silence. It is stored on the session as a durable
+  `hookStall {at, reason}` record (serializeSession allow-list, invariant 6)
+  and deliberately NOT treated as a normal finish: no turn-end edge, no
+  green-to-blue transition from it. Any later life sign (prompt, tool use,
+  next turn, SessionStart) clears it; a re-report of the same stall neither
+  re-persists nor re-flashes. Flash-attention fires on Stop and StopFailure
+  — turn finished and turn died are both "look at me".
+- **Plan progress** — an edit-family tool call (`Edit`, `Write`,
+  `MultiEdit`, `NotebookEdit`, `apply_patch`, `edit_file`, …) under a
+  claimed item moves it `ready → coding`; `Stop` under a `coding` claim
+  moves it to `review`. `claimedItemFor` sees a claim whatever its status
+  (`claimedPlanFor` — active work only — cannot see the `ready` claim the
+  first edit exists to promote). `blocked` stays sacred: only a human or an
+  MCP call unblocks.
+- **PreCompact** — Helm composes a **Compaction snapshot** artifact itself
+  (below).
+
+**Invariant-8 refinement, written down.** Invariant 8 says dots reflect
+activity, not pipeline state. Hooks make dots reflect **reported** activity —
+an agent that said "done" is not a silent terminal, and a tool call that
+started is not a spinner tick. That is a deliberate refinement of the
+invariant, not a violation: the colours stay centralised in
+`renderer/state-colors.ts`, and the timing producer is never disabled as the
+fallback.
+
+### PreCompact — Helm composes the save
+
+The obvious design — "ask the agent to write its state into an artifact" —
+is broken by construction: PreCompact fires because the context is FULL, the
+one moment the agent has no room to help. So Helm composes the snapshot
+itself, entirely from data it already holds: the claimed plan and its state,
+tools run and files touched (accumulated from PostToolUse), turn count and
+session age, draft memos, any pending handover note, and the PreCompact
+`trigger` (`auto` = context filled, `manual` = `/compact`).
+
+- The **transcript is ATTACHED, never inlined** (`transcript.jsonl`).
+  Transcripts are megabytes of mostly tool noise; inlining would make the
+  one artifact meant to be readable unreadable. Missing (`Copilot` sends
+  none) or over the 10MB attachment cap → the summary stands alone and the
+  drop is logged — never a truncated attachment, never a silently missing
+  one.
+- **Artifacts are ephemeral** — they die with the session. That is the
+  accepted trade: surviving a compaction happens within the same session, so
+  the artifact is alive exactly when it is needed. A durable copy was
+  explicitly declined.
+- **Handover delivery**: if a handover note was armed (via `session_compact`),
+  PreCompact delivers it immediately, ignoring the 15s lull floor. The
+  pending entry is removed before delivery, so the fallback lull heuristic's
+  later edge finds nothing — **no double delivery by construction**. The
+  heuristic stays armed only for sessions without hooks.
+- **Deliberately not built**: asking the agent early at "≈60% fill". No CLI
+  reports context fill, so any threshold is a guess that would inject a
+  prompt mid-work; the PreCompact composition covers the requirement without
+  agent capacity. Revisit only with evidence that the summary alone loses
+  something.
+- **Compaction can only be held on Codex** (`continue:false`). Claude and
+  Copilot treat PreCompact as notification only — the snapshot is composed
+  and the handover delivered at the announcement, but nothing delays the
+  compaction on those two.
+
 ## Config locations (user-level, install once)
 
 | CLI | File | Shape |
@@ -143,8 +235,9 @@ Helm-owned Copilot file is deleted only when it holds nothing of the user's.
 > is the same: one owned block, nothing else touched.
 
 Registered events are the common core: `SessionStart`, `UserPromptSubmit`,
-`PreToolUse`, `PostToolUse`, `PreCompact`, `Stop` (Copilot: its native
-camelCase spellings). Copilot entries run in native camelCase mode; Codex
+`PreToolUse`, `PostToolUse`, `PreCompact`, `Stop` — plus Claude-only
+`StopFailure` (G3's reported stall; the normaliser rejects it from any other
+provider). Copilot entries run in native camelCase mode; Codex
 non-managed hooks must be reviewed via `/hooks` before they run — trust is
 keyed to the hook's hash, so changes re-trigger review.
 
@@ -184,10 +277,12 @@ for both surfaces.
 | `src/session/hooks/hook-normaliser.ts` | per-CLI fields → one `HookEvent`; canonical event set; Copilot aliases; per-CLI deny encoding |
 | `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; routes PreToolUse through the policy |
 | `src/session/hooks/hook-policy.ts` | PURE `(event, session, rules) -> allow / deny+reason`; fail open on everything unexpected |
+| `src/session/hooks/hook-tracker.ts` | G3: the `hook` stream's first subscriber — activity edges, durable `hookStall`, plan progress, the PreCompact snapshot (composed by Helm, transcript attached) |
 | `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk |
 | `src/config/hooks/helm-hook-shim.py` | the shared transport shim (fail-open) |
 | `src/mcp/localhost-mcp-server.ts` | `POST /hooks` route, session-token auth |
 | `src/config/cli-types.yaml` | `hooks:` block per CLI (provider, configPath, events, denyRules) |
 
-Later groups subscribe to `HookReceiver`'s `hook` events; StateDetector and
-every existing session behaviour are untouched.
+Later groups subscribe to `HookReceiver`'s `hook` events (the HookTracker
+already does); StateDetector's timing path and every existing session
+behaviour are untouched without hooks.
