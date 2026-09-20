@@ -252,6 +252,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
 vi.mock('../src/mcp/localhost-mcp-server.js', () => ({
   LocalhostMcpServer: vi.fn(function (this: any) {
     this.start = vi.fn().mockResolvedValue(undefined);
+    this.setLoopDriver = vi.fn();
   }),
 }));
 
