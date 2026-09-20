@@ -187,6 +187,23 @@ describe('persistence', () => {
       const parsed = YAML.parse(content);
       expect(parsed.sessions[0]).not.toHaveProperty('activityLevel');
     });
+
+    it('persists the durable hookStall record (invariant 6)', () => {
+      saveSessions([{ ...mockSession1, hookStall: { at: 1700000123456, reason: 'API Error: usage limit reached' } }]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[0];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions[0].hookStall).toEqual({ at: 1700000123456, reason: 'API Error: usage limit reached' });
+    });
+
+    it('omits hookStall when the session is not stalled', () => {
+      saveSessions([mockSession1]);
+      saveSessions([{ ...mockSession1, hookStall: undefined }]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[1];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions[0]).not.toHaveProperty('hookStall');
+    });
   });
 
   describe('loadSessions', () => {
@@ -261,6 +278,26 @@ describe('persistence', () => {
 
       const result = loadSessions();
       expect(result[0].projectPath).toBe(norm('X:\\coding\\repo-a'));
+    });
+
+    it('round-trips hookStall through a save/load cycle', () => {
+      (fs.existsSync as any).mockReturnValue(true);
+      (fs.readFileSync as any).mockReturnValue(
+        YAML.stringify({ sessions: [{ ...mockSession1, hookStall: { at: 1700000123456, reason: 'usage limit' } }] })
+      );
+
+      const result = loadSessions();
+      expect(result[0].hookStall).toEqual({ at: 1700000123456, reason: 'usage limit' });
+    });
+
+    it('drops a malformed hookStall instead of hydrating a bogus shape', () => {
+      (fs.existsSync as any).mockReturnValue(true);
+      (fs.readFileSync as any).mockReturnValue(
+        YAML.stringify({ sessions: [{ ...mockSession1, hookStall: { at: 'soon' } }] })
+      );
+
+      const result = loadSessions();
+      expect(result[0].hookStall).toBeUndefined();
     });
   });
 

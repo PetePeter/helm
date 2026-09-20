@@ -24,7 +24,10 @@
   hooks:
     provider: claude
     configPath: ~/.claude/settings.json
-    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop]
+    # StopFailure is Claude's alone — the turn died on an API error (the
+    # usage-limit stall), reported as fact instead of guessed from silence.
+    # Codex and Copilot have no equivalent event, so they never register one.
+    events: [SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop, StopFailure]
     # G2 PreToolUse deny rules. The reason is fed back to the model, so it must
     # NAME the Helm alternative — that redirect is the feature. Unknown tools,
     # malformed rules and internal errors always ALLOW (fail open).

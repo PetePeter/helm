@@ -30,6 +30,9 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),
     ...(s.createdByMobileDeviceId ? { createdByMobileDeviceId: s.createdByMobileDeviceId } : {}),
+    // Durable hook-derived stall (G3). Absent = not stalled; omitted key means
+    // the same as no stall, so a cleared stall simply drops off disk.
+    ...(isHookStall(s.hookStall) ? { hookStall: s.hookStall } : {}),
     // Always written, both states. The renderer folds this snapshot over its
     // cached session records with a spread merge, so an omitted key means
     // "keep whatever you had" — which would make unlocking invisible.
@@ -40,6 +43,11 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
 function isSessionInfo(value: unknown): value is SessionInfo {
   if (!isRecord(value)) return false;
   return isString(value.id) && isString(value.name) && isString(value.cliType) && isNumber(value.processId);
+}
+
+/** Type guard for the durable hook-stall record — malformed shapes drop off on load. */
+function isHookStall(value: unknown): value is SessionInfo['hookStall'] {
+  return isRecord(value) && isNumber(value.at) && isString(value.reason);
 }
 
 export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
@@ -62,6 +70,11 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       }
       if (session.projectPath) {
         session.projectPath = normalizeProjectPath(session.projectPath);
+      }
+      // Drop a malformed stall record rather than let a hand-edited file put a
+      // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
+      if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
+        delete session.hookStall;
       }
       // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
       return hydrateChatBindings(session);

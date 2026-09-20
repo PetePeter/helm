@@ -74,6 +74,12 @@ export interface SessionInfo {
   createdByMobileDeviceId?: string;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
+  /** Hook-reported turn failure (G3, Claude StopFailure — e.g. a usage limit or
+   *  API error that killed the turn). Set when the CLI reports the stall,
+   *  cleared when work resumes. Persists across restarts so a stall that
+   *  happened while you were away is still visible; unlike a silent terminal,
+   *  this is fact, not a guess from timing. */
+  hookStall?: { at: number; reason: string };
 }
 
 /**
