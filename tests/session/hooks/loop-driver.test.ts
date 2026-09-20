@@ -2,10 +2,12 @@
  * LoopDriver — G8's Stop-block continuation and verification gates.
  *
  * Binding decisions under test (plan P-0789, decided context node
- * "Hook — loop driving: what decides go vs stop"):
+ * "Hook — loop driving: what decides go vs stop"; G10 removed the
+ * per-session opt-in, so consent is autoImplement + the global kill switch):
  * - continuation NEVER decides for itself: it reads autoImplement (consent),
  *   the completed plan's followUpPlans (the what-next) and live plan state
- * - OFF by default — a session that has not opted in gets null, always
+ * - no session-level consent exists anywhere — autoImplement is the only
+ *   opt-in, and the global kill switch is the only opt-out
  * - cap (default 5): reached -> allow the stop and flash the user
  * - no measurable progress since the last Stop -> allow the stop
  * - the counter increments per auto-continue and resets on a user turn,
@@ -107,7 +109,7 @@ function makeHarness(patch: Partial<SessionInfo> = {}, plans: LoopPlanView[] = [
 
 describe('continuation — the three existing facts', () => {
   it('blocks naming the plan when the follow-up is auto-implement and ready', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -119,7 +121,7 @@ describe('continuation — the three existing facts', () => {
   });
 
   it('allows the stop when the follow-up is not auto-implement', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready' },
     ]);
     h.complete();
@@ -127,13 +129,13 @@ describe('continuation — the three existing facts', () => {
   });
 
   it('allows the stop when followUpPlans is empty — a natural terminator', () => {
-    const h = makeHarness({ loopDriving: true });
+    const h = makeHarness();
     h.complete({ followUps: [] });
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
   });
 
   it('allows the stop when the follow-up still has incomplete precursors', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'planning', autoImplement: true },
     ]);
     h.complete();
@@ -141,7 +143,7 @@ describe('continuation — the three existing facts', () => {
   });
 
   it('allows the stop when another session already claimed the follow-up', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true, sessionId: 'someone-else' },
     ]);
     h.complete();
@@ -149,24 +151,15 @@ describe('continuation — the three existing facts', () => {
   });
 
   it('allows the stop when the follow-up was deleted between completion and Stop', () => {
-    const h = makeHarness({ loopDriving: true });
+    const h = makeHarness();
     h.complete();
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
   });
 });
 
 describe('continuation — hard stops', () => {
-  it('is OFF by default: a session that has not opted in is never continued', () => {
-    const h = makeHarness({}, [
-      { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true },
-    ]);
-    h.complete();
-    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
-    expect(h.flashes).toEqual([]);
-  });
-
   it('stops and flashes at the consecutive auto-continue cap, even with work outstanding', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
       { id: 'p4', humanId: 'P-0004', title: 'D', status: 'ready', autoImplement: true },
@@ -190,7 +183,7 @@ describe('continuation — hard stops', () => {
   });
 
   it('stops without a block when nothing measurable happened since the last Stop', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
@@ -202,7 +195,7 @@ describe('continuation — hard stops', () => {
   });
 
   it('treats an edit, a commit and a completion as progress', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -216,7 +209,7 @@ describe('continuation — hard stops', () => {
   });
 
   it('respects the global kill switch mid-loop', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -228,18 +221,8 @@ describe('continuation — hard stops', () => {
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
   });
 
-  it('respects the per-session kill switch mid-loop', () => {
-    const h = makeHarness({ loopDriving: true }, [
-      { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
-    ]);
-    h.complete();
-    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toContain('P-0002');
-    h.sessions.set('s1', session({ loopDriving: false }));
-    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
-  });
-
   it('NEVER continues a StopFailure — and resets the loop when the turn died', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -254,7 +237,7 @@ describe('continuation — hard stops', () => {
 
 describe('the visible counter', () => {
   it('increments per auto-continue and lands on the session row', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
@@ -269,7 +252,7 @@ describe('the visible counter', () => {
   });
 
   it('a genuine user turn ENDS the chain — the next Stop is allowed even with an eligible follow-up', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
@@ -292,7 +275,7 @@ describe('the visible counter', () => {
   });
 
   it('does NOT reset when the UserPromptSubmit is our own block reason coming back', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
@@ -310,7 +293,7 @@ describe('the visible counter', () => {
   });
 
   it('clears the row counter when a Stop is finally allowed', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -335,14 +318,15 @@ describe('verification — completionRecap is a quality gate, never a continuati
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
   });
 
-  it('fires with loop driving OFF — verification is not part of the feature flag', () => {
-    const h = makeHarness(); // no loopDriving opt-in
+  it('fires with the global kill switch OFF — verification is not part of the feature flag', () => {
+    const h = makeHarness();
+    h.config.enabled = false;
     h.complete({ completionRecap: true, followUps: [] });
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toMatch(/recap/i);
   });
 
   it('continuation wins when a valid auto-implement follow-up exists — one block, not two', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete({ completionRecap: true });
@@ -352,7 +336,7 @@ describe('verification — completionRecap is a quality gate, never a continuati
   });
 
   it('a recap-flagged plan with a follow-up that is NOT eligible still verifies', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'planning', autoImplement: true },
     ]);
     h.complete({ completionRecap: true });
@@ -376,7 +360,7 @@ describe('verification — completionRecap is a quality gate, never a continuati
   });
 
   it('does not fire the recap on the Stop the cap itself ends', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
@@ -394,14 +378,14 @@ describe('verification — completionRecap is a quality gate, never a continuati
 
 describe('session lifecycle', () => {
   it('ignores events for uncorrelated or unknown sessions', () => {
-    const h = makeHarness({ loopDriving: true });
+    const h = makeHarness();
     h.emitter.emit('hook', hookEvent({ helmSessionId: null }));
     h.emitter.emit('hook', hookEvent({ helmSessionId: 'who' }));
     expect(() => h.driver.forgetSession('s1')).not.toThrow();
   });
 
   it('a forgotten session starts with a clean slate', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();
@@ -411,7 +395,7 @@ describe('session lifecycle', () => {
   });
 
   it('only edit-shaped tools and commits tick progress, reads do not', () => {
-    const h = makeHarness({ loopDriving: true }, [
+    const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
     ]);
     h.complete();

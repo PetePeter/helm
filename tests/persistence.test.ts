@@ -205,13 +205,15 @@ describe('persistence', () => {
       expect(parsed.sessions[0]).not.toHaveProperty('hookStall');
     });
 
-    it('persists the G8 loop-driving opt-in, never the ephemeral counter', () => {
-      saveSessions([{ ...mockSession1, loopDriving: true, loopContinues: 3 }]);
+    it('never persists the removed G8 per-session loopDriving key, stale or not (G10)', () => {
+      const stale = { ...mockSession1, loopDriving: true, loopContinues: 3 } as unknown as SessionInfo;
+      saveSessions([stale]);
 
       const [, content] = (fs.writeFileSync as any).mock.calls[0];
       const parsed = YAML.parse(content);
-      expect(parsed.sessions[0].loopDriving).toBe(true);
-      // The counter is session-row state, not durable consent.
+      // Consent lives on the plan (autoImplement); the session record carries
+      // neither the removed opt-in nor the ephemeral counter.
+      expect(parsed.sessions[0]).not.toHaveProperty('loopDriving');
       expect(parsed.sessions[0]).not.toHaveProperty('loopContinues');
     });
   });
@@ -308,6 +310,19 @@ describe('persistence', () => {
 
       const result = loadSessions();
       expect(result[0].hookStall).toBeUndefined();
+    });
+
+    it('loads a record carrying the removed loopDriving key without error, dropping the value (G10)', () => {
+      (fs.existsSync as any).mockReturnValue(true);
+      (fs.readFileSync as any).mockReturnValue(
+        YAML.stringify({ sessions: [{ ...mockSession1, loopDriving: true }] })
+      );
+
+      const result = loadSessions();
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('session-1');
+      // A stale key in old data is not an error — and not a consent surface.
+      expect(result[0]).not.toHaveProperty('loopDriving');
     });
   });
 

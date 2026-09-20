@@ -26,9 +26,10 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
       return chatBindings ? { chatBindings } : {};
     })(),
     ...(s.aiagentState ? { aiagentState: s.aiagentState } : {}),
-    // Durable G8 opt-in; the ephemeral loopContinues counter is deliberately
-    // NOT here (invariant 6: persistence is an explicit allow-list).
-    ...(s.loopDriving ? { loopDriving: true } : {}),
+    // G10: no loop-driving session consent is persisted — autoImplement on
+    // the plan is the only switch — and the ephemeral loopContinues counter
+    // is deliberately not here either (invariant 6: persistence is an
+    // explicit allow-list).
     ...(s.createdAt != null ? { createdAt: s.createdAt } : {}),
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),
@@ -78,6 +79,12 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
       if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
         delete session.hookStall;
+      }
+      // G10 removed SessionInfo.loopDriving (the per-session loop-driving
+      // opt-in). A stale key in pre-G10 sessions.yaml is not an error — the
+      // value is silently dropped: consent lives on the plan's autoImplement.
+      if ('loopDriving' in session) {
+        delete (session as Record<string, unknown>).loopDriving;
       }
       // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
       return hydrateChatBindings(session);

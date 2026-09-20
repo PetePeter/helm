@@ -555,9 +555,9 @@ export function registerIPCHandlers(
   // G8 loop driving: the Stop-hook continuation brain. Fed by the same hook
   // stream (progress ticks, user turns, StopFailure) and by plan_complete's
   // completion notice (bound to the MCP server below — it is constructed
-  // earlier than the managers this needs, hence the late binding). OFF by
-  // default: a session that has not opted in via session_set_loop_driving
-  // gets exactly today's Stop behaviour.
+  // earlier than the managers this needs, hence the late binding). G10:
+  // autoImplement on a plan is the only consent; the global
+  // hooks.loopDriving.enabled kill switch (read live) is the only opt-out.
   const loopDriver = new LoopDriver({
     getSession: (sessionId) => sessionManager.getSession(sessionId),
     getPlan: (planId) => planManager.getItem(planId),

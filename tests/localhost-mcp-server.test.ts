@@ -128,7 +128,6 @@ function makeService(): HelmControlService {
       sent: true,
     })),
     notifyUser: vi.fn((sessionRef: string, title: string, content: string) => ({ delivered: 'bubble', sessionRef, title, content })),
-    setLoopDriving: vi.fn((sessionRef: string, enabled: boolean) => ({ ok: true, sessionId: sessionRef, name: 'Claude', loopDriving: enabled })),
     getAppVisibility: vi.fn(() => ({ visibility: 'visible-focused', screenLocked: false, activeSessionId: 's1' })),
     restartHelmGated: vi.fn((_callerSessionId: string, _handoverArtifactId: string | undefined, resume = true) => ({ sessionsClosed: resume ? 0 : 2, resume })),
     createScheduledTask: vi.fn((params: Record<string, unknown>) => ({ id: 'task-1', status: 'pending', ...params })),
@@ -851,12 +850,16 @@ describe('LocalhostMcpServer', () => {
     });
   });
 
-  it('dispatches session_set_loop_driving (G8 opt-in) through the MCP surface', async () => {
+  it('no longer exposes session_set_loop_driving — autoImplement is the only consent (G10)', async () => {
     const service = makeService();
     const server = new LocalhostMcpServer(service, { token: 'secret-token', port: 0 });
     servers.push(server);
     await server.start();
     const port = server.getAddress()!.port;
+
+    const toolsResponse = await rpc(port, 'secret-token', { jsonrpc: '2.0', id: 55, method: 'tools/list', params: {} });
+    const toolNames = (await toolsResponse.json()).result.tools.map((tool: { name: string }) => tool.name);
+    expect(toolNames).not.toContain('session_set_loop_driving');
 
     const response = await rpc(port, 'secret-token', {
       jsonrpc: '2.0',
@@ -869,8 +872,8 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
 
-    expect((service.setLoopDriving as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('s1', true);
-    expect(json.result.structuredContent).toEqual({ ok: true, sessionId: 's1', name: 'Claude', loopDriving: true });
+    expect(json.error).toBeDefined();
+    expect(json.error.message).toContain('Unknown tool');
   });
 
   it('adds ownership reminders to plan_create and plan_set_state text without changing structured content', async () => {

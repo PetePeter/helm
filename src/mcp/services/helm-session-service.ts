@@ -213,23 +213,6 @@ export class HelmSessionService {
     return { ok: true };
   }
 
-  /**
-   * G8 loop-driving opt-in (docs/cli-hooks.md, G8): allows the Stop hook to
-   * auto-continue this session into auto-implement follow-ups. OFF by
-   * default; this is the per-session switch (the global kill switch lives in
-   * settings.yaml and outranks it). Setting false mid-loop ends the loop at
-   * the next Stop.
-   */
-  setLoopDriving(sessionRef: string, enabled: boolean): { ok: true; sessionId: string; name: string; loopDriving: boolean } {
-    const session = this.findSession(sessionRef);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionRef}`);
-    }
-
-    this.sessionManager.updateSession(session.id, { loopDriving: enabled === true });
-    return { ok: true, sessionId: session.id, name: session.name, loopDriving: enabled === true };
-  }
-
   readSessionTerminal(
     sessionRef: string,
     requestedLines = 50,
