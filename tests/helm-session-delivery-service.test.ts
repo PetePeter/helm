@@ -307,6 +307,43 @@ describe('HelmSessionDeliveryService', () => {
 
       expect(allDeliveredText(ptyManager)).not.toContain('AskUserQuestion');
     });
+
+    it('omits the prepended directive when the recipient injects rules via hooks (G4 dual-path)', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      service.setRulesViaHooks(async (session) => session.id === receiver.id);
+
+      await service.sendTextToSession(receiver.id, 'do the thing', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+
+      const sent = allDeliveredText(ptyManager);
+      // The rules travel out-of-band instead — the hook injects them.
+      expect(sent).toContain('[HELM_MSG]');
+      expect(sent).toContain('do the thing');
+      expect(sent).not.toContain('[HELM_MSG_RULES]');
+    });
+
+    it('keeps prepending the directive when the recipient has no hooks installed', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      service.setRulesViaHooks(async () => false);
+
+      await service.sendTextToSession(receiver.id, 'do the thing', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+
+      expect(allDeliveredText(ptyManager)).toContain('[HELM_MSG_RULES]');
+    });
+
+    it('prepends as always when no capability check is wired at all', async () => {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      await service.sendTextToSession(receiver.id, 'do the thing', {
+        senderSessionId: sender.id,
+        senderSessionName: sender.name,
+      });
+      expect(allDeliveredText(ptyManager)).toContain('[HELM_MSG_RULES]');
+    });
   });
 
   describe('plain delivery (preamble=false)', () => {

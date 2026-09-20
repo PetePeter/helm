@@ -328,7 +328,7 @@ export class LocalhostMcpServer {
 
     // No receiver wired (older construction) still fails open, like the shim.
     const result = this.hookReceiver
-      ? this.hookReceiver.receive(body, auth.sessionId)
+      ? await this.hookReceiver.receive(body, auth.sessionId)
       : { statusCode: 200, body: {} };
     this.writeJson(res, result.statusCode, result.body);
   }

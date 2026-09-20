@@ -2,19 +2,22 @@
  * HookReceiver — the dispatch behind POST /hooks on the localhost server.
  *
  * G2: PreToolUse events route through the policy, which may DENY with a
- * reason the CLI feeds back to the model. Everything else stays G1:
- * normalise, stamp the Helm session id the bearer token resolved to, log the
- * traffic, and emit the event for later groups (injection, …).
+ * reason the CLI feeds back to the model. G4: every other steerable event
+ * (SessionStart, UserPromptSubmit, Stop) routes through the injected
+ * responder — the ContextInjector — which may return additionalContext or a
+ * one-shot stop block. Everything else stays G1: normalise, stamp the Helm
+ * session id the bearer token resolved to, log the traffic, emit the event.
  *
- * FAIL OPEN on every path the policy is involved in: unknown tools and events
- * allow by construction, and any error inside the decision machinery — a
- * throwing session lookup, a broken rule source — is swallowed into allow.
- * A crashed or confused policy must never be able to brick a session.
+ * FAIL OPEN on every decision path: unknown tools and events allow by
+ * construction, and any error inside the decision machinery — a throwing
+ * session lookup, a broken rule source, a throwing responder — is swallowed
+ * into a no-op. A crashed or confused decision must never brick a session.
  */
 
 import { EventEmitter } from 'node:events';
 import { encodeDenyResponse, normaliseHookEvent, type HookEvent, type HookProvider } from './hook-normaliser.js';
 import { decideHookPolicy } from './hook-policy.js';
+import type { InjectorResponse } from './context-injector.js';
 import type { SessionInfo } from '../../types/session.js';
 import { logger } from '../../utils/logger.js';
 
@@ -24,6 +27,11 @@ export interface HookReceiverDeps {
   getSession?: (helmSessionId: string) => SessionInfo | null;
   /** Deny rules for a provider, read live from config; empty = deny nothing. */
   getDenyRules?: (cli: HookProvider) => readonly unknown[] | null;
+  /**
+   * G4's non-deny responder (injection, nudges). Null/absent = no-op for
+   * every event the policy is not involved in. Absent in G1/G2 wiring.
+   */
+  respond?: (event: HookEvent) => Promise<InjectorResponse>;
 }
 
 export interface HookReceiveResult {
@@ -48,8 +56,10 @@ export class HookReceiver extends EventEmitter {
    * token auth — the payload's own session id is the CLI's, not Helm's.
    * Every malformed input is swallowed with a no-op: the shim does not read
    * error statuses beyond "reply or not", so there is nothing useful to say.
+   * Async because the G4 responder awaits the (Promise-seamed) suggester —
+   * the CLI blocks on this HTTP reply either way.
    */
-  receive(raw: unknown, helmSessionId: string | null): HookReceiveResult {
+  async receive(raw: unknown, helmSessionId: string | null): Promise<HookReceiveResult> {
     if (!isInboundBody(raw)) {
       logger.warn('[Hook] Dropped a malformed hook body');
       return NO_OP;
@@ -72,7 +82,8 @@ export class HookReceiver extends EventEmitter {
         `${correlated.cwd ? ` cwd=${correlated.cwd}` : ''}`,
     );
     this.emit('hook', correlated);
-    return this.decide(correlated);
+    if (event.event === 'PreToolUse') return this.decide(correlated);
+    return this.decideContext(correlated);
   }
 
   /**
@@ -95,6 +106,21 @@ export class HookReceiver extends EventEmitter {
       return NO_OP;
     } catch (error) {
       logger.warn(`[Hook] Policy failed open for ${event.cli} ${event.toolName}: ${String(error)}`);
+      return NO_OP;
+    }
+  }
+
+  /**
+   * The G4 decision step for every non-policy event. Same belt around the
+   * same braces: a throwing responder degrades to a no-op reply, which both
+   * means "no injection this turn" and "the turn ends normally" on Stop.
+   */
+  private async decideContext(event: HookEvent): Promise<HookReceiveResult> {
+    if (!this.deps.respond) return NO_OP;
+    try {
+      return (await this.deps.respond(event)) ?? NO_OP;
+    } catch (error) {
+      logger.warn(`[Hook] Injection failed open for ${event.cli} ${event.event}: ${String(error)}`);
       return NO_OP;
     }
   }

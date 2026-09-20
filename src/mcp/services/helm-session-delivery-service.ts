@@ -89,6 +89,8 @@ export interface HandoverArming {
 }
 
 export class HelmSessionDeliveryService {
+  private rulesViaHooks?: (session: SessionInfo) => Promise<boolean>;
+
   constructor(
     private readonly sessionManager: SessionManager,
     private readonly ptyManager: PtyManager,
@@ -105,6 +107,20 @@ export class HelmSessionDeliveryService {
    */
   setHandoverDelivery(handover: HandoverArming): void {
     this.handover = handover;
+  }
+
+  /**
+   * Late-bind the G4 rules-injection capability check.
+   *
+   * When it answers true for a recipient — hooks installed AND the provider
+   * can inject on UserPromptSubmit — the prepended directive is redundant
+   * transcript filler: the hook supplies the same rules out-of-band the
+   * moment the message is submitted. Sessions whose CLI has no hooks, or a
+   * provider that drops UserPromptSubmit output (Copilot), keep the
+   * prepended header. Both paths coexist; the choice is per recipient.
+   */
+  setRulesViaHooks(rulesViaHooks: (session: SessionInfo) => Promise<boolean>): void {
+    this.rulesViaHooks = rulesViaHooks;
   }
 
   /**
@@ -169,7 +185,10 @@ export class HelmSessionDeliveryService {
       // three bracketed pastes into the recipient's composer, each one a chance
       // for a full-screen TUI to still be ingesting when the submit lands. Same
       // bytes, one race instead of three.
-      const directive = buildNonBlockingDirective(options.senderSessionId);
+      // G4 dual-path: when the recipient injects the rules via hooks, the
+      // message carries only the tag, envelope and text.
+      const inlineRules = this.rulesViaHooks ? await this.rulesViaHooks(session) : false;
+      const directive = inlineRules ? '' : buildNonBlockingDirective(options.senderSessionId);
       const message = `${tag}${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({
