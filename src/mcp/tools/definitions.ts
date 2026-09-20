@@ -1063,6 +1063,21 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_set_loop_driving',
+    title: 'Set Loop Driving',
+    description: 'Opt this session into (or out of) G8 loop driving: when enabled and the session completes a plan whose follow-up is ready and marked auto-implement, the Stop hook auto-continues the session into that follow-up (up to a consecutive cap, default 5). OFF by default; only enable when the user has explicitly authorized autonomous chaining. Setting enabled:false mid-loop ends it at the next Stop. A genuine user prompt also ends the chain. The global kill switch in settings.yaml (hooks.loopDriving.enabled) outranks this flag. Accepts sessionId or exact session name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string' },
+        name: { type: 'string' },
+        enabled: { type: 'boolean', description: 'true opts the session into auto-continue; false opts out (the default state).' },
+      },
+      required: ['enabled'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_close',
     title: 'Close Session',
     description: 'Kill the PTY process and remove a session from Helm. Use this when a task is complete and the session is no longer needed, or to recover from a stuck session. Accepts sessionId or session name.',

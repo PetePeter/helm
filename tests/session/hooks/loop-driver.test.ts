@@ -268,23 +268,27 @@ describe('the visible counter', () => {
     expect(counterUpdates.map(([, u]) => u.loopContinues)).toEqual([1, 2]);
   });
 
-  it('resets on a genuine user turn, so a prodded loop starts counting fresh', () => {
+  it('a genuine user turn ENDS the chain — the next Stop is allowed even with an eligible follow-up', () => {
     const h = makeHarness({ loopDriving: true }, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
       { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
-    h.config.maxAutoContinues = 1;
     h.complete();
-    h.driver.stopBlock(h.sessions.get('s1')!); // continue 1/1
+    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toContain('P-0002');
     h.emitter.emit('hook', hookEvent({ toolName: 'Edit', toolInput: { file_path: 'x' } }));
     h.complete({ planId: 'p2', humanId: 'P-0002', title: 'B', followUps: [{ id: 'p3', humanId: 'P-0003', title: 'C' }] });
-    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull(); // cap
 
-    // The user takes over: counter resets, the chain may continue again.
-    h.emitter.emit('hook', hookEvent({ event: 'UserPromptSubmit', prompt: 'keep going please' }));
+    // The user takes the wheel mid-chain. Their word outranks the DAG.
+    h.emitter.emit('hook', hookEvent({ event: 'UserPromptSubmit', prompt: 'stop, ship what you have' }));
     const resets = h.updates.filter(([, u]) => u.loopContinues === undefined);
     expect(resets.length).toBeGreaterThan(0);
-    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toContain('P-0003');
+    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
+
+    // The chain re-arms on the NEXT completion — nothing is lost, the user
+    // just had to finish a turn first.
+    h.emitter.emit('hook', hookEvent({ toolName: 'Edit', toolInput: { file_path: 'y' } }));
+    h.complete({ planId: 'p3', humanId: 'P-0003', title: 'C', followUps: [] });
+    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull(); // nothing left to continue into
   });
 
   it('does NOT reset when the UserPromptSubmit is our own block reason coming back', () => {
@@ -315,8 +319,8 @@ describe('the visible counter', () => {
     h.complete({ planId: 'p2', humanId: 'P-0002', title: 'B', followUps: [] }); // chain ends
 
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
-    const last = h.updates.filter(([, u]) => 'loopContinues' in u).at(-1);
-    expect(last?.[1].loopContinues).toBeUndefined();
+    const counterUpdates = h.updates.filter(([, u]) => 'loopContinues' in u);
+    expect(counterUpdates[counterUpdates.length - 1]?.[1].loopContinues).toBeUndefined();
   });
 });
 
@@ -371,16 +375,18 @@ describe('verification — completionRecap is a quality gate, never a continuati
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toMatch(/recap/i);
   });
 
-  it('does not fire the recap when the cap ended the loop', () => {
+  it('does not fire the recap on the Stop the cap itself ends', () => {
     const h = makeHarness({ loopDriving: true }, [
       { id: 'p2', humanId: 'P-0002', title: 'B', status: 'ready', autoImplement: true },
+      { id: 'p3', humanId: 'P-0003', title: 'C', status: 'ready', autoImplement: true },
     ]);
     h.config.maxAutoContinues = 1;
     h.complete({ completionRecap: true });
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toContain('P-0002'); // 1/1, recap skipped for the completed plan
     h.emitter.emit('hook', hookEvent({ toolName: 'Edit', toolInput: { file_path: 'x' } }));
-    h.complete({ planId: 'p2', humanId: 'P-0002', title: 'B', completionRecap: true, followUps: [] });
-    // Cap exhausted and the chain is over: allow the stop, flash, no recap turn.
+    h.complete({ planId: 'p2', humanId: 'P-0002', title: 'B', completionRecap: true, followUps: [{ id: 'p3', humanId: 'P-0003', title: 'C' }] });
+    // Cap exhausted with C still outstanding: allow the stop, flash, and do
+    // NOT follow it with a recap turn — the cap's "allow the stop" is final.
     expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
     expect(h.flashes).toEqual(['s1']);
   });

@@ -124,6 +124,7 @@ import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ContextInjector } from '../../session/hooks/context-injector.js';
+import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
@@ -551,6 +552,22 @@ export function registerIPCHandlers(
   });
   hookTracker.watch(hookReceiver);
 
+  // G8 loop driving: the Stop-hook continuation brain. Fed by the same hook
+  // stream (progress ticks, user turns, StopFailure) and by plan_complete's
+  // completion notice (bound to the MCP server below — it is constructed
+  // earlier than the managers this needs, hence the late binding). OFF by
+  // default: a session that has not opted in via session_set_loop_driving
+  // gets exactly today's Stop behaviour.
+  const loopDriver = new LoopDriver({
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getPlan: (planId) => planManager.getItem(planId),
+    updateSession: (sessionId, updates) => sessionManager.updateSession(sessionId, updates),
+    flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
+    getLoopConfig: () => configLoader.getLoopDrivingConfig(),
+  });
+  loopDriver.watch(hookReceiver);
+  localhostMcpServer.setLoopDriver(loopDriver);
+
   // G4: the injection brain, bound to the receiver built above. SILENT for a
   // session without hook events — nothing here runs, so behaviour is exactly
   // as before. The suggester's candidates are built per prompt: skills visible
@@ -598,6 +615,7 @@ export function registerIPCHandlers(
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
+    loop: loopDriver,
   });
   hookReceiver.setResponder((event) => contextInjector.respond(event));
   // A closed session takes its nudger and suggester ledgers with it — a
@@ -606,6 +624,7 @@ export function registerIPCHandlers(
     contextInjector.forgetSession(event.sessionId);
     suggestionService.forgetSession(event.sessionId);
     suggestionUsage.forgetSession(event.sessionId);
+    loopDriver.forgetSession(event.sessionId);
   });
   // Dual-path rules delivery (G9): every surface resolves each standing
   // reminder from the same settings + capability — the delivery services

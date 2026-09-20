@@ -340,8 +340,9 @@ describe('Stop — the one-shot nudge', () => {
 
 describe('Stop — G8 loop driving, stacked on the same event', () => {
   it('emits the loop block as the ONE Stop reply when the decider blocks', async () => {
+    let blocksLeft = 1;
     const decider = {
-      stopBlock: () => 'Continue the plan chain: P-0002 "Follow up" is ready.',
+      stopBlock: () => (blocksLeft-- > 0 ? 'Continue the plan chain: P-0002 "Follow up" is ready.' : null),
     };
     const { injector } = makeInjector({
       loop: decider,
@@ -353,8 +354,10 @@ describe('Stop — G8 loop driving, stacked on the same event', () => {
       decision: 'block',
       reason: expect.stringContaining('P-0002'),
     });
-    // One Stop, one block — the nudge ledger was not consumed either.
-    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+    // Exactly one block per Stop EVENT: the next Stop gets the nudge (its
+    // ledger was not consumed by the loop block), not a stacked second block.
+    const second = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect((second!.body as { reason: string }).reason).toContain('still claimed and open');
   });
 
   it('falls through to the one-shot nudge when the decider allows', async () => {

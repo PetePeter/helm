@@ -35,6 +35,7 @@ import {
   type ReminderDeliveryMode,
   type ReminderId,
 } from '../session/reminder-delivery.js';
+import { DEFAULT_MAX_AUTO_CONTINUES, type LoopConfig } from '../session/hooks/loop-driver.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
 export type { CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
@@ -363,6 +364,14 @@ export interface SettingsConfig {
   reminderDelivery?: Partial<Record<ReminderId, ReminderDeliveryMode>>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
+  /**
+   * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
+   * consecutive auto-continue cap. Absent means allowed at the shipped cap;
+   * off-by-default lives on the per-session opt-in instead.
+   */
+  hooks?: {
+    loopDriving?: { enabled?: boolean; maxAutoContinues?: number };
+  };
   /** Pre-rename key, read-only migration input for `fleet`. Never written. */
   federation?: FleetConfig;
 }
@@ -1031,6 +1040,30 @@ export class ConfigLoader {
     }
     this.settings!.reminderDelivery = merged;
     this.saveSettings();
+  }
+
+  /**
+   * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
+   * consecutive auto-continue cap. Malformed values degrade to the shipped
+   * defaults — a junk cap can never silently uncap the loop. OFF-by-default
+   * lives on the per-session opt-in, NOT here: `enabled` defaults true so the
+   * kill switch is opt-OUT, matching how the rest of the hard stops read.
+   */
+  getLoopDrivingConfig(): LoopConfig {
+    const raw = this.settings?.hooks?.loopDriving;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return { enabled: true, maxAutoContinues: DEFAULT_MAX_AUTO_CONTINUES };
+    }
+    const section = raw as Record<string, unknown>;
+    const maxRaw = section.maxAutoContinues;
+    const maxAutoContinues =
+      typeof maxRaw === 'number' && Number.isInteger(maxRaw) && maxRaw > 0
+        ? maxRaw
+        : DEFAULT_MAX_AUTO_CONTINUES;
+    return {
+      enabled: section.enabled !== false,
+      maxAutoContinues,
+    };
   }
 
   /** Update the localhost MCP configuration (partial merge). */

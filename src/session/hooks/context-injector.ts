@@ -32,6 +32,7 @@ import {
   type ReminderDeliveryMode,
   type ReminderId,
 } from '../reminder-delivery.js';
+import type { LoopDriver } from './loop-driver.js';
 import { logger } from '../../utils/logger.js';
 
 /** A claimed plan reduced to what a nudge names. */
@@ -63,6 +64,13 @@ export interface ContextInjectorDeps {
    * 'pty' means the prepend path owns the reminder and nothing is injected.
    */
   getReminderMode?(reminder: ReminderId): ReminderDeliveryMode | undefined;
+  /**
+   * G8 loop driving: continuation (autoImplement-gated) and verification
+   * (completionRecap-gated) on the same Stop event. Checked BEFORE the
+   * one-shot nudge; exactly one block is ever emitted per Stop. Absent in
+   * pre-G8 wiring — the Stop path is then byte-identical to before.
+   */
+  loop?: Pick<LoopDriver, 'stopBlock'>;
 }
 
 /** One hook reply: 200 with a body the CLI reads, or null (send nothing). */
@@ -252,6 +260,14 @@ export class ContextInjector {
   // -- D. Stop: the one-shot nudge -----------------------------------------
 
   private respondStop(event: HookEvent, session: SessionInfo): InjectorResponse {
+    // G8 FIRST: continuation into an auto-implement follow-up, then the
+    // one-shot recap verification. Exactly one block per Stop event — when
+    // the loop speaks, the nudge below stays silent (and its ledger intact).
+    const loopBlock = this.deps.loop?.stopBlock(session);
+    if (loopBlock) {
+      return { statusCode: 200, body: encodeStopBlock(event, loopBlock) };
+    }
+
     const plan = this.deps.getClaimedPlan(session.id);
     const unsettled = session.aiagentState === undefined;
     if (!plan && !unsettled) return null;
