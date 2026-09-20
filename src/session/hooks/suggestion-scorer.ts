@@ -3,9 +3,11 @@
  *
  * DESIGN (decided; do not re-derive — see plans P-0785/P-0786 and the
  * "scoring is on demand" context node):
- * - POINTERS ONLY. The whole payload is `possibly related: skill/x, memory/y`.
+ * - POINTERS ONLY. The whole payload is `possibly related: skill/x (Name),
+ *   memory/y` — id is the address, name is the label (G7: a bare UUID forces
+ *   a fetch to judge relevance, the exact cost pointers exist to avoid).
  *   The agent fetches what it wants via skill_get / memory_get, or ignores it.
- *   A miss costs nothing; a hit costs ~10 tokens. There is no "inject body"
+ *   A miss costs nothing; a hit costs ~15 tokens. There is no "inject body"
  *   tier to tune and there never will be one.
  * - NO MODEL. BM25 over name + description + declared triggers, pure
  *   TypeScript, zero dependencies. SemIf / Qwen / WebGPU / a Python sidecar
@@ -455,7 +457,21 @@ export class SuggestionService {
     return `${candidate.type}/${candidate.id}`;
   }
 
-  private tuple(item: { type: SuggestionType; id: string }): string {
-    return `${item.type}/${item.id}`;
+  /**
+   * One pointer: `type/id (name)`. The id is the ADDRESS — it is what
+   * skill_get / memory_get take, and names are not unique. The name is the
+   * LABEL — what lets the recipient judge relevance WITHOUT fetching, which
+   * a bare UUID never can. It is appended only when it adds information the
+   * id lacks (never `skill/graphify (graphify)`) and never carries the
+   * characters that build the line format (comma, parens, newline), so a
+   * hostile or accident-prone name cannot forge another tuple.
+   */
+  private tuple(item: { type: SuggestionType; id: string; name?: string }): string {
+    const name = (item.name ?? '')
+      .replace(/[,()\r\n]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!name || name.toLowerCase() === item.id.toLowerCase()) return `${item.type}/${item.id}`;
+    return `${item.type}/${item.id} (${name})`;
   }
 }

@@ -315,7 +315,7 @@ describe('BoostedSuggestionScorer — fresh-install guarantee', () => {
     // where base scores are controlled exactly.)
     const promptText = 'please run the twin tool on the folder';
     const before = await service.suggest('s1', promptText, null);
-    expect(before).toBe('possibly related: memory/alpha-tool, memory/zulu-tool');
+    expect(before).toBe('possibly related: memory/alpha-tool (Twin Tool), memory/zulu-tool (Twin Tool)');
     // The agent fetched zulu after that suggestion (the dispatcher's call in
     // production); the correlation learns ONLY zulu.
     store.recordFetch('s1', 'memory/zulu-tool');

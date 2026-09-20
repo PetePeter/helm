@@ -265,16 +265,26 @@ wired and nothing arrives.
 `src/session/hooks/suggestion-scorer.ts`. On UserPromptSubmit, skills and
 memories are scored against the prompt — **BM25 over name + description +
 declared triggers**, pure TypeScript, no model, no download, no worker. The
-payload is `(type/id)` TUPLES ONLY:
+payload is `(type/id (name))` TUPLES ONLY:
 
 ```
-possibly related: skill/graphify, memory/helm-chain-stall-recovery
+possibly related: skill/graphify, memory/f412c44b (helm-chain-stall-recovery)
 ```
+
+The id is the ADDRESS — it is what `skill_get` / `memory_get` take, and names
+are not unique. The name is the LABEL — without it a pointer is a bare UUID
+the recipient must FETCH just to judge relevance, which is the exact cost the
+tuples-only design exists to avoid (G7). The name is appended only when it
+adds information the id lacks (`skill/graphify` never renders as
+`skill/graphify (graphify)`); an empty name degrades to the id form, never
+`()`. Names never carry the characters that build the line format (comma,
+parens, newline), so a name cannot forge another tuple.
 
 The agent fetches what it wants via `skill_get` / `memory_get`, or ignores it.
-A miss costs nothing; a hit costs ~10 tokens. There is no "inject body" tier
+A miss costs nothing; a hit costs ~15 tokens. There is no "inject body" tier
 to tune and never will be. A prompt that NAMES a candidate bypasses scoring.
-Caps: top-3, 400 bytes; once per item per session; below threshold sends
+Caps: top-3, 400 bytes — a cap that bites drops whole pointers, never splits
+one; once per item per session; below threshold sends
 nothing (that is the common case and it must be free). Candidates are
 pre-filtered to the session's project — skills visible to that project, plus
 that project's live (non-dormant) memories. `Trigger:` phrases declared in a
