@@ -308,6 +308,84 @@ shipped, not built, and its guards (max auto-continues, visible counter, kill
 switches) were never implemented. If it ever lands, it inherits the
 StopFailure-never-retried rule above.
 
+## Ranking signals (G5) — adjacency, scope, recency, usage
+
+BM25 matches words, not meaning. G5 adds four signals **behind the same
+`SuggestionScorer` interface** (`BoostedSuggestionScorer` in
+`src/session/hooks/suggestion-scorer.ts`), composed explicitly on top of
+BM25 — still no model, no download, no network, no background index (scoring
+is on demand, decided for G4/G5 and not re-derived here):
+
+```
+final = base(BM25) + adjacency + scope + recency + usage
+```
+
+Every contribution is on the log line
+(`[HookSuggestSignals] skill/x base=… adjacency=… scope=… usage=… recency=… final=…`)
+— explainability is the entire reason this exists instead of a model, so
+there is no opaque blend.
+
+**THE RULE, decided and pinned by tests: the threshold is BM25's job.** The
+base decides who passes `MIN_SCORE`; the signals **reorder passers only**.
+No signal — not adjacency, not a hundred recorded fetches — may lift a
+candidate over the line. A signal that could decide would create a
+self-reinforcing loop: an item gets suggested, being visible makes it more
+likely to be fetched, being fetched raises its weight, which makes it
+suggested again. Over weeks the ranking drifts toward whatever was suggested
+early rather than whatever is relevant, and every individual suggestion looks
+plausible while it happens. Do not "improve" this into a rescue/bonus that
+can cross the threshold; if real use shows relevant items consistently
+sitting just below the line, that is EVIDENCE, and a bounded rescue becomes a
+deliberate follow-up with a number attached.
+
+```mermaid
+flowchart LR
+    P[prompt] --> B["BM25 base<br/>threshold = BM25's job"]
+    B -->|"passers only"| S{G5 boosts}
+    G1["memory_graph edges<br/>to passers"] --> S
+    G2["workspace: claimed plan,<br/>sequence siblings, plans sharing<br/>a bound context node"] --> S
+    S1["scope: project-scoped<br/>skill over global"] --> S
+    S2["recency: age decay<br/>over the window"] --> S
+    S3["usage: fetched-after-suggested<br/>co-occurrence weights"] --> S
+    S --> F["re-sorted passers →<br/>top-3 / 400-byte tuples"]
+```
+
+| Signal | Evidence | Default | Configuration |
+|--------|----------|---------|---------------|
+| adjacency | memory_graph edge to a passer; workspace membership (a memory whose `planId` is the claimed plan, a sequence sibling, or a plan sharing a context node bound to that plan/sequence) | +1.0 per anchor, cap 2.0 | `suggestionScoring.adjacencyPerAnchor` / `adjacencyMax` |
+| scope | project-scoped (`allProjects: false`) skill over an equal global one; memories are pre-filtered to the project, so the signal is not theirs | +0.75 | `suggestionScoring.scope` |
+| recency | linear age decay of a memory's `createdAt` to 0 over the window | 0.75 max over 30 days | `suggestionScoring.recencyMax` / `recencyWindowDays` |
+| usage | co-occurrence counts between the item and the prompt's usable terms | +1.0 per count, cap 2.0 | `suggestionScoring.usagePerCooccurrence` / `usageMax` |
+
+Weights are configuration, not buried magic: the `suggestionScoring` section
+of the user's `settings.yaml` overrides any field, absent fields use the
+shipped defaults, and a malformed section degrades to the defaults.
+
+### Usage feedback — what is recorded, and what never is
+
+**Privacy boundary:** the store records ITEM IDS (the same tuples the
+suggester emits) and TERM CO-OCCURRENCE counts — single lowercased words,
+stopword-stripped. **Prompt text is never recorded**: no sentences, no
+messages, no transcript. That is stated here deliberately — a silent prompt
+log would be a nasty surprise for a user.
+
+The loop is narrow. When a suggestion payload goes out, the suggester notes
+the sent tuples and the prompt's usable terms (in memory only). When the MCP
+dispatcher sees `skill_get` / `memory_get` succeed for one of those tuples,
+within a 15-minute window, the co-occurrence counts increment; anything else
+— fetches with no matching suggestion, fetches long after, peers Helm cannot
+identify, failed fetches — records nothing.
+
+- Storage: one JSON file, `<configDir>/suggestion-usage.json` (the per-user
+  app-data dir — never the repo, invariant 4). Every write is fail-open.
+- Inspect and reset: Settings → 🪝 CLI Integrations → "Suggestion usage
+  feedback" shows the strongest associations, the recent learning events, and
+  a reset button. Reset empties the store; nothing is re-learned until new
+  fetches correlate with new suggestions.
+- Fresh install: no history → every usage boost is 0, no links means no
+  adjacency, and all-zero signals produce output **identical to bare G4** —
+  pinned by a whole-layer regression test, not just a unit.
+
 ## Config locations (user-level, install once)
 
 | CLI | File | Shape |
