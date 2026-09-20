@@ -229,4 +229,19 @@ describe('HookReceiver', async () => {
     await receiver.receive({ cli: 'claude', event: 'PreToolUse', payload: { tool_name: 'Bash' } }, 's1');
     expect(responderAsked).toBe(0);
   });
+
+  it('accepts a responder bound AFTER construction — the injector is built later than the receiver', async () => {
+    const receiver = new HookReceiver({ now: () => NOW });
+    receiver.setResponder(async (event) =>
+      event.event === 'UserPromptSubmit'
+        ? {
+            statusCode: 200,
+            body: { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'rules' } },
+          }
+        : null,
+    );
+    const result = await receiver.receive({ cli: 'claude', event: 'UserPromptSubmit', payload: { prompt: 'hi' } }, 's1');
+    const nested = (result.body as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput;
+    expect(nested.additionalContext).toBe('rules');
+  });
 });

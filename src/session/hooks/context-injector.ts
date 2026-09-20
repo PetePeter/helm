@@ -59,7 +59,9 @@ export type InjectorResponse = { statusCode: 200; body: Record<string, unknown> 
 // CLIs whose UserPromptSubmit command-hook output reaches the model. Copilot
 // drops that event's command-hook output entirely, so injecting there is
 // writing into the void — Copilot sessions keep the prepended rules header.
-const PROMPT_INJECTION_PROVIDERS = new Set(['claude', 'codex']);
+// Shared with hook-capability.ts: the delivery side must consult the SAME set
+// before deciding the prepended rules header is redundant.
+export const PROMPT_INJECTION_PROVIDERS = new Set(['claude', 'codex']);
 
 /** Per-source cap: a source longer than this is truncated, not dropped. */
 const SOURCE_CAP_CHARS = 800;

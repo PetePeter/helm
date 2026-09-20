@@ -123,6 +123,10 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
+import { ContextInjector } from '../../session/hooks/context-injector.js';
+import { SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
+import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
 const TELEGRAM_AUTOSTART_DELAY_MS = 60_000;
@@ -328,14 +332,31 @@ export function registerIPCHandlers(
   }
 
   const incomingWatcher = new IncomingPlansWatcher(planManager);
+  // The shim is seeded into the user config dir alongside the other shipped
+  // defaults; the installer writes CLI configs that point HERE at it. Shared by
+  // the settings handlers (below) and the G4 rules-via-hooks capability check.
+  const hookDeps: HookInstallerDeps = {
+    homeDir: () => homedir(),
+    shimPath: join(getConfigDir(dirname ?? process.cwd()), 'hooks', 'helm-hook-shim.py'),
+  };
   // G1 transport + G2 enforcement: receives CLI lifecycle hooks on POST /hooks,
   // correlates them by session token, logs them, and routes PreToolUse through
   // the deny policy. Session/rules lookups are live reads — no cached policy
-  // state — and every failure inside them fails open to allow.
+  // state — and every failure inside them fails open to allow. The G4
+  // responder (ContextInjector) is bound after construction below — it needs
+  // managers built later in this setup.
   const hookReceiver = new HookReceiver({
     getSession: (sessionId) => sessionManager.getSession(sessionId),
     getDenyRules: (provider) => configLoader.getHookDenyRules(provider),
   });
+  // G4 dual-path capability: does a recipient session inject its inter-session
+  // rules via hooks (so the prepended header can be skipped)? Read live, on
+  // disk, shared by the MCP delivery service and the Telegram relay. A check
+  // that fails answers false — prepend as today, never break delivery.
+  const rulesViaHooks = createRulesViaHooksFn(
+    (cliTypeId) => configLoader.getCliTypeEntry(cliTypeId),
+    (hooks) => readHookIntegrationStatus(hooks, hookDeps),
+  );
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
@@ -373,12 +394,7 @@ export function registerIPCHandlers(
     projectStore,
     applyFleetConfig,
     () => fleetController!.status(),
-    // The shim is seeded into the user config dir alongside the other shipped
-    // defaults; the installer writes CLI configs that point HERE at it.
-    {
-      homeDir: () => homedir(),
-      shimPath: join(getConfigDir(dirname ?? process.cwd()), 'hooks', 'helm-hook-shim.py'),
-    },
+    hookDeps,
   );
   setupEditorHandlers(configLoader);
   setupToolsHandlers(configLoader);
@@ -500,6 +516,53 @@ export function registerIPCHandlers(
     artifactAttachments: artifactAttachmentManager,
   });
   hookTracker.watch(hookReceiver);
+
+  // G4: the injection brain, bound to the receiver built above. SILENT for a
+  // session without hook events — nothing here runs, so behaviour is exactly
+  // as before. The suggester's candidates are built per prompt: skills visible
+  // to the session's project (globals included), plus that project's live
+  // (non-dormant) memories. Pointers only, capped, once per item.
+  const suggestionService = new SuggestionService({
+    getCandidates: (projectId) => {
+      const skills = skillManager.listForProject(projectId).map((skill) => ({
+        type: 'skill' as const,
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+      }));
+      if (!projectId) return skills;
+      const memories = memoryManager.listRecords()
+        .filter((record) => record.projectId === projectId && record.dormantSince === undefined)
+        .map((record) => ({ type: 'memory' as const, id: record.id, name: record.tldr, description: record.content }));
+      return [...skills, ...memories];
+    },
+  });
+  const contextInjector = new ContextInjector({
+    getSession: (sessionId) => sessionManager.getSession(sessionId),
+    getClaimedPlan: (sessionId) => {
+      const plan = planManager.claimedPlanFor(sessionId);
+      return plan ? { humanId: plan.humanId, title: plan.title, status: plan.status } : null;
+    },
+    getStartablePlans: (dirPath) => planManager.getStartableForDirectory(dirPath).map((plan) => ({
+      humanId: plan.humanId, title: plan.title, status: plan.status,
+    })),
+    getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
+    getHandover: (sessionId) => handoverDelivery.peek(sessionId),
+    suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
+    getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
+  });
+  hookReceiver.setResponder((event) => contextInjector.respond(event));
+  // A closed session takes its nudger and suggester ledgers with it — a
+  // restored session (same id) starts with clean slates.
+  sessionManager.on('session:removed', (event) => {
+    contextInjector.forgetSession(event.sessionId);
+    suggestionService.forgetSession(event.sessionId);
+  });
+  // Dual-path rules delivery: when the recipient injects the rules itself via
+  // hooks, both surfaces skip the prepended copies. Sessions without hooks
+  // (or Copilot, which drops UserPromptSubmit output) keep them, unchanged.
+  helmControlService.setRulesViaHooks(rulesViaHooks);
+  telegramModules.relayService.setRulesViaHooks(rulesViaHooks);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
   const cleanupPromptTemplates = promptTemplatesPath

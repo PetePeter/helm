@@ -44,11 +44,24 @@ const NO_OP: HookReceiveResult = { statusCode: 200, body: {} };
 export class HookReceiver extends EventEmitter {
   private readonly now: () => number;
   private readonly deps: HookReceiverDeps;
+  /** The G4 responder. Comes from deps, or is bound late via setResponder. */
+  private respond?: HookReceiverDeps['respond'];
 
   constructor(deps: HookReceiverDeps = {}) {
     super();
     this.deps = deps;
     this.now = deps.now ?? Date.now;
+    this.respond = deps.respond;
+  }
+
+  /**
+   * Bind the G4 responder after construction. The receiver is built with the
+   * localhost server, but the ContextInjector needs managers that are only
+   * constructed later in the handler setup (handover, plans, drafts) — the
+   * same late-binding idiom the rest of the stack uses.
+   */
+  setResponder(respond: NonNullable<HookReceiverDeps['respond']>): void {
+    this.respond = respond;
   }
 
   /**
@@ -116,9 +129,10 @@ export class HookReceiver extends EventEmitter {
    * means "no injection this turn" and "the turn ends normally" on Stop.
    */
   private async decideContext(event: HookEvent): Promise<HookReceiveResult> {
-    if (!this.deps.respond) return NO_OP;
+    const respond = this.respond;
+    if (!respond) return NO_OP;
     try {
-      return (await this.deps.respond(event)) ?? NO_OP;
+      return (await respond(event)) ?? NO_OP;
     } catch (error) {
       logger.warn(`[Hook] Injection failed open for ${event.cli} ${event.event}: ${String(error)}`);
       return NO_OP;
