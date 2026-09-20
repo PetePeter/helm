@@ -27,8 +27,8 @@ const DEFAULT_RULES: HookDenyRule[] = [
   },
   {
     tools: ['Bash', 'bash', 'shell', 'Shell'],
-    commandPattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b|\\bgit\\s+push\\b',
-    reason: 'Guardrail: this command is blocked for Helm-spawned sessions.',
+    commandPattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b',
+    reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions.',
   },
   {
     tools: ['Write', 'Edit', 'NotebookEdit', 'write', 'edit', 'apply_patch'],
@@ -117,8 +117,11 @@ describe('decideHookPolicy — command guardrails', () => {
     expect(decideHookPolicy(bash('sudo rm -rf /'), session(), DEFAULT_RULES).decision).toBe('deny');
   });
 
-  it('denies git push', () => {
-    expect(decideHookPolicy(bash('git push origin master'), session(), DEFAULT_RULES).decision).toBe('deny');
+  it('does NOT block git push in the shipped defaults — the release workflow pushes from Helm sessions', () => {
+    // Pinned after review: a shipped push guard silently broke sendDeploy.py,
+    // which commits, tags and pushes from inside a Helm session. Anyone who
+    // wants a push guard adds their own rule; the mechanism stays.
+    expect(decideHookPolicy(bash('git push origin master'), session(), DEFAULT_RULES).decision).toBe('allow');
   });
 
   it('allows an innocent rm and an innocent git command', () => {
@@ -136,7 +139,7 @@ describe('decideHookPolicy — command guardrails', () => {
 
   it('reads the command from cmd and script aliases too', () => {
     expect(
-      decideHookPolicy(preToolUse({ toolName: 'shell', toolInput: { cmd: 'git push' } }), session(), DEFAULT_RULES)
+      decideHookPolicy(preToolUse({ toolName: 'shell', toolInput: { cmd: 'rm -rf build' } }), session(), DEFAULT_RULES)
         .decision,
     ).toBe('deny');
     expect(

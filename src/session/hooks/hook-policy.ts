@@ -106,6 +106,10 @@ function matchesCommand(patternSource: string, event: HookEvent): boolean {
  * directory. Relative targets resolve against the CLI's own cwd (that is how
  * the CLI will interpret them too). When neither a session dir nor a cwd is
  * known there is nothing to compare against — allow.
+ *
+ * Deliberately coarse: only file-path tool inputs are inspected, so a shell
+ * redirect like `echo x > /etc/foo` is NOT caught here — guarding the Bash
+ * command itself is the commandPattern rule's job, not this one's.
  */
 function writesOutsideSessionDir(event: HookEvent, session: SessionInfo | null): boolean {
   const target = toolString(event, FILE_PATH_KEYS);

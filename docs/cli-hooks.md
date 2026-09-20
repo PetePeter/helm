@@ -103,7 +103,10 @@ flowchart LR
   1. `AskUserQuestion` while `interactionChannel === 'telegram'` (phone or
      Telegram — G1's mobile-bridge affinity feeds this) → use `chat_send`
   2. native `Artifact` tool → use `session_artifact_create`
-  3. command guardrails: `rm -rf` (either flag order), `git push`
+  3. command guardrail: `rm -rf` (either flag order). `git push` is
+     deliberately NOT in the shipped defaults — Helm's own release workflow
+     (`sendDeploy.py`) pushes from inside a Helm session; a push guard is a
+     one-line user rule, not a default.
   4. writes outside the session's working directory
 - **Rule shape** — `tools` (case-insensitive match) plus any of `onlyWhenAway`,
   `commandPattern` (regex over the shell command; uncompilable = never

@@ -35,8 +35,8 @@
       - tools: [Artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell]
-        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b|\bgit\s+push\b'
-        reason: 'Guardrail: this command is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
       - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
         outsideSessionDir: true
         reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
@@ -70,8 +70,8 @@
       - tools: [Artifact, artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell, local_shell]
-        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b|\bgit\s+push\b'
-        reason: 'Guardrail: this command is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
       - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
         outsideSessionDir: true
         reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
@@ -105,8 +105,8 @@
       - tools: [Artifact, artifact]
         reason: 'Helm owns artifacts for this session. Use the Helm MCP tool session_artifact_create instead so the report appears in Helm''s viewer.'
       - tools: [Bash, bash, shell, Shell]
-        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b|\bgit\s+push\b'
-        reason: 'Guardrail: this command is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
+        commandPattern: '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\b'
+        reason: 'Guardrail: destructive rm -rf is blocked for Helm-spawned sessions. Ask the user to run it themselves at the terminal.'
       - tools: [Write, Edit, NotebookEdit, write, edit, apply_patch]
         outsideSessionDir: true
         reason: 'Writes are limited to the session''s working directory; the user reviews anything outside it in person.'
