@@ -28,6 +28,9 @@ export interface Session {
   createdByPeerId?: string;
   /** True when deliberate closure is blocked until unlocked. */
   locked?: boolean;
+  /** G8: consecutive Stop-hook auto-continues in flight. >0 means an active
+   *  loop — an in-progress loop must never be invisible on the session row. */
+  loopContinues?: number;
 }
 
 export interface ProjectSummary {
