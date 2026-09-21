@@ -8,22 +8,21 @@ const emit = defineEmits<{
   select: [sessionId: string]; rename: [sessionId: string, name: string];
   toggleLock: [sessionId: string, locked: boolean]; toggleVisibility: [sessionId: string];
   requestClose: [sessionId: string, name: string]; showArtifacts: [sessionId: string];
+  toggleDepartment: [departmentId: string];
 }>();
-const collapsed = ref(new Set<string>());
-const selectedDeskId = ref<string | null>(null);
 const renameValue = ref('');
 const selectedDesk = computed(() => props.projection.departments.flatMap(d => d.desks)
-  .find(desk => desk.sessionId === selectedDeskId.value && !desk.hidden) ?? null);
+  .find(desk => desk.sessionId === props.activeSessionId && !desk.hidden) ?? null);
 function toggleDepartment(id: string): void {
-  const next = new Set(collapsed.value);
-  next.has(id) ? next.delete(id) : next.add(id);
-  collapsed.value = next;
+  emit('toggleDepartment', id);
 }
-function isCollapsed(id: string, projectionCollapsed: boolean): boolean { return projectionCollapsed || collapsed.value.has(id); }
+function isCollapsed(_id: string, projectionCollapsed: boolean): boolean { return projectionCollapsed; }
 function selectDesk(sessionId: string): void {
   const desk = props.projection.departments.flatMap(d => d.desks).find(d => d.sessionId === sessionId);
-  selectedDeskId.value = sessionId;
   renameValue.value = desk?.name ?? '';
+  // This is the existing session-selection boundary used by Session List and
+  // Ctrl+number. Team View never focuses or writes a terminal itself.
+  emit('select', sessionId);
 }
 async function copyReference(): Promise<void> {
   const desk = selectedDesk.value;
@@ -45,8 +44,8 @@ function commitRename(): void {
         <span>{{ isCollapsed(department.id, department.collapsed) ? '▸' : '▾' }}</span>{{ department.name }} <small>{{ department.visibleDeskCount }}</small>
       </button>
       <div v-if="!isCollapsed(department.id, department.collapsed)" class="team-desks">
-        <button v-for="desk in department.desks.filter(d => !d.hidden)" :key="desk.sessionId" class="team-desk" :class="{ 'team-desk--active': desk.sessionId === activeSessionId, 'team-desk--selected': desk.sessionId === selectedDeskId }" :aria-label="`${desk.name}, ${desk.state}, ${desk.focusLabel}`" @click="selectDesk(desk.sessionId)">
-          <span class="team-desk__shortcut">{{ desk.focusLabel }}</span><strong>{{ desk.name }}</strong><span class="team-desk__state">{{ desk.state }}<template v-if="desk.waitingReason"> · {{ desk.waitingReason }}</template></span>
+        <button v-for="desk in department.desks.filter(d => !d.hidden)" :key="desk.sessionId" class="team-desk" :class="{ 'team-desk--active': desk.sessionId === activeSessionId, 'team-desk--selected': desk.sessionId === activeSessionId }" :aria-current="desk.sessionId === activeSessionId ? 'true' : undefined" :aria-label="`${desk.name}, ${desk.state}${desk.focusLabel ? `, ${desk.focusLabel}` : ''}`" @click="selectDesk(desk.sessionId)">
+          <span v-if="desk.focusLabel" class="team-desk__shortcut">{{ desk.focusLabel }}</span><strong>{{ desk.name }}</strong><span class="team-desk__state">{{ desk.state }}<template v-if="desk.waitingReason"> · {{ desk.waitingReason }}</template></span>
           <span class="team-desk__monitor" aria-hidden="true"><span v-for="(line, index) in desk.terminalTail" :key="index">{{ line || ' ' }}</span><span v-if="!desk.terminalTail.length">No output</span></span>
           <TeamMember :state="desk.state" />
         </button>

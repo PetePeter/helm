@@ -53,6 +53,17 @@ describe('buildTeamViewProjection', () => {
     expect(second).toEqual(first);
   });
 
+  it('uses the shared Session List slots when present, leaving unassigned desks undiscoverable', () => {
+    const result = buildTeamViewProjection({
+      sessions: [session('one'), session('two'), session('three')],
+      projects: [],
+      focusSlotForSession: id => ({ one: 3, two: 0 }[id]),
+    });
+
+    expect(result.departments[0].desks.map(desk => [desk.sessionId, desk.focusIndex, desk.focusLabel]))
+      .toEqual([['one', 2, '^3'], ['three', -1, ''], ['two', 9, '^0']]);
+  });
+
   it('keeps presentation visibility separate from open-session membership', () => {
     const result = buildTeamViewProjection({
       sessions: [

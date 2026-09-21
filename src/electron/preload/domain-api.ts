@@ -223,6 +223,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       collapsed: string[];
       bookmarked?: string[];
       overviewHidden?: string[];
+      teamViewCollapsed?: string[];
     }>,
 
   configSetSessionGroupPrefs: (prefs: {
@@ -230,6 +231,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     collapsed: string[];
     bookmarked?: string[];
     overviewHidden?: string[];
+    teamViewCollapsed?: string[];
   }) =>
     ipcRenderer.invoke('config:setSessionGroupPrefs', prefs),
 

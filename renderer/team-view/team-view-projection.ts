@@ -54,6 +54,8 @@ export interface TeamViewProjectionInput {
   collapsedDepartmentIds?: ReadonlySet<string>;
   hiddenSessionIds?: ReadonlySet<string>;
   artifactCountForSession?: (sessionId: string) => number | undefined;
+  /** The shared Session List slot map; undefined means no assigned Ctrl+number shortcut. */
+  focusSlotForSession?: (sessionId: string) => number | undefined;
 }
 
 interface DepartmentSeed {
@@ -171,10 +173,14 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
 
   // Focus labels follow the displayed department ordering, not insertion order.
   let displayedIndex = 0;
+  const hasSharedSlots = input.focusSlotForSession !== undefined;
   for (const department of departments) {
     for (const desk of department.desks) {
-      desk.focusIndex = displayedIndex;
-      desk.focusLabel = `^${displayedIndex + 1}`;
+      const slot = input.focusSlotForSession?.(desk.sessionId);
+      // Standalone callers retain deterministic labels. The live pane supplies
+      // the Session List map, where an absent slot must not advertise a key.
+      desk.focusIndex = slot === undefined ? (hasSharedSlots ? -1 : displayedIndex) : (slot === 0 ? 9 : slot - 1);
+      desk.focusLabel = slot === undefined ? (hasSharedSlots ? '' : `^${displayedIndex + 1}`) : `^${slot}`;
       displayedIndex++;
     }
   }

@@ -27,6 +27,7 @@ export function useTeamViewProjection(
     // Reading the version makes output-buffer updates a Vue dependency without
     // copying PTY data into another store.
     outputVersion.value;
+    const shortcutMap = sessionsScreen.sessionShortcutMap?.value;
     return buildTeamViewProjection({
       ...options,
       sessions: state.sessions,
@@ -34,6 +35,8 @@ export function useTeamViewProjection(
       stateForSession: session => state.sessionStates.get(session.id) ?? session.aiagentState ?? session.state,
       artifactCountForSession: sessionId => state.artifactCounts.get(sessionId),
       hiddenSessionIds: sessionsScreen.hiddenSessionIds.value,
+      collapsedDepartmentIds: new Set(sessionsScreen.sessionsState.groupPrefs.teamViewCollapsed ?? []),
+      ...(shortcutMap ? { focusSlotForSession: (sessionId: string) => shortcutMap.get(sessionId) } : {}),
       terminalTailForSession: sessionId => outputBuffer?.getLastLines(sessionId, options.tailLineLimit ?? 4) ?? [],
     });
   });

@@ -398,6 +398,8 @@ export interface SessionGroupPrefs {
   bookmarked?: string[];
   /** Session IDs hidden from overview. */
   overviewHidden?: string[];
+  /** Team View department ids that the user has collapsed. */
+  teamViewCollapsed?: string[];
 }
 
 export interface ChipbarAction {

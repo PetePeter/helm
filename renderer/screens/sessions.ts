@@ -194,6 +194,7 @@ function normalizeGroupPrefs(prefs: Partial<typeof sessionsState.groupPrefs>): t
     collapsed: prefs.collapsed ?? [],
     bookmarked: prefs.bookmarked ?? [],
     overviewHidden: prefs.overviewHidden ?? [],
+    teamViewCollapsed: prefs.teamViewCollapsed ?? [],
   };
 }
 
@@ -204,6 +205,7 @@ async function saveGroupPrefs(): Promise<void> {
       order: [...sessionsState.groupPrefs.order],
       collapsed: [...sessionsState.groupPrefs.collapsed],
       overviewHidden: [...sessionsState.groupPrefs.overviewHidden],
+      teamViewCollapsed: [...(sessionsState.groupPrefs.teamViewCollapsed ?? [])],
     });
   } catch (e) {
     console.error('[Sessions] Failed to save group prefs:', e);
@@ -275,6 +277,15 @@ export async function toggleGroupCollapse(dirPath: string): Promise<void> {
   };
   await saveGroupPrefs();
   await loadSessions();
+}
+
+/** Persist Team View department collapse separately from Session List groups. */
+export async function toggleTeamViewDepartmentCollapse(departmentId: string): Promise<void> {
+  sessionsState.groupPrefs = {
+    ...sessionsState.groupPrefs,
+    teamViewCollapsed: toggleCollapse(sessionsState.groupPrefs.teamViewCollapsed ?? [], departmentId),
+  };
+  await saveGroupPrefs();
 }
 
 /** Remove a directory bookmark — empty group header disappears. */

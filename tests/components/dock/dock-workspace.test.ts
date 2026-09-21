@@ -142,7 +142,7 @@ describe('DockWorkspace', () => {
     const rail = wrapper.get('[data-dock-rail="right"]');
     const buttons = rail.findAll('[data-dock-rail-pane]');
     expect(buttons.map(b => b.attributes('data-dock-rail-pane'))).toEqual([PANE_ARTIFACTS, PANE_OVERVIEW]);
-    expect(buttons.map(b => b.attributes('title'))).toEqual(['Artifacts', 'Overview']);
+    expect(buttons.map(b => b.attributes('title'))).toEqual(['Artifacts', 'Team View']);
 
     // Clicking an icon opens that pane, not the dock's first one.
     await buttons[1].trigger('click');

@@ -18,6 +18,7 @@ const projection = useTeamViewProjection({ tailLineLimit: 4 });
   <TeamView
     :projection="projection"
     :active-session-id="state.activeSessionId"
+    @toggle-department="pane.sidebar.onTeamViewToggleDepartment"
     @select="pane.sidebar.onOverviewSelect"
     @rename="pane.sidebar.onCommitRename"
     @toggle-lock="pane.sidebar.onToggleLock"

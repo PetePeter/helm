@@ -7,7 +7,7 @@ import { setDirPickerBridge } from '../screens/sessions-spawn.js';
 import { openDirPicker, dirPicker, closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
-import { toggleSessionOverviewVisibility, setSessionLocked, setSessionState, toggleGroupCollapse } from '../screens/sessions.js';
+import { toggleSessionOverviewVisibility, setSessionLocked, setSessionState, toggleGroupCollapse, toggleTeamViewDepartmentCollapse } from '../screens/sessions.js';
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../src/types/scheduled-task.js';
 import type { SessionSortField, SortDirection } from '../sort-logic.js';
@@ -88,6 +88,10 @@ export function useSidebarController(deps: SidebarControllerDeps) {
 
   function onGroupToggleCollapse(dirPath: string): void {
     void toggleGroupCollapse(dirPath);
+  }
+
+  function onTeamViewToggleDepartment(departmentId: string): void {
+    void toggleTeamViewDepartmentCollapse(departmentId);
   }
 
   function onShowPlans(_dirPath: string): void {
@@ -196,6 +200,7 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     onOverviewSelect,
     onOverviewToggleCollapse,
     onGroupToggleCollapse,
+    onTeamViewToggleDepartment,
     onShowPlans,
     onShowOverview,
     onToggleOverview,

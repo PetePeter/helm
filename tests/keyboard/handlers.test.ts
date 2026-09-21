@@ -196,6 +196,20 @@ describe('number accelerators', () => {
     expect(workspace.calls.jumped).toEqual([3]);
   });
 
+  it('Ctrl+number selects through the shared session path before terminal input can see it', () => {
+    const workspace = fakeWorkspace();
+    const terminal = fakeTerminal();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
+    install();
+
+    const event = pressInTerminal({ key: '3', code: 'Digit3', ctrlKey: true });
+
+    expect(workspace.calls.jumped).toEqual([3]);
+    expect(terminal.calls.pty).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('Alt+1 fires the first chip action even when Alt remaps the key', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);

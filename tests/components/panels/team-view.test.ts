@@ -26,15 +26,15 @@ describe('TeamView', () => {
     expect(wrapper.find('textarea, input, [contenteditable="true"]').exists()).toBe(false);
   });
 
-  it('collapses a department and delegates selected-desk controls', async () => {
-    const wrapper = mount(TeamView, { props: { projection, activeSessionId: null } });
+  it('persists department collapse through its owner and delegates selection to the shared session path', async () => {
+    const wrapper = mount(TeamView, { props: { projection, activeSessionId: 's1' } });
     await wrapper.find('.team-department__header').trigger('click');
-    expect(wrapper.find('.team-desk').exists()).toBe(false);
-    await wrapper.find('.team-department__header').trigger('click');
+    expect(wrapper.emitted('toggleDepartment')).toEqual([['alpha']]);
     await wrapper.find('.team-desk').trigger('click');
     expect(wrapper.find('.team-actions').text()).toContain('Read-only desk');
-    await wrapper.get('.team-actions__controls button:nth-child(1)').trigger('click');
     expect(wrapper.emitted('select')).toEqual([['s1']]);
+    await wrapper.get('.team-actions__controls button:nth-child(1)').trigger('click');
+    expect(wrapper.emitted('select')).toEqual([['s1'], ['s1']]);
     await wrapper.get('.team-actions__controls button:nth-child(3)').trigger('click');
     await wrapper.get('.team-actions__controls button:nth-child(4)').trigger('click');
     await wrapper.get('.team-actions__controls button:nth-child(5)').trigger('click');
@@ -46,5 +46,12 @@ describe('TeamView', () => {
     await wrapper.get('.team-actions__rename input').setValue('Grace');
     await wrapper.get('.team-actions__rename').trigger('submit');
     expect(wrapper.emitted('rename')).toEqual([['s1', 'Grace']]);
+  });
+
+  it('keeps keyboard focus in document order and marks the shared active desk', () => {
+    const wrapper = mount(TeamView, { props: { projection, activeSessionId: 's1' } });
+    const labels = wrapper.findAll('button').map(button => button.text());
+    expect(labels.slice(0, 3)).toEqual(['▾Alpha 1', '^1Adawaiting · humanNeed approval', 'Open terminal']);
+    expect(wrapper.find('.team-desk').attributes('aria-current')).toBe('true');
   });
 });
