@@ -7,16 +7,17 @@ beat** in the sidebar until the user looks at it.
 
 `notify_user` covers "tell the user something". Flash Attention covers the different
 case: *"stop what you're doing and come here."* A toast is transient and a badge is
-easy to miss across a sidebar of a dozen sessions. A card that pulses in the user's
-own OS accent colour is unmissable, unambiguous about **which** session wants
+easy to miss across a sidebar of a dozen sessions. A card that pulses in the app's
+accent colour is unmissable, unambiguous about **which** session wants
 attention, and — crucially — **persists** until acknowledged, rather than expiring on
 a timer while the user is in another room.
 
 Three design choices follow from that:
 
-- **The OS theme accent, not a hard-coded colour.** The flash must read as the system
-  shouting, not as an app decoration. It is also the one colour guaranteed to be
-  distinct from the app's resting palette on that user's machine.
+- **The app's theme accent tokens, not the OS accent.** The flash uses the app's own
+  `--accent` / `--accent-contrast` tokens so it matches the app's theme regardless of
+  the OS accent — which can read as any colour, including ones the app's resting
+  palette collides with.
 - **Pulse, then hold.** A 15-second beat is the attention grab; after that it settles
   to a solid accent. Beating forever is hostile; stopping entirely would lose the
   signal for a user who returns after a coffee.
@@ -28,7 +29,7 @@ Three design choices follow from that:
 ```mermaid
 graph LR
     AI["AI: flash_attention(sessionId)"] --> SVC["HelmControlService<br/>.flashAttention()"]
-    SVC --> NM["NotificationManager<br/>getAccentColor + contrastText"]
+    SVC --> NM["NotificationManager<br/>flashAttention()"]
     NM -->|"webContents.send<br/>session:flashAttention"| FA["useFlashAttention<br/>(pulse 15s → solid)"]
     FA --> CARD["SessionCard (expanded)"]
     FA --> GROUP["SessionGroup header (collapsed)"]
@@ -45,22 +46,12 @@ The chain deliberately mirrors `notify_user`: MCP dispatcher →
 
 1. Looks the session up. **Unknown session is a graceful no-op** (`{ flashed: false }`
    + a warning) — an AI holding a stale id must not crash anything.
-2. Reads the OS theme accent via `readAccentColor()` →
-   `systemPreferences.getAccentColor()`, wrapped in try/catch and `?.` because the API
-   is Windows-centric and may be absent. `setAccentColorReader(fn)` overrides the
-   source so tests inject a fake instead of depending on the host's theme.
-3. `parseAccentColor()` normalises the Windows `"rrggbbaa"` / `"rrggbb"` form (with or
-   without `#`) into `#rrggbb`, returning `null` for anything unparseable — callers
-   then fall back to the app's own `--accent`.
-4. `contrastText()` derives `#000000` or `#ffffff` by **WCAG relative luminance**
-   (sRGB linearisation, ~0.179 threshold). The accent is user-chosen and could be
-   anything from pale yellow to navy; a fixed text colour would be illegible against
-   half of them.
-5. Broadcasts `session:flashAttention` `{ sessionId, accentColor, textColor }` to
+2. Broadcasts `session:flashAttention` `{ sessionId }` to
    **every** live, non-destroyed renderer — a snapped-out window must flash too.
 
 Timing and rendering location are **not** decided here. The main process states the
-fact and the colours; the renderer owns the presentation.
+fact; the renderer owns the presentation, including the colour (the app's
+`--accent` / `--accent-contrast` tokens).
 
 ## Renderer state (`useFlashAttention`)
 
@@ -68,7 +59,7 @@ A module-singleton `reactive(new Map<string, FlashEntry>())` plus a parallel tim
 map.
 
 ```
-FlashEntry { sessionId, accentColor, textColor, phase: 'pulse' | 'solid', startedAt }
+FlashEntry { sessionId, phase: 'pulse' | 'solid', startedAt }
 PULSE_DURATION_MS = 15_000
 ```
 
@@ -79,7 +70,7 @@ PULSE_DURATION_MS = 15_000
 | `clearAll()` | Teardown / tests. |
 | `isFlashing(sessionId)` | Is this session flashing? |
 | `groupIsFlashing(sessionIds)` | Is *any* member flashing? — drives collapsed group headers. |
-| `pickGroupFlashEntry(source, sessionIds)` | Which member's colours a collapsed header should use. |
+| `pickGroupFlashEntry(source, sessionIds)` | Which member's phase a collapsed header should use. |
 
 `pickGroupFlashEntry` is exported as a **pure** function over the passed map so it is
 directly unit-testable. Its rule: a **pulsing** member always beats a **solid** one —
@@ -104,21 +95,21 @@ Location is derived **live** from collapse state, not stored:
 | Session's directory group expanded | the session's `SessionCard` |
 | Group collapsed | the `SessionGroup` **header** (any flashing member) |
 
-`--flash-accent` and `--flash-text` are injected **inline per target**, so each
-flashing element carries its own colour pair.
+The flashing element is coloured straight from the app's `--accent` /
+`--accent-contrast` tokens — no per-target inline styles.
 
 ```css
 @keyframes flash-beat {
   0%,   49% { background-color: var(--bg-secondary); color: var(--text-primary); }
-  50%, 100% { background-color: var(--flash-accent);  color: var(--flash-text); }
+  50%, 100% { background-color: var(--accent);  color: var(--accent-contrast); }
 }
 .session-card.flash-pulse,
 .group-header.flash-pulse { animation: flash-beat 1s infinite; }
 
 .session-card.flash-solid,
 .group-header.flash-solid {
-  background-color: var(--flash-accent) !important;
-  color: var(--flash-text);
+  background-color: var(--accent) !important;
+  color: var(--accent-contrast);
 }
 ```
 
@@ -142,8 +133,7 @@ grey against the accent.
 |------|------|
 | `src/mcp/tools/dispatcher.ts` | Routes the `flash_attention` tool call |
 | `src/mcp/helm-control-service.ts` | `flashAttention(ref)` — resolves the session reference |
-| `src/session/notification-manager.ts` | `flashAttention(sessionId)`, `readAccentColor`, `setAccentColorReader`, broadcast |
-| `src/session/color-contrast.ts` | `parseAccentColor`, `contrastText` (WCAG luminance) |
+| `src/session/notification-manager.ts` | `flashAttention(sessionId)`, broadcast |
 | `src/electron/preload/domain-api.ts` | `onFlashAttention` subscription |
 | `renderer/composables/useFlashAttention.ts` | `PULSE_DURATION_MS`, entry map, `start`/`clear`/`isFlashing`/`groupIsFlashing`/`pickGroupFlashEntry` |
 | `renderer/MainWindowApp.vue` | IPC subscription, skip-if-looking rule, focus/activation clearing |

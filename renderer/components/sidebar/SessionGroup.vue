@@ -33,7 +33,7 @@ const props = defineProps<{
   navIndex: number;
   isFocused: boolean;
   /** When the group is collapsed and a member session is flashing, drives the header flash. */
-  flashEntry?: { accentColor: string | null; textColor: string | null; phase: 'pulse' | 'solid' } | null;
+  flashEntry?: { phase: 'pulse' | 'solid' } | null;
 }>();
 
 const emit = defineEmits<{
@@ -56,14 +56,6 @@ const activitySummary = computed(() => {
 const flashClass = computed(() => {
   if (!props.flashEntry) return '';
   return props.flashEntry.phase === 'solid' ? 'flash-solid' : 'flash-pulse';
-});
-const flashStyle = computed<Record<string, string>>(() => {
-  const entry = props.flashEntry;
-  if (!entry) return {};
-  return {
-    '--flash-accent': entry.accentColor ?? 'var(--accent)',
-    '--flash-text': entry.textColor ?? 'var(--accent-contrast)',
-  };
 });
 
 // --- Drag & drop ---
@@ -128,7 +120,6 @@ function onDrop(e: DragEvent): void {
       flashClass,
       dropState === 'ok' ? 'drop-ok' : dropState === 'bad' ? 'drop-bad' : '',
     ]"
-    :style="flashStyle"
     :data-dir-path="group.dirPath"
     :data-nav-index="navIndex"
     @click="emit('toggleCollapse', group.dirPath)"

@@ -20,10 +20,6 @@ export type FlashPhase = 'pulse' | 'solid';
 
 export interface FlashPayload {
   sessionId: string;
-  /** Normalised `#rrggbb` accent, or null → consumer falls back to the app accent var. */
-  accentColor: string | null;
-  /** Readable text colour for the accent, or null when accentColor is null. */
-  textColor: string | null;
 }
 
 export interface FlashEntry extends FlashPayload {

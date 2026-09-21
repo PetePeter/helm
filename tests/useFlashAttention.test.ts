@@ -8,7 +8,7 @@ import {
 } from '../renderer/composables/useFlashAttention.js';
 
 function entry(overrides: Partial<FlashEntry>): FlashEntry {
-  return { sessionId: 'x', accentColor: null, textColor: null, phase: 'pulse', startedAt: 0, ...overrides };
+  return { sessionId: 'x', phase: 'pulse', startedAt: 0, ...overrides };
 }
 
 describe('useFlashAttention', () => {
@@ -24,7 +24,7 @@ describe('useFlashAttention', () => {
 
   it('starts a flash in the pulse phase', () => {
     const flash = useFlashAttention();
-    flash.start({ sessionId: 's1', accentColor: '#0078d4', textColor: '#ffffff' });
+    flash.start({ sessionId: 's1' });
 
     expect(flash.isFlashing('s1')).toBe(true);
     expect(flash.entries.get('s1')?.phase).toBe('pulse');
@@ -32,7 +32,7 @@ describe('useFlashAttention', () => {
 
   it('flips from pulse to solid after the pulse duration', () => {
     const flash = useFlashAttention();
-    flash.start({ sessionId: 's1', accentColor: '#0078d4', textColor: '#ffffff' });
+    flash.start({ sessionId: 's1' });
 
     vi.advanceTimersByTime(PULSE_DURATION_MS);
 
@@ -41,7 +41,7 @@ describe('useFlashAttention', () => {
 
   it('clear() removes the flash (session was focused)', () => {
     const flash = useFlashAttention();
-    flash.start({ sessionId: 's1', accentColor: '#0078d4', textColor: '#ffffff' });
+    flash.start({ sessionId: 's1' });
 
     flash.clear('s1');
 
@@ -53,7 +53,7 @@ describe('useFlashAttention', () => {
 
   it('reports a group as flashing when any member session flashes', () => {
     const flash = useFlashAttention();
-    flash.start({ sessionId: 's2', accentColor: null, textColor: null });
+    flash.start({ sessionId: 's2' });
 
     expect(flash.groupIsFlashing(['s1', 's2', 's3'])).toBe(true);
     expect(flash.groupIsFlashing(['s1', 's3'])).toBe(false);

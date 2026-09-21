@@ -12,7 +12,7 @@
   --bg-hover: #252525;
   --accent: #4fd08b;
   --accent-hover: #73df9f;
-  /* Readable text on --accent (light green) — used as the flash fallback text colour. */
+  /* Readable text on --accent (light green) — used as the flash text colour. */
   --accent-contrast: #05130b;
   --text-primary: #eee;
   --text-secondary: #999;
@@ -1090,9 +1090,10 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   margin-left: 2px;
 }
 
-/* Flash attention — beats between the resting bg and the Windows accent for 15s
-   (flash-pulse), then holds the accent (flash-solid) until the session is focused.
-   --flash-accent / --flash-text are injected inline per-target.
+/* Flash attention — beats between the resting bg and the app theme accent for
+   15s (flash-pulse), then holds the accent (flash-solid) until the session is
+   focused. Colour comes straight from the app's --accent / --accent-contrast
+   tokens, so the flash matches the app theme regardless of the OS accent.
 
    The beat is DISCRETE, not a smooth interpolation: background + text switch
    together at flat plateaus so every rendered frame lands on one of two
@@ -1100,7 +1101,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
    Smoothly cross-fading fg and bg would collapse contrast mid-transition. */
 @keyframes flash-beat {
   0%,   49% { background-color: var(--bg-secondary); color: var(--text-primary); }
-  50%, 100% { background-color: var(--flash-accent);  color: var(--flash-text); }
+  50%, 100% { background-color: var(--accent);  color: var(--accent-contrast); }
 }
 .session-card.flash-pulse,
 .group-header.flash-pulse {
@@ -1108,8 +1109,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-card.flash-solid,
 .group-header.flash-solid {
-  background-color: var(--flash-accent) !important;
-  color: var(--flash-text);
+  background-color: var(--accent) !important;
+  color: var(--accent-contrast);
 }
 /* Force ALL textual/icon descendants onto the flash text colour while flashing so
    nothing (timer, meta, state, plan, row actions) keeps a fixed low-contrast grey. */
@@ -1125,7 +1126,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-card.flash-solid .session-activity-dot,
 .group-header.flash-pulse .group-activity-dot,
 .group-header.flash-solid .group-activity-dot {
-  box-shadow: 0 0 0 1px var(--flash-text);
+  box-shadow: 0 0 0 1px var(--accent-contrast);
 }
 
 /* Activity dot (green = active, blue = inactive >10s, grey = idle >5min) */

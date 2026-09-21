@@ -1020,9 +1020,9 @@ onMounted(async () => {
     // the target (it is active AND the window has focus); a backgrounded active
     // session still flashes so the attention grab is not silently dropped.
     unsubFlashAttention = eventsClient.onFlashAttention
-      ? eventsClient.onFlashAttention(({ sessionId, accentColor, textColor }) => {
+      ? eventsClient.onFlashAttention(({ sessionId }) => {
           if (sessionId === state.activeSessionId && document.hasFocus()) return;
-          flashAttention.start({ sessionId, accentColor, textColor });
+          flashAttention.start({ sessionId });
         })
       : null;
     window.addEventListener('focus', onWindowFocusClearFlash);

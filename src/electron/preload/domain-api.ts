@@ -420,8 +420,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   },
 
   /** Subscribe to flash-attention requests (flash a session/group in the sidebar) */
-  onFlashAttention: (callback: (data: { sessionId: string; accentColor: string | null; textColor: string | null }) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; accentColor: string | null; textColor: string | null }) => callback(data);
+  onFlashAttention: (callback: (data: { sessionId: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => callback(data);
     ipcRenderer.on('session:flashAttention', listener);
     return () => ipcRenderer.removeListener('session:flashAttention', listener);
   },

@@ -14,8 +14,6 @@ import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 
 interface FlashEntry {
-  accentColor: string | null;
-  textColor: string | null;
   phase: 'pulse' | 'solid';
   startedAt: number;
 }

@@ -53,7 +53,7 @@ export interface SessionCardProps {
   scheduledAt?: string | null;
   isSnappedOut?: boolean;
   llmNotifications?: Array<{ id: string; title: string; content: string; createdAt?: number }>;
-  flashEntry?: { accentColor: string | null; textColor: string | null; phase: 'pulse' | 'solid' } | null;
+  flashEntry?: { phase: 'pulse' | 'solid' } | null;
   shortcutKey?: number | null;
 }
 
@@ -140,14 +140,6 @@ const dotColor = computed(() => getActivityColor(props.activityLevel));
 const flashClass = computed(() => {
   if (!props.flashEntry) return '';
   return props.flashEntry.phase === 'solid' ? 'flash-solid' : 'flash-pulse';
-});
-const flashStyle = computed<Record<string, string>>(() => {
-  const entry = props.flashEntry;
-  if (!entry) return {};
-  return {
-    '--flash-accent': entry.accentColor ?? 'var(--accent)',
-    '--flash-text': entry.textColor ?? 'var(--accent-contrast)',
-  };
 });
 // Sessions opened here by a remote Helm peer are tinted so their origin is
 // obvious on the machine actually running them.
@@ -248,7 +240,6 @@ function onCardClick(e: MouseEvent): void {
     ref="cardEl"
     class="session-card"
     :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated }, flashClass]"
-    :style="flashStyle"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"

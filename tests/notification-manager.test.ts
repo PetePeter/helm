@@ -490,10 +490,9 @@ describe('NotificationManager.flashAttention()', () => {
     windowManager = createMockWindowManager();
     sessionManager = createMockSessionManager();
     notificationManager = new NotificationManager(windowManager, sessionManager);
-    notificationManager.setAccentColorReader(() => '1f3a5fff');
   });
 
-  it('broadcasts session:flashAttention to every live window with a resolved accent + text colour', () => {
+  it('broadcasts session:flashAttention to every live window', () => {
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'sess-1' });
     const window1: any = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
     const window2: any = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
@@ -503,7 +502,7 @@ describe('NotificationManager.flashAttention()', () => {
     const result = notificationManager.flashAttention('sess-1');
 
     expect(result).toEqual({ flashed: true });
-    const expectedPayload = { sessionId: 'sess-1', accentColor: '#1f3a5f', textColor: '#ffffff' };
+    const expectedPayload = { sessionId: 'sess-1' };
     expect(window1.webContents.send).toHaveBeenCalledWith('session:flashAttention', expectedPayload);
     expect(window2.webContents.send).toHaveBeenCalledWith('session:flashAttention', expectedPayload);
     expect(destroyed.webContents.send).not.toHaveBeenCalled();
@@ -518,21 +517,6 @@ describe('NotificationManager.flashAttention()', () => {
 
     expect(result).toEqual({ flashed: false });
     expect(window1.webContents.send).not.toHaveBeenCalled();
-  });
-
-  it('sends null colours when the accent is unavailable so the renderer falls back to the app accent', () => {
-    notificationManager.setAccentColorReader(() => null);
-    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({ id: 'sess-1' });
-    const window1: any = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-    electronMockState.getAllWindowsMock.mockReturnValue([window1]);
-
-    notificationManager.flashAttention('sess-1');
-
-    expect(window1.webContents.send).toHaveBeenCalledWith('session:flashAttention', {
-      sessionId: 'sess-1',
-      accentColor: null,
-      textColor: null,
-    });
   });
 });
 

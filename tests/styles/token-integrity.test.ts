@@ -8,8 +8,7 @@
  *
  * Deliberately narrow. A property counts as defined if ANY renderer file
  * declares it (`:root`, a scoped component block, anywhere), because scoped
- * component variables are legitimate. Properties injected at runtime cannot be
- * seen statically at all and are listed in RUNTIME_DEFINED below.
+ * component variables are legitimate.
  *
  * @vitest-environment node
  */
@@ -19,16 +18,6 @@ import { join, resolve } from 'path';
 import postcss from 'postcss';
 
 const RENDERER = resolve(__dirname, '../../renderer');
-
-/**
- * Custom properties set at runtime via inline style bindings rather than in any
- * stylesheet. These are correct as-is and must not be reported.
- */
-const RUNTIME_DEFINED = new Set([
-  // Bound per-session by SessionCard.vue / SessionGroup.vue for flash-attention.
-  '--flash-accent',
-  '--flash-text',
-]);
 
 const SCANNED_EXTENSIONS = ['.css', '.vue', '.ts'];
 
@@ -49,7 +38,7 @@ function collectDefined(files: string[]): Set<string> {
   const defined = new Set<string>();
   for (const file of files) {
     const source = readFileSync(file, 'utf8');
-    // Declarations in real CSS, plus JS object keys like '--flash-accent': ...
+    // Declarations in real CSS, plus JS object keys like '--foo': ...
     for (const match of source.matchAll(/(--[a-zA-Z0-9-]+)\s*'?\s*:/g)) {
       defined.add(match[1]);
     }
@@ -88,20 +77,9 @@ describe('CSS custom property integrity', () => {
     const used = collectUsedWithoutFallback(files);
 
     const undefinedTokens = [...used.entries()]
-      .filter(([token]) => !defined.has(token) && !RUNTIME_DEFINED.has(token))
+      .filter(([token]) => !defined.has(token))
       .map(([token, sites]) => `${token} — used in ${[...new Set(sites)].join(', ')}`);
 
     expect(undefinedTokens).toEqual([]);
-  });
-
-  it('the runtime-defined allowlist stays honest', () => {
-    // If one of these gains a real declaration, drop it from the allowlist
-    // rather than letting the exemption rot.
-    const declaredInStylesheets = collectDefined(
-      files.filter((f) => f.endsWith('.css')),
-    );
-    for (const token of RUNTIME_DEFINED) {
-      expect(declaredInStylesheets.has(token)).toBe(false);
-    }
   });
 });
