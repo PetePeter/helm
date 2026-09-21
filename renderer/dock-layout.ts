@@ -76,8 +76,8 @@ const DEFAULT_DOCK_MODES: Partial<Record<DockSide, DockMode>> = { right: 'autohi
 
 /**
  * The Classic layout — a close reproduction of the pre-docking UI: session list
- * and tool windows on the left, the view group in the centre, and Artifacts as a
- * collapsed right-edge rail.
+ * and tool windows on the left, the view group in the centre, Team View beside
+ * it, and Artifacts as a collapsed right-edge rail.
  *
  * Kept as a literal rather than derived: the left column's split between the
  * session list and the stacked tool windows is a hand-tuned arrangement that no
@@ -91,9 +91,14 @@ function createClassicLayout(): DockWorkspaceLayout {
         group([PANE_SESSIONS]),
         group([PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES], PANE_SCHEDULER),
       ], [0.6, 0.4])),
-      group([PANE_TERMINAL, PANE_OVERVIEW, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS], PANE_TERMINAL),
+      group([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS], PANE_TERMINAL),
+      // Team View is a roster whose job is switching sessions, so it owns a
+      // column of its own rather than a tab in the view group: as a tab it
+      // would lose to the very terminal it switches to and vanish on the first
+      // selection made through it.
+      group([PANE_OVERVIEW]),
       dock('right', 'autohide', group([PANE_ARTIFACTS])),
-    ], [0.22, 0.56, 0.22]),
+    ], [0.20, 0.42, 0.20, 0.18]),
     closed: [],
   };
 }

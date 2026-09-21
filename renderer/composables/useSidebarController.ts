@@ -11,10 +11,11 @@ import { toggleSessionOverviewVisibility, setSessionLocked, setSessionState, tog
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../src/types/scheduled-task.js';
 import type { SessionSortField, SortDirection } from '../sort-logic.js';
+import type { ActivationResult } from '../stores/navigation.js';
 
 interface NavigationController {
   closeOverview(): Promise<void> | void;
-  navigateToSession(sessionId: string): Promise<void> | void;
+  navigateToSession(sessionId: string): Promise<ActivationResult | void> | ActivationResult | void;
   openPlan(dirPath: string): Promise<void> | void;
   openOverview(dirPath: string | null, sessionId?: string): Promise<void> | void;
 }
@@ -74,8 +75,20 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     await setSessionState(sessionId, newState);
   }
 
+  /**
+   * Team View desk selection — the same session path the session list uses.
+   *
+   * A navigation that did not reach a session ('unavailable', or a request that
+   * was cancelled by a competing transition) is indistinguishable from success
+   * on screen, so it is reported rather than dropped.
+   */
   function onOverviewSelect(sessionId: string): void {
-    void deps.navStore.navigateToSession(sessionId);
+    void (async () => {
+      const result = await deps.navStore.navigateToSession(sessionId);
+      if (result && result.kind !== 'local-terminal' && result.kind !== 'snapped-out') {
+        console.error(`Desk selection did not reach a session (${result.kind}):`, sessionId);
+      }
+    })();
   }
 
   function onOverviewToggleCollapse(sessionId: string): void {

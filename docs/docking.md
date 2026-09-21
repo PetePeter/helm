@@ -135,11 +135,20 @@ does not invalidate a saved layout.
 
 ## Workspace shortcuts and view lifecycle
 
-The dock owns pane selection, but the three main view panes still use the
-navigation store's mount/unmount lifecycle. Selecting Team View or Plans from a
-tab, rail, View menu, or shortcut therefore runs the same initialization path.
-Selecting Terminal closes the active overview or plan lifecycle before focusing
-the terminal.
+The dock owns pane selection. Two panes — **Terminal** and **Plans** — also
+represent a *view mode* and therefore pass through the navigation store's
+mount/unmount lifecycle, whichever way they are selected (tab, rail, View menu,
+shortcut). `renderer/composables/useDockViewRouting.ts` is the single place that
+maps between the two, so the dock mirrors `main-view-manager` instead of
+becoming a second routing path. Selecting Terminal closes the active overview or
+plan lifecycle before focusing the terminal.
+
+Every other pane is a tool pane over existing state, **including Team View**
+(pane id `overview`). Focusing a tool pane is a focus move and nothing else: a
+view transition started from `focusin` would cancel the click that is about to
+select a session. See [team-view.md](team-view.md). The `overview` *view mode*
+still exists for the legacy fullscreen group-overview grid; it simply has no
+pane of its own, so the `activeView` watcher has nothing to reconcile for it.
 
 Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+O` Team View,
 `Ctrl+Shift+M` Memories, `Ctrl+Shift+P` Plans, `Ctrl+Shift+S` Sessions, and
@@ -176,6 +185,14 @@ The layout is stored by the main process as an opaque value
 so an older build can still load settings written by a newer renderer. The
 renderer validates on load and falls back to the Classic default if the value
 does not satisfy the schema.
+
+The Classic default is one horizontal root split with four tracks: the left tool
+dock (session list over the stacked tool windows), the view group
+(Terminal / Plans / Memories / Mess, Terminal active), Team View in a column of
+its own, and Artifacts as a collapsed right-edge rail. Team View is deliberately
+not a tab of the view group — a roster used to switch sessions must stay visible
+when the terminal it switched to becomes active. Saved layouts are untouched by
+this: the default only describes a fresh workspace, and the pane id is unchanged.
 
 ## Related
 
