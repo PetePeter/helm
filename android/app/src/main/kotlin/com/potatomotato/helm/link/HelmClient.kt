@@ -1211,6 +1211,8 @@ class HelmClient(
         sessionRefreshQueued = false
         // The cursor belongs to the link: the next usable link must hear it
         // again, whether it arrives via the link-up hook or the session poll.
+        // This is the TRANSPORT-loss half only; [onLinkUp] clears it per
+        // handshake, which covers the channels this hook never sees.
         chatCursorReported = false
         // The permitted surface is forgotten with the link so a reconnect re-asks.
         // An allow-list edited on the desktop while the phone was away must not
@@ -1232,8 +1234,20 @@ class HelmClient(
      * Sent FIRST on link up, ahead of the session refresh: the journal replay
      * and the session list are independent, and the cursor is the one request
      * whose answer cannot be re-derived later by a poll.
+     *
+     * THE FLAG IS CLEARED HERE, not only in [onLinkLost]. The cursor belongs to
+     * the HANDSHAKE, not to the transport: this hook fires once per established
+     * SecureChannel, whereas the loss hook fires only when the TRANSPORT changes
+     * (HelmPairing wires it to `HelmLink.onLinkChanged`). A channel re-made over
+     * a transport that never went down — a desktop restart, a re-handshake after
+     * a stumble — therefore left the flag standing and the phone never re-asked,
+     * which is the reconnect with permanently empty threads. Re-reporting is
+     * free: the desktop replays from the same seq and [ChatRepository] dedupes.
      */
-    fun onLinkUp(): Boolean = reportChatCursorIfNeeded()
+    fun onLinkUp(): Boolean {
+        chatCursorReported = false
+        return reportChatCursorIfNeeded()
+    }
 
     /**
      * Report the cursor if this link has not heard it yet. The flag moves only

@@ -368,6 +368,20 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a handshake re-made over a live transport re-reports the cursor`() {
+        // The reconnect with permanently empty threads: the desktop re-made the
+        // SecureChannel without the TRANSPORT ever going down, so the loss hook
+        // — the only other place the flag is cleared — never fired.
+        client.onLinkUp()
+        client.onInbound(resultFor(firstCallId(), "null"))
+
+        client.onLinkUp()
+
+        val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
+        assertEquals(listOf("__chat_cursor__", "__chat_cursor__"), methods)
+    }
+
+    @Test
     fun `everything outstanding fails when the link drops`() {
         client.sendChat("s1", "carry on")
 

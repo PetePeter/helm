@@ -159,6 +159,14 @@ failed handshake retry) still catches up within one poll instead of leaving the
 threads empty for the process lifetime. One global sequence means the hub
 tracks nothing per phone — a fourth paired phone needs no new hub state.
 
+"Has this link heard it" is owned by the HANDSHAKE, not the transport: the
+link-up hook clears the phone's reported-flag every time a SecureChannel is
+established, because the link-LOST hook it used to rely on fires only when the
+transport itself changes. A channel re-made over a transport that never went
+down — a desktop restart, a re-handshake after a stumble — otherwise left the
+flag standing, and that reconnect came back with permanently empty threads.
+Re-reporting costs nothing: Helm replays from the same seq and the phone dedupes.
+
 The cursor is deliberately NOT persisted. An app restart wipes the threads, so
 a persisted cursor would describe history the restarted process no longer holds
 and the link-up report would talk Helm out of the very replay a cold start
