@@ -347,7 +347,6 @@ tests/                                  # 61 test files
 ├── gamepad-repeat.test.ts      # D-pad/stick key repeat engine tests
 ├── group-overview.test.ts      # Group overview grid tests
 ├── handlers-restore.test.ts    # Session restore on startup tests
-├── handoff-command.test.ts     # Configurable handoff command tests
 ├── initial-prompt.test.ts      # Initial prompt delivery tests
 ├── keyboard.test.ts            # Keyboard simulation
 ├── modal-base.test.ts          # Modal UI base tests

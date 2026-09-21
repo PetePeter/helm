@@ -19,7 +19,6 @@ interface ToolEditorData {
   resumeCommand: string;
   continueCommand: string;
   renameCommand: string;
-  handoffCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
@@ -35,7 +34,6 @@ const DEFAULT_DATA: ToolEditorData = {
   resumeCommand: '',
   continueCommand: '',
   renameCommand: '',
-  handoffCommand: '',
   helmPreambleForInterSession: true,
   largeTextAsTempFile: false,
   messReminders: true,

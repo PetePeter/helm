@@ -29,7 +29,6 @@ export interface HelmActionMap {
 
 export type CliTypeOptions = {
   env?: EnvVarEntry[];
-  handoffCommand?: string;
   renameCommand?: string;
   spawnCommand?: string;
   resumeCommand?: string;

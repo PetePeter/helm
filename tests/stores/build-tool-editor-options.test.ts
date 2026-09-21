@@ -8,7 +8,6 @@ describe('buildToolEditorOptions', () => {
       resumeCommand: '  claude --resume  ',
       continueCommand: '',
       renameCommand: ' rename-me ',
-      handoffCommand: '  handoff ',
       env: [],
       helmPreambleForInterSession: true,
     };
@@ -17,7 +16,6 @@ describe('buildToolEditorOptions', () => {
     expect(result.resumeCommand).toBe('claude --resume');
     expect(result.continueCommand).toBe('');
     expect(result.renameCommand).toBe('rename-me');
-    expect(result.handoffCommand).toBe('handoff');
   });
 
   it('handles non-string command fields gracefully', () => {
@@ -26,7 +24,6 @@ describe('buildToolEditorOptions', () => {
       resumeCommand: null,
       continueCommand: undefined,
       renameCommand: '',
-      handoffCommand: '',
       env: [],
     };
     const result = buildToolEditorOptions(values);
@@ -105,7 +102,6 @@ describe('buildToolEditorOptions', () => {
       resumeCommand: 'claude --resume',
       continueCommand: '/continue',
       renameCommand: '/rename',
-      handoffCommand: 'handoff-text',
       env: [{ name: 'API_KEY', value: 'secret', mode: 'append' }],
       helmPreambleForInterSession: false,
       largeTextAsTempFile: true,
@@ -117,7 +113,6 @@ describe('buildToolEditorOptions', () => {
       resumeCommand: 'claude --resume',
       continueCommand: '/continue',
       renameCommand: '/rename',
-      handoffCommand: 'handoff-text',
       env: [{ name: 'API_KEY', value: 'secret', mode: 'append' }],
       helmPreambleForInterSession: false,
       largeTextAsTempFile: true,

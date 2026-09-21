@@ -37,7 +37,6 @@ export interface ToolEditorData {
   resumeCommand: string;
   continueCommand: string;
   renameCommand: string;
-  handoffCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
@@ -64,7 +63,6 @@ const emit = defineEmits<{
     resumeCommand: string;
     continueCommand: string;
     renameCommand: string;
-    handoffCommand: string;
     helmPreambleForInterSession?: boolean;
     largeTextAsTempFile: boolean;
     messReminders?: boolean;
@@ -85,7 +83,6 @@ const spawnCommand = ref('');
 const resumeCommand = ref('');
 const continueCommand = ref('');
 const renameCommand = ref('');
-const handoffCommand = ref('');
 const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
 const messReminders = ref(true);
@@ -146,7 +143,6 @@ function initForm(): void {
   resumeCommand.value = d.resumeCommand ?? '';
   continueCommand.value = d.continueCommand ?? '';
   renameCommand.value = d.renameCommand ?? '';
-  handoffCommand.value = d.handoffCommand ?? '';
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
@@ -205,7 +201,6 @@ function onSave(): void {
     resumeCommand: resumeCommand.value,
     continueCommand: continueCommand.value,
     renameCommand: renameCommand.value,
-    handoffCommand: handoffCommand.value,
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
@@ -293,7 +288,6 @@ defineExpose({ handleButton });
             <div class="te-field"><label for="te-resume">Resume Command</label><input id="te-resume" v-model="resumeCommand" type="text" placeholder="Template for resuming sessions" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-continue">Continue Command</label><input id="te-continue" v-model="continueCommand" type="text" placeholder="Template for continuing sessions" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-rename">Rename Command</label><input id="te-rename" v-model="renameCommand" type="text" placeholder="Template for renaming sessions" class="te-input te-input--mono" /></div>
-            <div class="te-field"><label for="te-handoff">Handoff Command</label><input id="te-handoff" v-model="handoffCommand" type="text" placeholder="Template for handoff between sessions" class="te-input te-input--mono" /></div>
           </fieldset>
 
           <fieldset class="te-section">

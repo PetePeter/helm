@@ -570,7 +570,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     initialPrompt: Array<{label: string; sequence: string}>, initialPromptDelay: number,
     options?: {
       env?: Array<{ name: string; value: string }>;
-      handoffCommand?: string;
       renameCommand?: string;
       spawnCommand?: string;
       resumeCommand?: string;
@@ -587,7 +586,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     initialPrompt: Array<{label: string; sequence: string}>, initialPromptDelay: number,
     options?: {
       env?: Array<{ name: string; value: string }>;
-      handoffCommand?: string;
       renameCommand?: string;
       spawnCommand?: string;
       resumeCommand?: string;

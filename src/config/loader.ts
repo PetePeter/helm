@@ -174,8 +174,6 @@ export interface CliTypeConfig {
   messReminders?: boolean;
   /** Named sequence groups — accessible via gamepad bindings and context menu */
   sequences?: Record<string, SequenceListItem[]>;
-  /** Command written to PTY on pipeline handoff. If omitted, no command is sent. */
-  handoffCommand?: string;
   /** Command sent to PTY after spawn to name the session for later resume. Template: {cliSessionName} replaced at runtime. */
   renameCommand?: string;
   /** CLI parameter template for fresh spawn with session UUID. Template: {cliSessionName} replaced at runtime.
@@ -1182,7 +1180,6 @@ export class ConfigLoader {
     const spawnCommand = options?.spawnCommand?.trim() || legacyCommand;
     if (spawnCommand) tool.spawnCommand = spawnCommand;
     if (options?.env !== undefined && options.env.length > 0) tool.env = options.env;
-    if (options?.handoffCommand) tool.handoffCommand = options.handoffCommand;
     if (options?.renameCommand) tool.renameCommand = options.renameCommand;
     if (options?.spawnCommand) tool.spawnCommand = options.spawnCommand;
     if (options?.resumeCommand) tool.resumeCommand = options.resumeCommand;
@@ -1243,7 +1240,7 @@ export class ConfigLoader {
         if (options.env.length === 0) delete existing.env;
         else existing.env = options.env;
       }
-      for (const field of ['handoffCommand', 'renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix'] as const) {
+      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix'] as const) {
         const val = options[field];
         if (val === undefined) continue;
         if (val === '') { delete (existing as any)[field]; }

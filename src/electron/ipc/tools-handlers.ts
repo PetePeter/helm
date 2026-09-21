@@ -25,7 +25,7 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
   ipcMain.handle('tools:addCliType', (
     _event, key: string, name: string,
     initialPrompt: SequenceListItem[], initialPromptDelay: number,
-    options?: { env?: EnvVarEntry[]; handoffCommand?: string; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
+    options?: { env?: EnvVarEntry[]; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
   ) => {
     try {
       // The minted uuid goes back to the caller — a clone needs it to copy
@@ -41,7 +41,7 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
   ipcMain.handle('tools:updateCliType', (
     _event, key: string, name: string,
     initialPrompt: SequenceListItem[], initialPromptDelay: number,
-    options?: { env?: EnvVarEntry[]; handoffCommand?: string; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
+    options?: { env?: EnvVarEntry[]; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
   ) => {
     try {
       configLoader.updateCliType(key, name, initialPrompt, initialPromptDelay, options);

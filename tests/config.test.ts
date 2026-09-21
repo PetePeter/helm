@@ -829,7 +829,6 @@ describe('ConfigLoader', () => {
         'claude-code': {
           ...CLI_TYPES['claude-code'],
           sequences: { prompts: [{ label: 'commit', sequence: 'use skill(commit)' }] },
-          handoffCommand: 'go implement it\r',
           renameCommand: '/session {cliSessionName}',
           resumeCommand: 'claude --resume {cliSessionName}',
           continueCommand: 'claude --continue',
@@ -844,7 +843,6 @@ describe('ConfigLoader', () => {
       expect(entry.name).toBe('CC Renamed');
       expect(entry.spawnCommand).toBe('cc2');
       expect(entry.sequences).toEqual({ prompts: [{ label: 'commit', sequence: 'use skill(commit)' }] });
-      expect(entry.handoffCommand).toBe('go implement it\r');
       expect(entry.renameCommand).toBe('/session {cliSessionName}');
       expect(entry.resumeCommand).toBe('claude --resume {cliSessionName}');
       expect(entry.continueCommand).toBe('claude --continue');
@@ -853,37 +851,34 @@ describe('ConfigLoader', () => {
     it('updateCliType with options sets optional command fields', () => {
       loader.load();
       loader.updateCliType('claude-code', 'CC', 'cc', [], 0, {
-        handoffCommand: 'do it',
         renameCommand: '/name {cliSessionName}',
       });
       const entry = loader.getCliTypeEntry('claude-code')!;
-      expect(entry.handoffCommand).toBe('do it');
       expect(entry.renameCommand).toBe('/name {cliSessionName}');
     });
 
     it('updateCliType with empty string clears optional field', () => {
       writeYaml('cli-types.yaml', {
         ...CLI_TYPES,
-        'claude-code': { ...CLI_TYPES['claude-code'], handoffCommand: 'go' },
+        'claude-code': { ...CLI_TYPES['claude-code'], renameCommand: '/go {cliSessionName}' },
       });
       loader = new ConfigLoader(TEST_DIR);
       loader.load();
 
-      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, { handoffCommand: '' });
+      loader.updateCliType('claude-code', 'CC', 'cc', [], 0, { renameCommand: '' });
       const entry = loader.getCliTypeEntry('claude-code')!;
-      expect(entry.handoffCommand).toBeUndefined();
+      expect(entry.renameCommand).toBeUndefined();
     });
 
     it('addCliType with options stores optional command fields', () => {
       loader.load();
       loader.addCliType('new-tool', 'New', 'newtool', [], 0, {
-        handoffCommand: 'build it',
+        renameCommand: '/name {cliSessionName}',
         resumeCommand: 'newtool --resume {cliSessionName}',
       });
       const entry = loader.getCliTypeEntry('new-tool')!;
-      expect(entry.handoffCommand).toBe('build it');
+      expect(entry.renameCommand).toBe('/name {cliSessionName}');
       expect(entry.resumeCommand).toBe('newtool --resume {cliSessionName}');
-      expect(entry.renameCommand).toBeUndefined();
     });
 
     it('addCliType with spawnCommand stores the full launch template', () => {
@@ -1061,7 +1056,7 @@ describe('ConfigLoader', () => {
         'claude-code': {
           ...CLI_TYPES['claude-code'],
           sequences: { prompts: [{ label: 'x', sequence: 'y' }] },
-          handoffCommand: 'h',
+          renameCommand: '/h {cliSessionName}',
           continueCommand: 'c',
         },
       });
@@ -1077,7 +1072,7 @@ describe('ConfigLoader', () => {
       expect(entry.name).toBe('New Name');
       expect(entry.spawnCommand).toBe('new-cmd');
       expect(entry.sequences).toEqual({ prompts: [{ label: 'x', sequence: 'y' }] });
-      expect(entry.handoffCommand).toBe('h');
+      expect(entry.renameCommand).toBe('/h {cliSessionName}');
       expect(entry.continueCommand).toBe('c');
     });
 

@@ -292,7 +292,6 @@ export interface ToolEditorBridgeData {
   resumeCommand: string;
   continueCommand: string;
   renameCommand: string;
-  handoffCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
@@ -304,7 +303,7 @@ export interface ToolEditorBridgeData {
 const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   name: '', env: [], initialPromptDelay: 2000,
   spawnCommand: '', resumeCommand: '', continueCommand: '',
-  renameCommand: '', handoffCommand: '', helmPreambleForInterSession: true,
+  renameCommand: '', helmPreambleForInterSession: true,
   largeTextAsTempFile: false, messReminders: true,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
 };
@@ -329,7 +328,6 @@ export function resetToolEditorData(): ToolEditorBridgeData {
 
 export function buildToolEditorOptions(values: Record<string, any>): {
   env?: ToolEditorEnvEntry[];
-  handoffCommand?: string;
   renameCommand?: string;
   spawnCommand?: string;
   resumeCommand?: string;
@@ -340,7 +338,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   submitSuffix?: string;
   helmActions?: { clear?: string; compact?: string; export?: string };
 } {
-  const fields = ['handoffCommand', 'renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand'] as const;
+  const fields = ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand'] as const;
   const options: Record<string, string> = {};
   for (const field of fields) {
     options[field] = typeof values[field] === 'string' ? values[field].trim() : '';
