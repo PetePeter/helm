@@ -214,6 +214,7 @@ describe('pty:spawn resume logic', () => {
       expect.any(Function),
       undefined,
       expect.any(Function),
+      expect.any(Function),
     );
     // The config passed should NOT have initialPrompt
     const config = mockScheduleInitialPrompt.mock.calls[0][1];
@@ -281,6 +282,7 @@ describe('pty:spawn resume logic', () => {
       expect.any(Function),
       expect.any(Function),
       undefined,
+      expect.any(Function),
       expect.any(Function),
     );
   });

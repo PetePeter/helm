@@ -162,6 +162,8 @@ claude-code:
 
 No `terminal` field — all CLIs run as embedded PTY sessions (no external window config). `initialPrompt` items are sent in order; use `{Wait N}` within sequences for inter-item timing.
 
+`renameCommand` runs **before** the `initialPrompt` items, onto a guaranteed-empty composer, and only once the PTY's output has been quiet for a beat (`waitForQuiet`): a full-screen TUI re-render landing mid-paste (e.g. a SessionStart hook reply) splits the paste and submits its tail as a stray user message. A wedge-proof second CR follows the rename for composers that swallow the submit after a paste.
+
 > **Note:** The legacy per-CLI `sequences:` block (named groups of sequence items) was removed in PT-7 and replaced by the global **prompt-template** library (`%APPDATA%/Helm/config/prompt-templates.yaml`, see the [`prompt-tree`](#prompt-tree) action). Any `sequences:` block still present in an old profile is read once as migration input and folded into the prompt-template tree.
 
 ## Pattern Rules (`patterns`)

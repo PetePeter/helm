@@ -574,6 +574,15 @@ their `command` — not a marker field — so nothing depends on the CLIs
 tolerating unknown keys. Uninstall removes exactly those entries; the
 Helm-owned Copilot file is deleted only when it holds nothing of the user's.
 
+Command strings quote a part only when it contains whitespace. Codex spawns
+hook commands with **no shell quote handling**, so a fully-quoted command
+(`"python" "C:\…\shim.py" …`) fails to spawn there — "Hook failed, exit 1" on
+every event, every hook feature silently dead. The default install path
+(`<appData>/Helm/config/hooks/`) is space-free, so commands go out unquoted
+and work everywhere; a spaced shim path still gets quoted for Claude Code and
+Copilot (they shell out via `cmd /C`), and codex logs a warning because no
+quoting strategy can save it there.
+
 > **First write outside Helm's tree.** This is the first code in Helm that
 > writes to a directory Helm does not own. It is the user's own CLI config,
 > not the repo working tree (invariant 4 is about the repo), but the courtesy

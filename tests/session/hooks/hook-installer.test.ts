@@ -8,7 +8,11 @@
  * the shim itself has its own test.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/utils/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -20,6 +24,7 @@ import {
   type HookInstallerDeps,
 } from '../../../src/session/hooks/hook-installer';
 import type { CliHooksIntegration } from '../../../src/config/loader';
+import { logger } from '../../../src/utils/logger.js';
 
 let home: string;
 let shimPath: string;
@@ -107,8 +112,10 @@ describe('installCliHooks (Claude settings.json)', () => {
     const group = settings.hooks.PreToolUse[0];
     expect(group.matcher).toBe('*');
     expect(group.hooks[0].type).toBe('command');
-    expect(group.hooks[0].command).toContain(`"${shimPath}" claude PreToolUse`);
-    expect(group.hooks[0].command).toMatch(/^"python"/);
+    // Unquoted: codex-style CLIs spawn hook commands with no shell quote
+    // handling, so a quoted program name fails to spawn. The space-free path
+    // needs no quotes anywhere.
+    expect(group.hooks[0].command).toBe(`python ${shimPath} claude PreToolUse`);
     expect(group.hooks[0].timeout).toBe(10);
   });
 
@@ -146,7 +153,7 @@ describe('installCliHooks (Codex hooks.json / Copilot helm.json)', () => {
 
     const hooks = readJson('.codex/hooks.json');
     expect(Object.keys(hooks.hooks)).toEqual(CODEX.events);
-    expect(hooks.hooks.PreToolUse[0].hooks[0].command).toContain(`"${shimPath}" codex PreToolUse`);
+    expect(hooks.hooks.PreToolUse[0].hooks[0].command).toBe(`python ${shimPath} codex PreToolUse`);
   });
 
   it('writes the Copilot flat-entry shape with version 1 into the Helm-owned file', async () => {
@@ -157,8 +164,65 @@ describe('installCliHooks (Codex hooks.json / Copilot helm.json)', () => {
     expect(Object.keys(file.hooks)).toEqual(COPILOT.events);
     const entry = file.hooks.agentStop[0];
     expect(entry.type).toBe('command');
-    expect(entry.command).toContain(`"${shimPath}" copilot agentStop`);
+    expect(entry.command).toBe(`python ${shimPath} copilot agentStop`);
     expect(entry.timeoutSec).toBe(10);
+  });
+});
+
+describe('hook command quoting', () => {
+  it('quotes a part only when it contains whitespace', async () => {
+    const spaced: HookInstallerDeps = {
+      homeDir: () => home,
+      shimPath: join(home, 'My Tools', 'helm-hook-shim.py'),
+      runCommand: async (command) => (command === 'python' ? { code: 0 } : { code: 1 }),
+    };
+
+    await installCliHooks(CLAUDE, spaced);
+
+    const settings = readJson('.claude/settings.json');
+    expect(settings.hooks.PreToolUse[0].hooks[0].command)
+      .toBe(`python "${join(home, 'My Tools', 'helm-hook-shim.py')}" claude PreToolUse`);
+  });
+
+  it('rewrites a legacy fully-quoted install to the unquoted form (self-healing)', async () => {
+    // Old Helm wrote fully-quoted commands; codex spawns hooks with no shell
+    // quote handling, so those died with "Hook failed, exit 1". Reinstalling
+    // over a machine that still carries the old format must heal the file.
+    mkdirSync(join(home, '.codex'), { recursive: true });
+    writeFileSync(
+      join(home, '.codex', 'hooks.json'),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [{
+            matcher: '*',
+            hooks: [{ type: 'command', command: `"python" "${shimPath}" codex SessionStart`, timeout: 10 }],
+          }],
+        },
+      }),
+    );
+
+    const result = await installCliHooks(CODEX, depsWithPython());
+
+    expect(result).toMatchObject({ status: 'installed', written: true });
+    const hooks = readJson('.codex/hooks.json');
+    for (const event of CODEX.events) {
+      const groups = hooks.hooks[event];
+      const commands = groups.flatMap((g: any) => g.hooks.map((h: any) => h.command));
+      expect(commands).toContain(`python ${shimPath} codex ${event}`);
+    }
+  });
+
+  it('flags a spaced shim path for codex, which cannot spawn quoted hook programs', async () => {
+    vi.mocked(logger.warn).mockClear();
+    const spaced: HookInstallerDeps = {
+      homeDir: () => home,
+      shimPath: join(home, 'My Tools', 'helm-hook-shim.py'),
+      runCommand: async (command) => (command === 'python' ? { code: 0 } : { code: 1 }),
+    };
+
+    await installCliHooks(CODEX, spaced);
+
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('spaces'));
   });
 });
 

@@ -84,9 +84,26 @@ export async function probeInterpreter(deps: HookInstallerDeps): Promise<Resolve
   return null;
 }
 
+/**
+ * One hook command line: interpreter, shim, provider, event.
+ *
+ * A part is quoted ONLY when it contains whitespace. Codex spawns hook
+ * commands with no shell quote handling, so a quoted program name
+ * (`"python" …`) fails to spawn outright — "Hook failed, exit 1" on every
+ * event, all hook features silently dead. Claude Code and Copilot shell out
+ * (cmd /C), where the quotes work when a path demands them.
+ */
 function hookCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter, provider: HookProvider, event: string): string {
-  const prefix = interpreter.args.length > 0 ? `"${interpreter.command}" ${interpreter.args.join(' ')}` : `"${interpreter.command}"`;
-  return `${prefix} "${deps.shimPath}" ${provider} ${event}`;
+  const parts = [interpreter.command, ...interpreter.args, deps.shimPath, provider, event];
+  const spaced = parts.some((part) => /\s/.test(part));
+  if (spaced && provider === 'codex') {
+    // Even quoted, codex cannot run this command — say so instead of
+    // installing a hook that fails invisibly.
+    logger.warn(
+      `[HookInstaller] Shim path contains spaces and codex cannot spawn quoted hook programs — ${provider} hooks will fail until the shim lives at a space-free path: ${deps.shimPath}`,
+    );
+  }
+  return parts.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(' ');
 }
 
 /** The matcher-group shape Claude's and Codex's nested config expects. */

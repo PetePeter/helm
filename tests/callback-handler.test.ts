@@ -555,6 +555,7 @@ describe('setupCallbackHandler', () => {
         expect.any(Function),
         expect.any(Function),
         expect.any(Function),
+        expect.any(Function),
       );
       // ensureTopic is handled by session:added event in handlers.ts, not by handleSpawnExec
       expect(bot.answerCallback).toHaveBeenCalledWith('q1', '🚀 Spawned claude (display)!');

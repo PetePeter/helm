@@ -16,6 +16,7 @@ export function scheduleInitialPrompt(
   deliverTextOrOnComplete?: ((sessionId: string, text: string) => Promise<void>) | (() => void),
   onComplete?: () => void,
   submitToPty?: (sessionId: string) => void | Promise<void>,
+  waitForQuiet?: (sessionId: string) => Promise<unknown>,
 ): (() => void) | null {
   const { initialPrompt, initialPromptDelay = 2000 } = config;
   const promptItems = [...(initialPrompt ?? [])];
@@ -63,6 +64,11 @@ export function scheduleInitialPrompt(
     // unsent text, and the rename's submit then sends one combined message
     // to the model instead of executing the command.
     if (!cancelled && config.renameCommand) {
+      // And only onto a SETTLED screen: a SessionStart hook reply re-renders
+      // the TUI mid-write, splitting the paste and submitting its tail as a
+      // stray user message. waitForQuiet bounds itself and fails open.
+      if (waitForQuiet) await waitForQuiet(sessionId);
+      if (cancelled) return;
       logger.info(`[InitialPrompt] Sending rename command for session ${sessionId}`);
       await deliver(sessionId, config.renameCommand + '\r');
       // Codex composers can swallow the submit that follows a paste (known

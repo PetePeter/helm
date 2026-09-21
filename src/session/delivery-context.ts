@@ -41,6 +41,20 @@ export const BRACKETED_PASTE_READY_BUDGET_MS = 1500;
 export const BRACKETED_PASTE_POLL_MS = 40;
 
 /**
+ * How quiet a session's output must fall before a rename command is pasted
+ * into it — and how long to keep waiting for that silence.
+ *
+ * A SessionStart hook reply re-renders a full-screen TUI mid-write; a paste
+ * landing across the redraw is split and its tail goes out as a stray user
+ * message. Waiting for a quiet window lands the paste on a settled screen.
+ * The budget bounds the wait for a CLI that never stops talking: pasting
+ * anyway beats dropping the rename, so exhaustion fails OPEN.
+ */
+export const RENAME_QUIET_WINDOW_MS = 400;
+export const RENAME_QUIET_BUDGET_MS = 8_000;
+export const RENAME_QUIET_POLL_MS = 100;
+
+/**
  * Frame text in DEC 2004 markers when the CLI has bracketed paste enabled, so
  * the whole block lands in the composer as one paste. Without the framing a
  * line editor reads each embedded newline as Enter and submits line-by-line,

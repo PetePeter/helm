@@ -149,6 +149,12 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
     }
     params.ptyManager.write(sessionId, submitSuffix);
   };
+  // Rename delivery waits for PTY output to settle (see initial-prompt); a
+  // test fake without the method skips the wait, same deal as deliverText.
+  const waitForQuiet = async (sessionId: string): Promise<void> => {
+    const maybeWait = (params.ptyManager as Partial<PtyManager>).waitForQuiet;
+    if (typeof maybeWait === 'function') await maybeWait.call(params.ptyManager, sessionId);
+  };
 
   const promptConfig = resolveInitialPromptConfig(params.cfg, params.cliSessionName);
   if (params.isResume) {
@@ -164,6 +170,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
       (sid, text) => deliverText(sid, text),
       undefined,
       submit,
+      waitForQuiet,
     );
     if (cancel) params.onPromptCancel?.(cancel);
     return;
@@ -177,6 +184,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
     (sid, text) => deliverText(sid, text),
     onComplete ?? (() => undefined),
     submit,
+    waitForQuiet,
   );
 
   if (cancel) {

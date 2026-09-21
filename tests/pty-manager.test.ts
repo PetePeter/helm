@@ -308,4 +308,48 @@ describe('PtyManager', () => {
       expect(() => manager.spawn({ sessionId: 's1', command: 'test' })).not.toThrow();
     });
   });
+
+  describe('waitForQuiet', () => {
+    it('resolves true once output has been silent for the quiet window', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+      mock.triggerData('frame');
+
+      await expect(manager.waitForQuiet('s1', { quietMs: 30, pollMs: 10, budgetMs: 5_000 })).resolves.toBe(true);
+    });
+
+    it('keeps waiting while output keeps arriving, then resolves true once it stops', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+      const chatter = setInterval(() => mock.triggerData('frame'), 20);
+      const waiting = manager.waitForQuiet('s1', { quietMs: 80, pollMs: 10, budgetMs: 5_000 });
+
+      // Still busy 100ms in — the chatty window has not gone quiet yet.
+      const settled = await Promise.race([waiting.then(() => true), new Promise<boolean>(r => setTimeout(() => r(false), 100))]);
+      expect(settled).toBe(false);
+
+      clearInterval(chatter);
+      await expect(waiting).resolves.toBe(true);
+    });
+
+    it('resolves false (fail-open signal) when the budget is exhausted under continuous output', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+      const chatter = setInterval(() => mock.triggerData('frame'), 5);
+
+      try {
+        await expect(manager.waitForQuiet('s1', { quietMs: 200, pollMs: 10, budgetMs: 100 })).resolves.toBe(false);
+      } finally {
+        clearInterval(chatter);
+      }
+    });
+
+    it('resolves false for an unknown session', async () => {
+      await expect(manager.waitForQuiet('ghost', { quietMs: 1, pollMs: 5, budgetMs: 20 })).resolves.toBe(false);
+    });
+
+    it('resolves false after the session exits', async () => {
+      manager.spawn({ sessionId: 's1', command: 'test' });
+      mock.triggerExit(0);
+
+      await expect(manager.waitForQuiet('s1', { quietMs: 1, pollMs: 5, budgetMs: 20 })).resolves.toBe(false);
+    });
+  });
 });

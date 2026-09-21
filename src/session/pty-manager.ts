@@ -6,6 +6,9 @@ import {
   buildPastePayload,
   BRACKETED_PASTE_POLL_MS,
   BRACKETED_PASTE_READY_BUDGET_MS,
+  RENAME_QUIET_BUDGET_MS,
+  RENAME_QUIET_POLL_MS,
+  RENAME_QUIET_WINDOW_MS,
   SUBMIT_SETTLE_DELAY_MS,
   type TextDeliveryOptions,
 } from './delivery-context.js';
@@ -115,6 +118,8 @@ export class PtyManager extends EventEmitter {
   private writeCounts: Map<string, number> = new Map();
   /** Last-known PTY dimensions per session (node-pty's PtyProcess does not expose cols/rows). */
   private sizes: Map<string, { cols: number; rows: number }> = new Map();
+  /** Timestamp of each session's most recent PTY output, for quiet-window waits. */
+  private lastOutputAt: Map<string, number> = new Map();
 
   constructor(factory?: PtyFactory) {
     super();
@@ -166,6 +171,10 @@ export class PtyManager extends EventEmitter {
 
     this.ptys.set(sessionId, ptyProcess);
     this.sizes.set(sessionId, { cols, rows });
+    // Seed the quiet-window clock at spawn: a session that has never spoken
+    // counts as busy from birth, not from the epoch — its first paint is
+    // still ahead of it and a write landed now would be split by it.
+    this.lastOutputAt.set(sessionId, Date.now());
 
     // Attach error handlers to internal pipe Sockets to prevent unhandled errors from crashing the process.
     // node-pty internals may change — guard with existence checks.
@@ -180,6 +189,7 @@ export class PtyManager extends EventEmitter {
     ptyProcess.onData((data: string) => {
       this.terminalOutputBuffer.append(sessionId, data);
       this.bracketedPaste.observe(sessionId, data);
+      this.lastOutputAt.set(sessionId, Date.now());
       this.emit('data', sessionId, data);
     });
 
@@ -189,6 +199,7 @@ export class PtyManager extends EventEmitter {
       this.bracketedPaste.clear(sessionId);
       this.writeCounts.delete(sessionId);
       this.sizes.delete(sessionId);
+      this.lastOutputAt.delete(sessionId);
       // During app shutdown every PTY dies at once; those exits are not
       // session closures, so no listener may act on them.
       if (this.shuttingDown) return;
@@ -293,6 +304,33 @@ export class PtyManager extends EventEmitter {
     return this.bracketedPaste.isEnabled(sessionId);
   }
 
+  /**
+   * Wait until a session's output has been silent for `quietMs`.
+   *
+   * A full-screen TUI re-render mid-write splits a paste in flight (the
+   * rename-delivery bug P-0792): landing writes on a settled screen means
+   * waiting out re-renders provoked by hook replies and startup banners.
+   * Resolves true when the window went quiet; false when the budget ran out,
+   * the session is gone, or it never stops talking — callers treat false as
+   * "proceed anyway", a dropped rename is worse than a raced one.
+   */
+  async waitForQuiet(
+    sessionId: string,
+    options?: { quietMs?: number; budgetMs?: number; pollMs?: number },
+  ): Promise<boolean> {
+    const quietMs = options?.quietMs ?? RENAME_QUIET_WINDOW_MS;
+    const budgetMs = options?.budgetMs ?? RENAME_QUIET_BUDGET_MS;
+    const pollMs = options?.pollMs ?? RENAME_QUIET_POLL_MS;
+    const deadline = Date.now() + budgetMs;
+    for (;;) {
+      if (!this.ptys.has(sessionId)) return false;
+      if (Date.now() - (this.lastOutputAt.get(sessionId) ?? 0) >= quietMs) return true;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(pollMs, remaining)));
+    }
+  }
+
   /** Resize a session's PTY. */
   resize(sessionId: string, cols: number, rows: number): void {
     const pty = this.ptys.get(sessionId);
@@ -340,6 +378,7 @@ export class PtyManager extends EventEmitter {
     this.bracketedPaste.clear(sessionId);
     this.writeCounts.delete(sessionId);
     this.sizes.delete(sessionId);
+    this.lastOutputAt.delete(sessionId);
   }
 
   /** Latch app shutdown. From here on, PTY exits are consequences of the app
@@ -369,6 +408,7 @@ export class PtyManager extends EventEmitter {
     this.bracketedPaste.clearAll();
     this.writeCounts.clear();
     this.sizes.clear();
+    this.lastOutputAt.clear();
   }
 
   /** Check if a PTY exists for a session. */

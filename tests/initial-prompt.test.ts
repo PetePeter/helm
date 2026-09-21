@@ -665,4 +665,45 @@ describe('rename command in scheduleInitialPrompt', () => {
     );
     expect(renameCallIndex).toBeGreaterThan(-1);
   });
+
+  it('waits for the PTY quiet window before delivering the rename command', async () => {
+    const writeToPty = vi.fn();
+    const waitForQuiet = vi.fn(async () => {});
+    const order: string[] = [];
+    writeToPty.mockImplementation(() => { order.push('write'); });
+    waitForQuiet.mockImplementation(async () => { order.push('quiet'); });
+
+    scheduleInitialPrompt('s1', {
+      initialPrompt: [],
+      initialPromptDelay: 0,
+      renameCommand: '/rename hub-s1',
+    }, writeToPty, undefined, undefined, undefined, waitForQuiet);
+
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(waitForQuiet).toHaveBeenCalledWith('s1');
+    // The rename must not reach the PTY until the quiet window has resolved:
+    // a SessionStart hook reply re-renders the TUI mid-write and splits the paste.
+    expect(order.indexOf('quiet')).toBeLessThan(order.indexOf('write'));
+    expect(writeToPty.mock.calls[0]).toEqual(['s1', '/rename hub-s1\r']);
+  });
+
+  it('skips the rename when cancelled during the quiet window', async () => {
+    const writeToPty = vi.fn();
+    let releaseQuiet!: () => void;
+    const waitForQuiet = vi.fn(() => new Promise<void>((resolve) => { releaseQuiet = resolve; }));
+
+    const cancel = scheduleInitialPrompt('s1', {
+      initialPrompt: [],
+      initialPromptDelay: 0,
+      renameCommand: '/rename hub-s1',
+    }, writeToPty, undefined, undefined, undefined, waitForQuiet);
+
+    await vi.advanceTimersByTimeAsync(0);
+    cancel!();
+    releaseQuiet();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(writeToPty).not.toHaveBeenCalled();
+  });
 });
