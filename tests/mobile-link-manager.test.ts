@@ -291,6 +291,30 @@ describe('MobileLinkManager identification', () => {
     expect(h.attempts.map((a) => a.psk)).toEqual([`mobile-${PHONE}`, `mobile-${OTHER_PHONE}`]);
     expect(h.manager.isOnline(OTHER_PHONE)).toBe(true);
   });
+
+  it('offers the most recently seen phone FIRST, not the stale record above it', async () => {
+    // Found on real hardware as a 100%-of-reconnects failure. A reinstalled
+    // phone leaves a dead record in the store; a LAN socket's address matches
+    // no stored deviceId, so every candidate tied at rank 1 and the walk's
+    // stable order put the STALE record first. `attempt` resets to 0 on every
+    // success, so each reconnect burned its first dial on the dead PSK
+    // ("Peer confirmation MAC failed"), refused, and only the second dial —
+    // one full redial backoff later — reached the live phone. Recency is the
+    // only honest tie-break: the record that authenticated last is the one
+    // most likely to be dialling now.
+    const h = makeHarness({ '10.9.8.1.10:48032': PHONE });
+    const dead = pair(h, OTHER_PHONE); // first in store order — the stale install
+    const live = pair(h, PHONE);
+    h.devices.update(dead.id, { lastSeenAt: 1_600_000_000_000 }); // four years stale
+    // The live phone linked minutes ago; register() refreshes this on every link.
+    h.devices.update(live.id, { lastSeenAt: 1_699_999_000_000 });
+    await h.manager.start();
+
+    await offer(h, new FakeLink('10.9.8.1.10:48032'));
+
+    expect(h.attempts.map((a) => a.psk)).toEqual([`mobile-${PHONE}`]);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+  });
 });
 
 describe('MobileLinkManager identity is the machineId', () => {

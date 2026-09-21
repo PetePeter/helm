@@ -790,7 +790,15 @@ export class MobileLinkManager extends EventEmitter {
     const candidates = this.opts.deviceStore
       .list()
       .filter((device) => device.enabled !== false && !this.linkedAtOrAbove(device.machineId, incoming))
-      .sort((a, b) => this.candidateRank(b, link, incoming) - this.candidateRank(a, link, incoming));
+      .sort((a, b) =>
+        this.candidateRank(b, link, incoming) - this.candidateRank(a, link, incoming) ||
+        // Ties go to the record that authenticated most recently. A rotated
+        // address (every LAN socket, every Android BLE hop) matches no stored
+        // deviceId, so without this the store's insertion order decides — and
+        // one dead record left by a reinstalled phone then eats the first dial
+        // of EVERY reconnect as a confirm-MAC failure. See nextCandidate.
+        (b.lastSeenAt ?? 0) - (a.lastSeenAt ?? 0),
+      );
     if (candidates.length === 0) return undefined;
 
     const index = this.attempt % candidates.length;
