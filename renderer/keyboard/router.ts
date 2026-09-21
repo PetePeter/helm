@@ -22,6 +22,7 @@
  */
 
 import { resolveKeyContext, type KeyContext, type KeyEnvironment } from './key-context.js';
+import { PANE_TERMINAL } from '../dock-types.js';
 
 export type { KeyContext, KeyEnvironment };
 
@@ -89,8 +90,46 @@ function isEligible(handler: KeyHandler, ctx: KeyContext): boolean {
   return true;
 }
 
+/** Repeat window for the dropped-keystroke warning — a dropped sentence must not become 40 warns. */
+const DROP_WARN_INTERVAL_MS = 3_000;
+
+/**
+ * A printable key that no handler claimed even though the app believed the
+ * terminal pane owned the keyboard. `scope === 'pane'` already excludes modal,
+ * editable fields and xterm itself; `focusedPane === PANE_TERMINAL` excludes
+ * panes (plan screen, drafts) whose keys legitimately fall through.
+ */
+function isDroppedKey(ctx: KeyContext): boolean {
+  const { event, key, scope, focusedPane, activeSessionId } = ctx;
+  if (scope !== 'pane' || focusedPane !== PANE_TERMINAL || activeSessionId === null) return false;
+  if (event.ctrlKey || event.altKey || event.metaKey) return false;
+  return key.length === 1;
+}
+
+/** Where DOM focus actually is — the evidence for *why* input went dead. */
+function describeParkedFocus(): string {
+  const el = document.activeElement;
+  if (!(el instanceof Element) || el === document.body) return '<body>';
+  const id = el.id ? `#${el.id}` : '';
+  const classes =
+    typeof el.className === 'string' && el.className.trim()
+      ? el.className.trim().split(/\s+/).map((name) => `.${name}`).join('')
+      : '';
+  return `<${el.tagName.toLowerCase()}${id}${classes}>`;
+}
+
+function warnDroppedKey(ctx: KeyContext): void {
+  console.warn(
+    `[Keyboard] ${JSON.stringify(ctx.key)} fell through with no handler while session ${ctx.activeSessionId} is active — ` +
+      `focus parked on ${describeParkedFocus()}. ` +
+      'If typing is dead, give the terminal focus (click it, or Ctrl+Shift+R) to restore input.',
+  );
+}
+
 /** Install the one listener. Returns an uninstall function. */
 export function installKeyRouter(env: KeyEnvironment): () => void {
+  let lastDropWarnAt = 0;
+
   function onKeyDown(event: KeyboardEvent): void {
     const ctx = resolveKeyContext(event, env);
 
@@ -102,6 +141,14 @@ export function installKeyRouter(env: KeyEnvironment): () => void {
       event.preventDefault();
       event.stopPropagation();
       return;
+    }
+
+    // Nothing claimed it. If the app still believed the terminal had the
+    // keyboard, the keystroke is silently dead — the parked-focus bug — so
+    // say so, throttled so a whole dropped sentence logs once per window.
+    if (isDroppedKey(ctx) && Date.now() - lastDropWarnAt >= DROP_WARN_INTERVAL_MS) {
+      lastDropWarnAt = Date.now();
+      warnDroppedKey(ctx);
     }
   }
 

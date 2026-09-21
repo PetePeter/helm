@@ -15,7 +15,7 @@ import {
   type KeyHandler,
 } from '../../renderer/keyboard/router.js';
 import { type KeyEnvironment } from '../../renderer/keyboard/key-context.js';
-import { PANE_TERMINAL } from '../../renderer/dock-types.js';
+import { PANE_SESSIONS, PANE_TERMINAL } from '../../renderer/dock-types.js';
 
 let uninstall: (() => void) | null = null;
 
@@ -193,6 +193,113 @@ describe('editable scope', () => {
     pressIn(helper, { key: 'O', ctrlKey: true, shiftKey: true });
 
     expect(handle).toHaveBeenCalledOnce();
+  });
+});
+
+describe('dropped-keystroke warning', () => {
+  // The parked-focus bug: space (and every other character) fell through the
+  // whole chain because DOM focus had drifted to non-terminal chrome, and it
+  // stayed dead until an unrelated flow happened to re-focus the terminal.
+  // The router is the single chokepoint that sees every fall-through, so it
+  // is where the diagnosis is logged — with the parked element, which is the
+  // evidence for *why*.
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  function focusInput(): HTMLInputElement {
+    document.body.innerHTML = '<input id="field" />';
+    const field = document.querySelector('#field') as HTMLInputElement;
+    field.focus();
+    return field;
+  }
+
+  function pressIn(field: Element, init: KeyboardEventInit = {}): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true, ...init });
+    field.dispatchEvent(event);
+    return event;
+  }
+
+  it('warns when a printable key falls through while the terminal pane is the keyboard target', () => {
+    document.body.innerHTML = '<button id="parked"></button>';
+    (document.querySelector('#parked') as HTMLButtonElement).focus();
+    install();
+
+    press({ key: ' ' });
+
+    expect(warn).toHaveBeenCalledOnce();
+    const message = warn.mock.calls.map((call: unknown[]) => call.join(' ')).join('\n');
+    expect(message).toContain('" "');
+    expect(message).toContain('session-1');
+    expect(message).toContain('button#parked');
+  });
+
+  it('stays silent when no session is active', () => {
+    install({ getActiveSessionId: () => null });
+    press();
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when an editable field owns the key', () => {
+    install();
+    pressIn(focusInput());
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when xterm owns the key', () => {
+    document.body.innerHTML = '<div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div>';
+    const helper = document.querySelector('.xterm-helper-textarea')!;
+    install();
+    pressIn(helper);
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays silent while a modal is open', () => {
+    install({ isModalOpen: () => true });
+    press();
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays silent when the keyboard target is a non-terminal pane', () => {
+    install({ getFocusedPane: () => PANE_SESSIONS });
+    press();
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('stays silent for modifier-only, multi-char and modified keys', () => {
+    install();
+    press({ key: 'Shift' });
+    press({ key: 'Enter' });
+    press({ key: 'a', ctrlKey: true });
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('throttles repeats inside the window', () => {
+    install();
+    press({ key: 'a' });
+    press({ key: 'b' });
+
+    expect(warn).toHaveBeenCalledOnce();
+  });
+
+  it('stays silent when a handler claims the key', () => {
+    registerKeyHandler(handler({ id: 'eater', scope: 'global', handle: () => true }));
+    install();
+    press();
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
