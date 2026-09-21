@@ -1,6 +1,6 @@
-import { parseSequence } from '../input/sequence-parser.js';
 import { executeSequenceString } from '../input/sequence-executor.js';
 import { logger } from '../utils/logger.js';
+import { SUBMIT_SETTLE_DELAY_MS } from './delivery-context.js';
 import type { SequenceListItem } from '../config/loader.js';
 
 export interface InitialPromptConfig {
@@ -57,6 +57,21 @@ export function scheduleInitialPrompt(
   const execute = async () => {
     if (cancelled) return;
 
+    // Rename goes FIRST, onto a guaranteed-empty composer, so the slash
+    // command lands as its own line. Delivered after the prompt items it
+    // glues onto a prompt ending in {NoSend} — the composer holds that
+    // unsent text, and the rename's submit then sends one combined message
+    // to the model instead of executing the command.
+    if (!cancelled && config.renameCommand) {
+      logger.info(`[InitialPrompt] Sending rename command for session ${sessionId}`);
+      await deliver(sessionId, config.renameCommand + '\r');
+      // Codex composers can swallow the submit that follows a paste (known
+      // wedge): a second bare CR after a settle beat completes it, and is a
+      // no-op for CLIs whose composer already submitted.
+      await new Promise(resolve => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
+      if (!cancelled) writeToPty(sessionId, '\r');
+    }
+
     if (promptItems.length > 0) {
       logger.info(`[InitialPrompt] Pre-loading ${promptItems.length} item(s) for session ${sessionId}`);
 
@@ -65,11 +80,6 @@ export function scheduleInitialPrompt(
         if (!item) continue;
         await executeItem(item);
       }
-    }
-
-    if (!cancelled && config.renameCommand) {
-      logger.info(`[InitialPrompt] Sending rename command for session ${sessionId}`);
-      await deliver(sessionId, config.renameCommand + '\r');
     }
 
     if (!cancelled) {

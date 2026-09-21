@@ -46,8 +46,12 @@
   name: Codex
   displayName: Codex
   spawnCommand: codex
-  resumeCommand: codex resume {cliSessionName}
+  # Name the thread after Helm's session UUID so resume can target it by name.
+  # The helm- prefix keeps the name from parsing as a codex session-id UUID
+  # (codex resume: "UUIDs take precedence if it parses").
+  resumeCommand: codex resume helm-{cliSessionName}
   continueCommand: codex resume --last
+  renameCommand: /rename helm-{cliSessionName}
   initialPrompt:
     - label: Helm session init
       sequence: Call session_info to get Helm MCP initial information.{Enter}

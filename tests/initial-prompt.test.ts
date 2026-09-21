@@ -591,7 +591,7 @@ describe('rename command in scheduleInitialPrompt', () => {
     vi.useRealTimers();
   });
 
-  it('sends rename command after initial prompt items', async () => {
+  it('sends rename command before initial prompt items, with a wedge-proof second CR', async () => {
     const writeToPty = vi.fn();
     const items: SequenceListItem[] = [{ label: 'Init', sequence: 'hello' }];
 
@@ -601,12 +601,17 @@ describe('rename command in scheduleInitialPrompt', () => {
       renameCommand: '/rename hub-s1',
     }, writeToPty);
 
-    await vi.advanceTimersByTimeAsync(100);
+    // 100ms delay + 400ms settle beat before the second CR
+    await vi.advanceTimersByTimeAsync(600);
 
-    expect(writeToPty).toHaveBeenCalledTimes(3);
-    expect(writeToPty).toHaveBeenCalledWith('s1', 'hello');
+    expect(writeToPty).toHaveBeenCalledTimes(4);
+    // Rename first — onto an empty composer — then its bare-CR follow-up,
+    // then the prompt item and its submit.
+    const calls = writeToPty.mock.calls.map((c: any[]) => c[1]);
+    expect(calls.indexOf('/rename hub-s1\r')).toBe(0);
+    expect(calls.indexOf('\r')).toBe(1);
+    expect(calls.indexOf('hello')).toBe(2);
     expect(writeToPty).toHaveBeenCalledWith('s1', '\r');
-    expect(writeToPty).toHaveBeenCalledWith('s1', '/rename hub-s1\r');
   });
 
   it('sends rename command even when initialPrompt is empty', async () => {
@@ -620,7 +625,7 @@ describe('rename command in scheduleInitialPrompt', () => {
 
     expect(cancel).not.toBeNull(); // should NOT return null
 
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(600);
 
     expect(writeToPty).toHaveBeenCalledWith('s1', '/rename hub-s1\r');
   });
@@ -651,7 +656,7 @@ describe('rename command in scheduleInitialPrompt', () => {
       renameCommand: '/rename hub-s1',
     }, writeToPty, onComplete);
 
-    await vi.advanceTimersByTimeAsync(100);
+    await vi.advanceTimersByTimeAsync(600);
 
     expect(onComplete).toHaveBeenCalledOnce();
     // onComplete called after rename
