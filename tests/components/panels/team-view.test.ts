@@ -12,6 +12,7 @@ const projection: TeamViewProjection = {
     desks: [{
       sessionId: 's1', name: 'Ada', cliType: 'codex', state: 'waiting', waitingReason: 'human',
       terminalTail: ['Need approval'], hidden: false, focusIndex: 0, focusLabel: '^1',
+      locked: false, artifactCount: 2,
     }],
   }],
 };
@@ -25,12 +26,25 @@ describe('TeamView', () => {
     expect(wrapper.find('textarea, input, [contenteditable="true"]').exists()).toBe(false);
   });
 
-  it('collapses a department and selects a desk', async () => {
+  it('collapses a department and delegates selected-desk controls', async () => {
     const wrapper = mount(TeamView, { props: { projection, activeSessionId: null } });
     await wrapper.find('.team-department__header').trigger('click');
     expect(wrapper.find('.team-desk').exists()).toBe(false);
     await wrapper.find('.team-department__header').trigger('click');
     await wrapper.find('.team-desk').trigger('click');
+    expect(wrapper.find('.team-actions').text()).toContain('Read-only desk');
+    await wrapper.get('.team-actions__controls button:nth-child(1)').trigger('click');
     expect(wrapper.emitted('select')).toEqual([['s1']]);
+    await wrapper.get('.team-actions__controls button:nth-child(3)').trigger('click');
+    await wrapper.get('.team-actions__controls button:nth-child(4)').trigger('click');
+    await wrapper.get('.team-actions__controls button:nth-child(5)').trigger('click');
+    await wrapper.get('.team-actions__controls button:nth-child(6)').trigger('click');
+    expect(wrapper.emitted('toggleLock')).toEqual([['s1', true]]);
+    expect(wrapper.emitted('toggleVisibility')).toEqual([['s1']]);
+    expect(wrapper.emitted('showArtifacts')).toEqual([['s1']]);
+    expect(wrapper.emitted('requestClose')).toEqual([['s1', 'Ada']]);
+    await wrapper.get('.team-actions__rename input').setValue('Grace');
+    await wrapper.get('.team-actions__rename').trigger('submit');
+    expect(wrapper.emitted('rename')).toEqual([['s1', 'Grace']]);
   });
 });

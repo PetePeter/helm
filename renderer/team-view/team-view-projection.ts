@@ -22,6 +22,9 @@ export interface TeamViewDesk {
   hidden: boolean;
   focusIndex: number;
   focusLabel: string;
+  /** Projected from the same live session sources as Session List. */
+  locked: boolean;
+  artifactCount: number;
 }
 
 export interface TeamViewDepartment {
@@ -50,6 +53,7 @@ export interface TeamViewProjectionInput {
   tailLineLimit?: number;
   collapsedDepartmentIds?: ReadonlySet<string>;
   hiddenSessionIds?: ReadonlySet<string>;
+  artifactCountForSession?: (sessionId: string) => number | undefined;
 }
 
 interface DepartmentSeed {
@@ -150,6 +154,8 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
           // Reassigned after departments are ordered for display.
           focusIndex: 0,
           focusLabel: '^1',
+          locked: session.locked === true,
+          artifactCount: input.artifactCountForSession?.(session.id) ?? 0,
         };
         return desk;
       });

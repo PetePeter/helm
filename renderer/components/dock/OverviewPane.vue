@@ -19,5 +19,10 @@ const projection = useTeamViewProjection({ tailLineLimit: 4 });
     :projection="projection"
     :active-session-id="state.activeSessionId"
     @select="pane.sidebar.onOverviewSelect"
+    @rename="pane.sidebar.onCommitRename"
+    @toggle-lock="pane.sidebar.onToggleLock"
+    @toggle-visibility="pane.sidebar.onToggleOverview"
+    @request-close="pane.sidebar.onRequestClose"
+    @show-artifacts="pane.showArtifactsForSession"
   />
 </template>

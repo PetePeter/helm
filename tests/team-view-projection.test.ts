@@ -69,6 +69,15 @@ describe('buildTeamViewProjection', () => {
       .toEqual([['one', false], ['two', true]]);
   });
 
+  it('projects lock and artifact status from the existing live session boundaries', () => {
+    const result = buildTeamViewProjection({
+      sessions: [session('one', { locked: true })],
+      projects: [],
+      artifactCountForSession: sessionId => sessionId === 'one' ? 3 : 0,
+    });
+    expect(result.departments[0].desks[0]).toMatchObject({ locked: true, artifactCount: 3 });
+  });
+
   it('uses the authoritative state, derives only safe waiting reasons, and clips passive tails', () => {
     const result = buildTeamViewProjection({
       sessions: [

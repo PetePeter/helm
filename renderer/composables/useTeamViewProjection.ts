@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref, type ComputedRef } from 'vue';
 import { state } from '../state.js';
+import { useSessionsScreenStore } from '../stores/sessions-screen.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import {
   buildTeamViewProjection,
@@ -16,6 +17,7 @@ export function useTeamViewProjection(
   options: Omit<TeamViewProjectionInput, 'sessions' | 'projects' | 'stateForSession' | 'terminalTailForSession'> = {},
 ): ComputedRef<TeamViewProjection> {
   const outputVersion = ref(0);
+  const sessionsScreen = useSessionsScreenStore();
   const outputBuffer = getTerminalManager()?.getOutputBuffer();
   const invalidate = () => { outputVersion.value++; };
   outputBuffer?.onUpdate?.(invalidate);
@@ -30,6 +32,8 @@ export function useTeamViewProjection(
       sessions: state.sessions,
       projects: state.projects,
       stateForSession: session => state.sessionStates.get(session.id) ?? session.aiagentState ?? session.state,
+      artifactCountForSession: sessionId => state.artifactCounts.get(sessionId),
+      hiddenSessionIds: sessionsScreen.hiddenSessionIds.value,
       terminalTailForSession: sessionId => outputBuffer?.getLastLines(sessionId, options.tailLineLimit ?? 4) ?? [],
     });
   });
