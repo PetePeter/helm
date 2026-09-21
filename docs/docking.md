@@ -136,12 +136,12 @@ does not invalidate a saved layout.
 ## Workspace shortcuts and view lifecycle
 
 The dock owns pane selection, but the three main view panes still use the
-navigation store's mount/unmount lifecycle. Selecting Overview or Plans from a
+navigation store's mount/unmount lifecycle. Selecting Team View or Plans from a
 tab, rail, View menu, or shortcut therefore runs the same initialization path.
 Selecting Terminal closes the active overview or plan lifecycle before focusing
 the terminal.
 
-Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+O` Overview,
+Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+O` Team View,
 `Ctrl+Shift+M` Memories, `Ctrl+Shift+P` Plans, `Ctrl+Shift+S` Sessions, and
 `Ctrl+Shift+A` Artifacts. The Artifact shortcut shows/focuses the pane; it does
 not toggle visibility. `Ctrl+Shift+N` remains the new-session shortcut.

@@ -50,12 +50,12 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+Tab | Next terminal tab |
 | Ctrl+Shift+Tab | Previous terminal tab |
 | Ctrl+Shift+T | Focus the Terminal pane |
-| Ctrl+Shift+O | Open/focus the global Overview pane |
+| Ctrl+Shift+O | Open/focus Team View; Session List can remain visible beside it |
 | Ctrl+Shift+M | Focus the Memories pane |
 | Ctrl+Shift+P | Open/focus the Plans pane for the active session folder |
 | Ctrl+Shift+S | Focus the Sessions pane |
 | Ctrl+Shift+A | Show/focus the Artifacts pane; never toggles it |
-| Ctrl+Shift+N | Terminal: open quick spawn / Sessions or Overview: create a new plan for the current directory |
+| Ctrl+Shift+N | Terminal: open quick spawn / Sessions or Team View: create a new plan for the current directory |
 | Ctrl+Shift+W | Close the active session; needs a terminal **visible**, not focused |
 | Ctrl+Tab / Ctrl+Shift+Tab | Cycle the selected session forward/back. Moves the session spine only — the focused pane stays put and re-points at the new session |
 | Arrow keys | Navigate the focused pane (mapped to D-pad equivalents). xterm owns arrows when the keystroke lands in it |
