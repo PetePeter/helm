@@ -38,6 +38,7 @@ class SpeechControllerTest {
         controller.start()
         engine.emitPartial("surface it and let the")
 
+        controller.stop()
         engine.emitFinal("surface it and let the app retry")
 
         val state = controller.state.value
@@ -47,10 +48,89 @@ class SpeechControllerTest {
     }
 
     @Test
+    fun `a final while still holding continues listening and keeps the mic open`() {
+        // THE pause fix: the platform closes the utterance on its own
+        // end-of-speech silence while the finger is still down. Ending the
+        // dictation there captured half a thought and left a dead mic; the
+        // utterance restarts and the dictation carries on instead.
+        controller.start()
+        engine.emitPartial("surface it and let the")
+
+        engine.emitFinal("surface it and let the app retry")
+
+        val state = controller.state.value
+        assertEquals("surface it and let the app retry", state.transcript)
+        assertEquals(VoicePhase.Listening, state.phase)
+        assertEquals(2, engine.startCount)
+    }
+
+    @Test
+    fun `segments across a held pause join into one transcript`() {
+        // Pause mid-hold (platform final), resume into the restarted utterance,
+        // then release: the stop's final covers only the resumed segment.
+        controller.start()
+        engine.emitPartial("first part")
+        engine.emitFinal("first part")
+
+        engine.emitPartial("second part")
+
+        controller.stop()
+        engine.emitFinal("second part")
+
+        val state = controller.state.value
+        assertEquals(VoicePhase.Captured, state.phase)
+        assertEquals("first part second part", state.transcript)
+    }
+
+    @Test
+    fun `releasing right after a held pause captures the committed segments`() {
+        controller.start()
+        engine.emitPartial("the whole thought")
+        engine.emitFinal("the whole thought")
+
+        controller.stop()
+        // The restarted utterance heard nothing before the release; its final
+        // comes back blank and must not disturb what was already committed.
+        engine.emitFinal("")
+
+        val state = controller.state.value
+        assertEquals(VoicePhase.Captured, state.phase)
+        assertEquals("the whole thought", state.transcript)
+    }
+
+    @Test
+    fun `a restart after a held pause replaces only the new segment, not the committed text`() {
+        controller.start()
+        engine.emitPartial("committed words")
+        engine.emitFinal("committed words")
+
+        engine.emitPartial("new guess")
+
+        assertEquals("committed words new guess", controller.state.value.transcript)
+    }
+
+    @Test
+    fun `a new press still means say it differently, not add to it`() {
+        controller.start()
+        engine.emitPartial("first attempt")
+        controller.stop()
+        engine.emitFinal("first attempt")
+
+        controller.start()
+
+        // The committed segments belong to the PREVIOUS hold; a fresh press
+        // starts the dictation over.
+        assertEquals(VoicePhase.Listening, controller.state.value.phase)
+        engine.emitPartial("second attempt")
+        assertEquals("second attempt", controller.state.value.transcript)
+    }
+
+    @Test
     fun `a blank final keeps what was already heard instead of wiping it`() {
         controller.start()
         engine.emitPartial("deploy the release build")
 
+        controller.stop()
         // Some recognisers close an utterance with an empty final. Trusting it
         // would delete a transcript the user watched appear.
         engine.emitFinal("")
@@ -60,15 +140,65 @@ class SpeechControllerTest {
     }
 
     @Test
+    fun `a blank final while holding restarts listening without failing`() {
+        controller.start()
+
+        engine.emitFinal("")
+
+        // Nothing was heard yet, but the finger is down: a restart, not a
+        // failure — the user is still thinking.
+        assertEquals(VoicePhase.Listening, controller.state.value.phase)
+        assertEquals(2, engine.startCount)
+    }
+
+    @Test
     fun `a final with nothing heard at all reports no match rather than capturing emptiness`() {
         controller.start()
 
+        controller.stop()
         engine.emitFinal("   ")
 
         val state = controller.state.value
         assertEquals(VoicePhase.Failed, state.phase)
         assertEquals(SpeechError.NoMatch, state.error)
         assertEquals("", state.transcript)
+    }
+
+    @Test
+    fun `a silence timeout while holding restarts listening instead of failing`() {
+        controller.start()
+        engine.emitPartial("kept words")
+        engine.emitFinal("kept words")
+
+        engine.emitError(SpeechError.NoMatch)
+
+        val state = controller.state.value
+        assertEquals(VoicePhase.Listening, state.phase)
+        assertEquals("kept words", state.transcript)
+        assertEquals(3, engine.startCount)
+    }
+
+    @Test
+    fun `a busy recognizer while holding restarts listening instead of failing`() {
+        controller.start()
+
+        engine.emitError(SpeechError.Busy)
+
+        assertEquals(VoicePhase.Listening, controller.state.value.phase)
+        assertEquals(2, engine.startCount)
+    }
+
+    @Test
+    fun `a network error while holding still fails — restarting cannot fix a missing language pack`() {
+        controller.start()
+        engine.emitPartial("offline attempt")
+
+        engine.emitError(SpeechError.Network)
+
+        val state = controller.state.value
+        assertEquals(VoicePhase.Failed, state.phase)
+        assertEquals(SpeechError.Network, state.error)
+        assertEquals(1, engine.startCount)
     }
 
     @Test
@@ -161,6 +291,7 @@ class SpeechControllerTest {
         engine.emitLevel(0.8f)
         assertEquals(0.8f, controller.state.value.level, TOLERANCE)
 
+        controller.stop()
         engine.emitFinal("said something")
 
         // A meter left twitching under captured text reads as "still recording".

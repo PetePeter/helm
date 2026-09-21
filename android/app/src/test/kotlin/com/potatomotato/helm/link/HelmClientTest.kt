@@ -89,11 +89,12 @@ class HelmClientTest {
         client.refreshSessions()
         client.refreshSessions()
 
-        assertEquals(1, sent.size)
+        // Two records: the chat cursor this link had not heard, then the list.
+        assertEquals(2, sent.size)
 
         client.onInbound(resultFor(first, "[]"))
 
-        assertEquals(2, sent.size)
+        assertEquals(3, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
@@ -105,14 +106,20 @@ class HelmClientTest {
 
         client.onInbound(errorFor(first, "desktop busy"))
 
-        assertEquals(2, sent.size)
+        // Third record: the reconciled list, after the cursor and the first try.
+        assertEquals(3, sent.size)
     }
 
     @Test
     fun `a call deadline settles it and a late answer cannot apply it`() {
         client.refreshSessions()
+        // Answer the cursor the refresh carried; its deadline stub still sits in
+        // the queue, so drain BOTH deadlines — the list call's settle is the one
+        // under test, and the late answer must find nothing to apply to.
+        client.onInbound(resultFor(firstCallId(), "null"))
         val id = lastCallId()
 
+        scheduler.runNext()
         scheduler.runNext()
         client.onInbound(resultFor(id, """[{"id":"late","name":"late"}]"""))
 
@@ -125,7 +132,8 @@ class HelmClientTest {
         client.closeSession("s1")
         client.onInbound(resultFor(lastCallId(), "null"))
 
-        assertEquals(2, sent.size)
+        // Close, then the reconcile's cursor + list.
+        assertEquals(3, sent.size)
         client.onInbound(resultFor(lastCallId(), "[]"))
         assertTrue(client.sessions.sessions.value.isEmpty())
     }
@@ -144,8 +152,9 @@ class HelmClientTest {
         client.onInbound(resultFor(lastCallId(), "null"))
         assertNotice(SessionAction.Rename, ActionOutcome.Done)
 
-        // The list is the only place the new name shows, so success pulls it.
-        assertEquals(2, sent.size)
+        // The list is the only place the new name shows, so success pulls it —
+        // the reconcile's cursor record rides with that pull.
+        assertEquals(3, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
@@ -163,7 +172,8 @@ class HelmClientTest {
         client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
         client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
 
-        assertEquals(2, sent.size)
+        // The reconcile rides the refresh path, so it carries the cursor too.
+        assertEquals(3, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
@@ -344,12 +354,51 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a cursor report whose answer died with the link is said again`() {
+        client.refreshSessions()
+        // The list answers; the cursor's answer never arrives (the link that
+        // carried it dropped before the desktop acted on it).
+        client.onInbound(resultFor(lastCallId(), "[]"))
+        scheduler.runNext() // the cursor's deadline settles it as failed
+
+        client.refreshSessions()
+
+        val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
+        assertEquals(listOf("__chat_cursor__", "session_list", "__chat_cursor__", "session_list"), methods)
+    }
+
+    @Test
     fun `everything outstanding fails when the link drops`() {
         client.sendChat("s1", "carry on")
 
         client.onLinkLost()
 
         assertEquals(Delivery.Failed, client.chats.thread("s1").single().delivery)
+    }
+
+    @Test
+    fun `a session poll re-reports the cursor a link never heard`() {
+        // Observed on real hardware: after a failed handshake attempt, a relink
+        // can come up usable without the link-up hook firing — `__mobile_tools__`
+        // crosses, `__chat_cursor__` never does, and the threads stay empty for
+        // the whole process. The poll is the backstop.
+        client.onLinkUp()
+        assertEquals("__chat_cursor__", JSONObject(String(sent.single(), Charsets.UTF_8)).getString("method"))
+
+        // The report is per-link: a poll on the same link sends only the list.
+        client.onInbound(resultFor(firstCallId(), "null"))
+        client.refreshSessions()
+        assertEquals(2, sent.size)
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+
+        // The link goes and comes back without the hook firing at all.
+        client.onLinkLost()
+        client.refreshSessions()
+
+        val cursor = JSONObject(String(sent[2], Charsets.UTF_8))
+        assertEquals("__chat_cursor__", cursor.getString("method"))
+        assertEquals(0, cursor.getJSONObject("params").getLong("seq"))
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
     }
 
     @Test
@@ -1338,6 +1387,8 @@ class HelmClientTest {
             .toByteArray(Charsets.UTF_8)
 
     private fun lastCallId(): String = JSONObject(String(sent.last(), Charsets.UTF_8)).getString("id")
+
+    private fun firstCallId(): String = JSONObject(String(sent.first(), Charsets.UTF_8)).getString("id")
 
     /**
      * The last notice said THIS action ended THIS way. The notice carries a

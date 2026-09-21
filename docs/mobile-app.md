@@ -87,7 +87,9 @@ removes.
   Bubbles cap at three quarters of the width, and the URLs in them are tappable
   (see **Links** below). The composer's mic is **push-to-talk**: hold it and the
   recogniser's partials land in the draft at the caret, each guess replacing the
-  last, so what is dictated can be edited and re-read before the send tap that is
+  last. A pause does not end the dictation — the platform may close the
+  utterance on its own silence threshold, but while the mic is held the
+  controller reopens it and the segments join, so what is dictated can be edited and re-read before the send tap that is
   still the user's. The action buttons stand in a vertical stack along the right
   edge at every draft size — they never reorganise under the thumb when the text
   wraps — and the field's minimum height matches that stack, so the composer

@@ -143,6 +143,19 @@ class HelmClient(
     private var sessionRefreshInFlight = false
     private var sessionRefreshQueued = false
 
+    /**
+     * Whether the chat cursor has been reported on THIS link. The report rides
+     * the link-up hook first, but the hook is not guaranteed: after a failed
+     * handshake attempt the relink that follows can come up usable without
+     * `onLinked` ever firing (observed on real hardware — `__mobile_tools__`
+     * crosses, `__chat_cursor__` never does), and the threads stay empty for
+     * the whole process. The session poll is the one request that demonstrably
+     * runs whenever the link is usable, so an unreported cursor re-sends there
+     * within one interval. A duplicate report is harmless: the desktop replays
+     * from the same seq and [ChatRepository] dedupes by seq.
+     */
+    private var chatCursorReported = false
+
     private data class PendingCall(
         val onOutcome: (Outcome) -> Unit,
         val deadline: Cancellable,
@@ -166,6 +179,7 @@ class HelmClient(
      * callers that arrive while it waits ask for one reconciliation afterward.
      */
     fun refreshSessions(): Boolean {
+        reportChatCursorIfNeeded()
         if (sessionRefreshInFlight) {
             sessionRefreshQueued = true
             return true
@@ -1195,6 +1209,9 @@ class HelmClient(
         }
         sessionRefreshInFlight = false
         sessionRefreshQueued = false
+        // The cursor belongs to the link: the next usable link must hear it
+        // again, whether it arrives via the link-up hook or the session poll.
+        chatCursorReported = false
         // The permitted surface is forgotten with the link so a reconnect re-asks.
         // An allow-list edited on the desktop while the phone was away must not
         // keep a revoked action looking available.
@@ -1216,8 +1233,24 @@ class HelmClient(
      * and the session list are independent, and the cursor is the one request
      * whose answer cannot be re-derived later by a poll.
      */
-    fun onLinkUp(): Boolean =
-        call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq())) { }
+    fun onLinkUp(): Boolean = reportChatCursorIfNeeded()
+
+    /**
+     * Report the cursor if this link has not heard it yet. The flag moves only
+     * when the link actually carried the call — and it moves BACK if the call
+     * then failed: a report whose answer died with the link was never heard by
+     * the desktop, so the next poll must say it again (observed as the empty
+     * threads after one reconnect: cursor sent, link dropped before the replay,
+     * flag left standing).
+     */
+    private fun reportChatCursorIfNeeded(): Boolean {
+        if (chatCursorReported) return true
+        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq())) { outcome ->
+            if (outcome is Outcome.Failed) chatCursorReported = false
+        }
+        chatCursorReported = issued
+        return issued
+    }
 
     /**
      * Issue one control action and record how it ended, so every outcome is

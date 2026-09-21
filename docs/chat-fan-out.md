@@ -12,7 +12,7 @@ the concept is lifted out into a bridge interface and a broker.
 | `src/session/chat/chat-bindings.ts` | Per-provider session bindings + `topicId` migration |
 | `src/telegram/relay-service.ts` | `provider: 'telegram'` — the first implementation |
 | `src/mobile/mobile-chat-bridge.ts` | `provider: 'mobile'` — the phone, and the inbound call path |
-| `src/mobile/mobile-chat-journal.ts` | The 24h rolling record every phone catches up from |
+| `src/mobile/mobile-chat-journal.ts` | The session-lifetime rolling record every phone catches up from |
 | `src/mobile/mobile-envelope.ts` | The records that cross the BLE wire |
 
 ```mermaid
@@ -141,23 +141,29 @@ told?*, which is a heavier job than the duplicate buzz it was ratified for.
 So every **message** the mobile bridge fans out is appended to ONE global
 journal (`mobile-chat-journal.json`, under the user config dir) before anyone is
 told, and the wire record gains its `seq`. The journal keeps **delivered**
-entries too, for 24h, because a fresh APK install is *designed* to refetch its
-history; pruning is purely age-based, with a hard 5,000-entry ceiling as the
-only runaway guard.
+entries too, because a fresh APK install is *designed* to refetch its history.
+Retention is the session's lifetime, not an age: entries survive until their
+session is permanently gone — purged from the recycle bin (expiry, Forget,
+Empty) or closed without ever being recoverable — with a hard 100,000-entry
+ceiling as the only runaway guard.
 
 Each phone keeps just its own cursor — the seq of the last message it holds,
 in memory beside the threads it counts. On every link up the phone reports it
 via a second reserved in-gate meta-method, `__chat_cursor__` (the
 `__mobile_tools__` precedent: answered in the gate, never dispatched, so a
 disabled device cannot pull the journal), and Helm streams everything after
-that seq over the same link, oldest first. One global sequence means the hub
+that seq over the same link, oldest first. The phone reports the cursor on its
+link-up hook AND from its 2-second session poll whenever the current link has
+not heard it — a relink that comes up without the hook firing (observed after a
+failed handshake retry) still catches up within one poll instead of leaving the
+threads empty for the process lifetime. One global sequence means the hub
 tracks nothing per phone — a fourth paired phone needs no new hub state.
 
 The cursor is deliberately NOT persisted. An app restart wipes the threads, so
 a persisted cursor would describe history the restarted process no longer holds
 and the link-up report would talk Helm out of the very replay a cold start
 needs — the thread would come back empty. Instead a fresh process reports zero,
-Helm replays the whole 24h journal, and the refilled threads are why delivered
+Helm replays the whole journal, and the refilled threads are why delivered
 messages survive the restart. A mid-process reconnect (out of Bluetooth range
 and back) reports the real position, so only the gap is re-sent.
 

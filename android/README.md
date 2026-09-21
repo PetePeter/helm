@@ -154,6 +154,14 @@ Four rules this layer exists to hold:
   "test test test test". `DictationInsert` anchors the press at the caret and
   re-renders every guess against that anchor, so the text typed around it never
   moves.
+- **A pause is not a decision to stop talking.** The platform closes the
+  utterance on its own end-of-speech silence — even mid-hold, even with the
+  silence window lengthened — and a silence timeout can fire while the user
+  thinks. While the mic is held, `SpeechController` reopens the recognizer and
+  the finalised segment is *committed*: the next utterance's partials join onto
+  it rather than replacing it. One recognizer instance is reused across
+  utterances, so the reopen is not a service re-bind hiccup. Only the thumb
+  coming up ends the dictation.
 - **Nothing is sent without an explicit tap.** The words land in the draft, which
   is an editable field, because recognisers get names and jargon wrong and
   retyping a whole dictation to fix one word is worse than typing it.

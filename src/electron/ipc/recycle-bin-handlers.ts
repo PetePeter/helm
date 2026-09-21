@@ -14,6 +14,7 @@ import type { WindowManager } from '../window-manager.js';
 import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
 import type { MemoryManager } from '../../session/memory-manager.js';
 import type { MessManager, MessSessionCloseKind } from '../../session/mess-manager.js';
+import type { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
 import { logger } from '../../utils/logger.js';
 
 export function setupRecycleBinHandlers(
@@ -23,13 +24,14 @@ export function setupRecycleBinHandlers(
   tempRegistry: ArtifactTempRegistry = new ArtifactTempRegistry(),
   memoryManager?: Pick<MemoryManager, 'purgeSession'>,
   messManager?: Pick<MessManager, 'onSessionClosed'>,
+  chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
 ): void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   /**
    * A session leaving the bin is never coming back, so its per-session stores go
    * with it. Memory gates the transaction — a failed purge leaves the entry
-   * recoverable for retry — while the Mess cursor is maintenance that must never
-   * block the bin operation.
+   * recoverable for retry — while the Mess cursor and the chat journal are
+   * maintenance that must never block the bin operation.
    */
   const purgeSessionData = (sessionId: string, kind: MessSessionCloseKind): boolean => {
     try {
@@ -42,6 +44,13 @@ export function setupRecycleBinHandlers(
       messManager?.onSessionClosed(sessionId, kind);
     } catch (error) {
       logger.error(`[recycleBin] Failed to drop the Mess cursor for ${sessionId}: ${error}`);
+    }
+    try {
+      // The phone's replay of this conversation dies with the session — the
+      // journal's retention IS the session's lifetime (see MobileChatJournal).
+      chatJournal?.pruneSession(sessionId);
+    } catch (error) {
+      logger.error(`[recycleBin] Failed to prune the chat journal for ${sessionId}: ${error}`);
     }
     return true;
   };

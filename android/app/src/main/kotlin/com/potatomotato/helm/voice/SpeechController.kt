@@ -22,7 +22,21 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
     val state: StateFlow<VoiceState> = _state.asStateFlow()
 
     /**
-     * Begin (or restart) an utterance. Starting wipes whatever was captured
+     * The mic button's finger. A pause ends the platform's UTTERANCE, not the
+     * dictation: while the finger is down, a final or a silence error restarts
+     * listening and the words keep accumulating. Only releasing the button
+     * (stop) decides the dictation is over.
+     */
+    private var held = false
+
+    /** Segments the recogniser has finalised during this hold, joined. */
+    private var committed = ""
+
+    /** The current utterance's latest partial — the recogniser's whole guess for it. */
+    private var pending = ""
+
+    /**
+     * Begin (or restart) a dictation. Starting wipes whatever was captured
      * before: tapping the mic again means "say it differently", not "add to it".
      */
     fun start() {
@@ -30,24 +44,34 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
         // cancels the recognition in flight on the real recogniser.
         if (_state.value.phase == VoicePhase.Listening) return
 
+        held = true
+        committed = ""
+        pending = ""
         _state.value = VoiceState(phase = VoicePhase.Listening)
         engine.start(this)
     }
 
-    /** Ask for the final result. It arrives as [onFinal], not from this call. */
+    /** The finger came up. Ask for the final result; it arrives as [onFinal]. */
     fun stop() {
         if (_state.value.phase != VoicePhase.Listening) return
+        held = false
         engine.stop()
     }
 
     /** Throw the utterance away. Nothing was sent, and nothing is kept. */
     fun cancel() {
+        held = false
+        committed = ""
+        pending = ""
         engine.cancel()
         _state.value = VoiceState()
     }
 
     /** Leaving the screen. The microphone must not stay held open behind it. */
     fun release() {
+        held = false
+        committed = ""
+        pending = ""
         engine.release()
         _state.value = VoiceState()
     }
@@ -63,9 +87,11 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
 
     override fun onPartial(text: String) {
         if (_state.value.phase != VoicePhase.Listening) return
-        // REPLACE. A partial is the recogniser's whole current guess, never a
-        // delta — appending is what produces "test test test test test".
-        _state.value = _state.value.copy(transcript = text)
+        // REPLACE, within the current utterance. A partial is the recogniser's
+        // whole current guess, never a delta — appending is what produces
+        // "test test test test test". Finalised segments stay committed.
+        pending = text
+        _state.value = _state.value.copy(transcript = join(committed, text))
     }
 
     override fun onFinal(text: String) {
@@ -73,16 +99,40 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
 
         // An empty final is common and does NOT mean "the user said nothing" —
         // it means this final carries no improvement on the last partial.
-        val transcript = text.ifBlank { _state.value.transcript }.trim()
+        val segment = text.ifBlank { pending }.trim()
+        pending = ""
+        if (segment.isNotEmpty()) committed = join(committed, segment)
 
-        _state.value = if (transcript.isEmpty()) {
+        if (held) {
+            // The platform closed the utterance — usually its end-of-speech
+            // silence, i.e. the user paused. The finger is still down, so the
+            // dictation is not over: reopen the mic and carry on from what was
+            // committed. Restarting in place is what makes the pause seamless.
+            engine.start(this)
+            _state.value = _state.value.copy(transcript = committed)
+            return
+        }
+
+        _state.value = if (committed.isEmpty()) {
             VoiceState(phase = VoicePhase.Failed, error = SpeechError.NoMatch)
         } else {
-            VoiceState(phase = VoicePhase.Captured, transcript = transcript)
+            VoiceState(phase = VoicePhase.Captured, transcript = committed)
         }
     }
 
     override fun onError(error: SpeechError) {
+        // The pause-adjacent stumbles: silence timeouts and a busy recogniser.
+        // With the finger still down they restart the utterance rather than
+        // ending it — the user was holding the mic because they meant to talk.
+        if (
+            _state.value.phase == VoicePhase.Listening &&
+            held &&
+            (error == SpeechError.NoMatch || error == SpeechError.Busy)
+        ) {
+            engine.start(this)
+            return
+        }
+
         // Whatever was already heard survives the stumble: a long dictation is
         // expensive to redo, and Failed with text still on screen is recoverable
         // where a wipe is not.
@@ -91,6 +141,12 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
             error = error,
             level = 0f,
         )
+    }
+
+    private fun join(left: String, right: String): String = when {
+        left.isEmpty() -> right
+        right.isEmpty() -> left
+        else -> "$left $right"
     }
 }
 

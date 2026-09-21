@@ -29,11 +29,19 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             return
         }
 
-        // One recogniser per utterance keeps the platform's own state out of the
-        // picture: a fresh instance cannot be left half-cancelled by the last run.
-        release()
+        // ONE recogniser instance for the engine's lifetime, reused across
+        // utterances. Creating and destroying per utterance forces a fresh
+        // recognition-service bind every restart — the 300ms..1s gap that read
+        // as a hiccup between held segments. The controller is a 1:1 companion
+        // of this engine, so the listener registered at creation is always the
+        // one each start() would hand in.
+        val existing = recognizer
+        if (existing != null) {
+            existing.startListening(recognitionIntent())
+            return
+        }
         val created = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(Bridge(listener))
+            setRecognitionListener(Bridge(listener, ::invalidate))
         }
         recognizer = created
         created.startListening(recognitionIntent())
@@ -52,6 +60,16 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
         recognizer = null
     }
 
+    /**
+     * An error can leave the platform recogniser unwilling to listen again;
+     * drop it so the next start() builds a fresh one. Called by the bridge
+     * AFTER the error is delivered, so the controller always hears it first.
+     */
+    private fun invalidate() {
+        recognizer?.destroy()
+        recognizer = null
+    }
+
     private fun recognitionIntent(): Intent =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -63,10 +81,21 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             // surfaces as SpeechError.Network rather than silently going online.
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+            // Best-effort, honoured by Google's recognizer only: a longer
+            // end-of-speech silence window, so a mid-hold thinking pause does
+            // not close the utterance. When the platform closes it anyway, the
+            // controller reopens the mic (see SpeechController.onFinal).
+            putExtra(
+                RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,
+                COMPLETE_SILENCE_MILLIS,
+            )
         }
 
     /** Android's listener, adapted. Nothing but translation happens here. */
-    private class Bridge(private val out: SpeechEngine.Listener) : RecognitionListener {
+    private class Bridge(
+        private val out: SpeechEngine.Listener,
+        private val onFailed: () -> Unit,
+    ) : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = out.onReady()
 
         override fun onRmsChanged(rmsdB: Float) = out.onLevel(normaliseRms(rmsdB))
@@ -84,6 +113,7 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             // only visible in this number. A code is a type, never a payload.
             HelmLog.w(HelmLog.UI, "speech recognition failed with code $error")
             out.onError(speechErrorOf(error))
+            onFailed()
         }
 
         override fun onBeginningOfSpeech() = Unit
@@ -107,6 +137,9 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
 
         const val RMS_FLOOR_DB = -2f
         const val RMS_CEILING_DB = 10f
+
+        /** End-of-speech silence window. Long enough to think mid-sentence. */
+        const val COMPLETE_SILENCE_MILLIS = 2500L
     }
 }
 

@@ -443,7 +443,12 @@ export function registerIPCHandlers(
   // Keep lightweight handler fixtures (and embedders that do not enable
   // project services) compatible with the optional Mess surface.
   const messManager = helmControlService.getMessManager?.() ?? null;
-  setupRecycleBinHandlers(recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined);
+  // Created here (not in the mobile block far below) so the recycle bin's
+  // purge paths can prune it — the journal's retention is the session's
+  // lifetime, and a purged session's replay dies with it.
+  const mobileChatJournal = new MobileChatJournal({ persist: saveMobileChatJournal });
+  mobileChatJournal.hydrate(loadMobileChatJournal());
+  setupRecycleBinHandlers(recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal);
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
   recycleBinManager.pruneExpired();
@@ -715,6 +720,13 @@ export function registerIPCHandlers(
         logger.error(`[IPC] Failed to purge memories for removed session ${event.sessionId}: ${error}`);
       }
       artifactManager.clearSession(event.sessionId);
+      // No bin entry means no way back, so the phone's replay of this
+      // conversation goes now too — same rule the bin's purge paths enforce.
+      try {
+        mobileChatJournal.pruneSession(event.sessionId);
+      } catch (error) {
+        logger.error(`[IPC] Failed to prune the chat journal for removed session ${event.sessionId}: ${error}`);
+      }
     }
 
     if (!telegramBot.isRunning()) return;
@@ -935,9 +947,8 @@ export function registerIPCHandlers(
 
   // The rolling record of chat messages fanned out to phones, so a phone that
   // was offline — or an app whose process lost its in-memory threads — refetches
-  // what it missed when its link next comes up. Hydrated here, pruned on load.
-  const mobileChatJournal = new MobileChatJournal({ persist: saveMobileChatJournal });
-  mobileChatJournal.hydrate(loadMobileChatJournal());
+  // what it missed when its link next comes up. Created near the recycle bin
+  // wiring above (its purge paths own the journal's session-lifetime pruning).
 
   // The phone as a chat surface, and the ONE path an inbound phone call takes to
   // a tool. The gate is resolved through getMobileGate() rather than captured, so
