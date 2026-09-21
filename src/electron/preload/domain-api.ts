@@ -434,7 +434,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   },
 
   /** Subscribe to session metadata updates such as renames. */
-  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; lastOutputAt?: number }) => void) => {
+  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; questionPending?: boolean; lastOutputAt?: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);

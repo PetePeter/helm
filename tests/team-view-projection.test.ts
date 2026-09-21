@@ -78,6 +78,7 @@ describe('buildTeamViewProjection', () => {
       ],
       projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
       stateForSession: () => 'waiting',
+      waitingReasonForSession: candidate => candidate.id === 'agent' ? 'agent' : undefined,
       terminalTailForSession: id => id === 'human'
         ? ['one', 'two', 'three', 'four']
         : [],
@@ -89,5 +90,14 @@ describe('buildTeamViewProjection', () => {
       { sessionId: 'agent', state: 'waiting', waitingReason: 'agent', terminalTail: [] },
       { sessionId: 'unknown', state: 'waiting', waitingReason: 'unknown', terminalTail: [] },
     ]);
+  });
+
+  it('does not infer an agent wait from a completed or idle agent phase', () => {
+    const result = buildTeamViewProjection({
+      sessions: [session('completed', { aiagentState: 'completed' }), session('idle', { aiagentState: 'idle' })],
+      projects: [],
+      stateForSession: () => 'waiting',
+    });
+    expect(result.departments[0].desks.map(desk => desk.waitingReason)).toEqual(['unknown', 'unknown']);
   });
 });

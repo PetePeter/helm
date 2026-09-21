@@ -183,6 +183,7 @@ export async function refreshSessions(): Promise<void> {
       windowId: managed.windowId,
       state: managed.state,
       aiagentState: managed.aiagentState,
+      questionPending: managed.questionPending,
       currentPlanId: managed.currentPlanId,
       lastOutputAt: managed.lastOutputAt,
       createdAt: managed.createdAt,

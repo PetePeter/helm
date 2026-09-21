@@ -142,7 +142,8 @@ export const PANE_MESS = 'mess';
  */
 export const DOCK_PANES: readonly DockPaneDescriptor[] = Object.freeze([
   Object.freeze({ id: PANE_TERMINAL, kind: 'view', title: 'Terminal', icon: '▶', hint: 'Ctrl+Shift+T', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_OVERVIEW, kind: 'view', title: 'Overview', icon: '▦', hint: 'Ctrl+Shift+O', closable: true, home: 'center' }),
+  // Keep the stable `overview` id so existing dock layouts reopen in place.
+  Object.freeze({ id: PANE_OVERVIEW, kind: 'view', title: 'Team View', icon: '♟', hint: 'Ctrl+Shift+O', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_PLAN_SCREEN, kind: 'view', title: 'Plans', icon: '🗺', hint: 'Ctrl+Shift+P', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_MEMORIES, kind: 'view', title: 'Memories', icon: '🧠', hint: 'Ctrl+Shift+M', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_MESS, kind: 'view', title: 'Mess', icon: '🍽', closable: true, home: 'center' }),

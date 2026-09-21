@@ -27,7 +27,7 @@ import SortBar from '../../../renderer/components/sidebar/SortBar.vue';
 import SpawnGrid from '../../../renderer/components/sidebar/SpawnGrid.vue';
 import PlansGrid from '../../../renderer/components/sidebar/PlansGrid.vue';
 import SchedulerSection from '../../../renderer/components/sidebar/SchedulerSection.vue';
-import OverviewGrid from '../../../renderer/components/panels/OverviewGrid.vue';
+import TeamView from '../../../renderer/components/panels/TeamView.vue';
 import PlanScreen from '../../../renderer/components/panels/PlanScreen.vue';
 import ArtifactViewer from '../../../renderer/components/panels/ArtifactViewer.vue';
 
@@ -158,9 +158,9 @@ describe('pane wrappers render their view', () => {
     expect(wrapper.find('.recycle-bin-btn').exists()).toBe(true);
   });
 
-  it('OverviewPane renders the overview grid', () => {
+  it('OverviewPane keeps its persisted dock position but renders Team View', () => {
     const wrapper = mountPane(OverviewPane, fake.context);
-    expect(wrapper.findComponent(OverviewGrid).exists()).toBe(true);
+    expect(wrapper.findComponent(TeamView).exists()).toBe(true);
   });
 
   it('PlanScreenPane renders the plan canvas', () => {
@@ -308,15 +308,13 @@ describe('pane wrappers preserve the shell event seams', () => {
     expect(sidebar().openSchedulerHistory).toHaveBeenCalled();
   });
 
-  it('OverviewPane forwards select and collapse', () => {
+  it('OverviewPane forwards Team View selection', () => {
     const wrapper = mountPane(OverviewPane, fake.context);
-    const grid = wrapper.findComponent(OverviewGrid);
+    const grid = wrapper.findComponent(TeamView);
 
     grid.vm.$emit('select', 's-3');
-    grid.vm.$emit('toggle-collapse', 's-3');
 
     expect(sidebar().onOverviewSelect).toHaveBeenCalledWith('s-3');
-    expect(sidebar().onOverviewToggleCollapse).toHaveBeenCalledWith('s-3');
   });
 
   it('PlanScreenPane forwards workspace actions to the plan controller', () => {

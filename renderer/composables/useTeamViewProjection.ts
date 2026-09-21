@@ -1,4 +1,4 @@
-import { computed, type ComputedRef } from 'vue';
+import { computed, onScopeDispose, ref, type ComputedRef } from 'vue';
 import { state } from '../state.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import {
@@ -15,8 +15,16 @@ import {
 export function useTeamViewProjection(
   options: Omit<TeamViewProjectionInput, 'sessions' | 'projects' | 'stateForSession' | 'terminalTailForSession'> = {},
 ): ComputedRef<TeamViewProjection> {
+  const outputVersion = ref(0);
+  const outputBuffer = getTerminalManager()?.getOutputBuffer();
+  const invalidate = () => { outputVersion.value++; };
+  outputBuffer?.onUpdate?.(invalidate);
+  onScopeDispose(() => outputBuffer?.offUpdate?.(invalidate));
+
   return computed(() => {
-    const outputBuffer = getTerminalManager()?.getOutputBuffer();
+    // Reading the version makes output-buffer updates a Vue dependency without
+    // copying PTY data into another store.
+    outputVersion.value;
     return buildTeamViewProjection({
       ...options,
       sessions: state.sessions,

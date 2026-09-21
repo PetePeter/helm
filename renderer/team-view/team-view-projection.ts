@@ -98,8 +98,8 @@ function resolveWaitingReason(
   if (session.questionPending) return 'human';
   const supplied = waitingReasonForSession?.(session);
   if (WAITING_REASONS.has(supplied as TeamViewWaitingReason)) return supplied;
-  // An explicit external-agent phase is useful evidence, unlike inactivity.
-  if (session.aiagentState) return 'agent';
+  // A phase describes what the agent was doing, not why it is now waiting.
+  // Do not turn completed/idle (or any phase) into a false agent-wait cue.
   return 'unknown';
 }
 
