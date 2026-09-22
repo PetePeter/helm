@@ -9,6 +9,14 @@ import type { ProjectSummary, Session } from '../state.js';
 export type TeamViewSessionState = 'implementing' | 'waiting' | 'planning' | 'completed' | 'idle';
 export type TeamViewWaitingReason = 'human' | 'agent' | 'unknown';
 
+/** A desk-facing LLM notification; carried verbatim, owned by the llmNotifications store. */
+export interface TeamViewNotification {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+}
+
 export interface TeamViewDesk {
   sessionId: string;
   name: string;
@@ -27,6 +35,8 @@ export interface TeamViewDesk {
   /** Projected from the same live session sources as Session List. */
   locked: boolean;
   artifactCount: number;
+  /** Live notifications for this session; the projection owns no copy of them. */
+  notifications: TeamViewNotification[];
 }
 
 export interface TeamViewDepartment {
@@ -35,6 +45,8 @@ export interface TeamViewDepartment {
   collapsed: boolean;
   desks: TeamViewDesk[];
   visibleDeskCount: number;
+  /** How many member desks are hidden from Team View (kept in `desks`). */
+  hiddenDeskCount: number;
 }
 
 export interface TeamViewProjection {
@@ -58,6 +70,8 @@ export interface TeamViewProjectionInput {
   collapsedDepartmentIds?: ReadonlySet<string>;
   hiddenSessionIds?: ReadonlySet<string>;
   artifactCountForSession?: (sessionId: string) => number | undefined;
+  /** Live notification feed (the llmNotifications store); default none. */
+  notificationsForSession?: (sessionId: string) => readonly TeamViewNotification[];
   /** The shared Session List slot map; undefined means no assigned Ctrl+number shortcut. */
   focusSlotForSession?: (sessionId: string) => number | undefined;
 }
@@ -93,6 +107,18 @@ function resolveDepartment(session: Session, projects: readonly ProjectSummary[]
   return { id: `path:${fallbackPath}`, name: pathTail(fallbackPath) };
 }
 
+/**
+ * Inverse department lookup (department id → member sessions). The unhide flow
+ * needs this to clear overview-hiding for a whole department without
+ * rebuilding the desk projection.
+ */
+export function findSessionsInDepartment(
+  departmentId: string,
+  input: Pick<TeamViewProjectionInput, 'sessions' | 'projects'>,
+): Session[] {
+  return input.sessions.filter(session => resolveDepartment(session, input.projects).id === departmentId);
+}
+
 function resolveState(session: Session, stateForSession?: TeamViewProjectionInput['stateForSession']): TeamViewSessionState {
   const state = stateForSession?.(session) ?? session.aiagentState ?? session.state ?? 'idle';
   return SESSION_STATES.has(state as TeamViewSessionState) ? state as TeamViewSessionState : 'idle';
@@ -123,6 +149,24 @@ function compareSessions(left: Session, right: Session): number {
   return leftCreated - rightCreated || left.id.localeCompare(right.id);
 }
 
+/**
+ * Desk display order within a department: desks carrying a shared Session List
+ * slot lead, ascending by slot, so the Ctrl+number order reads top-to-bottom;
+ * slot-less desks follow in the historical createdAt/id order.
+ */
+function compareSessionsBySlot(
+  slots?: (sessionId: string) => number | undefined,
+): (left: Session, right: Session) => number {
+  return (left, right) => {
+    const leftSlot = slots?.(left.id);
+    const rightSlot = slots?.(right.id);
+    if (leftSlot === undefined && rightSlot === undefined) return compareSessions(left, right);
+    if (leftSlot === undefined) return 1;
+    if (rightSlot === undefined) return -1;
+    return leftSlot - rightSlot || compareSessions(left, right);
+  };
+}
+
 function isHidden(session: Session, hiddenSessionIds: ReadonlySet<string>): boolean {
   return hiddenSessionIds.has(session.id)
     || (session.cliSessionName !== undefined && hiddenSessionIds.has(session.cliSessionName));
@@ -144,7 +188,7 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
 
   const departments = Array.from(buckets.values())
     .map(({ seed, sessions }) => {
-      const desks = [...sessions].sort(compareSessions).map((session) => {
+      const desks = [...sessions].sort(compareSessionsBySlot(input.focusSlotForSession)).map((session) => {
         const state = resolveState(session, input.stateForSession);
         const terminalTail = input.terminalTailForSession?.(session.id) ?? [];
         const waitingReason = resolveWaitingReason(session, state, input.waitingReasonForSession);
@@ -163,6 +207,7 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
           focusLabel: '^1',
           locked: session.locked === true,
           artifactCount: input.artifactCountForSession?.(session.id) ?? 0,
+          notifications: [...(input.notificationsForSession?.(session.id) ?? [])],
         };
         return desk;
       });
@@ -172,6 +217,7 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
         collapsed: collapsed.has(seed.id),
         desks,
         visibleDeskCount: desks.filter(desk => !desk.hidden).length,
+        hiddenDeskCount: desks.filter(desk => desk.hidden).length,
       };
     })
     .sort(compareDepartments);

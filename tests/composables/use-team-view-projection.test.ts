@@ -4,6 +4,7 @@ import { effectScope, watch } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { useTeamViewProjection } from '../../renderer/composables/useTeamViewProjection.js';
 import { useAppStore } from '../../renderer/stores/app.js';
+import { useLlmNotificationsStore } from '../../renderer/stores/llmNotifications.js';
 import { PtyOutputBuffer } from '../../renderer/terminal/pty-output-buffer.js';
 import { setTerminalManager } from '../../renderer/runtime/terminal-provider.js';
 import type { Session } from '../../renderer/state.js';
@@ -91,6 +92,23 @@ describe('useTeamViewProjection live plumbing', () => {
 
     appStore.state.sessionActivityLevels.set('s1', 'idle');
     expect(projection.value.departments[0].desks[0].activityLevel).toBe('idle');
+    scope.stop();
+  });
+
+  it('projects live llm notifications onto desks and drops them once dismissed', () => {
+    seedStore(['s1']);
+    const llmNotifications = useLlmNotificationsStore();
+    llmNotifications.add({ sessionId: 's1', title: 'Ping', content: 'Check my work' });
+
+    const scope = effectScope();
+    const projection = scope.run(() => useTeamViewProjection())!;
+    const desk = () => projection.value.departments[0].desks[0];
+
+    expect(desk().notifications).toHaveLength(1);
+    expect(desk().notifications[0]).toMatchObject({ title: 'Ping', content: 'Check my work' });
+
+    llmNotifications.dismiss(llmNotifications.notifications[0].id);
+    expect(desk().notifications).toHaveLength(0);
     scope.stop();
   });
 });

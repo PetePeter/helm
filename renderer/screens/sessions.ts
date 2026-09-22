@@ -25,6 +25,7 @@ import {
 import { useNavigationStore } from '../stores/navigation.js';
 import { isPlanScreenVisible, hidePlanScreen } from '../plans/plan-screen.js';
 import { loadStoredSessions } from '../session-store.js';
+import { findSessionsInDepartment } from '../team-view/team-view-projection.js';
 
 // Sub-module imports — circular at module level, safe because all usages are in function bodies.
 import {
@@ -204,7 +205,7 @@ async function saveGroupPrefs(): Promise<void> {
         await configClient.configSetSessionGroupPrefs({
       order: [...sessionsState.groupPrefs.order],
       collapsed: [...sessionsState.groupPrefs.collapsed],
-      overviewHidden: [...sessionsState.groupPrefs.overviewHidden],
+      overviewHidden: [...(sessionsState.groupPrefs.overviewHidden ?? [])],
       teamViewCollapsed: [...(sessionsState.groupPrefs.teamViewCollapsed ?? [])],
     });
   } catch (e) {
@@ -259,6 +260,30 @@ export async function toggleSessionOverviewVisibility(sessionId: string): Promis
       refreshOverview();
     }
   }
+  updateSessionsFocus();
+}
+
+/**
+ * Clear the overview-hiding of every session in one Team View department.
+ * The inverse of toggleSessionOverviewVisibility for the department-wide
+ * "Unhide all" row: all member aliases (stable key and id) leave the same
+ * persisted overviewHidden list.
+ */
+export async function unhideDepartmentFromOverview(departmentId: string): Promise<void> {
+  const members = findSessionsInDepartment(
+    departmentId,
+    { sessions: state.sessions, projects: state.projects },
+  );
+  const memberAliases = new Set(members.flatMap(session => getSessionOverviewAliases(session)));
+  const hidden = sessionsState.groupPrefs.overviewHidden ?? [];
+  const next = hidden.filter(key => !memberAliases.has(key));
+  if (next.length === hidden.length) return;
+
+  sessionsState.groupPrefs = {
+    ...sessionsState.groupPrefs,
+    overviewHidden: next,
+  };
+  await saveGroupPrefs();
   updateSessionsFocus();
 }
 

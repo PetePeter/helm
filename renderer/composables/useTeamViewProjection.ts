@@ -1,6 +1,7 @@
 import { computed, onScopeDispose, ref, type ComputedRef } from 'vue';
 import { state } from '../state.js';
 import { useSessionsScreenStore } from '../stores/sessions-screen.js';
+import { useLlmNotificationsStore } from '../stores/llmNotifications.js';
 import { getTerminalManager, onTerminalManagerChanged } from '../runtime/terminal-provider.js';
 import type { PtyOutputBuffer } from '../terminal/pty-output-buffer.js';
 import {
@@ -22,6 +23,8 @@ export function useTeamViewProjection(
 ): ComputedRef<TeamViewProjection> {
   const outputVersion = ref(0);
   const sessionsScreen = useSessionsScreenStore();
+  // Same store Session List reads — dismissal there clears the desk cue here.
+  const llmNotifications = useLlmNotificationsStore();
 
   // The manager is constructed by useAppBootstrap AFTER dock panes mount, so
   // the buffer is resolved reactively rather than captured once at setup —
@@ -63,6 +66,7 @@ export function useTeamViewProjection(
     // A setup store unwraps its computed refs on the store instance — read the
     // Map/Set directly; a `.value` here is silently undefined at runtime.
     const shortcutMap = sessionsScreen.sessionShortcutMap ?? null;
+    const notificationsBySession = llmNotifications.bySession;
     return buildTeamViewProjection({
       ...options,
       sessions: state.sessions,
@@ -70,6 +74,7 @@ export function useTeamViewProjection(
       stateForSession: session => state.sessionStates.get(session.id) ?? session.aiagentState ?? session.state,
       activityLevelForSession: sessionId => state.sessionActivityLevels.get(sessionId),
       artifactCountForSession: sessionId => state.artifactCounts.get(sessionId),
+      notificationsForSession: sessionId => notificationsBySession.get(sessionId) ?? [],
       hiddenSessionIds: sessionsScreen.hiddenSessionIds ?? new Set<string>(),
       collapsedDepartmentIds: new Set(sessionsScreen.sessionsState.groupPrefs.teamViewCollapsed ?? []),
       ...(shortcutMap ? { focusSlotForSession: (sessionId: string) => shortcutMap.get(sessionId) } : {}),

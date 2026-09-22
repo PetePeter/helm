@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-const props = defineProps<{ state: 'implementing' | 'waiting' | 'planning' | 'completed' | 'idle' }>();
+const props = defineProps<{
+  state: 'implementing' | 'waiting' | 'planning' | 'completed' | 'idle';
+  /** Unread notifications force the waving pose — the figure flags for attention. */
+  alert?: boolean;
+}>();
 
-const pose = computed(() => ({
-  implementing: 'busy', planning: 'busy', waiting: 'input', completed: 'done', idle: 'idle',
-}[props.state]));
+const pose = computed(() => {
+  if (props.alert) return 'input';
+  return {
+    implementing: 'busy', planning: 'busy', waiting: 'input', completed: 'done', idle: 'idle',
+  }[props.state];
+});
 </script>
 
 <template>
@@ -30,5 +37,8 @@ const pose = computed(() => ({
 </template>
 
 <style scoped>
-.team-member{position:absolute;right:-6px;bottom:2px;width:78px;height:86px;z-index:3}.team-member svg{width:100%;height:100%;overflow:visible}.chairback{fill:none;stroke:#36485a;stroke-width:5;stroke-linecap:round}.skin{fill:#f0c39c}.hair{fill:#3d4f66}.torso{fill:#64748b}.team-member--busy .torso{fill:#438de8}.team-member--input .torso{fill:#e2a43c}.team-member--done .torso{fill:#56a87b}.team-member--idle .torso{fill:#718096}.team-member--busy .armL{animation:tap .38s ease-in-out infinite}.team-member--busy .armR{animation:tap .38s ease-in-out infinite .19s}.team-member--input .armUp{transform-origin:22px 40px;animation:wave .9s ease-in-out infinite}.zz{font:bold 9px sans-serif;fill:#7d8ea3;animation:fade 3.2s ease-out infinite}@keyframes tap{50%{transform:translateY(2px)}}@keyframes wave{50%{transform:rotate(10deg)}}@keyframes fade{to{opacity:0;transform:translate(4px,-8px)}}
+/* Static inside the desk's avatar rail: the figure is contained by its tile
+   and can never overhang neighbouring desks. Width scales to the rail; the
+   viewBox ratio keeps the figure proportional. */
+.team-member{position:static;display:block;width:100%;max-height:100%;max-width:100%}.team-member svg{display:block;width:100%;height:auto;overflow:visible}.chairback{fill:none;stroke:#36485a;stroke-width:5;stroke-linecap:round}.skin{fill:#f0c39c}.hair{fill:#3d4f66}.torso{fill:#64748b}.team-member--busy .torso{fill:#438de8}.team-member--input .torso{fill:#e2a43c}.team-member--done .torso{fill:#56a87b}.team-member--idle .torso{fill:#718096}.team-member--busy .armL{animation:tap .38s ease-in-out infinite}.team-member--busy .armR{animation:tap .38s ease-in-out infinite .19s}.team-member--input .armUp{transform-origin:22px 40px;animation:wave .9s ease-in-out infinite}.zz{font:bold 9px sans-serif;fill:#7d8ea3;animation:fade 3.2s ease-out infinite}@keyframes tap{50%{transform:translateY(2px)}}@keyframes wave{50%{transform:rotate(10deg)}}@keyframes fade{to{opacity:0;transform:translate(4px,-8px)}}
 </style>

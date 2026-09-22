@@ -61,7 +61,7 @@ describe('buildTeamViewProjection', () => {
     });
 
     expect(result.departments[0].desks.map(desk => [desk.sessionId, desk.focusIndex, desk.focusLabel]))
-      .toEqual([['one', 2, '^3'], ['three', -1, ''], ['two', 9, '^0']]);
+      .toEqual([['two', 9, '^0'], ['one', 2, '^3'], ['three', -1, '']]);
   });
 
   it('keeps presentation visibility separate from open-session membership', () => {
@@ -126,6 +126,83 @@ describe('buildTeamViewProjection', () => {
       projects: [],
     });
     expect(withoutSource.departments[0].desks[0].activityLevel).toBe('idle');
+  });
+
+  it('orders desks by focus slot ascending, then slot-less desks by createdAt', () => {
+    const result = buildTeamViewProjection({
+      sessions: [
+        session('slot3', { projectId: 'alpha', createdAt: 100 }),
+        session('loose-new', { projectId: 'alpha', createdAt: 500 }),
+        session('slot1', { projectId: 'alpha', createdAt: 200 }),
+        session('loose-old', { projectId: 'alpha', createdAt: 400 }),
+        session('slot2', { projectId: 'alpha', createdAt: 300 }),
+      ],
+      projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
+      focusSlotForSession: id => ({ slot1: 1, slot2: 2, slot3: 3 })[id],
+    });
+
+    // Slot-bearing desks lead in slot order regardless of createdAt; desks
+    // without a slot follow in createdAt order and carry no advertised key.
+    expect(result.departments[0].desks.map(desk => [desk.sessionId, desk.focusLabel]))
+      .toEqual([['slot1', '^1'], ['slot2', '^2'], ['slot3', '^3'], ['loose-old', ''], ['loose-new', '']]);
+  });
+
+  it('counts hidden desks per department while keeping them in desks', () => {
+    const result = buildTeamViewProjection({
+      sessions: [
+        session('one', { projectId: 'alpha' }),
+        session('two', { projectId: 'alpha', cliSessionName: 'stable-two' }),
+        session('three', { projectId: 'alpha' }),
+      ],
+      projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
+      // 'two' is hidden via its cliSessionName alias; 'three' via its id.
+      hiddenSessionIds: new Set(['stable-two', 'three']),
+    });
+
+    expect(result.departments[0].desks.map(desk => desk.sessionId)).toEqual(['one', 'three', 'two']);
+    expect(result.departments[0].desks.map(desk => desk.hidden)).toEqual([false, true, true]);
+    expect(result.departments[0].visibleDeskCount).toBe(1);
+    expect(result.departments[0].hiddenDeskCount).toBe(2);
+  });
+
+  it('keeps a fully hidden department in the projection', () => {
+    const result = buildTeamViewProjection({
+      sessions: [session('one', { projectId: 'alpha' }), session('two', { projectId: 'alpha' })],
+      projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
+      hiddenSessionIds: new Set(['one', 'two']),
+    });
+
+    expect(result.departments).toHaveLength(1);
+    expect(result.departments[0].desks).toHaveLength(2);
+    expect(result.departments[0].visibleDeskCount).toBe(0);
+    expect(result.departments[0].hiddenDeskCount).toBe(2);
+    expect(result.visibleDeskCount).toBe(0);
+  });
+
+  it('feeds notificationsForSession verbatim into desk.notifications, defaulting to empty', () => {
+    const notifications = [
+      { id: 'n1', title: 'Attention', content: 'Please review', createdAt: 1 },
+      { id: 'n2', title: 'Second', content: 'Also review', createdAt: 2 },
+    ];
+    const result = buildTeamViewProjection({
+      sessions: [
+        session('one', { projectId: 'alpha', createdAt: 1 }),
+        session('two', { projectId: 'alpha', createdAt: 2 }),
+      ],
+      projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
+      notificationsForSession: sessionId => (sessionId === 'one' ? notifications : []),
+    });
+
+    const desks = result.departments[0].desks;
+    // Verbatim pass-through: the badge derives its count from notifications.length.
+    expect(desks.find(desk => desk.sessionId === 'one')?.notifications).toEqual(notifications);
+    expect(desks.find(desk => desk.sessionId === 'two')?.notifications).toEqual([]);
+    // No redundant count field — the projection owns the list, not a derived number.
+    expect(desks[0]).not.toHaveProperty('notificationCount');
+    expect(desks[1]).not.toHaveProperty('notificationCount');
+
+    const absent = buildTeamViewProjection({ sessions: [session('solo')], projects: [] });
+    expect(absent.departments[0].desks[0].notifications).toEqual([]);
   });
 
   it('does not infer an agent wait from a completed or idle agent phase', () => {
