@@ -23,7 +23,6 @@ const projection = useTeamViewProjection({ tailLineLimit: 4 });
     @rename="pane.sidebar.onCommitRename"
     @toggle-lock="pane.sidebar.onToggleLock"
     @toggle-visibility="pane.sidebar.onToggleOverview"
-    @unhide-all="pane.sidebar.onUnhideDepartment"
     @request-close="pane.sidebar.onRequestClose"
     @show-artifacts="pane.showArtifactsForSession"
   />

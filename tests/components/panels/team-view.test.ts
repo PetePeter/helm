@@ -181,7 +181,7 @@ describe('TeamView', () => {
     active.unmount();
   });
 
-  it('renders one quiet hidden-desks row per department and unhides all from it', async () => {
+  it('renders hidden desks as name-only rows that stay selectable and operable from the top bar', async () => {
     const hiddenProjection: TeamViewProjection = {
       deskCount: 3,
       visibleDeskCount: 1,
@@ -195,13 +195,26 @@ describe('TeamView', () => {
       }],
     };
 
+    // Hidden desks collapse to name-only rows — no state, monitor, or avatar.
     const wrapper = mount(TeamView, { props: { projection: hiddenProjection, activeSessionId: null } });
-    const rows = wrapper.findAll('.team-hidden-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].text()).toMatch(/2 hidden/i);
-    await rows[0].get('button').trigger('click');
-    expect(wrapper.emitted('unhide-all')).toEqual([['alpha']]);
+    const row = wrapper.get('[data-desk-id="s2"]');
+    expect(row.classes()).toContain('team-desk--hidden');
+    expect(row.text()).toContain('Bob');
+    expect(row.find('.team-desk__monitor').exists()).toBe(false);
+    expect(row.find('.team-desk__avatar').exists()).toBe(false);
+    // Selecting a hidden desk works like any other.
+    await row.trigger('click');
+    expect(wrapper.emitted('select')).toEqual([['s2']]);
     wrapper.unmount();
+
+    // The operator bar operates on a hidden selected desk, with Unhide.
+    const active = mount(TeamView, { props: { projection: hiddenProjection, activeSessionId: 's2' } });
+    const unhide = active.findAll('.team-actions__controls button')
+      .find(button => button.text() === 'Unhide');
+    expect(unhide).toBeDefined();
+    await unhide!.trigger('click');
+    expect(active.emitted('toggleVisibility')).toEqual([['s2']]);
+    active.unmount();
   });
 
   it('focuses the rename input on Ctrl+Shift+R when a desk is selected', async () => {

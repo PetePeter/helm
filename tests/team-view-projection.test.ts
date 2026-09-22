@@ -147,6 +147,27 @@ describe('buildTeamViewProjection', () => {
       .toEqual([['slot1', '^1'], ['slot2', '^2'], ['slot3', '^3'], ['loose-old', ''], ['loose-new', '']]);
   });
 
+  it('orders departments by their lowest member slot so Ctrl+number reads top-down', () => {
+    const result = buildTeamViewProjection({
+      sessions: [
+        session('a1', { projectId: 'alpha' }),
+        session('b1', { projectId: 'beta' }),
+        session('b2', { projectId: 'beta' }),
+        session('c1', { projectId: 'gamma' }),
+      ],
+      projects: [
+        { id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] },
+        { id: 'beta', name: 'Beta', canonicalPath: '/beta', alternatePaths: [] },
+        { id: 'gamma', name: 'Gamma', canonicalPath: '/gamma', alternatePaths: [] },
+      ],
+      // Beta holds ^1, alpha holds ^3, gamma holds none: beta leads, gamma trails.
+      focusSlotForSession: id => ({ a1: 3, b1: 1, b2: 2 })[id],
+    });
+
+    expect(result.departments.map(department => department.id))
+      .toEqual(['project:beta', 'project:alpha', 'project:gamma']);
+  });
+
   it('counts hidden desks per department while keeping them in desks', () => {
     const result = buildTeamViewProjection({
       sessions: [

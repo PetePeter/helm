@@ -7,7 +7,7 @@ import { setDirPickerBridge } from '../screens/sessions-spawn.js';
 import { openDirPicker, dirPicker, closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
-import { toggleSessionOverviewVisibility, unhideDepartmentFromOverview, setSessionLocked, setSessionState, toggleGroupCollapse, toggleTeamViewDepartmentCollapse } from '../screens/sessions.js';
+import { toggleSessionOverviewVisibility, setSessionLocked, setSessionState, toggleGroupCollapse, toggleTeamViewDepartmentCollapse } from '../screens/sessions.js';
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../src/types/scheduled-task.js';
 import type { SessionSortField, SortDirection } from '../sort-logic.js';
@@ -120,10 +120,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     void toggleSessionOverviewVisibility(sessionId);
   }
 
-  function onUnhideDepartment(departmentId: string): void {
-    void unhideDepartmentFromOverview(departmentId);
-  }
-
   function onToggleLock(sessionId: string, locked: boolean): void {
     void setSessionLocked(sessionId, locked);
   }
@@ -221,7 +217,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     onShowPlans,
     onShowOverview,
     onToggleOverview,
-    onUnhideDepartment,
     onToggleLock,
     onCancelSchedule,
     onSessionSnapOut,

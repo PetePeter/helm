@@ -107,18 +107,6 @@ function resolveDepartment(session: Session, projects: readonly ProjectSummary[]
   return { id: `path:${fallbackPath}`, name: pathTail(fallbackPath) };
 }
 
-/**
- * Inverse department lookup (department id → member sessions). The unhide flow
- * needs this to clear overview-hiding for a whole department without
- * rebuilding the desk projection.
- */
-export function findSessionsInDepartment(
-  departmentId: string,
-  input: Pick<TeamViewProjectionInput, 'sessions' | 'projects'>,
-): Session[] {
-  return input.sessions.filter(session => resolveDepartment(session, input.projects).id === departmentId);
-}
-
 function resolveState(session: Session, stateForSession?: TeamViewProjectionInput['stateForSession']): TeamViewSessionState {
   const state = stateForSession?.(session) ?? session.aiagentState ?? session.state ?? 'idle';
   return SESSION_STATES.has(state as TeamViewSessionState) ? state as TeamViewSessionState : 'idle';
@@ -141,6 +129,32 @@ function resolveWaitingReason(
 
 function compareDepartments(left: TeamViewDepartment, right: TeamViewDepartment): number {
   return left.id.localeCompare(right.id);
+}
+
+/**
+ * Department display order: by the lowest Session List slot any member desk
+ * carries, so `Ctrl+number` reads top-down across the whole view. Departments
+ * with no slotted desks follow in the historical id order.
+ */
+function compareDepartmentsBySlot(
+  slots?: (sessionId: string) => number | undefined,
+): (left: TeamViewDepartment, right: TeamViewDepartment) => number {
+  const lowestSlot = (department: TeamViewDepartment): number | undefined => {
+    let lowest: number | undefined;
+    for (const desk of department.desks) {
+      const slot = slots?.(desk.sessionId);
+      if (slot !== undefined && (lowest === undefined || slot < lowest)) lowest = slot;
+    }
+    return lowest;
+  };
+  return (left, right) => {
+    const leftSlot = lowestSlot(left);
+    const rightSlot = lowestSlot(right);
+    if (leftSlot === undefined && rightSlot === undefined) return compareDepartments(left, right);
+    if (leftSlot === undefined) return 1;
+    if (rightSlot === undefined) return -1;
+    return leftSlot - rightSlot || compareDepartments(left, right);
+  };
 }
 
 function compareSessions(left: Session, right: Session): number {
@@ -220,7 +234,7 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
         hiddenDeskCount: desks.filter(desk => desk.hidden).length,
       };
     })
-    .sort(compareDepartments);
+    .sort(compareDepartmentsBySlot(input.focusSlotForSession));
 
   // Focus labels follow the displayed department ordering, not insertion order.
   let displayedIndex = 0;

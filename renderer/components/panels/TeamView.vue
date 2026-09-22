@@ -15,7 +15,6 @@ const emit = defineEmits<{
   toggleLock: [sessionId: string, locked: boolean]; toggleVisibility: [sessionId: string];
   requestClose: [sessionId: string, name: string]; showArtifacts: [sessionId: string];
   toggleDepartment: [departmentId: string];
-  'unhide-all': [departmentId: string];
 }>();
 const renameValue = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
@@ -27,12 +26,9 @@ const recycleBin = useRecycleBin();
 // One popover at a time: the id of the desk whose notification list is open.
 const openNotificationsDeskId = ref<string | null>(null);
 const selectedDesk = computed(() => props.projection.departments.flatMap(d => d.desks)
-  .find(desk => desk.sessionId === props.activeSessionId && !desk.hidden) ?? null);
+  .find(desk => desk.sessionId === props.activeSessionId) ?? null);
 function toggleDepartment(id: string): void {
   emit('toggleDepartment', id);
-}
-function unhideDepartment(id: string): void {
-  emit('unhide-all', id);
 }
 function isCollapsed(_id: string, projectionCollapsed: boolean): boolean { return projectionCollapsed; }
 function selectDesk(sessionId: string): void {
@@ -179,7 +175,7 @@ function commitRename(): void {
         <button type="button" @click="emit('select', selectedDesk.sessionId)">Open terminal</button>
         <button type="button" @click="copyReference">Copy reference</button>
         <button type="button" @click="emit('toggleLock', selectedDesk.sessionId, !selectedDesk.locked)">{{ selectedDesk.locked ? 'Unlock' : 'Lock' }}</button>
-        <button type="button" @click="emit('toggleVisibility', selectedDesk.sessionId)">Hide</button>
+        <button type="button" @click="emit('toggleVisibility', selectedDesk.sessionId)">{{ selectedDesk.hidden ? 'Unhide' : 'Hide' }}</button>
         <button v-if="selectedDesk.artifactCount > 0" type="button" @click="emit('showArtifacts', selectedDesk.sessionId)">Artifacts ({{ selectedDesk.artifactCount }})</button>
         <button type="button" :disabled="selectedDesk.locked" @click="emit('requestClose', selectedDesk.sessionId, selectedDesk.name)">Close</button>
       </div>
@@ -193,31 +189,32 @@ function commitRename(): void {
         <span>{{ isCollapsed(department.id, department.collapsed) ? '▸' : '▾' }}</span>{{ department.name }} <small>{{ department.visibleDeskCount }}</small>
       </button>
       <div v-if="!isCollapsed(department.id, department.collapsed)" class="team-desks">
-        <button v-for="desk in department.desks.filter(d => !d.hidden)" :key="desk.sessionId" :data-desk-id="desk.sessionId" class="team-desk" :class="{ 'team-desk--active': desk.sessionId === activeSessionId, 'team-desk--selected': desk.sessionId === activeSessionId }" :aria-current="desk.sessionId === activeSessionId ? 'true' : undefined" :aria-label="`${desk.name}, ${desk.state}${desk.focusLabel ? `, ${desk.focusLabel}` : ''}`" @click="selectDesk(desk.sessionId)">
-          <span class="team-desk__info">
-            <span v-if="desk.focusLabel" class="team-desk__shortcut">{{ desk.focusLabel }}</span><strong>{{ desk.name }}</strong><span class="team-desk__state"><span class="team-desk__activity-dot" :style="{ '--dot-colour': getActivityColor(desk.activityLevel) }" aria-hidden="true"></span>{{ desk.state }}<template v-if="desk.waitingReason"> · {{ desk.waitingReason }}</template><button v-if="desk.notifications.length > 0" type="button" class="team-desk__notification-badge" :aria-label="`${desk.notifications.length} notifications for ${desk.name}`" @click.stop="toggleNotifications(desk.sessionId)">{{ desk.notifications.length }}</button></span>
-            <span class="team-desk__monitor" aria-hidden="true"><span v-for="(line, index) in desk.terminalTail" :key="index">{{ line || ' ' }}</span><span v-if="!desk.terminalTail.length">No output</span></span>
-          </span>
-          <span class="team-desk__avatar" aria-hidden="true"><TeamMember :state="desk.state" :alert="desk.notifications.length > 0" /></span>
-          <div
-            v-if="openNotificationsDeskId === desk.sessionId"
-            class="team-desk__notifications"
-            role="dialog"
-            :aria-label="`${desk.name} notifications`"
-            @click.stop
-          >
-            <NotificationCarousel
-              :notifications="desk.notifications"
-              :session-id="desk.sessionId"
-              @dismiss="id => llmNotifications.dismiss(id)"
-              @dismiss-all="sessionId => llmNotifications.dismissSession(sessionId)"
-            />
-          </div>
+        <button v-for="desk in department.desks" :key="desk.sessionId" :data-desk-id="desk.sessionId" class="team-desk" :class="{ 'team-desk--active': desk.sessionId === activeSessionId, 'team-desk--selected': desk.sessionId === activeSessionId, 'team-desk--hidden': desk.hidden }" :aria-current="desk.sessionId === activeSessionId ? 'true' : undefined" :aria-label="`${desk.name}${desk.hidden ? ', hidden' : `, ${desk.state}`}${desk.focusLabel ? `, ${desk.focusLabel}` : ''}`" @click="selectDesk(desk.sessionId)">
+          <!-- Hidden desks collapse to a name-only row, selectable + operable
+               from the operator bar like any other desk. -->
+          <template v-if="desk.hidden"><span class="team-desk__info"><strong>{{ desk.name }}</strong></span></template>
+          <template v-else>
+            <span class="team-desk__info">
+              <span v-if="desk.focusLabel" class="team-desk__shortcut">{{ desk.focusLabel }}</span><strong>{{ desk.name }}</strong><span class="team-desk__state"><span class="team-desk__activity-dot" :style="{ '--dot-colour': getActivityColor(desk.activityLevel) }" aria-hidden="true"></span>{{ desk.state }}<template v-if="desk.waitingReason"> · {{ desk.waitingReason }}</template><button v-if="desk.notifications.length > 0" type="button" class="team-desk__notification-badge" :aria-label="`${desk.notifications.length} notifications for ${desk.name}`" @click.stop="toggleNotifications(desk.sessionId)">{{ desk.notifications.length }}</button></span>
+              <span class="team-desk__monitor" aria-hidden="true"><span v-for="(line, index) in desk.terminalTail" :key="index">{{ line || ' ' }}</span><span v-if="!desk.terminalTail.length">No output</span></span>
+            </span>
+            <span class="team-desk__avatar" aria-hidden="true"><TeamMember :state="desk.state" :alert="desk.notifications.length > 0" /></span>
+            <div
+              v-if="openNotificationsDeskId === desk.sessionId"
+              class="team-desk__notifications"
+              role="dialog"
+              :aria-label="`${desk.name} notifications`"
+              @click.stop
+            >
+              <NotificationCarousel
+                :notifications="desk.notifications"
+                :session-id="desk.sessionId"
+                @dismiss="id => llmNotifications.dismiss(id)"
+                @dismiss-all="sessionId => llmNotifications.dismissSession(sessionId)"
+              />
+            </div>
+          </template>
         </button>
-      </div>
-      <div v-if="department.hiddenDeskCount > 0" class="team-hidden-row">
-        <span>{{ department.hiddenDeskCount }} hidden</span>
-        <button type="button" @click="unhideDepartment(department.id)">Unhide all</button>
       </div>
     </section>
     <span
@@ -283,13 +280,12 @@ function commitRename(): void {
 /* One notification popover at a time, anchored inside its desk tile. */
 .team-desk__notifications{position:absolute;top:calc(100% - 4px);right:8px;z-index:7;width:min(260px,92%);padding:6px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary)}
 
-/* Quiet per-department hint for hidden desks — muted, single line. */
-.team-hidden-row{display:flex;align-items:center;gap:8px;color:var(--text-dim);font-size:var(--font-size-sm)}
-.team-hidden-row button{border:0;background:none;color:var(--text-secondary);padding:2px 4px;font:inherit;cursor:pointer;text-decoration:underline}
-.team-hidden-row button:hover,.team-hidden-row button:focus-visible{color:var(--text-primary)}
+/* Hidden desks: a quiet name-only row, still selectable + operable. */
+.team-desk--hidden{align-items:center;min-height:0;padding:4px 9px;color:var(--text-secondary)}
+.team-desk--hidden:hover,.team-desk--hidden:focus-visible,.team-desk--hidden.team-desk--active,.team-desk--hidden.team-desk--selected{color:var(--text-primary)}
 
 /* Bin entry pinned to the very bottom — same singleton the Session List opens. */
-.team-recycle-bin{display:flex;align-items:center;gap:8px;margin-top:4px;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-secondary);font:inherit;cursor:pointer}
+.team-recycle-bin{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;margin-top:4px;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-secondary);font:inherit;cursor:pointer}
 .team-recycle-bin:hover,.team-recycle-bin:focus-visible{color:var(--text-primary);border-color:var(--accent);outline:none}
 .team-recycle-bin__badge{margin-left:auto;padding:1px 7px;border-radius:999px;background:var(--accent);color:var(--bg-primary);font:600 var(--font-size-xs) var(--font-mono)}
 

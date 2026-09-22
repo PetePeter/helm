@@ -55,9 +55,10 @@ normal session-selection path as Session List and `Ctrl+number`; Terminal
 remains the only interactive terminal surface.
 
 `Ctrl+1` through `Ctrl+9` and `Ctrl+0` are displayed only on desks assigned by
-the shared Session List shortcut map, and desks are ordered within a department
-by that slot (ascending, slot-less desks after) so the labels read
-top-left → right → down. Department collapse is saved with the
+the shared Session List shortcut map. Desks are ordered within a department by
+that slot (ascending, slot-less desks after) and departments by their lowest
+member slot, so the labels read top-left → right → down across the whole
+view. Department collapse is saved with the
 existing session-group preferences. Desk state, waiting cue, lock, visibility,
 rename, artifact, and close controls are projections of the existing session
 boundaries rather than a second Team View state store.
@@ -65,22 +66,25 @@ boundaries rather than a second Team View state store.
 ## Operator bar
 
 One persistent operator bar is sticky at the top of the pane — selection
-context, then the desk actions (open, copy reference, lock, hide, artifacts,
-close) and the rename form when a desk is selected. With no selection it shows
-a "Select a desk" hint and no controls. `Ctrl+Shift+R` claims the Session List
-rename chord while a desk is selected and focuses the rename input.
+context, then the desk actions (open, copy reference, lock, hide/unhide,
+artifacts, close) and the rename form when a desk is selected. With no
+selection it shows a "Select a desk" hint and no controls. `Ctrl+Shift+R`
+claims the Session List rename chord **when the Team View pane is focused**
+(the global `session-meta-keys` handler declines the chord for a focused Team
+View, per `renderer/keyboard/handlers/terminal-keys.ts`) and focuses the
+rename input.
 
 ## Hidden desks
 
 Hiding a desk writes the same persisted `overviewHidden` key the Session List
 hide uses (`cliSessionName` when present, else session id — see
 `isSessionHiddenFromOverview`). Because `cliSessionName` survives restarts, a
-hidden desk stays hidden across Helm restarts; a department never renders as an
-empty void. Hidden desks collapse into one quiet `<count> hidden` row under
-the department's desks, with an **Unhide all** button that clears every member
-alias from `overviewHidden` (`unhideDepartmentFromOverview` in
-`renderer/screens/sessions.ts`). Hidden desks keep their Session List slot
-while hidden, so unhiding restores both the desk and its `Ctrl+number`.
+hidden desk stays hidden across Helm restarts — so hiding collapses the desk
+to a **name-only row** (no state, monitor, or avatar) rather than removing it:
+hidden sessions stay visible, selectable, and fully operable from the operator
+bar, whose Hide button becomes **Unhide** for a hidden selected desk. Hidden
+desks keep their Session List slot while hidden, so unhiding restores both the
+desk and its `Ctrl+number`.
 
 ## Recycle bin
 
