@@ -185,6 +185,37 @@ describe('session cycling', () => {
   });
 });
 
+describe('session meta keys', () => {
+  // The shipped bug: the global rename ate Ctrl+Shift+R before the focused
+  // Team View pane's own rename input could claim it.
+  it('Ctrl+Shift+R renames through the Session List while the terminal is focused', () => {
+    const terminal = fakeTerminal();
+    const renames: string[] = [];
+    terminal.deps.renameSession = (sessionId) => { renames.push(sessionId); };
+    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
+    install();
+
+    const event = press({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true });
+
+    expect(renames).toEqual(['session-1']);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('Ctrl+Shift+R is left for Team View when the Team View pane is focused', () => {
+    const terminal = fakeTerminal();
+    const renames: string[] = [];
+    terminal.deps.renameSession = (sessionId) => { renames.push(sessionId); };
+    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
+    install({ getFocusedPane: () => PANE_OVERVIEW });
+
+    const event = press({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true });
+
+    expect(renames).toEqual([]);
+    // Not consumed: the event reaches Team View's own listener untouched.
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
 describe('number accelerators', () => {
   it('Ctrl+3 jumps to the third session', () => {
     const workspace = fakeWorkspace();
@@ -194,6 +225,20 @@ describe('number accelerators', () => {
     press({ key: '3', code: 'Digit3', ctrlKey: true });
 
     expect(workspace.calls.jumped).toEqual([3]);
+  });
+
+  it('Ctrl+number selects through the shared session path before terminal input can see it', () => {
+    const workspace = fakeWorkspace();
+    const terminal = fakeTerminal();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
+    install();
+
+    const event = pressInTerminal({ key: '3', code: 'Digit3', ctrlKey: true });
+
+    expect(workspace.calls.jumped).toEqual([3]);
+    expect(terminal.calls.pty).toEqual([]);
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('Alt+1 fires the first chip action even when Alt remaps the key', () => {

@@ -49,6 +49,8 @@ export interface SessionGroupPrefs {
   bookmarked?: string[];
   /** Stable session keys hidden from overview. Falls back to session id when unavailable. */
   overviewHidden?: string[];
+  /** Team View department ids that the user has collapsed. */
+  teamViewCollapsed?: string[];
 }
 
 // ============================================================================

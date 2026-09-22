@@ -2,17 +2,25 @@
 /**
  * CliIntegrationsTab.vue — Settings → 🪝 CLI Integrations (G1).
  *
- * One row per CLI type that has a hooks block in its config: install state
- * read off the CLI's own config file on disk (never a stored flag), and
- * Install / Update / Remove buttons. G1 is plumbing — installing changes
- * nothing visible except that hook events start arriving in the log.
+ * One row per canonical PROVIDER (Claude Code / Codex / Copilot — always the
+ * same three, independent of the user's CLI types): install state read off
+ * the CLI's own config file on disk (never a stored flag), Install / Update /
+ * Remove buttons, and the hook registration code a fresh install would write
+ * — built in the main process by the same builders the installer uses, shown
+ * ready to copy for hand registration on machines Helm shouldn't touch.
+ * G1 is plumbing — installing changes nothing visible except that hook
+ * events start arriving in the log.
  *
  * "Python not found" is a first-class state, not an error toast: the installer
  * refuses rather than writing a hook config that points at an interpreter
  * that isn't there.
+ *
+ * The Tool mapping section is where the user's own CLI types are mapped onto
+ * a provider (auto-migrated on load, correctable here) — that mapping is what
+ * hook capability resolves against.
  */
 import { computed, onMounted, ref } from 'vue';
-import { configClient } from '../../ipc/clients.js';
+import { configClient, toolsClient } from '../../ipc/clients.js';
 import {
   DEFAULT_REMINDER_MODES,
   REMINDER_IDS,
@@ -23,11 +31,15 @@ import {
 type HookStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
 interface HookIntegrationItem {
-  cliTypeId: string;
+  /** The canonical provider — install/uninstall key on this, not on CLI types. */
+  provider: string;
   label: string;
   status: HookStatus;
   /** G9: false = this CLI can never take injected reminders (Copilot). */
   canInject?: boolean;
+  /** The CLI's user-level config file and the hook block to merge into it. */
+  configPath?: string;
+  snippet?: string;
 }
 
 /** One settings row per standing reminder (docs/cli-hooks.md, G9). */
@@ -68,6 +80,15 @@ const usage = ref<SuggestionUsageSummary | null>(null);
 const usageLoading = ref(true);
 const resettingUsage = ref(false);
 
+/** Tool mapping: which CLI family each configured tool speaks (drives capability). */
+interface ToolMappingEntry {
+  key: string;
+  label: string;
+  provider: string;
+}
+const toolMapping = ref<ToolMappingEntry[]>([]);
+const mappingBusy = ref(false);
+
 const STATUS_TEXT: Record<HookStatus, string> = {
   installed: 'Installed',
   outdated: 'Update available',
@@ -87,9 +108,9 @@ async function loadStatus(): Promise<void> {
 }
 
 async function install(item: HookIntegrationItem): Promise<void> {
-  busyId.value = item.cliTypeId;
+  busyId.value = item.provider;
   try {
-    const result = await configClient.hooksInstall(item.cliTypeId);
+    const result = await configClient.hooksInstall(item.provider);
     if (!result.success) errorText.value = result.error ?? 'Install failed';
   } finally {
     busyId.value = null;
@@ -98,14 +119,52 @@ async function install(item: HookIntegrationItem): Promise<void> {
 }
 
 async function remove(item: HookIntegrationItem): Promise<void> {
-  busyId.value = item.cliTypeId;
+  busyId.value = item.provider;
   try {
-    const result = await configClient.hooksUninstall(item.cliTypeId);
+    const result = await configClient.hooksUninstall(item.provider);
     if (!result.success) errorText.value = result.error ?? 'Remove failed';
   } finally {
     busyId.value = null;
   }
   await loadStatus();
+}
+
+async function loadToolMapping(): Promise<void> {
+  const result = await toolsClient.toolsGetAll();
+  toolMapping.value = Object.entries(result?.cliTypes ?? {}).map(([key, entry]) => ({
+    key,
+    label: (entry as { displayName?: string; name?: string }).displayName
+      ?? (entry as { displayName?: string; name?: string }).name
+      ?? key,
+    provider: (entry as { provider?: string }).provider ?? '',
+  }));
+}
+
+async function setToolProvider(entry: ToolMappingEntry, provider: string): Promise<void> {
+  mappingBusy.value = true;
+  try {
+    const result = await toolsClient.toolsSetCliTypeProvider(entry.key, provider === '' ? null : (provider as 'claude' | 'codex' | 'copilot'));
+    if (result.success) {
+      entry.provider = provider;
+      errorText.value = '';
+    } else {
+      errorText.value = result.error ?? 'Could not save the mapping';
+    }
+  } finally {
+    mappingBusy.value = false;
+  }
+}
+
+/** Same hand-off as the MCP setup snippets: clipboard, nothing else. */
+function copySnippet(text: string): void {
+  void navigator.clipboard.writeText(text);
+}
+
+/** How a hand-registered block comes back out — per provider's config shape. */
+function unregisterHint(item: HookIntegrationItem): string {
+  return item.provider === 'copilot'
+    ? 'Manual remove: delete the file (or just the shim entries if you added your own)'
+    : 'Manual remove: delete the entries whose command runs helm-hook-shim.py';
 }
 
 const reminderModes = ref<Partial<Record<ReminderId, ReminderDeliveryMode>>>({});
@@ -187,6 +246,7 @@ onMounted(() => {
   void loadStatus();
   void loadUsage();
   void loadReminderModes();
+  void loadToolMapping();
 });
 </script>
 
@@ -209,18 +269,32 @@ onMounted(() => {
       </div>
       <div
         v-for="item in items"
-        :key="item.cliTypeId"
+        :key="item.provider"
         class="settings-list-item"
       >
         <div class="settings-list-item__info">
           <span class="settings-list-item__name">{{ item.label }}</span>
           <span class="settings-list-item__detail">{{ STATUS_TEXT[item.status] }}</span>
+          <template v-if="item.snippet">
+            <span class="settings-list-item__detail">{{ item.configPath }}</span>
+            <pre class="hook-command-block">{{ item.snippet }}</pre>
+            <div class="hook-snippet-actions">
+              <button
+                class="btn btn--secondary btn--sm focusable"
+                :aria-label="`Copy hook registration code for ${item.label}`"
+                @click="copySnippet(item.snippet!)"
+              >
+                Copy
+              </button>
+            </div>
+            <span class="settings-list-item__detail">{{ unregisterHint(item) }}</span>
+          </template>
         </div>
         <div class="tg-btn-row">
           <button
             v-if="item.status === 'not-installed' || item.status === 'outdated'"
             class="btn btn--primary btn--sm focusable"
-            :disabled="busyId === item.cliTypeId || item.status === 'interpreter-missing'"
+            :disabled="busyId === item.provider || item.status === 'interpreter-missing'"
             @click="install(item)"
           >
             {{ item.status === 'outdated' ? 'Update' : 'Install' }}
@@ -228,7 +302,7 @@ onMounted(() => {
           <button
             v-if="item.status !== 'not-installed' && item.status !== 'interpreter-missing'"
             class="btn btn--secondary btn--sm focusable"
-            :disabled="busyId === item.cliTypeId"
+            :disabled="busyId === item.provider"
             @click="remove(item)"
           >
             Remove
@@ -242,6 +316,40 @@ onMounted(() => {
         A working Python interpreter is required — Helm ships without one. Install Python
         (python.org or the Microsoft Store) and reload this pane.
       </p>
+    </div>
+
+    <div class="tg-section">
+      <h3 class="tg-section-title">Tool mapping</h3>
+      <p class="settings-form__hint">
+        Which CLI family each of your tools actually speaks. Auto-filled from
+        names and commands where the answer is obvious — correct it here when
+        it guessed wrong. A tool mapped to Claude or Codex can take injected
+        reminders once that provider's hooks are installed; Copilot and
+        unmapped tools always get prepended text.
+      </p>
+      <div
+        v-for="entry in toolMapping"
+        :key="entry.key"
+        class="settings-list-item"
+      >
+        <div class="settings-list-item__info">
+          <span class="settings-list-item__name">{{ entry.label }}</span>
+        </div>
+        <div class="tg-btn-row">
+          <select
+            class="focusable"
+            :value="entry.provider"
+            :disabled="mappingBusy"
+            :aria-label="`Provider for ${entry.label}`"
+            @change="setToolProvider(entry, ($event.target as HTMLSelectElement).value)"
+          >
+            <option value="">Not mapped</option>
+            <option value="claude">Claude</option>
+            <option value="codex">Codex</option>
+            <option value="copilot">Copilot</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <div class="tg-section">
@@ -360,5 +468,28 @@ onMounted(() => {
 
 .settings-cli-integrations-panel__fallback {
   color: var(--warning, #b58900);
+}
+
+/* Same snippet treatment as McpCliSetup.vue — each SFC owns its scoped style.
+   Capped height: the seven-event block must not push the pane apart. */
+.hook-command-block {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, "Cascadia Code", "Fira Code", monospace);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.hook-snippet-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 </style>

@@ -1044,3 +1044,111 @@ describe('useNavigationStore', () => {
     });
   });
 });
+
+// ── Dock view routing ─────────────────────────────────────────────────
+
+import { ref } from 'vue';
+import { createDockViewRouting } from '../renderer/composables/useDockViewRouting.js';
+import { PANE_OVERVIEW, PANE_TERMINAL, type PaneId } from '../renderer/dock-types.js';
+
+/** A fake dock workspace: real bookkeeping, no tree, no DOM. */
+function makeFakeDock() {
+  const open = new Set<PaneId>([PANE_TERMINAL, PANE_OVERVIEW]);
+  const calls: string[] = [];
+  return {
+    calls,
+    isOpen: (id: PaneId) => open.has(id),
+    isVisible: () => true,
+    restore: (id: PaneId) => { open.add(id); calls.push(`restore:${id}`); },
+    reveal: (id: PaneId) => { calls.push(`reveal:${id}`); },
+    unreveal: (id: PaneId) => { calls.push(`unreveal:${id}`); },
+    activate: (id: PaneId) => { calls.push(`activate:${id}`); },
+    focusPane: (id: PaneId) => { calls.push(`focus:${id}`); },
+    close: (id: PaneId) => { open.delete(id); calls.push(`close:${id}`); },
+  };
+}
+
+describe('dock view routing — Team View is a tool pane', () => {
+  let store: ReturnType<typeof useNavigationStore>;
+  let dock: ReturnType<typeof makeFakeDock>;
+  let activeView: ReturnType<typeof ref<'terminal' | 'overview' | 'plan'>>;
+  let routing: ReturnType<typeof createDockViewRouting>;
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    currentMvmView = 'terminal';
+    viewChangeListeners = [];
+    resetSingletons();
+    vi.clearAllMocks();
+    mockTm.hasTerminal.mockReturnValue(true);
+    (window as any).gamepadCli = { sessionSetActive: mockSessionSetActive };
+    store = useNavigationStore();
+    store.init();
+    buildNavList(
+      { type: 'group-header', id: '/proj' },
+      { type: 'session-card', id: 'sess-1' },
+      { type: 'session-card', id: 'sess-2' },
+    );
+    dock = makeFakeDock();
+    activeView = ref<'terminal' | 'overview' | 'plan'>('terminal');
+    routing = createDockViewRouting({
+      activeView: activeView as any,
+      dock,
+      navStore: store,
+      artifacts: { showPanel: vi.fn(), hidePanel: vi.fn() },
+      getActiveSessionDir: () => null,
+    });
+  });
+
+  afterEach(() => {
+    store.__dispose();
+  });
+
+  it('focusing the Team View pane while the terminal view is active starts no view transition', async () => {
+    await store.navigateToSession('sess-1');
+    vi.mocked(showView).mockClear();
+
+    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+    await Promise.resolve();
+
+    expect(showView).not.toHaveBeenCalled();
+    expect(currentView()).toBe('terminal');
+    expect(dock.calls).toEqual(['focus:overview']);
+  });
+
+  it('does not invalidate a navigation that is already in flight', async () => {
+    await store.navigateToSession('sess-1');
+
+    // mousedown focuses the pane while the click's navigation is still running.
+    const pending = store.navigateToSession('sess-2');
+    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+
+    await expect(pending).resolves.toEqual({ kind: 'local-terminal', sessionId: 'sess-2' });
+  });
+
+  it('selects the second desk after the first — the click path stays live', async () => {
+    const first = await store.navigateToSession('sess-1');
+    expect(first).toEqual({ kind: 'local-terminal', sessionId: 'sess-1' });
+
+    // Click on the second desk: focusin (mousedown) then the select handler.
+    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+    const second = await store.navigateToSession('sess-2');
+
+    expect(second).toEqual({ kind: 'local-terminal', sessionId: 'sess-2' });
+    expect(mockTm.switchTo).toHaveBeenLastCalledWith('sess-2');
+    expect(state.activeSessionId).toBe('sess-2');
+  });
+
+  it('closing the Team View pane runs no view lifecycle', async () => {
+    await routing.closeDockPane(PANE_OVERVIEW);
+    expect(showView).not.toHaveBeenCalled();
+    expect(activeView.value).toBe('terminal');
+    expect(dock.calls).toEqual(['close:overview']);
+  });
+
+  it('still routes the panes that do represent a view', () => {
+    expect(routing.viewForPane(PANE_TERMINAL)).toBe('terminal');
+    expect(routing.viewForPane(PANE_OVERVIEW)).toBeUndefined();
+    expect(routing.paneForView('overview')).toBeUndefined();
+  });
+});

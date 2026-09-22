@@ -243,14 +243,16 @@ export function uninstallCliHooks(hooks: CliHooksIntegration, deps: HookInstalle
 /**
  * Read the install state off DISK (never a stored flag), with the interpreter
  * probe ahead of file state: a missing interpreter is shown, not hidden, even
- * when a stale block is still on disk.
+ * when a stale block is still on disk. Callers that already probed pass the
+ * resolved interpreter in — undefined means "probe here".
  */
 export async function readHookIntegrationStatus(
   hooks: CliHooksIntegration,
   deps: HookInstallerDeps,
+  interpreter?: ResolvedInterpreter | null,
 ): Promise<HookIntegrationStatus> {
-  const interpreter = await probeInterpreter(deps);
-  if (!interpreter) return 'interpreter-missing';
+  const resolved = interpreter === undefined ? await probeInterpreter(deps) : interpreter;
+  if (!resolved) return 'interpreter-missing';
 
   const file = resolveConfigFile(hooks, deps);
   const obj = readConfigFile(file);
@@ -270,10 +272,39 @@ export async function readHookIntegrationStatus(
       continue;
     }
     foundAny = true;
-    const command = hookCommand(deps, interpreter, hooks.provider, event);
+    const command = hookCommand(deps, resolved, hooks.provider, event);
     const desired = isCopilot(hooks) ? desiredCopilotEntry(command) : desiredGroup(command);
     if (!ours.some((entry) => sameJson(entry, desired))) complete = false;
   }
   if (!foundAny) return 'not-installed';
   return complete ? 'installed' : 'outdated';
+}
+
+export interface HookSnippet {
+  /** The CLI's user-level config file, in the `~/` form (never per-project). */
+  configPath: string;
+  /** The exact block to merge into that file, pretty-printed JSON. */
+  snippet: string;
+}
+
+/**
+ * The hook block a fresh install WOULD write — the settings pane shows it
+ * ready to copy. Built from the same desiredGroup/desiredCopilotEntry
+ * builders installCliHooks writes with, so copy and install can never drift.
+ * A missing interpreter renders as a <python> placeholder: the snippet stays
+ * honest about needing one without fabricating a path that isn't there.
+ */
+export function buildHookSnippet(
+  hooks: CliHooksIntegration,
+  deps: HookInstallerDeps,
+  interpreter: ResolvedInterpreter | null,
+): HookSnippet {
+  const resolved = interpreter ?? { command: '<python>', args: [] };
+  const hooksBlock: JsonRecord = {};
+  for (const event of hooks.events) {
+    const command = hookCommand(deps, resolved, hooks.provider, event);
+    hooksBlock[event] = [isCopilot(hooks) ? desiredCopilotEntry(command) : desiredGroup(command)];
+  }
+  const body: JsonRecord = isCopilot(hooks) ? { version: 1, hooks: hooksBlock } : { hooks: hooksBlock };
+  return { configPath: hooks.configPath, snippet: JSON.stringify(body, null, 2) };
 }

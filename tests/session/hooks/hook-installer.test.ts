@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  buildHookSnippet,
   installCliHooks,
   probeInterpreter,
   readHookIntegrationStatus,
@@ -310,5 +311,88 @@ describe('readHookIntegrationStatus', () => {
     writeFileSync(path, JSON.stringify(settings, null, 2));
 
     expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('outdated');
+  });
+
+  it('accepts a pre-resolved interpreter, skips the probe entirely, and answers identically', async () => {
+    await installCliHooks(CLAUDE, depsWithPython());
+
+    let probeCalls = 0;
+    const deps: HookInstallerDeps = {
+      homeDir: () => home,
+      shimPath,
+      runCommand: async () => {
+        probeCalls++;
+        return { code: 0 };
+      },
+    };
+    // Same interpreter the installer itself would have probed and found.
+    expect(await readHookIntegrationStatus(CLAUDE, deps, { command: 'python', args: [] })).toBe('installed');
+    expect(probeCalls).toBe(0);
+    // And the caller's other hand — probing itself — agrees.
+    expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('installed');
+  });
+
+  it('takes null as a definitive missing interpreter: interpreter-missing, no probe', async () => {
+    let probeCalls = 0;
+    const deps: HookInstallerDeps = {
+      homeDir: () => home,
+      shimPath,
+      runCommand: async () => {
+        probeCalls++;
+        return { code: 0 };
+      },
+    };
+    expect(await readHookIntegrationStatus(CLAUDE, deps, null)).toBe('interpreter-missing');
+    expect(probeCalls).toBe(0);
+  });
+});
+
+describe('buildHookSnippet', () => {
+  /** The drift guard: the copy-ready snippet IS what installCliHooks writes. */
+  async function expectSnippetToMatchInstall(hooks: CliHooksIntegration): Promise<void> {
+    const deps = depsWithPython();
+    await installCliHooks(hooks, deps);
+
+    const interpreter = await probeInterpreter(deps);
+    const { configPath, snippet } = buildHookSnippet(hooks, deps, interpreter);
+
+    expect(configPath).toBe(hooks.configPath);
+    const onDisk = readJson(hooks.configPath.replace(/^~[\\/]/, ''));
+    const expected: Record<string, unknown> = { hooks: onDisk.hooks };
+    if (hooks.provider === 'copilot') expected.version = 1;
+    expect(JSON.parse(snippet)).toEqual(expected);
+  }
+
+  it('matches what a Claude install writes (parsed-JSON equality)', async () => {
+    await expectSnippetToMatchInstall(CLAUDE);
+  });
+
+  it('matches what a Codex install writes', async () => {
+    await expectSnippetToMatchInstall(CODEX);
+  });
+
+  it('matches the Copilot Helm-owned file, including the version stamp', async () => {
+    await expectSnippetToMatchInstall(COPILOT);
+  });
+
+  it('renders a <python> placeholder when the interpreter is missing, never a fabricated path', () => {
+    const { snippet } = buildHookSnippet(CLAUDE, depsWithPython(), null);
+
+    expect(snippet).toContain('<python>');
+    // The shim path is real (Helm's own seeded copy) — JSON-escaped on Windows.
+    expect(snippet).toContain(shimPath.replace(/\\/g, '\\\\'));
+    // The only bare interpreter-looking token is the placeholder itself.
+    for (const line of snippet.split('\n')) {
+      if (line.trim().startsWith('"command"')) {
+        expect(line.trim().startsWith('"command": "<python> ')).toBe(true);
+      }
+    }
+  });
+
+  it('keeps the Copilot version stamp under the placeholder too', () => {
+    const { snippet } = buildHookSnippet(COPILOT, depsWithPython(), null);
+
+    expect(snippet).toContain('"version": 1');
+    expect(snippet).toContain('<python>');
   });
 });

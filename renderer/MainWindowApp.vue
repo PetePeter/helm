@@ -84,7 +84,6 @@ import { provideHelmPaneContext } from './dock-pane-context.js';
 import { setPaneVisibilityBridge } from './dock-visibility-bridge.js';
 import {
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
   PANE_PLAN_SCREEN,
   PANE_TERMINAL,
 } from './dock-types.js';
@@ -125,6 +124,7 @@ import { resolveFocusSlot } from './composables/focus-slot.js';
 import { useLlmNotificationsStore } from './stores/llmNotifications.js';
 import { useFlashAttention } from './composables/useFlashAttention.js';
 import { listRegisteredPanes, useDockWorkspace } from './composables/useDockWorkspace.js';
+import { createDockViewRouting } from './composables/useDockViewRouting.js';
 import DockViewMenu from './components/dock/DockViewMenu.vue';
 import DockWorkspace from './components/dock/DockWorkspace.vue';
 import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
@@ -173,89 +173,26 @@ watch(terminalContainerRef, (container) => {
 
 const dockViewItems = computed(() => listRegisteredPanes(dockWorkspace.layout.value));
 
-const viewPaneByName: Record<ViewName, PaneId> = {
-  terminal: PANE_TERMINAL,
-  overview: PANE_OVERVIEW,
-  plan: PANE_PLAN_SCREEN,
-};
-const viewNameByPane = new Map<PaneId, ViewName>([
-  [PANE_TERMINAL, 'terminal'],
-  [PANE_OVERVIEW, 'overview'],
-  [PANE_PLAN_SCREEN, 'plan'],
-]);
-
-function syncViewFromDockLayout(): void {
-  const activePane = ([PANE_TERMINAL, PANE_OVERVIEW, PANE_PLAN_SCREEN] as const)
-    .find(paneId => dockWorkspace.isOpen(paneId) && dockWorkspace.isVisible(paneId));
-  const view = activePane ? viewNameByPane.get(activePane) : undefined;
-  if (view) activeView.value = view;
-}
-
-function fallbackToOpenView(): void {
-  if (dockWorkspace.isOpen(viewPaneByName[activeView.value])) return;
-  const fallback = ([PANE_TERMINAL, PANE_OVERVIEW, PANE_PLAN_SCREEN] as const)
-    .find(paneId => dockWorkspace.isOpen(paneId));
-  const view = fallback ? viewNameByPane.get(fallback) : undefined;
-  if (view) activeView.value = view;
-}
-
-let dockNavigationRequest = 0;
-
-/**
- * Select a pane through one shell-owned path. View panes must pass through the
- * navigation store so their existing mount/unmount lifecycle initializes data;
- * tool panes only need dock activation/focus.
- */
-async function activateDockPane(paneId: PaneId, reveal = false, focusedItemId?: string): Promise<void> {
-  const requestId = ++dockNavigationRequest;
-  try {
-    if (!dockWorkspace.isOpen(paneId)) dockWorkspace.restore(paneId);
-    if (reveal) dockWorkspace.reveal(paneId);
-    else dockWorkspace.activate(paneId);
-  } catch {
-    return;
-  }
-
-  if (paneId === PANE_OVERVIEW) {
-    await navStore.openOverview(null, state.activeSessionId ?? undefined);
-  } else if (paneId === PANE_PLAN_SCREEN) {
-    const dirPath = getActiveSessionDir();
-    if (dirPath) await navStore.openPlan(dirPath);
-  } else if (paneId === PANE_TERMINAL) {
-    if (activeView.value === 'overview') await navStore.closeOverview();
-    else if (activeView.value === 'plan') await navStore.closePlan();
-  } else if (paneId === PANE_ARTIFACTS) {
-    // ArtifactViewer retains content/session state for snapped-out windows;
-    // dock visibility itself remains owned by the workspace tree.
-    artifactViewer.showPanel();
-  }
-
-  if (requestId !== dockNavigationRequest) return;
-  dockWorkspace.focusPane(paneId, focusedItemId);
-}
-
-async function closeDockPane(paneId: PaneId): Promise<void> {
-  const view = viewNameByPane.get(paneId);
-  const wasActiveView = view === activeView.value;
-
-  if (wasActiveView && view === 'overview') await navStore.closeOverview();
-  else if (wasActiveView && view === 'plan') await navStore.closePlan();
-
-  try {
-    dockWorkspace.close(paneId);
-  } catch {
-    return;
-  }
-
-  if (paneId === PANE_ARTIFACTS) artifactViewer.hidePanel();
-
-  if (wasActiveView && view === 'terminal') {
-    const fallback = ([PANE_OVERVIEW, PANE_PLAN_SCREEN] as const)
-      .find(candidate => dockWorkspace.isOpen(candidate));
-    if (fallback) void activateDockPane(fallback);
-    else fallbackToOpenView();
-  }
-}
+// Dock ↔ view-mode reconciliation. Team View (the `overview` pane id) is deliberately
+// not part of it: it is a tool pane over a reactive projection, so focusing it
+// must not start a view transition. The legacy fullscreen overview view still
+// exists and is still reached through `openOverview()`.
+const {
+  activateDockPane,
+  closeDockPane,
+  onDockFocusPane,
+  onDockAutohideClose,
+  syncViewFromDockLayout,
+  fallbackToOpenView,
+  invalidateActivations,
+  paneForView,
+} = createDockViewRouting({
+  activeView,
+  dock: dockWorkspace,
+  navStore,
+  artifacts: artifactViewer,
+  getActiveSessionDir,
+});
 
 function onDockViewToggle(paneId: PaneId): void {
   dockViewMenuOpen.value = false;
@@ -264,21 +201,12 @@ function onDockViewToggle(paneId: PaneId): void {
 }
 
 function onDockLayoutReset(): void {
-  dockNavigationRequest++;
+  invalidateActivations();
   dockWorkspace.reset();
   if (activeView.value === 'overview') void navStore.closeOverview();
   else if (activeView.value === 'plan') void navStore.closePlan();
   activeView.value = 'terminal';
   dockViewMenuOpen.value = false;
-}
-
-function onDockFocusPane(paneId: PaneId, focusedItemId?: string): void {
-  const view = viewNameByPane.get(paneId);
-  if (view && view !== activeView.value) {
-    void activateDockPane(paneId, false, focusedItemId);
-    return;
-  }
-  dockWorkspace.focusPane(paneId, focusedItemId);
 }
 
 function onDockActivatePane(paneId: PaneId): void {
@@ -296,11 +224,6 @@ function onDockClosePane(paneId: PaneId): void {
  */
 function onDockRevealPane(paneId: PaneId): void {
   void activateDockPane(paneId, true);
-}
-
-function onDockAutohideClose(paneId: PaneId): void {
-  dockWorkspace.unreveal(paneId);
-  if (paneId === PANE_ARTIFACTS) artifactViewer.hidePanel();
 }
 
 // Collapsing a pinned dock is a mode change, not a close: the panes stay in the
@@ -348,10 +271,12 @@ function onDockPaneEdge(paneId: PaneId, side: DockSide): void {
 
 // main-view-manager stays the view transition authority; the dock mirrors it.
 // Reconciling here — rather than a second routing path — is what lets a normal
-// openOverview()/openPlan() bring back a view pane the user closed to the View
-// menu, instead of transitioning into a pane that is not in the tree.
+// openPlan() bring back a view pane the user closed to the View menu, instead
+// of transitioning into a pane that is not in the tree. A view with no pane of
+// its own (the legacy fullscreen overview) has nothing to reconcile.
 watch(() => activeView.value, (view) => {
-  const paneId = viewPaneByName[view];
+  const paneId = paneForView(view);
+  if (!paneId) return;
   if (!dockWorkspace.isOpen(paneId)) {
     try {
       dockWorkspace.restore(paneId);

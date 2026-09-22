@@ -28,6 +28,29 @@ describe('createRulesViaHooksFn', () => {
     expect(await fn(session('claude-code'))).toBe(true);
   });
 
+  it('resolves the provider from the top-level field alone — custom CLI types carry no hooks block', async () => {
+    let consulted = 0;
+    const fn = createRulesViaHooksFn(
+      (cliType) => {
+        consulted += 1;
+        return cliType === 'custom-uuid' ? { provider: 'claude' } : null;
+      },
+      async () => 'installed',
+    );
+    expect(await fn(session('custom-uuid'))).toBe(true);
+    // The status read still happened — provider resolved without a hooks block.
+    expect(consulted).toBe(1);
+  });
+
+  it('prefers the top-level provider over the legacy hooks block', async () => {
+    // Contrived but decisive: the mapping is the newer, authoritative source.
+    const fn = createRulesViaHooksFn(
+      () => ({ provider: 'copilot', hooks: CLAUDE }),
+      async () => 'installed',
+    );
+    expect(await fn(session('weird'))).toBe(false);
+  });
+
   it('says yes for codex with hooks merely outdated — a stale block still injects', async () => {
     const fn = createRulesViaHooksFn(
       () => ({ hooks: CODEX }),

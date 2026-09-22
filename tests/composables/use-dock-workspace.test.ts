@@ -16,22 +16,26 @@ describe('useDockWorkspace', () => {
     expect(ws.paneOrder.value).toEqual(listPanes(createDefaultLayout().root));
     expect(ws.focusedPaneId.value).toBe(PANE_TERMINAL);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(true);
-    expect(ws.isVisible(PANE_OVERVIEW)).toBe(false);
+    // Team View owns its own column in the default layout, so it is visible
+    // alongside the terminal rather than tabbed behind it.
+    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true);
+    expect(ws.isVisible(PANE_MESS)).toBe(false);
   });
 
   it('focusing a background tab activates it in its own group', () => {
     const ws = useDockWorkspace();
-    ws.focusPane(PANE_OVERVIEW);
-    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true);
+    ws.focusPane(PANE_MESS);
+    expect(ws.isVisible(PANE_MESS)).toBe(true);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(false);
-    expect(ws.focusedPaneId.value).toBe(PANE_OVERVIEW);
+    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true); // a different group, untouched
+    expect(ws.focusedPaneId.value).toBe(PANE_MESS);
   });
 
   it('cycles focus in deterministic tree order and wraps', () => {
     const ws = useDockWorkspace();
     ws.focusPane(PANE_SESSIONS);
     ws.cycleFocus(-1);
-    expect(ws.focusedPaneId.value).toBe(PANE_MESS); // autohide panes are not focus targets
+    expect(ws.focusedPaneId.value).toBe(PANE_OVERVIEW); // autohide panes are not focus targets
     ws.cycleFocus(1);
     expect(ws.focusedPaneId.value).toBe(PANE_SESSIONS);
   });
@@ -87,11 +91,11 @@ describe('useDockWorkspace', () => {
 
   it('resizes a recursive split through the workspace facade', () => {
     const ws = useDockWorkspace();
-    ws.resize([], [0.3, 0.56, 0.14]);
+    ws.resize([], [0.3, 0.4, 0.16, 0.14]);
 
     expect(ws.layout.value.root).toMatchObject({
       type: 'split',
-      sizes: [0.3, 0.56, 0.14],
+      sizes: [0.3, 0.4, 0.16, 0.14],
     });
   });
 

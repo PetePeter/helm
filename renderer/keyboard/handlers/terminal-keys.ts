@@ -18,7 +18,7 @@
  */
 
 import { comboToPtyEscape, keyToPtyEscape } from '../../bindings.js';
-import { PANE_TERMINAL } from '../../dock-types.js';
+import { PANE_OVERVIEW, PANE_TERMINAL } from '../../dock-types.js';
 import { shouldAllowNativeCopy, type SelectionInfo } from '../../paste-handler.js';
 import type { KeyContext, KeyHandler } from '../router.js';
 
@@ -63,6 +63,9 @@ export function createTerminalKeyHandlers(deps: TerminalKeyDeps): KeyHandler[] {
       handle: (ctx) => {
         const sessionId = ctx.activeSessionId!;
         if (ctx.combo === 'ctrl+shift+r' && deps.renameSession) {
+          // The focused Team View pane owns the chord — its own rename input
+          // claims it. Decline (return false) so the event stays pristine.
+          if (ctx.isFocused(PANE_OVERVIEW)) return false;
           deps.renameSession(sessionId);
           return true;
         }

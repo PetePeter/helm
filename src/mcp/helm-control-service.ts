@@ -373,6 +373,15 @@ export class HelmControlService extends EventEmitter {
     this.telegramService.setChatBroker(broker);
   }
 
+  /**
+   * Wire the renderer message-flight gate: every enveloped session_send_text
+   * broadcasts a flight and holds the paste until the renderer acks (or the
+   * timeout releases it). See src/session/message-flight.ts.
+   */
+  setMessageFlightSink(sink: (flight: import('../session/message-flight.js').SessionMessageFlight) => Promise<void> | void): void {
+    this.sessionDelivery.setMessageFlightSink(sink);
+  }
+
   /** Wire the RuntimeGroupManager so session_create can place into runtime groups. */
   setRuntimeGroupManager(manager: import('../session/runtime-group-manager.js').RuntimeGroupManager): void {
     this.sessionService.setRuntimeGroupManager(manager);

@@ -245,6 +245,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setHandoverDelivery = vi.fn();
     this.setReminderDelivery = vi.fn();
     this.setChatBroker = vi.fn();
+    this.setMessageFlightSink = vi.fn();
     this.setMobileDeps = vi.fn();
   }),
 }));

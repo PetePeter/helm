@@ -276,6 +276,14 @@ describe('useAppBootstrap session hydration', () => {
     state.sessions = [];
   });
 
+  it('carries questionPending through a session update for waiting UI', async () => {
+    const mod = await initBootstrap();
+    state.sessions = [{ id: 'question', name: 'test', cliType: 'claude', workingDir: '/tmp' }];
+    capturedOnSessionUpdated!({ id: 'question', name: 'test', cliType: 'claude', questionPending: true });
+    expect(state.sessions[0].questionPending).toBe(true);
+    mod.teardown();
+  });
+
   async function initBootstrap() {
     const mod = await import('../renderer/composables/useAppBootstrap.js');
     await mod.bootstrap({

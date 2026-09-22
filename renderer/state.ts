@@ -19,6 +19,8 @@ export interface Session {
   lastOutputAt?: number;
   windowId?: number;
   state?: string;
+  /** True when the terminal detector has observed an AIAGENT question. */
+  questionPending?: boolean;
   aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Wall-clock epoch ms when this hub session was first spawned. */
   createdAt?: number;

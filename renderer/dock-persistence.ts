@@ -114,7 +114,7 @@ function withLegacyWidths(
   if (!legacy.sidebarWidth && !legacy.artifactWidth) return layout;
 
   const root = layout.root;
-  if (root.type !== 'split' || root.direction !== 'horizontal' || root.children.length !== 3) return layout;
+  if (root.type !== 'split' || root.direction !== 'horizontal' || root.children.length < 3) return layout;
 
   const leftIndex = root.children.findIndex(child => listPanes(child).some(id => id !== PANE_ARTIFACTS));
   const artifactIndex = root.children.findIndex(child => listPanes(child).includes(PANE_ARTIFACTS));
@@ -122,15 +122,24 @@ function withLegacyWidths(
 
   const leftWidth = legacy.sidebarWidth ?? (root.sizes[leftIndex] * viewportWidth!);
   const artifactWidth = legacy.artifactWidth ?? (root.sizes[artifactIndex] * viewportWidth!);
-  const centerIndex = [0, 1, 2].find(index => index !== leftIndex && index !== artifactIndex);
-  if (centerIndex === undefined) return layout;
+
+  // Only the two edges had a legacy width. Whatever is between them — one centre
+  // group or several, e.g. the view group beside Team View — keeps its own
+  // proportions inside the remaining space.
+  const centerIndices = root.children
+    .map((_, index) => index)
+    .filter(index => index !== leftIndex && index !== artifactIndex);
+  const centerShare = centerIndices.reduce((sum, index) => sum + root.sizes[index], 0);
+  if (centerIndices.length === 0 || centerShare <= 0) return layout;
 
   const centerWidth = Math.max(1, viewportWidth! - leftWidth - artifactWidth);
   const total = leftWidth + centerWidth + artifactWidth;
   const sizes = [...root.sizes];
   sizes[leftIndex] = leftWidth / total;
-  sizes[centerIndex] = centerWidth / total;
   sizes[artifactIndex] = artifactWidth / total;
+  for (const index of centerIndices) {
+    sizes[index] = (centerWidth * (root.sizes[index] / centerShare)) / total;
+  }
 
   const nextRoot: DockSplitNode = { ...root, sizes };
   return { ...layout, root: nextRoot };

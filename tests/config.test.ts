@@ -250,17 +250,19 @@ describe('ConfigLoader', () => {
   });
 
   describe('session group prefs', () => {
-    it('persists overviewHidden to settings.yaml', () => {
+    it('persists Team View collapse alongside the existing group preferences', () => {
       loader.load();
 
       loader.setSessionGroupPrefs({
         order: ['X:\\coding\\project-a'],
         collapsed: ['X:\\coding\\project-b'],
         overviewHidden: ['session-1', 'session-2'],
+        teamViewCollapsed: ['project:alpha'],
       });
 
       const onDisk = readYaml<any>('settings.yaml');
       expect(onDisk.sessionGroups.overviewHidden).toEqual(['session-1', 'session-2']);
+      expect(onDisk.sessionGroups.teamViewCollapsed).toEqual(['project:alpha']);
     });
 
     it('roundtrips overviewHidden through save and reload', () => {

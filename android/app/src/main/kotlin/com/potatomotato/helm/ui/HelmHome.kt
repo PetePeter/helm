@@ -736,12 +736,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 }
 
                 // The ROOT — one bar whose context label is the surface menu,
-                // and whichever of the three surfaces it selects. Back off a
-                // non-Sessions surface returns to Sessions rather than offering
-                // to quit; the root BackHandler further down is gated on the
-                // Sessions surface for exactly that reason.
+                // and whichever of the three surfaces it selects. Back on ANY
+                // root tab is the exit question, asked by the one root
+                // BackHandler further down. Plans and Contexts used to bounce
+                // to Sessions instead — a decision deliberately reversed:
+                // three tabs at the same depth with different exit stories was
+                // the bug, and the dialog is the single exit affordance.
                 open == null -> Column(modifier = Modifier.fillMaxSize()) {
-                    BackHandler(enabled = homeTab != HomeTab.Sessions) { homeTab = HomeTab.Sessions }
                     HelmAppBar(
                         title = stringResource(R.string.app_name),
                         linkState = linkState,
@@ -1086,7 +1087,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 )
             }
 
-            // Back at the true root — the session list, nothing open over it.
+            // Back at the true root — the session list, plans board or contexts
+            // list, with nothing open over it.
             //
             // GATED, NOT MERELY LAST: this composes AFTER the branch handlers
             // above, and the dispatcher gives back to the most recently added
@@ -1096,13 +1098,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // WHY ASK AT ALL: backgrounding keeps the foreground service, and
             // with it the BLE link and the notifications, alive. Quitting drops
             // them. A stray back used to take the destructive option silently.
-            // The Plans and Contexts tabs are NOT the root: back off one of them
-            // returns to Sessions (handled in that branch), and offering to quit
-            // from there would be the same silent destructive answer this
-            // dialog exists to stop.
-            val atRoot = openSessionId == null &&
-                where == Destination.Thread &&
-                homeTab == HomeTab.Sessions
+            // EVERY root tab asks, not only Sessions: the Plans and Contexts
+            // surfaces used to bounce to Sessions instead, which gave three
+            // tabs at the same depth three different exit stories and no way
+            // out of them at all. The dialog is the one exit affordance,
+            // wherever in the root the user is standing.
+            val atRoot = openSessionId == null && where == Destination.Thread
             BackHandler(enabled = atRoot) { leaving = !leaving }
             // A notification tap can navigate out from under an open dialog.
             // Drop the question with the screen it was asked on, so returning
@@ -1119,17 +1120,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     },
                     onQuit = {
                         leaving = false
-                        // Quit means QUIT. The foreground service outlives the
-                        // activity by design when backgrounding, so finishing
-                        // alone leaves the link and its notification running —
-                        // observed as "quit doesn't work" with Helm still
-                        // online on the desktop afterwards. LAN is the same
-                        // story but sneakier: it lives in HelmPairing, not the
-                        // service, and its non-daemon pump thread keeps the
-                        // whole process — and the socket — alive after finish().
-                        HelmPairing.stopLan()
-                        HelmLinkService.stop(context)
-                        (context as? Activity)?.finish()
+                        // The stops-then-finish order and the always-finish
+                        // guarantee live in quitHelmApp; this site only wires
+                        // the three owners it belongs to.
+                        quitHelmApp(
+                            stopLan = HelmPairing::stopLan,
+                            stopLinkService = { HelmLinkService.stop(context) },
+                            finish = { (context as? Activity)?.finish() },
+                        )
                     },
                     onDismiss = { leaving = false },
                 )

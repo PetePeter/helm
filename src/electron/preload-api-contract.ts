@@ -24,6 +24,8 @@ export const PRELOAD_API_DOMAINS = {
     'sessionSetState',
     'sessionRequestFocusSlot',
     'sessionFocusWindow',
+    'onSessionMessageFlight',
+    'ackSessionMessageFlight',
   ],
   terminal: [
     'terminalAttach',
@@ -95,6 +97,7 @@ export const PRELOAD_API_DOMAINS = {
     'toolsAddCliType',
     'toolsUpdateCliType',
     'toolsRemoveCliType',
+    'toolsSetCliTypeProvider',
     'toolsReorderCliType',
   ],
   projects: [

@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
+import type { SessionMessageFlight } from '../../session/message-flight.js';
 import type { DraftPrompt } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
@@ -223,6 +224,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       collapsed: string[];
       bookmarked?: string[];
       overviewHidden?: string[];
+      teamViewCollapsed?: string[];
     }>,
 
   configSetSessionGroupPrefs: (prefs: {
@@ -230,6 +232,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     collapsed: string[];
     bookmarked?: string[];
     overviewHidden?: string[];
+    teamViewCollapsed?: string[];
   }) =>
     ipcRenderer.invoke('config:setSessionGroupPrefs', prefs),
 
@@ -434,11 +437,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   },
 
   /** Subscribe to session metadata updates such as renames. */
-  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; lastOutputAt?: number }) => void) => {
+  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; questionPending?: boolean; lastOutputAt?: number }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);
   },
+
+  /** Subscribe to inter-session message flights (Team View envelope animation). */
+  onSessionMessageFlight: (callback: (flight: SessionMessageFlight) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: SessionMessageFlight) => callback(data);
+    ipcRenderer.on('session:message-flight', listener);
+    return () => ipcRenderer.removeListener('session:message-flight', listener);
+  },
+
+  /** Acknowledge a message flight landing — releases the held PTY paste. */
+  ackSessionMessageFlight: (flightId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('session:message-flight-ack', flightId),
 
   /** Subscribe to snap-out events */
   onSnapOut: (callback: (sessionId: string) => void) => {
@@ -598,6 +612,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     },
   ) => ipcRenderer.invoke('tools:updateCliType', key, name, initialPrompt, initialPromptDelay, options),
   toolsRemoveCliType: (key: string) => ipcRenderer.invoke('tools:removeCliType', key),
+  /** Which CLI family a tool speaks — the CLI Integrations pane's Tool mapping dropdown. null clears. */
+  toolsSetCliTypeProvider: (key: string, provider: 'claude' | 'codex' | 'copilot' | null) =>
+    ipcRenderer.invoke('tools:setCliTypeProvider', key, provider),
   toolsReorderCliType: (index: number, direction: 'up' | 'down') =>
     ipcRenderer.invoke('tools:reorderCliType', index, direction),
   toolsGetPatterns: (cliType: string) => ipcRenderer.invoke('tools:getPatterns', cliType),

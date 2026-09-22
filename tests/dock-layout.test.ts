@@ -76,6 +76,16 @@ describe('default Classic layout', () => {
     expect(() => validateLayout(JSON.parse(JSON.stringify(layout)))).not.toThrow();
   });
 
+  it('keeps Team View beside the terminal rather than tabbed behind it', () => {
+    // A roster whose job is switching sessions cannot be a tab that loses to the
+    // terminal it switches to.
+    const terminalGroup = findPaneGroup(layout.root, PANE_TERMINAL);
+    expect(terminalGroup?.tabs).not.toContain(PANE_OVERVIEW);
+    const teamGroup = findPaneGroup(layout.root, PANE_OVERVIEW);
+    expect(teamGroup?.activeTab).toBe(PANE_OVERVIEW);
+    expect(findDockSideOf(layout.root, PANE_OVERVIEW)).toBeNull();
+  });
+
   it('places sessions/tools left, views centre, artifacts right', () => {
     // Deterministic left-to-right, top-to-bottom order mirrors the current UI.
     expect(listPanes(layout.root)).toEqual([
@@ -84,10 +94,10 @@ describe('default Classic layout', () => {
       PANE_QUICK_SPAWN,
       PANE_PLAN_DIRECTORIES,
       PANE_TERMINAL,
-      PANE_OVERVIEW,
       PANE_PLAN_SCREEN,
       PANE_MEMORIES,
       PANE_MESS,
+      PANE_OVERVIEW,
       PANE_ARTIFACTS,
     ]);
   });
@@ -106,10 +116,10 @@ describe('default Classic layout', () => {
       PANE_QUICK_SPAWN,
       PANE_PLAN_DIRECTORIES,
       PANE_TERMINAL,
-      PANE_OVERVIEW,
       PANE_PLAN_SCREEN,
       PANE_MEMORIES,
       PANE_MESS,
+      PANE_OVERVIEW,
     ]);
   });
 

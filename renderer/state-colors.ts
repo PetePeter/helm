@@ -32,6 +32,16 @@ export function getPeerStatusColor(status: string): string {
   return PEER_STATUS_COLORS[status] ?? PEER_STATUS_COLORS.offline;
 }
 
+/**
+ * Team View message-flight envelope colours: a first send between two
+ * sessions flies blue; a reply in an ongoing exchange (any direction within
+ * the reply window) flies amber.
+ */
+export const MESSAGE_FLIGHT_COLORS: Record<'send' | 'reply', string> = {
+  send: '#4488ff',   // Blue — same blue as the inactive activity dot
+  reply: '#ff9f1a',  // Amber — same amber as peer pairing / blocked plan
+};
+
 /** Plan lifecycle colors. These values mirror the --status-* CSS tokens. */
 export const PLAN_STATUS_COLORS: Record<string, string> = {
   planning: '#555555',

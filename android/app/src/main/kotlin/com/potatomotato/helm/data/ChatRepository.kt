@@ -34,6 +34,13 @@ data class ChatMessage(
     val voice: Boolean = false,
     /** A file Helm is offering. Null on an ordinary message. */
     val attachment: ChatAttachment? = null,
+    /**
+     * The desktop journal number this row arrived under. Null on rows that
+     * never carried one — this phone's own optimistic sends, and records from
+     * an old desktop build. Not display data: it is the key a replayed
+     * gap-fill dedupes against (see [receive]).
+     */
+    val seq: Long? = null,
 )
 
 /**
@@ -49,6 +56,12 @@ data class ChatMessage(
  * sorted every phone message into the past. `at` is display data only. A
  * reconnect backlog arrives from Helm in the order it was written, so arrival
  * order reads correctly there too.
+ *
+ * ONE exception: a replayed gap (see [receive]) files in SEQ order. A live
+ * record can outrun the replay it belongs to — the cursor jumps the gap, the
+ * replayed hole then lands below the cursor — and pure arrival order would
+ * leave the conversation reading with exactly the hole the replay exists to
+ * close.
  *
  * The threads are the one thing here that does NOT persist. The unread count
  * ([UnreadStore]) does, but the catch-up cursor deliberately does NOT: a cursor
@@ -131,43 +144,94 @@ class ChatRepository(
     /** A thread the user has seen stops counting, whatever it got up to. */
     fun markRead(sessionId: String) = setUnread(sessionId, 0)
 
-    /** A `chat` record from Helm. */
+    /**
+     * A `chat` record from Helm.
+     *
+     * Two sends share the wire and seq is the only order they agree on: the
+     * live fan-out, and the journal replay. The race this survives — a live
+     * record with a higher seq can cross while this phone's cursor request is
+     * still in flight, the cursor jumps OVER the gap, and the replayed gap then
+     * arrives at or below the cursor. Dropping it there loses the hole until
+     * the app restarts, so a record flagged `replay` below the cursor is
+     * FILLED into its thread instead — deduped by seq, cursor untouched.
+     */
     fun receive(record: MobileRecord.Chat) {
-        // THE CURSOR ADVANCES BEFORE ANYTHING ELSE, and it is also the dedupe:
-        // a record the desktop replays after a link stumble can race its own
-        // live copy here, and seq is the only order the two sends share. A
-        // record WITHOUT a seq — an old desktop build, an alert — updates
-        // nothing, so catch-up degrades to today's live-only behaviour rather
-        // than to a cursor that claims history it never held.
         val seq = record.seq
-        if (seq != null) {
-            if (seq <= lastSeqValue) return
-            lastSeqValue = seq
+        if (seq != null && seq <= lastSeqValue) {
+            // A LIVE record at or below the cursor can only be a duplicate of
+            // something already held: the desktop numbers forward, so live
+            // fan-out never re-sends old news unflagged. Only a flagged replay
+            // is a gap to fill — and only if the thread does not hold it.
+            if (!record.replay) return
+            if (holds(record.sessionId, seq)) return
+            if (isOwnEcho(record)) return
+            insertBySeq(record)
+            countUnread(record)
+            return
         }
+        // THE CURSOR ADVANCES BEFORE ANYTHING ELSE, and it is also the dedupe
+        // for the live path: a record the desktop replays after a link stumble
+        // can race its own live copy here, and seq is the only order the two
+        // sends share. A record WITHOUT a seq — an old desktop build, an alert
+        // — updates nothing, so catch-up degrades to today's live-only
+        // behaviour rather than to a cursor that claims history it never held.
+        if (seq != null) lastSeqValue = seq
         // This phone's OWN words, echoed back from the journal. Dropped AFTER the
         // cursor advanced: the message is history this phone holds either way,
         // and a cursor that refused it would ask for it again on every link up.
         // The optimistic copy the user watched leave is still on screen — one
         // row, as typed, not two.
-        if (record.originId != null && sentIds.containsKey(record.originId)) return
-        append(
-            record.sessionId,
-            ChatMessage(
-                key = nextKey(),
-                text = record.text,
-                at = record.at,
-                // An originId names a phone, so it can only be a phone's words —
-                // never an agent's. Rendering it as an agent bubble would
-                // fabricate a speaker the desktop never had.
-                fromPhone = record.originId != null,
-                filePath = record.filePath,
-                voice = record.voice,
-                attachment = attachmentIn(record),
-            ),
-        )
-        // Only what arrives unseen counts. The thread the user is reading is
-        // being read by definition, and the user's own outgoing words were
-        // never news to them — they typed them.
+        if (isOwnEcho(record)) return
+        append(record.sessionId, message(record))
+        countUnread(record)
+    }
+
+    /** Whether the thread already holds a row under this journal number. */
+    private fun holds(sessionId: String, seq: Long): Boolean =
+        _threads.value[sessionId]?.any { it.seq == seq } == true
+
+    /** This phone's own words, echoed back from the journal. */
+    private fun isOwnEcho(record: MobileRecord.Chat): Boolean =
+        record.originId != null && sentIds.containsKey(record.originId)
+
+    /**
+     * File a replayed gap into its thread IN SEQ ORDER, ahead of the numbered
+     * rows that raced it here. Rows without a seq are not anchors — they keep
+     * the arrival spot they earned; the gap goes ahead of the first numbered
+     * row newer than it, or the tail when there is none. Capped like every
+     * append: a gap older than the window is the desktop's history to hold,
+     * not this thread's.
+     */
+    private fun insertBySeq(record: MobileRecord.Chat) {
+        val seq = record.seq ?: return
+        val thread = _threads.value[record.sessionId].orEmpty()
+        val at = thread.indexOfFirst { it.seq != null && it.seq > seq }
+        val next = if (at < 0) thread + message(record)
+        else thread.subList(0, at) + message(record) + thread.subList(at, thread.size)
+        _threads.value = _threads.value + (record.sessionId to next.takeLast(MAX_THREAD))
+    }
+
+    /** The row a journal record becomes, seq riding along as the dedupe key. */
+    private fun message(record: MobileRecord.Chat) = ChatMessage(
+        key = nextKey(),
+        text = record.text,
+        at = record.at,
+        // An originId names a phone, so it can only be a phone's words —
+        // never an agent's. Rendering it as an agent bubble would
+        // fabricate a speaker the desktop never had.
+        fromPhone = record.originId != null,
+        filePath = record.filePath,
+        voice = record.voice,
+        attachment = attachmentIn(record),
+        seq = record.seq,
+    )
+
+    /**
+     * Only what arrives unseen counts. The thread the user is reading is
+     * being read by definition, and the user's own outgoing words were
+     * never news to them — they typed them.
+     */
+    private fun countUnread(record: MobileRecord.Chat) {
         if (record.sessionId != readingSessionId) {
             setUnread(record.sessionId, (_unreadCounts.value[record.sessionId] ?: 0) + 1)
         }

@@ -7,12 +7,13 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { type ConfigLoader, type PlanFilterConfig, type EditorPrefs, type FleetConfig, type WorkspaceLayoutProfile, type CliHooksIntegration } from '../../config/loader.js';
+import { type ConfigLoader, type PlanFilterConfig, type EditorPrefs, type FleetConfig, type WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import type { ProjectStore } from '../../session/project-store.js';
 import type { FleetStatus } from '../../mcp/peer/fleet-controller.js';
 import type { HookInstallerDeps, HookIntegrationStatus } from '../../session/hooks/hook-installer.js';
-import { installCliHooks, readHookIntegrationStatus, uninstallCliHooks } from '../../session/hooks/hook-installer.js';
+import { buildHookSnippet, installCliHooks, probeInterpreter, readHookIntegrationStatus, uninstallCliHooks } from '../../session/hooks/hook-installer.js';
+import { HOOK_PROVIDERS, getHookProviderConfig } from '../../session/hooks/hook-providers.js';
 import { PROMPT_INJECTION_PROVIDERS } from '../../session/hooks/context-injector.js';
 import { REMINDER_IDS, isReminderDeliveryMode, type ReminderDeliveryMode, type ReminderId } from '../../session/reminder-delivery.js';
 import { summarizeSuggestionUsage, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
@@ -373,6 +374,7 @@ export function setupConfigHandlers(
     collapsed: string[];
     bookmarked?: string[];
     overviewHidden?: string[];
+    teamViewCollapsed?: string[];
   }) => {
     try {
       configLoader.setSessionGroupPrefs(prefs);
@@ -527,18 +529,16 @@ export function setupConfigHandlers(
   // CLI hook integrations (G1: transport only — install/remove/observe)
   // ========================================================================
 
-  /** Resolve a CLI type's hooks block, or null when it has none. */
-  const resolveHooks = (cliTypeId: string): { id: string; label: string; hooks: CliHooksIntegration } | null => {
-    const entry = configLoader.getCliTypeEntry(cliTypeId);
-    if (!entry?.hooks) return null;
-    return { id: cliTypeId, label: entry.displayName ?? entry.name, hooks: entry.hooks };
-  };
+  /** The canonical hooks config for a provider — install/uninstall key on the
+   *  PROVIDER, never on the user's CLI types (hook-providers.ts owns the list). */
+  const resolveHooks = (provider: string) => getHookProviderConfig(provider);
 
   ipcMain.handle('hooks:getStatus', async () => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
+      // One probe shared by every row's status read AND snippet build.
+      const interpreter = await probeInterpreter(hookDeps);
       const items: Array<{
-        cliTypeId: string;
         label: string;
         status: HookIntegrationStatus;
         provider: string;
@@ -546,16 +546,18 @@ export function setupConfigHandlers(
          *  UserPromptSubmit (Copilot drops that event's output) — the pane
          *  shows the fallback instead of pretending 'hook' is available. */
         canInject: boolean;
+        /** The CLI's user-level config file and the hook block a fresh
+         *  install would write — shown in the pane ready to copy. */
+        configPath: string;
+        snippet: string;
       }> = [];
-      for (const cliTypeId of configLoader.getCliTypes()) {
-        const resolved = resolveHooks(cliTypeId);
-        if (!resolved) continue;
+      for (const resolved of HOOK_PROVIDERS) {
         items.push({
-          cliTypeId: resolved.id,
           label: resolved.label,
-          status: await readHookIntegrationStatus(resolved.hooks, hookDeps),
-          provider: resolved.hooks.provider,
-          canInject: PROMPT_INJECTION_PROVIDERS.has(resolved.hooks.provider),
+          status: await readHookIntegrationStatus(resolved, hookDeps, interpreter),
+          provider: resolved.provider,
+          canInject: PROMPT_INJECTION_PROVIDERS.has(resolved.provider),
+          ...buildHookSnippet(resolved, hookDeps, interpreter),
         });
       }
       return { success: true, items };
@@ -565,30 +567,30 @@ export function setupConfigHandlers(
     }
   });
 
-  ipcMain.handle('hooks:install', async (_event, cliTypeId: string) => {
+  ipcMain.handle('hooks:install', async (_event, provider: string) => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
-      const resolved = resolveHooks(cliTypeId);
-      if (!resolved) return { success: false, error: `CLI type has no hooks config: ${cliTypeId}` };
-      const result = await installCliHooks(resolved.hooks, hookDeps);
+      const resolved = resolveHooks(provider);
+      if (!resolved) return { success: false, error: `No hooks config for provider: ${provider}` };
+      const result = await installCliHooks(resolved, hookDeps);
       logger.info(`[IPC] Hook install for ${resolved.label}: ${result.status} (written=${result.written})`);
       return { success: true, ...result };
     } catch (error) {
-      logger.error(`[IPC] Failed to install hooks for ${cliTypeId}: ${error}`);
+      logger.error(`[IPC] Failed to install hooks for ${provider}: ${error}`);
       return { success: false, error: String(error) };
     }
   });
 
-  ipcMain.handle('hooks:uninstall', (_event, cliTypeId: string) => {
+  ipcMain.handle('hooks:uninstall', (_event, provider: string) => {
     if (!hookDeps) return { success: false, error: 'Hook installer not wired' };
     try {
-      const resolved = resolveHooks(cliTypeId);
-      if (!resolved) return { success: false, error: `CLI type has no hooks config: ${cliTypeId}` };
-      const result = uninstallCliHooks(resolved.hooks, hookDeps);
+      const resolved = resolveHooks(provider);
+      if (!resolved) return { success: false, error: `No hooks config for provider: ${provider}` };
+      const result = uninstallCliHooks(resolved, hookDeps);
       logger.info(`[IPC] Hook uninstall for ${resolved.label}: changed=${result.changed}`);
       return { success: true, ...result };
     } catch (error) {
-      logger.error(`[IPC] Failed to uninstall hooks for ${cliTypeId}: ${error}`);
+      logger.error(`[IPC] Failed to uninstall hooks for ${provider}: ${error}`);
       return { success: false, error: String(error) };
     }
   });
