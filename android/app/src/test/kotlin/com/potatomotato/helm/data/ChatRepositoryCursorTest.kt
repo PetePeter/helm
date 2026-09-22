@@ -12,6 +12,12 @@ import org.junit.Test
  * persisted cursor told Helm "seen through seq N" about a process that held
  * nothing, and the restart never refilled.
  *
+ * The race pinned down here: a live fan-out record can cross the wire while
+ * this phone's cursor request is still in flight, so the cursor JUMPS OVER the
+ * gap the desktop is about to replay. The replayed gap then arrives stamped
+ * `replay: true` at or below the cursor — and it must be filled in, not
+ * dropped, or the hole in the thread lasts until the app restarts.
+ *
  * Real repository, no fakes.
  */
 class ChatRepositoryCursorTest {
@@ -58,33 +64,59 @@ class ChatRepositoryCursorTest {
     }
 
     @Test
-    fun `a live record that raced the replay is kept once, and the replay never doubles it`() {
+    fun `a replayed gap below the cursor fills in ahead of the live record that raced it`() {
         val repository = ChatRepository()
 
-        // Live fan-out arrives while the refetch is still in flight — seq 5
-        // lands before the replay reaches it. The cursor advanced to 5, so the
-        // replayed copies at or below 5 are dropped: seq is the only order the
-        // two sends share, and the drop is what keeps one message one row.
+        // Live fan-out crosses while the cursor request is still in flight:
+        // seq 5 lands first and the cursor jumps OVER 3 and 4. The replayed gap
+        // then arrives — flagged replay, at or below the cursor — and must
+        // render, in seq order, or the conversation reads with a hole in it.
         repository.receive(chat(text = "raced", at = 20, seq = 5))
-        repository.receive(chat(text = "old 3", at = 3, seq = 3))
-        repository.receive(chat(text = "old 4", at = 4, seq = 4))
-        // The replay's own copy of seq 5, behind the live one that already won.
-        repository.receive(chat(text = "raced again", at = 5, seq = 5))
+        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
+        repository.receive(chat(text = "old 4", at = 4, seq = 4, replay = true))
 
-        assertEquals(listOf("raced"), repository.thread("s1").map { it.text })
+        assertEquals(listOf("old 3", "old 4", "raced"), repository.thread("s1").map { it.text })
+        // The gap was history, not a new high-water mark: filling it must not
+        // drag the cursor backwards.
         assertEquals(5L, repository.lastSeq())
     }
 
     @Test
-    fun `a replayed record at or below the cursor is dropped, so a race cannot double it`() {
+    fun `a replayed record already in the thread does not double it`() {
+        val repository = ChatRepository()
+
+        repository.receive(chat(text = "raced", at = 20, seq = 5))
+        // The replay's own copy of the record that already won the race...
+        repository.receive(chat(text = "raced again", at = 5, seq = 5, replay = true))
+        // ...and the same gap record said twice, as a re-run replay would.
+        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
+        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
+
+        assertEquals(listOf("old 3", "raced"), repository.thread("s1").map { it.text })
+    }
+
+    @Test
+    fun `a live record at or below the cursor is still dropped, so a race cannot double it`() {
         val repository = ChatRepository()
         repository.receive(chat(text = "live", at = 10, seq = 5))
 
-        // The desktop replayed the gap while the live copy raced it here.
+        // A LIVE record (no replay flag) at or below the cursor can only be a
+        // duplicate of something already held: the desktop numbers forward, so
+        // live fan-out never re-sends old news unflagged.
         repository.receive(chat(text = "live again", at = 10, seq = 5))
-        repository.receive(chat(text = "older", at = 9, seq = 3))
 
         assertEquals(listOf("live"), repository.thread("s1").map { it.text })
+    }
+
+    @Test
+    fun `a replayed record below the cursor never moves it`() {
+        val repository = ChatRepository()
+        repository.receive(chat(text = "live", at = 10, seq = 9))
+
+        repository.receive(chat(text = "old", at = 3, seq = 3, replay = true))
+
+        // The next report must keep asking after 9, not after the gap.
+        assertEquals(9L, repository.lastSeq())
     }
 
     @Test
@@ -113,5 +145,14 @@ class ChatRepositoryCursorTest {
         seq: Long? = null,
         sessionId: String = "s1",
         originId: String? = null,
-    ) = MobileRecord.Chat(sessionId = sessionId, sessionName = "work", text = text, at = at, seq = seq, originId = originId)
+        replay: Boolean = false,
+    ) = MobileRecord.Chat(
+        sessionId = sessionId,
+        sessionName = "work",
+        text = text,
+        at = at,
+        seq = seq,
+        originId = originId,
+        replay = replay,
+    )
 }

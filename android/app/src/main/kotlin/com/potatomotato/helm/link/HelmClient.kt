@@ -153,8 +153,18 @@ class HelmClient(
      * runs whenever the link is usable, so an unreported cursor re-sends there
      * within one interval. A duplicate report is harmless: the desktop replays
      * from the same seq and [ChatRepository] dedupes by seq.
+     *
+     * The report also goes STALE after [CURSOR_REPORT_FRESH_MS]: a journal
+     * replay streamed over BLE can outrun a link that drops mid-stream, and the
+     * desktop — having answered the report — never sends the rest. Saying the
+     * cursor again after five minutes heals that hole on the next poll instead
+     * of at the next app restart, for the cost of a replay [ChatRepository]
+     * dedupes to nothing.
      */
     private var chatCursorReported = false
+
+    /** When [now] last stamped the report as issued — the freshness clock. */
+    private var chatCursorReportedAt = 0L
 
     private data class PendingCall(
         val onOutcome: (Outcome) -> Unit,
@@ -1250,19 +1260,22 @@ class HelmClient(
     }
 
     /**
-     * Report the cursor if this link has not heard it yet. The flag moves only
-     * when the link actually carried the call — and it moves BACK if the call
-     * then failed: a report whose answer died with the link was never heard by
-     * the desktop, so the next poll must say it again (observed as the empty
-     * threads after one reconnect: cursor sent, link dropped before the replay,
-     * flag left standing).
+     * Report the cursor if this link has not heard it yet — or has not heard it
+     * lately ([CURSOR_REPORT_FRESH_MS]). The flag moves only when the link
+     * actually carried the call — and it moves BACK if the call then failed: a
+     * report whose answer died with the link was never heard by the desktop, so
+     * the next poll must say it again (observed as the empty threads after one
+     * reconnect: cursor sent, link dropped before the replay, flag left
+     * standing). Staleness reads the same stamp the flag does, so a report
+     * known to have failed re-says immediately regardless of the clock.
      */
     private fun reportChatCursorIfNeeded(): Boolean {
-        if (chatCursorReported) return true
+        if (chatCursorReported && now() - chatCursorReportedAt < CURSOR_REPORT_FRESH_MS) return true
         val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq())) { outcome ->
             if (outcome is Outcome.Failed) chatCursorReported = false
         }
         chatCursorReported = issued
+        if (issued) chatCursorReportedAt = now()
         return issued
     }
 
@@ -1405,6 +1418,15 @@ class HelmClient(
          * which is also why it needs no allow-list entry.
          */
         private const val METHOD_CHAT_CURSOR = "__chat_cursor__"
+
+        /**
+         * How long a reported chat cursor stays believed before the next poll
+         * says it again. A journal replay over BLE takes real minutes and can
+         * die mid-stream; re-saying after five minutes heals the hole at the
+         * next poll instead of the next app restart. Cheap by design: the
+         * desktop replays from the same seq and [ChatRepository] dedupes.
+         */
+        private const val CURSOR_REPORT_FRESH_MS = 5 * 60 * 1000L
 
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"

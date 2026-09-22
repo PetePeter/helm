@@ -416,6 +416,37 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a cursor report gone stale is said again without a reconnect`() {
+        // The report went out and the desktop heard it — but a journal replay
+        // streaming over BLE can outrun a link that drops mid-stream, leaving
+        // the phone holding a hole and the desktop believing it is done. The
+        // poll must re-say the cursor once the report is old enough to doubt.
+        client.refreshSessions()
+        client.onInbound(resultFor(firstCallId(), "null"))
+        client.onInbound(resultFor(lastCallId(), "[]"))
+        clock += 6 * 60 * 1000L
+
+        client.refreshSessions()
+
+        val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
+        assertEquals(listOf("__chat_cursor__", "session_list", "__chat_cursor__", "session_list"), methods)
+    }
+
+    @Test
+    fun `a fresh cursor report is not repeated by the poll`() {
+        client.refreshSessions()
+        client.onInbound(resultFor(firstCallId(), "null"))
+        client.onInbound(resultFor(lastCallId(), "[]"))
+        clock += 60_000L
+
+        client.refreshSessions()
+
+        // Inside the freshness window the cursor is believed; only the list goes.
+        val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
+        assertEquals(listOf("__chat_cursor__", "session_list", "session_list"), methods)
+    }
+
+    @Test
     fun `an answer that arrives after the link dropped is not applied twice`() {
         client.sendChat("s1", "carry on")
         val id = lastCallId()

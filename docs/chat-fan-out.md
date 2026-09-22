@@ -165,7 +165,11 @@ established, because the link-LOST hook it used to rely on fires only when the
 transport itself changes. A channel re-made over a transport that never went
 down — a desktop restart, a re-handshake after a stumble — otherwise left the
 flag standing, and that reconnect came back with permanently empty threads.
-Re-reporting costs nothing: Helm replays from the same seq and the phone dedupes.
+Re-reporting costs nothing: Helm replays from the same seq and the phone
+dedupes. The report also goes STALE after five minutes — a replay streamed
+over BLE can outrun a link that drops mid-stream, and the desktop, having
+answered once, never sends the rest; saying the cursor again on a later poll
+heals that hole without waiting for a reconnect.
 
 The cursor is deliberately NOT persisted. An app restart wipes the threads, so
 a persisted cursor would describe history the restarted process no longer holds
@@ -180,11 +184,16 @@ Two deliberate edges:
 - **A refused send stops the stream.** The phone reports its cursor again on the
   next link up and takes the remainder then; the re-request *is* the retry
   story, so none is attempted inline.
-- **The phone dedupes by seq.** Messages fanned out live while the cursor was in
-  flight can race the replay; the cursor is the only order both sends share, so
-  the phone drops anything at or below what it already holds. A record with no
-  `seq` (an older hub) updates nothing — catch-up degrades to live-only rather
-  than advancing past history nobody held.
+- **The phone dedupes by seq — and FILLS by it.** Messages fanned out live
+  while the cursor was in flight can race the replay; the cursor is the only
+  order both sends share. A live record above the cursor advances it; a
+  record at or below it can only be a duplicate — UNLESS it is stamped
+  `replay: true`, which means it is the gap itself: the cursor jumped over it
+  while the request was in flight, and dropping it there loses the hole until
+  the app restarts. So a replayed record below the cursor files into its
+  thread in seq order (deduped by seq, cursor untouched). A record with no
+  `seq` (an older hub) updates nothing — catch-up degrades to live-only
+  rather than advancing past history nobody held.
 
 ### Phone-origin echoes
 
