@@ -609,13 +609,36 @@ be a few lines later — deliberately not built (YAGNI).
 ## Settings pane
 
 Settings → 🪝 CLI Integrations (`renderer/components/settings/CliIntegrationsTab.vue`):
-one row per CLI type with a `hooks` block in its config. Status is read off
-disk every time — never a stored flag — and reports `installed` /
-`outdated` / `not-installed` / `interpreter-missing`, plus the G9 `canInject`
-flag (false for providers that drop UserPromptSubmit output). IPC:
-`hooks:getStatus` / `hooks:install` / `hooks:uninstall` via the preload
-`config` domain (`hooksGetStatus` / `hooksInstall` / `hooksUninstall`).
-Below the install rows: the **Reminder delivery** section (G9, above).
+one row per canonical provider — Claude Code, Codex, Copilot — **owned by
+code** (`src/session/hooks/hook-providers.ts`), not by cli-types config.
+The hooks block used to live on each CLI type entry, so a machine whose CLI
+types are custom UUIDs (shipped defaults never overwrite an existing config)
+lost its rows entirely; install/uninstall are now keyed by PROVIDER and the
+three rows always appear. Status is read off disk every time — never a
+stored flag — and reports `installed` / `outdated` / `not-installed` /
+`interpreter-missing`, plus the G9 `canInject` flag (false for providers
+that drop UserPromptSubmit output). Each row also shows the **registration
+code ready to copy** — the target config file and the exact hook block a
+fresh install would write, built by `buildHookSnippet` from the SAME
+builders the installer writes with, so copy and install cannot drift. A
+missing interpreter renders as a `<python>` placeholder, never a fabricated
+path; manual unregistration is described per provider (delete the shim
+entries / delete the Copilot file), and the Remove button does the same
+surgery automatically. IPC: `hooks:getStatus` / `hooks:install` /
+`hooks:uninstall` via the preload `config` domain (`hooksGetStatus` /
+`hooksInstall` / `hooksUninstall`) — the snippet rides `hooks:getStatus`,
+no channel of its own.
+
+The **Tool mapping** section is where the user's own CLI types meet the
+providers: each configured tool carries a dropdown (Not mapped / Claude /
+Codex / Copilot). `CliTypeStore.load()` auto-migrates a provider onto every
+type once, inferred from its hooks block or name/commands — an explicit
+dropdown answer (including "Not mapped", persisted as `provider: null`) is
+never re-inferred. That top-level `provider` field is what
+`hook-capability.ts` resolves (legacy hooks blocks are the fallback); the
+shipped `cli-types.yaml` entries carry it up front so first load stays
+byte-pristine. IPC: `tools:setCliTypeProvider`.
+Below it: the **Reminder delivery** section (G9, above).
 
 ## Mobile/Telegram channel affinity (G2 enabler)
 
@@ -641,7 +664,8 @@ for both surfaces.
 | `src/session/reminder-delivery.ts` | G9: pure hook/pty/off resolution per reminder + the per-recipient factory wrapping the capability check |
 | `src/session/intersession-directive.ts` | the inter-session rules in both delivery forms — prepended builder + static injected blocks |
 | `src/session/hooks/hook-tracker.ts` | G3: the `hook` stream's first subscriber — activity edges, durable `hookStall`, plan progress, the PreCompact snapshot (composed by Helm, transcript attached) |
-| `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk |
+| `src/session/hooks/hook-installer.ts` | interpreter probe; install/update/remove of the Helm-owned block; status from disk; the copy-ready snippet builder |
+| `src/session/hooks/hook-providers.ts` | the canonical hookable providers (code-owned, not config-derived) + the CLI-type→provider inference the auto-migration uses |
 | `src/config/hooks/helm-hook-shim.py` | the shared transport shim (fail-open) |
 | `src/mcp/localhost-mcp-server.ts` | `POST /hooks` route, session-token auth |
 | `src/config/cli-types.yaml` | `hooks:` block per CLI (provider, configPath, events, denyRules) |

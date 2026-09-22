@@ -62,6 +62,17 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
     }
   });
 
+  /** Which CLI family a tool speaks — the CLI Integrations pane's Tool mapping dropdown. null clears. */
+  ipcMain.handle('tools:setCliTypeProvider', (_event, key: string, provider: 'claude' | 'codex' | 'copilot' | null) => {
+    try {
+      configLoader.setCliTypeProvider(key, provider);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to set CLI type provider: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('tools:reorderCliType', (_event, index: number, direction: 'up' | 'down') => {
     try {
       configLoader.reorderCliType(index, direction);

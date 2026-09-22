@@ -43,6 +43,12 @@ describe('shipped cli-types.yaml', () => {
     expect(entries.map(([, c]) => c.displayName)).toEqual(EXPECTED_NAMES);
   });
 
+  it('maps each agent type to its provider up front — the shell stays unmapped', () => {
+    // Shipped WITH the provider field so the load-time auto-migration has
+    // nothing to stamp and the file stays byte-pristine on first load.
+    expect(entries.map(([, c]) => c.provider)).toEqual(['claude', 'codex', 'copilot', undefined]);
+  });
+
   it('gives the agent types the Helm session init prompt and the shell none', () => {
     for (const [, config] of entries) {
       if (config.displayName === 'cmd') {

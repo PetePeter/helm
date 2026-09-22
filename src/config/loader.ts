@@ -196,7 +196,17 @@ export interface CliTypeConfig {
   helmActions?: HelmActionMap;
   /** User-defined regex patterns that trigger automated actions when matched against PTY output. */
   patterns?: PatternRule[];
-  /** System-wide hook integration (Settings → CLI Integrations). Absent = this type has none (e.g. cmd). */
+  /**
+   * Which CLI family this tool actually speaks ('claude' | 'codex' | 'copilot').
+   * Auto-migrated on load from the name/commands/hooks block; the CLI
+   * Integrations pane's Tool mapping dropdown sets it explicitly. `null` is
+   * "explicitly unmapped" — the user answered the dropdown with Not mapped,
+   * and migration must respect that forever, never re-infer. Drives hook
+   * capability (hook-capability.ts) — install/uninstall are provider-keyed
+   * and do NOT consult per-type hooks blocks (see session/hooks/hook-providers.ts).
+   */
+  provider?: 'claude' | 'codex' | 'copilot' | null;
+  /** Legacy carrier of provider + denyRules for this type. Install/uninstall no longer read it; denyRules remain user-editable here. */
   hooks?: CliHooksIntegration;
 }
 
@@ -573,6 +583,12 @@ export class ConfigLoader {
   getCliTypeEntry(cliType: string): CliTypeConfig | null {
     this.ensureLoaded();
     return this.cliTypeStore.get(cliType) ?? null;
+  }
+
+  /** Set/clear which CLI family a tool speaks (Tool mapping dropdown). */
+  setCliTypeProvider(key: string, provider: 'claude' | 'codex' | 'copilot' | null): void {
+    this.ensureLoaded();
+    this.cliTypeStore.setCliTypeProvider(key, provider);
   }
 
   getCliTypeName(cliType: string): string | null {

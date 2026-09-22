@@ -107,4 +107,70 @@ describe('CliTypeStore', () => {
     expect(() => store.load()).not.toThrow();
     expect(store.get('cc')?.name).toBe('Claude');
   });
+
+  describe('provider auto-migration + setCliTypeProvider', () => {
+    function seed(yaml: string): void {
+      fs.writeFileSync(path.join(TEST_DIR, 'cli-types.yaml'), yaml, 'utf8');
+    }
+
+    it('migrates an inferred provider on load and persists it once', () => {
+      seed('cc:\n  name: Claude Code\n  spawnCommand: claude --session-id {x}\n  initialPrompt: []\n');
+
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+      expect(store.get('cc')?.provider).toBe('claude');
+      // Persisted, not just in-memory — a fresh store reads it back.
+      const fresh = new CliTypeStore(TEST_DIR);
+      fresh.load();
+      expect(fresh.get('cc')?.provider).toBe('claude');
+    });
+
+    it('takes the hooks block as authoritative when inferring', () => {
+      seed('cx:\n  name: Codex\n  hooks:\n    provider: codex\n    configPath: ~/.codex/hooks.json\n    events: [Stop]\n');
+
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+      expect(store.get('cx')?.provider).toBe('codex');
+    });
+
+    it('never overwrites an explicit provider, even when the name disagrees', () => {
+      seed('cp:\n  name: Copilot\n  provider: claude\n  initialPrompt: []\n');
+
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+      expect(store.get('cp')?.provider).toBe('claude');
+    });
+
+    it('leaves provider unset for a shell with no signal', () => {
+      seed('sh:\n  name: cmd\n  spawnCommand: cmd.exe\n  initialPrompt: []\n');
+
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+      expect(store.get('sh')?.provider).toBeUndefined();
+    });
+
+    it('setCliTypeProvider sets, persists, and clears', () => {
+      seed('cc:\n  name: Claude Code\n  initialPrompt: []\n');
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+
+      store.setCliTypeProvider('cc', 'codex');
+      const fresh = new CliTypeStore(TEST_DIR);
+      fresh.load();
+      expect(fresh.get('cc')?.provider).toBe('codex');
+
+      fresh.setCliTypeProvider('cc', null);
+      const again = new CliTypeStore(TEST_DIR);
+      again.load();
+      // Explicitly unmapped survives the reload — the name still says "Claude
+      // Code", but the user answered the dropdown and that answer wins.
+      expect(again.get('cc')?.provider).toBeNull();
+    });
+
+    it('setCliTypeProvider throws on an unknown key', () => {
+      const store = new CliTypeStore(TEST_DIR);
+      store.load();
+      expect(() => store.setCliTypeProvider('ghost', 'claude')).toThrow();
+    });
+  });
 });

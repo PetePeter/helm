@@ -5,6 +5,7 @@
 import * as path from 'path';
 import { normalizeToolConfig } from './loader-helpers.js';
 import { loadYaml, saveYaml } from './yaml-store.js';
+import { inferCliProvider } from '../session/hooks/hook-providers.js';
 import type { CliTypeConfig } from './loader.js';
 
 /**
@@ -61,6 +62,14 @@ export class CliTypeStore {
     for (const key of Object.keys(this.data)) {
       if (normalizeToolConfig(this.data[key])) anyChanged = true;
       if (normalizeIdentity(key, this.data[key], false)) anyChanged = true;
+      // Provider auto-migration: stamp which CLI family a type speaks, once,
+      // inferred from its own fields. Only `undefined` is fillable — `null`
+      // is the user's explicit "Not mapped" and must never be re-inferred.
+      const config = this.data[key];
+      if (config.provider === undefined) {
+        const inferred = inferCliProvider(config);
+        if (inferred) { config.provider = inferred; anyChanged = true; }
+      }
     }
     if (anyChanged) this.save();
   }
@@ -140,6 +149,20 @@ export class CliTypeStore {
     key = this.resolveKey(key);
     if (!this.data[key]) throw new Error(`CLI type not found: ${key}`);
     delete this.data[key];
+    this.save();
+  }
+
+  /**
+   * Set (or clear) which CLI family a type speaks — the Tool mapping
+   * dropdown's write path. null persists an EXPLICIT "Not mapped" (not an
+   * absent field): the user answered the question, and load()'s migration
+   * must never second-guess them by re-inferring.
+   */
+  setCliTypeProvider(key: string, provider: 'claude' | 'codex' | 'copilot' | null): void {
+    key = this.resolveKey(key);
+    const config = this.data[key];
+    if (!config) throw new Error(`CLI type not found: ${key}`);
+    config.provider = provider;
     this.save();
   }
 

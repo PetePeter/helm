@@ -18,15 +18,20 @@ import CliIntegrationsTab from '../../../renderer/components/settings/CliIntegra
 
 const setCalls: Array<Record<string, string>> = [];
 let modes: Record<string, string> = {};
+const providerCalls: Array<{ key: string; provider: string }> = [];
+
+const CLAUDE_SNIPPET = '{\n  "hooks": { "SessionStart": [] }\n}';
+const CODEX_SNIPPET = '{\n  "hooks": { "SessionStart": [] }\n}';
+const COPILOT_SNIPPET = '{\n  "version": 1,\n  "hooks": { "sessionStart": [] }\n}';
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
   configClient: {
     hooksGetStatus: vi.fn(async () => ({
       success: true,
       items: [
-        { cliTypeId: 'claude', label: 'Claude Code', status: 'installed', canInject: true },
-        { cliTypeId: 'codex', label: 'Codex', status: 'not-installed', canInject: true },
-        { cliTypeId: 'copilot', label: 'GitHub Copilot CLI', status: 'installed', canInject: false },
+        { provider: 'claude', label: 'Claude Code', status: 'installed', canInject: true, configPath: '~/.claude/settings.json', snippet: CLAUDE_SNIPPET },
+        { provider: 'codex', label: 'Codex', status: 'not-installed', canInject: true, configPath: '~/.codex/hooks.json', snippet: CODEX_SNIPPET },
+        { provider: 'copilot', label: 'GitHub Copilot CLI', status: 'installed', canInject: false, configPath: '~/.copilot/hooks/helm.json', snippet: COPILOT_SNIPPET },
       ],
     })),
     hooksInstall: vi.fn(async () => ({ success: true })),
@@ -40,6 +45,19 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
       return { success: true, modes };
     }),
   },
+  toolsClient: {
+    toolsGetAll: vi.fn(async () => ({
+      cliTypes: {
+        'uuid-a': { name: 'My Claude Tool', displayName: 'My Claude Tool', provider: 'claude' },
+        'uuid-b': { name: 'Codex', displayName: 'Codex' },
+        'uuid-c': { name: 'cmd', displayName: 'cmd' },
+      },
+    })),
+    toolsSetCliTypeProvider: vi.fn(async (key: string, provider: string) => {
+      providerCalls.push({ key, provider });
+      return { success: true };
+    }),
+  },
 }));
 
 async function factory() {
@@ -48,8 +66,14 @@ async function factory() {
   return wrapper;
 }
 
-function reminderRows(wrapper: ReturnType<typeof factory> extends Promise<infer W> ? W : never) {
-  return wrapper.findAll('.settings-list-item').filter(row => row.find('select').exists());
+function section(wrapper: Awaited<ReturnType<typeof factory>>, title: string) {
+  const found = wrapper.findAll('.tg-section').find(s => s.find('.tg-section-title').text() === title);
+  if (!found) throw new Error(`No section titled "${title}"`);
+  return found;
+}
+
+function reminderRows(wrapper: Awaited<ReturnType<typeof factory>>) {
+  return section(wrapper, 'Reminder delivery').findAll('.settings-list-item').filter(row => row.find('select').exists());
 }
 
 describe('CliIntegrationsTab — Reminder delivery (G9)', () => {
@@ -100,5 +124,73 @@ describe('CliIntegrationsTab — Reminder delivery (G9)', () => {
     expect(setCalls).toEqual([{ telegramModeInstructions: 'hook' }]);
     // The fallback line appears once the mode asks for hook.
     expect(reminderRows(wrapper)[2].text()).toContain('Falls back to prepend for:');
+  });
+});
+
+describe('CliIntegrationsTab — copy-ready hook registration code', () => {
+  let writeText: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+  });
+
+  /** One row per CLI, each carrying its snippet pre block. */
+  function hookRows(wrapper: Awaited<ReturnType<typeof factory>>) {
+    return wrapper.findAll('.settings-list-item').filter(row => row.find('pre').exists());
+  }
+
+  it('shows the config file path and the ready-to-copy snippet per CLI', async () => {
+    const wrapper = await factory();
+    const rows = hookRows(wrapper);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].text()).toContain('~/.claude/settings.json');
+    expect(rows[0].find('pre').text()).toBe(CLAUDE_SNIPPET);
+    expect(rows[2].text()).toContain('~/.copilot/hooks/helm.json');
+    expect(rows[2].find('pre').text()).toBe(COPILOT_SNIPPET);
+  });
+
+  it('describes manual unregistration per provider', async () => {
+    const wrapper = await factory();
+    const rows = hookRows(wrapper);
+    // Claude/Codex: delete the entries whose command runs the shim.
+    expect(rows[0].text()).toContain('helm-hook-shim.py');
+    // Copilot: the Helm-owned file goes away entirely.
+    expect(rows[2].text()).toContain('delete the file');
+  });
+
+  it('copies the snippet verbatim', async () => {
+    const wrapper = await factory();
+    const rows = hookRows(wrapper);
+    await rows[1].findAll('button').find(b => b.text() === 'Copy')!.trigger('click');
+    expect(writeText).toHaveBeenCalledWith(CODEX_SNIPPET);
+  });
+});
+
+describe('CliIntegrationsTab — tool provider mapping', () => {
+  beforeEach(() => {
+    providerCalls.length = 0;
+  });
+
+  /** One row per configured CLI type, each carrying its provider dropdown. */
+  function mappingRows(wrapper: Awaited<ReturnType<typeof factory>>) {
+    return section(wrapper, 'Tool mapping').findAll('.settings-list-item');
+  }
+
+  it('lists every configured CLI type with its current provider', async () => {
+    const wrapper = await factory();
+    const rows = mappingRows(wrapper);
+    expect(rows).toHaveLength(3);
+    expect(rows[0].text()).toContain('My Claude Tool');
+    expect((rows[0].find('select').element as HTMLSelectElement).value).toBe('claude');
+    // Auto-migration fills what it can; a shell stays unset.
+    expect((rows[2].find('select').element as HTMLSelectElement).value).toBe('');
+  });
+
+  it('persists a provider choice through the tools channel', async () => {
+    const wrapper = await factory();
+    await mappingRows(wrapper)[1].find('select').setValue('copilot');
+    await flushPromises();
+    expect(providerCalls).toEqual([{ key: 'uuid-b', provider: 'copilot' }]);
   });
 });

@@ -21,6 +21,9 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  # Which CLI family this tool speaks — the first-class provider mapping the
+  # Tool mapping dropdown edits (auto-migrated onto older configs on load).
+  provider: claude
   hooks:
     provider: claude
     configPath: ~/.claude/settings.json
@@ -63,6 +66,7 @@
     clear: /new{Enter}
     compact: /compact{Enter}
     export: ''
+  provider: codex
   hooks:
     provider: codex
     configPath: ~/.codex/hooks.json
@@ -95,6 +99,7 @@
     clear: /clear{Enter}
     compact: /compact $instructions{Enter}
     export: /export $path{Enter} {Wait 5000}
+  provider: copilot
   hooks:
     provider: copilot
     configPath: ~/.copilot/hooks/helm.json

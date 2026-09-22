@@ -612,6 +612,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     },
   ) => ipcRenderer.invoke('tools:updateCliType', key, name, initialPrompt, initialPromptDelay, options),
   toolsRemoveCliType: (key: string) => ipcRenderer.invoke('tools:removeCliType', key),
+  /** Which CLI family a tool speaks — the CLI Integrations pane's Tool mapping dropdown. null clears. */
+  toolsSetCliTypeProvider: (key: string, provider: 'claude' | 'codex' | 'copilot' | null) =>
+    ipcRenderer.invoke('tools:setCliTypeProvider', key, provider),
   toolsReorderCliType: (index: number, direction: 'up' | 'down') =>
     ipcRenderer.invoke('tools:reorderCliType', index, direction),
   toolsGetPatterns: (cliType: string) => ipcRenderer.invoke('tools:getPatterns', cliType),
