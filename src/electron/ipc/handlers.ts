@@ -6,7 +6,8 @@
  * are never imported directly by the application.
  */
 
-import { BrowserWindow, app, dialog, net, powerMonitor } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
+import { getMessageFlightTimeoutMs } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
 import { PtyManager } from '../../session/pty-manager.js';
 import { StateDetector } from '../../session/state-detector.js';
@@ -292,6 +293,29 @@ export function registerIPCHandlers(
   });
   chatBroker.register(telegramModules.relayService);
   helmControlService.setChatBroker(chatBroker);
+
+  // Message-flight gate: every enveloped session_send_text broadcasts a
+  // flight to all windows; the paste is held until a renderer acks the
+  // landing (the delivery service enforces the timeout release).
+  const pendingFlightAcks = new Map<string, () => void>();
+  ipcMain.handle('session:message-flight-ack', (_event, flightId: unknown) => {
+    if (typeof flightId === 'string') {
+      pendingFlightAcks.get(flightId)?.();
+      pendingFlightAcks.delete(flightId);
+    }
+    return { ok: true };
+  });
+  helmControlService.setMessageFlightSink(flight => new Promise<void>(resolve => {
+    pendingFlightAcks.set(flight.flightId, resolve);
+    for (const window of windowManager.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send('session:message-flight', flight);
+    }
+    // Late-ack sanitation: drop the registry entry once the sender side has
+    // certainly moved on, so the map cannot grow without bound.
+    setTimeout(() => {
+      if (pendingFlightAcks.get(flight.flightId) === resolve) pendingFlightAcks.delete(flight.flightId);
+    }, getMessageFlightTimeoutMs() + 5000).unref?.();
+  }));
 
   // Restore sessions persisted from previous run
   const restored = sessionManager.restoreSessions();

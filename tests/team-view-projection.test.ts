@@ -112,6 +112,22 @@ describe('buildTeamViewProjection', () => {
     ]);
   });
 
+  it('projects the shared activity level onto desks, defaulting to idle', () => {
+    const withSource = buildTeamViewProjection({
+      sessions: [session('busy', { projectId: 'alpha' }), session('quiet', { projectId: 'alpha' })],
+      projects: [{ id: 'alpha', name: 'Alpha', canonicalPath: '/alpha', alternatePaths: [] }],
+      activityLevelForSession: id => (id === 'busy' ? 'active' : 'inactive'),
+    });
+    expect(withSource.departments[0].desks.map(desk => [desk.sessionId, desk.activityLevel]))
+      .toEqual([['busy', 'active'], ['quiet', 'inactive']]);
+
+    const withoutSource = buildTeamViewProjection({
+      sessions: [session('one')],
+      projects: [],
+    });
+    expect(withoutSource.departments[0].desks[0].activityLevel).toBe('idle');
+  });
+
   it('does not infer an agent wait from a completed or idle agent phase', () => {
     const result = buildTeamViewProjection({
       sessions: [session('completed', { aiagentState: 'completed' }), session('idle', { aiagentState: 'idle' })],

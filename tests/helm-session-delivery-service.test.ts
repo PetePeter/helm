@@ -605,3 +605,100 @@ describe('HelmSessionDeliveryService', () => {
     });
   });
 });
+
+describe('message flight gate (envelope animation before the paste)', () => {
+  const ORIGINAL_TIMEOUT = process.env.HELM_MESSAGE_FLIGHT_TIMEOUT_MS;
+
+  beforeEach(() => {
+    process.env.HELM_MESSAGE_FLIGHT_TIMEOUT_MS = '25';
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_TIMEOUT === undefined) delete process.env.HELM_MESSAGE_FLIGHT_TIMEOUT_MS;
+    else process.env.HELM_MESSAGE_FLIGHT_TIMEOUT_MS = ORIGINAL_TIMEOUT;
+    // A timed-out async body never reaches its own finally — restore here so
+    // fake timers cannot leak into the next test and stall its real awaits.
+    vi.useRealTimers();
+  });
+
+  /** A sink that lets each test decide when the renderer-side flight "lands". */
+  function makeFlightSink() {
+    const flights: import('../src/session/message-flight.js').SessionMessageFlight[] = [];
+    const landings = new Map<string, () => void>();
+    const sink = (flight: import('../src/session/message-flight.js').SessionMessageFlight) => {
+      flights.push(flight);
+      return new Promise<void>(resolve => landings.set(flight.flightId, resolve));
+    };
+    const land = (flightId: string) => landings.get(flightId)?.();
+    return { flights, sink, land };
+  }
+
+  it('holds the PTY paste until the flight lands, then delivers', async () => {
+    const { service, ptyManager, receiver, sender } = makeDeps();
+    const gate = makeFlightSink();
+    service.setMessageFlightSink(gate.sink);
+
+    const pending = service.sendTextToSession(receiver.id, 'hello world', {
+      senderSessionId: sender.id, senderSessionName: sender.name, expectsResponse: false,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(gate.flights).toHaveLength(1);
+    expect(gate.flights[0]).toMatchObject({
+      senderSessionId: sender.id,
+      recipientSessionId: receiver.id,
+      recipientName: receiver.name,
+      isReply: false,
+    });
+    expect(ptyManager.deliverText).not.toHaveBeenCalled();
+
+    gate.land(gate.flights[0].flightId);
+    await pending;
+    expect(getSentText(ptyManager)).toContain('hello world');
+  });
+
+  it('stops waiting and delivers anyway when nothing acks the flight', async () => {
+    vi.useFakeTimers();
+    try {
+      const { service, ptyManager, receiver, sender } = makeDeps();
+      const gate = makeFlightSink();
+      service.setMessageFlightSink(gate.sink);
+
+      const pending = service.sendTextToSession(receiver.id, 'unacked', {
+        senderSessionId: sender.id, senderSessionName: sender.name,
+      });
+      // Nothing acks; the flight timeout (25ms here) must release the paste.
+      // runAllTimersAsync also flushes the settle-waits the delivery itself
+      // schedules after the hold is released.
+      await vi.runAllTimersAsync();
+      await pending;
+      expect(getSentText(ptyManager)).toContain('unacked');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('flags a reverse-direction send within the reply window as a reply', async () => {
+    const { service, ptyManager, receiver, sender } = makeDeps();
+    const gate = makeFlightSink();
+    service.setMessageFlightSink(gate.sink);
+
+    const first = service.sendTextToSession(receiver.id, 'initial', {
+      senderSessionId: sender.id, senderSessionName: sender.name,
+    });
+    await Promise.resolve(); await Promise.resolve();
+    gate.land(gate.flights[0].flightId);
+    await first;
+
+    // The recipient answers back: reverse direction → reply.
+    const reply = service.sendTextToSession(sender.id, 'answering', {
+      senderSessionId: receiver.id, senderSessionName: receiver.name,
+    });
+    await Promise.resolve(); await Promise.resolve();
+    expect(gate.flights[1].isReply).toBe(true);
+    gate.land(gate.flights[1].flightId);
+    await reply;
+    void ptyManager;
+  });
+});

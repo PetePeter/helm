@@ -15,6 +15,8 @@ export interface TeamViewDesk {
   cliType: string;
   title?: string;
   state: TeamViewSessionState;
+  /** PTY-output activity level (active/inactive/idle) — drives the shared dot palette. */
+  activityLevel: string;
   /** Why a waiting desk is waiting, when there is evidence for it. */
   waitingReason?: TeamViewWaitingReason;
   /** A passive, already-clipped PTY tail. Team View never writes to it. */
@@ -46,6 +48,8 @@ export interface TeamViewProjectionInput {
   projects: readonly ProjectSummary[];
   /** Renderer display state is authoritative over the persisted session field. */
   stateForSession?: (session: Session) => string | undefined;
+  /** PTY-output timing source (the same one Session List dots read); default idle. */
+  activityLevelForSession?: (sessionId: string) => string | undefined;
   /** Optional future source for a known agent wait; unknown is retained safely. */
   waitingReasonForSession?: (session: Session) => TeamViewWaitingReason | undefined;
   /** Existing renderer PTY-buffer boundary; this module never reads xterm itself. */
@@ -150,6 +154,7 @@ export function buildTeamViewProjection(input: TeamViewProjectionInput): TeamVie
           cliType: session.cliType,
           ...(session.title ? { title: session.title } : {}),
           state,
+          activityLevel: input.activityLevelForSession?.(session.id) ?? 'idle',
           ...(waitingReason ? { waitingReason } : {}),
           terminalTail: terminalTail.slice(-tailLimit),
           hidden: isHidden(session, hidden),

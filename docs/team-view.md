@@ -59,3 +59,54 @@ the shared Session List shortcut map. Department collapse is saved with the
 existing session-group preferences. Desk state, waiting cue, lock, visibility,
 rename, artifact, and close controls are projections of the existing session
 boundaries rather than a second Team View state store.
+
+## Live desk plumbing
+
+Two desk cues come straight from the same renderer sources the Session List
+uses — Team View owns no state of its own for either:
+
+- **Activity dot** — `state.sessionActivityLevels` (PTY output timing, fed by
+  `pty:activity-change`) flows into the projection via
+  `activityLevelForSession` and is rendered with the shared
+  `getActivityColor` palette (`renderer/state-colors.ts`). Never hardcode a
+  dot colour here.
+- **Desk monitor tail** — the `PtyOutputBuffer` behind the TerminalManager.
+  The pane's composable resolves the buffer *reactively*
+  (`onTerminalManagerChanged`), because dock panes mount before
+  `useAppBootstrap` constructs the TerminalManager; a one-time read at setup
+  is permanently null. Buffer updates invalidate the projection on a
+  250 ms trailing throttle so PTY bursts recompute once per window.
+
+## Message flights (envelope animation)
+
+Every enveloped `session_send_text` pauses before its bytes reach the
+recipient's composer: the main process broadcasts a flight
+(`session:message-flight`) and holds the paste until the renderer acks the
+landing (`session:message-flight-ack`):
+
+```mermaid
+sequenceDiagram
+    participant S as Sender CLI
+    participant M as Main process
+    participant T as Team View pane
+    participant R as Recipient CLI
+    S->>M: session_send_text
+    M->>T: broadcast flight (flightId, sender, recipient, isReply)
+    M-->>M: hold the paste
+    T->>T: fly envelope sender desk → recipient desk (1s)
+    T->>M: ack(flightId) on animationend
+    M->>R: paste the message
+```
+
+- The hold is **never a hostage situation**: the delivery service races the
+  ack against `HELM_MESSAGE_FLIGHT_TIMEOUT_MS` (default 1600 ms), so
+  headless MCP traffic with no renderer degrades to a short fixed delay.
+- A flight whose recipient desk is missing (closed session, other project) is
+  acked immediately; a sender without a desk (phone, mobile proxy) flies in
+  from the pane corner.
+- Colours live in `MESSAGE_FLIGHT_COLORS` (`renderer/state-colors.ts`): a
+  first send flies blue, any reverse-direction send within the 10-minute
+  reply window flies amber — replies to replies included.
+- Contract and constants: `src/session/message-flight.ts`; IPC wiring in
+  `src/electron/ipc/handlers.ts`; preload channels `onSessionMessageFlight` /
+  `ackSessionMessageFlight` in the `sessions` domain.

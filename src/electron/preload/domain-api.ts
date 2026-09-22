@@ -1,5 +1,6 @@
 import { ipcRenderer } from 'electron';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
+import type { SessionMessageFlight } from '../../session/message-flight.js';
 import type { DraftPrompt } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
@@ -441,6 +442,17 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);
   },
+
+  /** Subscribe to inter-session message flights (Team View envelope animation). */
+  onSessionMessageFlight: (callback: (flight: SessionMessageFlight) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: SessionMessageFlight) => callback(data);
+    ipcRenderer.on('session:message-flight', listener);
+    return () => ipcRenderer.removeListener('session:message-flight', listener);
+  },
+
+  /** Acknowledge a message flight landing — releases the held PTY paste. */
+  ackSessionMessageFlight: (flightId: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('session:message-flight-ack', flightId),
 
   /** Subscribe to snap-out events */
   onSnapOut: (callback: (sessionId: string) => void) => {
