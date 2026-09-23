@@ -10,6 +10,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { systemClient } from '../ipc/clients.js';
+import { installMouseTrackingGuard } from './mouse-tracking-guard.js';
 
 export interface TerminalViewOptions {
   sessionId: string;
@@ -19,6 +20,8 @@ export interface TerminalViewOptions {
   onScrollInput?: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
   onTitleChange?: (title: string) => void;
+  /** Let the CLI capture the mouse. Off by default so plain click-drag selects text. */
+  mouseTracking?: boolean;
 }
 
 export class TerminalView {
@@ -78,6 +81,8 @@ export class TerminalView {
       void systemClient.systemOpenExternalUrl(uri);
     }));
     this.terminal.loadAddon(this.searchAddon);
+
+    if (options.mouseTracking !== true) installMouseTrackingGuard(this.terminal);
 
     this.terminal.open(this.container);
 

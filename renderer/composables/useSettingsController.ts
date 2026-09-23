@@ -282,6 +282,7 @@ export function useSettingsController(options: {
       renameCommand: value?.renameCommand || '',
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),
+      mouseTracking: Boolean(value?.mouseTracking),
       messReminders: value?.messReminders !== false,
       submitSuffix: value?.submitSuffix ?? '\\r',
       helmActions: {
@@ -437,6 +438,7 @@ export function useSettingsController(options: {
       helmPreambleForInterSession: true,
       largeTextAsTempFile: false,
       messReminders: true,
+      mouseTracking: false,
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
       initialPrompt: [],

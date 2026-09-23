@@ -31,6 +31,9 @@ import { usePromptApplyFlow } from '../../composables/usePromptApplyFlow.js';
 import TerminalChips from '../chips/TerminalChips.vue';
 import ContextMenu from '../modals/ContextMenu.vue';
 import { configClient, eventsClient, sessionsClient, terminalClient } from '../../ipc/clients.js';
+import { initConfigCache } from '../../bindings.js';
+import { state as legacyState } from '../../state.js';
+import { cliTypeWantsMouseTracking } from '../../utils.js';
 
 const appStore = useAppStore();
 const chipBarStore = useChipBarStore();
@@ -155,6 +158,13 @@ onMounted(async () => {
   const id = sessionId.value;
   if (!container || !id) return;
 
+  // A freshly opened pop-out may mount before bootstrap filled the tools cache;
+  // the mouse-tracking opt-in must be known before xterm starts parsing.
+  // Awaited before attach so it cannot widen the attach→listener output race.
+  if (Object.keys(legacyState.cliToolsCache ?? {}).length === 0) await initConfigCache();
+  if (unmounted) return;
+  const cliType = appStore.state.sessions.find((s) => s.id === id)?.cliType;
+
   const attachResult = await terminalClient.terminalAttach?.(id);
   if (unmounted) return;
   if (attachResult && !attachResult.success) {
@@ -177,6 +187,7 @@ onMounted(async () => {
   view = new TerminalView({
     sessionId: id,
     container,
+    mouseTracking: cliTypeWantsMouseTracking(cliType),
     onData: (data) => { terminalClient.ptyWrite?.(id, data); },
     onScrollInput: (data) => { terminalClient.ptyScrollInput?.(id, data); },
     onResize: (cols, rows) => { terminalClient.ptyResize?.(id, cols, rows); },

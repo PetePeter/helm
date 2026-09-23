@@ -199,7 +199,7 @@ renderer/
 ├── terminal/
 │   ├── terminal-view.ts        # xterm.js wrapper (fit/search/weblinks addons)
 │   ├── terminal-manager.ts     # Multi-terminal orchestration (create/switch/rename/resize/destroy + tab bar + PtyOutputBuffer + right-click paste prevention + pty:markSwitching before fit)
-│   ├── pty-filter.ts           # Strips mouse-tracking + alternate-scroll escape sequences from PTY output
+│   ├── mouse-tracking-guard.ts # Swallows xterm mouse-tracking modes unless the CLI type opts in (plain-drag copy)
 │   └── pty-output-buffer.ts    # Ring buffer for PTY output — last N lines per session, ANSI-stripped, for preview display
 ├── screens/
 │   ├── sessions.ts             # Sessions screen orchestrator: group init, collapse/reorder actions, removeBookmark action, navigation, public API. Re-exports from sessions-spawn and sessions-plans.
@@ -359,7 +359,6 @@ tests/                                  # 61 test files
 ├── pinned-dashboard.test.ts    # Telegram pinned dashboard tests
 ├── pipeline-queue.test.ts      # Auto-handoff queue tests
 ├── power-monitor.test.ts       # Power monitor diagnostics tests
-├── pty-filter.test.ts          # Mouse-tracking + alternate-scroll escape sequence stripping tests
 ├── pty-manager.test.ts         # PTY process management tests
 ├── pty-output-buffer.test.ts   # PtyOutputBuffer ring buffer tests
 ├── quick-spawn.test.ts         # Quick-spawn CLI type picker tests

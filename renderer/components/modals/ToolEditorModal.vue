@@ -40,6 +40,7 @@ export interface ToolEditorData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  mouseTracking?: boolean;
   submitSuffix: string;
   helmActions: { clear: string; compact: string; export: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
@@ -66,6 +67,7 @@ const emit = defineEmits<{
     helmPreambleForInterSession?: boolean;
     largeTextAsTempFile: boolean;
     messReminders?: boolean;
+    mouseTracking?: boolean;
     submitSuffix: string;
     helmActions: { clear: string; compact: string; export: string };
     _promptItems: Array<{ label: string; sequence: string }>;
@@ -86,6 +88,7 @@ const renameCommand = ref('');
 const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
 const messReminders = ref(true);
+const mouseTracking = ref(false);
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
 const helmActionClear = ref('');
 const helmActionCompact = ref('');
@@ -146,6 +149,7 @@ function initForm(): void {
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
+  mouseTracking.value = Boolean(d.mouseTracking);
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
@@ -204,6 +208,7 @@ function onSave(): void {
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
+    mouseTracking: mouseTracking.value,
     submitSuffix: submitSuffix.value,
     helmActions: {
       clear: helmActionClear.value.trim(),
@@ -310,6 +315,7 @@ defineExpose({ handleButton });
             <label class="te-checkbox-row"><input v-model="largeTextAsTempFile" type="checkbox" /><span>Send large Helm MCP messages as temp file paths</span></label>
             <p class="te-section__hint">When enabled, large session_send_text payloads are written to a temp file and the recipient gets the file path plus reading instructions.</p>
             <label class="te-checkbox-row"><input v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
+            <label class="te-checkbox-row"><input v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
             <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
           </fieldset>
 

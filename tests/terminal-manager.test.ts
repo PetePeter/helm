@@ -51,7 +51,7 @@ function makeMockTerminal() {
     cols: 120,
     rows: 30,
     options: {},
-    parser: {},
+    parser: { registerCsiHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }) },
   };
   terminalInstances.push(t);
   return t;

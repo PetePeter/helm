@@ -29,7 +29,7 @@ vi.mock('@xterm/xterm', () => ({
       onResize: vi.fn().mockReturnValue({ dispose: vi.fn() }),
       onTitleChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
       buffer: { active: { type: 'normal', baseY: 0, cursorY: 0, length: 30, getLine: vi.fn() } },
-      cols: 120, rows: 30, options: {}, parser: {},
+      cols: 120, rows: 30, options: {}, parser: { registerCsiHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }) },
     });
     return this;
   }),

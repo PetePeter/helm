@@ -12,6 +12,7 @@ import { resolveSuccessorSessionId } from './successor-pick.js';
 import type { SessionInfo } from '../../src/types/session.js';
 import { loadStoredSessions } from '../session-store.js';
 import { eventsClient, terminalClient } from '../ipc/clients.js';
+import { cliTypeWantsMouseTracking } from '../utils.js';
 
 export interface TerminalSession {
   sessionId: string;
@@ -109,6 +110,7 @@ export class TerminalManager {
     const view = new TerminalView({
       sessionId,
       container: element,
+      mouseTracking: cliTypeWantsMouseTracking(cliType),
       onData: (data) => {
         terminalClient.ptyWrite?.(sessionId, data);
       },
@@ -192,6 +194,7 @@ export class TerminalManager {
     const view = new TerminalView({
       sessionId,
       container: element,
+      mouseTracking: cliTypeWantsMouseTracking(cliType),
       onData: (data) => {
         terminalClient.ptyWrite?.(sessionId, data);
       },
@@ -532,6 +535,7 @@ export class TerminalManager {
     const view = new TerminalView({
       sessionId,
       container: element,
+      mouseTracking: cliTypeWantsMouseTracking(managed.cliType),
       onData: (data) => { terminalClient.ptyWrite?.(sessionId, data); },
       onScrollInput: (data) => { terminalClient.ptyScrollInput?.(sessionId, data); },
       onResize: (cols, rows) => { terminalClient.ptyResize?.(sessionId, cols, rows); },

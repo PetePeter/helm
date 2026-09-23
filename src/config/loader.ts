@@ -172,6 +172,11 @@ export interface CliTypeConfig {
    * a plain shell's stdin is not a nudge, it is a stray command.
    */
   messReminders?: boolean;
+  /**
+   * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —
+   * mouse modes are swallowed so plain click-drag selects text for copying.
+   */
+  mouseTracking?: boolean;
   /** Named sequence groups — accessible via gamepad bindings and context menu */
   sequences?: Record<string, SequenceListItem[]>;
   /** Command sent to PTY after spawn to name the session for later resume. Template: {cliSessionName} replaced at runtime. */
@@ -1205,6 +1210,7 @@ export class ConfigLoader {
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
+    if (options?.mouseTracking === true) tool.mouseTracking = true;
     const helmActions = this.cleanHelmActions(options?.helmActions);
     if (helmActions) tool.helmActions = helmActions;
     this.cliTypeStore.add(id, tool);
@@ -1283,6 +1289,13 @@ export class ConfigLoader {
           delete (existing as any).messReminders;  // omit default from YAML
         } else {
           existing.messReminders = false;
+        }
+      }
+      if (options.mouseTracking !== undefined) {
+        if (options.mouseTracking === false) {
+          delete (existing as any).mouseTracking;  // omit default from YAML
+        } else {
+          existing.mouseTracking = true;
         }
       }
       if (options.helmActions !== undefined) {

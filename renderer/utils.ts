@@ -60,6 +60,11 @@ const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a
  * reference reaching the UI can still be a pre-migration slug or a label a
  * human typed, so all three have to resolve to the same record.
  */
+/** Whether this CLI type opted in to xterm mouse tracking (default off so plain drag copies). */
+export function cliTypeWantsMouseTracking(cliType: string | undefined): boolean {
+  return resolveCliTypeRecord(cliType ?? '')?.mouseTracking === true;
+}
+
 export function resolveCliTypeRecord(cliType: string): Record<string, any> | null {
   if (typeof cliType !== 'string') return null;
   const ref = cliType.trim();

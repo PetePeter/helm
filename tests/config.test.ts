@@ -936,6 +936,18 @@ describe('ConfigLoader', () => {
       expect(loader.getCliTypeEntry('claude-code')!.largeTextAsTempFile).toBeUndefined();
     });
 
+    it('updateCliType toggles mouseTracking and omits the false default', () => {
+      loader.load();
+      loader.addCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: true });
+      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBe(true);
+
+      loader.updateCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: false });
+      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBeUndefined();
+
+      loader.updateCliType('mouse-tool', 'Mouse Tool', [], 0, { mouseTracking: true });
+      expect(loader.getCliTypeEntry('mouse-tool')!.mouseTracking).toBe(true);
+    });
+
     it('addCliType with env stores environment variable entries', () => {
       loader.load();
       loader.addCliType('env-tool', 'Env Tool', 'mytool', [], 0, {

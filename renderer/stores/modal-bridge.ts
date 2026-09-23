@@ -295,6 +295,7 @@ export interface ToolEditorBridgeData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  mouseTracking?: boolean;
   submitSuffix: string;
   helmActions: { clear: string; compact: string; export: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
@@ -304,7 +305,7 @@ const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   name: '', env: [], initialPromptDelay: 2000,
   spawnCommand: '', resumeCommand: '', continueCommand: '',
   renameCommand: '', helmPreambleForInterSession: true,
-  largeTextAsTempFile: false, messReminders: true,
+  largeTextAsTempFile: false, messReminders: true, mouseTracking: false,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
 };
 
@@ -335,6 +336,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
+  mouseTracking?: boolean;
   submitSuffix?: string;
   helmActions?: { clear?: string; compact?: string; export?: string };
 } {
@@ -364,6 +366,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     helmPreambleForInterSession: values.helmPreambleForInterSession !== false,
     largeTextAsTempFile: Boolean(values.largeTextAsTempFile),
     messReminders: values.messReminders !== false,
+    mouseTracking: Boolean(values.mouseTracking),
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,
   };

@@ -105,6 +105,7 @@ describe('buildToolEditorOptions', () => {
       env: [{ name: 'API_KEY', value: 'secret', mode: 'append' }],
       helmPreambleForInterSession: false,
       largeTextAsTempFile: true,
+      mouseTracking: true,
       submitSuffix: '\\r',
     };
     const result = buildToolEditorOptions(values);
@@ -119,6 +120,7 @@ describe('buildToolEditorOptions', () => {
       // Absent from the input and still present here: the default is on, and the
       // options builder always states it so a CLI type cannot inherit silence.
       messReminders: true,
+      mouseTracking: true,
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
     });
