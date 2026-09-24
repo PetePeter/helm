@@ -435,4 +435,5 @@
     <string name="sequence_cleanup_counts">%1$d empty sequences · %2$d unused contexts</string>
     <string name="sequence_clear_action">Clear unused</string>
     <string name="sequence_clear_confirm">Delete %1$d empty sequences and %2$d unused contexts? This cannot be undone.</string>
+    <string name="plans_blocked">blocked</string>
 </resources>

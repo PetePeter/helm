@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
+import com.potatomotato.helm.data.PlanStatus
 import com.potatomotato.helm.data.PlanWrite
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.HelmReferences
@@ -126,6 +127,7 @@ private fun PlanBoard(
         val startableIds = PlanStartability.of(rows)
         PlanBuckets(
             buckets = PlanGrouping.group(rows, lanes, startableIds),
+            startableIds = startableIds,
             collapsedLaneIds = collapsedLaneIds,
             onToggleLane = onToggleLane,
             onOpen = onOpen,
@@ -137,6 +139,7 @@ private fun PlanBoard(
 @Composable
 private fun PlanBuckets(
     buckets: List<PlanBucket>,
+    startableIds: Set<String>,
     collapsedLaneIds: Set<String>,
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
@@ -162,6 +165,9 @@ private fun PlanBuckets(
                 item(key = plan.id) {
                     PlanRow(
                         plan = plan,
+                        // Off the frontier and not finished: a prerequisite is
+                        // still open, which is what "blocked" means.
+                        blocked = plan.status != PlanStatus.Done && plan.id !in startableIds,
                         onClick = { onOpen(plan) },
                         onSpawn = { onSpawn(plan) },
                     )
@@ -227,7 +233,7 @@ private fun LaneHeader(
 }
 
 @Composable
-private fun PlanRow(plan: HelmPlanSummary, onClick: () -> Unit, onSpawn: () -> Unit) {
+private fun PlanRow(plan: HelmPlanSummary, blocked: Boolean, onClick: () -> Unit, onSpawn: () -> Unit) {
     HelmRow(
         title = plan.title,
         onClick = onClick,
@@ -252,6 +258,13 @@ private fun PlanRow(plan: HelmPlanSummary, onClick: () -> Unit, onSpawn: () -> U
                 // The plan's own state, always. "Ready to start" (no unmet
                 // prerequisites) read as a state and hid the real one.
                 Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+                if (blocked) {
+                    Text(
+                        text = stringResource(R.string.plans_blocked),
+                        color = HelmColors.Danger,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 CopyGlyphButton(text = HelmReferences.plan(plan))
                 // Its own target, beside copy: spawning is not opening the plan.
