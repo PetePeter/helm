@@ -64,6 +64,15 @@ function split(direction: SplitDirection, children: DockNode[], sizes?: number[]
   return { type: 'split', direction, sizes: scaleSizes(sizes ?? [], children.length), children };
 }
 
+/**
+ * The left dock holds the session list and cannot be collapsed; it is shrunk with
+ * its splitter instead. Normalising here also repairs layouts saved while a
+ * collapse control still existed, which would otherwise be stranded on a rail.
+ */
+function dockModeFor(side: DockSide, mode: DockMode): DockMode {
+  return side === 'left' ? 'pinned' : mode;
+}
+
 function dock(side: DockSide, mode: DockMode, child: DockNode): DockDockNode {
   return { type: 'dock', side, mode, child };
 }
@@ -482,7 +491,7 @@ export function setDockMode(layout: DockWorkspaceLayout, paneId: PaneId, mode: D
   const root = mapNode(layout.root, node => {
     if (node.type !== 'dock' || !listPanes(node.child).includes(paneId)) return node;
     found = true;
-    return { ...node, mode };
+    return { ...node, mode: dockModeFor(node.side, mode) };
   });
   if (!found) throw new Error(`dock layout: pane "${paneId}" is not docked to an edge`);
   return withRoot(layout, root, layout.closed);
@@ -680,7 +689,7 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
       const { side, mode, child } = raw;
       if (!DOCK_SIDES.includes(side as DockSide)) throw new Error(`dock layout: unknown dock side "${String(side)}"`);
       if (!DOCK_MODES.includes(mode as DockMode)) throw new Error(`dock layout: unknown dock mode "${String(mode)}"`);
-      return { type: 'dock', side: side as DockSide, mode: mode as DockMode, child: validateNode(child, seen, profile) };
+      return { type: 'dock', side: side as DockSide, mode: dockModeFor(side as DockSide, mode as DockMode), child: validateNode(child, seen, profile) };
     }
     default:
       throw new Error(`dock layout: unknown node type "${String(raw.type)}"`);

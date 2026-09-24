@@ -450,7 +450,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .dock-rail__btn:hover,
 .dock-rail__btn:focus-visible { color: var(--text-primary); background: var(--bg-tertiary); outline: 2px solid var(--accent); outline-offset: -2px; }
 .dock-rail__icon { font-size: 14px; line-height: 1; }
-.dock-rail__collapse { color: var(--text-dim); font-size: 13px; }
 .dock-node--empty { display: grid; place-items: center; flex: 1; color: var(--text-dim); }
 .dock-view-menu__trigger {
   font-size: 11px;

@@ -431,6 +431,17 @@ describe('dock mode', () => {
   it('throws when the pane is not inside a dock node', () => {
     expect(() => setDockMode(createDefaultLayout(), PANE_TERMINAL, 'hidden')).toThrow(/not docked/i);
   });
+
+  it('keeps the left dock pinned — it resizes but never collapses', () => {
+    const next = setDockMode(createDefaultLayout(), PANE_SESSIONS, 'autohide');
+    expect(findDock(next.root, PANE_SESSIONS)?.mode).toBe('pinned');
+  });
+
+  it('repairs a persisted layout whose left dock was saved collapsed', () => {
+    const saved = JSON.parse(JSON.stringify(createDefaultLayout()));
+    findDock(saved.root, PANE_SESSIONS)!.mode = 'autohide';
+    expect(findDock(validateLayout(saved).root, PANE_SESSIONS)?.mode).toBe('pinned');
+  });
 });
 
 describe('split resizing', () => {

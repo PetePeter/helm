@@ -94,9 +94,13 @@ Likewise there is exactly one collapse concept: a dock's `mode`.
 
 | Mode | Behaviour |
 |------|-----------|
-| `pinned` | Content visible; the rail offers a collapse toggle |
+| `pinned` | Content always visible; no rail and no collapse toggle |
 | `autohide` | Collapsed to its rail; opens on rail click or focus, re-collapses on focus-out |
 | `hidden` | Collapsed and stays collapsed until explicitly opened |
+
+The **left dock is always `pinned`** — it is shrunk with its splitter, never
+collapsed. The model enforces this on every mode change and on load, so a layout
+saved while a collapse control existed is repaired rather than stranded on a rail.
 
 Reveal state (which autohide docks are currently open) is **session state, not
 layout** — it is deliberately outside the persisted tree, so an opened autohide
@@ -108,8 +112,10 @@ A collapsed dock renders a rail of **one icon button per pane in the dock**;
 clicking an icon opens *that* pane. Rails never contain rotated text — a ~34px
 strip fits a glyph and a tooltip, not a legible word.
 
-A pinned dock also gets a rail, carrying a collapse chevron. This matters: it is
-what makes reclaiming space a *collapse* rather than a *close*.
+A pinned dock renders **no rail** and offers no collapse. Its rail used to carry
+only a collapse chevron, which on a left/right dock laid out as a blank
+full-width strip along the bottom edge. A pinned dock's space is reclaimed
+by closing the pane (the View menu restores it).
 
 ## Closing and restoring
 

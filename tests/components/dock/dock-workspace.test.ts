@@ -149,15 +149,15 @@ describe('DockWorkspace', () => {
     expect(wrapper.emitted('reveal-pane')).toEqual([[PANE_OVERVIEW]]);
   });
 
-  // Space used to be reclaimable from a pinned dock only by closing its panes —
-  // the one path that recovered badly.
-  it('lets a pinned dock be collapsed to its rail instead of closed', async () => {
-    const wrapper = mount(DockWorkspace, {
+  // A pinned dock has no collapse affordance: its rail rendered as a blank
+  // full-width strip at the bottom of left/right docks.
+  it('renders no rail for a pinned dock, but keeps rail items for an autohide dock', () => {
+    const dock = (mode: 'pinned' | 'autohide') => mount(DockWorkspace, {
       props: {
         layout: layout({
           type: 'dock',
           side: 'left',
-          mode: 'pinned',
+          mode,
           child: { type: 'group', tabs: [PANE_ARTIFACTS], activeTab: PANE_ARTIFACTS },
         }),
         focusedPaneId: PANE_TERMINAL,
@@ -166,9 +166,9 @@ describe('DockWorkspace', () => {
       },
     });
 
-    await wrapper.get('.dock-rail__collapse').trigger('click');
-    expect(wrapper.emitted('set-dock-mode')).toEqual([[PANE_ARTIFACTS, 'autohide']]);
-    expect(wrapper.emitted('close-pane')).toBeUndefined();
+    expect(dock('pinned').find('.dock-rail').exists()).toBe(false);
+    const autohide = dock('autohide');
+    expect(autohide.find(`[data-dock-rail="left"] [data-dock-rail-pane="${PANE_ARTIFACTS}"]`).exists()).toBe(true);
   });
 
   it('gives a collapsed dock a rail-sized track instead of its split share', async () => {

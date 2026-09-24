@@ -44,14 +44,4 @@ describe('pane visibility bridge', () => {
     workspace.reveal(PANE_ARTIFACTS);
     expect(isPaneVisible(PANE_ARTIFACTS)).toBe(true);
   });
-
-  it('hides panes of a pinned dock once it is collapsed to its rail', () => {
-    const workspace = useDockWorkspace();
-    setPaneVisibilityBridge(workspace.isVisible);
-    expect(isPaneVisible(PANE_SCHEDULER)).toBe(true);
-
-    workspace.setMode(PANE_SCHEDULER, 'autohide');
-    workspace.unreveal(PANE_SCHEDULER);
-    expect(isPaneVisible(PANE_SCHEDULER)).toBe(false);
-  });
 });

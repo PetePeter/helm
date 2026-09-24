@@ -87,20 +87,14 @@ const railItems = computed(() => dockPaneIds.value.map(paneId => {
 /**
  * Clicking a rail icon opens that pane, not the dock's first one.
  *
- * A pinned dock has no reveal state to set, so collapsing it is a mode change
- * (pinned → autohide) and expanding it is the reveal. Both directions therefore
- * go through the model rather than a local `collapsed` flag.
+ * A hidden dock is first switched to autohide so the reveal has somewhere to
+ * land; the reveal itself is workspace state, never a local flag.
  */
 function openRail(paneId: PaneId): void {
   if (props.node.type === 'dock' && props.node.mode === 'hidden') {
     emit('set-dock-mode', paneId, 'autohide');
   }
   emit('reveal-pane', paneId);
-}
-
-function collapsePinned(): void {
-  const paneId = dockAnchorPaneId.value;
-  if (paneId) emit('set-dock-mode', paneId, 'autohide');
 }
 
 function onDockFocusIn(): void {
@@ -214,22 +208,11 @@ function onDockFocusOut(event: FocusEvent): void {
         @reorder-tab="(...args) => emit('reorder-tab', ...args)"
       />
     </div>
-    <!-- One icon per pane in the dock. Present for pinned docks too, so space
-         can be reclaimed by collapsing rather than by closing the pane. -->
-    <div class="dock-rail" :data-dock-rail="node.side" role="toolbar" :aria-label="`${node.side} dock`">
-      <button
-        v-if="node.mode === 'pinned'"
-        class="dock-rail__btn dock-rail__collapse"
-        type="button"
-        aria-label="Collapse dock"
-        title="Collapse dock"
-        @click="collapsePinned"
-      >
-        {{ node.side === 'right' ? '›' : node.side === 'left' ? '‹' : node.side === 'bottom' ? '⌄' : '⌃' }}
-      </button>
+    <!-- One icon per pane in the dock. A pinned dock has no rail: it is always
+         open, and an empty rail read as a blank strip along the dock's edge. -->
+    <div v-if="node.mode !== 'pinned'" class="dock-rail" :data-dock-rail="node.side" role="toolbar" :aria-label="`${node.side} dock`">
       <button
         v-for="item in railItems"
-        v-show="node.mode !== 'pinned'"
         :key="`rail-${item.paneId}`"
         class="dock-rail__btn"
         :data-dock-rail-pane="item.paneId"
