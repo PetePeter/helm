@@ -1,6 +1,11 @@
 package com.potatomotato.helm.ui.plans
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,17 +16,28 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlan
 import com.potatomotato.helm.data.HelmPlanContextRef
+import com.potatomotato.helm.data.HelmPlanSequence
+import com.potatomotato.helm.data.PlanStatus
+import com.potatomotato.helm.data.PlanWrite
+import com.potatomotato.helm.ui.components.ConfirmDelete
+import com.potatomotato.helm.ui.components.GlyphButton
 import com.potatomotato.helm.ui.components.DetailFieldBlock
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.components.Pill
 import com.potatomotato.helm.ui.theme.HelmColors
+import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 
 /**
@@ -46,7 +62,80 @@ fun PlanDetail(
     plan: LoadView<HelmPlan>,
     contexts: LoadView<List<HelmPlanContextRef>>,
     onRefresh: () -> Unit,
+    actions: PlanDetailActions,
     modifier: Modifier = Modifier,
+) {
+    var dialog by rememberSaveable { mutableStateOf<PlanDialog?>(null) }
+    val shownPlan = (plan as? LoadView.Ready)?.data
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            PlanWriteLine(actions.write, actions.onDismissWrite)
+            PlanBody(plan, contexts, onRefresh, actions, onDialog = { dialog = it }, modifier = Modifier.weight(1f))
+        }
+        if (shownPlan != null) {
+            PlanDialogs(dialog, shownPlan, actions, close = { dialog = null })
+        }
+    }
+}
+
+/**
+ * Everything the detail screen can WRITE (P-0812), handed in as one bundle so
+ * the screen stays scope-blind: the caller knows the directory and the client,
+ * this file knows only which button was pressed.
+ */
+class PlanDetailActions(
+    val lanes: List<HelmPlanSequence>,
+    val write: PlanWrite,
+    val onDismissWrite: () -> Unit,
+    val onEdit: (title: String, description: String) -> Unit,
+    val onSetState: (PlanStatus) -> Unit,
+    val onComplete: (documentation: String) -> Unit,
+    val onReopen: () -> Unit,
+    val onAssign: (sequenceId: String?) -> Unit,
+    val onDelete: () -> Unit,
+)
+
+/** Which form is open over the plan. Saveable so rotation keeps the user mid-question. */
+enum class PlanDialog { Edit, Complete, Assign, Delete }
+
+@Composable
+private fun PlanDialogs(dialog: PlanDialog?, plan: HelmPlan, actions: PlanDetailActions, close: () -> Unit) {
+    // Each form closes on submit: the verdict is the write line's to say, and a
+    // form left open over a refused write would read as "still saving".
+    when (dialog) {
+        null -> Unit
+        PlanDialog.Edit -> EditPlanDialog(
+            initialTitle = plan.title,
+            initialDescription = plan.description,
+            onSave = { title, description -> close(); actions.onEdit(title, description) },
+            onCancel = close,
+        )
+        PlanDialog.Complete -> CompletePlanDialog(
+            onComplete = { documentation -> close(); actions.onComplete(documentation) },
+            onCancel = close,
+        )
+        PlanDialog.Assign -> AssignLaneDialog(
+            lanes = actions.lanes,
+            currentLaneId = plan.sequenceId,
+            onPick = { laneId -> close(); if (laneId != plan.sequenceId) actions.onAssign(laneId) },
+            onCancel = close,
+        )
+        PlanDialog.Delete -> ConfirmDelete(
+            message = stringResource(R.string.plan_confirm_delete, plan.title),
+            onConfirm = { close(); actions.onDelete() },
+            onCancel = close,
+        )
+    }
+}
+
+@Composable
+private fun PlanBody(
+    plan: LoadView<HelmPlan>,
+    contexts: LoadView<List<HelmPlanContextRef>>,
+    onRefresh: () -> Unit,
+    actions: PlanDetailActions,
+    onDialog: (PlanDialog) -> Unit,
+    modifier: Modifier,
 ) {
     LoadBody(
         view = plan,
@@ -62,10 +151,74 @@ fun PlanDetail(
         val contextsTitle = stringResource(R.string.detail_label_contexts)
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             item(key = "head") { PlanHead(shown) }
+            item(key = "actions") { PlanActionRow(shown.status, actions, onDialog) }
             items(fields.size) { index -> DetailFieldBlock(fields[index]) }
             item(key = "contexts") { SectionHeader(contextsTitle) }
             contextItems(contexts)
         }
+    }
+}
+
+/**
+ * The plan's write affordances, under its heading. State moves come from
+ * [PlanStateActions] so only moves the desktop accepts are offered; the ones
+ * that need no input fire at once, Done opens the documentation form.
+ * Wrapping because a phone cannot fit every move and every glyph on one line.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlanActionRow(status: PlanStatus, actions: PlanDetailActions, onDialog: (PlanDialog) -> Unit) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = HelmSpacing.Gutter),
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        for (move in PlanStateActions.of(status)) {
+            StateMoveChip(move) {
+                when (move) {
+                    PlanStateAction.Planning -> actions.onSetState(PlanStatus.Planning)
+                    PlanStateAction.Ready -> actions.onSetState(PlanStatus.Ready)
+                    PlanStateAction.Done -> onDialog(PlanDialog.Complete)
+                    PlanStateAction.Reopen -> actions.onReopen()
+                }
+            }
+        }
+        GlyphButton(
+            glyph = stringResource(R.string.control_glyph_rename),
+            description = stringResource(R.string.plan_action_edit),
+            onClick = { onDialog(PlanDialog.Edit) },
+        )
+        GlyphButton(
+            glyph = stringResource(R.string.plan_assign_glyph),
+            description = stringResource(R.string.plan_assign_title),
+            onClick = { onDialog(PlanDialog.Assign) },
+        )
+        GlyphButton(
+            glyph = stringResource(R.string.artifacts_glyph_delete),
+            description = stringResource(R.string.plan_action_delete),
+            onClick = { onDialog(PlanDialog.Delete) },
+        )
+    }
+}
+
+/** A state move, worn as the pill of the state it moves TO so the target is recognisable at a glance. */
+@Composable
+private fun StateMoveChip(move: PlanStateAction, onClick: () -> Unit) {
+    val (label, color) = when (move) {
+        PlanStateAction.Planning -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Planning.labelRes)) to PlanStatus.Planning.pillColor
+        PlanStateAction.Ready -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Ready.labelRes)) to PlanStatus.Ready.pillColor
+        PlanStateAction.Done -> stringResource(R.string.plan_move_to, stringResource(PlanStatus.Done.labelRes)) to HelmColors.Accent
+        PlanStateAction.Reopen -> stringResource(R.string.plan_action_reopen) to HelmColors.Accent
+    }
+    Box(
+        modifier = Modifier
+            .heightIn(min = HelmSize.TouchTarget)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Pill(text = label, color = color)
     }
 }
 

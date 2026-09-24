@@ -16,6 +16,9 @@ import com.potatomotato.helm.data.ChatRepository
 import com.potatomotato.helm.data.ContextRepository
 import com.potatomotato.helm.data.ControlRepository
 import com.potatomotato.helm.data.PlanRepository
+import com.potatomotato.helm.data.PlanStatus
+import com.potatomotato.helm.data.PlanWriteKind
+import com.potatomotato.helm.data.PlanWrites
 import com.potatomotato.helm.data.SequenceRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
@@ -27,6 +30,7 @@ import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.save.SavedFile
+import com.potatomotato.helm.wire.JsonNull
 import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.data.ArtifactRules
 
@@ -88,6 +92,7 @@ class HelmClient(
     val artifacts: ArtifactRepository = ArtifactRepository(),
     val plans: PlanRepository = PlanRepository(),
     val sequences: SequenceRepository = SequenceRepository(),
+    val planWrites: PlanWrites = PlanWrites(),
     val contexts: ContextRepository = ContextRepository(),
     val alerts: AlertRouter = AlertRouter(),
     val uploads: ArtifactUploads = ArtifactUploads(),
@@ -1068,9 +1073,7 @@ class HelmClient(
      * enough for this link to finish delivering it. The prose arrives one plan
      * at a time from [readPlan] when the reader opens one.
      *
-     * READ-ONLY on this link for now — nothing here creates, claims or completes
-     * a plan — so a refusal is state the screen shows and never a half-written
-     * change on the desktop.
+     * The writes (P-0812) live further down and refresh this board on success.
      *
      * ACTIVE IS FIXED, not a parameter: a finished plan is noise on a phone, and
      * asking for all of them is what cost the link the reply in the first place.
@@ -1157,6 +1160,174 @@ class HelmClient(
                 is Outcome.Failed -> sequences.detailFailed(sequenceId, outcome.message)
             }
         }
+    }
+
+    // ------------------------------------------------- plan and sequence writes (P-0812)
+    //
+    // Every write follows ONE rule: the desktop's answer is only ever a verdict,
+    // never data this app parses into a cache. Success re-pulls the small
+    // summary/list answers the screens already read; failure touches nothing but
+    // [planWrites], so a refused or dropped write leaves every cache as it was.
+    // None of these tools answers with more than one record, so none risks the
+    // oversized reply that once broke the link.
+
+    /** A new plan in [dirPath]. `type` is omitted when unset — the desktop treats it as optional. */
+    fun createPlan(dirPath: String, title: String, description: String, type: String?, autoImplement: Boolean): Boolean {
+        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "title" to title.trim(), "description" to description)
+        if (!type.isNullOrBlank()) params["type"] = type
+        params["autoImplement"] = autoImplement
+        return write(PlanWriteKind.CreatePlan, METHOD_PLAN_CREATE, params) { refreshBoard(dirPath) }
+    }
+
+    /** Title and description only; the other plan_update fields stay the desktop's. */
+    fun updatePlan(dirPath: String, planId: String, title: String, description: String): Boolean =
+        write(
+            PlanWriteKind.UpdatePlan,
+            METHOD_PLAN_UPDATE,
+            linkedMapOf("uuid" to planId, "title" to title.trim(), "description" to description),
+        ) { refreshPlanAndBoard(dirPath, planId) }
+
+    /** Planning/ready and the other non-terminal states. Done is [completePlan]; undone is [reopenPlan]. */
+    fun setPlanState(dirPath: String, planId: String, status: PlanStatus): Boolean =
+        write(
+            PlanWriteKind.SetState,
+            METHOD_PLAN_SET_STATE,
+            linkedMapOf("uuid" to planId, "status" to status.wire),
+        ) { refreshPlanAndBoard(dirPath, planId) }
+
+    /**
+     * Mark done. The desktop demands [documentation] (10+ chars) and only
+     * completes a coding/review plan; its refusal text is shown as-is rather
+     * than second-guessed here.
+     */
+    fun completePlan(dirPath: String, planId: String, documentation: String): Boolean =
+        write(
+            PlanWriteKind.Complete,
+            METHOD_PLAN_COMPLETE,
+            linkedMapOf("uuid" to planId, "documentation" to documentation.trim()),
+        ) { refreshPlanAndBoard(dirPath, planId) }
+
+    fun reopenPlan(dirPath: String, planId: String): Boolean =
+        write(PlanWriteKind.Reopen, METHOD_PLAN_REOPEN, linkedMapOf("uuid" to planId)) {
+            refreshPlanAndBoard(dirPath, planId)
+        }
+
+    /** One plan. The screen confirms first; success purges it at once rather than waiting for the list. */
+    fun deletePlan(dirPath: String, planId: String): Boolean =
+        write(PlanWriteKind.DeletePlan, METHOD_PLAN_DELETE, linkedMapOf("uuid" to planId)) {
+            plans.planDeleted(planId)
+            refreshBoard(dirPath)
+        }
+
+    /** Put a plan in a lane, or take it out of any lane with a null [sequenceId]. */
+    fun assignSequence(dirPath: String, planId: String, sequenceId: String?): Boolean =
+        write(
+            PlanWriteKind.AssignSequence,
+            METHOD_SEQUENCE_ASSIGN,
+            linkedMapOf<String, Any>("planId" to planId, "sequenceId" to (sequenceId ?: JsonNull)),
+        ) { refreshPlanAndBoard(dirPath, planId) }
+
+    fun createSequence(dirPath: String, title: String, missionStatement: String): Boolean {
+        val params = linkedMapOf<String, Any>("dirPath" to dirPath, "title" to title.trim())
+        if (missionStatement.isNotBlank()) params["missionStatement"] = missionStatement
+        return write(PlanWriteKind.CreateSequence, METHOD_SEQUENCE_CREATE, params) { refreshLanes(dirPath) }
+    }
+
+    /** Title and mission only; sharedMemory is legacy and order belongs to the desktop canvas. */
+    fun updateSequence(dirPath: String, sequenceId: String, title: String, missionStatement: String): Boolean =
+        write(
+            PlanWriteKind.UpdateSequence,
+            METHOD_SEQUENCE_UPDATE,
+            linkedMapOf("id" to sequenceId, "title" to title.trim(), "missionStatement" to missionStatement),
+        ) {
+            readSequence(sequenceId)
+            refreshLanes(dirPath)
+        }
+
+    fun deleteSequence(dirPath: String, sequenceId: String): Boolean =
+        write(PlanWriteKind.DeleteSequence, METHOD_SEQUENCE_DELETE, linkedMapOf("id" to sequenceId)) {
+            sequences.sequenceDeleted(sequenceId)
+            // Members lose their lane on the desktop; the board must regroup.
+            refreshBoard(dirPath)
+            refreshCleanupCounts(dirPath)
+        }
+
+    /** The counts the Sequences tab shows before "Clear unused" is offered. Read-only. */
+    fun refreshCleanupCounts(dirPath: String): Boolean {
+        sequences.cleanupRequested(dirPath)
+        return call(METHOD_PLAN_CLEANUP_COUNTS, linkedMapOf("dirPath" to dirPath)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok ->
+                    if (!sequences.cleanupArrived(dirPath, outcome.result)) {
+                        sequences.cleanupFailed(dirPath, UNREADABLE_CLEANUP)
+                    }
+                is Outcome.Failed -> sequences.cleanupFailed(dirPath, outcome.message)
+            }
+        }
+    }
+
+    /**
+     * The desktop's "Clear unused", in the desktop's ORDER: empty sequences
+     * first, because deleting one releases its context bindings — which is what
+     * makes contexts bound only to it unreferenced — then unreferenced contexts.
+     * The second call only runs if the first succeeded; either failure is the
+     * one verdict the user reads.
+     */
+    fun clearUnused(dirPath: String): Boolean {
+        planWrites.started(PlanWriteKind.ClearUnused)
+        return call(METHOD_SEQUENCE_CLEAR_EMPTY, linkedMapOf("dirPath" to dirPath)) { first ->
+            when (first) {
+                is Outcome.Failed -> planWrites.failed(PlanWriteKind.ClearUnused, first.message)
+                is Outcome.Ok -> clearUnreferencedContexts(dirPath)
+            }
+        }
+    }
+
+    /** Step two of [clearUnused]; only ever run after the empty sequences are gone. */
+    private fun clearUnreferencedContexts(dirPath: String) {
+        refreshSequences(dirPath)
+        call(METHOD_CONTEXT_CLEAR_UNREFERENCED, linkedMapOf("dirPath" to dirPath)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> planWrites.succeeded(PlanWriteKind.ClearUnused)
+                is Outcome.Failed -> planWrites.failed(PlanWriteKind.ClearUnused, outcome.message)
+            }
+            refreshCleanupCounts(dirPath)
+        }
+    }
+
+    /** One write: raise in-flight, send, and on the verdict either refresh or record the failure. */
+    private fun write(
+        kind: PlanWriteKind,
+        method: String,
+        params: Map<String, Any>,
+        onSuccess: () -> Unit,
+    ): Boolean {
+        planWrites.started(kind)
+        return call(method, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> {
+                    planWrites.succeeded(kind)
+                    onSuccess()
+                }
+                is Outcome.Failed -> planWrites.failed(kind, outcome.message)
+            }
+        }
+    }
+
+    private fun refreshBoard(dirPath: String) {
+        refreshPlans(dirPath)
+        refreshSequences(dirPath)
+    }
+
+    private fun refreshPlanAndBoard(dirPath: String, planId: String) {
+        readPlan(planId)
+        refreshBoard(dirPath)
+    }
+
+    /** Lanes changed: the list and the cleanup counts both describe them. */
+    private fun refreshLanes(dirPath: String) {
+        refreshSequences(dirPath)
+        refreshCleanupCounts(dirPath)
     }
 
     /**
@@ -1554,10 +1725,9 @@ class HelmClient(
         private const val UNREADABLE_UPLOAD_OFFER = "Helm answered with an upload slot this app could not read"
 
         /**
-         * Helm's planning surface, READ side only. No `plan_create`,
-         * `plan_set_state` or `plan_complete` constant exists here on purpose:
-         * a method name that is never spelled is a call that cannot be made by
-         * accident.
+         * Helm's planning surface: reads and, since P-0812, single-record writes
+         * plus directory cleanup. What is STILL never spelled is any tool that
+         * answers every plan's full record (see below).
          */
         /**
          * The board's list tool is the SUMMARY one, never the full-record
@@ -1578,6 +1748,20 @@ class HelmClient(
         private const val METHOD_PLAN_CONTEXT_LIST = "plan_context_list"
         private const val METHOD_SEQUENCE_LIST = "sequence_list"
         private const val METHOD_SEQUENCE_GET = "sequence_get"
+        private const val METHOD_PLAN_CREATE = "plan_create"
+        private const val METHOD_PLAN_UPDATE = "plan_update"
+        private const val METHOD_PLAN_SET_STATE = "plan_set_state"
+        private const val METHOD_PLAN_COMPLETE = "plan_complete"
+        private const val METHOD_PLAN_REOPEN = "plan_reopen"
+        private const val METHOD_PLAN_DELETE = "plan_delete"
+        private const val METHOD_SEQUENCE_ASSIGN = "sequence_assign"
+        private const val METHOD_SEQUENCE_CREATE = "sequence_create"
+        private const val METHOD_SEQUENCE_UPDATE = "sequence_update"
+        private const val METHOD_SEQUENCE_DELETE = "sequence_delete"
+        private const val METHOD_PLAN_CLEANUP_COUNTS = "plan_cleanup_counts"
+        private const val METHOD_SEQUENCE_CLEAR_EMPTY = "sequence_clear_empty"
+        private const val METHOD_CONTEXT_CLEAR_UNREFERENCED = "context_clear_unreferenced"
+        private const val UNREADABLE_CLEANUP = "Helm answered with cleanup counts this app could not read"
         private const val METHOD_CONTEXT_LIST = "context_list"
         private const val METHOD_CONTEXT_GET = "context_get"
         private const val METHOD_PROJECT_LIST = "project_list"

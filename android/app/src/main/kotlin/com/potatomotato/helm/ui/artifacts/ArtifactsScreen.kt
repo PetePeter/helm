@@ -47,6 +47,7 @@ import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.ui.HelmReferences
+import com.potatomotato.helm.ui.components.ConfirmDelete
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -407,54 +408,6 @@ private fun SaveStateLine(saveState: ArtifactSave, artifactId: String?) {
             .fillMaxWidth()
             .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
     )
-}
-
-@Composable
-internal fun ConfirmDelete(message: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(HelmColors.Bg.copy(alpha = SCRIM_ALPHA))
-            // Tapping the darkness around the card is cancel, like the sheet.
-            .clickable(onClick = onCancel),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                // Consume taps on the card so they never fall through to the
-                // scrim: only a deliberate Cancel or a dismiss-tap cancels.
-                .padding(HelmSpacing.Gutter)
-                .clip(RoundedCornerShape(HelmRadius.Md))
-                .background(HelmColors.Surface)
-                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
-                // A bare pointer input, not an empty clickable: it keeps scrim
-                // taps from falling through to Cancel without adding the
-                // unlabeled no-op node an empty clickable puts in the tree.
-                .pointerInput(Unit) {}
-                .padding(HelmSpacing.Lg),
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            Text(
-                text = message,
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            // The destructive one is NOT the loud accent button: the accent means
-            // "the thing you came here to do", and that is never losing a file.
-            Text(
-                text = stringResource(R.string.artifacts_confirm_delete_yes),
-                color = HelmColors.Danger,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(HelmRadius.Md))
-                    .clickable(onClick = onConfirm)
-                    .padding(vertical = HelmSpacing.Md),
-            )
-            GhostButton(text = stringResource(R.string.control_confirm_close_no), onClick = onCancel)
-        }
-    }
 }
 
 /**

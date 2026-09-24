@@ -275,6 +275,16 @@ closes every session first — refused while any session is locked, and no
 self-resume is scheduled since your session is closed too. Remote peers and
 phones can never invoke `helm_restart` (hard-denied in both gates).
 
+## Directory cleanup: `plan_cleanup_counts`, `sequence_clear_empty`, `context_clear_unreferenced`
+
+The same bulk cleanup as the desktop planner (P-0805), exposed as MCP tools so the phone can drive it. All take `{ dirPath }`.
+
+- `plan_cleanup_counts` — read-only `{ donePlans, emptySequences, unreferencedContexts, unusedContexts }`. `unusedContexts` is what a full "Clear unused" removes.
+- `sequence_clear_empty` — deletes sequences with no member plans and releases their context bindings. Returns `{ deleted }`.
+- `context_clear_unreferenced` — deletes the project's context nodes with no bindings. Returns `{ deleted }`.
+
+Call them in that order: clearing sequences first is what turns contexts bound only to empty sequences into unreferenced ones. Replies stay tiny on purpose — large replies have broken the phone link.
+
 ## Testing Your Envelope Handler
 
 ```bash

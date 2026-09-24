@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
 import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
@@ -1041,6 +1042,20 @@ export class HelmControlService extends EventEmitter {
 
   deletePlanSequence(id: string): boolean {
     return this.planSequenceService.deletePlanSequence(id);
+  }
+
+  /** Cleanup counts for a directory — same numbers the desktop cleanup dialog shows. */
+  getPlanCleanupCounts(dirPath: string): PlanCleanupCounts {
+    return getPlanCleanupCounts(this.planManager, this.contextManager, dirPath);
+  }
+
+  /** Small `{ deleted }` reply on purpose: large MCP replies have broken the phone link. */
+  clearEmptySequences(dirPath: string): { deleted: number } {
+    return { deleted: clearEmptySequences(this.planManager, this.contextManager, dirPath) };
+  }
+
+  clearUnreferencedContexts(dirPath: string): { deleted: number } {
+    return { deleted: clearUnreferencedContexts(this.planManager, this.contextManager, dirPath) };
   }
 
   assignPlanSequence(planRef: string, sequenceId: string | null): { ok: true } {

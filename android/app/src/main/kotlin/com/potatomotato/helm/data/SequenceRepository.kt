@@ -56,6 +56,26 @@ sealed interface SequenceDetail {
     data class Failed(val sequenceId: String, val message: String) : SequenceDetail
 }
 
+/** What a directory cleanup would remove, as `plan_cleanup_counts` answers it. */
+data class CleanupCounts(
+    val donePlans: Int,
+    val emptySequences: Int,
+    val unreferencedContexts: Int,
+    /** What "Clear unused" deletes: unreferenced contexts plus those bound only to empty sequences. */
+    val unusedContexts: Int,
+) {
+    /** Nothing for "Clear unused" to do — the button greys rather than asking to delete zero things. */
+    val nothingToClear: Boolean get() = emptySequences == 0 && unusedContexts == 0
+}
+
+/** The cleanup counts of one directory. */
+sealed interface CleanupState {
+    data object Idle : CleanupState
+    data class Loading(val dirPath: String) : CleanupState
+    data class Ready(val dirPath: String, val counts: CleanupCounts) : CleanupState
+    data class Failed(val dirPath: String, val message: String) : CleanupState
+}
+
 /**
  * SequenceRepository — the phone's picture of Helm's sequence lanes.
  *
@@ -73,6 +93,9 @@ class SequenceRepository {
 
     private val _detail = MutableStateFlow<SequenceDetail>(SequenceDetail.Idle)
     val detail: StateFlow<SequenceDetail> = _detail.asStateFlow()
+
+    private val _cleanup = MutableStateFlow<CleanupState>(CleanupState.Idle)
+    val cleanup: StateFlow<CleanupState> = _cleanup.asStateFlow()
 
     private val listCache = HashMap<String, List<HelmPlanSequence>>()
     private val detailCache = HashMap<String, HelmPlanSequence>()
@@ -155,6 +178,49 @@ class SequenceRepository {
     /** Record why the lane is missing. The message is what the user reads. */
     fun detailFailed(sequenceId: String, message: String) {
         _detail.value = SequenceDetail.Failed(sequenceId, message)
+    }
+
+    /**
+     * A `sequence_delete` the desktop confirmed: purge now rather than show a
+     * deleted lane until the refresh lands. Never called for a failed delete.
+     */
+    fun sequenceDeleted(sequenceId: String) {
+        for (dirPath in listCache.keys.toList()) {
+            listCache[dirPath] = listCache.getValue(dirPath).filter { it.id != sequenceId }
+        }
+        detailCache.remove(sequenceId)
+        _list.value = when (val current = _list.value) {
+            is SequenceList.Ready -> current.copy(sequences = current.sequences.filter { it.id != sequenceId })
+            is SequenceList.Refreshing -> current.copy(cached = current.cached.filter { it.id != sequenceId })
+            else -> current
+        }
+    }
+
+    fun cleanupRequested(dirPath: String) {
+        _cleanup.value = CleanupState.Loading(dirPath)
+    }
+
+    /** Take a `plan_cleanup_counts` result. False when it could not be read. */
+    fun cleanupArrived(dirPath: String, result: Any?): Boolean {
+        val json = result as? JSONObject ?: run {
+            WireShape.undecodable<Unit>("a plan_cleanup_counts result", "a JSON object of counts", result)
+            return false
+        }
+        fun count(key: String) = (json.opt(key) as? Number)?.toInt() ?: 0
+        _cleanup.value = CleanupState.Ready(
+            dirPath,
+            CleanupCounts(
+                donePlans = count("donePlans"),
+                emptySequences = count("emptySequences"),
+                unreferencedContexts = count("unreferencedContexts"),
+                unusedContexts = count("unusedContexts"),
+            ),
+        )
+        return true
+    }
+
+    fun cleanupFailed(dirPath: String, message: String) {
+        _cleanup.value = CleanupState.Failed(dirPath, message)
     }
 
     /** One lane. A lane without an id is dropped rather than invented. */

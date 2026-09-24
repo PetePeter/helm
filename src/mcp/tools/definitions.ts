@@ -405,6 +405,39 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'plan_cleanup_counts',
+    title: 'Plan Cleanup Counts',
+    description: 'Count what a directory cleanup would remove: donePlans, emptySequences (no member plans), unreferencedContexts (no bindings), and unusedContexts (unreferenced or bound only to empty sequences — what sequence_clear_empty followed by context_clear_unreferenced deletes). Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: { dirPath: { type: 'string' } },
+      required: ['dirPath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'sequence_clear_empty',
+    title: 'Clear Empty Sequences',
+    description: 'Delete every sequence in the directory that has no member plans, releasing its context bindings. Run before context_clear_unreferenced to also remove contexts bound only to those sequences. Returns { deleted }.',
+    inputSchema: {
+      type: 'object',
+      properties: { dirPath: { type: 'string' } },
+      required: ['dirPath'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'context_clear_unreferenced',
+    title: 'Clear Unreferenced Contexts',
+    description: 'Delete every context node in the directory project that has no plan or sequence bindings. Returns { deleted }.',
+    inputSchema: {
+      type: 'object',
+      properties: { dirPath: { type: 'string' } },
+      required: ['dirPath'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'context_list',
     title: 'List Context Nodes',
     description: 'List project-level context nodes. Use project_list first when you need the projectId for a directory or repo.',

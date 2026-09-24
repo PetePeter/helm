@@ -2,6 +2,7 @@ package com.potatomotato.helm.ui.plans
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,6 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -21,6 +26,8 @@ import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
 import com.potatomotato.helm.data.PlanStatus
+import com.potatomotato.helm.data.PlanWrite
+import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.HelmReferences
 import com.potatomotato.helm.ui.components.CopyGlyphButton
 import com.potatomotato.helm.ui.components.GlyphButton
@@ -66,7 +73,47 @@ fun PlanList(
     onOpen: (HelmPlanSummary) -> Unit,
     onSpawn: (HelmPlanSummary) -> Unit,
     onRefresh: () -> Unit,
+    write: PlanWrite,
+    onDismissWrite: () -> Unit,
+    onCreate: (title: String, description: String, type: String?, autoImplement: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+) {
+    // The new-plan form is local: it is a question over the board, not a place.
+    var creating by rememberSaveable { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Above the LoadBody, not inside it, so an EMPTY board — exactly
+            // where a first plan is wanted — still offers it.
+            GhostButton(
+                text = stringResource(R.string.plan_new_action),
+                onClick = { creating = true },
+                modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
+            )
+            PlanWriteLine(write, onDismissWrite)
+            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, onRefresh, Modifier.weight(1f))
+        }
+        if (creating) {
+            NewPlanDialog(
+                onCreate = { title, description, type, autoImplement ->
+                    creating = false
+                    onCreate(title, description, type, autoImplement)
+                },
+                onCancel = { creating = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlanBoard(
+    plans: LoadView<List<HelmPlanSummary>>,
+    sequences: LoadView<List<HelmPlanSequence>>,
+    collapsedLaneIds: Set<String>,
+    onToggleLane: (String) -> Unit,
+    onOpen: (HelmPlanSummary) -> Unit,
+    onSpawn: (HelmPlanSummary) -> Unit,
+    onRefresh: () -> Unit,
+    modifier: Modifier,
 ) {
     LoadBody(
         view = plans,

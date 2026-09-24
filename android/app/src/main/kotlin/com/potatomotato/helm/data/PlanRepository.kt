@@ -325,6 +325,26 @@ class PlanRepository {
         _contextRefs.value = PlanContextRefs.Failed(planId, message)
     }
 
+    /**
+     * A `plan_delete` the desktop confirmed. This is the one write that purges
+     * WITHOUT waiting for an omitting list answer: the desktop has said the plan
+     * is gone, which is the same evidence an omission is, and the board would
+     * otherwise show a deleted row until the refresh lands. Only called on
+     * success — a failed delete leaves every cache as it was.
+     */
+    fun planDeleted(planId: String) {
+        for (dirPath in listCache.keys.toList()) {
+            listCache[dirPath] = listCache.getValue(dirPath).filter { it.id != planId }
+        }
+        detailCache.remove(planId)
+        refsCache.remove(planId)
+        _list.value = when (val current = _list.value) {
+            is PlanList.Ready -> current.copy(plans = current.plans.filter { it.id != planId })
+            is PlanList.Refreshing -> current.copy(cached = current.cached.filter { it.id != planId })
+            else -> current
+        }
+    }
+
     private fun parseSummaries(result: Any?): List<HelmPlanSummary>? {
         val array = result as? JSONArray ?: return WireShape.undecodable(
             "a plan_summary result",

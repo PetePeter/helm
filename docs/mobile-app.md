@@ -183,6 +183,30 @@ siblings) and deliberately has no copy in this repo — one source of truth,
 nothing to drift. Where the mockup and a plan's prose disagree about an
 interaction, the mockup wins.
 
+## Plans and sequences — reading and writing (P-0812)
+
+The Plans tab and the in-session Plans/Sequences tabs read through
+`plan_summary`, `plan_get`, `plan_context_list`, `sequence_list` and
+`sequence_get`, and since P-0812 also write:
+
+- **Plans board** — *New plan* (title, description, type, autoImplement) → `plan_create`.
+- **Plan detail** — edit title/description (`plan_update`); state moves that the
+  desktop accepts (`plan_set_state` to planning/ready, `plan_complete` only from
+  coding/review and only with ≥10 chars of documentation the phone prompts for,
+  `plan_reopen` from done); move to a sequence or ungrouped (`sequence_assign`);
+  delete with a confirm (`plan_delete`).
+- **Sequences** — create, edit title/mission, delete with a confirm
+  (`sequence_create` / `_update` / `_delete`), plus the desktop's cleanup:
+  `plan_cleanup_counts` is shown first, and a confirmed *Clear unused* runs
+  `sequence_clear_empty` then `context_clear_unreferenced` — the same order and
+  logic as the desktop planner (shared `src/session/plan-cleanup.ts`).
+
+Writes never parse their answer into a cache: success re-pulls the small
+summary/list answers, a confirmed delete purges its row at once, and a failed
+write only sets the write line (`PlanWrites`) — every cache stays as it was.
+`plan_list` (the full-record list whose 419 KB reply once broke the link) is
+still never called.
+
 ## Artifacts — reading, writing, downloading
 
 The desktop's `artifact_*` tools are unreachable from a phone: they address the

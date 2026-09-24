@@ -296,8 +296,9 @@ object MobileEnvelope {
         is String -> appendJsonString(value)
         is Int, is Long -> append(value.toString())
         is Boolean -> append(if (value) "true" else "false")
+        JsonNull -> append("null")
         else -> throw IllegalArgumentException(
-            "unsupported param type ${value.javaClass.simpleName}; use String, Int, Long or Boolean",
+            "unsupported param type ${value.javaClass.simpleName}; use String, Int, Long, Boolean or JsonNull",
         )
     }
 
@@ -321,3 +322,10 @@ object MobileEnvelope {
         return append('"')
     }
 }
+
+/**
+ * An explicit JSON `null` param. Params are non-null `Any` so a forgotten value
+ * cannot silently become null; the one tool that needs null on purpose —
+ * `sequence_assign` unlinking a plan from its lane — says so with this.
+ */
+object JsonNull

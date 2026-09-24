@@ -44,6 +44,7 @@ import com.potatomotato.helm.data.HelmArtifact
 import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.UploadSupport
+import com.potatomotato.helm.ui.components.ConfirmDelete
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.PrimaryButton

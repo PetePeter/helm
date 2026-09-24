@@ -40,7 +40,10 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.HelmPlanSequence
 import com.potatomotato.helm.data.HelmPlanSummary
+import com.potatomotato.helm.data.PlanWrite
+import com.potatomotato.helm.data.PlanWriteKind
 import com.potatomotato.helm.data.HelmProject
 import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.SessionAction
@@ -84,6 +87,7 @@ import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.pairing.AwaitingDesktopScreen
 import com.potatomotato.helm.ui.pairing.DesktopsScreen
 import com.potatomotato.helm.ui.plans.PlanDetail
+import com.potatomotato.helm.ui.plans.PlanDetailActions
 import com.potatomotato.helm.ui.plans.PlanList
 import com.potatomotato.helm.ui.plans.PlanScope
 import com.potatomotato.helm.ui.plans.PlanSpawn
@@ -175,6 +179,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val planContextsState by client.plans.contextRefs.collectAsState()
     val sequenceListState by client.sequences.list.collectAsState()
     val sequenceDetailState by client.sequences.detail.collectAsState()
+    val planWriteState by client.planWrites.state.collectAsState()
+    val cleanupState by client.sequences.cleanup.collectAsState()
     val projectsState by client.contexts.projects.collectAsState()
     val contextListState by client.contexts.list.collectAsState()
     val contextDetailState by client.contexts.detail.collectAsState()
@@ -321,7 +327,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             client.refreshPlans(planDirPath)
             client.refreshSequences(planDirPath)
         }
-        if (showingSequences && planDirPath != null) client.refreshSequences(planDirPath)
+        if (showingSequences && planDirPath != null) {
+            client.refreshSequences(planDirPath)
+            client.refreshCleanupCounts(planDirPath)
+        }
         if (showingContexts && contextProjectId != null) client.refreshContexts(contextProjectId)
     }
 
@@ -611,6 +620,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
         Unit
     }
+    // Plan/sequence writes (P-0812). Each needs the board's directory so the
+    // client can re-pull it on success; with no directory there is no board.
+    val createPlan: (String, String, String?, Boolean) -> Unit = { title, description, type, autoImplement ->
+        planDirPath?.let { dir -> client.createPlan(dir, title, description, type, autoImplement) }
+    }
+    // A confirmed delete leaves nothing to show; go back rather than sit on a
+    // detail screen for a plan or lane that no longer exists.
+    LaunchedEffect(planWriteState) {
+        val done = planWriteState as? PlanWrite.Done ?: return@LaunchedEffect
+        if (done.kind == PlanWriteKind.DeletePlan && where == Destination.PlanDetail) where = Destination.Thread
+        if (done.kind == PlanWriteKind.DeleteSequence && where == Destination.SequenceDetail) where = Destination.Thread
+    }
     val refreshLanes: () -> Unit = {
         planDirPath?.let { dir -> client.refreshSequences(dir) }
         Unit
@@ -736,6 +757,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         PlanDetail(
                             plan = plan,
                             contexts = LoadViews.planContexts(planContextsState, openPlanId),
+                            actions = planDetailActions(
+                                client = client,
+                                dirPath = planDirPath,
+                                planId = openPlanId,
+                                lanes = (LoadViews.sequences(sequenceListState, planDirPath) as? LoadView.Ready)?.data.orEmpty(),
+                                write = planWriteState,
+                            ),
                             onRefresh = {
                                 openPlanId?.let { planId ->
                                     client.readPlan(planId)
@@ -759,6 +787,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         SequenceDetail(
                             sequence = sequence,
                             onRefresh = { openSequenceId?.let { client.readSequence(it) } },
+                            write = planWriteState,
+                            onDismissWrite = client.planWrites::dismiss,
+                            onEdit = { title, mission ->
+                                val dir = planDirPath
+                                val id = openSequenceId
+                                if (dir != null && id != null) client.updateSequence(dir, id, title, mission)
+                            },
+                            onDelete = {
+                                val dir = planDirPath
+                                val id = openSequenceId
+                                if (dir != null && id != null) client.deleteSequence(dir, id)
+                            },
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -848,6 +888,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     },
                                     onSpawn = spawnForPlan,
                                     onRefresh = refreshPlanBoard,
+                                    write = planWriteState,
+                                    onDismissWrite = client.planWrites::dismiss,
+                                    onCreate = createPlan,
                                 )
                             }
 
@@ -1091,6 +1134,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     },
                                     onSpawn = spawnForPlan,
                                     onRefresh = refreshPlanBoard,
+                                    write = planWriteState,
+                                    onDismissWrite = client.planWrites::dismiss,
+                                    onCreate = createPlan,
                                 )
                             }
 
@@ -1104,6 +1150,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         where = Destination.SequenceDetail
                                     },
                                     onRefresh = refreshLanes,
+                                    cleanup = cleanupState,
+                                    write = planWriteState,
+                                    onDismissWrite = client.planWrites::dismiss,
+                                    onCreate = { title, mission -> client.createSequence(planDirPath, title, mission) },
+                                    onClearUnused = { client.clearUnused(planDirPath) },
                                 )
                             }
                         }
@@ -1356,3 +1407,31 @@ private const val DEFAULT_OPEN_MIME = "application/octet-stream"
 
 /** The upload slot-open tool — the one the toolbar's greying must see granted. */
 private const val METHOD_ATTACHMENT_ADD = "session_artifact_attachment_add"
+
+/**
+ * The plan detail's write bundle (P-0812). Every action is a no-op without a
+ * directory or an open plan — the board it would refresh does not exist then —
+ * which keeps the detail screen free of null checks it cannot answer.
+ */
+private fun planDetailActions(
+    client: HelmClient,
+    dirPath: String?,
+    planId: String?,
+    lanes: List<HelmPlanSequence>,
+    write: PlanWrite,
+): PlanDetailActions {
+    fun withPlan(action: (String, String) -> Unit): () -> Unit = {
+        if (dirPath != null && planId != null) action(dirPath, planId)
+    }
+    return PlanDetailActions(
+        lanes = lanes,
+        write = write,
+        onDismissWrite = client.planWrites::dismiss,
+        onEdit = { title, description -> withPlan { dir, id -> client.updatePlan(dir, id, title, description) }() },
+        onSetState = { status -> withPlan { dir, id -> client.setPlanState(dir, id, status) }() },
+        onComplete = { documentation -> withPlan { dir, id -> client.completePlan(dir, id, documentation) }() },
+        onReopen = withPlan { dir, id -> client.reopenPlan(dir, id) },
+        onAssign = { laneId -> withPlan { dir, id -> client.assignSequence(dir, id, laneId) }() },
+        onDelete = withPlan { dir, id -> client.deletePlan(dir, id) },
+    )
+}

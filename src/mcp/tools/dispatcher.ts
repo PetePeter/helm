@@ -336,6 +336,12 @@ export async function callMcpTool(
           asString(args.planId, 'planId is required'),
           args.sequenceId === null ? null : asString(args.sequenceId, 'sequenceId is required or null'),
         );
+      case 'plan_cleanup_counts':
+        return service.getPlanCleanupCounts(asString(args.dirPath, 'dirPath is required'));
+      case 'sequence_clear_empty':
+        return service.clearEmptySequences(asString(args.dirPath, 'dirPath is required'));
+      case 'context_clear_unreferenced':
+        return service.clearUnreferencedContexts(asString(args.dirPath, 'dirPath is required'));
       case 'context_list':
         return service.listContexts(asString(args.projectId, 'projectId is required'));
       case 'context_create':
