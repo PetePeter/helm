@@ -301,22 +301,209 @@ class LanLinkControllerTest {
     }
 
     @Test
-    fun `the redial loop only postpones while Bluetooth carries the link`() {
+    fun `the redial loop dials while Bluetooth carries the link`() {
+        // Found on hardware: the one Bluetooth-triggered dial often ran before
+        // wifi was up, and a loop that postponed while Bluetooth held the link
+        // left the phone on Bluetooth for hours at home.
         HelmLink.attach(RANK_BLE) { }
         HelmLink.publishState(RANK_BLE, com.potatomotato.helm.ble.LinkState.Linked)
         val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(emptyMap())
+        val schedule = ManualSchedule()
+        val logs = mutableListOf<String>()
+        LanLinkController(store, dialer, DeferredPump(), schedule = schedule, log = { logs += it })
+            .tryConnect("desk")
+        assertEquals(1, dialer.attempts.size)
+
+        schedule.runNext()
+
+        assertEquals(2, dialer.attempts.size)
+        assertTrue(logs.any { it.contains("retry: dialing while BLE-owned") })
+    }
+
+    @Test
+    fun `the redial loop does not dial while LAN owns the link`() {
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val reachable = mutableMapOf<String, FakeConnection>()
+        val dialer = FakeDialer(reachable)
+        val schedule = ManualSchedule()
+        val controller = LanLinkController(store, dialer, DeferredPump(), schedule = schedule)
+        controller.tryConnect("desk")
+        // Something else (a network change, an address push) got LAN up first.
+        reachable["192.168.1.20:47475"] = FakeConnection()
+        controller.tryConnect("desk")
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+        val before = dialer.attempts.size
+
+        schedule.runNext()
+
+        assertEquals(before, dialer.attempts.size)
+    }
+
+    /** Hands the controller's network callback to the test. */
+    private class FakeNetworkWatcher : NetworkWatcher {
+        var onChange: (() -> Unit)? = null
+        var stopped = false
+        override fun start(onChange: () -> Unit) { this.onChange = onChange }
+        override fun stop() { stopped = true }
+        fun fire() = onChange!!.invoke()
+    }
+
+    @Test
+    fun `a network becoming available triggers one dial`() {
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val reachable = mutableMapOf<String, FakeConnection>()
+        val dialer = FakeDialer(reachable)
+        val schedule = ManualSchedule()
+        val network = FakeNetworkWatcher()
+        val logs = mutableListOf<String>()
+        val controller = LanLinkController(
+            store, dialer, DeferredPump(), schedule = schedule, network = network, log = { logs += it },
+        )
+        controller.tryConnect("desk") // fails: wifi is not up yet; arms the retry
+        val retries = schedule.actions.size
+        reachable["192.168.1.20:47475"] = FakeConnection()
+
+        network.fire()
+        assertEquals(retries + 1, schedule.actions.size)
+        schedule.actions.removeAt(retries)()
+
+        assertEquals(2, dialer.attempts.size)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+        assertTrue(logs.any { it.contains("network change") })
+    }
+
+    @Test
+    fun `a burst of network events makes one dial`() {
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
         val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        val schedule = ManualSchedule()
+        val network = FakeNetworkWatcher()
+        var allowed = false
+        // Remembers the desktop without dialling, so only the burst dials.
+        LanLinkController(
+            store, dialer, DeferredPump(), schedule = schedule, network = network, allowDial = { allowed },
+        ).tryConnect("desk")
+        allowed = true
+
+        repeat(5) { network.fire() }
+        assertEquals(1, schedule.actions.size)
+        schedule.runNext()
+        // A second burst after the link is up dials nothing.
+        repeat(3) { network.fire() }
+        schedule.actions.toList().forEach { it() }
+
+        assertEquals(1, dialer.attempts.size)
+    }
+
+    @Test
+    fun `stop unregisters the network watcher`() {
+        val network = FakeNetworkWatcher()
+        val controller = LanLinkController(
+            MemoryAddresses(mutableMapOf()), FakeDialer(emptyMap()), DeferredPump(), schedule = never, network = network,
+        )
+        assertTrue(network.onChange != null)
+
+        controller.stop()
+
+        assertTrue(network.stopped)
+    }
+
+    @Test
+    fun `resume links the first reachable desktop and redials that one after a drop`() {
+        val store = MemoryAddresses(mutableMapOf(
+            "A" to listOf("192.168.1.20:47475"),
+            "B" to listOf("192.168.1.30:47475"),
+        ))
+        val reachable = mutableMapOf(
+            "192.168.1.20:47475" to FakeConnection(),
+            "192.168.1.30:47475" to FakeConnection(),
+        )
+        val dialer = FakeDialer(reachable)
         val pump = DeferredPump()
         val schedule = ManualSchedule()
-        LanLinkController(store, dialer, pump, schedule = schedule).tryConnect("desk")
-        assertEquals(1, dialer.attempts.size)
+        val controller = LanLinkController(store, dialer, pump, schedule = schedule)
 
+        controller.resume(listOf("A", "B"))
+        assertEquals(listOf("192.168.1.20:47475"), dialer.attempts)
+
+        reachable["192.168.1.20:47475"] = FakeConnection()
         pump.run()
-        // The loop keeps running but never dials while Bluetooth holds the
-        // link — the next address push does that job better.
-        repeat(3) { schedule.runNext() }
+        schedule.runNext()
+
+        assertEquals(listOf("192.168.1.20:47475", "192.168.1.20:47475"), dialer.attempts)
+    }
+
+    @Test
+    fun `resume falls through an unreachable desktop and retries target the one that linked`() {
+        val store = MemoryAddresses(mutableMapOf(
+            "A" to listOf("192.168.1.20:47475"),
+            "B" to listOf("192.168.1.30:47475"),
+        ))
+        val reachable = mutableMapOf("192.168.1.30:47475" to FakeConnection())
+        val dialer = FakeDialer(reachable)
+        val pump = DeferredPump()
+        val schedule = ManualSchedule()
+        val controller = LanLinkController(store, dialer, pump, schedule = schedule)
+
+        controller.resume(listOf("A", "B"))
+        assertEquals(listOf("192.168.1.20:47475", "192.168.1.30:47475"), dialer.attempts)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+
+        reachable["192.168.1.30:47475"] = FakeConnection()
+        pump.run()
+        schedule.actions.toList().forEach { it() }
+
+        assertEquals("192.168.1.30:47475", dialer.attempts.last())
+        assertEquals(1, dialer.attempts.count { it == "192.168.1.20:47475" })
+    }
+
+    @Test
+    fun `tryConnect after stop does not dial`() {
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        val controller = LanLinkController(store, dialer, DeferredPump(), schedule = never)
+        controller.stop()
+
+        controller.tryConnect("desk")
+
+        assertTrue(dialer.attempts.isEmpty())
+    }
+
+    @Test
+    fun `service start with Bluetooth switched off dials LAN`() {
+        // Found on hardware: with Bluetooth off by preference, a restart of
+        // the link service made zero LAN attempts for six hours. Nothing about
+        // Bluetooth — not attached, not linked — may gate the dial.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(mapOf("192.168.1.20:47475" to FakeConnection()))
+        val controller = LanLinkController(store, dialer, DeferredPump(), schedule = never)
+
+        controller.resume(listOf("desk"))
 
         assertEquals(1, dialer.attempts.size)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+    }
+
+    @Test
+    fun `service start re-dials a LAN socket the old service orphaned`() {
+        // The service's teardown clears every rank while the socket lives on;
+        // the controller then believed it was connected forever and never
+        // dialled again.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val first = FakeConnection()
+        val connections = ArrayDeque(listOf(first, FakeConnection()))
+        val attempts = mutableListOf<String>()
+        val dialer = LanLinkSession.Dialer { host, port -> attempts += "$host:$port"; connections.removeFirst() }
+        val controller = LanLinkController(store, dialer, PumpQueue(), schedule = never)
+        controller.tryConnect("desk")
+        HelmLink.detach()
+
+        controller.resume(listOf("desk"))
+
+        assertTrue(first.closed)
+        assertEquals(2, attempts.size)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
     }
 
     @Test

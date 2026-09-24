@@ -46,18 +46,51 @@ export interface MobileAddressAdvertiserDeps {
   /** Every machine currently linked — used when settings change, not on link. */
   linkedMachines: () => string[];
   logger?: (message: string) => void;
+  /**
+   * Re-resolve the address (e.g. re-probe the default route). Called before each
+   * poll, because a laptop moving Wi-Fi networks changes its address with no
+   * link event to tell us.
+   */
+  refresh?: () => Promise<void>;
+  /** Poll interval for address changes; default 30s. */
+  pollMs?: number;
 }
+
+const DEFAULT_POLL_MS = 30_000;
 
 export class MobileAddressAdvertiser {
   private readonly onOnline = (machineId: string) => this.advertiseTo(machineId);
+  private timer: ReturnType<typeof setInterval> | null = null;
+  /** What was last pushed, so a poll only sends when the address really moved. */
+  private lastAdvertised: string | null = null;
 
   constructor(private readonly deps: MobileAddressAdvertiserDeps) {
     this.deps.links.on('online', this.onOnline);
   }
 
-  /** Stop advertising. Idempotent. */
+  /** Begin polling for address changes. Idempotent. */
+  start(): void {
+    if (this.timer) return;
+    void this.deps.refresh?.();
+    this.timer = setInterval(() => void this.poll(), this.deps.pollMs ?? DEFAULT_POLL_MS);
+  }
+
+  /** Stop advertising and polling. Idempotent. */
   dispose(): void {
     this.deps.links.off('online', this.onOnline);
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** Cheap: re-resolve, and push only when the list differs from the last one. */
+  private async poll(): Promise<void> {
+    try {
+      await this.deps.refresh?.();
+      if (!this.timer) return;
+      if (JSON.stringify(this.deps.addresses()) !== this.lastAdvertised) this.advertiseAll();
+    } catch (error) {
+      this.log(`address poll failed: ${describe(error)}`);
+    }
   }
 
   /**
@@ -84,7 +117,8 @@ export class MobileAddressAdvertiser {
       this.log(`could not send the address list to ${machineId}`);
       return;
     }
-    this.log(`advertised ${addresses.length} address(es) to ${machineId}`);
+    this.lastAdvertised = JSON.stringify(addresses);
+    this.log(`advertised [${addresses.join(', ')}] to ${machineId}`);
   }
 
   private log(message: string): void {

@@ -132,15 +132,67 @@ class BleLinkSessionTest {
     }
 
     @Test
-    fun `a refused notification clears the queue instead of sending a hole`() {
+    fun `a notification refused twice clears the queue instead of sending a hole`() {
         link()
         peripheral.acceptNotifications = false
 
         session.send(Random(6).nextBytes(700))
+        // First refusal: the chunk is held for exactly one retry, not dropped.
+        assertTrue(session.pendingChunks > 0)
+        assertEquals(50L, scheduler.delays.last())
+
+        scheduler.runPending()
 
         assertEquals(0, peripheral.notified.size)
         assertEquals(0, session.pendingChunks)
-        assertTrue(logs.any { it.contains("rejected") })
+        assertEquals(0L, session.pendingBytes)
+        assertTrue(logs.any { it.contains("rejected after a retry") })
+    }
+
+    @Test
+    fun `a chunk refused once is retried after a short delay and the message arrives whole`() {
+        link()
+        val message = Random(60).nextBytes(700)
+        session.send(message)
+        assertEquals(1, peripheral.notified.size)
+
+        // The stack reports the notification failed: nothing new goes out yet.
+        session.onNotificationSent(helm, false)
+        assertEquals(1, peripheral.notified.size)
+        assertEquals(50L, scheduler.delays.last())
+
+        scheduler.runPending()
+        // The SAME chunk goes out again rather than the next one leaving a hole.
+        assertEquals(2, peripheral.notified.size)
+        assertEquals(peripheral.notified[0].toHex(), peripheral.notified[1].toHex())
+
+        while (session.pendingChunks > 0) session.onNotificationSent(helm, true)
+        session.onNotificationSent(helm, true)
+
+        val roundTripped = mutableListOf<ByteArray>()
+        val reassembler = BleReassembler({ roundTripped.add(it) }, { throw AssertionError(it) })
+        // The refused first copy never reached the central.
+        peripheral.notified.drop(1).forEach(reassembler::push)
+        assertEquals(listOf(message.toHex()), roundTripped.map { it.toHex() })
+        assertEquals(0L, session.pendingBytes)
+    }
+
+    @Test
+    fun `an async refusal of the retried chunk discards the rest cleanly`() {
+        link()
+        session.send(Random(61).nextBytes(700))
+        session.onNotificationSent(helm, false)
+        scheduler.runPending()
+        assertEquals(2, peripheral.notified.size)
+
+        session.onNotificationSent(helm, false)
+
+        assertEquals(0, session.pendingChunks)
+        assertEquals(0L, session.pendingBytes)
+        assertEquals(2, peripheral.notified.size)
+        // The link itself survives; the next message is sent normally.
+        session.send(Random(62).nextBytes(10))
+        assertEquals(3, peripheral.notified.size)
     }
 
     @Test

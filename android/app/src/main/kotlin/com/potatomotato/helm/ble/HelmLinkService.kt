@@ -20,6 +20,7 @@ import android.os.Looper
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.TransportPreferences
+import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.log.HelmLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -158,6 +159,7 @@ class HelmLinkService : Service() {
                 .distinctUntilChanged()
                 .collect { allowed -> recovery.onTransportAllowed(allowed) }
         }
+        HelmPairing.onLinkServiceStarted()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -169,7 +171,9 @@ class HelmLinkService : Service() {
         // Android tearing the service down is the one link-lifecycle event the
         // phone can see and the desktop cannot infer.
         HelmLog.i(TAG, "the link service is being destroyed")
-        HelmLink.detach()
+        // ONLY Bluetooth's rank: clearing every rank orphaned a live LAN socket,
+        // which then blocked all redials as "already connected".
+        HelmLink.detachRank(RANK_BLE)
         session?.stop()
         gattServer?.close()
         handler.removeCallbacksAndMessages(null)

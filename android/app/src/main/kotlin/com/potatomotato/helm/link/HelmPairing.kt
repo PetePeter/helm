@@ -4,6 +4,7 @@ import android.content.Context
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ble.RANK_BLE
+import com.potatomotato.helm.lan.AndroidNetworkWatcher
 import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.LanAddressStore
@@ -132,6 +133,8 @@ object HelmPairing {
         lan = LanLinkController(
             addresses = addresses,
             allowDial = { TransportPreferences.preference.value.allowsLan },
+            // Wi-Fi coming up is when a dial can first succeed; see NetworkWatcher.
+            network = AndroidNetworkWatcher(context.applicationContext),
             log = { message -> HelmLog.i(HelmLog.WIRE, message) },
         )
         // A change has to reach the live socket: gating the next dial alone
@@ -210,10 +213,10 @@ object HelmPairing {
 
         // A phone whose only path to the desktop is the network — the VPN case
         // — never sees the Bluetooth link-up that triggers a dial, so startup
-        // makes one attempt per paired desktop and the controller's own
+        // dials paired desktops until one links (one LAN session) and the controller's own
         // backoff carries it from there.
         scope.launch(Dispatchers.IO) {
-            for (desktopId in keys.pairedMachineIds()) lan?.tryConnect(desktopId)
+            for (desktopId in keys.pairedMachineIds()) if (lan?.tryConnect(desktopId) == true) break
         }
     }
 
@@ -223,6 +226,17 @@ object HelmPairing {
      * (that is the point of backgrounding), and its non-daemon pump thread
      * holds the process open after finish() if nobody closes the socket.
      */
+    /**
+     * The link service (re)started. LAN is dialled here INDEPENDENT of the
+     * Bluetooth preference or state: a restarted service with Bluetooth off by
+     * preference otherwise made zero LAN attempts for hours (process-lifetime
+     * init had already run, and nothing Bluetooth-side would ever fire).
+     */
+    fun onLinkServiceStarted() {
+        val keys = store ?: return
+        scope.launch(Dispatchers.IO) { lan?.resume(keys.pairedMachineIds()) }
+    }
+
     fun stopLan() {
         lan?.stop()
     }

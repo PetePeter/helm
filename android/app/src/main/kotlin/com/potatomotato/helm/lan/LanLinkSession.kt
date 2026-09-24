@@ -4,6 +4,7 @@ import com.potatomotato.helm.data.parseLanAddress
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.SocketTimeoutException
 
 /**
  * LanLinkSession — the phone dialling Helm over the network.
@@ -122,15 +123,26 @@ class LanLinkSession(
     fun pump() {
         val open = connection ?: return
         val buffer = ByteArray(READ_BUFFER_BYTES)
+        val startedMs = System.currentTimeMillis()
+        var reason = "closed"
         try {
             while (!stopped) {
                 val read = open.input.read(buffer)
-                if (read < 0) break
+                if (read < 0) {
+                    reason = "eof"
+                    break
+                }
                 if (read > 0) onBytes(buffer.copyOf(read))
             }
+        } catch (error: SocketTimeoutException) {
+            // Nothing heard for the read timeout. The desktop pings far more
+            // often than that, so the socket is dead even if TCP has not noticed.
+            reason = "timeout"
         } catch (error: IOException) {
-            if (!stopped) log("the LAN link ended: ${error.message}")
+            reason = if (stopped) "closed" else "reset (${error.message})"
         } finally {
+            val lifetimeS = (System.currentTimeMillis() - startedMs) / 1_000
+            log("the LAN link ended: reason=$reason lifetime=${lifetimeS}s")
             close()
         }
     }

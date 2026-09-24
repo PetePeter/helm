@@ -91,7 +91,7 @@ import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
 import { MobileArtifactUploadService } from '../../mobile/mobile-artifact-upload.js';
 import { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
 import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.js';
-import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
+import { PrimaryLanAddressResolver } from '../../mobile/primary-lan-address.js';
 import { MobileAlertNotifier } from '../../mobile/mobile-alert-notifier.js';
 import { MobileArtifactNotifier } from '../../mobile/mobile-artifact-notifier.js';
 import type { ObservedSession } from '../../mobile/mobile-alert-notifier.js';
@@ -928,6 +928,8 @@ export function registerIPCHandlers(
     deviceStore: mobileDeviceStore,
     isOnline: (machineId) => mobileLinkManager.isOnline(machineId),
   });
+  // Shared by the advertiser and the settings panel so both show the same address.
+  const primaryLanAddress = new PrimaryLanAddressResolver();
   const disposeMobile = setupMobileHandlers({
     deviceStore: mobileDeviceStore,
     getPairing: () => mobilePairing,
@@ -954,6 +956,7 @@ export function registerIPCHandlers(
         mobileAddressAdvertiser.advertiseAll();
       },
       boundPort: () => mobileLanTransport.boundPort,
+      addresses: (port) => primaryLanAddress.addresses(port),
     },
   });
   // The security boundary in front of every inbound phone call (P-0737). Built
@@ -1003,18 +1006,22 @@ export function registerIPCHandlers(
   // Without it the phone's address is a typed string that dies silently the day
   // the DHCP lease moves — and mDNS, which is how the fleet lane repairs that,
   // cannot cross a VPN.
+  // Only the default-route address: virtual adapters (WSL, VirtualBox, VPN)
+  // each cost the phone a dial timeout. See src/mobile/primary-lan-address.ts.
   const mobileAddressAdvertiser = new MobileAddressAdvertiser({
     links: mobileLinkManager,
+    refresh: () => primaryLanAddress.refresh(),
     addresses: () => {
       const boundPort = mobileLanTransport.boundPort;
       // Nothing bound means an EMPTY list, which is itself the instruction to
       // stop dialling — not a reason to stay silent.
-      return boundPort === null ? [] : reachableAddresses('0.0.0.0', boundPort).addresses;
+      return boundPort === null ? [] : primaryLanAddress.addresses(boundPort);
     },
     linkedMachines: () => mobileDeviceStore.list()
       .filter((device) => device.enabled !== false && mobileLinkManager.isOnline(device.machineId))
       .map((device) => device.machineId),
   });
+  mobileAddressAdvertiser.start();
 
   // The phone's notification path: a state change, a notify_user or a flash
   // reaches a pocketed phone over the already-open BLE link. Fed in ADDITION to
@@ -1068,6 +1075,7 @@ export function registerIPCHandlers(
       disposePairing();
       disposePeerManagement();
       disposeMobile();
+      mobileAddressAdvertiser.dispose();
       sessionManager.off('session:updated', observeForAlerts);
       sessionManager.off('session:removed', forgetForAlerts);
       mobileChatBridge.stop();

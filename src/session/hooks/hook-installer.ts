@@ -87,23 +87,31 @@ export async function probeInterpreter(deps: HookInstallerDeps): Promise<Resolve
 /**
  * One hook command line: interpreter, shim, provider, event.
  *
- * A part is quoted ONLY when it contains whitespace. Codex spawns hook
- * commands with no shell quote handling, so a quoted program name
- * (`"python" …`) fails to spawn outright — "Hook failed, exit 1" on every
- * event, all hook features silently dead. Claude Code and Copilot shell out
- * (cmd /C), where the quotes work when a path demands them.
+ * Claude Code and Copilot shell out (cmd /C), so the shim path is ALWAYS
+ * quoted for them — a path is user-controlled and any shell-significant
+ * character in it would otherwise split or reinterpret the command.
+ * Codex spawns hook commands with no shell quote handling, so a quoted part
+ * fails to spawn outright — "Hook failed, exit 1" on every event, all hook
+ * features silently dead. Codex therefore stays unquoted. Every other part
+ * is quoted only when it contains whitespace.
  */
 function hookCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter, provider: HookProvider, event: string): string {
   const parts = [interpreter.command, ...interpreter.args, deps.shimPath, provider, event];
-  const spaced = parts.some((part) => /\s/.test(part));
-  if (spaced && provider === 'codex') {
-    // Even quoted, codex cannot run this command — say so instead of
-    // installing a hook that fails invisibly.
-    logger.warn(
-      `[HookInstaller] Shim path contains spaces and codex cannot spawn quoted hook programs — ${provider} hooks will fail until the shim lives at a space-free path: ${deps.shimPath}`,
-    );
+  if (provider === 'codex') {
+    warnIfCodexCannotSpawn(parts, deps.shimPath);
+    return parts.join(' ');
   }
-  return parts.map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(' ');
+  return parts
+    .map((part) => (part === deps.shimPath || /\s/.test(part) ? `"${part}"` : part))
+    .join(' ');
+}
+
+/** Even quoted, codex cannot run a spaced command — say so instead of installing a hook that fails invisibly. */
+function warnIfCodexCannotSpawn(parts: string[], shimPath: string): void {
+  if (!parts.some((part) => /\s/.test(part))) return;
+  logger.warn(
+    `[HookInstaller] Shim path contains spaces and codex cannot spawn quoted hook programs — codex hooks will fail until the shim lives at a space-free path: ${shimPath}`,
+  );
 }
 
 /** The matcher-group shape Claude's and Codex's nested config expects. */

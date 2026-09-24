@@ -53,8 +53,17 @@ import type { SecretStore } from '../mcp/peer/secret-store.js';
  * while the radio keeps the link alive — settles the write and never answers.
  * Without a deadline here the transport's one active-link slot is held forever:
  * no error, no disconnect, no rescan.
+ *
+ * Per transport, because the transports differ by an order of magnitude. A LAN
+ * handshake is two small frames over a socket and completes in milliseconds, so
+ * five seconds is generous and anything slower is a wedged peer. BLE carries
+ * the same frames as acknowledged 20-byte ATT writes until the MTU report lands,
+ * through a connection that may still be settling its parameters — observed
+ * handshakes take 1-3s — so eight seconds keeps a margin for a slow but healthy
+ * radio while still freeing the slot well before the phone's own timeouts.
  */
-const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
+const DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS = 5_000;
+const DEFAULT_BLE_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 /**
  * How long a registered link may hear nothing from the phone before the manager
@@ -64,15 +73,29 @@ const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
  * wedged-radio-stack case — and a quiet link would then look online forever,
  * until a send burned its 10s write deadline. The probe forces traffic: the
  * peer answers PONG, which is inbound, which resets the clock.
+ *
+ * Also the tick of the keepalive clock: every link is checked this often, so a
+ * dead link is dropped at most one tick after its silence budget runs out
+ * (was 15s ticks, ~45s worst case).
  */
-const DEFAULT_KEEPALIVE_INTERVAL_MS = 15_000;
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 5_000;
 
 /**
- * Silent probe intervals that make a link dead. Two intervals of silence means
- * one probe went out and came back with nothing — not merely a link between
+ * Silent probe intervals that make a link dead: 6 x 5s = 30s of silence, i.e.
+ * five probes went out and not one came back — not merely a link between
  * messages, which is what a healthy idle phone looks like.
  */
-const DEFAULT_KEEPALIVE_MISS_LIMIT = 2;
+const DEFAULT_KEEPALIVE_MISS_LIMIT = 6;
+
+/**
+ * Probe intervals after which a link is pinged even if the phone is talking.
+ *
+ * Inbound traffic resets the silence clock, so a phone that talks constantly
+ * would never be probed — and the phone's own side (the LAN socket's 45s read
+ * timeout) needs to hear from US. 4 x 5s = 20s bounds the gap between desktop
+ * pings at ~25s including tick granularity, well inside 45s.
+ */
+const DEFAULT_KEEPALIVE_REFRESH_INTERVALS = 4;
 
 
 /**
@@ -166,7 +189,10 @@ export interface MobileLinkManagerOptions {
   pairing: MobilePairing;
   /** This hub's stable machine id, bound into the handshake transcript. */
   machineId: string;
-  /** Ceiling on waiting for the peer's handshake answer; see DEFAULT_HANDSHAKE_TIMEOUT_MS. */
+  /**
+   * Ceiling on waiting for the peer's handshake answer, for every transport.
+   * Omitted, the per-transport defaults apply; see DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS.
+   */
   handshakeTimeoutMs?: number;
   /** Silence before an idle link is probed; see DEFAULT_KEEPALIVE_INTERVAL_MS. */
   keepaliveIntervalMs?: number;
@@ -214,7 +240,7 @@ export class MobileLinkManager extends EventEmitter {
   private readonly opts: MobileLinkManagerOptions;
   private readonly now: () => number;
   private readonly openChannel: OpenMobileChannel;
-  private readonly handshakeTimeoutMs: number;
+  private readonly handshakeTimeoutMs: number | undefined;
   private readonly keepaliveIntervalMs: number;
   private readonly keepaliveMissLimit: number;
   private readonly retireGraceMs: number;
@@ -223,8 +249,14 @@ export class MobileLinkManager extends EventEmitter {
   private enabled = false;
   private running = false;
   private keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Handshakes currently running — keepalive probing pauses while any is. */
-  private handshakesInFlight = 0;
+  /**
+   * Links with a handshake currently running. The keepalive skips exactly
+   * these — never every link — so a pairing window or a slow identification on
+   * one phone cannot shield a different, dead link from being dropped.
+   */
+  private readonly handshaking = new Set<MobileLink>();
+  /** When each occupancy was last pinged; see DEFAULT_KEEPALIVE_REFRESH_INTERVALS. */
+  private readonly lastProbeAt = new WeakMap<ActiveLink, number>();
   private readonly links = new Map<string, ActiveLink>();
   /**
    * How many identification attempts have been made since the last success.
@@ -234,6 +266,12 @@ export class MobileLinkManager extends EventEmitter {
    * peer's advertised address changes.
    */
   private attempt = 0;
+  /**
+   * Bumped by stop(). A handshake captures it on entry and checks it after
+   * every await: one that settles after stop() belongs to a stack that no
+   * longer exists and must not register, emit or refuse anything.
+   */
+  private lifetime = 0;
   /** Increments on every slot occupancy; see ActiveLink.generation. */
   private generation = 0;
   /**
@@ -252,12 +290,32 @@ export class MobileLinkManager extends EventEmitter {
    * time because the coordinator accepts only one attempt at a time.
    */
   private pairingHold: { link: MobileLink; timer: ReturnType<typeof setTimeout> } | null = null;
+  /**
+   * A lower-rank link held idle, per machineId, while a higher rank owns the
+   * slot. See parkOrRelease for why it is never handshaken while parked.
+   */
+  private readonly parked = new Map<string, MobileLink>();
+  /**
+   * Advertisers whose last handshake failed while a paired phone was owned at a
+   * higher rank with no standby. The phone cannot tell us who it is before the
+   * handshake, and it answers only on its OWNING transport, so a LAN-owned
+   * phone's BLE link fails whichever unlinked PSK it is offered. Its next
+   * connection from the same id is parked instead of identified. See
+   * handshakeFailed.
+   */
+  private readonly parkNext = new Set<string>();
+  /**
+   * machineId → rank that dropped, while its parked link is mid-handshake.
+   * Offline is withheld until that settles, so a successful failover is a
+   * `switched`, not an offline/online blink.
+   */
+  private readonly failingOver = new Map<string, number>();
 
   constructor(options: MobileLinkManagerOptions) {
     super();
     this.opts = options;
     this.now = options.now ?? Date.now;
-    this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS;
+    this.handshakeTimeoutMs = options.handshakeTimeoutMs;
     this.keepaliveIntervalMs = options.keepaliveIntervalMs ?? DEFAULT_KEEPALIVE_INTERVAL_MS;
     this.keepaliveMissLimit = Math.max(1, options.keepaliveMissLimit ?? DEFAULT_KEEPALIVE_MISS_LIMIT);
     this.retireGraceMs = options.retireGraceMs ?? DEFAULT_RETIRE_GRACE_MS;
@@ -305,9 +363,15 @@ export class MobileLinkManager extends EventEmitter {
    */
   async stop(): Promise<void> {
     this.enabled = false;
+    this.lifetime += 1;
+    this.handshaking.clear();
     this.clearKeepalive();
     this.flushRetiring('Helm stopped');
     this.releasePairingHold('Helm stopped');
+    // Transports close their own links on stop; only the bookkeeping goes here.
+    this.parked.clear();
+    this.parkNext.clear();
+    this.failingOver.clear();
     for (const active of [...this.links.values()]) {
       this.links.delete(active.machineId);
       try {
@@ -342,6 +406,9 @@ export class MobileLinkManager extends EventEmitter {
    * which must take effect on the radio now rather than at next reconnect.
    */
   dropLink(machineId: string, reason = 'dropped by Helm'): void {
+    // Revoke/disable must not fail over — the parked link goes with the owner.
+    const parked = this.takeParked(machineId);
+    if (parked) this.release(parked, reason);
     const active = this.links.get(machineId);
     if (active) this.dropGeneration(machineId, active.generation, reason);
   }
@@ -359,7 +426,7 @@ export class MobileLinkManager extends EventEmitter {
     this.links.delete(machineId);
     this.log(`dropping the link to ${machineId}: ${reason}`);
     this.teardown(active, reason);
-    this.emit('offline', machineId);
+    this.lostOwner(machineId, active.rank);
   }
 
   /** Close a link's channel and hand the link back to its own transport. */
@@ -457,11 +524,10 @@ export class MobileLinkManager extends EventEmitter {
   }
 
   private keepaliveTick(): void {
-    // A handshake in flight means a phone is mid-identification on a second
-    // link; probing registered links can wait a beat rather than race it.
-    if (this.handshakesInFlight > 0) return;
     for (const active of [...this.links.values()]) {
       if (!active.channel) continue;
+      // Only the link that is itself mid-handshake waits; see `handshaking`.
+      if (this.handshaking.has(active.link)) continue;
       const silentFor = this.now() - active.lastInboundAt;
       // A bulk write still working through the outbound queue IS evidence of a
       // live peer path: the phone is accepting chunks, and the inbound traffic
@@ -478,16 +544,30 @@ export class MobileLinkManager extends EventEmitter {
       // paused too — a PING would queue behind the transfer and arrive after it.
       if (active.link.hasPendingWrites?.()) continue;
       if (silentFor >= this.keepaliveIntervalMs * this.keepaliveMissLimit) {
-        this.dropLink(active.machineId, `keepalive: no inbound traffic for ${silentFor}ms`);
+        // dropGeneration, not dropLink: a dead owner must fail over to a parked link.
+        this.dropGeneration(active.machineId, active.generation, `keepalive: no inbound traffic for ${silentFor}ms`);
         continue;
       }
-      if (silentFor < this.keepaliveIntervalMs) continue;
+      if (!this.probeDue(active, silentFor)) continue;
+      this.lastProbeAt.set(active, this.now());
       try {
         active.channel.sendPing?.();
       } catch (error) {
         this.log(`keepalive probe to ${active.machineId} failed`, error);
       }
     }
+  }
+
+  /**
+   * Probe a link that has gone quiet, and — whatever the phone is saying —
+   * one we have not pinged in a while, so the phone's side of the link never
+   * goes long without hearing from us.
+   */
+  private probeDue(active: ActiveLink, silentFor: number): boolean {
+    if (silentFor >= this.keepaliveIntervalMs) return true;
+    if (!this.lastProbeAt.has(active)) this.lastProbeAt.set(active, this.now());
+    const sinceProbe = this.now() - this.lastProbeAt.get(active)!;
+    return sinceProbe >= this.keepaliveIntervalMs * DEFAULT_KEEPALIVE_REFRESH_INTERVALS;
   }
 
   /** ANY inbound byte — pong, ping, or application message — resets the probe. */
@@ -526,15 +606,16 @@ export class MobileLinkManager extends EventEmitter {
   private async onLink(link: MobileLink): Promise<void> {
     // Both handshake paths below count as in flight until they settle, so the
     // keepalive clock stays out of the way while a link is being decided.
-    this.handshakesInFlight += 1;
+    this.handshaking.add(link);
     try {
       await this.identify(link);
     } finally {
-      this.handshakesInFlight -= 1;
+      this.handshaking.delete(link);
     }
   }
 
   private async identify(link: MobileLink): Promise<void> {
+    const lifetime = this.lifetime;
     // Pairing first: while it is armed the coordinator owns the handshake, and a
     // second one on the same pipe would fight it for the bytes. The link is only
     // LENT — see holdForPairing for why it still has to be tracked here.
@@ -555,6 +636,7 @@ export class MobileLinkManager extends EventEmitter {
     if (this.pairingArmed() && this.rankOf(link) === RANK_BLE) {
       this.holdForPairing(link);
       const taken = await this.opts.pairing.offerLink(link);
+      if (this.stoppedSince(lifetime)) return;
       // The deadline may have reclaimed and dropped the link while we waited.
       if (this.pairingHold?.link !== link) return;
       if (taken) return;
@@ -562,9 +644,15 @@ export class MobileLinkManager extends EventEmitter {
       this.takePairingHold();
     }
 
+    const standbyFor = this.parkNext.delete(link.deviceId) ? this.ownerWithoutStandby(link) : undefined;
+    if (standbyFor) {
+      this.park(standbyFor.machineId, link);
+      return;
+    }
+
     const device = this.nextCandidate(link);
     if (!device) {
-      await this.refuse(link, 'no paired device matches this advertiser');
+      await this.parkOrRelease(link);
       return;
     }
 
@@ -584,15 +672,21 @@ export class MobileLinkManager extends EventEmitter {
     let channel: MobileChannel;
     try {
       channel = await this.boundedHandshake(
+        link,
         this.openChannel(link, { machineId: this.opts.machineId, psk }),
       );
     } catch (error) {
+      if (this.stoppedSince(lifetime)) return;
       // The expected outcome for a stranger, or for the wrong candidate PSK.
       this.log(`identification of ${link.deviceId} failed`, error);
-      await this.refuse(link, 'handshake did not authenticate');
+      await this.handshakeFailed(link);
       return;
     }
 
+    if (this.stoppedSince(lifetime)) {
+      this.closeQuietly(channel, link.deviceId);
+      return;
+    }
     this.register(link, channel);
   }
 
@@ -602,11 +696,12 @@ export class MobileLinkManager extends EventEmitter {
    * because a pipe cannot be asked to cancel its read — its eventual failure
    * goes nowhere once we have stopped caring.
    */
-  private boundedHandshake(run: Promise<MobileChannel>): Promise<MobileChannel> {
+  private boundedHandshake(link: MobileLink, run: Promise<MobileChannel>): Promise<MobileChannel> {
+    const timeoutMs = this.handshakeTimeoutFor(link);
     return new Promise<MobileChannel>((resolve, reject) => {
       const timer = setTimeout(
-        () => reject(new Error(`handshake timed out after ${this.handshakeTimeoutMs}ms`)),
-        this.handshakeTimeoutMs,
+        () => reject(new Error(`handshake timed out after ${timeoutMs}ms`)),
+        timeoutMs,
       );
       run.then(
         (channel) => {
@@ -619,6 +714,12 @@ export class MobileLinkManager extends EventEmitter {
         },
       );
     });
+  }
+
+  /** The handshake deadline for this link's transport; see DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS. */
+  private handshakeTimeoutFor(link: MobileLink): number {
+    if (this.handshakeTimeoutMs !== undefined) return this.handshakeTimeoutMs;
+    return this.rankOf(link) === RANK_BLE ? DEFAULT_BLE_HANDSHAKE_TIMEOUT_MS : DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS;
   }
 
   /**
@@ -641,8 +742,10 @@ export class MobileLinkManager extends EventEmitter {
     const rank = this.rankOf(link);
     const incumbent = this.links.get(machineId);
     if (incumbent && rank <= incumbent.rank) {
+      // It authenticated, so it is the right phone: close it WITHOUT the
+      // cooldown reject() imposes on strangers.
       channel.close('already linked');
-      void this.refuse(link, 'a link to this device already exists');
+      this.release(link, 'a link to this device already exists');
       return;
     }
 
@@ -667,7 +770,187 @@ export class MobileLinkManager extends EventEmitter {
       return;
     }
     this.log(`linked "${device.name}" (${machineId}) via ${link.deviceId}`);
-    this.emit('online', machineId);
+    this.announceOwner(machineId, rank);
+  }
+
+  /**
+   * Announce a new owner: `online` normally, but `switched` when it lands while
+   * a failover withheld the offline — nothing above ever saw the phone leave.
+   */
+  private announceOwner(machineId: string, rank: number): void {
+    const fromRank = this.failingOver.get(machineId);
+    if (fromRank === undefined) {
+      this.emit('online', machineId);
+      return;
+    }
+    this.failingOver.delete(machineId);
+    this.emit('switched', machineId, fromRank, rank);
+  }
+
+  /**
+   * The owner of a slot is gone. Fail over to a parked lower-rank link if one
+   * is held; otherwise the phone is offline.
+   */
+  private lostOwner(machineId: string, fromRank: number): void {
+    const parked = this.takeParked(machineId);
+    if (!parked) {
+      this.emit('offline', machineId);
+      return;
+    }
+    this.failingOver.set(machineId, fromRank);
+    void this.failover(machineId, parked);
+  }
+
+  /**
+   * Handshake over the parked link now that it is the phone's owner too: the
+   * phone's HelmLink fell back to the lower rank when the same drop reached it.
+   * No rescan is involved — which is the point, since noble would not report
+   * the phone again until its address rotated.
+   */
+  private async failover(machineId: string, link: MobileLink): Promise<void> {
+    this.log(`failing ${machineId} over to its parked link ${link.deviceId}`);
+    const lifetime = this.lifetime;
+    this.handshaking.add(link);
+    try {
+      const device = this.opts.deviceStore.getByMachineId(machineId);
+      const psk = device && device.enabled !== false ? this.readPsk(device) : undefined;
+      if (!device || !psk) throw new Error('the device is no longer trusted');
+      const channel = await this.boundedHandshake(
+        link,
+        this.openChannel(link, { machineId: this.opts.machineId, psk }),
+      );
+      if (this.stoppedSince(lifetime)) {
+        this.closeQuietly(channel, link.deviceId);
+        return;
+      }
+      if (channel.peerMachine !== machineId || !this.failingOver.has(machineId) || this.links.has(machineId)) {
+        channel.close('failover superseded');
+        this.release(link, 'failover superseded');
+        this.settleFailover(machineId);
+        return;
+      }
+      this.occupy({ machineId, link, channel, rank: this.rankOf(link), lastInboundAt: this.now() });
+      this.opts.deviceStore.update(device.id, { lastSeenAt: this.now() });
+      this.announceOwner(machineId, this.rankOf(link));
+    } catch (error) {
+      if (this.stoppedSince(lifetime)) return;
+      this.log(`failover of ${machineId} to ${link.deviceId} failed`, error);
+      // No cooldown: it is still our phone, and the transport must rescan for it.
+      this.release(link, 'failover handshake failed');
+      this.settleFailover(machineId);
+    } finally {
+      this.handshaking.delete(link);
+    }
+  }
+
+  /** Whether stop() ran since `lifetime` was captured; see `lifetime`. */
+  private stoppedSince(lifetime: number): boolean {
+    return lifetime !== this.lifetime;
+  }
+
+  /** Close a channel that finished handshaking after stop(); the transport owns the link. */
+  private closeQuietly(channel: MobileChannel, deviceId: string): void {
+    this.log(`discarding the handshake of ${deviceId}: Helm stopped`);
+    try {
+      channel.close('Helm stopped');
+    } catch (error) {
+      this.log(`closing the channel for ${deviceId} failed`, error);
+    }
+  }
+
+  /** End a failover that did not take the slot: offline, unless another link did. */
+  private settleFailover(machineId: string): void {
+    if (this.failingOver.delete(machineId) && !this.links.has(machineId)) this.emit('offline', machineId);
+  }
+
+  private readPsk(device: MobileDevice): Buffer | undefined {
+    try {
+      return this.opts.secretStore.get(device.pskRef);
+    } catch (error) {
+      this.log(`reading the PSK for ${device.machineId} failed`, error);
+      return undefined;
+    }
+  }
+
+  /**
+   * No unlinked device can be behind this advertiser. If a device is owned at a
+   * HIGHER rank, this is almost certainly its lower-rank transport arriving:
+   * keep it parked, unhandshaken, so a drop of the owner is a handover rather
+   * than a reconnect (the phone agrees — HelmLink keeps Bluetooth attached
+   * below LAN). Handshaking now would go unanswered, because the phone's
+   * channel follows its owner rank. A duplicate at the SAME rank is closed
+   * without the cooldown — it is our phone, just redundant. Only a genuine
+   * stranger is refused.
+   */
+  private async parkOrRelease(link: MobileLink): Promise<void> {
+    const incoming = this.rankOf(link);
+    const enabled = this.opts.deviceStore.list().filter((device) => device.enabled !== false);
+    const owner = this.ownerWithoutStandby(link);
+    if (owner) {
+      this.park(owner.machineId, link);
+      return;
+    }
+    if (enabled.some((device) => this.linkedAtOrAbove(device.machineId, incoming))) {
+      this.release(link, 'a link to this device already exists');
+      return;
+    }
+    await this.refuse(link, 'no paired device matches this advertiser');
+  }
+
+  /**
+   * A failed identification is only a stranger when no paired phone could be
+   * behind it. While one is owned at a higher rank without a standby, the
+   * failure is most likely that phone's lower rank failing ANOTHER phone's PSK
+   * (it would answer nothing else — see parkNext): disconnect without the
+   * cooldown and park this id next time. A genuine second phone is unaffected,
+   * because its own PSK is tried first and succeeds.
+   */
+  private async handshakeFailed(link: MobileLink): Promise<void> {
+    if (this.ownerWithoutStandby(link)) {
+      this.parkNext.add(link.deviceId);
+      this.release(link, 'handshake failed while a paired device is linked at a higher rank');
+      return;
+    }
+    await this.refuse(link, 'handshake did not authenticate');
+  }
+
+  /** An enabled device owned above this link's rank with no parked standby. */
+  private ownerWithoutStandby(link: MobileLink): MobileDevice | undefined {
+    const incoming = this.rankOf(link);
+    return this.opts.deviceStore.list().find((device) => {
+      if (device.enabled === false) return false;
+      const active = this.links.get(device.machineId);
+      return active !== undefined && active.rank > incoming && !this.parked.has(device.machineId);
+    });
+  }
+
+  private park(machineId: string, link: MobileLink): void {
+    this.parked.set(machineId, link);
+    this.log(`parked ${link.deviceId} (rank ${this.rankOf(link)}) as standby for ${machineId}`);
+    link.pipe.onClose(() => this.unpark(link, 'the parked pipe closed'));
+  }
+
+  private unpark(link: MobileLink, reason: string): void {
+    for (const [machineId, held] of this.parked) {
+      if (held !== link) continue;
+      this.parked.delete(machineId);
+      this.log(`standby ${link.deviceId} for ${machineId} gone: ${reason}`);
+    }
+  }
+
+  private takeParked(machineId: string): MobileLink | undefined {
+    const link = this.parked.get(machineId);
+    this.parked.delete(machineId);
+    return link;
+  }
+
+  /** Close a link we will not use, WITHOUT the refusal cooldown. */
+  private release(link: MobileLink, reason: string): void {
+    const transport = this.origin.get(link);
+    if (!transport) return;
+    this.log(`releasing ${link.deviceId}: ${reason}`);
+    const close = (transport.disconnect ?? transport.reject).bind(transport);
+    void close(link, reason).catch((error) => this.log(`releasing ${link.deviceId} failed`, error));
   }
 
   /**
@@ -883,6 +1166,11 @@ export class MobileLinkManager extends EventEmitter {
    * late disconnect finds nothing to drop.
    */
   private onDisconnected(deviceId: string, transport: MobileLinkTransport): void {
+    for (const held of [...this.parked.values()]) {
+      if (this.origin.get(held) === transport && held.deviceId === deviceId) {
+        this.unpark(held, 'the transport reported a disconnect');
+      }
+    }
     for (const active of [...this.links.values()]) {
       if (active.transport !== transport || active.link.deviceId !== deviceId) continue;
       this.onClosed(active.machineId, active.generation, 'the transport reported a disconnect');
@@ -911,10 +1199,11 @@ export class MobileLinkManager extends EventEmitter {
     // channel and transport all report their close AFTER the replacement has
     // taken the slot, and a bare delete-by-machineId would take the successor
     // down with them. See P-0752 footgun 1.
-    if (!this.isCurrent(machineId, generation)) return;
+    const active = this.links.get(machineId);
+    if (!active || active.generation !== generation) return;
     this.links.delete(machineId);
     this.log(`link to ${machineId} closed: ${reason}`);
-    this.emit('offline', machineId);
+    this.lostOwner(machineId, active.rank);
   }
 }
 

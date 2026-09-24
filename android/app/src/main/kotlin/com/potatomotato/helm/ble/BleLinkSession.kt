@@ -52,6 +52,15 @@ class BleLinkSession(
          * itself, taken on the same scheduler everything else here defers to.
          */
         const val SUPERVISE_INTERVAL_MS = 15_000L
+
+        /**
+         * Pause before re-sending a chunk the stack refused. A refusal is almost
+         * always momentary congestion (the notification slot not yet released),
+         * and dropping the rest of the record instead leaves a sequence gap the
+         * desktop's AEAD check turns into a full link teardown. One retry after a
+         * beat is enough to ride that out without holding the queue for long.
+         */
+        const val CHUNK_RETRY_DELAY_MS = 50L
     }
 
     /**
@@ -118,6 +127,18 @@ class BleLinkSession(
      * stale [LinkScheduler] action can never tear down a healthy link.
      */
     private var ackWatch = 0L
+
+    /** The chunk on the air, kept so a refusal can put it back for one retry. */
+    private var inFlightChunk: ByteArray? = null
+
+    /** Whether [inFlightChunk] is already its own retry; a second refusal gives up. */
+    private var chunkRetried = false
+
+    /** True while a refused chunk waits out [CHUNK_RETRY_DELAY_MS]; drain holds. */
+    private var chunkRetryPending = false
+
+    /** Bumped per connection so a retry scheduled on a dead link no-ops. */
+    private var linkEpoch = 0L
 
     // ---- control ----------------------------------------------------------
 
@@ -254,14 +275,11 @@ class BleLinkSession(
         if (address != centralAddress) return
         awaitingNotificationAck = false
         if (!success) {
-            // The stack refused the chunk. The message is now unrecoverable at
-            // this layer; drop the rest of it rather than sending a hole — the
-            // truncated secure frame fails the peer's AEAD check, which is the
-            // notice.
-            log("notification failed; discarding ${outbound.size} queued chunks")
-            discardOutbound()
+            onChunkRefused("notification failed")
             return
         }
+        inFlightChunk = null
+        chunkRetried = false
         // Acked, so those bytes are no longer pending — counted here rather than
         // at dequeue so "pending" means "not yet on the air", not "not yet tried".
         outboundBytes -= inFlightBytes
@@ -334,9 +352,10 @@ class BleLinkSession(
     // ---- internals --------------------------------------------------------
 
     private fun drain() {
-        if (state != LinkState.Linked || awaitingNotificationAck) return
+        if (state != LinkState.Linked || awaitingNotificationAck || chunkRetryPending) return
         val chunk = outbound.removeFirstOrNull() ?: return
         awaitingNotificationAck = true
+        inFlightChunk = chunk
         inFlightBytes = chunk.size
         chunksSent++
         HelmLog.v(HelmLog.BLE) { "tx chunk #$chunksSent, ${chunk.size} bytes, ${outbound.size} left" }
@@ -345,11 +364,45 @@ class BleLinkSession(
             // A synchronous refusal never produces an ack callback, so unwind
             // here or the queue stalls forever.
             awaitingNotificationAck = false
-            log("notification rejected; discarding ${outbound.size} queued chunks")
-            discardOutbound()
+            onChunkRefused("notification rejected")
             return
         }
         armAckDeadline()
+    }
+
+    /**
+     * The stack refused the chunk in flight, synchronously or via a failed
+     * `onNotificationSent`. Dropping it would leave a hole in the record — a
+     * sequence gap the desktop reads as an AEAD failure and answers by tearing
+     * the whole link down — so the chunk goes back to the head of the queue and
+     * is retried ONCE after [CHUNK_RETRY_DELAY_MS]. A second refusal means the
+     * stack is not just congested: the rest of the message is discarded rather
+     * than sent with a hole, and the peer's framing check is the notice.
+     */
+    private fun onChunkRefused(what: String) {
+        val chunk = inFlightChunk
+        inFlightChunk = null
+        inFlightBytes = 0
+        if (chunk != null && !chunkRetried) {
+            chunkRetried = true
+            chunkRetryPending = true
+            // Still counted in outboundBytes: it has not reached the air.
+            outbound.addFirst(chunk)
+            log("$what; retrying the chunk once in ${CHUNK_RETRY_DELAY_MS}ms")
+            val epoch = linkEpoch
+            scheduler.schedule(CHUNK_RETRY_DELAY_MS) {
+                synchronized(lock) {
+                    if (epoch == linkEpoch) {
+                        chunkRetryPending = false
+                        drain()
+                    }
+                }
+            }
+            return
+        }
+        chunkRetried = false
+        log("$what after a retry; discarding ${outbound.size} queued chunks")
+        discardOutbound()
     }
 
     /**
@@ -416,6 +469,10 @@ class BleLinkSession(
         chunkSize = BleFraming.MIN_CHUNK_BYTES
         discardOutbound()
         awaitingNotificationAck = false
+        inFlightChunk = null
+        chunkRetried = false
+        chunkRetryPending = false
+        linkEpoch++
         // Invalidate any ack deadline still in flight from the dead connection;
         // LinkScheduler has no cancel, so the stale action simply no-ops.
         ackWatch++

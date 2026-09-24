@@ -102,11 +102,50 @@ negotiating it. Desktop: `MobileLinkManager.register()`. Phone:
    for logs only.
 3. **Equal rank loses.** A transport re-attaching at its own rank must not
    displace itself mid-transfer.
-4. **Downgrade needs no code on either end**, but for different reasons. On
-   the DESKTOP the link goes offline and the existing scan/reconnect path
-   brings BLE back — a real reconnect, taking seconds. On the PHONE nothing
-   reconnects at all: it is the peripheral, its Bluetooth link was never
-   dropped, and the handover is immediate. See "The phone's side of ownership".
+4. **Downgrade is a failover, not a reconnect, when BLE is parked.** On the
+   PHONE nothing reconnects: it is the peripheral, its Bluetooth link was never
+   dropped. On the DESKTOP a BLE link that connects while LAN owns the slot is
+   held parked (below), and a LAN drop hands the slot to it. Without a parked
+   link the phone goes offline and the scan path brings BLE back.
+
+### Downgrade: failover to a parked BLE link
+
+A displaced BLE link is still retired (its SecureChannel closes the pipe), but
+the BLE client then rescans, the phone's advertiser reconnects, and the manager
+finds no *unlinked* candidate for it. If a paired device is owned at a higher
+rank, the link is **parked** for that device — connected, but not handshaken:
+the phone's channel follows its owner rank, so a HELLO over Bluetooth would go
+unanswered while LAN owns it. Only a genuine stranger is `reject`ed into the
+60s ignore window; refusing the parked phone there is what used to strand the
+desktop offline after a LAN drop.
+
+**With a second paired phone unlinked**, the advertiser *does* have a
+candidate — the other phone — so it is identified against that PSK and fails
+(the phone answers only on its owning transport, and nothing pre-handshake says
+which phone it is). While some device is owned above BLE with no standby, that
+failure is `disconnect`ed, not rejected, and the peripheral id is remembered:
+its next connection is parked instead of identified. The other phone's genuine
+link is unaffected — its own PSK succeeds first time. A stranger with no
+higher-rank owner around is still rejected into the ignore window.
+
+```mermaid
+sequenceDiagram
+    participant B as BLE client
+    participant M as MobileLinkManager
+    participant L as LAN
+    L->>M: link (rank 2) — owner
+    B->>M: link (rank 1), no unlinked candidate
+    Note over M: park for machineId (no handshake, no cooldown)
+    L--xM: LAN closes
+    Note over M: offline withheld; handshake over parked BLE
+    M-->>M: occupy slot, emit switched(2 → 1)
+    Note over M: handshake fails → release (disconnect), emit offline
+```
+
+Revoke/disable drops the parked link with the owner; a parked link whose radio
+drops is simply forgotten. While the failover handshake runs `isOnline` is
+false, but no `offline` is emitted unless it fails. A keepalive-detected dead
+owner fails over too.
 
 ### Generations — the defect this exists to prevent
 
@@ -166,6 +205,29 @@ Rules:
 - The phone stores the list **replacing**, never merging — otherwise stale
   leases accumulate and every connection slows down dialling ghosts.
 
+### Why only the default-route address is advertised
+
+The phone dials the list **in order**, with a per-address timeout (~1.5s). A
+Windows dev box owns many IPv4 addresses no phone can reach — WSL/Hyper-V
+`vEthernet` (172.23.x, 172.30.x), VirtualBox host-only (192.168.56.1), Docker,
+VPN/TAP tunnels. A real phone log showed it burning ~3s on 172.23.128.1 and
+192.168.56.1 before reaching the Wi-Fi address 10.98.1.140. So Helm advertises
+**one** address: the IPv4 of the interface carrying the default route
+(`src/mobile/primary-lan-address.ts`).
+
+- **How it is found:** a UDP socket `connect()`ed to a public IP — no packet is
+  sent; the OS just picks the route and binds the local address — then checked
+  against a non-internal entry of `os.networkInterfaces()`.
+- **Offline fallback** (no default route, or the address is not a real
+  interface): every non-internal IPv4 except 169.254/16 and adapters named like
+  vEthernet/WSL/Hyper-V/VirtualBox/VMware/Docker/vpn/TAP/Tailscale/ZeroTier. The
+  switch is logged once per transition.
+- **Change detection:** the advertiser re-probes every 30s and re-pushes to live
+  phones **only when the list changed** (a laptop hopping Wi-Fi networks gets no
+  link event). The log names the addresses sent, not just a count.
+- **Fleet is unaffected:** its pairing panel still lists every interface via
+  `reachableAddresses()` — a human picks one there, nothing dials them blindly.
+
 ### Why the socket address is never persisted as a hint
 
 `MobileDevice.deviceId` is a **BLE scanning hint**: it decides which stored PSK
@@ -188,8 +250,8 @@ different kinds of peer, so one firewall rule never means two things at once.
 There is **no host field**, following `FleetConfigPanel.vue`'s precedent — the
 bind is a wildcard in every real deployment, and the only thing a user can act
 on is the concrete address to type into the phone. Settings → 📱 Mobile shows
-those as copy-to-clipboard chips, derived from `reachableAddresses()` (which
-picks up a VPN adapter's address too).
+the same default-route address the phone is told to dial, as a
+copy-to-clipboard chip.
 
 Changes hot-apply: toggling or changing the port rebinds the listener and
 re-advertises to every live phone. No restart.
@@ -215,7 +277,8 @@ transfer and a slice sized for the wrong transport is refused, not merely slow.
 | `src/mobile/mobile-link.ts` | `MobileLink`, `LinkTransportError`, `RANK_BLE`/`RANK_LAN` — the transport-neutral link contract |
 | `src/mobile/lan/socket-link-transport.ts` | The listener, `SocketLink`, and live enable/port |
 | `src/mobile/mobile-link-manager.ts` | Owns N transports; ranking, preemption, generations |
-| `src/mobile/mobile-address-advertiser.ts` | Pushes reachable addresses down the authenticated link |
+| `src/mobile/mobile-address-advertiser.ts` | Pushes the address down the authenticated link; 30s change poll |
+| `src/mobile/primary-lan-address.ts` | Default-route IPv4 resolution + virtual-adapter fallback filter |
 | `src/mobile/mobile-envelope.ts` | The `lan` record |
 | `android/…/lan/LanLinkSession.kt` | The phone's dialling policy |
 | `android/…/data/LanAddressStore.kt` | Stored addresses and strict `host:port` parsing |
@@ -227,21 +290,54 @@ transfer and a slice sized for the wrong transport is refused, not merely slow.
 split because the when is all policy and the how is all sockets, and only one of
 them needs a network to test.
 
-There are exactly two triggers, and both are events rather than timers:
+Triggers — any one dials, and a dial already in flight or an up LAN link makes
+every other trigger a no-op:
 
-1. **A Bluetooth link came up.** That is the moment the phone both knows which
-   desktop it is talking to and has somewhere to reach it.
-2. **A fresh address list arrived.** The first list a phone ever receives lands
-   *after* the Bluetooth link came up, so waiting for the next link would leave
-   LAN unused for a whole session.
+1. **A Bluetooth link came up.** The phone knows which desktop it is talking to
+   and has somewhere to reach it.
+2. **A fresh address list arrived** over the authenticated channel.
+3. **A Wi-Fi/Ethernet network became available** or changed addresses
+   (`NetworkWatcher`, a `ConnectivityManager.NetworkCallback`). Debounced 2s:
+   the system reports available-then-link-properties in a burst, which must be
+   one socket, not several.
+4. **The link service (re)started** (`LanLinkController.resume`). Independent of
+   the Bluetooth preference and state — a restarted service with Bluetooth off
+   by preference previously made zero LAN attempts for six hours.
+5. **The redial backoff** (15s doubling to 60s), whenever LAN does not itself
+   own the link — **including while Bluetooth owns it**. It used to pause under
+   Bluetooth, and since trigger 1 usually fires before wifi has an address, the
+   phone stayed on Bluetooth indefinitely. It pauses only while LAN owns the link.
 
-**It does not retry on a schedule.** Away from home every address is
-unreachable, so a background loop would drain the battery to rediscover that the
-office wifi still isolates its clients. One quiet failed connect per link is
-enough. The TCP connect timeout is 1.5s for the same reason: the user is waiting
-on a Bluetooth link that already works.
+The TCP connect timeout is 1.5s: away from home every address is unreachable and
+the user is already on Bluetooth.
 
-The phone needs `android.permission.INTERNET`. Without it a dial raises
+```mermaid
+flowchart LR
+    BLE[BLE link up] --> D{dial}
+    PUSH[address push] --> D
+    NET[wifi available<br/>debounced 2s] --> D
+    SVC[service start] --> D
+    RETRY[backoff 15-60s] -->|LAN not owner| D
+    D -->|connected| LAN[LAN owns link]
+    D -->|failed| RETRY
+    LAN -->|EOF / reset / 45s read timeout| RETRY
+```
+
+**Dead-socket detection.** The phone sets a 45s socket read timeout (the desktop
+pings at least every ~25s, and every 5s once the link is quiet) plus TCP keepalive. A silently dead link — an AP
+that stopped forwarding, a desktop gone without a FIN — throws
+`SocketTimeoutException`, which the pump treats as a clean close; the rank drops
+and Bluetooth resumes at once. Without it the phone stayed "Linked" until TCP
+gave up, ten-plus minutes. Every close logs `reason=eof|reset|timeout|closed`
+and the link's lifetime.
+
+**Service teardown releases only Bluetooth's rank.** Clearing every rank used to
+orphan a live LAN socket: the controller still believed it was connected and
+refused to redial. The controller now also detects an orphaned session (open
+socket, rank no longer registered) and closes it before redialling.
+
+The phone needs `android.permission.INTERNET` (and `ACCESS_NETWORK_STATE` for
+the network callback). Without INTERNET a dial raises
 `SecurityException` — which is **not** an `IOException`, so the dial loop catches
 `Exception` rather than enumerating failure modes it cannot predict.
 

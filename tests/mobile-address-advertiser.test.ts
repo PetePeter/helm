@@ -6,7 +6,7 @@
  * synchronises, and nothing about resolving an address may endanger a link.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { MobileAddressAdvertiser } from '../src/mobile/mobile-address-advertiser.js';
 import { decodeRecord, type MobileLanRecord } from '../src/mobile/mobile-envelope.js';
@@ -142,5 +142,73 @@ describe('MobileAddressAdvertiser', () => {
     links.bringOnline(PHONE);
 
     expect(links.sent).toEqual([]);
+  });
+});
+
+describe('MobileAddressAdvertiser polling', () => {
+  function buildPolled(addresses: () => string[]) {
+    const links = new FakeLinks();
+    const logs: string[] = [];
+    let refreshes = 0;
+    const advertiser = new MobileAddressAdvertiser({
+      links,
+      addresses,
+      linkedMachines: () => [...links.online],
+      logger: (message) => logs.push(message),
+      refresh: async () => { refreshes++; },
+      pollMs: 30_000,
+    });
+    return { links, logs, advertiser, refreshes: () => refreshes };
+  }
+
+  it('re-advertises when the resolved address changes, and not otherwise', async () => {
+    vi.useFakeTimers();
+    try {
+      let ip = '10.98.1.140';
+      const { links, advertiser, refreshes } = buildPolled(() => [`${ip}:47475`]);
+      advertiser.start();
+      links.bringOnline(PHONE);
+      expect(links.sent).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(refreshes()).toBeGreaterThanOrEqual(1);
+      expect(links.sent).toHaveLength(1);
+
+      ip = '192.168.1.50';
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(links.sent).toHaveLength(2);
+      expect(addressesAt(links, 1)).toEqual(['192.168.1.50:47475']);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(links.sent).toHaveLength(2);
+      advertiser.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('logs the advertised addresses themselves', () => {
+    const { links, logs } = build(() => ['10.98.1.140:47475']);
+    links.bringOnline(PHONE);
+    expect(logs.join(' ')).toContain('10.98.1.140:47475');
+  });
+
+  it('stops polling once disposed', async () => {
+    vi.useFakeTimers();
+    try {
+      let ip = '10.98.1.140';
+      const { links, advertiser, refreshes } = buildPolled(() => [`${ip}:1`]);
+      advertiser.start();
+      links.bringOnline(PHONE);
+      advertiser.dispose();
+      const before = refreshes();
+      ip = '10.0.0.9';
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(refreshes()).toBe(before);
+      expect(links.sent).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

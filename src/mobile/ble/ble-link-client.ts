@@ -78,11 +78,15 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
  *
  * None of the three steps had a bound, and on real hardware `discover` simply
  * never returned: Helm sat for ~33 seconds, died on noble's bare "Disconnected
- * unknown", and could not say which await had been stuck. Ten seconds is well
+ * unknown", and could not say which await had been stuck. The ceiling sits well
  * under the ~30s the phone was observed holding a silent connection, so Helm
  * now gives up first and gets to describe what happened.
+ *
+ * Five seconds, not ten: every healthy step on real hardware completes in well
+ * under two, and while a connect is in flight the scan is paused — so a long
+ * ceiling directly delays every OTHER phone's discovery too.
  */
-const DEFAULT_STEP_TIMEOUT_MS = 10_000;
+const DEFAULT_STEP_TIMEOUT_MS = 5_000;
 /** Windows can report the first uncached GATT query as unreachable while the
  * connection is still settling. A bounded retry lets the stack converge. */
 const DISCOVERY_ATTEMPTS = 2;
@@ -139,6 +143,8 @@ export interface NoblePeripheral {
   on(event: 'mtu', handler: (mtu: number) => void): unknown;
   /** Detach the report listener again when an attempt or a link ends. */
   off(event: 'mtu', handler: (mtu: number) => void): unknown;
+  /** Detach a disconnect listener for a link closed by other means. */
+  off(event: 'disconnect', handler: () => void): unknown;
 }
 
 export interface NobleApi {
@@ -147,6 +153,10 @@ export interface NobleApi {
   stopScanningAsync(): Promise<void>;
   on(event: 'stateChange', handler: (state: string) => void): unknown;
   on(event: 'discover', handler: (peripheral: NoblePeripheral) => void): unknown;
+  /** Fires on every scan end — ours, and the ones the OS decides on its own. */
+  on(event: 'scanStop', handler: () => void): unknown;
+  /** Removes a handler added with on(); stop() must not leave any behind. */
+  off(event: 'stateChange' | 'discover' | 'scanStop', handler: (...args: never[]) => void): unknown;
 }
 
 /* ------------------------------------------------------------------ */
@@ -191,12 +201,30 @@ export class BleLinkClient extends EventEmitter {
   private readonly log: (message: string, error?: unknown) => void;
 
   private started = false;
-  private busy = false;
-  private active: BleLinkPipe | null = null;
+  /**
+   * Peripheral ids with a connect sequence in progress. Per peripheral, so one
+   * phone mid-connect never blocks a second paired phone from linking.
+   */
+  private readonly connecting = new Set<string>();
+  /**
+   * Peripheral ids inside the connectAsync step itself. The scan is paused only
+   * while this is non-empty: the WinRT stack has been seen to stall a connect
+   * that races an active advertisement watcher, and the pause costs nothing
+   * once connect completes — scanning resumes immediately after.
+   */
+  private readonly scanPausedFor = new Set<string>();
+  /** Every live link, keyed by peripheral id. Several phones may be linked at once. */
+  private readonly links = new Map<string, BleLinkPipe>();
   private attempts = 0;
   private rescanTimer: ReturnType<typeof setTimeout> | null = null;
   /** Peripheral id → epoch ms until which it is skipped. */
   private readonly ignored = new Map<string, number>();
+  /** One expiry timer per ignore entry; see onIgnoreExpired. */
+  private readonly ignoreTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Ignore entries whose skipped discovery has already been logged. */
+  private readonly ignoreLogged = new Set<string>();
+  /** True while WE are stopping the scan, so its scanStop is not unsolicited. */
+  private stoppingScan = false;
   private nextAttemptId = 1;
 
   constructor(options: BleLinkClientOptions) {
@@ -217,25 +245,42 @@ export class BleLinkClient extends EventEmitter {
     if (this.started) return;
     this.started = true;
 
-    this.noble.on('stateChange', (state: string) => {
-      if (state === 'poweredOn') void this.scan();
-      else this.log(`BLE adapter state ${state}`);
-    });
-    this.noble.on('discover', (peripheral: NoblePeripheral) => {
-      void this.onDiscover(peripheral);
-    });
+    this.noble.on('stateChange', this.handleStateChange);
+    this.noble.on('discover', this.handleDiscover);
+    this.noble.on('scanStop', this.handleScanStop);
 
-    if (this.noble.state === 'poweredOn') await this.scan();
+    if (this.noble.state === 'poweredOn') await this.scan('start');
   }
+
+  // Bound once so stop() can remove exactly what start() added — otherwise
+  // every start/stop cycle stacked another set, and one power-on scanned N times.
+  private readonly handleStateChange = (state: string): void => {
+    if (state === 'poweredOn') void this.scan('adapter powered on');
+    else this.log(`BLE adapter state ${state}`);
+  };
+  private readonly handleDiscover = (peripheral: NoblePeripheral): void => {
+    void this.onDiscover(peripheral);
+  };
+  private readonly handleScanStop = (): void => this.onScanStop();
 
   /** Stop scanning, drop any live link, and cancel pending retries. */
   async stop(): Promise<void> {
     this.started = false;
+    this.noble.off('stateChange', this.handleStateChange);
+    this.noble.off('discover', this.handleDiscover);
     this.clearRescan();
-    const link = this.active;
-    this.active = null;
-    if (link) await link.disconnect();
-    await this.safely('stopScanning', () => this.noble.stopScanningAsync());
+    for (const timer of this.ignoreTimers.values()) clearTimeout(timer);
+    this.ignoreTimers.clear();
+    // Cleared first: a stopping client closes quietly, with no per-link
+    // 'disconnected' events or rescans.
+    const links = [...this.links.values()];
+    this.links.clear();
+    this.connecting.clear();
+    this.scanPausedFor.clear();
+    await Promise.all(links.map((link) => link.disconnect()));
+    await this.safely('stopScanning', () => this.stopScanning());
+    // Removed last: stopScanning resolves on the scanStop event itself.
+    this.noble.off('scanStop', this.handleScanStop);
   }
 
   /**
@@ -252,34 +297,101 @@ export class BleLinkClient extends EventEmitter {
    * strangers. Same mechanics as reject, minus the cooldown.
    */
   async disconnect(link: MobileLink, reason: string): Promise<void> {
+    const current = this.currentPipe(link);
+    if (!current) {
+      this.log(`BLE ignoring stale close of ${link.deviceId}: ${reason}`);
+      return;
+    }
     this.log(`BLE closing ${link.deviceId}: ${reason}`);
-
-    const active = this.active;
-    if (!active || active.deviceId !== link.deviceId) return;
-    await active.disconnect();
-    if (this.active !== active) return;
-    this.active = null;
-    this.emit('disconnected', active.deviceId);
-    this.scheduleRescan();
+    // Closing the pipe runs onLinkClosed, which frees the slot and rescans —
+    // even when the peripheral never fires 'disconnect'.
+    await current.disconnect();
   }
 
   async reject(link: MobileLink, reason: string): Promise<void> {
-    this.ignored.set(link.deviceId, this.now() + this.rejectIgnoreMs);
+    const current = this.currentPipe(link);
+    if (!current) {
+      // No cooldown either: the advertiser is serving a newer, healthy link.
+      this.log(`BLE ignoring stale reject of ${link.deviceId}: ${reason}`);
+      return;
+    }
+    this.ignore(link.deviceId);
     this.log(`BLE rejecting ${link.deviceId}: ${reason}`);
-
-    const active = this.active;
-    if (!active || active.deviceId !== link.deviceId) return;
-    await active.disconnect();
-    // A peripheral that never fires 'disconnect' would otherwise wedge the
-    // client with a dead active link and no scheduled rescan.
-    if (this.active !== active) return;
-    this.active = null;
-    this.emit('disconnected', active.deviceId);
-    this.scheduleRescan();
+    await current.disconnect();
   }
 
-  private async scan(): Promise<void> {
-    if (!this.started || this.active || this.busy) return;
+  /**
+   * The live pipe only if `link` IS it. A MobileLink from a superseded
+   * connection shares the peripheral id with its successor, so a lookup by id
+   * alone would let a late teardown kill the newer, healthy link.
+   */
+  private currentPipe(link: MobileLink): BleLinkPipe | undefined {
+    const current = this.links.get(link.deviceId);
+    return current === (link as unknown) ? current : undefined;
+  }
+
+  /**
+   * Skip an advertiser for the reject window, and arm a rescan for when it
+   * ends. noble reports each peripheral once per scan, so without the rescan
+   * an advertiser skipped while ignored would never be reported again.
+   */
+  private ignore(peripheralId: string): void {
+    this.ignored.set(peripheralId, this.now() + this.rejectIgnoreMs);
+    this.ignoreLogged.delete(peripheralId);
+    const previous = this.ignoreTimers.get(peripheralId);
+    if (previous) clearTimeout(previous);
+    const timer = setTimeout(() => this.onIgnoreExpired(peripheralId), this.rejectIgnoreMs);
+    timer.unref?.();
+    this.ignoreTimers.set(peripheralId, timer);
+  }
+
+  private onIgnoreExpired(peripheralId: string): void {
+    this.ignoreTimers.delete(peripheralId);
+    this.ignored.delete(peripheralId);
+    this.ignoreLogged.delete(peripheralId);
+    this.log(`BLE ignore entry for ${peripheralId} expired`);
+    void this.restartScan(`ignore entry for ${peripheralId} expired`);
+  }
+
+  /**
+   * Stop and start the scan so noble forgets what it already reported. A
+   * connect in progress owns the radio and resumes a fresh scan itself when it
+   * completes, and a pending backoff rescan starts a fresh scan anyway.
+   */
+  private async restartScan(reason: string): Promise<void> {
+    if (!this.started || this.scanPausedFor.size > 0 || this.rescanTimer) return;
+    this.log(`BLE restarting scan: ${reason}`);
+    await this.safely('stopScanning', () => this.stopScanning());
+    await this.scan(reason);
+  }
+
+  /** Stop scanning, marking the resulting scanStop as ours. */
+  private async stopScanning(): Promise<void> {
+    this.stoppingScan = true;
+    try {
+      await this.noble.stopScanningAsync();
+    } finally {
+      this.stoppingScan = false;
+    }
+  }
+
+  /**
+   * A scan end we did not ask for (the OS, a radio reset) would otherwise leave
+   * the client idle forever: nothing else restarts a scan that merely stopped.
+   */
+  private onScanStop(): void {
+    if (this.stoppingScan) {
+      this.log('BLE scan stopped');
+      return;
+    }
+    if (!this.started || this.scanPausedFor.size > 0) return;
+    this.log('BLE scanStop not requested by Helm; rescanning');
+    this.scheduleRescan('unsolicited scanStop');
+  }
+
+  private async scan(reason: string): Promise<void> {
+    if (!this.started || this.scanPausedFor.size > 0) return;
+    this.log(`BLE scan start (${reason})`);
     try {
       await this.noble.startScanningAsync([this.serviceUuid], false);
     } catch (error) {
@@ -289,14 +401,20 @@ export class BleLinkClient extends EventEmitter {
       // no discover, no failed connect step, and no disconnect event will ever
       // fire to announce it. The backoff is the only recovery, so a radio that
       // transiently refuses must land here rather than idle the client forever.
-      this.scheduleRescan();
+      this.scheduleRescan('scan start failed');
     }
   }
 
   private async onDiscover(peripheral: NoblePeripheral): Promise<void> {
-    if (!this.started || this.active || this.busy) return;
-    if (this.isIgnored(peripheral.id)) return;
-    this.busy = true;
+    if (!this.started || this.links.has(peripheral.id) || this.connecting.has(peripheral.id)) return;
+    if (this.isIgnored(peripheral.id)) {
+      if (!this.ignoreLogged.has(peripheral.id)) {
+        this.ignoreLogged.add(peripheral.id);
+        this.log(`BLE skipping ignored ${peripheral.id} until ${new Date(this.ignored.get(peripheral.id)!).toISOString()}`);
+      }
+      return;
+    }
+    this.connecting.add(peripheral.id);
     // WHICH STEP, how long it took, and a bound on each one. P-0756 caught this
     // sequence hanging for 35 seconds and failing with noble's bare "Disconnected
     // unknown", while the phone sat in Connecting having seen a perfectly
@@ -321,12 +439,16 @@ export class BleLinkClient extends EventEmitter {
     this.log(`BLE attempt ${attemptId} discovered ${peripheral.id}`);
     try {
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
-      await this.noble.stopScanningAsync();
+      this.scanPausedFor.add(peripheral.id);
+      await this.stopScanning();
 
       step = 'connect';
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
       await this.bounded(step, () => peripheral.connectAsync());
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
+      // Resume at once: other phones must stay discoverable while this one
+      // discovers, subscribes and — above all — stays linked.
+      this.resumeScanAfterConnect(peripheral.id);
 
       step = 'discover';
       this.log(`BLE attempt ${attemptId} starting ${step} for ${peripheral.id}`);
@@ -342,25 +464,35 @@ export class BleLinkClient extends EventEmitter {
       await this.bounded(step, () => tx.subscribeAsync());
       this.log(`BLE attempt ${attemptId} completed ${step} for ${peripheral.id} after ${Date.now() - startedAt}ms`);
 
-      const link = new BleLinkPipe(peripheral, rx, tx, this.log, this.now, this.writeTimeoutMs);
+      const onDisconnectEvent = () => link.handleClose();
+      const link: BleLinkPipe = new BleLinkPipe(peripheral, rx, tx, this.log, this.now, this.writeTimeoutMs, () => {
+        // Every exit path of a live link lands here exactly once, so this is
+        // where its peripheral listeners come off — reconnects must not stack them.
+        peripheral.off('mtu', onMtu);
+        peripheral.off('disconnect', onDisconnectEvent);
+        this.onLinkClosed(link);
+      });
       // Replay a report that arrived before the pipe did; the plausibility band
       // in noteNegotiatedMtu applies to it exactly as to a live one. Later
       // reports (a renegotiation in either direction) update the live link
       // through the listener above.
       if (latestMtu !== null) link.noteNegotiatedMtu(latestMtu);
       pipe = link;
-      this.active = link;
+      this.links.set(peripheral.id, link);
       this.attempts = 0;
-      peripheral.once('disconnect', () => this.onDisconnect(link));
-      this.busy = false;
+      peripheral.once('disconnect', onDisconnectEvent);
+      this.connecting.delete(peripheral.id);
       this.emit('link', link);
     } catch (error) {
-      this.busy = false;
+      this.connecting.delete(peripheral.id);
+      // A connect-step failure leaves the scan paused; the backoff rescan below
+      // is what resumes it, so a flapping phone never tight-loops the radio.
+      this.scanPausedFor.delete(peripheral.id);
       this.log(`BLE attempt ${attemptId} ${step} to ${peripheral.id} failed after ${Date.now() - startedAt}ms`, error);
       peripheral.off('mtu', onMtu);
       await this.abandon(peripheral);
       this.emitError(error);
-      this.scheduleRescan();
+      this.scheduleRescan(`attempt ${attemptId} failed at ${step}`);
     }
   }
 
@@ -435,13 +567,23 @@ export class BleLinkClient extends EventEmitter {
     }
   }
 
-  private onDisconnect(link: BleLinkPipe): void {
-    if (this.active !== link) return;
-    this.log(`BLE peripheral ${link.deviceId} emitted disconnect after ${Date.now() - link.connectedAt}ms`);
-    this.active = null;
-    link.handleClose();
+  /** Resume scanning once no connect step holds the radio. */
+  private resumeScanAfterConnect(peripheralId: string): void {
+    this.scanPausedFor.delete(peripheralId);
+    if (this.scanPausedFor.size === 0) void this.scan(`connect to ${peripheralId} completed`);
+  }
+
+  /**
+   * A live link ended — peripheral disconnect, a failed or timed-out write,
+   * a reject, or a retirement. Frees that peripheral's slot and rescans so it
+   * is reported again; other linked phones are untouched.
+   */
+  private onLinkClosed(link: BleLinkPipe): void {
+    if (this.links.get(link.deviceId) !== link) return;
+    this.log(`BLE link ${link.deviceId} closed after ${Date.now() - link.connectedAt}ms`);
+    this.links.delete(link.deviceId);
     this.emit('disconnected', link.deviceId);
-    this.scheduleRescan();
+    this.scheduleRescan(`link to ${link.deviceId} closed`);
   }
 
   /**
@@ -449,13 +591,16 @@ export class BleLinkClient extends EventEmitter {
    * our own rescan. Backoff exists so a phone that is simply out of range does
    * not put the radio in a tight scan loop all day.
    */
-  private scheduleRescan(): void {
+  private scheduleRescan(reason: string): void {
     if (!this.started || this.rescanTimer) return;
     const delay = Math.min(this.reconnectBaseMs * 2 ** this.attempts, this.reconnectMaxMs);
     this.attempts += 1;
+    this.log(`BLE rescan in ${delay}ms: ${reason}`);
     this.rescanTimer = setTimeout(() => {
       this.rescanTimer = null;
-      void this.scan();
+      // A restart, not a plain start: with other phones linked the scan may
+      // still be running, and noble reports each peripheral once per scan.
+      void this.restartScan(reason);
     }, delay);
   }
 
@@ -465,6 +610,7 @@ export class BleLinkClient extends EventEmitter {
     if (until === undefined) return false;
     if (this.now() < until) return true;
     this.ignored.delete(peripheralId);
+    this.ignoreLogged.delete(peripheralId);
     return false;
   }
 
@@ -524,6 +670,8 @@ class BleLinkPipe implements MobileLink {
     private readonly log: (message: string, error?: unknown) => void,
     private now: () => number,
     private readonly writeTimeoutMs: number,
+    /** Runs once, after the consumers' close handlers; see BleLinkClient.onLinkClosed. */
+    private readonly onClosed: () => void = () => {},
   ) {
     this.linkedAt = this.now();
     tx.on('data', (chunk: Buffer) => this.reassembler.push(chunk));
@@ -705,6 +853,7 @@ class BleLinkPipe implements MobileLink {
     if (this.closed) return;
     this.closed = true;
     for (const handler of this.closeHandlers) handler();
+    this.onClosed();
   }
 
   /**

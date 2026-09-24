@@ -36,6 +36,7 @@ import { useToast } from './composables/useToast.js';
 import { useSettingsController } from './composables/useSettingsController.js';
 import { useInputRouter } from './composables/useInputRouter.js';
 import { useSidebarController } from './composables/useSidebarController.js';
+import { useSessionRenameFocusGuard } from './composables/useSessionRenameFocusGuard.js';
 import { useRecycleBin } from './composables/useRecycleBin.js';
 import { useArtifactViewer } from './composables/useArtifactViewer.js';
 import { useArtifactSessionBinding } from './composables/useArtifactSessionBinding.js';
@@ -421,6 +422,7 @@ const sidebarController = useSidebarController({
   doSpawn,
   doCloseSession,
 });
+useSessionRenameFocusGuard(dockWorkspace.focusedPaneId);
 const {
   overviewCollapsedIds,
   overviewGroupLabel,

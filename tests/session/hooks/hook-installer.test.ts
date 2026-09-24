@@ -113,10 +113,9 @@ describe('installCliHooks (Claude settings.json)', () => {
     const group = settings.hooks.PreToolUse[0];
     expect(group.matcher).toBe('*');
     expect(group.hooks[0].type).toBe('command');
-    // Unquoted: codex-style CLIs spawn hook commands with no shell quote
-    // handling, so a quoted program name fails to spawn. The space-free path
-    // needs no quotes anywhere.
-    expect(group.hooks[0].command).toBe(`python ${shimPath} claude PreToolUse`);
+    // Claude shells out, so the shim path is always quoted — robust against
+    // any path the shell would otherwise split or reinterpret.
+    expect(group.hooks[0].command).toBe(`python "${shimPath}" claude PreToolUse`);
     expect(group.hooks[0].timeout).toBe(10);
   });
 
@@ -165,13 +164,43 @@ describe('installCliHooks (Codex hooks.json / Copilot helm.json)', () => {
     expect(Object.keys(file.hooks)).toEqual(COPILOT.events);
     const entry = file.hooks.agentStop[0];
     expect(entry.type).toBe('command');
-    expect(entry.command).toBe(`python ${shimPath} copilot agentStop`);
+    expect(entry.command).toBe(`python "${shimPath}" copilot agentStop`);
     expect(entry.timeoutSec).toBe(10);
   });
 });
 
 describe('hook command quoting', () => {
-  it('quotes a part only when it contains whitespace', async () => {
+  it('always quotes the shim path for shell-run providers (claude, copilot), never for codex', async () => {
+    expect(shimPath).not.toMatch(/\s/);
+    await installCliHooks(CLAUDE, depsWithPython());
+    await installCliHooks(COPILOT, depsWithPython());
+    await installCliHooks(CODEX, depsWithPython());
+
+    expect(readJson('.claude/settings.json').hooks.Stop[0].hooks[0].command).toContain(`"${shimPath}"`);
+    expect(readJson('.copilot/hooks/helm.json').hooks.agentStop[0].command).toContain(`"${shimPath}"`);
+    expect(readJson('.codex/hooks.json').hooks.Stop[0].hooks[0].command).not.toContain('"');
+  });
+
+  it('replaces an existing unquoted Helm entry with the quoted one instead of duplicating it', async () => {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(
+      join(home, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          Stop: [{ matcher: '*', hooks: [{ type: 'command', command: `python ${shimPath} claude Stop`, timeout: 10 }] }],
+        },
+      }),
+    );
+
+    const result = await installCliHooks(CLAUDE, depsWithPython());
+
+    expect(result).toMatchObject({ status: 'installed', written: true });
+    const groups = readJson('.claude/settings.json').hooks.Stop;
+    expect(groups).toHaveLength(1);
+    expect(groups[0].hooks[0].command).toBe(`python "${shimPath}" claude Stop`);
+  });
+
+  it('quotes the interpreter only when it contains whitespace', async () => {
     const spaced: HookInstallerDeps = {
       homeDir: () => home,
       shimPath: join(home, 'My Tools', 'helm-hook-shim.py'),

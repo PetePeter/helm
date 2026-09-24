@@ -159,6 +159,13 @@ object HelmLink {
         republish()
     }
 
+    /**
+     * Whether [rank] is registered at all. A transport can outlive its entry —
+     * the link service's teardown clears the map while a LAN socket is still
+     * open — and its owner must be able to notice that orphaning.
+     */
+    internal fun isAttached(rank: Int): Boolean = synchronized(lock) { transports.containsKey(rank) }
+
     /** Which rank currently owns the link, or null when nothing is attached. */
     internal val holderRank: Int? get() = synchronized(lock) { transports.keys.lastOrNull() }
 

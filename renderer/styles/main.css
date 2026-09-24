@@ -1532,7 +1532,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   align-items: center;
   gap: 6px;
   width: auto;
-  margin: var(--spacing-sm);
+  /* No bottom margin: the bin is the pane's last row and anchors to its edge. */
+  margin: var(--spacing-sm) var(--spacing-sm) 0;
   padding: var(--spacing-sm);
   background: var(--bg-secondary);
   border: 1px solid var(--border);

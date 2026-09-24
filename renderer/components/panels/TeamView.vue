@@ -246,7 +246,10 @@ function commitRename(): void {
 </template>
 
 <style scoped>
-.team-view{position:relative;height:100%;overflow:auto;padding:14px;background:var(--bg-primary);color:var(--text-primary)}
+/* Flex column so the recycle bin (margin-top:auto) sits at the pane's bottom
+   edge even when the desk list is short. No bottom padding: it only left a
+   blank strip beneath the bin. */
+.team-view{position:relative;display:flex;flex-direction:column;height:100%;overflow:auto;padding:14px 14px 0;background:var(--bg-primary);color:var(--text-primary)}
 .team-desk__activity-dot{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:var(--dot-colour,var(--text-dim));vertical-align:baseline}
 .team-view__flight{position:absolute;z-index:6;pointer-events:none;color:var(--flight-colour,var(--status-ready));animation:team-message-flight 1s ease-in-out forwards}
 .team-view__flight svg{display:block;filter:drop-shadow(0 0 3px var(--flight-colour,var(--status-ready)))}
@@ -268,7 +271,7 @@ function commitRename(): void {
 .team-desk__info{position:relative;flex:1;min-width:0}
 .team-desk strong,.team-desk__state{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .team-desk__shortcut{position:absolute;top:0;right:0;color:var(--accent);font:600 var(--font-size-xs) var(--font-mono)}
-.team-desk__monitor{display:block;margin-top:8px;max-height:44px;overflow:hidden;border:1px solid var(--border);background:var(--bg-primary);padding:3px;font:9px/11px var(--font-mono);color:var(--text-secondary)}
+.team-desk__monitor{display:block;margin-top:8px;max-height:59px;overflow:hidden;border:1px solid var(--border);background:var(--bg-primary);padding:3px;font:9px/11px var(--font-mono);color:var(--text-secondary)}
 .team-desk__monitor span{display:block;white-space:pre;overflow:hidden;text-overflow:clip}
 /* Fixed avatar rail: the member can never render outside its tile. */
 .team-desk__avatar{flex:0 0 56px;width:56px;max-height:96px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden}
@@ -285,7 +288,7 @@ function commitRename(): void {
 .team-desk--hidden:hover,.team-desk--hidden:focus-visible,.team-desk--hidden.team-desk--active,.team-desk--hidden.team-desk--selected{color:var(--text-primary)}
 
 /* Bin entry pinned to the very bottom — same singleton the Session List opens. */
-.team-recycle-bin{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;margin-top:4px;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-secondary);font:inherit;cursor:pointer}
+.team-recycle-bin{position:sticky;bottom:0;z-index:5;flex-shrink:0;display:flex;align-items:center;gap:8px;margin-top:auto;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-secondary);color:var(--text-secondary);font:inherit;cursor:pointer}
 .team-recycle-bin:hover,.team-recycle-bin:focus-visible{color:var(--text-primary);border-color:var(--accent);outline:none}
 .team-recycle-bin__badge{margin-left:auto;padding:1px 7px;border-radius:999px;background:var(--accent);color:var(--bg-primary);font:600 var(--font-size-xs) var(--font-mono)}
 

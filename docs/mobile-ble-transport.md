@@ -127,7 +127,9 @@ graph TD
     C --> P{pairing armed?}
     P -->|yes| PAIR[MobilePairing.offerLink<br/>SAS on both screens]
     P -->|no| K[next candidate device<br/>address hint first]
-    K -->|none| R[reject: disconnect,<br/>ignore 60s, rescan]
+    K -->|none, phone owned by LAN| PK[park: keep connected,<br/>no handshake]
+    K -->|none, phone already on BLE| D[disconnect, no cooldown]
+    K -->|none, stranger| R[reject: disconnect,<br/>ignore 60s, rescan]
     K --> H[SecureChannel with stored PSK]
     H -->|handshake fails| R
     H --> M{peerMachine is a<br/>trusted, enabled device?}
@@ -140,6 +142,64 @@ graph TD
 A refused advertiser is skipped for 60s (`rejectIgnoreMs`). Without that window
 a neighbour's phone would be reconnected on every rescan forever, since the
 refusal can only happen *after* connecting.
+
+**The ignore window must never catch our own phone, and a scan must never go
+stale.** noble reports each peripheral once per scan, so an advertiser skipped
+while ignored is not reported again until the scan restarts. The original bug:
+LAN preempted BLE, the phone's BLE advertiser reconnected, was refused as
+"already linked" and ignored — and when LAN later dropped the desktop sat
+offline ~15 minutes until Android rotated its address. So:
+
+- A BLE link arriving for a phone LAN already owns is **parked**, not refused
+  (see [mobile-lan-transport.md](mobile-lan-transport.md#downgrade-failover-to-a-parked-ble-link)).
+  A same-rank duplicate is closed via `disconnect` (no cooldown); only a
+  stranger gets `reject`.
+- `BleLinkClient` restarts the scan when a link goes offline (backoff), when an
+  ignore entry expires, and on a noble `scanStop` it did not request.
+- Logged: scan start with its reason, scan stop, each rescan and its reason,
+  ignore expiry, and the first skipped discovery per ignore entry.
+
+### Several phones at once
+
+`BleLinkClient` holds **one link per peripheral id**, not one link in total, so a
+second paired phone links while the first is active. Every piece of connect
+state is per peripheral — which ids are mid-connect, which are linked, each
+link's negotiated MTU and its `mtu`/`disconnect` listeners — and a repeat
+discovery of a phone already held or mid-connect is ignored.
+
+Scanning keeps running while phones are linked. It is paused only for the
+`connectAsync` step itself (the WinRT stack has stalled connects that race an
+active advertisement watcher) and resumed the moment connect completes, before
+discover/subscribe. A connect-step *failure* leaves the scan to the backoff
+rescan instead, so a flapping phone never tight-loops the radio. A rescan is a
+stop-then-start, because with other phones linked the scan may already be
+running and noble reports each peripheral once per scan.
+
+```mermaid
+sequenceDiagram
+    participant N as noble scan
+    participant C as BleLinkClient
+    participant A as phone A
+    participant B as phone B
+    N->>C: discover A
+    C->>N: pause scan
+    C->>A: connect
+    C->>N: resume scan
+    C->>A: discover · subscribe → link A
+    N->>C: discover B (A still linked)
+    C->>N: pause scan
+    C->>B: connect
+    C->>N: resume scan
+    C->>B: discover · subscribe → link B
+    A--xC: disconnect
+    C->>C: close A only · listeners off · rescan (stop+start)
+```
+
+Every exit path of a link — peripheral `disconnect`, a failed or timed-out
+write, `reject`, `disconnect` (retirement) — runs through the pipe's single
+close hook, which removes that link's `mtu` and `disconnect` listeners, frees
+its slot, emits `disconnected`, and schedules the rescan. Listener counts stay
+constant across reconnects.
 
 The manager runs the radio only when there is something to reach: at least one
 paired device, or an armed pairing. `noble` is therefore never loaded on a
@@ -165,16 +225,18 @@ Per invariant 7's spirit, a misbehaving radio must not take a session with it:
 
 ### The connect sequence is bounded, and never leaks a connection
 
-`connect → discover → subscribe` each run under a 10s ceiling, and any failure
+`connect → discover → subscribe` each run under a 5s ceiling, and any failure
 disconnects the peripheral before rescanning. Both rules were paid for:
 
 - **A step with no ceiling cannot be blamed.** Discovery was observed never
   returning — noble said `Device is unreachable while discovering services`
   while the phone sat in `Connecting` with zero chunks either way — and Helm
   hung ~33s before dying on a bare `Disconnected unknown`. A failure now reads
-  `BLE <step> to <id> failed after <n>ms`. 10s is deliberately under the ~30s
-  the phone was seen holding a silent connection, so **Helm gives up first** and
-  is the one that gets to describe what happened.
+  `BLE <step> to <id> failed after <n>ms`. 5s is well under the ~30s the phone
+  was seen holding a silent connection, so **Helm gives up first** and is the
+  one that gets to describe what happened. It was 10s; healthy steps finish in
+  under 2s, and a long ceiling holds the scan pause — delaying every *other*
+  phone's discovery.
 - **A half-built connection must not outlive its attempt.** Walking away without
   disconnecting left the phone holding a live link carrying no traffic, and the
   next attempt met its own leftover as `Peripheral already connected`. The
@@ -189,17 +251,26 @@ we stopped caring is its own defect.
 
 A radio can die without emitting `disconnect` (the wedged-stack class), and a
 quiet link would otherwise look online forever. The manager therefore probes:
-when a registered link has been silent for 15s it sends a **PING** (protocol v2
-frame; the phone answers PONG), and if *nothing* arrives inbound within two
-intervals the link is dropped, `offline` is emitted, and the normal rescan
-recovers it. Any inbound traffic — application data, pong, anything — resets the
-probe; probing pauses while a handshake is in flight, and both probing and the
+the keepalive clock ticks every **5s**; a registered link silent for 5s gets a
+**PING** (protocol v2 frame; the phone answers PONG), and one silent for **30s**
+(6 ticks) is dropped, `offline` is emitted, and the normal rescan recovers it —
+at most one tick late, so ~30-35s worst case (was 15s x 2 checked every 15s,
+~45s). Any inbound traffic — application data, pong, anything — resets the
+silence clock. A link is also pinged if it has not been pinged for 20s even
+while the phone is talking, so the phone always hears from Helm at least every
+~25s — inside the Android LAN socket's 45s read timeout on a healthy link.
+Only a link that is *itself* mid-handshake is skipped; another link's handshake
+(an identification, a failover, or a pairing attempt held open for its whole
+TTL) no longer pauses the keepalive for everyone. Both probing and the
 silence-drop pause while the link's outbound write queue is still working a
 transfer (a bulk send is itself proof the peer path is up, and the reply that
 would reset the clock cannot arrive until it finishes; a wedged queue is still
 dropped, bounded by the per-chunk 10s write deadline). The initiator handshake
-itself is bounded (10s), so a phone that accepts the connection but never
-answers HELLO is rejected and rescanned rather than held forever. A scan start
+itself is bounded — 5s over LAN (two small frames on a socket; milliseconds
+when healthy) and 8s over BLE (the same frames as acknowledged 20-byte writes
+until the MTU report lands, on a connection still settling; observed 1-3s) — so
+a phone that accepts the connection but never answers HELLO is rejected and
+rescanned rather than held forever. A scan start
 the radio refuses also feeds the rescan backoff instead of leaving the client
 dormant.
 
@@ -271,9 +342,12 @@ Three things that shape the Kotlin:
   until `onNotificationSent`, so outbound chunks queue and drain on the ack —
   and the ack itself is bounded (10s, mirroring the desktop's write deadline),
   because an ack that never arrives would otherwise stall the queue for the life
-  of the connection. A refusal discards the rest of that message rather than
-  sending a hole; the peer's secure channel sees it as a sequence gap and
-  continues. All session state is confined behind a single monitor, since the
+  of the connection. A refused chunk (synchronous `notifyTx` false, or
+  `onNotificationSent(false)`) is put back at the head of the queue and
+  **retried once after 50ms** — a refusal is almost always momentary congestion,
+  and dropping it left a sequence gap the desktop's AEAD check turned into a
+  full link teardown. A second refusal of the same chunk discards the rest of
+  that message rather than sending a hole. All session state is confined behind a single monitor, since the
   binder thread, the main thread, and coroutines all touch it.
 - **The radio comes back on its own.** `BleRadioRecovery` watches the adapter
   state: Bluetooth off waits (no retry churn), on retries `open()` with a 1s→4s

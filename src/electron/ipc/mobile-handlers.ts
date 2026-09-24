@@ -61,6 +61,8 @@ export interface MobileHandlerDeps {
     set(config: MobileLanConfig): Promise<void>;
     /** The port actually bound right now, or null when nothing is listening. */
     boundPort(): number | null;
+    /** `host:port` a phone should dial; defaults to every external IPv4. */
+    addresses?(port: number): string[];
   };
 }
 
@@ -204,9 +206,10 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
       enabled: config.enabled,
       port: config.port,
       listening: boundPort !== null,
-      // A wildcard bind is expanded to the concrete IPv4 addresses this host
-      // owns; reachableAddresses already solves that, including a VPN adapter.
-      addresses: boundPort === null ? [] : reachableAddresses('0.0.0.0', boundPort).addresses,
+      // The same address the phone is told to dial (default-route IPv4 in the
+      // app); the all-interfaces expansion is only the fallback when unwired.
+      addresses: boundPort === null ? []
+        : deps.lan?.addresses?.(boundPort) ?? reachableAddresses('0.0.0.0', boundPort).addresses,
     };
   });
 

@@ -21,13 +21,15 @@ import java.util.concurrent.Executors
  * (the address push rides the authenticated channel — see
  * MobileAddressAdvertiser). Dialling at any other time would be guessing.
  *
- * It ALSO retries on a backoff, but ONLY while nothing else carries the link
- * (see [scheduleRetry]). The Bluetooth-triggered attempt alone strands a phone
- * whose ONLY path is the network: away from home over a VPN there is no
- * Bluetooth link coming to re-trigger the dial, so one dropped TCP connection
- * used to be permanent. A phone whose Bluetooth link IS up is never retried —
- * the next address push does that job better, and a background loop would drain
- * the battery rediscovering that the office wifi still isolates its clients.
+ * It ALSO retries on a backoff whenever LAN does not itself own the link,
+ * Bluetooth-owned or offline alike (see [scheduleRetry]). Pausing while
+ * Bluetooth held the link stranded phones on Bluetooth for hours: the one
+ * Bluetooth-triggered dial usually ran before wifi was up. The backoff caps at
+ * a minute, which is the whole battery cost of that.
+ *
+ * It also dials when a Wi-Fi/Ethernet network appears ([NetworkWatcher]),
+ * debounced so a burst of callbacks makes one attempt, and on link-service
+ * start ([resume]) whatever the Bluetooth preference.
  *
  * The Bluetooth link is NOT torn down on success. It stays attached at its lower
  * rank so that LAN dropping is an instant handover rather than a reconnect —
@@ -59,11 +61,15 @@ class LanLinkController(
      * Defaults to true: a build that never wires the setting dials as before.
      */
     private val allowDial: () -> Boolean = { true },
+    /** Connectivity callbacks; null in tests that are not about them. */
+    private val network: NetworkWatcher? = null,
     private val log: (String) -> Unit = {},
 ) {
     private companion object {
         const val RETRY_MIN_MS = 15_000L
         const val RETRY_MAX_MS = 60_000L
+        /** Lets a burst of callbacks (available, then addresses) settle into one dial. */
+        const val NETWORK_SETTLE_MS = 2_000L
     }
 
     private val lock = Any()
@@ -78,6 +84,7 @@ class LanLinkController(
     private var retryPending = false
     private var retryDelayMs = RETRY_MIN_MS
     @Volatile private var stopped = false
+    private var networkDialPending = false
 
     private val writer: ExecutorService by lazy {
         Executors.newSingleThreadExecutor { runnable ->
@@ -86,6 +93,10 @@ class LanLinkController(
     }
     private val runWrite: (() -> Unit) -> Unit =
         runWrite ?: { body -> writer.execute(body) }
+
+    init {
+        network?.start(::onNetworkChanged)
+    }
 
     /** True while a LAN connection is up and carrying the link. */
     val connected: Boolean get() = session?.connected == true
@@ -97,20 +108,27 @@ class LanLinkController(
      * the desktop refuses a second link from the same phone anyway, and two
      * phone-side sockets would race each other for the rank — the loser's
      * teardown detaching the winner's link was a real flap on hardware.
+     *
+     * Returns true when this call brought a LAN link up. The controller holds
+     * ONE session, so callers walking several desktops stop at the first true.
      */
-    fun tryConnect(machineId: String) {
-        lastMachineId = machineId
-        // Remembered FIRST, so switching back to Auto has a desktop to redial.
+    fun tryConnect(machineId: String): Boolean {
+        // Quit can race a queued startup/retry dial; a stopped controller
+        // must never open a socket nobody will close.
+        if (stopped) return false
         if (!allowDial()) {
+            // Remembered so switching back to Auto has a desktop to redial —
+            // but never over one already chosen.
+            if (lastMachineId == null) lastMachineId = machineId
             log("not dialling: the network is switched off by preference")
-            return
+            return false
         }
         val lan = dial(machineId)
         if (lan == null) {
             // A failed attempt is retried later — but never when there is
             // nothing to dial, which only a fresh address push can change.
             if (addresses.load(machineId).isNotEmpty()) scheduleRetry()
-            return
+            return false
         }
 
         runBlocking {
@@ -122,6 +140,7 @@ class LanLinkController(
                 endIfCurrent(lan)
             }
         }
+        return true
     }
 
     private fun dial(machineId: String): LanLinkSession? {
@@ -132,6 +151,10 @@ class LanLinkController(
         try {
             val known = addresses.load(machineId)
             if (known.isEmpty()) return null
+            // Recorded only for a desktop actually dialled: a trigger that
+            // short-circuits above must not steal the redial target from the
+            // desktop the live link belongs to.
+            lastMachineId = machineId
 
             val lan = LanLinkSession(
                 dialer = dialer,
@@ -190,7 +213,7 @@ class LanLinkController(
      * and away from home a quiet timer is the whole cost.
      */
     private fun scheduleRetry() {
-        val machineId = lastMachineId ?: return
+        if (lastMachineId == null) return
         if (retryPending || stopped) return
         retryPending = true
         val delay = retryDelayMs
@@ -198,17 +221,73 @@ class LanLinkController(
         schedule(delay) {
             retryPending = false
             if (stopped) return@schedule
-            when {
-                connected -> scheduleRetry()
-                HelmLink.state.value == LinkState.Linked -> scheduleRetry()
-                else -> tryConnect(machineId)
+            // Read at fire time: a later dial may have linked another desktop.
+            val machineId = lastMachineId ?: return@schedule
+            dropIfOrphaned()
+            if (connected) {
+                scheduleRetry()
+                return@schedule
             }
+            if (HelmLink.owner.value != null) log("retry: dialing while BLE-owned")
+            else log("retry: dialing while offline")
+            tryConnect(machineId)
         }
+    }
+
+    /**
+     * A Wi-Fi/Ethernet network appeared or changed addresses. Debounced: the
+     * system reports available-then-link-properties in a burst, and each must
+     * not become its own socket.
+     */
+    fun onNetworkChanged() {
+        synchronized(lock) {
+            if (stopped || networkDialPending || lastMachineId == null) return
+            networkDialPending = true
+        }
+        schedule(NETWORK_SETTLE_MS) {
+            synchronized(lock) { networkDialPending = false }
+            val machineId = lastMachineId ?: return@schedule
+            if (stopped) return@schedule
+            dropIfOrphaned()
+            if (connected) return@schedule
+            log("network change: dialing")
+            retryDelayMs = RETRY_MIN_MS
+            tryConnect(machineId)
+        }
+    }
+
+    /**
+     * The link service (re)started. Dials every paired desktop regardless of
+     * Bluetooth: with Bluetooth off by preference nothing else would. Also
+     * recovers a socket the previous service orphaned by clearing HelmLink.
+     * Stops at the first desktop that links: there is one session to hold.
+     */
+    fun resume(machineIds: Collection<String>) {
+        if (stopped) return
+        dropIfOrphaned()
+        retryDelayMs = RETRY_MIN_MS
+        for (machineId in machineIds) if (tryConnect(machineId)) return
+    }
+
+    /**
+     * A live session whose rank is no longer registered carries nothing, yet
+     * blocks every dial as "already connected". Close it so the phone redials.
+     */
+    private fun dropIfOrphaned() {
+        val orphan = synchronized(lock) {
+            val current = session ?: return
+            if (HelmLink.isAttached(RANK_LAN)) return
+            session = null
+            current
+        }
+        log("LAN socket was orphaned (rank detached); closing it to redial")
+        orphan.close()
     }
 
     /** Drop any LAN link. Bluetooth takes over again on its own. */
     fun stop() {
         stopped = true
+        network?.stop()
         closeSession()
     }
 
@@ -261,13 +340,23 @@ private fun LanLinkState.toLinkState(): LinkState = when (this) {
  * works. Failing fast costs nothing; a default connect timeout would stall the
  * attempt for the better part of a minute.
  */
-fun tcpDialer(connectTimeoutMs: Int = 1_500): LanLinkSession.Dialer =
+fun tcpDialer(
+    connectTimeoutMs: Int = 1_500,
+    /**
+     * More than twice the desktop's 15s ping interval: a link that has heard
+     * nothing for this long is dead, and must drop to Bluetooth now rather than
+     * when TCP gives up ten-plus minutes later.
+     */
+    readTimeoutMs: Int = 45_000,
+): LanLinkSession.Dialer =
     LanLinkSession.Dialer { host, port ->
         val socket = Socket()
         socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
         // Helm's frames are small and chatty during a handshake; Nagle would add
         // latency to every one of them for no benefit.
         socket.tcpNoDelay = true
+        socket.soTimeout = readTimeoutMs
+        socket.keepAlive = true
         object : LanLinkSession.Connection {
             override val input = socket.getInputStream()
             override val output = socket.getOutputStream()

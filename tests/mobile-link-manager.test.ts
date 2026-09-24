@@ -464,22 +464,143 @@ describe('MobileLinkManager transport preemption', () => {
     }
   });
 
-  it('refuses a BLE link while a LAN link is live', async () => {
-    const h = preemptHarness();
+  /** Link the phone over LAN only, then have its BLE advertiser connect too. */
+  async function lanThenBle(h: Harness) {
     pair(h, PHONE);
     await h.manager.start();
     const lan = new FakeLink(LAN);
     await offerOn(h.transports[1], lan);
-
+    expect(h.manager.isOnline(PHONE)).toBe(true);
     const ble = new FakeLink(ADDR);
     await offerOn(h.transports[0], ble);
+    return { lan, ble };
+  }
+
+  it('parks a BLE link that arrives while a LAN link is live, without the refusal cooldown', async () => {
+    // Refusing it put the advertiser on the transport's ignore list; noble
+    // reports a device once per scan, so the phone was never seen again and a
+    // LAN drop left the desktop offline until Android rotated its address.
+    const h = preemptHarness();
+    const { lan, ble } = await lanThenBle(h);
+
+    expect(ble.closed).toBe(false);
+    expect(lan.closed).toBe(false);
+    expect(h.transports[0].rejected).toEqual([]);
+    expect(h.transports[0].retired).toEqual([]);
+    // Parked, not handshaken: the phone's channel follows its OWNER (LAN), so a
+    // HELLO over the lower rank would go unanswered.
+    expect(h.attempts.map((a) => a.deviceId)).toEqual([LAN]);
+    expect(h.manager.send(PHONE, Buffer.from('x'))).toBe(true);
+    expect(h.channels[0].sent).toHaveLength(1);
+  });
+
+  describe('with a second paired phone unlinked', () => {
+    const B_ADDR = '11:22:33:44:55:66';
+
+    async function twoPhones() {
+      const h = makeHarness({ [ADDR]: PHONE, [LAN]: PHONE, [B_ADDR]: OTHER_PHONE }, undefined, {
+        ranks: [RANK_BLE, RANK_LAN],
+      });
+      pair(h, PHONE);
+      pair(h, OTHER_PHONE);
+      await h.manager.start();
+      await offerOn(h.transports[1], new FakeLink(LAN));
+      expect(h.manager.isOnline(PHONE)).toBe(true);
+      return h;
+    }
+
+    it("never ignore-lists the LAN-owned phone's BLE link when it fails the other phone's PSK", async () => {
+      const h = await twoPhones();
+      const ble = new FakeLink(ADDR);
+      await offerOn(h.transports[0], ble);
+
+      // Only B is a candidate, so the handshake fails — but A is linked above
+      // BLE, so this may be A's lower rank: disconnect, never reject.
+      expect(h.transports[0].rejected).toEqual([]);
+      expect(ble.closed).toBe(true);
+    });
+
+    it('parks the same advertiser as standby when it reconnects after that failure', async () => {
+      const h = await twoPhones();
+      await offerOn(h.transports[0], new FakeLink(ADDR));
+      const again = new FakeLink(ADDR);
+      await offerOn(h.transports[0], again);
+
+      expect(again.closed).toBe(false);
+      expect(h.attempts.map((a) => a.deviceId)).toEqual([LAN, ADDR]);
+    });
+
+    it("still identifies the second phone's genuine BLE link", async () => {
+      const h = await twoPhones();
+      await offerOn(h.transports[0], new FakeLink(B_ADDR));
+      expect(h.manager.isOnline(OTHER_PHONE)).toBe(true);
+      expect(h.transports[0].rejected).toEqual([]);
+    });
+
+    it('still refuses a stranger when no device is linked above BLE', async () => {
+      const h = makeHarness({ [B_ADDR]: OTHER_PHONE }, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+      pair(h, PHONE);
+      pair(h, OTHER_PHONE);
+      await h.manager.start();
+      await offerOn(h.transports[0], new FakeLink('99:99:99:99:99:99'));
+      expect(h.transports[0].rejected).toHaveLength(1);
+    });
+  });
+
+  it('fails over to the parked BLE link when LAN drops, without a rescan', async () => {
+    const h = preemptHarness();
+    const switched: Array<[number, number]> = [];
+    h.manager.on('switched', (_id: string, from: number, to: number) => switched.push([from, to]));
+    const { lan, ble } = await lanThenBle(h);
+
+    lan.close();
+    await flush();
+
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+    expect(switched).toEqual([[RANK_LAN, RANK_BLE]]);
+    expect(ble.closed).toBe(false);
+    // The handshake ran over the parked pipe; the transport offered nothing new.
+    expect(h.attempts.at(-1)).toEqual({ deviceId: ADDR, psk: `mobile-${PHONE}` });
+    expect(h.manager.send(PHONE, Buffer.from('y'))).toBe(true);
+    expect(h.channels.at(-1)!.sent.map((b) => b.toString())).toEqual(['y']);
+  });
+
+  it('reports offline and releases the parked link without cooldown when failover cannot authenticate', async () => {
+    const h = makeHarness({ [LAN]: PHONE }, undefined, { ranks: [RANK_BLE, RANK_LAN] });
+    const { lan, ble } = await lanThenBle(h);
+
+    lan.close();
+    await flush();
+
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+    expect(ble.closed).toBe(true);
+    expect(h.transports[0].rejected).toEqual([]);
+    expect(h.transports[0].retired).toHaveLength(1);
+  });
+
+  it('forgets a parked link whose radio drops before it is needed', async () => {
+    const h = preemptHarness();
+    const { lan, ble } = await lanThenBle(h);
+    h.transports[0].drop(ble);
+
+    lan.close();
+    await flush();
+
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+  });
+
+  it('drops the parked link too when the device is revoked', async () => {
+    const h = preemptHarness();
+    const { ble } = await lanThenBle(h);
+
+    h.manager.dropLink(PHONE, 'device revoked');
+    await flush();
 
     expect(ble.closed).toBe(true);
-    expect(lan.closed).toBe(false);
-    // The refusal is routed to the transport that produced the link, not to
-    // whichever one happens to be first.
-    expect(h.transports[0].rejected).toHaveLength(1);
-    expect(h.transports[1].rejected).toEqual([]);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
   });
 
   it('refuses a second link of EQUAL rank, as it always has', async () => {
@@ -491,6 +612,9 @@ describe('MobileLinkManager transport preemption', () => {
 
     expect(second.closed).toBe(true);
     expect(ble.link.closed).toBe(false);
+    // Closed without the ignore-list cooldown: it is the right phone.
+    expect(h.transports[0].rejected).toEqual([]);
+    expect(h.transports[0].retired.map((r) => r.deviceId)).toEqual([ROTATED]);
   });
 
   it('leaves the live BLE link untouched when the LAN handshake FAILS', async () => {
@@ -1087,21 +1211,18 @@ describe('MobileLinkManager keepalive', () => {
     expect(h.manager.isOnline(PHONE)).toBe(true);
   });
 
-  it('pauses probing while a handshake is in flight, and resumes after', async () => {
+  it('keeps probing a linked phone while ANOTHER link is mid-handshake', async () => {
     const PENDING = '44:44:44:44:44:44';
     const channels: FakeChannel[] = [];
-    let release: ((channel: MobileChannel) => void) | null = null;
     const h = makeHarness(
       { [ADDR]: PHONE, [PENDING]: OTHER_PHONE },
       async (link) => {
-        if (link.deviceId === PENDING) {
-          return new Promise<MobileChannel>((resolve) => { release = resolve; });
-        }
-        const channel = new FakeChannel(link.deviceId === ADDR ? PHONE : OTHER_PHONE);
+        if (link.deviceId === PENDING) return new Promise<MobileChannel>(() => {});
+        const channel = new FakeChannel(PHONE);
         channels.push(channel);
         return channel;
       },
-      { keepaliveIntervalMs: 1_000, keepaliveMissLimit: 2 },
+      { keepaliveIntervalMs: 1_000, keepaliveMissLimit: 2, handshakeTimeoutMs: 60_000 },
     );
     pair(h, PHONE);
     pair(h, OTHER_PHONE);
@@ -1110,18 +1231,80 @@ describe('MobileLinkManager keepalive', () => {
     // A second advertiser starts a handshake that never answers.
     await offer(h, new FakeLink(PENDING));
 
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(channels[0].pings).toBe(0);
-    expect(h.manager.isOnline(PHONE)).toBe(true);
-
-    // The stalled handshake settles; the next silent interval probes again.
-    // (The linked phone says something first, so the pause did not push it
-    // past the miss limit.)
-    channels[0].emit('message', Buffer.from('still here'));
-    release!(new FakeChannel(OTHER_PHONE));
-    await flush();
     await vi.advanceTimersByTimeAsync(1_000);
     expect(channels[0].pings).toBe(1);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+  });
+
+  /**
+   * The pairing window used to pause the keepalive for EVERY link: a pairing
+   * handshake held open (up to the attempt TTL) shielded an already-linked
+   * phone that had silently died, so it looked online for minutes.
+   */
+  it('drops a dead link while a pairing handshake is in flight on another', async () => {
+    const h = makeHarness({ [ADDR]: PHONE }, undefined, { keepaliveIntervalMs: 1_000, keepaliveMissLimit: 2 });
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeLink(ADDR));
+    const channel = h.channels[0];
+    channel.answerPings = false;
+
+    // Pairing armed, and a phone connects over BLE but never answers the
+    // coordinator's handshake: the pairing attempt stays in flight.
+    h.pairing.start();
+    await offer(h, new FakeLink('55:55:55:55:55:55'));
+    expect(h.pairing.getState().status).not.toBe('idle');
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(channel.closed).toBe(true);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.offline).toEqual([PHONE]);
+  });
+
+  it('with the default clock, drops a dead link after 30s of silence and not before', async () => {
+    const h = makeHarness({ [ADDR]: PHONE });
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeLink(ADDR));
+    const channel = h.channels[0];
+    channel.answerPings = false;
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    // Probed every 5s tick once the link went quiet.
+    expect(channel.pings).toBeGreaterThanOrEqual(5);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channel.closed).toBe(true);
+    expect(h.offline).toEqual([PHONE]);
+  });
+
+  /**
+   * The phone's LAN socket gives up after 45s without hearing from Helm. A
+   * phone that talks constantly resets OUR silence clock, so without a refresh
+   * rule Helm would never ping it — and a quiet desktop would get its healthy
+   * link killed from the phone's end.
+   */
+  it('pings a phone that never goes quiet often enough for its 45s read timeout', async () => {
+    const h = makeHarness({ [ADDR]: PHONE });
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeLink(ADDR));
+    const channel = h.channels[0];
+    const pingTimes: number[] = [];
+    const sendPing = channel.sendPing.bind(channel);
+    channel.sendPing = () => { pingTimes.push(Date.now()); sendPing(); };
+
+    for (let second = 0; second < 120; second += 1) {
+      channel.emit('message', Buffer.from('chatter'));
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+
+    expect(pingTimes.length).toBeGreaterThanOrEqual(4);
+    const gaps = pingTimes.slice(1).map((at, index) => at - pingTimes[index]);
+    expect(Math.max(...gaps)).toBeLessThan(45_000);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
   });
 
   it('stops probing once stopped', async () => {
@@ -1209,6 +1392,40 @@ describe('MobileLinkManager keepalive', () => {
 });
 
 describe('MobileLinkManager lifecycle', () => {
+  it('discards a handshake that succeeds after stop()', async () => {
+    let answer!: (channel: MobileChannel) => void;
+    const h = makeHarness({}, async () => new Promise<MobileChannel>((resolve) => { answer = resolve; }));
+    pair(h, PHONE);
+    await h.manager.start();
+    const link = new FakeLink(ADDR);
+    await offer(h, link);
+
+    await h.manager.stop();
+    const channel = new FakeChannel(PHONE);
+    answer(channel);
+    await flush();
+
+    expect(h.online).toEqual([]);
+    expect(h.manager.isOnline(PHONE)).toBe(false);
+    expect(h.transport.rejected).toEqual([]);
+    expect(channel.closed).toBe(true);
+  });
+
+  it('discards a handshake that fails after stop() without refusing the link', async () => {
+    let fail!: (error: Error) => void;
+    const h = makeHarness({}, async () => new Promise<MobileChannel>((_, reject) => { fail = reject; }));
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeLink(ADDR));
+
+    await h.manager.stop();
+    fail(new Error('confirm-MAC mismatch'));
+    await flush();
+
+    expect(h.transport.rejected).toEqual([]);
+    expect(h.offline).toEqual([]);
+  });
+
   it('only runs the radio when there is something to connect to', async () => {
     const h = makeHarness({});
     await h.manager.start();

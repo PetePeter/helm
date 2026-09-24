@@ -66,7 +66,9 @@ describe('BleLinkClient discovery', () => {
     expect(phone.tx.subscribed).toBe(true);
     expect(link.deviceId).toBe('11:22:33:44:55:66');
     expect(link.deviceName).toBe('helm-phone');
-    expect(noble.scanning).toBe(false);
+    // Scanning resumes as soon as connect completes: a second phone must stay
+    // discoverable while the first is linked.
+    expect(noble.scanning).toBe(true);
   });
 
   it('keeps scanning when a connection attempt fails, and never throws', async () => {
@@ -243,6 +245,8 @@ describe('BleLinkClient connect sequence failures', () => {
     const phone = new FakePeripheral();
     phone.hangDiscover = true;
     const { noble } = await attempt(phone, 5_000);
+    // Let connect complete (which resumes the scan) before counting.
+    await vi.advanceTimersByTimeAsync(0);
     const scansBefore = noble.scanStarts;
 
     await vi.advanceTimersByTimeAsync(5_000);
@@ -335,12 +339,13 @@ describe('BleLinkClient pipe', () => {
     expect(failures).toHaveLength(1);
     expect(failures[0]).toMatchObject({ chunkLength: 11, mtu: 185, withoutResponse: false });
     expect(phone.connected).toBe(false);
-    expect(noble.scanStarts).toBe(1);
+    // 1 initial scan + 1 resumed after connect.
+    expect(noble.scanStarts).toBe(2);
 
     await vi.advanceTimersByTimeAsync(999);
-    expect(noble.scanStarts).toBe(1);
-    await vi.advanceTimersByTimeAsync(1);
     expect(noble.scanStarts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(noble.scanStarts).toBe(3);
   });
 
   /**
@@ -369,7 +374,7 @@ describe('BleLinkClient pipe', () => {
     expect(phone.disconnectCalls).toBe(1);
 
     await vi.advanceTimersByTimeAsync(1000);
-    expect(noble.scanStarts).toBe(2);
+    expect(noble.scanStarts).toBe(3);
   });
 
   it('a hung disconnect still closes the pipe instead of wedging recovery', async () => {
@@ -575,6 +580,27 @@ describe('BleLinkClient MTU negotiation', () => {
 });
 
 describe('BleLinkClient lifecycle', () => {
+  it('does not stack adapter listeners across start/stop cycles', async () => {
+    // Each start() used to add another stateChange/discover/scanStop handler
+    // that stop() never removed, so one power-on started one scan per cycle.
+    const { noble, client } = build();
+    await client.start();
+    await client.stop();
+    await client.start();
+
+    for (const event of ['stateChange', 'discover', 'scanStop']) {
+      expect(noble.listenerCount(event)).toBe(1);
+    }
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(noble.scanStarts).toBe(1);
+
+    await client.stop();
+    for (const event of ['stateChange', 'discover', 'scanStop']) {
+      expect(noble.listenerCount(event)).toBe(0);
+    }
+  });
+
   async function connected() {
     const { noble, client, logs } = build();
     await client.start();
@@ -702,6 +728,131 @@ describe('BleLinkClient rejection', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(relinked).toBe(true);
   });
+
+  /**
+   * A superseded MobileLink for the same peripheral must not reach the newer
+   * link: disconnect/reject by a stale handle used to kill the healthy one.
+   */
+  async function relinked() {
+    const { noble, client, phone, link: link1 } = await connected();
+    phone.dropLink();
+    await vi.advanceTimersByTimeAsync(1000);
+    const pending = nextLink(client);
+    noble.discover(phone);
+    const link2 = await pending;
+    return { noble, client, phone, link1, link2 };
+  }
+
+  it('ignores reject() of a stale link, leaving the newer link up and unpenalised', async () => {
+    const { noble, client, phone, link1, link2 } = await relinked();
+    let closed = false;
+    link2.pipe.onClose(() => { closed = true; });
+
+    await client.reject(link1, 'stale');
+    expect(closed).toBe(false);
+    expect(phone.connected).toBe(true);
+
+    // No ignore entry: after a real drop the advertiser relinks at once.
+    phone.dropLink();
+    await vi.advanceTimersByTimeAsync(1000);
+    const again = nextLink(client);
+    let relinkedAgain = false;
+    void again.then(() => { relinkedAgain = true; });
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(relinkedAgain).toBe(true);
+  });
+
+  it('ignores disconnect() of a stale link', async () => {
+    const { client, phone, link1, link2 } = await relinked();
+    let closed = false;
+    link2.pipe.onClose(() => { closed = true; });
+
+    await client.disconnect(link1, 'stale');
+    expect(closed).toBe(false);
+    expect(phone.connected).toBe(true);
+  });
+});
+
+/**
+ * noble reports each peripheral ONCE per scan and the client only restarted a
+ * scan on failure, so an advertiser skipped while ignored was never seen again:
+ * after LAN preempted BLE the desktop stayed offline until Android rotated its
+ * address (~15 min). A scan must be restarted whenever it could be stale.
+ */
+describe('BleLinkClient scan restarts', () => {
+  async function rejected() {
+    const noble = new FakeNoble();
+    const logs: string[] = [];
+    const client = new BleLinkClient({
+      noble, reconnectBaseMs: 1000, reconnectMaxMs: 8000, rejectIgnoreMs: 60_000,
+      logger: (message) => logs.push(message),
+    });
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = nextLink(client);
+    const phone = new FakePeripheral();
+    noble.discover(phone);
+    const link = await pending;
+    await client.reject(link, 'not a paired device');
+    await vi.advanceTimersByTimeAsync(1000);
+    return { noble, client, phone, logs };
+  }
+
+  it('restarts the scan when an ignore entry expires, so the advertiser is reported again', async () => {
+    const { noble, phone, logs } = await rejected();
+    expect(noble.scanning).toBe(true);
+    const startsBefore = noble.scanStarts;
+
+    await vi.advanceTimersByTimeAsync(58_000);
+    expect(noble.scanStarts).toBe(startsBefore);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(noble.scanStarts).toBe(startsBefore + 1);
+    expect(noble.scanning).toBe(true);
+    expect(logs.some((line) => line.includes('ignore') && line.includes(phone.id) && line.includes('expired'))).toBe(true);
+  });
+
+  it('logs an ignored discovery once per ignore entry, not per report', async () => {
+    const { noble, phone, logs } = await rejected();
+    noble.discover(phone);
+    noble.discover(phone);
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(logs.filter((line) => line.includes('skipping ignored') && line.includes(phone.id))).toHaveLength(1);
+  });
+
+  it('restarts a scan the OS stopped on its own', async () => {
+    const { noble, client, logs } = build();
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    const startsBefore = noble.scanStarts;
+
+    noble.stopUnsolicited();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(noble.scanStarts).toBe(startsBefore + 1);
+    expect(noble.scanning).toBe(true);
+    expect(logs.some((line) => line.includes('scanStop') && line.includes('not requested'))).toBe(true);
+  });
+
+  it('does not treat its own scan stop as unsolicited', async () => {
+    const { noble, client } = build();
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = nextLink(client);
+    noble.discover(new FakePeripheral());
+    await pending;
+    const startsBefore = noble.scanStarts;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(noble.scanStarts).toBe(startsBefore);
+    expect(noble.scanning).toBe(true);
+  });
 });
 
 describe('BleLinkClient with SecureChannel', () => {
@@ -746,5 +897,109 @@ describe('BleLinkClient with SecureChannel', () => {
     expect(initiator.sas).toBe(responder.sas);
     expect(phoneA.rx.writeModes.some((mode) => mode === false)).toBe(true);
     expect(phoneA.rx.writeModes[phoneA.rx.writeModes.length - 1]).toBe(true);
+  });
+});
+
+/**
+ * Two paired phones used to be impossible over BLE: one active-link slot, and
+ * scanning stopped for as long as it was held, so the second phone was never
+ * even discovered while the first was linked.
+ */
+describe('BleLinkClient with several phones', () => {
+  async function scanning() {
+    const { noble, client, logs } = build();
+    client.on('error', () => {});
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    return { noble, client, logs };
+  }
+
+  it('links a second paired phone while the first is active, and both stay active', async () => {
+    const { noble, client } = await scanning();
+    const first = new FakePeripheral('11:11:11:11:11:11');
+    const second = new FakePeripheral('22:22:22:22:22:22');
+
+    const firstLink = nextLink(client);
+    noble.discover(first);
+    const a = await firstLink;
+    expect(noble.scanning).toBe(true);
+
+    const secondLink = nextLink(client);
+    noble.discover(second);
+    const b = await secondLink;
+
+    expect([a.deviceId, b.deviceId]).toEqual([first.id, second.id]);
+    expect(first.connected).toBe(true);
+    expect(second.connected).toBe(true);
+    expect(noble.scanning).toBe(true);
+
+    // Each pipe still carries its own traffic.
+    a.pipe.write(Buffer.from('to first'));
+    b.pipe.write(Buffer.from('to second'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(first.rx.writes).toHaveLength(1);
+    expect(second.rx.writes).toHaveLength(1);
+  });
+
+  it('drops only the phone that went away; the other link survives', async () => {
+    const { noble, client } = await scanning();
+    const first = new FakePeripheral('11:11:11:11:11:11');
+    const second = new FakePeripheral('22:22:22:22:22:22');
+    let pending = nextLink(client);
+    noble.discover(first);
+    const a = await pending;
+    pending = nextLink(client);
+    noble.discover(second);
+    const b = await pending;
+    let firstClosed = false;
+    let secondClosed = false;
+    a.pipe.onClose(() => { firstClosed = true; });
+    b.pipe.onClose(() => { secondClosed = true; });
+    const dropped: string[] = [];
+    client.on('disconnected', (id: string) => dropped.push(id));
+
+    first.dropLink();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(dropped).toEqual([first.id]);
+    expect(firstClosed).toBe(true);
+    expect(secondClosed).toBe(false);
+    expect(second.connected).toBe(true);
+  });
+
+  it('ignores a repeat discovery of a phone it already holds', async () => {
+    const { noble, client } = await scanning();
+    const phone = new FakePeripheral();
+    const pending = nextLink(client);
+    noble.discover(phone);
+    await pending;
+    const links: MobileLink[] = [];
+    client.on('link', (link: MobileLink) => links.push(link));
+
+    noble.discover(phone);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(links).toEqual([]);
+  });
+
+  it('keeps one mtu listener per peripheral across repeated reconnects', async () => {
+    const { noble, client } = await scanning();
+    const phone = new FakePeripheral();
+    phone.mtuOnConnect = 185;
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      const pending = nextLink(client);
+      noble.discover(phone);
+      const link = await pending;
+      expect(phone.listenerCount('mtu')).toBe(1);
+      expect(phone.listenerCount('disconnect')).toBe(1);
+      // Alternate exit paths: a radio drop, then a retirement by the manager.
+      if (cycle % 2 === 0) phone.dropLink();
+      else await client.disconnect(link, 'retired');
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(phone.listenerCount('mtu')).toBe(0);
+      expect(phone.listenerCount('disconnect')).toBe(0);
+    }
   });
 });

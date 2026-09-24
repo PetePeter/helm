@@ -40,6 +40,9 @@
          app opens an outbound socket on the local network. Without this a
          dial throws SecurityException before it ever touches the wire. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wi-Fi/Ethernet availability callbacks trigger a LAN dial the moment a
+         network comes up (lan/NetworkWatcher.kt). Normal permission. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 

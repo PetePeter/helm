@@ -163,6 +163,14 @@ export class FakeNoble extends EventEmitter implements NobleApi {
 
   async stopScanningAsync(): Promise<void> {
     this.scanning = false;
+    // Real noble resolves its stop on this very event.
+    this.emit('scanStop');
+  }
+
+  /** Simulate the OS ending the scan on its own (radio reset, driver hiccup). */
+  stopUnsolicited(): void {
+    this.scanning = false;
+    this.emit('scanStop');
   }
 
   /** Simulate the adapter coming up. */
