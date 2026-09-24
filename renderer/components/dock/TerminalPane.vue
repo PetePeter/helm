@@ -16,8 +16,12 @@
 import { onBeforeUnmount } from 'vue';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
 import TerminalChips from '../chips/TerminalChips.vue';
+import MissionBar from './MissionBar.vue';
+import { useAppStore } from '../../stores/app.js';
 
 const pane = useHelmPaneContext();
+/** The mission bar follows the session at the prompt, like the chips below. */
+const appStore = useAppStore();
 
 function setContainer(el: unknown): void {
   pane.terminalContainerRef.value = (el as HTMLElement | null) ?? null;
@@ -31,6 +35,12 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
 
 <template>
   <div class="terminal-view">
+    <MissionBar
+      v-if="appStore.activeSession"
+      :session-id="appStore.activeSession.id"
+      :mission="appStore.activeSession.mission"
+      :height="appStore.activeSession.missionBarHeight"
+    />
     <div class="terminal-container" id="terminalContainer" :ref="setContainer">
       <!-- xterm.js terminals rendered by TerminalManager -->
     </div>

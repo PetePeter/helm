@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import type { SessionMessageFlight } from '../../session/message-flight.js';
-import type { DraftPrompt } from '../../types/session.js';
+import type { DraftPrompt, SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
@@ -57,6 +57,17 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Set or clear the closure lock. Returns the resulting lock state. */
   sessionSetLocked: (id: string, locked: boolean): Promise<{ success: boolean; locked?: boolean; error?: string }> =>
     ipcRenderer.invoke('session:setLocked', id, locked),
+
+  /** Set (or clear, with '') the session's mission TL;DR as the user. Max 500 chars. */
+  sessionSetMission: (
+    id: string,
+    text: string,
+  ): Promise<{ success: boolean; mission?: SessionMission | null; error?: string }> =>
+    ipcRenderer.invoke('session:setMission', id, text),
+
+  /** Persist the per-session mission bar height (px, clamped in main). */
+  sessionSetMissionBarHeight: (id: string, px: number): Promise<{ success: boolean; height?: number; error?: string }> =>
+    ipcRenderer.invoke('session:setMissionBarHeight', id, px),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>

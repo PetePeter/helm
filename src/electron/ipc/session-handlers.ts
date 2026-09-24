@@ -133,6 +133,31 @@ export function setupSessionHandlers(
     }
   });
 
+  /**
+   * The user's side of the mission TL;DR. Same SessionManager validator as the
+   * MCP session_mission_set path; an over-limit text returns an error and the
+   * existing mission is left as it was.
+   */
+  ipcMain.handle('session:setMission', (_event, id: string, text: string) => {
+    try {
+      const session = sessionManager.setMission(id, text, 'user');
+      return { success: true, mission: session.mission ?? null };
+    } catch (error) {
+      logger.error(`[Session] Set mission failed: ${error}`);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle('session:setMissionBarHeight', (_event, id: string, px: number) => {
+    try {
+      const session = sessionManager.setMissionBarHeight(id, px);
+      return { success: true, height: session.missionBarHeight };
+    } catch (error) {
+      logger.error(`[Session] Set mission bar height failed: ${error}`);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   ipcMain.handle('session:close', async (_event, id: string) => {
     try {
       const session = sessionManager.getSession(id);

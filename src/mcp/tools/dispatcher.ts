@@ -592,6 +592,13 @@ export async function callMcpTool(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
           asBoolean(args.locked, 'locked must be true or false'),
         );
+      case 'session_mission_set': {
+        // Own session by default — server-derived identity, never a client claim.
+        const target = typeof args.sessionId === 'string' && args.sessionId.trim()
+          ? args.sessionId
+          : requireCallerSession(authContext, 'session_mission_set');
+        return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
+      }
       case 'session_rename':
         return service.renameSession(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),

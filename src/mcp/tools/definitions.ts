@@ -1048,6 +1048,20 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_mission_set',
+    title: 'Set Session Mission',
+    description: 'Set the mission statement for a Helm session: a TL;DR of what the session is meant to be doing, pinned at the top of its terminal and re-injected on every prompt. Update it when the direction of work changes. Omit sessionId to set your own session. Max 500 characters after trimming; an empty string clears it. Over-limit text is rejected and the existing mission is kept.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Target session ID or exact name. Defaults to your own session.' },
+        text: { type: 'string', description: 'The mission TL;DR (max 500 characters). Empty clears it.' },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_set_locked',
     title: 'Set Session Lock',
     description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, Telegram, group close, and force restart. Accepts sessionId or exact session name.',

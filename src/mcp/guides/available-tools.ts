@@ -65,6 +65,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'session_plan_claim', title: 'Claim Plan', description: 'Claim a plan for this session: records ownership, auto-transitions ready→coding, and shows the plan badge on the session row.' },
     { name: 'session_set_aiagent_state', title: 'Set Session AIAGENT State', description: 'Update the durable AIAGENT phase for a session. Valid states: planning, implementing, completed, idle.' },
     { name: 'session_set_locked', title: 'Set Session Lock', description: 'Set or clear a durable lock that prevents deliberate session closure.' },
+    { name: 'session_mission_set', title: 'Set Session Mission', description: 'Set the session mission — a TL;DR (max 500 chars) of what it is meant to be doing, pinned above its terminal. Defaults to your own session; an empty text clears it.' },
     { name: 'session_rename', title: 'Rename Session', description: 'Rename a Helm session by ID or name. Also updates the Telegram topic name.' },
     { name: 'session_close', title: 'Close Session', description: 'Close a Helm session and stop its PTY.' },
     { name: 'session_info', title: 'Get Session Info', description: 'Retrieve session identity, startup guidance, the project knowledge model, and durable_memory contract: project scope, compaction/restart/session-death durability, recycle-bin continuity, permanent purge on forget/empty/expiry, graphDepth/cycle breadcrumbs, regex search, and non-searchable attachments.' },

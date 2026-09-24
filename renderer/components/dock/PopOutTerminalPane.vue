@@ -29,6 +29,7 @@ import { deliverPromptSequence } from '../../sequence-delivery.js';
 import { contextMenu } from '../../stores/modal-bridge.js';
 import { usePromptApplyFlow } from '../../composables/usePromptApplyFlow.js';
 import TerminalChips from '../chips/TerminalChips.vue';
+import MissionBar from './MissionBar.vue';
 import ContextMenu from '../modals/ContextMenu.vue';
 import { configClient, eventsClient, sessionsClient, terminalClient } from '../../ipc/clients.js';
 import { initConfigCache } from '../../bindings.js';
@@ -242,6 +243,12 @@ defineExpose({ snapBack });
 
 <template>
   <div class="popout-terminal-pane">
+    <MissionBar
+      v-if="appStore.activeSession"
+      :session-id="appStore.activeSession.id"
+      :mission="appStore.activeSession.mission"
+      :height="appStore.activeSession.missionBarHeight"
+    />
     <div ref="containerRef" class="popout-terminal"></div>
     <TerminalChips />
     <ContextMenu

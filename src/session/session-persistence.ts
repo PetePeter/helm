@@ -6,6 +6,7 @@ import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
 import { hydrateChatBindings, serializeChatBindings } from './chat/chat-bindings.js';
+import { isSessionMission } from './mission.js';
 
 function serializeSession(s: SessionInfo): Record<string, unknown> {
   return {
@@ -37,6 +38,9 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     // Durable hook-derived stall (G3). Absent = not stalled; omitted key means
     // the same as no stall, so a cleared stall simply drops off disk.
     ...(isHookStall(s.hookStall) ? { hookStall: s.hookStall } : {}),
+    // The mission TL;DR and its bar height (docs/mission-statement.md).
+    ...(isSessionMission(s.mission) ? { mission: s.mission } : {}),
+    ...(isNumber(s.missionBarHeight) ? { missionBarHeight: s.missionBarHeight } : {}),
     // Always written, both states. The renderer folds this snapshot over its
     // cached session records with a spread merge, so an omitted key means
     // "keep whatever you had" — which would make unlocking invisible.
@@ -79,6 +83,12 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
       if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
         delete session.hookStall;
+      }
+      if (session.mission !== undefined && !isSessionMission(session.mission)) {
+        delete session.mission;
+      }
+      if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
+        delete session.missionBarHeight;
       }
       // G10 removed SessionInfo.loopDriving (the per-session loop-driving
       // opt-in). A stale key in pre-G10 sessions.yaml is not an error — the

@@ -14,7 +14,7 @@ describe('getSessionInfo', () => {
   describe('response shape', () => {
     it('has identity, workflow, artifact, and durable memory guidance', () => {
       const info = getSessionInfo(mgr, authContext);
-      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_session_id', 'your_working_dir']);
+      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_mission', 'your_session_id', 'your_working_dir']);
       expect(info.durable_memory.ownership).toContain('authenticated Helm session');
       expect(info.knowledge_model.memory).toContain('project');
     });
@@ -32,6 +32,13 @@ describe('getSessionInfo', () => {
     it('your_working_dir reflects session workingDir', () => {
       const info = getSessionInfo(mgr, authContext);
       expect(info.your_working_dir).toBe('/home/user/project');
+    });
+
+    it('your_mission is null without a mission and mirrors it when set', () => {
+      expect(getSessionInfo(mgr, authContext).your_mission).toBeNull();
+      const mission = { text: 'ship it', setBy: 'ai' as const, setAt: 5 };
+      const withMission = { getSession: () => ({ workingDir: '/p', mission }) } as any;
+      expect(getSessionInfo(withMission, authContext).your_mission).toEqual(mission);
     });
 
     it('helm_workflow points to startup skill', () => {

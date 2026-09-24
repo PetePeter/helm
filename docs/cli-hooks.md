@@ -229,15 +229,17 @@ context it would otherwise not have. `ContextInjector`
 can say THREE things, each independently optional — and **null** (send
 nothing) is the common case by design:
 
-- **SessionStart** — the session's claimed plan, its draft memos, and any
-  pending handover note, out-of-band at startup. Nothing is preloaded
+- **SessionStart** — the session's claimed plan, its draft memos, its
+  mission, and any pending handover note, out-of-band at startup. Nothing is preloaded
   wholesale; each source is capped at 800 chars, the whole payload at 2500,
   and whole parts are dropped from the end before anything is cut mid-line.
 - **UserPromptSubmit** — for a prompt carrying a `[HELM_MSG]` /
   `[HELM_TELEGRAM]` envelope, the inter-session rules as additionalContext
   instead of prepended prompt text (dual-path, below); the hint-only
   suggester pointer; conditional one-shot nudges (unset AIAGENT state, one
-  startable plan). Copilot is excluded entirely — its CLI drops this event's
+  startable plan); and on EVERY prompt the `[HELM_MISSION]` line (current
+  mission, or a request to set one — see [mission-statement.md](mission-statement.md)).
+  Copilot is excluded entirely — its CLI drops this event's
   command-hook output, so injecting there is writing into the void.
 - **Stop** — the one-shot nudge: a claimed-but-open plan item or an unset
   AIAGENT state blocks the turn ONCE with a reason naming the alternative
@@ -346,6 +348,7 @@ how it reaches the session changed.
 | — | Mess pokes (`[HELM_MESS] N new — call mess_check`, join line) | `src/session/mess-notifier.ts` | `sendSystemReminder` PTY write | **keep inline** — the unread count IS the message (per-event content); the per-CLI-type `messReminders` flag already is its off-switch |
 | — | Spawn init prompt (`Call session_info…`) | `cli-types.yaml` `initialPrompt` | PTY after spawn | **keep inline** — it triggers the CLI's first turn; injection alone would leave nothing to respond to |
 | — | Handover paste, `session_clear` context note, large-text temp-file notices | handover-delivery / delivery service | PTY | **keep inline** — one-shot per-message payloads |
+| — | Mission reminder `[HELM_MISSION]` on every prompt | `src/session/hooks/context-injector.ts` | `ContextInjector` inject only | **hook-only, no mode** — no prepend twin, so a G9 mode would offer a `pty` option that does nothing |
 | — | G2 deny reasons | `cli-types.yaml` `hooks.denyRules` | PreToolUse deny response | not injected text — event-driven enforcement, delivered exactly when relevant |
 
 **Deletions: none.** A reminder is deleted only when a PreToolUse deny now

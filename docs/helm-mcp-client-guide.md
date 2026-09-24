@@ -223,6 +223,24 @@ const envelope = JSON.parse(chunk.slice(10, chunk.indexOf('\n')));
 await replyViaHelm(envelope.fromSessionName, response);
 ```
 
+## Keeping your mission current: `session_mission_set`
+
+Every session has a mission — a TL;DR (max 500 characters) pinned above its
+terminal. The UserPromptSubmit hook shows it to you on every prompt as
+`[HELM_MISSION] ...`. When there is none, set one; when a prompt changes the
+direction of work, replace it; otherwise ignore the line.
+
+```
+session_mission_set(text="Port the planner canvas to Vue; keep DAG layout stable")
+```
+
+- `sessionId` is optional and defaults to your own session.
+- Text is trimmed; an empty string clears the mission.
+- Over 500 characters is rejected and the existing mission is kept.
+- Read it back with `session_get` (`mission`) or `session_info` (`your_mission`).
+
+See [mission-statement.md](mission-statement.md).
+
 ## Restarting Helm: the `helm_restart` ritual
 
 `helm_restart` is a two-phase gate. A restart destroys your own context, so the

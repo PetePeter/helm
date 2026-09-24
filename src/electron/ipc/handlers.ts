@@ -472,7 +472,11 @@ export function registerIPCHandlers(
   // lifetime, and a purged session's replay dies with it.
   const mobileChatJournal = new MobileChatJournal({ persist: saveMobileChatJournal });
   mobileChatJournal.hydrate(loadMobileChatJournal());
-  setupRecycleBinHandlers(recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal);
+  setupRecycleBinHandlers(
+    recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
+    // Restore reuses the original session id, so the mission lands back on the same session.
+    (entry) => sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight),
+  );
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
   recycleBinManager.pruneExpired();
@@ -641,6 +645,7 @@ export function registerIPCHandlers(
     })),
     getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
+    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],

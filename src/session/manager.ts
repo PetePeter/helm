@@ -4,6 +4,8 @@ import { saveSessions, loadSessions } from './persistence.js';
 import { logger } from '../utils/logger.js';
 import type { ProjectStore } from './project-store.js';
 import { normalizeProjectPath } from './project-identity.js';
+import { normalizeMissionBarHeight, normalizeMissionText, isSessionMission } from './mission.js';
+import type { SessionMission } from '../types/session.js';
 
 /**
  * Manages CLI sessions, tracking active sessions and handling focus switching.
@@ -236,6 +238,41 @@ export class SessionManager extends EventEmitter {
   setSessionLocked(sessionId: string, locked: boolean): SessionInfo {
     this.updateSession(sessionId, { locked });
     return this.sessions.get(sessionId)!;
+  }
+
+  /**
+   * Set or clear the session's mission TL;DR. Validation is shared with every
+   * write path (src/session/mission.ts): over-limit text throws BEFORE any
+   * mutation, so the existing mission survives a rejected write. An empty
+   * string clears — the key stays present (undefined) on the update event
+   * because the renderer spread-merges updates.
+   */
+  setMission(sessionId: string, text: string, setBy: SessionMission['setBy']): SessionInfo {
+    if (!this.sessions.has(sessionId)) throw new Error(`Session with id "${sessionId}" does not exist`);
+    const normalized = normalizeMissionText(text);
+    const mission = normalized ? { text: normalized, setBy, setAt: Date.now() } : undefined;
+    this.updateSession(sessionId, { mission });
+    return this.sessions.get(sessionId)!;
+  }
+
+  /** Persist the user's chosen mission-bar height (clamped, rounded px). */
+  setMissionBarHeight(sessionId: string, px: number): SessionInfo {
+    if (!this.sessions.has(sessionId)) throw new Error(`Session with id "${sessionId}" does not exist`);
+    this.updateSession(sessionId, { missionBarHeight: normalizeMissionBarHeight(px) });
+    return this.sessions.get(sessionId)!;
+  }
+
+  /**
+   * Recycle-bin restore: re-apply the mission verbatim (keeping who set it and
+   * when) and the bar height captured at close time. Malformed values are ignored.
+   */
+  restoreMission(sessionId: string, mission: unknown, missionBarHeight: unknown): void {
+    const updates: Partial<SessionInfo> = {};
+    if (isSessionMission(mission)) updates.mission = { ...mission };
+    if (typeof missionBarHeight === 'number' && Number.isFinite(missionBarHeight)) {
+      updates.missionBarHeight = normalizeMissionBarHeight(missionBarHeight);
+    }
+    if (Object.keys(updates).length > 0) this.updateSession(sessionId, updates);
   }
 
   /**

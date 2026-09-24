@@ -86,6 +86,20 @@ export interface SessionInfo {
    *  per-session loopDriving opt-in — autoImplement on the plan is the only
    *  consent.) */
   loopContinues?: number;
+  /** The session's TL;DR — what it is meant to be doing. Set by the user (UI)
+   *  or the AI (MCP session_mission_set); current value only, no history.
+   *  Persists across restarts and recycle-bin restore. See docs/mission-statement.md. */
+  mission?: SessionMission;
+  /** Per-session height (px) of the resizable mission bar. Persists. */
+  missionBarHeight?: number;
+}
+
+/** A session's mission statement. Text is trimmed, 1–500 chars (src/session/mission.ts). */
+export interface SessionMission {
+  text: string;
+  setBy: 'user' | 'ai';
+  /** Epoch ms of the last change. */
+  setAt: number;
 }
 
 /**

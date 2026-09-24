@@ -621,7 +621,7 @@ describe('HelmControlService.getSessionInfo', () => {
 
     const info = service.getSessionInfo({ sessionId: 's1', sessionName: 'Claude' });
 
-    expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_session_id', 'your_working_dir']);
+    expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_mission', 'your_session_id', 'your_working_dir']);
     expect(info.helm_workflow).toContain('startup');
     expect(info.chat).toContain('chat_send');
     expect(info.artifact_viewer).toContain('artifact_create');

@@ -35,6 +35,7 @@ src/
 │   ├── delivery-lock.ts         # Per-session gate serializing the nudge/payload/settle/submit delivery transaction
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
 │   ├── state-detector.ts       # PTY activity tracking + question markers; AIAGENT phase state is MCP-owned + markRestored() grace period for restored sessions
+│   ├── mission.ts              # Session mission validator (500-char limit, trim/clear) + bar-height clamp, shared by IPC and MCP
 │   ├── handover-delivery.ts    # Holds a session_compact handover across the compaction; pastes it back on the first inactive edge (floor 15s / ceiling 5min)
 │   ├── pipeline-queue.ts       # Waiting→implementing auto-handoff queue (FIFO)
 │   ├── notification-manager.ts # Windows toast notifications (Electron Notification API, activity-change triggers for implementing/planning sessions, dedup, click-to-focus)
@@ -158,6 +159,7 @@ renderer/
 │   │   └── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
 │   ├── dock/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
+│   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
 │   └── panels/
 │       ├── index.ts

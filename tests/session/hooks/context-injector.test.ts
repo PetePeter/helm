@@ -387,3 +387,57 @@ describe('Stop — G8 loop driving, stacked on the same event', () => {
     });
   });
 });
+
+describe('Mission statement ([HELM_MISSION])', () => {
+  const mission = { text: 'Ship the mission bar', setBy: 'user' as const, setAt: 1 };
+
+  it('UserPromptSubmit carries the current mission on EVERY prompt', async () => {
+    const { injector } = makeInjector({ getMission: () => mission });
+    for (const prompt of ['first', 'second', 'third']) {
+      const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt }));
+      const context = contextOf(result!.body);
+      expect(context).toContain('[HELM_MISSION] Current mission: "Ship the mission bar".');
+      expect(context).toContain('call session_mission_set');
+    }
+  });
+
+  it('with no mission, asks the AI to set one', async () => {
+    const { injector } = makeInjector({ getMission: () => undefined });
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'hello' }));
+    expect(contextOf(result!.body)).toContain(
+      '[HELM_MISSION] No mission set. Call session_mission_set with a one-line TL;DR of what this session is doing.',
+    );
+  });
+
+  it('combines with the rules and nudges instead of replacing them', async () => {
+    const { injector } = makeInjector({ getMission: () => mission }, { aiagentState: undefined });
+    const result = await injector.respond(
+      hookEvent({ event: 'UserPromptSubmit', prompt: '[HELM_MSG]{"type":"inter_llm_message"}hi' }),
+    );
+    const context = contextOf(result!.body);
+    expect(context).toContain('[HELM_MSG_RULES]');
+    expect(context).toContain('session_set_aiagent_state');
+    expect(context).toContain('[HELM_MISSION] Current mission');
+  });
+
+  it('is never sent to Copilot (its CLI drops UserPromptSubmit output)', async () => {
+    const { injector } = makeInjector({ getMission: () => mission });
+    expect(await injector.respond(hookEvent({ cli: 'copilot', event: 'UserPromptSubmit', prompt: 'x' }))).toBeNull();
+  });
+
+  it('SessionStart injects the mission alongside drafts and handover', async () => {
+    const { injector } = makeInjector({
+      getMission: () => mission,
+      getHandover: () => 'mid-refactor',
+    });
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('[HELM_MISSION] Current mission: "Ship the mission bar"');
+    expect(context).toContain('Handover note');
+  });
+
+  it('SessionStart with only a mission still speaks', async () => {
+    const { injector } = makeInjector({ getMission: () => mission });
+    const result = await injector.respond(hookEvent());
+    expect(contextOf(result!.body)).toContain('Ship the mission bar');
+  });
+});

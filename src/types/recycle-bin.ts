@@ -1,3 +1,5 @@
+import type { SessionMission } from './session.js';
+
 /**
  * Recycle-bin entry — a recoverable record of a closed session.
  *
@@ -27,4 +29,8 @@ export interface RecycleBinEntry {
   runtimeGroupId?: string;
   /** The runtime group's display name at close time, used to recreate the group on restore. */
   runtimeGroupName?: string;
+  /** The session's mission at close time — re-applied verbatim on restore. */
+  mission?: SessionMission;
+  /** The session's mission-bar height at close time. */
+  missionBarHeight?: number;
 }

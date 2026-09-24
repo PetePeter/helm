@@ -33,6 +33,10 @@ export interface Session {
   /** G8: consecutive Stop-hook auto-continues in flight. >0 means an active
    *  loop — an in-progress loop must never be invisible on the session row. */
   loopContinues?: number;
+  /** The session's mission TL;DR (docs/mission-statement.md). Untrusted when setBy is 'ai'. */
+  mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
+  /** Persisted mission-bar height in px. */
+  missionBarHeight?: number;
 }
 
 export interface ProjectSummary {

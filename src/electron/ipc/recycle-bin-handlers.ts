@@ -25,6 +25,8 @@ export function setupRecycleBinHandlers(
   memoryManager?: Pick<MemoryManager, 'purgeSession'>,
   messManager?: Pick<MessManager, 'onSessionClosed'>,
   chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
+  /** Re-applies bin-carried session fields (the mission) once the re-spawn is back. */
+  onRestoreCommitted?: (entry: RecycleBinEntry) => void,
 ): void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   /**
@@ -97,6 +99,15 @@ export function setupRecycleBinHandlers(
 
   ipcMain.handle('recycleBin:commitRestore', (_event, id: string) => {
     try {
+      const entry = recycleBin.peek(id);
+      if (entry && onRestoreCommitted) {
+        try {
+          onRestoreCommitted(entry);
+        } catch (err) {
+          // Never fatal: the session is already back; losing its mission must not strand the entry.
+          logger.warn(`[recycleBin:commitRestore] Failed to re-apply session fields: ${err}`);
+        }
+      }
       recycleBin.forget(id); // remove the entry only; artifacts stay with the reused id
       return true;
     } catch (err) {

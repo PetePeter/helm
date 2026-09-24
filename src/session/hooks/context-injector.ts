@@ -9,7 +9,10 @@
  *    logged. Nothing is preloaded wholesale.
  * B. UserPromptSubmit — the inter-session rules as additionalContext instead
  *    of prompt text (prompt with a [HELM_MSG] / [HELM_TELEGRAM] envelope),
- *    plus the hint-only suggester pointer, plus conditional nudges.
+ *    plus the hint-only suggester pointer, plus conditional nudges, plus the
+ *    [HELM_MISSION] line on EVERY prompt (the deliberate exception to
+ *    "silent when nothing to say": the mission must track the work, so the AI
+ *    is asked each turn whether the direction changed).
  * C. Stop — the one-shot nudge. A claimed plan still open or an unset
  *    AIAGENT state blocks the turn ONCE; the second Stop always passes.
  *    The cap is 1 by decision and is NOT configurable.
@@ -23,7 +26,7 @@
  * throwing dep degrades to no-op, never to a broken session.
  */
 
-import type { SessionInfo } from '../../types/session.js';
+import type { SessionInfo, SessionMission } from '../../types/session.js';
 import { encodeAdditionalContext, encodeStopBlock } from './hook-encoder.js';
 import type { HookEvent } from './hook-normaliser.js';
 import { HELM_MSG_HOOK_RULES, HELM_TELEGRAM_HOOK_RULES, HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../intersession-directive.js';
@@ -53,6 +56,12 @@ export interface ContextInjectorDeps {
   getDrafts(sessionId: string): { label: string; text: string }[];
   /** Handover text pending across a compaction, when armed. */
   getHandover(sessionId: string): string | undefined;
+  /**
+   * The session's mission TL;DR. Absent dep = mission feature not wired (the
+   * injector stays byte-identical to before); present and returning undefined
+   * = no mission yet, and the AI is asked to set one.
+   */
+  getMission?(sessionId: string): SessionMission | undefined;
   /** The hint-only suggester: tuple payload or null. Promise = the worker seam. */
   suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null>;
   /** Directory → project id, for pre-filtering suggester candidates. */
@@ -154,6 +163,8 @@ export class ContextInjector {
     for (const draft of this.deps.getDrafts(session.id)) {
       parts.push(truncate(`Draft memo "${draft.label}": ${draft.text}`, SOURCE_CAP_CHARS));
     }
+    const mission = this.deps.getMission?.(session.id);
+    if (mission) parts.push(truncate(missionLine(mission), SOURCE_CAP_CHARS));
     const handover = this.deps.getHandover(session.id);
     if (handover) {
       parts.push(truncate(`Handover note carried across your last compaction:\n${handover}`, SOURCE_CAP_CHARS));
@@ -203,12 +214,18 @@ export class ContextInjector {
       }
     }
 
+    // Mission rides on every prompt, right after the rules so the payload cap
+    // (which drops trailing parts first) never cuts it. Hook-only by design: it
+    // has no prepend twin, so it is not a G9 ReminderId (docs/mission-statement.md).
+    if (this.deps.getMission) parts.push(missionReminder(this.deps.getMission(session.id)));
+
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);
     if (pointer) parts.push(pointer);
 
     const nudge = this.oneShotNudges(session);
     if (nudge) parts.push(nudge);
+
 
     if (parts.length === 0) return null;
     const context = capJoined(parts, TOTAL_CAP_CHARS);
@@ -287,6 +304,20 @@ export class ContextInjector {
     logger.info(`[HookInject] Stop nudge session=${session.id} (${session.name}): blocked once`);
     return { statusCode: 200, body: encodeStopBlock(event, lines.join('\n')) };
   }
+}
+
+/** The SessionStart form: just the fact. */
+function missionLine(mission: SessionMission): string {
+  return `[HELM_MISSION] Current mission: "${mission.text}".`;
+}
+
+/** The per-prompt form: the fact plus the standing instruction to keep it current. */
+function missionReminder(mission: SessionMission | undefined): string {
+  if (!mission) {
+    return '[HELM_MISSION] No mission set. Call session_mission_set with a one-line TL;DR of what this session is doing.';
+  }
+  return `${missionLine(mission)} If this prompt changes the direction of work, call session_mission_set ` +
+    'with a new TL;DR (max 500 chars). Otherwise ignore.';
 }
 
 /** Join parts and cut the whole payload deterministically — never mid-line. */

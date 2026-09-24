@@ -128,6 +128,8 @@ export interface SessionSummary {
   createdByPeerId?: string;
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
+  /** The session's mission TL;DR, who set it, and when (epoch ms). */
+  mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
 }
 
 export interface CliSummary {
@@ -178,6 +180,8 @@ export interface SessionTerminalTailResponse {
 export interface SessionInfoResponse {
   your_session_id: string;
   your_working_dir: string;
+  /** This session's mission TL;DR, or null when none is set (session_mission_set). */
+  your_mission: { text: string; setBy: 'user' | 'ai'; setAt: number } | null;
   helm_workflow: string;
   chat: string;
   artifact_viewer: string;
@@ -1243,6 +1247,10 @@ export class HelmControlService extends EventEmitter {
 
   setSessionLocked(sessionRef: string, locked: boolean) {
     return this.sessionService.setSessionLocked(sessionRef, locked);
+  }
+
+  setSessionMission(sessionRef: string, text: string) {
+    return this.sessionService.setSessionMission(sessionRef, text);
   }
 
   // ---------------------------------------------------------------------------

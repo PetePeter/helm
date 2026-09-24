@@ -130,5 +130,8 @@ export function recordRemovedSession(
     // Tag the bin entry with the session's runtime group so restore can re-add
     // it (recreating the group by id+name if it was closed meanwhile).
     ...(runtimeGroup ? { runtimeGroupId: runtimeGroup.id, runtimeGroupName: runtimeGroup.name } : {}),
+    // The mission survives the bin so a restored session still says what it is for.
+    ...(session.mission ? { mission: { ...session.mission } } : {}),
+    ...(session.missionBarHeight != null ? { missionBarHeight: session.missionBarHeight } : {}),
   });
 }

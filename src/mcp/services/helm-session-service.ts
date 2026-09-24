@@ -194,6 +194,14 @@ export class HelmSessionService {
     return { ok: true, locked };
   }
 
+  /** AI-side mission write; validation lives in SessionManager (shared with IPC). */
+  setSessionMission(sessionRef: string, text: string): { ok: true; mission: SessionInfo['mission'] | null } {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    const updated = this.sessionManager.setMission(session.id, text, 'ai');
+    return { ok: true, mission: updated.mission ?? null };
+  }
+
   renameSession(sessionRef: string, name: string): { ok: true } {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -277,6 +285,7 @@ export class HelmSessionService {
       ...(session.createdByPeerId ? { createdByPeerId: session.createdByPeerId } : {}),
       ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
+      ...(session.mission ? { mission: { ...session.mission } } : {}),
     };
   }
 
