@@ -192,6 +192,9 @@ export async function refreshSessions(): Promise<void> {
       // Without this the card falls back to "unlocked" on every refresh, and
       // its toggle can then only ever ask to lock.
       locked: managed.locked,
+      // Same trap for the mission bar: this refresh runs on every plan change.
+      mission: managed.mission,
+      missionBarHeight: managed.missionBarHeight,
     } as Session);
 
     const displayState = managed.aiagentState ?? managed.state;

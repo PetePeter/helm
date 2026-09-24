@@ -307,6 +307,26 @@ describe('useAppBootstrap session hydration', () => {
     mod.teardown();
   });
 
+  // P-0808: every plan:changed runs this refresh; dropping the mission here
+  // blanked the Mission bar after any Plans edit until the next session:updated.
+  it('carries the mission and its bar height through a refresh', async () => {
+    const mod = await initBootstrap();
+    const mission = { text: 'ship it', setBy: 'ai' as const, setAt: 1 };
+    mockTerminalManager.hydrateFromStore.mockResolvedValueOnce([
+      { id: 'sess-m', name: 'w', cliType: 'claude', processId: 1, workingDir: '/tmp', mission, missionBarHeight: 90 },
+      { id: 'sess-none', name: 'w2', cliType: 'claude', processId: 2, workingDir: '/tmp' },
+    ] as never);
+
+    await mod.refreshSessions();
+
+    const withMission = state.sessions.find(s => s.id === 'sess-m');
+    expect(withMission?.mission).toEqual(mission);
+    expect(withMission?.missionBarHeight).toBe(90);
+    expect(state.sessions.find(s => s.id === 'sess-none')?.mission).toBeUndefined();
+
+    mod.teardown();
+  });
+
   it('leaves an unlocked session unlocked', async () => {
     const mod = await initBootstrap();
     mockTerminalManager.hydrateFromStore.mockResolvedValueOnce([
