@@ -9,9 +9,11 @@
 import { ref } from 'vue';
 import SessionGroup from './SessionGroup.vue';
 import SessionCard from './SessionCard.vue';
-import { isNavItemFocused } from '../../session-groups.js';
+import { isNavItemFocused, type SessionPreviewMode } from '../../session-groups.js';
 import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
+import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
+import { useMessageFlights } from '../../composables/useMessageFlights.js';
 
 interface FlashEntry {
   phase: 'pulse' | 'solid';
@@ -76,6 +78,8 @@ const props = defineProps<{
   isSessionHiddenFromOverview: (session: SessionListGroupSession) => boolean;
   sessionElapsedText: (sessionId: string) => string;
   sessionShortcutMap: Map<string, number>;
+  /** PTY preview density. Absent = 'on'. */
+  previewMode?: SessionPreviewMode;
 }>();
 
 const emit = defineEmits<{
@@ -119,6 +123,46 @@ function groupFlashEntry(sessions: SessionListGroupSession[]): FlashEntry | null
   return pickGroupFlashEntry(props.flashEntries, sessions.map((session) => session.id));
 }
 
+// --- PTY previews ---------------------------------------------------------
+
+const { linesFor } = useSessionPreviews();
+
+/**
+ * The preview source for a row, or null when the row shows no preview. The
+ * card calls it during its own render, so a busy session re-renders only its
+ * own row, not the whole list.
+ */
+function previewSourceFor(sessionId: string): ((id: string) => string[]) | null {
+  const mode = props.previewMode ?? 'on';
+  if (mode === 'off') return null;
+  if (mode === 'selected-only' && sessionId !== props.activeSessionId) return null;
+  return linesFor;
+}
+
+// --- Message flights -------------------------------------------------------
+
+const listEl = ref<HTMLElement | null>(null);
+
+/**
+ * Where a session's envelope lands: its row, else its collapsed group's
+ * header, else nowhere. Compares dataset values rather than building an
+ * attribute selector: session ids and paths contain characters (mobile
+ * proxies, Windows paths) that would need CSS escaping.
+ */
+function resolveAnchor(sessionId: string): HTMLElement | null {
+  const root = listEl.value;
+  if (!root) return null;
+  const row = Array.from(root.querySelectorAll<HTMLElement>('[data-session-id]'))
+    .find(el => el.dataset.sessionId === sessionId);
+  if (row) return row;
+  const group = props.groups.find(g => g.collapsed && g.sessions.some(s => s.id === sessionId));
+  if (!group) return null;
+  return Array.from(root.querySelectorAll<HTMLElement>('[data-dir-path]'))
+    .find(el => el.dataset.dirPath === group.dirPath) ?? null;
+}
+
+const { flights, landedSessionIds, onFlightLanded, flightStyle } = useMessageFlights({ rootEl: listEl, resolveAnchor });
+
 // Dropping a session onto the ＋ New Group segment creates a group prefilled and
 // moves the session in (mirrors the mockup).
 const { draggedSessionId } = useSessionDrag();
@@ -144,7 +188,7 @@ function onNewGroupDrop(e: DragEvent): void {
 
 <template>
   <div class="sessions-list-shell">
-    <!-- Overview is a dock pane; this toolbar only owns runtime-group creation. -->
+    <!-- This toolbar only owns runtime-group creation. -->
     <div class="runtime-list-actions">
       <button
         class="runtime-action"
@@ -157,7 +201,7 @@ function onNewGroupDrop(e: DragEvent): void {
       >＋ New Group</button>
     </div>
 
-    <div class="sessions-list" id="sessionsList">
+    <div ref="listEl" class="sessions-list" id="sessionsList">
       <template v-for="group in groups" :key="group.dirPath">
         <!-- Runtime groups always render (even empty); directory groups only when non-empty. -->
         <template v-if="group.sessions.length > 0 || group.kind === 'runtime'">
@@ -226,6 +270,8 @@ function onNewGroupDrop(e: DragEvent): void {
               :llm-notifications="llmNotifications.get(session.id) ?? []"
               :flash-entry="flashEntries?.get(session.id) ?? null"
               :shortcut-key="sessionShortcutMap.get(session.id) ?? null"
+              :preview-source="previewSourceFor(session.id)"
+              :message-landed="landedSessionIds.has(session.id)"
               @click="emit('sessionClick', $event)"
               @rename="emit('sessionRename', $event)"
               @commit-rename="onCommitRename"
@@ -246,6 +292,41 @@ function onNewGroupDrop(e: DragEvent): void {
       <div v-if="!hasSessions" class="sessions-empty">
         No active sessions
       </div>
+
+      <span
+        v-for="flight in flights"
+        :key="flight.id"
+        class="message-flight"
+        :style="flightStyle(flight)"
+        aria-hidden="true"
+        @animationend="onFlightLanded(flight.id)"
+      >
+        <svg width="18" height="12" viewBox="0 0 18 12" fill="none" aria-hidden="true">
+          <rect x="0.75" y="0.75" width="16.5" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+          <path d="M1.5 1.5 9 7l7.5-5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        </svg>
+      </span>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Flights are drawn in list coordinates, so they scroll with the rows. */
+.sessions-list { position: relative; }
+
+/* Centred on its anchor point; flies by the offset to the recipient. */
+.message-flight {
+  position: absolute;
+  z-index: 6;
+  margin: -6px 0 0 -9px;
+  pointer-events: none;
+  color: var(--flight-colour, var(--status-ready));
+  animation: session-message-flight 1s ease-in-out forwards;
+}
+.message-flight svg { display: block; filter: drop-shadow(0 0 3px var(--flight-colour, var(--status-ready))); }
+
+@keyframes session-message-flight {
+  from { transform: translate(0, 0); }
+  to { transform: translate(var(--flight-dx, 0), var(--flight-dy, 0)); }
+}
+</style>

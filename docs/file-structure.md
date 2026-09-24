@@ -145,7 +145,9 @@ renderer/
 │   │   └── MobilePairingDialog.vue    # SAS 6-digit compare for a pairing phone; the digits are a KDF output, safe to display
 │   ├── sidebar/
 │   │   ├── index.ts
-│   │   ├── SessionCard.vue     # Session card (activity dot, badges, timer, rename, close)
+│   │   ├── SessionCard.vue     # Session card (activity dot, badges, timer, rename, close, 5-line PTY preview)
+│   │   ├── SessionList.vue     # Grouped session list; hosts the message-flight envelopes
+│   │   ├── SessionListTab.vue  # Settings tab: PTY preview mode (on / selected-only / off)
 │   │   ├── SessionGroup.vue    # Collapsible directory group header
 │   │   ├── SpawnGrid.vue       # 2-column CLI spawn button grid
 │   │   ├── SortBar.vue         # Sort field dropdown + direction toggle
@@ -181,6 +183,8 @@ renderer/
 ├── composables/
 │   ├── index.ts                # Barrel export of all composables
 │   ├── useHandover.ts          # Reactive mirror of pending compaction handovers; drives the terminal lock
+│   ├── useMessageFlights.ts    # Inter-session envelope flights: anchor resolve, landing ack, release on unmount
+│   ├── useSessionPreviews.ts   # Throttled passive PTY tails for Session List rows (reads PtyOutputBuffer)
 │   ├── useModalStack.ts        # Reactive push/pop modal stack replacing 11-deep if-chain
 │   ├── useIpc.ts               # Typed IPC wrappers with auto-cleanup on unmount
 │   ├── useGamepad.ts           # Gamepad polling setup + connection events

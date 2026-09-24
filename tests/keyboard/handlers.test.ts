@@ -17,7 +17,6 @@ import { type KeyEnvironment } from '../../renderer/keyboard/key-context.js';
 import {
   PANE_ARTIFACTS,
   PANE_MEMORIES,
-  PANE_OVERVIEW,
   PANE_TERMINAL,
   type PaneId,
 } from '../../renderer/dock-types.js';
@@ -92,14 +91,14 @@ describe('dock pane shortcuts', () => {
   // The reported regression: MainWindowApp guarded on closest('textarea'), and
   // xterm's helper textarea matched, so every Ctrl+Shift+<pane> died the moment
   // you were actually using a terminal.
-  it('Ctrl+Shift+O activates Overview while typing in a terminal', () => {
+  it('Ctrl+Shift+M activates Memories while typing in a terminal', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
     install();
 
-    pressInTerminal({ key: 'O', code: 'KeyO', ctrlKey: true, shiftKey: true });
+    pressInTerminal({ key: 'M', code: 'KeyM', ctrlKey: true, shiftKey: true });
 
-    expect(workspace.calls.activated).toEqual([PANE_OVERVIEW]);
+    expect(workspace.calls.activated).toEqual([PANE_MEMORIES]);
   });
 
   it('Ctrl+Shift+M activates Memories from a terminal', () => {
@@ -186,8 +185,6 @@ describe('session cycling', () => {
 });
 
 describe('session meta keys', () => {
-  // The shipped bug: the global rename ate Ctrl+Shift+R before the focused
-  // Team View pane's own rename input could claim it.
   it('Ctrl+Shift+R renames through the Session List while the terminal is focused', () => {
     const terminal = fakeTerminal();
     const renames: string[] = [];
@@ -199,20 +196,6 @@ describe('session meta keys', () => {
 
     expect(renames).toEqual(['session-1']);
     expect(event.defaultPrevented).toBe(true);
-  });
-
-  it('Ctrl+Shift+R is left for Team View when the Team View pane is focused', () => {
-    const terminal = fakeTerminal();
-    const renames: string[] = [];
-    terminal.deps.renameSession = (sessionId) => { renames.push(sessionId); };
-    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
-    install({ getFocusedPane: () => PANE_OVERVIEW });
-
-    const event = press({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true });
-
-    expect(renames).toEqual([]);
-    // Not consumed: the event reaches Team View's own listener untouched.
-    expect(event.defaultPrevented).toBe(false);
   });
 });
 

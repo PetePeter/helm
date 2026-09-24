@@ -1,9 +1,9 @@
 /**
- * Inter-session message flights — the Team View envelope animation gate.
+ * Inter-session message flights — the Session List envelope animation gate.
  *
  * A flight is broadcast BEFORE the message is pasted into the recipient's
- * PTY. The renderer animates an envelope from the sender's desk to the
- * recipient's desk and acks on landing; only then is delivery released.
+ * PTY. The renderer animates an envelope from the sender's row to the
+ * recipient's row and acks on landing; only then is delivery released.
  * Delivery is never hostage to the animation: the sender side enforces a
  * timeout, so headless MCP traffic (no renderer, no pane) degrades to a
  * short fixed delay instead of stalling.

@@ -103,6 +103,7 @@ import ProjectsTab from './components/sidebar/ProjectsTab.vue';
 import ChipbarActionsTab from './components/sidebar/ChipbarActionsTab.vue';
 import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
+import SessionListTab from './components/sidebar/SessionListTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
@@ -174,10 +175,9 @@ watch(terminalContainerRef, (container) => {
 
 const dockViewItems = computed(() => listRegisteredPanes(dockWorkspace.layout.value));
 
-// Dock ↔ view-mode reconciliation. Team View (the `overview` pane id) is deliberately
-// not part of it: it is a tool pane over a reactive projection, so focusing it
-// must not start a view transition. The legacy fullscreen overview view still
-// exists and is still reached through `openOverview()`.
+// Dock ↔ view-mode reconciliation. Tool panes are not part of it: focusing one
+// must not start a view transition. The legacy fullscreen overview view has no
+// pane and is reached through `openOverview()`.
 const {
   activateDockPane,
   closeDockPane,
@@ -1121,6 +1121,9 @@ onUnmounted(() => {
               @clone="onToolClone"
               @delete="onToolDelete"
               @move="onToolReorder"
+            />
+            <SessionListTab
+              v-else-if="activeTab === 'session-list'"
             />
             <ProjectsTab
               v-else-if="activeTab === 'projects'"

@@ -119,32 +119,6 @@ describe('useSidebarController', () => {
     expect(mocks.openDirPicker).not.toHaveBeenCalled();
   });
 
-  it('surfaces a desk selection that did not reach a session', async () => {
-    const { controller, navStore } = createController();
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    navStore.navigateToSession.mockResolvedValue({ kind: 'unavailable', sessionId: 's2' });
-
-    controller.onOverviewSelect('s2');
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(error).toHaveBeenCalledWith(expect.stringContaining('unavailable'), 's2');
-    error.mockRestore();
-  });
-
-  it('stays quiet when a desk selection reaches its session', async () => {
-    const { controller, navStore } = createController();
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    navStore.navigateToSession.mockResolvedValue({ kind: 'local-terminal', sessionId: 's2' });
-
-    controller.onOverviewSelect('s2');
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(error).not.toHaveBeenCalled();
-    error.mockRestore();
-  });
-
   it('closes overview before navigating from a session click', async () => {
     const { controller, deps, navStore } = createController();
     deps.activeView.value = 'overview';

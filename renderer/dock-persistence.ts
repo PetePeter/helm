@@ -124,7 +124,7 @@ function withLegacyWidths(
   const artifactWidth = legacy.artifactWidth ?? (root.sizes[artifactIndex] * viewportWidth!);
 
   // Only the two edges had a legacy width. Whatever is between them — one centre
-  // group or several, e.g. the view group beside Team View — keeps its own
+  // group or several — keeps its own
   // proportions inside the remaining space.
   const centerIndices = root.children
     .map((_, index) => index)

@@ -235,7 +235,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       collapsed: string[];
       bookmarked?: string[];
       overviewHidden?: string[];
-      teamViewCollapsed?: string[];
+      sessionPreviewMode?: 'on' | 'off' | 'selected-only';
     }>,
 
   configSetSessionGroupPrefs: (prefs: {
@@ -243,7 +243,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     collapsed: string[];
     bookmarked?: string[];
     overviewHidden?: string[];
-    teamViewCollapsed?: string[];
+    sessionPreviewMode?: 'on' | 'off' | 'selected-only';
   }) =>
     ipcRenderer.invoke('config:setSessionGroupPrefs', prefs),
 
@@ -454,7 +454,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('session:updated', listener);
   },
 
-  /** Subscribe to inter-session message flights (Team View envelope animation). */
+  /** Subscribe to inter-session message flights (Session List envelope animation). */
   onSessionMessageFlight: (callback: (flight: SessionMessageFlight) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: SessionMessageFlight) => callback(data);
     ipcRenderer.on('session:message-flight', listener);

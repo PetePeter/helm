@@ -15,7 +15,6 @@ import {
   PANE_ARTIFACTS,
   PANE_MEMORIES,
   PANE_MESS,
-  PANE_OVERVIEW,
   PANE_PLAN_SCREEN,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -107,7 +106,7 @@ describe('validateLayout(raw, profile)', () => {
 
   it('never lets a foreign pane survive into the returned layout', () => {
     const layout = createDefaultLayout('popout');
-    const withForeign = { ...layout, closed: [PANE_OVERVIEW] };
+    const withForeign = { ...layout, closed: [PANE_SESSIONS] };
     expect(() => validateLayout(withForeign, 'popout')).toThrow();
   });
 });

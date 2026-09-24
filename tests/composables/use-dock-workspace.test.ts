@@ -3,7 +3,7 @@ import { useDockWorkspace } from '../../renderer/composables/useDockWorkspace';
 import { createDefaultLayout, listPanes } from '../../renderer/dock-layout';
 import {
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
+  PANE_MEMORIES,
   PANE_PLAN_SCREEN,
   PANE_MESS,
   PANE_SESSIONS,
@@ -16,26 +16,22 @@ describe('useDockWorkspace', () => {
     expect(ws.paneOrder.value).toEqual(listPanes(createDefaultLayout().root));
     expect(ws.focusedPaneId.value).toBe(PANE_TERMINAL);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(true);
-    // Team View owns its own column in the default layout, so it is visible
-    // alongside the terminal rather than tabbed behind it.
-    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true);
-    expect(ws.isVisible(PANE_MESS)).toBe(false);
+    expect(ws.isVisible(PANE_MEMORIES)).toBe(false);
   });
 
   it('focusing a background tab activates it in its own group', () => {
     const ws = useDockWorkspace();
-    ws.focusPane(PANE_MESS);
-    expect(ws.isVisible(PANE_MESS)).toBe(true);
+    ws.focusPane(PANE_MEMORIES);
+    expect(ws.isVisible(PANE_MEMORIES)).toBe(true);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(false);
-    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true); // a different group, untouched
-    expect(ws.focusedPaneId.value).toBe(PANE_MESS);
+    expect(ws.focusedPaneId.value).toBe(PANE_MEMORIES);
   });
 
   it('cycles focus in deterministic tree order and wraps', () => {
     const ws = useDockWorkspace();
     ws.focusPane(PANE_SESSIONS);
     ws.cycleFocus(-1);
-    expect(ws.focusedPaneId.value).toBe(PANE_OVERVIEW); // autohide panes are not focus targets
+    expect(ws.focusedPaneId.value).toBe(PANE_MESS); // autohide panes are not focus targets
     ws.cycleFocus(1);
     expect(ws.focusedPaneId.value).toBe(PANE_SESSIONS);
   });
@@ -77,34 +73,34 @@ describe('useDockWorkspace', () => {
 
   it('restores a closed view pane and focuses it — the view-transition reconcile path', () => {
     const ws = useDockWorkspace();
-    ws.close(PANE_OVERVIEW);
-    expect(ws.isOpen(PANE_OVERVIEW)).toBe(false);
+    ws.close(PANE_MEMORIES);
+    expect(ws.isOpen(PANE_MEMORIES)).toBe(false);
 
-    ws.restore(PANE_OVERVIEW);
-    ws.activate(PANE_OVERVIEW);
-    ws.focusPane(PANE_OVERVIEW);
+    ws.restore(PANE_MEMORIES);
+    ws.activate(PANE_MEMORIES);
+    ws.focusPane(PANE_MEMORIES);
 
-    expect(ws.isOpen(PANE_OVERVIEW)).toBe(true);
-    expect(ws.isVisible(PANE_OVERVIEW)).toBe(true);
-    expect(ws.focusedPaneId.value).toBe(PANE_OVERVIEW);
+    expect(ws.isOpen(PANE_MEMORIES)).toBe(true);
+    expect(ws.isVisible(PANE_MEMORIES)).toBe(true);
+    expect(ws.focusedPaneId.value).toBe(PANE_MEMORIES);
   });
 
   it('resizes a recursive split through the workspace facade', () => {
     const ws = useDockWorkspace();
-    ws.resize([], [0.3, 0.4, 0.16, 0.14]);
+    ws.resize([], [0.3, 0.56, 0.14]);
 
     expect(ws.layout.value.root).toMatchObject({
       type: 'split',
-      sizes: [0.3, 0.4, 0.16, 0.14],
+      sizes: [0.3, 0.56, 0.14],
     });
   });
 
   it('remembers pane-local focus identity while cycling between panes', () => {
     const ws = useDockWorkspace();
     ws.setFocusedItemId(PANE_SESSIONS, 'session:s1');
-    ws.focusPane(PANE_OVERVIEW, 'card:s2');
+    ws.focusPane(PANE_MEMORIES, 'card:s2');
 
-    expect(ws.getFocusedItemId(PANE_OVERVIEW)).toBe('card:s2');
+    expect(ws.getFocusedItemId(PANE_MEMORIES)).toBe('card:s2');
     expect(ws.getFocusedItemId(PANE_SESSIONS)).toBe('session:s1');
 
     ws.focusPane(PANE_SESSIONS);

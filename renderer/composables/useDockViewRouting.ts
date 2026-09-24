@@ -6,8 +6,8 @@
  * openPlan()/openOverview() bring back a view pane the user closed to the View
  * menu, instead of transitioning into a pane that is not in the tree.
  *
- * Only panes that *represent* a view mode take part. Tool panes (Team View,
- * Sessions, Artifacts, …) are pure projections of existing state: focusing one
+ * Only panes that *represent* a view mode take part. Tool panes (Sessions,
+ * Artifacts, …) are pure projections of existing state: focusing one
  * must never start a view transition, because a transition cancels whatever
  * navigation the same click is about to perform.
  *
@@ -51,8 +51,7 @@ export interface DockViewRoutingDeps {
  * Panes that represent a view mode.
  *
  * `overview` (the legacy fullscreen group-overview grid) is deliberately absent:
- * the `overview` *pane id* now hosts Team View, a dockable tool. The view mode
- * itself still exists and is still reached through `openOverview()`.
+ * it has no pane of its own and is reached through `openOverview()`.
  */
 const VIEW_PANES: ReadonlyArray<readonly [ViewName, PaneId]> = [
   ['terminal', PANE_TERMINAL],

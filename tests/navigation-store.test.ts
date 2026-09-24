@@ -1049,11 +1049,11 @@ describe('useNavigationStore', () => {
 
 import { ref } from 'vue';
 import { createDockViewRouting } from '../renderer/composables/useDockViewRouting.js';
-import { PANE_OVERVIEW, PANE_TERMINAL, type PaneId } from '../renderer/dock-types.js';
+import { PANE_SESSIONS, PANE_TERMINAL, type PaneId } from '../renderer/dock-types.js';
 
 /** A fake dock workspace: real bookkeeping, no tree, no DOM. */
 function makeFakeDock() {
-  const open = new Set<PaneId>([PANE_TERMINAL, PANE_OVERVIEW]);
+  const open = new Set<PaneId>([PANE_TERMINAL, PANE_SESSIONS]);
   const calls: string[] = [];
   return {
     calls,
@@ -1068,7 +1068,7 @@ function makeFakeDock() {
   };
 }
 
-describe('dock view routing — Team View is a tool pane', () => {
+describe('dock view routing — tool panes start no view transition', () => {
   let store: ReturnType<typeof useNavigationStore>;
   let dock: ReturnType<typeof makeFakeDock>;
   let activeView: ReturnType<typeof ref<'terminal' | 'overview' | 'plan'>>;
@@ -1104,16 +1104,16 @@ describe('dock view routing — Team View is a tool pane', () => {
     store.__dispose();
   });
 
-  it('focusing the Team View pane while the terminal view is active starts no view transition', async () => {
+  it('focusing a tool pane while the terminal view is active starts no view transition', async () => {
     await store.navigateToSession('sess-1');
     vi.mocked(showView).mockClear();
 
-    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+    routing.onDockFocusPane(PANE_SESSIONS, 'session:sess-2');
     await Promise.resolve();
 
     expect(showView).not.toHaveBeenCalled();
     expect(currentView()).toBe('terminal');
-    expect(dock.calls).toEqual(['focus:overview']);
+    expect(dock.calls).toEqual(['focus:sessions']);
   });
 
   it('does not invalidate a navigation that is already in flight', async () => {
@@ -1121,7 +1121,7 @@ describe('dock view routing — Team View is a tool pane', () => {
 
     // mousedown focuses the pane while the click's navigation is still running.
     const pending = store.navigateToSession('sess-2');
-    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+    routing.onDockFocusPane(PANE_SESSIONS, 'session:sess-2');
 
     await expect(pending).resolves.toEqual({ kind: 'local-terminal', sessionId: 'sess-2' });
   });
@@ -1131,7 +1131,7 @@ describe('dock view routing — Team View is a tool pane', () => {
     expect(first).toEqual({ kind: 'local-terminal', sessionId: 'sess-1' });
 
     // Click on the second desk: focusin (mousedown) then the select handler.
-    routing.onDockFocusPane(PANE_OVERVIEW, 'desk:sess-2');
+    routing.onDockFocusPane(PANE_SESSIONS, 'session:sess-2');
     const second = await store.navigateToSession('sess-2');
 
     expect(second).toEqual({ kind: 'local-terminal', sessionId: 'sess-2' });
@@ -1139,16 +1139,16 @@ describe('dock view routing — Team View is a tool pane', () => {
     expect(state.activeSessionId).toBe('sess-2');
   });
 
-  it('closing the Team View pane runs no view lifecycle', async () => {
-    await routing.closeDockPane(PANE_OVERVIEW);
+  it('closing a tool pane runs no view lifecycle', async () => {
+    await routing.closeDockPane(PANE_SESSIONS);
     expect(showView).not.toHaveBeenCalled();
     expect(activeView.value).toBe('terminal');
-    expect(dock.calls).toEqual(['close:overview']);
+    expect(dock.calls).toEqual(['close:sessions']);
   });
 
   it('still routes the panes that do represent a view', () => {
     expect(routing.viewForPane(PANE_TERMINAL)).toBe('terminal');
-    expect(routing.viewForPane(PANE_OVERVIEW)).toBeUndefined();
+    expect(routing.viewForPane(PANE_SESSIONS)).toBeUndefined();
     expect(routing.paneForView('overview')).toBeUndefined();
   });
 });

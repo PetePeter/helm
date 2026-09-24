@@ -40,6 +40,9 @@ export interface NavItem {
   groupIndex: number;
 }
 
+export type SessionPreviewMode = 'on' | 'off' | 'selected-only';
+export const SESSION_PREVIEW_MODES: readonly SessionPreviewMode[] = ['on', 'selected-only', 'off'];
+
 export interface SessionGroupPrefs {
   /** Working directory paths in display order. */
   order: string[];
@@ -49,8 +52,8 @@ export interface SessionGroupPrefs {
   bookmarked?: string[];
   /** Stable session keys hidden from overview. Falls back to session id when unavailable. */
   overviewHidden?: string[];
-  /** Team View department ids that the user has collapsed. */
-  teamViewCollapsed?: string[];
+  /** Session List PTY preview density. Absent = 'on'. */
+  sessionPreviewMode?: SessionPreviewMode;
 }
 
 // ============================================================================

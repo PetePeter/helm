@@ -72,18 +72,7 @@ describe('dock persistence', () => {
     expect(result.source).toBe('migrated');
     expect(result.migrated).toBe(true);
     expect(root.type).toBe('split');
-    if (root.type === 'split') {
-      // The two legacy widths pin the edges; the centre columns keep their own
-      // proportions inside what is left.
-      const defaults = createDefaultLayout().root as typeof root & { type: 'split' };
-      const centreShare = defaults.sizes[1] + defaults.sizes[2];
-      expect(root.sizes).toEqual([
-        400 / 1400,
-        (800 * (defaults.sizes[1] / centreShare)) / 1400,
-        (800 * (defaults.sizes[2] / centreShare)) / 1400,
-        200 / 1400,
-      ]);
-    }
+    if (root.type === 'split') expect(root.sizes).toEqual([400 / 1400, 800 / 1400, 200 / 1400]);
     expect(artifactDock?.mode).toBe('hidden');
   });
 

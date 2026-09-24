@@ -1,7 +1,6 @@
 import {
   PANE_ARTIFACTS,
   PANE_MEMORIES,
-  PANE_OVERVIEW,
   PANE_PLAN_SCREEN,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -11,7 +10,6 @@ import {
 /** Global workspace shortcuts. Ctrl is accepted on Windows/Linux and Meta on macOS. */
 export const DOCK_SHORTCUT_PANES: Readonly<Record<string, PaneId>> = Object.freeze({
   t: PANE_TERMINAL,
-  o: PANE_OVERVIEW,
   m: PANE_MEMORIES,
   p: PANE_PLAN_SCREEN,
   s: PANE_SESSIONS,

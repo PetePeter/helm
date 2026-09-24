@@ -149,15 +149,13 @@ maps between the two, so the dock mirrors `main-view-manager` instead of
 becoming a second routing path. Selecting Terminal closes the active overview or
 plan lifecycle before focusing the terminal.
 
-Every other pane is a tool pane over existing state, **including Team View**
-(pane id `overview`). Focusing a tool pane is a focus move and nothing else: a
-view transition started from `focusin` would cancel the click that is about to
-select a session. See [team-view.md](team-view.md). The `overview` *view mode*
-still exists for the legacy fullscreen group-overview grid; it simply has no
-pane of its own, so the `activeView` watcher has nothing to reconcile for it.
+Every other pane is a tool pane over existing state. Focusing a tool pane is a
+focus move and nothing else: a view transition started from `focusin` would
+cancel the click that is about to select a session. The `overview` *view mode*
+still exists for the legacy fullscreen group-overview grid; it has no pane of
+its own, so the `activeView` watcher has nothing to reconcile for it.
 
-Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+O` Team View,
-`Ctrl+Shift+M` Memories, `Ctrl+Shift+P` Plans, `Ctrl+Shift+S` Sessions, and
+Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+M` Memories, `Ctrl+Shift+P` Plans, `Ctrl+Shift+S` Sessions, and
 `Ctrl+Shift+A` Artifacts. The Artifact shortcut shows/focuses the pane; it does
 not toggle visibility. `Ctrl+Shift+N` remains the new-session shortcut.
 
@@ -192,13 +190,17 @@ so an older build can still load settings written by a newer renderer. The
 renderer validates on load and falls back to the Classic default if the value
 does not satisfy the schema.
 
-The Classic default is one horizontal root split with four tracks: the left tool
-dock (session list over the stacked tool windows), the view group
-(Terminal / Plans / Memories / Mess, Terminal active), Team View in a column of
-its own, and Artifacts as a collapsed right-edge rail. Team View is deliberately
-not a tab of the view group — a roster used to switch sessions must stay visible
-when the terminal it switched to becomes active. Saved layouts are untouched by
-this: the default only describes a fresh workspace, and the pane id is unchanged.
+The Classic default is one horizontal root split with three tracks: the left
+tool dock (session list over the stacked tool windows), the view group
+(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts as a
+collapsed right-edge rail.
+
+**Retired panes.** A saved layout may name a pane that no longer exists — the
+`overview` pane (Team View, replaced by
+[Session List previews](session-list-previews.md)). `validateLayout` prunes
+retired ids before validating and hands the freed share back to the
+neighbouring panes, rather than rejecting the layout and discarding the user's
+whole arrangement for one missing pane.
 
 ## Related
 

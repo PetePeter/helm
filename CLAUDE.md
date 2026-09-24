@@ -150,6 +150,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | Document | Content |
 |----------|---------|
 | [docs/group-overview.md](docs/group-overview.md) | Group overview grid — entry/exit, navigation, live previews |
+| [docs/session-list-previews.md](docs/session-list-previews.md) | Session List rows — passive 5-line PTY tail, preview mode setting, message-flight envelopes (hold/ack) |
 | [docs/runtime-groups.md](docs/runtime-groups.md) | Custom cross-directory groups, exclusive membership, restore-to-group, drag/close flows |
 | [docs/recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day rolling bin, restore-with-resume |
 | [docs/drafts.md](docs/drafts.md) | Per-session draft prompt memos |

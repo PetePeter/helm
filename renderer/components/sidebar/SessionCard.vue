@@ -55,6 +55,10 @@ export interface SessionCardProps {
   llmNotifications?: Array<{ id: string; title: string; content: string; createdAt?: number }>;
   flashEntry?: { phase: 'pulse' | 'solid' } | null;
   shortcutKey?: number | null;
+  /** Reads this row's passive PTY tail; null/absent = no preview. */
+  previewSource?: ((sessionId: string) => string[]) | null;
+  /** True briefly after a message envelope lands on this row. */
+  messageLanded?: boolean;
 }
 
 // --- Constants ---
@@ -133,6 +137,9 @@ watch(() => props.isEditing, async (editing) => {
 }, { immediate: true });
 
 // --- Computed ---
+
+// Read inside the card so only this row re-renders when its session's output changes.
+const previewLines = computed(() => props.previewSource?.(props.session.id) ?? null);
 
 const dotColor = computed(() => getActivityColor(props.activityLevel));
 
@@ -239,7 +246,7 @@ function onCardClick(e: MouseEvent): void {
   <div
     ref="cardEl"
     class="session-card"
-    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated }, flashClass]"
+    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
@@ -394,6 +401,12 @@ function onCardClick(e: MouseEvent): void {
       >×</button>
     </div>
 
+    <!-- Passive PTY tail: read-only, never focused, clicks select the row. -->
+    <div v-if="previewLines" class="session-preview" aria-hidden="true">
+      <span v-for="(line, index) in previewLines" :key="index" class="session-preview__line">{{ line }}</span>
+      <span v-if="previewLines.length === 0" class="session-preview__line session-preview__line--empty">No output yet</span>
+    </div>
+
     <NotificationCarousel
       :notifications="llmNotifications ?? []"
       :session-id="session.id"
@@ -455,6 +468,40 @@ function onCardClick(e: MouseEvent): void {
 
 .artifact-badge:hover { border-color: var(--accent); color: var(--accent); }
 .draft-badge + .artifact-badge { margin-left: 4px; }
+
+/* Five clipped lines; the fade on top hints at the older output above. */
+.session-preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: calc(5 * 12px + 8px);
+  margin-top: 4px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font: 10px/12px var(--font-mono);
+  color: var(--text-secondary);
+  pointer-events: none;
+  user-select: none;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 40%);
+}
+.session-preview__line {
+  display: block;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: clip;
+}
+.session-preview__line:last-child { color: var(--text-primary); }
+.session-preview__line--empty:last-child { color: var(--text-dim); }
+
+/* An envelope just landed here: a short accent flash before the paste shows. */
+.session-card.message-landed { animation: session-message-landed 0.6s ease-out; }
+@keyframes session-message-landed {
+  from { box-shadow: inset 0 0 0 2px var(--accent); }
+  to { box-shadow: inset 0 0 0 2px transparent; }
+}
 
 /* Natural draggability — whole card, no handle. */
 .session-card[draggable='true'] { cursor: grab; }

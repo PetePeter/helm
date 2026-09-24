@@ -33,7 +33,7 @@ export function getPeerStatusColor(status: string): string {
 }
 
 /**
- * Team View message-flight envelope colours: a first send between two
+ * Message-flight envelope colours: a first send between two
  * sessions flies blue; a reply in an ongoing exchange (any direction within
  * the reply window) flies amber.
  */

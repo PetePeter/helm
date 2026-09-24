@@ -1461,6 +1461,15 @@ describe('Sessions Screen', () => {
       });
     });
 
+    it('setSessionPreviewMode persists the preview mode with the group prefs', async () => {
+      await sessions.setSessionPreviewMode('selected-only');
+
+      expect(sessionsState.groupPrefs.sessionPreviewMode).toBe('selected-only');
+      expect(mockConfigSetSessionGroupPrefs.mock.calls.at(-1)?.[0]).toMatchObject({
+        sessionPreviewMode: 'selected-only',
+      });
+    });
+
     it('getTabCycleSessionIds excludes overview-hidden sessions from Ctrl+Tab order', async () => {
       const data = [
         { ...makeSessions(1)[0], id: 's-0', cliSessionName: 'cli-0' },

@@ -97,7 +97,7 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const NON_CLI_SETTINGS_TABS = new Set(['tools', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations']);
+const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations']);
 
 function emptySkillDraft(): SettingsSkillDraft {
   return {
@@ -169,6 +169,7 @@ export function useSettingsController(options: {
     const validTabs = new Set([
       ...settingsCliTypes.value,
       'tools',
+      'session-list',
       'chipbar-actions',
       'directories',
       'projects',
@@ -231,6 +232,7 @@ export function useSettingsController(options: {
         label: getCliDisplayName(cliType),
       })),
       { id: 'tools', label: '🔧 Tools' },
+      { id: 'session-list', label: '🗂 Session List' },
       { id: 'chipbar-actions', label: '⚡ Quick Actions' },
       { id: 'projects', label: '📁 Projects' },
       { id: 'skills', label: '🧠 Skills' },

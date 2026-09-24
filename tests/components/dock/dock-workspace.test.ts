@@ -13,7 +13,7 @@ import type { DockWorkspaceLayout } from '../../../renderer/dock-types';
 import {
   DOCK_LAYOUT_VERSION,
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
+  PANE_MESS,
   PANE_PLAN_SCREEN,
   PANE_TERMINAL,
 } from '../../../renderer/dock-types';
@@ -47,12 +47,12 @@ describe('DockWorkspace', () => {
         direction: 'horizontal',
         sizes: [0.65, 0.35],
         children: [
-          { type: 'group', tabs: [PANE_TERMINAL, PANE_OVERVIEW], activeTab: PANE_TERMINAL },
+          { type: 'group', tabs: [PANE_TERMINAL, PANE_MESS], activeTab: PANE_TERMINAL },
           { type: 'dock', side: 'right', mode: 'pinned', child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_PLAN_SCREEN], activeTab: PANE_ARTIFACTS } },
         ],
       }), focusedPaneId: PANE_TERMINAL, paneComponents: {
         [PANE_TERMINAL]: PaneStub,
-        [PANE_OVERVIEW]: PaneStub,
+        [PANE_MESS]: PaneStub,
         [PANE_ARTIFACTS]: PaneStub,
         [PANE_PLAN_SCREEN]: PaneStub,
       } },
@@ -62,10 +62,10 @@ describe('DockWorkspace', () => {
     expect(wrapper.findAll('.dock-node--dock')).toHaveLength(1);
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(4);
     expect(wrapper.findAll('.dock-pane[data-dock-pane-id]')).toHaveLength(4);
-    expect(wrapper.find('.dock-pane[data-dock-pane-id="overview"]').attributes('style')).toContain('display: none');
+    expect(wrapper.find('.dock-pane[data-dock-pane-id="mess"]').attributes('style')).toContain('display: none');
 
-    await wrapper.find('[role="tab"][aria-controls="dock-pane-overview"]').trigger('click');
-    expect(wrapper.emitted('focus-pane')?.at(-1)).toEqual([PANE_OVERVIEW, 'tab:overview']);
+    await wrapper.find('[role="tab"][aria-controls="dock-pane-mess"]').trigger('click');
+    expect(wrapper.emitted('focus-pane')?.at(-1)).toEqual([PANE_MESS, 'tab:mess']);
   });
 
   it('exposes keyboard tab semantics and an accessible splitter', async () => {
@@ -75,12 +75,12 @@ describe('DockWorkspace', () => {
         direction: 'vertical',
         sizes: [0.5, 0.5],
         children: [
-          { type: 'group', tabs: [PANE_TERMINAL, PANE_OVERVIEW], activeTab: PANE_TERMINAL },
+          { type: 'group', tabs: [PANE_TERMINAL, PANE_MESS], activeTab: PANE_TERMINAL },
           { type: 'group', tabs: [PANE_ARTIFACTS], activeTab: PANE_ARTIFACTS },
         ],
       }), focusedPaneId: PANE_TERMINAL, paneComponents: {
         [PANE_TERMINAL]: PaneStub,
-        [PANE_OVERVIEW]: PaneStub,
+        [PANE_MESS]: PaneStub,
         [PANE_ARTIFACTS]: PaneStub,
       } },
     });
@@ -88,7 +88,7 @@ describe('DockWorkspace', () => {
     const splitter = wrapper.find('[role="separator"]');
     expect(splitter.attributes('aria-orientation')).toBe('vertical');
     await wrapper.find('[role="tab"][aria-controls="dock-pane-terminal"]').trigger('keydown', { key: 'ArrowRight' });
-    expect(wrapper.emitted('focus-pane')?.at(-1)).toEqual([PANE_OVERVIEW, 'tab:overview']);
+    expect(wrapper.emitted('focus-pane')?.at(-1)).toEqual([PANE_MESS, 'tab:mess']);
     await splitter.trigger('keydown', { key: 'ArrowDown' });
     expect(wrapper.emitted('resize-split')).toBeTruthy();
     expect(wrapper.emitted('resize-split')?.at(-1)?.[1]).toEqual([0.55, 0.45]);
@@ -131,22 +131,22 @@ describe('DockWorkspace', () => {
           type: 'dock',
           side: 'right',
           mode: 'autohide',
-          child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_OVERVIEW], activeTab: PANE_ARTIFACTS },
+          child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_MESS], activeTab: PANE_ARTIFACTS },
         }),
         focusedPaneId: PANE_TERMINAL,
         revealedPaneIds: [],
-        paneComponents: { [PANE_ARTIFACTS]: PaneStub, [PANE_OVERVIEW]: PaneStub },
+        paneComponents: { [PANE_ARTIFACTS]: PaneStub, [PANE_MESS]: PaneStub },
       },
     });
 
     const rail = wrapper.get('[data-dock-rail="right"]');
     const buttons = rail.findAll('[data-dock-rail-pane]');
-    expect(buttons.map(b => b.attributes('data-dock-rail-pane'))).toEqual([PANE_ARTIFACTS, PANE_OVERVIEW]);
-    expect(buttons.map(b => b.attributes('title'))).toEqual(['Artifacts', 'Team View']);
+    expect(buttons.map(b => b.attributes('data-dock-rail-pane'))).toEqual([PANE_ARTIFACTS, PANE_MESS]);
+    expect(buttons.map(b => b.attributes('title'))).toEqual(['Artifacts', 'Mess']);
 
     // Clicking an icon opens that pane, not the dock's first one.
     await buttons[1].trigger('click');
-    expect(wrapper.emitted('reveal-pane')).toEqual([[PANE_OVERVIEW]]);
+    expect(wrapper.emitted('reveal-pane')).toEqual([[PANE_MESS]]);
   });
 
   // A pinned dock has no collapse affordance: its rail rendered as a blank

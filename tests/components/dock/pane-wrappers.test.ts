@@ -14,7 +14,6 @@ import { nextTick, ref, type Ref } from 'vue';
 
 import TerminalPane from '../../../renderer/components/dock/TerminalPane.vue';
 import TerminalChips from '../../../renderer/components/chips/TerminalChips.vue';
-import OverviewPane from '../../../renderer/components/dock/OverviewPane.vue';
 import PlanScreenPane from '../../../renderer/components/dock/PlanScreenPane.vue';
 import SessionsPane from '../../../renderer/components/dock/SessionsPane.vue';
 import SchedulerPane from '../../../renderer/components/dock/SchedulerPane.vue';
@@ -27,7 +26,6 @@ import SortBar from '../../../renderer/components/sidebar/SortBar.vue';
 import SpawnGrid from '../../../renderer/components/sidebar/SpawnGrid.vue';
 import PlansGrid from '../../../renderer/components/sidebar/PlansGrid.vue';
 import SchedulerSection from '../../../renderer/components/sidebar/SchedulerSection.vue';
-import TeamView from '../../../renderer/components/panels/TeamView.vue';
 import PlanScreen from '../../../renderer/components/panels/PlanScreen.vue';
 import ArtifactViewer from '../../../renderer/components/panels/ArtifactViewer.vue';
 
@@ -58,7 +56,6 @@ function makeContext(): Fake {
     onCancelRename: vi.fn(),
     onRequestClose: vi.fn(),
     onSessionStateChange: vi.fn(),
-    onOverviewSelect: vi.fn(),
     onOverviewToggleCollapse: vi.fn(),
     onGroupToggleCollapse: vi.fn(),
     onShowPlans: vi.fn(),
@@ -156,11 +153,6 @@ describe('pane wrappers render their view', () => {
     expect(wrapper.findComponent(SortBar).exists()).toBe(true);
     expect(wrapper.findComponent(SessionList).exists()).toBe(true);
     expect(wrapper.find('.recycle-bin-btn').exists()).toBe(true);
-  });
-
-  it('OverviewPane keeps its persisted dock position but renders Team View', () => {
-    const wrapper = mountPane(OverviewPane, fake.context);
-    expect(wrapper.findComponent(TeamView).exists()).toBe(true);
   });
 
   it('PlanScreenPane renders the plan canvas', () => {
@@ -306,15 +298,6 @@ describe('pane wrappers preserve the shell event seams', () => {
     expect(sidebar().openSchedulerPopup).toHaveBeenCalledWith('t-1');
     expect(sidebar().deleteScheduledTask).toHaveBeenCalledWith({ id: 't-1' });
     expect(sidebar().openSchedulerHistory).toHaveBeenCalled();
-  });
-
-  it('OverviewPane forwards Team View selection', () => {
-    const wrapper = mountPane(OverviewPane, fake.context);
-    const grid = wrapper.findComponent(TeamView);
-
-    grid.vm.$emit('select', 's-3');
-
-    expect(sidebar().onOverviewSelect).toHaveBeenCalledWith('s-3');
   });
 
   it('PlanScreenPane forwards workspace actions to the plan controller', () => {

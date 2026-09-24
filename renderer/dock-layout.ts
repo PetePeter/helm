@@ -15,7 +15,6 @@ import {
   listProfilePanes,
   OUTER_EDGE_RATIO,
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
   PANE_PLAN_DIRECTORIES,
   PANE_PLAN_SCREEN,
   PANE_MEMORIES,
@@ -85,8 +84,8 @@ const DEFAULT_DOCK_MODES: Partial<Record<DockSide, DockMode>> = { right: 'autohi
 
 /**
  * The Classic layout — a close reproduction of the pre-docking UI: session list
- * and tool windows on the left, the view group in the centre, Team View beside
- * it, and Artifacts as a collapsed right-edge rail.
+ * and tool windows on the left, the view group in the centre, and Artifacts as a
+ * collapsed right-edge rail.
  *
  * Kept as a literal rather than derived: the left column's split between the
  * session list and the stacked tool windows is a hand-tuned arrangement that no
@@ -101,13 +100,8 @@ function createClassicLayout(): DockWorkspaceLayout {
         group([PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES], PANE_SCHEDULER),
       ], [0.6, 0.4])),
       group([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS], PANE_TERMINAL),
-      // Team View is a roster whose job is switching sessions, so it owns a
-      // column of its own rather than a tab in the view group: as a tab it
-      // would lose to the very terminal it switches to and vanish on the first
-      // selection made through it.
-      group([PANE_OVERVIEW]),
       dock('right', 'autohide', group([PANE_ARTIFACTS])),
-    ], [0.20, 0.42, 0.20, 0.18]),
+    ], [0.22, 0.56, 0.22]),
     closed: [],
   };
 }
@@ -697,11 +691,57 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
 }
 
 /**
+ * Pane ids that used to exist. A saved layout may still name them, so they are
+ * pruned before validation rather than failing it — failing would throw away
+ * the user's whole arrangement for the sake of one pane that is gone.
+ * `overview` was Team View, retired in favour of Session List previews.
+ */
+const RETIRED_PANE_IDS: ReadonlySet<string> = new Set(['overview']);
+
+/** Drop retired panes from a raw node; null when nothing is left of it. */
+function pruneRetiredNode(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw;
+  if (raw.type === 'group' && Array.isArray(raw.tabs)) {
+    const tabs = raw.tabs.filter(tab => !RETIRED_PANE_IDS.has(tab as string));
+    if (tabs.length === raw.tabs.length) return raw;
+    if (tabs.length === 0) return null;
+    return { ...raw, tabs, activeTab: tabs.includes(raw.activeTab) ? raw.activeTab : tabs[0] };
+  }
+  if (raw.type === 'dock') {
+    const child = pruneRetiredNode(raw.child);
+    if (child === raw.child) return raw;
+    return child === null ? null : { ...raw, child };
+  }
+  if (raw.type === 'split' && Array.isArray(raw.children) && Array.isArray(raw.sizes)) {
+    const pruned = raw.children.map(pruneRetiredNode);
+    if (pruned.every((child, i) => child === (raw.children as unknown[])[i])) return raw;
+    const kept = pruned
+      .map((child, i) => ({ child, size: (raw.sizes as unknown[])[i] as number }))
+      .filter(entry => entry.child !== null);
+    if (kept.length === 0) return null;
+    if (kept.length === 1) return kept[0].child;
+    // The removed pane's share goes back to its siblings in proportion.
+    return { ...raw, children: kept.map(k => k.child), sizes: scaleSizes(kept.map(k => k.size), kept.length) };
+  }
+  return raw;
+}
+
+function pruneRetiredPanes(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw;
+  const root = pruneRetiredNode(raw.root);
+  const closed = Array.isArray(raw.closed)
+    ? raw.closed.filter(id => !RETIRED_PANE_IDS.has(id as string))
+    : raw.closed;
+  return { ...raw, root: root ?? { type: 'empty' }, closed };
+}
+
+/**
  * Parse an untrusted layout (persisted config, IPC payload). Throws on any
  * malformed schema, unknown/duplicate pane, or missing registered pane, so a
  * caller can fall back to the default layout on a single try/catch.
  */
-export function validateLayout(raw: unknown, profile: DockProfileId = 'main'): DockWorkspaceLayout {
+export function validateLayout(input: unknown, profile: DockProfileId = 'main'): DockWorkspaceLayout {
+  const raw = pruneRetiredPanes(input);
   if (!isRecord(raw)) throw new Error('dock layout: layout is not an object');
   if (raw.version !== DOCK_LAYOUT_VERSION) throw new Error(`dock layout: unsupported version "${String(raw.version)}"`);
 

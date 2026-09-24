@@ -374,7 +374,7 @@ export function setupConfigHandlers(
     collapsed: string[];
     bookmarked?: string[];
     overviewHidden?: string[];
-    teamViewCollapsed?: string[];
+    sessionPreviewMode?: 'on' | 'off' | 'selected-only';
   }) => {
     try {
       configLoader.setSessionGroupPrefs(prefs);

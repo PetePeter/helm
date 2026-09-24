@@ -17,7 +17,7 @@ import type { DockWorkspaceLayout } from '../../../renderer/dock-types';
 import {
   DOCK_LAYOUT_VERSION,
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
+  PANE_MESS,
   PANE_TERMINAL,
 } from '../../../renderer/dock-types';
 
@@ -35,7 +35,7 @@ const RECTS: Record<string, { x: number; y: number; width: number; height: numbe
   [`strip:${PANE_TERMINAL}`]: { x: 0, y: 0, width: 600, height: 30 },
   [`strip:${PANE_ARTIFACTS}`]: { x: 600, y: 0, width: 400, height: 30 },
   [`tab:${PANE_TERMINAL}`]: { x: 0, y: 0, width: 100, height: 30 },
-  [`tab:${PANE_OVERVIEW}`]: { x: 100, y: 0, width: 100, height: 30 },
+  [`tab:${PANE_MESS}`]: { x: 100, y: 0, width: 100, height: 30 },
   [`tab:${PANE_ARTIFACTS}`]: { x: 600, y: 0, width: 100, height: 30 },
 };
 
@@ -80,7 +80,7 @@ function layout(): DockWorkspaceLayout {
       direction: 'horizontal',
       sizes: [0.6, 0.4],
       children: [
-        { type: 'group', tabs: [PANE_TERMINAL, PANE_OVERVIEW], activeTab: PANE_TERMINAL },
+        { type: 'group', tabs: [PANE_TERMINAL, PANE_MESS], activeTab: PANE_TERMINAL },
         { type: 'group', tabs: [PANE_ARTIFACTS], activeTab: PANE_ARTIFACTS },
       ],
     },
@@ -96,7 +96,7 @@ function mountWorkspace(): VueWrapper {
       focusedPaneId: PANE_TERMINAL,
       paneComponents: {
         [PANE_TERMINAL]: PaneStub,
-        [PANE_OVERVIEW]: PaneStub,
+        [PANE_MESS]: PaneStub,
         [PANE_ARTIFACTS]: PaneStub,
       },
     },
@@ -238,7 +238,7 @@ describe('dock drag interaction', () => {
   it('suppresses the preview for a drop the model rejects', async () => {
     const wrapper = mountWorkspace();
     // Overview is already tabbed with Terminal, so a centre drop is a no-op.
-    await press(wrapper, PANE_OVERVIEW, 120, 10);
+    await press(wrapper, PANE_MESS, 120, 10);
     await dragTo(300, 300);
 
     expect(wrapper.find('[data-dock-preview]').exists()).toBe(false);
@@ -341,7 +341,7 @@ describe('dock drag interaction', () => {
 
     // Without the modifiers the same arrow still navigates tabs.
     await tab.trigger('keydown', { key: 'ArrowRight' });
-    expect(wrapper.emitted('activate-pane')?.at(-1)).toEqual([PANE_OVERVIEW]);
+    expect(wrapper.emitted('activate-pane')?.at(-1)).toEqual([PANE_MESS]);
     wrapper.unmount();
   });
 });

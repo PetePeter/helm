@@ -23,7 +23,7 @@ import {
   DOCK_SPLITTER_PX,
   OUTER_EDGE_RATIO,
   PANE_ARTIFACTS,
-  PANE_OVERVIEW,
+  PANE_MESS,
   PANE_TERMINAL,
   splitTrackSize,
 } from '../renderer/dock-types';
@@ -109,7 +109,7 @@ describe('edgeForPoint', () => {
 describe('tab reorder', () => {
   const tabs = [
     { paneId: PANE_TERMINAL, rect: { x: 0, y: 0, width: 100, height: 30 } },
-    { paneId: PANE_OVERVIEW, rect: { x: 100, y: 0, width: 100, height: 30 } },
+    { paneId: PANE_MESS, rect: { x: 100, y: 0, width: 100, height: 30 } },
   ];
 
   it('inserts before the first tab whose midpoint the pointer passed', () => {
@@ -123,10 +123,10 @@ describe('tab reorder', () => {
     // Terminal already sits at 0 and Overview at 1, so those slots are no-ops.
     expect(isNoOpReorder(tabs, PANE_TERMINAL, 0)).toBe(true);
     expect(isNoOpReorder(tabs, PANE_TERMINAL, 1)).toBe(false);
-    expect(isNoOpReorder(tabs, PANE_OVERVIEW, 1)).toBe(true);
-    expect(isNoOpReorder(tabs, PANE_OVERVIEW, 0)).toBe(false);
+    expect(isNoOpReorder(tabs, PANE_MESS, 1)).toBe(true);
+    expect(isNoOpReorder(tabs, PANE_MESS, 0)).toBe(false);
     // An out-of-range index still resolves to the last slot.
-    expect(isNoOpReorder(tabs, PANE_OVERVIEW, 9)).toBe(true);
+    expect(isNoOpReorder(tabs, PANE_MESS, 9)).toBe(true);
     expect(isNoOpReorder(tabs, PANE_ARTIFACTS, 0)).toBe(false);
   });
 
@@ -148,7 +148,7 @@ describe('resolveDrop', () => {
         rect: { x: 0, y: 0, width: 600, height: 30 },
         tabs: [
           { paneId: PANE_TERMINAL, rect: { x: 0, y: 0, width: 100, height: 30 } },
-          { paneId: PANE_OVERVIEW, rect: { x: 100, y: 0, width: 100, height: 30 } },
+          { paneId: PANE_MESS, rect: { x: 100, y: 0, width: 100, height: 30 } },
         ],
       },
     },
@@ -190,16 +190,16 @@ describe('resolveDrop', () => {
   it('resolves nothing when a tab is dropped back into its own slot', () => {
     // No preview and no drop, so the layout is never rewritten for a non-move.
     expect(resolveDrop(PANE_TERMINAL, { x: 10, y: 5 }, surfaces, workspace)).toBeNull();
-    expect(resolveDrop(PANE_OVERVIEW, { x: 180, y: 5 }, surfaces, workspace)).toBeNull();
+    expect(resolveDrop(PANE_MESS, { x: 180, y: 5 }, surfaces, workspace)).toBeNull();
   });
 
   it('ignores a hidden group whose strip measures zero', () => {
     const collapsed: DockDragSurface[] = [{
-      paneId: PANE_OVERVIEW,
+      paneId: PANE_MESS,
       rect: { x: 0, y: 0, width: 0, height: 0 },
       tabStrip: {
         rect: { x: 0, y: 0, width: 0, height: 0 },
-        tabs: [{ paneId: PANE_OVERVIEW, rect: { x: 0, y: 0, width: 0, height: 0 } }],
+        tabs: [{ paneId: PANE_MESS, rect: { x: 0, y: 0, width: 0, height: 0 } }],
       },
     }];
     // Without the guard the collapsed strip would claim the workspace corner as

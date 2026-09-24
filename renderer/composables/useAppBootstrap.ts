@@ -338,6 +338,7 @@ async function initGroupPrefs(): Promise<void> {
         collapsed: prefs.collapsed ?? [],
         bookmarked: prefs.bookmarked ?? [],
         overviewHidden: prefs.overviewHidden ?? [],
+        sessionPreviewMode: prefs.sessionPreviewMode ?? 'on',
       };
     }
   } catch (e) {
