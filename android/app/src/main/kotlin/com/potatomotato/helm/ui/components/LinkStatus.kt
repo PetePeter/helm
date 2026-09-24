@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -161,6 +162,8 @@ fun HelmAppBar(
      * already says it (a session name, "Snapshot") leave this out.
      */
     contextLabel: String? = null,
+    /** One quiet line under the title — the open session's mission. Null draws nothing. */
+    subtitle: String? = null,
     /**
      * The choices the context label can switch between, when the label is a menu
      * rather than a caption. Empty (the default) renders the plain label; the
@@ -245,17 +248,28 @@ fun HelmAppBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
-            Text(
-                text = title,
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.titleLarge,
-                maxLines = 1,
-                // A long session name truncates; wrapping would push the link
-                // badge off the bar, which is the one thing that must always
-                // be visible.
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
+            Column(modifier = Modifier.weight(1f, fill = false)) {
+                Text(
+                    text = title,
+                    color = HelmColors.Txt,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    // A long session name truncates; wrapping would push the link
+                    // badge off the bar, which is the one thing that must always
+                    // be visible.
+                    overflow = TextOverflow.Ellipsis,
+                )
+                // Terminal, not Dim/Faint: the user reads this, it is not chrome.
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        color = HelmColors.Terminal,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             if (contextLabel != null && contextMenuItems.isNotEmpty() && onSelectContextItem != null) {
                 ContextMenu(
                     label = contextLabel,

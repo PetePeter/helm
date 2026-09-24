@@ -39,6 +39,8 @@ data class HelmSession(
      * THAT a plan is claimed, never which one.
      */
     val currentPlanId: String? = null,
+    /** The session's mission TL;DR (desktop caps it at 500 chars); null when unset or blank. */
+    val mission: String? = null,
 ) {
     /**
      * What the group header shows. The full path is the identity — two projects
@@ -85,6 +87,8 @@ object SessionWire {
             // org.json hands back Integer or Long by magnitude; both are the number.
             lastActiveAtEpochMs = (summary.opt("lastActiveAtEpochMs") as? Number)?.toLong(),
             currentPlanId = summary.opt("currentPlanId") as? String,
+            mission = ((summary.opt("mission") as? JSONObject)?.opt("text") as? String)
+                ?.takeIf { it.isNotBlank() },
         )
     }
 

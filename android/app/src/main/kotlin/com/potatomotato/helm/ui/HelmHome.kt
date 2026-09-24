@@ -34,6 +34,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
@@ -235,9 +236,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // whenever the app was started, which put a session_list call between every
     // slice of an attachment transfer — two round trips per slice instead of
     // one. Everything else that matters arrives as a push.
+    //
+    // An OPEN session polls too, slower and never mid-transfer, so its app bar
+    // (the mission line) follows the desktop without taxing a pull's slices.
+    val onList = openSessionId == null && where == Destination.Thread && homeTab == HomeTab.Sessions
+    val transferring = (pulls.values + artifactPulls.values).any { it is PullState.Pulling }
     PollSessions(
         client,
-        active = openSessionId == null && where == Destination.Thread && homeTab == HomeTab.Sessions,
+        active = onList || (openSessionId != null && where == Destination.Thread && !transferring),
+        intervalMs = if (onList) POLL_INTERVAL_MS else OPEN_SESSION_POLL_INTERVAL_MS,
     )
 
     // A notification tap lands in that session's THREAD — or, for an artifact
@@ -1068,6 +1075,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     BackHandler(onBack = toList)
                     SessionTabScaffold(
                         sessionName = open.name,
+                        mission = open.mission,
                         linkState = linkState,
                         tab = tab,
                         onSelectTab = { tab = it },
@@ -1314,6 +1322,7 @@ private fun ExitDialog(onBackground: () -> Unit, onQuit: () -> Unit, onDismiss: 
 @Composable
 private fun SessionTabScaffold(
     sessionName: String,
+    mission: String?,
     linkState: LinkState,
     tab: SessionTab,
     onSelectTab: (SessionTab) -> Unit,
@@ -1322,7 +1331,7 @@ private fun SessionTabScaffold(
     body: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        HelmAppBar(title = sessionName, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
+        HelmAppBar(title = sessionName, subtitle = mission, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
         SessionTabs(selected = tab, onSelect = onSelectTab)
         Box(modifier = Modifier.weight(1f)) { body() }
     }
@@ -1339,22 +1348,22 @@ private fun SessionTabScaffold(
  * round trips per slice instead of one, on a link where a round trip is most of
  * the cost. Nothing else needs it; alerts and chat arrive as pushes.
  *
- * The trade, stated because it is real: an OPEN session's row data stops
- * refreshing while the user is inside it.
+ * An OPEN session polls at a slower [intervalMs] and pauses while an attachment
+ * is being pulled, so its header stays current without taxing a transfer.
  *
  * Keyed on [active], so returning to the list polls immediately rather than
  * waiting out an interval.
  */
 @Composable
-private fun PollSessions(client: HelmClient, active: Boolean) {
+private fun PollSessions(client: HelmClient, active: Boolean, intervalMs: Long) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(lifecycle, active) {
+    LaunchedEffect(lifecycle, active, intervalMs) {
         if (!active) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 client.refreshSessions()
-                delay(POLL_INTERVAL_MS)
+                delay(intervalMs)
             }
         }
     }
@@ -1386,6 +1395,7 @@ private fun ReportVisibility(client: HelmClient) {
 
 /** Half the per-device budget, leaving room for whatever the user is doing. */
 private const val POLL_INTERVAL_MS = 2_000L
+private const val OPEN_SESSION_POLL_INTERVAL_MS = 10_000L
 
 /**
  * How long a confirmed spawn waits for its session to show in the list before

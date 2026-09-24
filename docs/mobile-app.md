@@ -83,6 +83,10 @@ removes.
   and **Artifacts**. They are places, not actions, which is why they are tabs and
   not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so
   switching tabs swaps only the body. A freshly opened session starts on Chat.
+  Under the session name the bar shows the session's **mission** (`session_list`
+  `mission.text`) on one ellipsized line in `HelmColors.Terminal`; no mission, no
+  line. It refreshes with the session list, which an open session polls every 10 s
+  (paused while an attachment is being pulled).
 - **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
   Bubbles cap at three quarters of the width, and the URLs in them are tappable
   (see **Links** below). The composer's mic is **push-to-talk**: hold it and the

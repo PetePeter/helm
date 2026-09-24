@@ -115,6 +115,20 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `the mission text is read, and absent or blank means no mission`() {
+        fun parse(mission: Any?) = SessionWire.parseList(
+            listOf(
+                JSONObject(mapOf("id" to "s1")).apply { if (mission != null) put("mission", mission) },
+            ).toJsonArray(),
+        )!!.single().mission
+
+        assertEquals("Ship P-0816", parse(JSONObject(mapOf("text" to "Ship P-0816", "setBy" to "ai"))))
+        assertNull(parse(null))
+        assertNull(parse(JSONObject(mapOf("text" to "   "))))
+        assertNull(parse("not an object"))
+    }
+
+    @Test
     fun `a snapshot that changes one session leaves every other instance untouched`() {
         val repository = SessionRepository()
         repository.applySnapshot(SessionWire.parseList(listOf(summary("s1"), summary("s2")).toJsonArray())!!)
