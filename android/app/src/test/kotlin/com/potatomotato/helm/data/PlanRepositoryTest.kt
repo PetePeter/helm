@@ -41,6 +41,10 @@ class PlanRepositoryTest {
         // The lane rides the summary because the board has no other source for
         // it — the full records are the very thing it must not ask for.
         assertEquals("seq1", ready.plans.first().sequenceId)
+        // The claim: who is working it, by name, so the row can say so.
+        assertEquals("s3", ready.plans.first().sessionId)
+        assertEquals("helm-claude", ready.plans.first().sessionName)
+        assertEquals(null, ready.plans[1].sessionId)
     }
 
     @Test
@@ -288,6 +292,7 @@ class PlanRepositoryTest {
     private fun listJson(): String =
         """[{"id":"p1","humanId":"P-0007","title":"Wire the board","type":"feature",""" +
             """"status":"coding","stateUpdatedAt":1700,"sequenceId":"seq1",""" +
+            """"sessionId":"s3","sessionName":"helm-claude",""" +
             """"blockedBy":["P-0006"],"blocks":["P-0008"]},""" +
             """{"id":"p2","humanId":"P-0008","title":"Ship it","status":"planning",""" +
             """"blockedBy":["P-0007"],"blocks":[]}]"""

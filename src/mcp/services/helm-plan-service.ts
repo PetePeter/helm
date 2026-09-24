@@ -9,6 +9,14 @@ import type { ContextManager } from '../../session/context-manager.js';
 import type { SequenceContextMetadata } from '../../types/context.js';
 import { filterPlanItems, type PlanFilter, type PlanItem, type PlanStatus, type PlanType } from '../../types/plan.js';
 
+function claimOf(
+  sessionId: string,
+  sessionNameOf: (sessionId: string) => string | undefined,
+): { sessionId: string; sessionName?: string } {
+  const sessionName = sessionNameOf(sessionId);
+  return sessionName ? { sessionId, sessionName } : { sessionId };
+}
+
 /**
  * Plan CRUD: create, read, update, delete, complete, reopen, state changes,
  * dependency linking/unlinking, and directory/item export.
@@ -28,7 +36,16 @@ export class HelmPlanService {
     return filterPlanItems(exported.items, exported.dependencies, filter);
   }
 
-  plansSummary(dirPath: string, filter: PlanFilter = 'active') {
+  /**
+   * [sessionNameOf] resolves a claiming session's display name. It is a
+   * callback so this service stays free of the session registry; a claim whose
+   * session is gone keeps its id and simply has no name.
+   */
+  plansSummary(
+    dirPath: string,
+    filter: PlanFilter = 'active',
+    sessionNameOf: (sessionId: string) => string | undefined = () => undefined,
+  ) {
     const exported = this.planManager.exportDirectory(normalizeProjectPath(dirPath));
     if (!exported) return [];
     const dependencies = exported.dependencies;
@@ -48,6 +65,9 @@ export class HelmPlanService {
       // no sequence. Nothing else joins this payload: keeping descriptions out
       // is the point of it.
       sequenceId: item.sequenceId,
+      // Who is working it, so the phone board can show a claim at a glance.
+      // Only the name rides along, never the session record.
+      ...(item.sessionId ? claimOf(item.sessionId, sessionNameOf) : {}),
       blockedBy: dependencies
         .filter((d) => d.toId === item.id)
         .map((d) => idToHumanId.get(d.fromId) ?? d.fromId),

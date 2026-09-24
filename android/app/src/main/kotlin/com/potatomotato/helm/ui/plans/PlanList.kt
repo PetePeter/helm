@@ -265,6 +265,17 @@ private fun PlanRow(plan: HelmPlanSummary, blocked: Boolean, onClick: () -> Unit
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
+                // Who is on it. Once a plan is done, the claim no longer matters.
+                if (plan.sessionId != null && plan.status != PlanStatus.Done) {
+                    Text(
+                        text = plan.sessionName ?: stringResource(R.string.plans_claimed),
+                        color = HelmColors.State.Active,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
                 Spacer(modifier = Modifier.weight(1f))
                 CopyGlyphButton(text = HelmReferences.plan(plan))
                 // Its own target, beside copy: spawning is not opening the plan.

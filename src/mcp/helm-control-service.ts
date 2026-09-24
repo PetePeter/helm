@@ -962,7 +962,7 @@ export class HelmControlService extends EventEmitter {
   }
 
   plansSummary(dirPath: string, filter: PlanFilter = 'active') {
-    return this.planService.plansSummary(dirPath, filter);
+    return this.planService.plansSummary(dirPath, filter, (id) => this.sessionManager.getSession(id)?.name);
   }
 
   getPlan(id: string): (Omit<PlanItem, 'sequenceId'> & {

@@ -51,6 +51,9 @@ enum class PlanStatus(val wire: String) {
  * one waits on, and the plans waiting on it — resolved against the full item set
  * rather than the filtered one, so an edge still names its far end even when the
  * filter excluded it. Startability is read off them; see `PlanStartability`.
+ *
+ * [sessionId] is the session that claimed the plan, and [sessionName] is that
+ * session's display name. The name is absent when the session has gone.
  */
 data class HelmPlanSummary(
     val id: String,
@@ -62,6 +65,8 @@ data class HelmPlanSummary(
     val sequenceId: String?,
     val blockedBy: List<String>,
     val blocks: List<String>,
+    val sessionId: String? = null,
+    val sessionName: String? = null,
 )
 
 /**
@@ -367,6 +372,8 @@ class PlanRepository {
             sequenceId = entry.opt("sequenceId") as? String,
             blockedBy = parseIds(entry.optJSONArray("blockedBy")),
             blocks = parseIds(entry.optJSONArray("blocks")),
+            sessionId = entry.opt("sessionId") as? String,
+            sessionName = entry.opt("sessionName") as? String,
         )
     }
 

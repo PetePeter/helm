@@ -165,6 +165,27 @@ describe('HelmPlanService plan listing filters', () => {
     expect(summary.find(s => s.id === loose.id)!.sequenceId).toBeUndefined();
   });
 
+  it('plansSummary names the session working a claimed plan', () => {
+    const claimed = pm.create(dir, 'Claimed', 'desc');
+    const loose = pm.create(dir, 'Loose', 'desc');
+    pm.claimPlan(claimed.id, 's-1');
+
+    const summary = service.plansSummary(dir, 'active', id => (id === 's-1' ? 'worker' : undefined));
+    const row = summary.find(s => s.id === claimed.id)!;
+    expect(row.sessionId).toBe('s-1');
+    expect(row.sessionName).toBe('worker');
+    expect(summary.find(s => s.id === loose.id)).not.toHaveProperty('sessionId');
+  });
+
+  it('plansSummary keeps the claim but drops the name of a session that is gone', () => {
+    const claimed = pm.create(dir, 'Claimed', 'desc');
+    pm.claimPlan(claimed.id, 's-gone');
+
+    const row = service.plansSummary(dir, 'active', () => undefined).find(s => s.id === claimed.id)!;
+    expect(row.sessionId).toBe('s-gone');
+    expect(row).not.toHaveProperty('sessionName');
+  });
+
   it('plansSummary never carries a description, which is the point of it', () => {
     pm.create(dir, 'First', 'a very long description that must not ride the wire');
 
