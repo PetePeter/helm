@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -21,6 +22,7 @@ import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
 import com.potatomotato.helm.data.PlanStatus
 import com.potatomotato.helm.ui.HelmReferences
+import com.potatomotato.helm.ui.components.CopyGlyphButton
 import com.potatomotato.helm.ui.components.GlyphButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmRow
@@ -186,9 +188,14 @@ private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Un
     HelmRow(
         title = plan.title,
         onClick = onClick,
-        copy = HelmReferences.plan(plan),
+        // The row's actions ride on line 2, not the right edge: on a phone the
+        // right edge is where the title needs its width.
         subtitle = {
-            Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
                 // A plan with no P-00xx name yet shows none: the human id is
                 // the desktop's to mint, and inventing one here would put a
                 // label on screen no other surface would agree with.
@@ -206,19 +213,19 @@ private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Un
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
-            }
-        },
-        trailing = {
-            // Its own target, beside copy: spawning is not opening the plan.
-            GlyphButton(
-                glyph = stringResource(R.string.plans_spawn_glyph),
-                description = stringResource(R.string.plans_spawn_description),
-                onClick = onSpawn,
-            )
-            // Ready says nothing the subtitle's startability line does not
-            // already say; every other status still earns its pill.
-            if (plan.status != PlanStatus.Ready) {
-                Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+                // Ready says nothing the startability marker does not already
+                // say; every other status still earns its pill.
+                if (plan.status != PlanStatus.Ready) {
+                    Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                CopyGlyphButton(text = HelmReferences.plan(plan))
+                // Its own target, beside copy: spawning is not opening the plan.
+                GlyphButton(
+                    glyph = stringResource(R.string.plans_spawn_glyph),
+                    description = stringResource(R.string.plans_spawn_description),
+                    onClick = onSpawn,
+                )
             }
         },
     )
