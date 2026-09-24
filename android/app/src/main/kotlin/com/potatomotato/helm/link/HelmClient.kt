@@ -221,6 +221,7 @@ class HelmClient(
                         "the list held ${sessions.sessions.value.size} before the merge",
                 )
                 sessions.applySnapshot(parsed)
+                chats.retainSessions(parsed.mapTo(HashSet()) { it.id })
                 HelmLog.i(HelmLog.CLIENT, "the list holds ${sessions.sessions.value.size} after the merge")
             } finally {
                 // A queued poll is reconciliation, not a retry of only success.

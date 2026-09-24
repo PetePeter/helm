@@ -7,6 +7,7 @@ import com.potatomotato.helm.ble.RANK_BLE
 import com.potatomotato.helm.lan.AndroidNetworkWatcher
 import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
+import com.potatomotato.helm.data.FileChatStore
 import com.potatomotato.helm.data.LanAddressStore
 import com.potatomotato.helm.data.PrefsTransportPreferenceStore
 import com.potatomotato.helm.data.TransportPreferences
@@ -102,6 +103,9 @@ object HelmPairing {
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.
         client.chats.useUnreadStore(PrefsUnreadStore(context))
+        // The threads and their catch-up cursor, restored before the link comes
+        // up so the first link-up report asks Helm for only the gap.
+        client.chats.useChatStore(FileChatStore(File(context.filesDir, CHAT_STORE_FILE)))
         // The machineId the desktop prefixes onto an echoed reply's originId —
         // without it this phone cannot recognise its own words in a replay.
         client.machineId = PhoneIdentity.machineId(context)
@@ -307,4 +311,5 @@ object HelmPairing {
 
     /** Alongside the log, under the app's own files — never shared storage. */
     private const val NOTIFY_DIRECTORY = "notify"
+    private const val CHAT_STORE_FILE = "chat-threads.json"
 }

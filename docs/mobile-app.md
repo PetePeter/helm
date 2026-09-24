@@ -88,6 +88,9 @@ removes.
   line. It refreshes with the session list, which an open session polls every 10 s
   (paused while an attachment is being pulled).
 - **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
+  Threads survive an app restart (saved with their catch-up cursor; a send still
+  `Sending` when the app died comes back `Failed`), so only newer messages are
+  fetched — see [chat-fan-out.md](chat-fan-out.md).
   Bubbles cap at three quarters of the width, and the URLs in them are tappable
   (see **Links** below). The composer's mic is **push-to-talk**: hold it and the
   recogniser's partials land in the draft at the caret, each guess replacing the

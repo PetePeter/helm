@@ -6,11 +6,10 @@ import org.junit.Test
 
 /**
  * The catch-up cursor: what advances it, what dedupes against it, what it must
- * never do to a record that carries no seq — and the cold-start rule that drove
- * the design: the cursor lives in memory, so an app restart is a cursor at zero
- * and a FULL journal refetch. Persisting the cursor was the bug it fixes — a
- * persisted cursor told Helm "seen through seq N" about a process that held
- * nothing, and the restart never refilled.
+ * never do to a record that carries no seq — and the cold-start rule: a
+ * repository with no saved snapshot is a cursor at zero and a FULL journal
+ * refetch. (A cursor persisted WITHOUT its threads was once the bug here; it
+ * now persists only beside them — see ChatStoreTest.)
  *
  * The race pinned down here: a live fan-out record can cross the wire while
  * this phone's cursor request is still in flight, so the cursor JUMPS OVER the

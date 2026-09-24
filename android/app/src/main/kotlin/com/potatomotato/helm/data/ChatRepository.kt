@@ -46,9 +46,9 @@ data class ChatMessage(
 /**
  * ChatRepository — the per-session threads behind mockup screen 2.
  *
- * Threads are kept in memory ONLY. A durable phone-side history is a different
- * feature with its own storage and retention questions; what this holds is what
- * has arrived since the app started, which is what the screen shows.
+ * Threads persist through a [ChatStore], capped at [MAX_THREAD] rows each, so
+ * a reopened app shows its chats at once instead of an empty screen waiting on
+ * the replay.
  *
  * Messages are kept in ARRIVAL order, never sorted by `at`: outgoing messages
  * are stamped by the phone clock and incoming ones by the desktop clock, and
@@ -63,16 +63,21 @@ data class ChatMessage(
  * leave the conversation reading with exactly the hole the replay exists to
  * close.
  *
- * The threads are the one thing here that does NOT persist. The unread count
- * ([UnreadStore]) does, but the catch-up cursor deliberately does NOT: a cursor
- * that survives a restart describes history the restarted process no longer
- * holds, and the link-up report of it would talk Helm out of the very replay
- * the restart needs. So the cursor lives in memory beside the threads it
- * counts — an empty repository reports zero, and a cold start refetches the
- * whole 24h journal, which is the requirement.
+ * The catch-up cursor persists TOGETHER with the threads, as one snapshot. A
+ * cursor saved on its own would describe history the restarted process no
+ * longer holds, and the link-up report of it would talk Helm out of the very
+ * replay the restart needs. Saved with its threads, it only ever claims what
+ * the restart gets back — so Helm replays just the gap. No snapshot (a fresh
+ * install, wiped data, an unreadable file) reports zero and refetches the
+ * whole 24h journal.
+ *
+ * Mutators are @Synchronized: records arrive on the link's collector while
+ * sends and edits come from the UI thread, and each change is a
+ * read-modify-write of the threads plus a snapshot of them for the store.
  */
 class ChatRepository(
     private var unread: UnreadStore = MemoryUnreadStore(),
+    private var store: ChatStore = MemoryChatStore(),
 ) {
     private val _threads = MutableStateFlow<Map<String, List<ChatMessage>>>(emptyMap())
     val threads: StateFlow<Map<String, List<ChatMessage>>> = _threads.asStateFlow()
@@ -84,10 +89,7 @@ class ChatRepository(
 
     private var sequence = 0L
 
-    /**
-     * The catch-up cursor: the highest seq this process has actually held. Not
-     * persisted — an app restart must report zero so the journal replays.
-     */
+    /** The catch-up cursor: the highest seq held, saved only beside its threads. */
     private var lastSeqValue = 0L
 
     /** The session whose thread is on screen, when there is one. */
@@ -106,10 +108,40 @@ class ChatRepository(
     }
 
     /**
+     * Attach the persistent chat store and adopt its snapshot — late, like
+     * [useUnreadStore], and before the link comes up so the link-up report
+     * already carries the saved cursor. A repository that has already received
+     * something keeps what it holds rather than mixing two histories.
+     */
+    @Synchronized
+    fun useChatStore(chatStore: ChatStore) {
+        store = chatStore
+        if (lastSeqValue != 0L || _threads.value.isNotEmpty()) return
+        val saved = chatStore.load() ?: return
+        lastSeqValue = saved.lastSeq
+        saved.sentIds.forEach { sentIds[it] = Unit }
+        _threads.value = saved.threads.mapValues { (_, thread) ->
+            thread.takeLast(MAX_THREAD).map { row ->
+                // A send that never settled before the process died never will.
+                val delivery = if (row.delivery == Delivery.Sending) Delivery.Failed else row.delivery
+                row.copy(key = nextKey(), delivery = delivery)
+            }
+        }
+    }
+
+    /**
+     * Drop the threads of sessions the desktop no longer lists — called on every
+     * session-list sync, so the saved file cannot collect the dead.
+     */
+    @Synchronized
+    fun retainSessions(liveIds: Set<String>) {
+        if (_threads.value.keys.all { it in liveIds }) return
+        setThreads(_threads.value.filterKeys { it in liveIds })
+    }
+
+    /**
      * The seq of the last chat message held — what the desktop replays after.
-     * In memory, on purpose: see the class doc. A populated repository reports
-     * its real position on reconnect; an empty one reports zero and gets the
-     * full journal.
+     * Survives a restart with the threads it counts; see the class doc.
      */
     fun lastSeq(): Long = lastSeqValue
 
@@ -124,9 +156,11 @@ class ChatRepository(
      * first, which is safe — an echo older than the set predates every message
      * the cursor would replay anyway.
      */
+    @Synchronized
     fun sent(originId: String) {
         sentIds[originId] = Unit
         while (sentIds.size > MAX_SENT_IDS) sentIds.remove(sentIds.keys.first())
+        persist()
     }
 
     private val sentIds = linkedMapOf<String, Unit>()
@@ -136,12 +170,14 @@ class ChatRepository(
      * arriving at a thread IS reading it, backlog included. Null when the user
      * is back on the list, so nothing reads as "being read" from there.
      */
+    @Synchronized
     fun reading(sessionId: String?) {
         readingSessionId = sessionId
         if (sessionId != null) markRead(sessionId)
     }
 
     /** A thread the user has seen stops counting, whatever it got up to. */
+    @Synchronized
     fun markRead(sessionId: String) = setUnread(sessionId, 0)
 
     /**
@@ -155,6 +191,7 @@ class ChatRepository(
      * the app restarts, so a record flagged `replay` below the cursor is
      * FILLED into its thread instead — deduped by seq, cursor untouched.
      */
+    @Synchronized
     fun receive(record: MobileRecord.Chat) {
         val seq = record.seq
         if (seq != null && seq <= lastSeqValue) {
@@ -181,7 +218,12 @@ class ChatRepository(
         // and a cursor that refused it would ask for it again on every link up.
         // The optimistic copy the user watched leave is still on screen — one
         // row, as typed, not two.
-        if (isOwnEcho(record)) return
+        // The cursor is saved WITH the row it counts (append persists), never
+        // ahead of it — a cursor-only snapshot on disk would skip that row.
+        if (isOwnEcho(record)) {
+            persist()
+            return
+        }
         append(record.sessionId, message(record))
         countUnread(record)
     }
@@ -208,7 +250,7 @@ class ChatRepository(
         val at = thread.indexOfFirst { it.seq != null && it.seq > seq }
         val next = if (at < 0) thread + message(record)
         else thread.subList(0, at) + message(record) + thread.subList(at, thread.size)
-        _threads.value = _threads.value + (record.sessionId to next.takeLast(MAX_THREAD))
+        setThreads(_threads.value + (record.sessionId to next.takeLast(MAX_THREAD)))
     }
 
     /** The row a journal record becomes, seq riding along as the dedupe key. */
@@ -244,6 +286,7 @@ class ChatRepository(
      * `session_send_text` call comes back. Optimistic on purpose: a reply that
      * only appears after a BLE round trip reads as a dropped keystroke.
      */
+    @Synchronized
     fun sending(sessionId: String, text: String, at: Long): String {
         val key = nextKey()
         append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending))
@@ -251,6 +294,7 @@ class ChatRepository(
     }
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */
+    @Synchronized
     fun settle(sessionId: String, key: String, delivered: Boolean) {
         val thread = _threads.value[sessionId] ?: return
         val settled = thread.map { message ->
@@ -260,7 +304,7 @@ class ChatRepository(
                 message
             }
         }
-        _threads.value = _threads.value + (sessionId to settled)
+        setThreads(_threads.value + (sessionId to settled))
     }
 
     /**
@@ -269,9 +313,10 @@ class ChatRepository(
      * An unknown key or an absent thread is a no-op, and a no-op must not
      * invent the thread it was asked about.
      */
+    @Synchronized
     fun remove(sessionId: String, key: String) {
         val thread = _threads.value[sessionId] ?: return
-        _threads.value = _threads.value + (sessionId to thread.filterNot { it.key == key })
+        setThreads(_threads.value + (sessionId to thread.filterNot { it.key == key }))
     }
 
     /**
@@ -281,6 +326,7 @@ class ChatRepository(
      * one. Returns the new key for the caller to settle; null when there is
      * nothing failed to retry.
      */
+    @Synchronized
     fun retry(sessionId: String, key: String, at: Long): String? {
         val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
         if (failed.delivery != Delivery.Failed) return null
@@ -344,8 +390,16 @@ class ChatRepository(
 
     private fun append(sessionId: String, message: ChatMessage) {
         val thread = (_threads.value[sessionId].orEmpty() + message).takeLast(MAX_THREAD)
-        _threads.value = _threads.value + (sessionId to thread)
+        setThreads(_threads.value + (sessionId to thread))
     }
+
+    /** Every thread change goes through here, so the saved file never lags the screen. */
+    private fun setThreads(next: Map<String, List<ChatMessage>>) {
+        _threads.value = next
+        persist()
+    }
+
+    private fun persist() = store.save(ChatSnapshot(_threads.value, lastSeqValue, sentIds.keys.toList()))
 
     /** One write, to the flow the screens read and the store the app restarts from. */
     private fun setUnread(sessionId: String, count: Int) {

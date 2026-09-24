@@ -148,12 +148,12 @@ Empty) or closed without ever being recoverable — with a hard 100,000-entry
 ceiling as the only runaway guard.
 
 Each phone keeps just its own cursor — the seq of the last message it holds,
-in memory beside the threads it counts. On every link up the phone reports it
+saved beside the threads it counts. On every link up the phone reports it
 via a second reserved in-gate meta-method, `__chat_cursor__` (the
 `__mobile_tools__` precedent: answered in the gate, never dispatched, so a
 disabled device cannot pull the journal), and Helm streams everything after
 that seq over the same link, oldest first. The phone reports the cursor on its
-link-up hook AND from its 2-second session poll whenever the current link has
+link-up hook AND from its session poll whenever the current link has
 not heard it — a relink that comes up without the hook firing (observed after a
 failed handshake retry) still catches up within one poll instead of leaving the
 threads empty for the process lifetime. One global sequence means the hub
@@ -171,13 +171,24 @@ over BLE can outrun a link that drops mid-stream, and the desktop, having
 answered once, never sends the rest; saying the cursor again on a later poll
 heals that hole without waiting for a reconnect.
 
-The cursor is deliberately NOT persisted. An app restart wipes the threads, so
-a persisted cursor would describe history the restarted process no longer holds
-and the link-up report would talk Helm out of the very replay a cold start
-needs — the thread would come back empty. Instead a fresh process reports zero,
-Helm replays the whole journal, and the refilled threads are why delivered
-messages survive the restart. A mid-process reconnect (out of Bluetooth range
-and back) reports the real position, so only the gap is re-sent.
+The cursor persists ONLY together with the threads: `ChatStore` writes one
+snapshot (threads capped at 200 rows each, cursor, recent own-echo ids) to
+`chat-threads.json` in app-private storage, atomically and coalesced. A cursor
+saved alone would describe history the restarted process no longer holds and
+talk Helm out of the replay it needs; saved with its threads it only claims
+what the restart gets back, so a restart shows the chats at once and Helm
+replays just the gap. No file (fresh install, wiped data) or an unreadable one
+is a cold start: cursor zero, full journal. Threads of sessions the desktop no
+longer lists are pruned on each session-list sync.
+
+```mermaid
+graph LR
+    A[App start] --> B{chat-threads.json?}
+    B -- yes --> C[Restore threads + cursor N]
+    B -- no / corrupt --> D[Cursor 0]
+    C --> E[__chat_cursor__ N → gap replay]
+    D --> F[__chat_cursor__ 0 → full journal]
+```
 
 Two deliberate edges:
 
