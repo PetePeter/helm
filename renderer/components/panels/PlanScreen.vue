@@ -8,7 +8,8 @@ import type { LayoutResult } from '../../plans/plan-layout.js';
 import type { TriState } from '../../plans/plan-screen.js';
 import PanelHeader from '../common/PanelHeader.vue';
 import FilterChip from '../common/FilterChip.vue';
-import SplitAddButton from '../buttons/SplitAddButton.vue';
+import SplitActionButton from '../buttons/SplitActionButton.vue';
+import type { PlanCleanupKind } from '../../plans/plan-screen.js';
 import SequencePanel from './SequencePanel.vue';
 import { isEditableElement } from '../../input/input-ownership.js';
 import { getPlanStatusColor } from '../../state-colors.js';
@@ -74,7 +75,7 @@ const emit = defineEmits<{
   addContext: [];
   exportDir: [];
   openPlanExternal: [];
-  clearDone: [];
+  cleanup: [kind: PlanCleanupKind];
   popOut: [];
   createSequence: [title: string, missionStatement: string, sharedMemory: string];
   assignSequence: [planId: string, sequenceId: string | null];
@@ -596,6 +597,18 @@ function unlinkFromSequence(id: string, e: MouseEvent): void {
   emit('assignSequence', id, null);
 }
 
+const ADD_ITEMS = [
+  { value: 'plan', label: 'Add Plan' },
+  { value: 'context', label: 'Add Context' },
+  { value: 'sequence', label: 'Add Sequence' },
+] as const satisfies readonly { value: string; label: string }[];
+
+const CLEANUP_ITEMS = [
+  { value: 'done', label: 'Clear done plans', detail: 'Completed plan items only' },
+  { value: 'sequences', label: 'Clear empty sequences', detail: 'Sequences with no member plans' },
+  { value: 'contexts', label: 'Clear unreferenced contexts', detail: 'Contexts with no plan or sequence bindings' },
+] as const satisfies readonly { value: PlanCleanupKind; label: string; detail: string }[];
+
 function handleAddSelection(value: 'plan' | 'context' | 'sequence'): void {
   if (value === 'plan') emit('addNode');
   else if (value === 'context') emit('addContext');
@@ -661,7 +674,7 @@ onUnmounted(() => {
       <template #actions>
         <div class="plan-header__controls">
           <button class="plan-header__btn" @click="emit('close')">← Back</button>
-          <SplitAddButton @primary="emit('addNode')" @select="handleAddSelection" />
+          <SplitActionButton label="+ Add" :items="[...ADD_ITEMS]" @primary="emit('addNode')" @select="handleAddSelection" />
           <button
             class="plan-header__btn plan-header__btn--secondary"
             :disabled="!selectedId && !relatedFocusActive"
@@ -676,7 +689,14 @@ onUnmounted(() => {
           >↗ Pop Out</button>
           <button class="plan-header__btn plan-header__btn--secondary" @click="emit('openPlanExternal')" title="Open selected plan as Markdown (read-only)">📄 Open Plan</button>
           <button class="plan-header__btn plan-header__btn--secondary" @click="emit('exportDir')">⬆ Export Dir</button>
-          <button class="plan-header__btn plan-header__btn--secondary" @click="emit('clearDone')">🧹 Clear Done</button>
+          <SplitActionButton
+            class="plan-header__cleanup"
+            label="Clear unused"
+            title="Clear empty sequences, then contexts with no plan or sequence"
+            :items="[...CLEANUP_ITEMS]"
+            @primary="emit('cleanup', 'unused')"
+            @select="emit('cleanup', $event)"
+          />
           <span v-if="notice" class="plan-notice plan-notice--visible">{{ notice }}</span>
         </div>
       </template>

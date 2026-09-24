@@ -326,12 +326,12 @@ describe('PlanDeleteConfirmModal.vue', () => {
 });
 
 // ============================================================================
-// ClearDonePlansModal
+// BulkCleanupModal
 // ============================================================================
 
-import ClearDonePlansModal from '../../../renderer/components/modals/ClearDonePlansModal.vue';
+import BulkCleanupModal from '../../../renderer/components/modals/BulkCleanupModal.vue';
 
-describe('ClearDonePlansModal.vue', () => {
+describe('BulkCleanupModal.vue', () => {
   let modalStack: ReturnType<typeof useModalStack>;
 
   beforeEach(() => {
@@ -339,9 +339,9 @@ describe('ClearDonePlansModal.vue', () => {
     modalStack.clear();
   });
 
-  function factory(props: Partial<InstanceType<typeof ClearDonePlansModal>['$props']> = {}) {
-    return mount(ClearDonePlansModal, {
-      props: { visible: true, count: 3, dirName: 'my-project', ...props },
+  function factory(props: Partial<InstanceType<typeof BulkCleanupModal>['$props']> = {}) {
+    return mount(BulkCleanupModal, {
+      props: { visible: true, title: 'Clear Completed Plans', lines: [{ count: 3, noun: 'completed plan' }], dirName: 'my-project', ...props },
       attachTo: document.body,
       global: { stubs: GLOBAL_STUBS },
     });
@@ -354,10 +354,15 @@ describe('ClearDonePlansModal.vue', () => {
     w.unmount();
   });
 
-  it('renders count and dirName in body text', () => {
-    const w = factory({ count: 5, dirName: 'backend' });
-    expect(w.text()).toContain('5');
+  it('renders every count, pluralized, with the dirName', () => {
+    const w = factory({
+      dirName: 'backend',
+      lines: [{ count: 1, noun: 'empty sequence' }, { count: 5, noun: 'unreferenced context' }],
+    });
     expect(w.text()).toContain('backend');
+    expect(w.text()).toContain('1 empty sequence');
+    expect(w.text()).not.toContain('1 empty sequences');
+    expect(w.text()).toContain('5 unreferenced contexts');
     w.unmount();
   });
 
@@ -369,9 +374,9 @@ describe('ClearDonePlansModal.vue', () => {
 
   it('pushes/pops modal stack', async () => {
     const w = factory();
-    expect(modalStack.has('clear-done-plans-confirm')).toBe(true);
+    expect(modalStack.has('bulk-cleanup-confirm')).toBe(true);
     await w.setProps({ visible: false });
-    expect(modalStack.has('clear-done-plans-confirm')).toBe(false);
+    expect(modalStack.has('bulk-cleanup-confirm')).toBe(false);
     w.unmount();
   });
 
@@ -432,12 +437,6 @@ describe('ClearDonePlansModal.vue', () => {
     w.unmount();
   });
 
-  it('renders singular "plan" when count is 1', () => {
-    const w = factory({ count: 1 });
-    expect(w.text()).toContain('1');
-    expect(w.text()).not.toContain('plans');
-    w.unmount();
-  });
 });
 
 // ============================================================================

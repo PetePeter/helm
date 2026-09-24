@@ -770,6 +770,12 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Delete all completed (done) plan items for a directory */
   planClearCompleted: (dirPath: string): Promise<number> =>
     ipcRenderer.invoke('plan:clearCompleted', dirPath),
+  planCleanupCounts: (dirPath: string): Promise<{ donePlans: number; emptySequences: number; unreferencedContexts: number; unusedContexts: number }> =>
+    ipcRenderer.invoke('plan:cleanup-counts', dirPath),
+  planClearEmptySequences: (dirPath: string): Promise<number> =>
+    ipcRenderer.invoke('plan:clear-empty-sequences', dirPath),
+  planClearUnreferencedContexts: (dirPath: string): Promise<number> =>
+    ipcRenderer.invoke('plan:clear-unreferenced-contexts', dirPath),
 
   /** Add a dependency edge (fromId must finish before toId can start) */
   planAddDep: (fromId: string, toId: string) =>

@@ -148,7 +148,7 @@ Emits `plan:changed` with `dirPath` on every mutation. PlanManager self-saves to
 
 ## IPC Channels
 
-12 IPC channels registered in `src/electron/ipc/plan-handlers.ts`:
+Core IPC channels registered in `src/electron/ipc/plan-handlers.ts`:
 
 | Channel | Direction | Purpose |
 |---------|-----------|---------|
@@ -164,6 +164,10 @@ Emits `plan:changed` with `dirPath` on every mutation. PlanManager self-saves to
 | `plan:doingForSession` | invoke | Legacy IPC name for coding/review items owned by a session |
 | `plan:deps` | invoke | Get dependencies for a directory |
 | `plan:getItem` | invoke | Get a single item by ID |
+| `plan:clearCompleted` | invoke | Delete the directory's done plans |
+| `plan:cleanup-counts` | invoke | Preview counts for the bulk cleanups below |
+| `plan:clear-empty-sequences` | invoke | Delete the project's sequences with no member plans |
+| `plan:clear-unreferenced-contexts` | invoke | Delete the project's contexts with no plan or sequence binding |
 
 All channels exposed via `contextBridge` in `preload.ts` as `window.gamepadCli.plan*` methods.
 
@@ -214,6 +218,20 @@ interface LayoutResult {
 
 - **Entry:** 🗺️ Plans button on group headers (column 1, click only — D-pad Right at col 0 opens the group overview)
 - **Exit:** B button (gamepad) or ← Back button in plan header
+
+### Bulk Cleanup
+
+The header's **Clear unused** split button deletes stale records in the current project, always behind a confirmation that lists what will go:
+
+- **Primary — Clear unused:** empty sequences first, then unreferenced contexts. Order matters: deleting a sequence releases its context bindings, so a context bound only to empty sequences is counted and cleared in the same pass.
+- **▾ menu:** *Clear done plans*, *Clear empty sequences*, *Clear unreferenced contexts* — each on its own.
+
+```mermaid
+flowchart LR
+    A[Clear unused] --> B[plan:cleanup-counts] --> C{anything?}
+    C -- no --> N[Nothing to clear notice]
+    C -- yes --> D[BulkCleanupModal] -- Clear --> E[clear-empty-sequences] --> F[clear-unreferenced-contexts] --> G[refresh canvas]
+```
 
 ### Canvas Features
 

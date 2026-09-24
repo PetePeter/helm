@@ -235,6 +235,22 @@ describe('PlanManager', () => {
       expect(assigned?.sequenceId).toBe(sequence.id);
     });
 
+    it('deletes only the empty sequences of the directory', () => {
+      const item = pm.create('/d', 'Step', 'Do it');
+      const used = pm.createSequence('/d', 'Used');
+      pm.assignSequence(item.id, used.id);
+      const empty = pm.createSequence('/d', 'Empty');
+      const elsewhere = pm.createSequence('/other', 'Elsewhere');
+
+      expect(pm.getEmptySequencesForDirectory('/d').map((s) => s.id)).toEqual([empty.id]);
+      expect(pm.deleteEmptySequencesForDirectory('/d').map((s) => s.id)).toEqual([empty.id]);
+
+      expect(pm.getSequence(empty.id)).toBeNull();
+      expect(pm.getSequence(used.id)).not.toBeNull();
+      expect(pm.getSequence(elsewhere.id)).not.toBeNull();
+      expect(pm.getItem(item.id)?.sequenceId).toBe(used.id);
+    });
+
     it('exports directory sequences with member plans', () => {
       const item = pm.create('/d', 'Step', 'Do it');
       const sequence = pm.createSequence('/d', 'Mission');

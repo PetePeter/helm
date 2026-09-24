@@ -1201,7 +1201,7 @@ describe('PlanScreen', () => {
 
   it('emits addNode on + Add button click', async () => {
     const w = mount(PlanScreen, { props: baseProps });
-    await w.find('.split-add__primary').trigger('click');
+    await w.find('.split-action__primary').trigger('click');
     expect(w.emitted('addNode')).toHaveLength(1);
   });
 

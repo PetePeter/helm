@@ -93,7 +93,7 @@ vi.mock('../renderer/plans/plan-screen.js', () => ({
   handlePlanScreenAction: vi.fn(() => false),
   onPlanAddDependency: vi.fn(),
   onPlanAddNode: vi.fn(),
-  onPlanClearDone: vi.fn(),
+  onPlanCleanup: vi.fn(),
   onPlanExportDirectory: vi.fn(),
   onPlanNodeApply: vi.fn(),
   onPlanNodeClick: vi.fn(),

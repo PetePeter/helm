@@ -27,6 +27,9 @@ const mockPlanOpenExternal = vi.fn();
 const mockPlanWriteFile = vi.fn();
 const mockPlanReadFile = vi.fn();
 const mockPlanClearCompleted = vi.fn();
+const mockPlanCleanupCounts = vi.fn();
+const mockPlanClearEmptySequences = vi.fn();
+const mockPlanClearUnreferencedContexts = vi.fn();
 const mockPlanContextList = vi.fn();
 const mockPlanContextCreate = vi.fn();
 const mockPlanContextUpdate = vi.fn();
@@ -44,8 +47,8 @@ const mockShowPlanHelpModal = vi.fn();
 const mockHidePlanHelpModal = vi.fn();
 const mockIsPlanHelpVisible = vi.fn(() => false);
 const mockComputeLayout = vi.fn();
-const clearDonePlans = { count: 0, dirName: '', visible: false };
-let clearDoneCallback: (() => Promise<void>) | null = null;
+const bulkCleanup = { title: '', lines: [] as { count: number; noun: string }[], dirName: '', visible: false };
+let cleanupCallback: (() => Promise<void>) | null = null;
 let registeredMount: ((params?: unknown, context?: { isActive: () => boolean }) => Promise<void>) | null = null;
 let registeredUnmount: (() => void) | null = null;
 let currentViewName = 'terminal';
@@ -72,8 +75,8 @@ vi.mock('../renderer/sequence-delivery.js', () => ({
 vi.mock('../renderer/stores/modal-bridge.js', () => ({
   showPlanDeleteConfirm: (...args: unknown[]) => mockShowPlanDeleteConfirm(...args),
   hidePlanDeleteConfirm: (...args: unknown[]) => mockHidePlanDeleteConfirm(...args),
-  clearDonePlans,
-  setClearDonePlansCallback: (cb: () => Promise<void>) => { clearDoneCallback = cb; },
+  bulkCleanup,
+  setBulkCleanupCallback: (cb: () => Promise<void>) => { cleanupCallback = cb; },
   showPlanHelpModal: (...args: unknown[]) => mockShowPlanHelpModal(...args),
   hidePlanHelpModal: (...args: unknown[]) => mockHidePlanHelpModal(...args),
   isPlanHelpVisible: () => mockIsPlanHelpVisible(),
@@ -154,10 +157,11 @@ describe('plan screen bridge', () => {
     currentViewName = 'terminal';
     registeredMount = null;
     registeredUnmount = null;
-    clearDonePlans.count = 0;
-    clearDonePlans.dirName = '';
-    clearDonePlans.visible = false;
-    clearDoneCallback = null;
+    bulkCleanup.title = '';
+    bulkCleanup.lines = [];
+    bulkCleanup.dirName = '';
+    bulkCleanup.visible = false;
+    cleanupCallback = null;
 
     mockPlanList.mockReset();
     mockPlanDeps.mockReset();
@@ -180,6 +184,9 @@ describe('plan screen bridge', () => {
     mockPlanWriteFile.mockReset();
     mockPlanReadFile.mockReset();
     mockPlanClearCompleted.mockReset();
+    mockPlanCleanupCounts.mockReset();
+    mockPlanClearEmptySequences.mockReset();
+    mockPlanClearUnreferencedContexts.mockReset();
     mockPlanContextList.mockReset();
     mockPlanContextCreate.mockReset();
     mockPlanContextUpdate.mockReset();
@@ -222,6 +229,9 @@ describe('plan screen bridge', () => {
       planWriteFile: mockPlanWriteFile,
       planReadFile: mockPlanReadFile,
       planClearCompleted: mockPlanClearCompleted,
+      planCleanupCounts: mockPlanCleanupCounts,
+      planClearEmptySequences: mockPlanClearEmptySequences,
+      planClearUnreferencedContexts: mockPlanClearUnreferencedContexts,
       planContextList: mockPlanContextList,
       planContextCreate: mockPlanContextCreate,
       planContextUpdate: mockPlanContextUpdate,
@@ -1298,22 +1308,69 @@ describe('plan screen bridge', () => {
     expect(mod.planScreenState.notice).toContain('not found');
   });
 
-  it('seeds clear-done confirmation state', async () => {
-    const mod = await getModule();
-    const items = [
-      { id: 'a', dirPath: '/test/dir', title: 'A', description: 'Alpha', status: 'done', createdAt: 1, updatedAt: 1 },
-    ];
-    mockPlanList.mockResolvedValue(items);
-    mockPlanDeps.mockResolvedValue([]);
-    mockComputeLayout.mockReturnValue(fakeLayout(['a']));
+  describe('bulk cleanup (P-0805)', () => {
+    const counts = { donePlans: 2, emptySequences: 1, unreferencedContexts: 0, unusedContexts: 3 };
 
-    await mod.showPlanScreen('/test/dir');
-    mod.onPlanClearDone();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    async function openScreen() {
+      const mod = await getModule();
+      mockPlanList.mockResolvedValue([]);
+      mockPlanDeps.mockResolvedValue([]);
+      mockComputeLayout.mockReturnValue(fakeLayout([]));
+      mockPlanCleanupCounts.mockResolvedValue(counts);
+      await mod.showPlanScreen('/test/dir');
+      return mod;
+    }
 
-    expect(clearDonePlans.visible).toBe(true);
-    expect(clearDonePlans.count).toBe(1);
-    expect(clearDoneCallback).not.toBeNull();
+    it('previews "Clear unused" with the counts it will delete, and deletes nothing yet', async () => {
+      const mod = await openScreen();
+      mod.onPlanCleanup('unused');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(mockPlanCleanupCounts).toHaveBeenCalledWith('/test/dir');
+      expect(bulkCleanup).toMatchObject({
+        visible: true,
+        title: 'Clear unused items?',
+        dirName: 'dir',
+        lines: [{ count: 1, noun: 'empty sequence' }, { count: 3, noun: 'unreferenced context' }],
+      });
+      expect(mockPlanClearEmptySequences).not.toHaveBeenCalled();
+      expect(mockPlanClearUnreferencedContexts).not.toHaveBeenCalled();
+    });
+
+    it('on confirm, "Clear unused" clears sequences before contexts and never done plans', async () => {
+      const mod = await openScreen();
+      const order: string[] = [];
+      mockPlanClearEmptySequences.mockImplementation(async () => { order.push('sequences'); return 1; });
+      mockPlanClearUnreferencedContexts.mockImplementation(async () => { order.push('contexts'); return 3; });
+      mod.onPlanCleanup('unused');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      await cleanupCallback!();
+
+      expect(order).toEqual(['sequences', 'contexts']);
+      expect(mockPlanClearCompleted).not.toHaveBeenCalled();
+    });
+
+    it('keeps "Clear done plans" an individual action', async () => {
+      const mod = await openScreen();
+      mod.onPlanCleanup('done');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(bulkCleanup.lines).toEqual([{ count: 2, noun: 'completed plan' }]);
+      await cleanupCallback!();
+      expect(mockPlanClearCompleted).toHaveBeenCalledWith('/test/dir');
+      expect(mockPlanClearEmptySequences).not.toHaveBeenCalled();
+      expect(mockPlanClearUnreferencedContexts).not.toHaveBeenCalled();
+    });
+
+    it('shows a notice instead of a dialog when there is nothing to clear', async () => {
+      const mod = await openScreen();
+      mod.onPlanCleanup('contexts');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(bulkCleanup.visible).toBe(false);
+      expect(mod.planScreenState.notice).toBe('Nothing to clear');
+    });
   });
 
   it('clears planner state when hidden', async () => {

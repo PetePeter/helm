@@ -141,18 +141,19 @@ export function hidePlanDeleteConfirm(): void {
 }
 
 // ============================================================================
-// Clear Done Plans Confirm
+// Bulk Cleanup Confirm (done plans / empty sequences / unreferenced contexts)
 // ============================================================================
 
-export const clearDonePlans = reactive({
+export const bulkCleanup = reactive({
   visible: false,
-  count: 0,
+  title: '',
   dirName: '',
+  lines: [] as { count: number; noun: string }[],
 });
 
-let _clearDonePlansOnConfirm: (() => void) | null = null;
-export function setClearDonePlansCallback(cb: (() => void) | null): void { _clearDonePlansOnConfirm = cb; }
-export function getClearDonePlansCallback(): (() => void) | null { return _clearDonePlansOnConfirm; }
+let _bulkCleanupOnConfirm: (() => void) | null = null;
+export function setBulkCleanupCallback(cb: (() => void) | null): void { _bulkCleanupOnConfirm = cb; }
+export function getBulkCleanupCallback(): (() => void) | null { return _bulkCleanupOnConfirm; }
 
 
 // ============================================================================
@@ -503,7 +504,7 @@ export function isAnyBridgeModalVisible(): boolean {
   const editorPopupStore = useEditorPopupStore();
 
   return closeConfirm.visible || contextMenu.visible || planDeleteConfirm.visible ||
-    clearDonePlans.visible || quickSpawn.visible || dirPicker.visible ||
+    bulkCleanup.visible || quickSpawn.visible || dirPicker.visible ||
     draftSubmenu.visible || formModal.visible || editorPopupStore.visible || toolEditor.visible ||
     planHelp.visible || promptTree.visible || runtimeGroupName.visible || runtimeGroupClose.visible ||
     runtimeGroupMove.visible || escProtection.isProtecting.value;

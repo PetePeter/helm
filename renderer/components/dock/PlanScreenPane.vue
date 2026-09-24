@@ -16,7 +16,7 @@ import {
   onPlanAddDependency,
   onPlanAddNode,
   onPlanAssignSequence,
-  onPlanClearDone,
+  onPlanCleanup,
   onPlanContextBind,
   onPlanContextBindTarget,
   onPlanContextClick,
@@ -86,7 +86,7 @@ onUnmounted(() => { setPlanScreenPaneMounted(false); });
     @add-context="onPlanAddContext()"
     @export-dir="onPlanExportDirectory()"
     @open-plan-external="onPlanOpenExternal()"
-    @clear-done="onPlanClearDone()"
+    @cleanup="onPlanCleanup($event)"
     @create-sequence="onPlanCreateSequence"
     @assign-sequence="onPlanAssignSequence"
     @update-sequence="onPlanUpdateSequence"

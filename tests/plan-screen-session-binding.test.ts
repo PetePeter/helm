@@ -24,10 +24,10 @@ vi.mock('../renderer/plans/plan-layout.js', () => ({
   }),
 }));
 vi.mock('../renderer/stores/modal-bridge.js', () => ({
-  clearDonePlans: { count: 0, dirName: '', visible: false },
+  bulkCleanup: { title: '', lines: [], dirName: '', visible: false },
   hidePlanDeleteConfirm: vi.fn(),
   showPlanDeleteConfirm: vi.fn(),
-  setClearDonePlansCallback: vi.fn(),
+  setBulkCleanupCallback: vi.fn(),
   showPlanHelpModal: vi.fn(),
   hidePlanHelpModal: vi.fn(),
   isPlanHelpVisible: () => false,

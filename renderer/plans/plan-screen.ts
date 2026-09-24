@@ -5,7 +5,7 @@ import type { LayoutNode, LayoutResult } from './plan-layout.js';
 import { computeLayout } from './plan-layout.js';
 import { deliverPromptSequence } from '../sequence-delivery.js';
 import { hidePlanDeleteConfirm, showPlanDeleteConfirm } from '../stores/modal-bridge.js';
-import { clearDonePlans, setClearDonePlansCallback, showPlanHelpModal, hidePlanHelpModal, isPlanHelpVisible } from '../stores/modal-bridge.js';
+import { bulkCleanup, setBulkCleanupCallback, showPlanHelpModal, hidePlanHelpModal, isPlanHelpVisible } from '../stores/modal-bridge.js';
 import { state } from '../state.js';
 import { getActiveSessionDir } from '../stores/app.js';
 import { registerView, showView, currentView, type ViewMountContext } from '../main-view/main-view-manager.js';
@@ -904,21 +904,45 @@ async function handleExportDirectory(): Promise<void> {
   }
 }
 
-async function handleClearDone(): Promise<void> {
+/** The Plans screen's bulk cleanups. "unused" is empty sequences, then unreferenced contexts. */
+export type PlanCleanupKind = 'unused' | 'done' | 'sequences' | 'contexts';
+
+const CLEANUP_TITLES: Record<PlanCleanupKind, string> = {
+  unused: 'Clear unused items?',
+  done: 'Clear done plans?',
+  sequences: 'Clear empty sequences?',
+  contexts: 'Clear unreferenced contexts?',
+};
+
+async function handleCleanup(kind: PlanCleanupKind): Promise<void> {
+  const dirPath = planScreenState.currentDir;
   try {
-    const items = await plansClient.planList(planScreenState.currentDir);
-    const doneItems = items.filter((item: PlanItem) => item.status === 'done');
-    if (doneItems.length === 0) return;
-    const parts = planScreenState.currentDir.replace(/\\/g, '/').split('/');
-    clearDonePlans.count = doneItems.length;
-    clearDonePlans.dirName = parts[parts.length - 1] || planScreenState.currentDir;
-    clearDonePlans.visible = true;
-    setClearDonePlansCallback(async () => {
-      await plansClient.planClearCompleted(planScreenState.currentDir);
+    const counts = await plansClient.planCleanupCounts(dirPath);
+    const sequences = { count: counts.emptySequences, noun: 'empty sequence' };
+    const lines = {
+      done: [{ count: counts.donePlans, noun: 'completed plan' }],
+      sequences: [sequences],
+      contexts: [{ count: counts.unreferencedContexts, noun: 'unreferenced context' }],
+      // Clearing the sequences first frees contexts bound only to them.
+      unused: [sequences, { count: counts.unusedContexts, noun: 'unreferenced context' }],
+    }[kind].filter((line) => line.count > 0);
+    if (lines.length === 0) {
+      showBriefNotice('Nothing to clear');
+      return;
+    }
+    const parts = dirPath.replace(/\\/g, '/').split('/');
+    bulkCleanup.title = CLEANUP_TITLES[kind];
+    bulkCleanup.lines = lines;
+    bulkCleanup.dirName = parts[parts.length - 1] || dirPath;
+    bulkCleanup.visible = true;
+    setBulkCleanupCallback(async () => {
+      if (kind === 'done') await plansClient.planClearCompleted(dirPath);
+      if (kind === 'sequences' || kind === 'unused') await plansClient.planClearEmptySequences(dirPath);
+      if (kind === 'contexts' || kind === 'unused') await plansClient.planClearUnreferencedContexts(dirPath);
       await refreshCanvas();
     });
   } catch (err) {
-    console.error('[PlanScreen] Clear done failed:', err);
+    console.error('[PlanScreen] Cleanup failed:', err);
   }
 }
 
@@ -1001,8 +1025,8 @@ export function onPlanOpenExternal(): void {
   void handleOpenPlanExternal();
 }
 
-export function onPlanClearDone(): void {
-  void handleClearDone();
+export function onPlanCleanup(kind: PlanCleanupKind): void {
+  void handleCleanup(kind);
 }
 
 export async function onPlanCreateSequence(title: string, missionStatement: string, sharedMemory: string): Promise<void> {

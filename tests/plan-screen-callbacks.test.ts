@@ -44,8 +44,8 @@ const mockShowPlanHelpModal = vi.fn();
 const mockHidePlanHelpModal = vi.fn();
 const mockIsPlanHelpVisible = vi.fn(() => false);
 const mockComputeLayout = vi.fn();
-const clearDonePlans = { count: 0, dirName: '', visible: false };
-let clearDoneCallback: (() => Promise<void>) | null = null;
+const bulkCleanup = { title: '', lines: [] as { count: number; noun: string }[], dirName: '', visible: false };
+let cleanupCallback: (() => Promise<void>) | null = null;
 let registeredMount: ((params?: unknown, context?: { isActive: () => boolean }) => Promise<void>) | null = null;
 let registeredUnmount: (() => void) | null = null;
 let currentViewName = 'terminal';
@@ -72,8 +72,8 @@ vi.mock('../renderer/sequence-delivery.js', () => ({
 vi.mock('../renderer/stores/modal-bridge.js', () => ({
   showPlanDeleteConfirm: (...args: unknown[]) => mockShowPlanDeleteConfirm(...args),
   hidePlanDeleteConfirm: (...args: unknown[]) => mockHidePlanDeleteConfirm(...args),
-  clearDonePlans,
-  setClearDonePlansCallback: (cb: () => Promise<void>) => { clearDoneCallback = cb; },
+  bulkCleanup,
+  setBulkCleanupCallback: (cb: () => Promise<void>) => { cleanupCallback = cb; },
   showPlanHelpModal: (...args: unknown[]) => mockShowPlanHelpModal(...args),
   hidePlanHelpModal: (...args: unknown[]) => mockHidePlanHelpModal(...args),
   isPlanHelpVisible: () => mockIsPlanHelpVisible(),
@@ -129,10 +129,11 @@ describe('plan screen window-keyed callbacks', () => {
     currentViewName = 'terminal';
     registeredMount = null;
     registeredUnmount = null;
-    clearDonePlans.count = 0;
-    clearDonePlans.dirName = '';
-    clearDonePlans.visible = false;
-    clearDoneCallback = null;
+    bulkCleanup.title = '';
+    bulkCleanup.lines = [];
+    bulkCleanup.dirName = '';
+    bulkCleanup.visible = false;
+    cleanupCallback = null;
 
     mockPlanList.mockReset();
     mockPlanDeps.mockReset();

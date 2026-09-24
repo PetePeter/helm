@@ -5,7 +5,7 @@ import {
   getCloseConfirmCancelCallback, setCloseConfirmCancelCallback,
   contextMenu,
   planDeleteConfirm, getPlanDeleteCallback, setPlanDeleteCallback,
-  clearDonePlans, getClearDonePlansCallback,
+  bulkCleanup, getBulkCleanupCallback,
   promptTree, getPromptTreeCallback, hidePromptTree,
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
   dirPicker, closeDirPicker,
@@ -32,7 +32,7 @@ import EditorPopup from '../modals/EditorPopup.vue';
 import BindingEditorModal from '../modals/BindingEditorModal.vue';
 import EscProtectionModal from '../modals/EscProtectionModal.vue';
 import PlanHelpModal from '../modals/PlanHelpModal.vue';
-import ClearDonePlansModal from '../modals/ClearDonePlansModal.vue';
+import BulkCleanupModal from '../modals/BulkCleanupModal.vue';
 import RuntimeGroupNameModal from '../modals/RuntimeGroupNameModal.vue';
 import RuntimeGroupCloseDialog from '../modals/RuntimeGroupCloseDialog.vue';
 import RuntimeGroupMoveSubmenu from '../modals/RuntimeGroupMoveSubmenu.vue';
@@ -106,9 +106,9 @@ function onPlanDeleteCancel(): void {
   setPlanDeleteCallback(null);
 }
 
-function onClearDonePlansConfirm(): void {
-  clearDonePlans.visible = false;
-  getClearDonePlansCallback()?.();
+function onBulkCleanupConfirm(): void {
+  bulkCleanup.visible = false;
+  getBulkCleanupCallback()?.();
 }
 
 
@@ -209,12 +209,13 @@ function onRuntimeGroupMoveCancel(): void {
     @cancel="onPlanDeleteCancel"
   />
 
-  <ClearDonePlansModal
-    v-model:visible="clearDonePlans.visible"
-    :count="clearDonePlans.count"
-    :dir-name="clearDonePlans.dirName"
-    @confirm="onClearDonePlansConfirm"
-    @cancel="clearDonePlans.visible = false"
+  <BulkCleanupModal
+    v-model:visible="bulkCleanup.visible"
+    :title="bulkCleanup.title"
+    :lines="bulkCleanup.lines"
+    :dir-name="bulkCleanup.dirName"
+    @confirm="onBulkCleanupConfirm"
+    @cancel="bulkCleanup.visible = false"
   />
 
   <PromptTreeModal

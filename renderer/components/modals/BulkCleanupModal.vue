@@ -1,18 +1,26 @@
 <script setup lang="ts">
 /**
- * Clear done plans confirmation modal.
+ * Bulk cleanup confirmation modal.
  *
- * Confirms bulk deletion of completed plan items for a directory.
+ * Confirms a bulk deletion in a project — completed plans, empty sequences,
+ * unreferenced contexts, or several at once — listing each count first.
  * Two buttons: Cancel / Clear. Gamepad D-pad toggles selection, A confirms, B cancels.
  */
 import { ref } from 'vue';
 import ConfirmDialog from './ConfirmDialog.vue';
 
-const MODAL_ID = 'clear-done-plans-confirm';
+const MODAL_ID = 'bulk-cleanup-confirm';
 
-const props = defineProps<{
-  visible: boolean;
+export interface CleanupLine {
   count: number;
+  /** Singular noun, e.g. "completed plan". */
+  noun: string;
+}
+
+defineProps<{
+  visible: boolean;
+  title: string;
+  lines: CleanupLine[];
   dirName: string;
 }>();
 
@@ -46,8 +54,8 @@ defineExpose({ handleButton, selectedIndex });
     ref="dialog"
     :visible="visible"
     :modal-id="MODAL_ID"
-    title="Clear Completed Plans"
-    aria-label="Clear completed plans confirmation"
+    :title="title"
+    :aria-label="title"
     :buttons="buttons"
     v-model:selected-index="selectedIndex"
     cancel-action-id="cancel"
@@ -55,12 +63,21 @@ defineExpose({ handleButton, selectedIndex });
     @cancel="emit('cancel')"
     @update:visible="emit('update:visible', $event)"
   >
-    <div id="clearDonePlansBody">
-      <div>
-        Clear <strong>{{ count }}</strong> completed plan{{ count === 1 ? '' : 's' }}
-        in <strong>{{ dirName }}</strong>?
-      </div>
+    <div id="bulkCleanupBody">
+      <div>In <strong>{{ dirName }}</strong>, clear:</div>
+      <ul class="bulk-cleanup__lines">
+        <li v-for="line in lines" :key="line.noun">
+          <strong>{{ line.count }}</strong> {{ line.noun }}{{ line.count === 1 ? '' : 's' }}
+        </li>
+      </ul>
       <div class="modal-warning">This cannot be undone.</div>
     </div>
   </ConfirmDialog>
 </template>
+
+<style scoped>
+.bulk-cleanup__lines {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+</style>

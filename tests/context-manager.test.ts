@@ -218,4 +218,21 @@ describe('ContextManager', () => {
     expect(manager.getSequenceIdsForContext('ctx-1')).toEqual(['seq-1']);
     expect(manager.get('ctx-1')?.projectId).toBe('project-1');
   });
+
+  it('deletes only the unreferenced contexts of the project', () => {
+    const toSequence = manager.create('project-1', { title: 'Seq bound' });
+    const toPlan = manager.create('project-1', { title: 'Plan bound' });
+    const loose = manager.create('project-1', { title: 'Loose' });
+    const otherProject = manager.create('project-2', { title: 'Other project' });
+    manager.bind(toSequence.id, 'sequence', 'seq-1');
+    manager.bind(toPlan.id, 'plan', 'plan-1');
+
+    expect(manager.getUnreferencedForProject('project-1').map((c) => c.id)).toEqual([loose.id]);
+    expect(manager.deleteUnreferencedForProject('project-1')).toBe(1);
+
+    expect(manager.get(loose.id)).toBeNull();
+    expect(manager.get(toSequence.id)).not.toBeNull();
+    expect(manager.get(toPlan.id)).not.toBeNull();
+    expect(manager.get(otherProject.id)).not.toBeNull();
+  });
 });

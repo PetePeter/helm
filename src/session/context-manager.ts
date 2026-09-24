@@ -119,6 +119,22 @@ export class ContextManager extends EventEmitter {
     return true;
   }
 
+  /** Contexts in the project bound to no plan and no sequence. */
+  getUnreferencedForProject(projectId: string): ContextNode[] {
+    const bound = new Set(this.bindings.map((binding) => binding.contextId));
+    return this.listForProject(projectId).filter((context) => !bound.has(context.id));
+  }
+
+  /** Delete every unreferenced context in the project. Returns the count deleted. */
+  deleteUnreferencedForProject(projectId: string): number {
+    const unreferenced = this.getUnreferencedForProject(projectId);
+    if (unreferenced.length === 0) return 0;
+    for (const context of unreferenced) this.contexts.delete(context.id);
+    this.persist();
+    this.emit('context:changed', projectId);
+    return unreferenced.length;
+  }
+
   bind(contextId: string, targetType: ContextBindingTargetType, targetId: string): boolean {
     const context = this.contexts.get(contextId);
     if (!context || !this.isValidBindingTarget(context, targetType, targetId)) return false;

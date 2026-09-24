@@ -62,6 +62,7 @@ vi.mock('../src/session/persistence.js', () => ({
 
 import { setupPlanHandlers } from '../src/electron/ipc/plan-handlers.js';
 import { PlanManager } from '../src/session/plan-manager.js';
+import { ContextManager } from '../src/session/context-manager.js';
 
 describe('plan IPC handlers', () => {
   let planManager: PlanManager;
@@ -299,5 +300,50 @@ describe('plan IPC handlers', () => {
 
     bItem = (await handlers.get('plan:list')!({}, '/proj')).find((i: any) => i.id === b.id);
     expect(bItem.status).toBe('ready');
+  });
+});
+
+describe('plan cleanup IPC handlers (P-0805)', () => {
+  let planManager: PlanManager;
+  let contextManager: ContextManager;
+  const projectStore = {
+    resolveForPath: vi.fn((dirPath: string) => ({ id: dirPath === '/proj' ? 'project-1' : 'project-2' })),
+    findByPath: vi.fn((dirPath: string) => ({ id: dirPath === '/proj' ? 'project-1' : 'project-2' })),
+    getById: vi.fn((id: string) => ({ canonicalPath: id === 'project-1' ? '/proj' : '/other' })),
+    save: vi.fn(),
+  } as any;
+
+  beforeEach(() => {
+    handlers.clear();
+    planManager = new PlanManager(projectStore);
+    contextManager = new ContextManager(planManager);
+    setupPlanHandlers(planManager, contextManager);
+  });
+
+  it('counts, then clears, empty sequences before unreferenced contexts', async () => {
+    const item = planManager.create('/proj', 'Step', '');
+    const used = planManager.createSequence('/proj', 'Used');
+    planManager.assignSequence(item.id, used.id);
+    const empty = planManager.createSequence('/proj', 'Empty');
+    const boundToEmpty = contextManager.create('project-1', { title: 'Bound to the empty sequence' });
+    contextManager.bind(boundToEmpty.id, 'sequence', empty.id);
+    const boundToPlan = contextManager.create('project-1', { title: 'Bound to a plan' });
+    contextManager.bind(boundToPlan.id, 'plan', item.id);
+    contextManager.create('project-2', { title: 'Other project' });
+
+    // The context bound to the empty sequence is not unreferenced YET.
+    expect(await handlers.get('plan:cleanup-counts')!({}, '/proj')).toEqual({
+      donePlans: 0, emptySequences: 1, unreferencedContexts: 0, unusedContexts: 1,
+    });
+
+    expect(await handlers.get('plan:clear-empty-sequences')!({}, '/proj')).toBe(1);
+    // Deleting the sequence released its binding, so the context is now unreferenced.
+    expect(await handlers.get('plan:cleanup-counts')!({}, '/proj')).toMatchObject({ unreferencedContexts: 1 });
+    expect(await handlers.get('plan:clear-unreferenced-contexts')!({}, '/proj')).toBe(1);
+
+    expect(planManager.getSequence(used.id)).not.toBeNull();
+    expect(contextManager.get(boundToEmpty.id)).toBeNull();
+    expect(contextManager.get(boundToPlan.id)).not.toBeNull();
+    expect(contextManager.listForProject('project-2')).toHaveLength(1);
   });
 });

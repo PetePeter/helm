@@ -110,6 +110,35 @@ export function setupPlanHandlers(
     return count;
   });
 
+  // Bulk cleanup (P-0805). Sequences go first: deleting one releases its
+  // context bindings, which is what makes those contexts unreferenced.
+  ipcMain.handle('plan:cleanup-counts', (_event, dirPath: string) => {
+    const projectId = planManager.getProjectIdForDirectory(dirPath);
+    const emptySequenceIds = new Set(planManager.getEmptySequencesForDirectory(dirPath).map(s => s.id));
+    const contexts = projectId && contextManager ? contextManager.listForProject(projectId) : [];
+    const bindingsOf = (id: string) => contextManager?.getBindingsForContext(id) ?? [];
+    return {
+      donePlans: planManager.getForDirectory(dirPath).filter(i => i.status === 'done').length,
+      emptySequences: emptySequenceIds.size,
+      unreferencedContexts: contexts.filter(c => bindingsOf(c.id).length === 0).length,
+      // What "Clear unused" will delete: also contexts bound only to empty sequences.
+      unusedContexts: contexts.filter(c => bindingsOf(c.id).every(
+        b => b.targetType === 'sequence' && emptySequenceIds.has(b.targetId),
+      )).length,
+    };
+  });
+
+  ipcMain.handle('plan:clear-empty-sequences', (_event, dirPath: string) => {
+    const deleted = planManager.deleteEmptySequencesForDirectory(dirPath);
+    for (const sequence of deleted) contextManager?.removeBindingsForTarget('sequence', sequence.id);
+    return deleted.length;
+  });
+
+  ipcMain.handle('plan:clear-unreferenced-contexts', (_event, dirPath: string) => {
+    const projectId = planManager.getProjectIdForDirectory(dirPath);
+    return projectId ? contextManager?.deleteUnreferencedForProject(projectId) ?? 0 : 0;
+  });
+
   ipcMain.handle('plan:addDep', (_event, fromId: string, toId: string) => {
     return planManager.addDependency(fromId, toId);
   });

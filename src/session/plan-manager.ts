@@ -260,6 +260,19 @@ export class PlanManager extends EventEmitter {
     return true;
   }
 
+  /** Sequences in the directory's project that no plan belongs to. */
+  getEmptySequencesForDirectory(dirPath: string): PlanSequence[] {
+    const used = new Set([...this.items.values()].map((item) => item.sequenceId));
+    return this.getSequencesForDirectory(dirPath).filter((sequence) => !used.has(sequence.id));
+  }
+
+  /** Delete every empty sequence in the directory's project. Returns the deleted sequences. */
+  deleteEmptySequencesForDirectory(dirPath: string): PlanSequence[] {
+    const empty = this.getEmptySequencesForDirectory(dirPath);
+    for (const sequence of empty) this.deleteSequence(sequence.id);
+    return empty;
+  }
+
   /** Delete a sequence and hard-delete all its member plan items. */
   deleteSequenceWithPlans(id: string): boolean {
     const sequence = this.sequences.get(id);
