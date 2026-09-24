@@ -1051,7 +1051,10 @@ export class HelmControlService extends EventEmitter {
 
 
   deletePlanSequence(id: string): boolean {
-    return this.planSequenceService.deletePlanSequence(id);
+    const deleted = this.planSequenceService.deletePlanSequence(id);
+    // Same as the desktop's plan:sequence-delete: drop the lane's bindings.
+    if (deleted) this.contextManager.removeBindingsForTarget('sequence', id);
+    return deleted;
   }
 
   /** Cleanup counts for a directory — same numbers the desktop cleanup dialog shows. */

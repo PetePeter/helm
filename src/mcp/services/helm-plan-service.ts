@@ -126,6 +126,9 @@ export class HelmPlanService {
     const deleted = this.planManager.delete(plan.item.id);
     if (deleted) {
       this.attachmentManager.deletePlanAttachments(plan.item.id);
+      // Same as the desktop's plan:delete: a stale binding would keep its
+      // context counted as used, so cleanup could never clear it.
+      this.contextManager?.removeBindingsForTarget('plan', plan.item.id);
     }
     return deleted;
   }

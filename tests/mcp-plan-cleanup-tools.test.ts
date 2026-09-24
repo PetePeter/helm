@@ -34,8 +34,9 @@ function setup() {
     setPlanStateWithValidation: () => ({}),
     completePlanWithValidation: () => ({}),
   };
-  const call = (name: string) => callMcpTool(deps, name, { dirPath }, { sessionId: 's1' });
-  return { dirPath, projectId, planManager, contextManager, call };
+  const callWith = (name: string, args: Record<string, unknown>) => callMcpTool(deps, name, args, { sessionId: 's1' });
+  const call = (name: string) => callWith(name, { dirPath });
+  return { dirPath, projectId, planManager, contextManager, call, callWith };
 }
 
 describe('plan cleanup MCP tools (P-0812)', () => {
@@ -67,6 +68,22 @@ describe('plan cleanup MCP tools (P-0812)', () => {
     expect(planManager.getSequence(used.id)).not.toBeNull();
     expect(contextManager.get(boundToEmpty.id)).toBeNull();
     expect(contextManager.get(boundToPlan.id)).not.toBeNull();
+  });
+
+  it('plan_delete and sequence_delete drop the context bindings, like the desktop does', async () => {
+    // Stale bindings would strand the contexts: cleanup counts only unbound ones.
+    const { dirPath, projectId, planManager, contextManager, callWith } = setup();
+    const item = planManager.create(dirPath, 'Step', '');
+    const lane = planManager.createSequence(dirPath, 'Lane');
+    const onPlan = contextManager.create(projectId, { title: 'On plan' });
+    contextManager.bind(onPlan.id, 'plan', item.id);
+    const onLane = contextManager.create(projectId, { title: 'On lane' });
+    contextManager.bind(onLane.id, 'sequence', lane.id);
+    await callWith('plan_delete', { uuid: item.id });
+    await callWith('sequence_delete', { id: lane.id });
+
+    expect(contextManager.getBindingsForContext(onPlan.id)).toEqual([]);
+    expect(contextManager.getBindingsForContext(onLane.id)).toEqual([]);
   });
 
   it('is a no-op on a clean directory', async () => {
