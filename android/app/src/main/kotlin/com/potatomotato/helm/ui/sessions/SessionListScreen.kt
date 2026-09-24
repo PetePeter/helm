@@ -97,12 +97,13 @@ fun SessionListScreen(
             )
         }
 
+        // The spawner stays pinned below either branch: zero sessions is exactly
+        // when the user most needs to start one.
         if (sessions.isEmpty()) {
-            EmptyList(sessionListState(linkState, sessions, reach))
-            return@Column
-        }
-
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                EmptyList(sessionListState(linkState, sessions, reach))
+            }
+        } else LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             for (entry in SessionRows.build(sessions, collapsed)) {
                 when (entry) {
                     is RowEntry.Header -> item(key = "header:${entry.label}") {

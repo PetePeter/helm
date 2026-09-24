@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.components
 
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -266,7 +267,9 @@ fun HelmAppBar(
                         color = HelmColors.Terminal,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        // A long mission scrolls non-stop, radio-display style,
+                        // instead of hiding its tail behind an ellipsis.
+                        modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
                     )
                 }
             }
