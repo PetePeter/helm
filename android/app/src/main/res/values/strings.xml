@@ -313,6 +313,12 @@
     <string name="artifacts_attach_too_large">That file is past the 10 MB attachment limit.</string>
     <string name="artifacts_attach_refused">That file could not be read.</string>
     <string name="artifacts_attachments_header">Attachments</string>
+    <string name="artifacts_attachment_delete">Delete %1$s</string>
+    <string name="artifacts_attachment_delete_glyph">🗑</string>
+    <string name="artifacts_attachment_replace">Replace %1$s with another file</string>
+    <string name="artifacts_attachment_replace_glyph">⇄</string>
+    <string name="artifacts_attachment_confirm_delete">Delete “%1$s” from this artifact?</string>
+    <string name="artifacts_attachment_failed">Not changed: %1$s</string>
 
     <string name="artifacts_confirm_delete">Delete “%1$s”? Every version goes with it.</string>
     <string name="artifacts_confirm_delete_yes">Delete it</string>

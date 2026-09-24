@@ -240,6 +240,15 @@ upload that failed silently. The editor stays open until the last file has
 crossed, because a notice that closed it would strand a half-sent file with
 nowhere to report itself.
 
+**A revise can also delete and replace existing attachments** (read from the
+list cache, like the detail screen). Delete confirms first, then calls
+`HelmClient.deleteArtifactAttachment`, the one `session_artifact_attachment_delete`
+path that chat tiles use too. On Ok the cached row is pruned at once; on failure
+the row stays and shows the reason. Replace uploads and commits the new file
+through the staged chain first, and deletes the old one only after that commit
+returns Ok. So if the upload fails, the original stays, next to a chip you can
+retry. A replace never navigates away from the editor.
+
 **An artifact's attachments are rows, and a tap pulls one down in slices.** This
 is the same transfer a chat attachment makes, on the same shared driver. It has
 to be: the desktop ALWAYS slices an attachment and defaults `length` to one

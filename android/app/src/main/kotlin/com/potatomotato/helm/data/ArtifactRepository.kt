@@ -239,6 +239,46 @@ class ArtifactRepository {
         return true
     }
 
+    private val _attachmentErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /**
+     * Why an attachment edit (delete, or the delete half of a replace) failed,
+     * keyed by attachment id. Lives beside the cache rather than in the editor so
+     * the failed row keeps its reason across a rotation — the row itself stays,
+     * because a refused delete is no evidence the file left.
+     */
+    val attachmentErrors: StateFlow<Map<String, String>> = _attachmentErrors.asStateFlow()
+
+    /**
+     * The desktop confirmed an attachment is gone: drop it from the cached row
+     * NOW, so the editor and detail screens stop offering a file that no longer
+     * exists, without waiting for the list re-pull that follows.
+     */
+    fun attachmentRemoved(sessionId: String, artifactId: String, attachmentId: String) {
+        _attachmentErrors.value = _attachmentErrors.value - attachmentId
+        val cached = listCache[sessionId] ?: return
+        val pruned = cached.map { artifact ->
+            if (artifact.id != artifactId) artifact
+            else artifact.copy(attachments = artifact.attachments.filterNot { it.id == attachmentId })
+        }
+        listCache[sessionId] = pruned
+        _list.value = when (val state = _list.value) {
+            is ArtifactList.Ready -> if (state.sessionId == sessionId) state.copy(artifacts = pruned) else state
+            is ArtifactList.Refreshing -> if (state.sessionId == sessionId) state.copy(cached = pruned) else state
+            else -> state
+        }
+    }
+
+    /** A delete was refused or lost; the row stays and says why. */
+    fun attachmentEditFailed(attachmentId: String, message: String) {
+        _attachmentErrors.value = _attachmentErrors.value + (attachmentId to message)
+    }
+
+    /** A fresh attempt on this row starts clean. */
+    fun attachmentEditStarted(attachmentId: String) {
+        _attachmentErrors.value = _attachmentErrors.value - attachmentId
+    }
+
     /** Record why the list is missing. The message is what the user reads. */
     fun listFailed(sessionId: String, message: String) {
         // The cache stands: a failed ask is no evidence an artifact left.

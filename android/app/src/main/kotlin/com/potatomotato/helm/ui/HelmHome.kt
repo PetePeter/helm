@@ -166,6 +166,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // to. Owned by the client, not the editor, for the same reason every
     // transfer on this link is: an upload outruns its screen.
     val stagedAttachments by client.uploads.staged.collectAsState()
+    val attachmentErrors by client.artifacts.attachmentErrors.collectAsState()
     val uploadStates by client.uploads.states.collectAsState()
     val notificationsEnabled by client.alerts.enabled.collectAsState()
     val desktops by HelmPairing.desktops.collectAsState()
@@ -547,6 +548,31 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) stagePick(uri)
     }
+    // Which existing attachment the open file picker is replacing. Saveable so
+    // the answer still finds its target if the picker outlived a rotation.
+    var replacingAttachmentId by rememberSaveable { mutableStateOf<String?>(null) }
+    // Replace uses the same read-now + size guard as a plain pick; only the
+    // hand-off differs — the client uploads first and deletes the old file only
+    // after the new one's commit, so a failure never loses the original.
+    val replaceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val oldId = replacingAttachmentId
+        replacingAttachmentId = null
+        val sessionId = openSessionId
+        val artifactId = editingArtifactId
+        if (uri != null && oldId != null && sessionId != null && artifactId != null) {
+            scope.launch {
+                val picked = staging.stage(uri.toString(), displayName = null, mimeType = null)
+                when {
+                    picked == null -> attachNote(R.string.artifacts_attach_refused)
+                    stageVerdict(picked.sizeBytes) is StageVerdict.TooLarge -> {
+                        staging.discard(picked)
+                        attachNote(R.string.artifacts_attach_too_large)
+                    }
+                    else -> client.replaceArtifactAttachment(sessionId, artifactId, oldId, picked)
+                }
+            }
+        }
+    }
     // The chip tap opens the LOCAL copy through the provider — the picker's own
     // uri may be long dead by the time the user taps.
     val openStagedFile: (StagedAttachment) -> Unit = { staged ->
@@ -900,6 +926,21 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onOpenStaged = openStagedFile,
                         onRemoveStaged = client.uploads::unstage,
                         onRetryStaged = { client.retryArtifactUploads() },
+                        attachmentErrors = attachmentErrors,
+                        onDeleteExisting = { attachmentId ->
+                            val artifactId = editingArtifactId
+                            if (artifactId != null) {
+                                // The cache prunes on Ok; the re-pull reconciles
+                                // anything else the desktop changed meanwhile.
+                                client.deleteArtifactAttachment(open.id, artifactId, attachmentId) {
+                                    client.refreshArtifacts(open.id)
+                                }
+                            }
+                        },
+                        onReplaceExisting = { attachmentId ->
+                            replacingAttachmentId = attachmentId
+                            replaceLauncher.launch(ANY_MIME)
+                        },
                         onSubmit = { title, content ->
                             if (edit is ArtifactEdit.New) {
                                 // The staged keys ride the create; the client

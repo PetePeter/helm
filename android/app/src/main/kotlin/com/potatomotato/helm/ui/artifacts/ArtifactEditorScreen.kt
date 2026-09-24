@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -40,6 +41,7 @@ import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ArtifactRules.Verdict
 import com.potatomotato.helm.data.HelmArtifact
+import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.UploadSupport
 import com.potatomotato.helm.ui.components.GhostButton
@@ -105,6 +107,12 @@ fun ArtifactEditorScreen(
     onRemoveStaged: (key: String) -> Unit = {},
     /** Send a failed attachment again. */
     onRetryStaged: (key: String) -> Unit = {},
+    /** Why an existing attachment's last delete/replace failed, keyed by attachment id. */
+    attachmentErrors: Map<String, String> = emptyMap(),
+    /** Delete an existing attachment — only ever called after the confirm dialog. */
+    onDeleteExisting: (attachmentId: String) -> Unit = {},
+    /** Pick a file to replace an existing attachment with. */
+    onReplaceExisting: (attachmentId: String) -> Unit = {},
 ) {
     // Bound to a local before any lambda captures it: Compose slot lambdas run
     // again on recomposition, and a parameter smart cast does not survive being
@@ -125,8 +133,10 @@ fun ArtifactEditorScreen(
     // a second artifact into the one being assembled.
     val uploadsRunning = staged.any { it.key !in uploadStates || uploadStates[it.key] is AttachmentUploadState.Uploading }
     val isCreate = revision == null
+    var confirmingDelete by remember { mutableStateOf<HelmArtifactAttachment?>(null) }
 
-    Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
             title = if (revision == null) {
                 stringResource(R.string.artifacts_editor_new)
@@ -217,6 +227,28 @@ fun ArtifactEditorScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
+            // A revise edits what the artifact ALREADY carries. Read live from the
+            // list cache (the revision's artifact is rebuilt from it), so a
+            // delete that lands removes the row without a manual refresh.
+            revision?.artifact?.attachments?.takeIf { it.isNotEmpty() }?.let { existing ->
+                ExistingAttachments(
+                    attachments = existing,
+                    errors = attachmentErrors,
+                    onDelete = { confirmingDelete = it },
+                    onReplace = { onReplaceExisting(it.id) },
+                )
+            }
+            // A replacement rides the staged chain, so its chip is the one place
+            // its progress or failure can show — in a revise as much as a create.
+            if (!isCreate && staged.isNotEmpty()) {
+                StagedChips(
+                    staged = staged,
+                    uploadStates = uploadStates,
+                    onOpen = onOpenStaged,
+                    onRemove = onRemoveStaged,
+                    onRetry = onRetryStaged,
+                )
+            }
             if (isCreate) {
                 StagedChips(
                     staged = staged,
@@ -237,6 +269,64 @@ fun ArtifactEditorScreen(
                 onClick = { onSubmit(ArtifactRules.title(title), body) },
             )
             GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onBack)
+        }
+    }
+    confirmingDelete?.let { target ->
+        ConfirmDelete(
+            message = stringResource(R.string.artifacts_attachment_confirm_delete, target.filename),
+            onConfirm = {
+                confirmingDelete = null
+                onDeleteExisting(target.id)
+            },
+            onCancel = { confirmingDelete = null },
+        )
+    }
+    }
+}
+
+/**
+ * The files the artifact already carries, each with delete and replace. A row
+ * whose last edit failed stays and says why: a refused delete is no evidence
+ * the file left, and hiding it would lie about what the artifact holds.
+ */
+@Composable
+private fun ExistingAttachments(
+    attachments: List<HelmArtifactAttachment>,
+    errors: Map<String, String>,
+    onDelete: (HelmArtifactAttachment) -> Unit,
+    onReplace: (HelmArtifactAttachment) -> Unit,
+) {
+    Text(
+        text = stringResource(R.string.artifacts_attachments_header),
+        color = HelmColors.Faint,
+        style = MaterialTheme.typography.labelMedium,
+    )
+    for (attachment in attachments) {
+        val replaceLabel = stringResource(R.string.artifacts_attachment_replace, attachment.filename)
+        val deleteLabel = stringResource(R.string.artifacts_attachment_delete, attachment.filename)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(HelmRadius.Pill))
+                .background(HelmColors.Surface2)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = attachment.filename,
+                    color = HelmColors.Txt,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                errors[attachment.id]?.let { reason ->
+                    ChipLine(stringResource(R.string.artifacts_attachment_failed, reason), color = HelmColors.Danger)
+                }
+            }
+            ChipGlyph(stringResource(R.string.artifacts_attachment_replace_glyph), replaceLabel) { onReplace(attachment) }
+            ChipGlyph(stringResource(R.string.artifacts_attachment_delete_glyph), deleteLabel) { onDelete(attachment) }
         }
     }
 }
@@ -350,12 +440,13 @@ private fun ChipLine(text: String, modifier: Modifier = Modifier, color: Color =
 
 /** A glyph acting as a chip button, the way the version bar's controls do. */
 @Composable
-private fun ChipGlyph(glyph: String, onClick: () -> Unit) {
+private fun ChipGlyph(glyph: String, spoken: String? = null, onClick: () -> Unit) {
     Text(
         text = glyph,
         color = HelmColors.Dim,
         style = MaterialTheme.typography.labelLarge,
         modifier = Modifier
+            .semantics { if (spoken != null) contentDescription = spoken }
             .clickable(onClick = onClick)
             .padding(HelmSpacing.Xs),
     )

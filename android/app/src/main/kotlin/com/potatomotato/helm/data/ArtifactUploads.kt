@@ -148,7 +148,28 @@ class ArtifactUploads {
     fun unstage(key: String) {
         _staged.value = _staged.value.filterNot { it.key == key }
         _states.value = _states.value - key
+        replacing.remove(key)
     }
+
+    /**
+     * Staged file -> the existing attachment it REPLACES. The old id is deleted
+     * only once the new file's commit has answered Ok, so a failed upload can
+     * never leave the artifact with neither file.
+     */
+    private val replacing = HashMap<String, String>()
+
+    /** Stage [attachment] as the replacement for [oldAttachmentId]. */
+    fun stageReplacement(attachment: StagedAttachment, oldAttachmentId: String): Boolean {
+        if (!stage(attachment)) return false
+        replacing[attachment.key] = oldAttachmentId
+        return true
+    }
+
+    /** The attachment [key] replaces, or null for a plain add. */
+    fun replaces(key: String): String? = replacing[key]
+
+    /** Whether some staged file is mid-flight — a second chain must not start. */
+    fun anyUploading(): Boolean = _states.value.values.any { it is AttachmentUploadState.Uploading }
 
     fun stagedAttachment(key: String): StagedAttachment? =
         _staged.value.firstOrNull { it.key == key }
@@ -197,6 +218,7 @@ class ArtifactUploads {
     fun clear() {
         _staged.value = emptyList()
         _states.value = emptyMap()
+        replacing.clear()
         targetArtifactId = null
         targetSessionId = null
     }

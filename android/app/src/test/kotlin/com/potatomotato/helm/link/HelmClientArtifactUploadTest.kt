@@ -243,20 +243,106 @@ class HelmClientArtifactUploadTest {
     // ------------------------------------------------------------- the harness
 
     private fun stage(key: String) {
-        assertTrue(
-            client.uploads.stage(
-                StagedAttachment(
-                    key = key,
-                    source = "content://test/$key",
-                    localPath = "/cache/$key",
-                    filename = "$key.jpg",
-                    mimeType = "image/jpeg",
-                    sizeBytes = files.getValue(key).size.toLong(),
-                    sha256 = "ab".repeat(32),
-                ),
+        assertTrue(client.uploads.stage(stagedFile(key)))
+    }
+
+    private fun stagedFile(key: String) = StagedAttachment(
+        key = key,
+        source = "content://test/$key",
+        localPath = "/cache/$key",
+        filename = "$key.jpg",
+        mimeType = "image/jpeg",
+        sizeBytes = files.getValue(key).size.toLong(),
+        sha256 = "ab".repeat(32),
+    )
+
+    // ------------------------------------------------- existing-attachment CRUD
+
+    @Test
+    fun `deleting an attachment sends the delete tool and prunes the cached row`() {
+        seedList()
+
+        client.deleteArtifactAttachment("s1", "artifact-9", "att-old")
+
+        assertEquals("session_artifact_attachment_delete", methodOf(sent.last()))
+        val params = paramsOf(sent.last())
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("artifact-9", params.getString("artifactId"))
+        assertEquals("att-old", params.getString("attachmentId"))
+
+        client.onInbound(resultFor(callIdOf(sent.last()), """{"ok":true}"""))
+        assertEquals(listOf("att-keep"), cachedAttachmentIds())
+        assertTrue(client.artifacts.attachmentErrors.value.isEmpty())
+    }
+
+    @Test
+    fun `a refused delete keeps the row and records why`() {
+        seedList()
+
+        client.deleteArtifactAttachment("s1", "artifact-9", "att-old")
+        client.onInbound(errorFor(callIdOf(sent.last()), "attachment locked"))
+
+        assertEquals(listOf("att-old", "att-keep"), cachedAttachmentIds())
+        assertEquals("attachment locked", client.artifacts.attachmentErrors.value["att-old"])
+    }
+
+    @Test
+    fun `a replace commits the new file before deleting the old one and never navigates`() {
+        seedList()
+        files["n"] = byteArrayOf(9, 9)
+        val before = sent.size
+
+        assertTrue(client.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n")))
+
+        // Upload first — no delete may precede the commit.
+        assertEquals("session_artifact_attachment_add", methodOf(sent[before]))
+        client.onInbound(resultFor(callIdOf(sent.last()), """{"uploadId":"slot-n","maxSliceBytes":64,"total":2}"""))
+        assertEquals("session_artifact_attachment_commit", methodOf(sent.last()))
+        assertTrue(sent.drop(before).none { isCall(it, "session_artifact_attachment_delete") })
+
+        client.onInbound(resultFor(callIdOf(sent.last()), """{"attachment":{"id":"att-new"}}"""))
+
+        // Only now the old one goes.
+        val delete = sent.last { isCall(it, "session_artifact_attachment_delete") }
+        assertEquals("att-old", paramsOf(delete).getString("attachmentId"))
+        client.onInbound(resultFor(callIdOf(delete), """{"ok":true}"""))
+        assertEquals(listOf("att-keep"), cachedAttachmentIds())
+        // The editor stays put: a replace is not a create/revise landing.
+        assertNull(client.control.artifactLanding.value)
+    }
+
+    @Test
+    fun `a replace whose upload fails keeps the original and sends no delete`() {
+        seedList()
+        files["n"] = byteArrayOf(9, 9)
+        val before = sent.size
+
+        client.replaceArtifactAttachment("s1", "artifact-9", "att-old", stagedFile("n"))
+        client.onInbound(resultFor(callIdOf(sent.last()), """{"uploadId":"slot-n","maxSliceBytes":64,"total":2}"""))
+        client.onInbound(errorFor(callIdOf(sent.last()), "upload checksum mismatch"))
+
+        assertTrue(client.uploads.states.value["n"] is AttachmentUploadState.Failed)
+        assertTrue(sent.drop(before).none { isCall(it, "session_artifact_attachment_delete") })
+        assertEquals(listOf("att-old", "att-keep"), cachedAttachmentIds())
+    }
+
+    /** Put one artifact with two attachments into the list cache, as a real list answer would. */
+    private fun seedList() {
+        client.refreshArtifacts("s1")
+        client.onInbound(
+            resultFor(
+                callIdOf(sent.last { isCall(it, "session_artifact_list") }),
+                """[{"id":"artifact-9","title":"T","kind":"markdown","attachments":[""" +
+                    """{"id":"att-old","filename":"old.png"},{"id":"att-keep","filename":"keep.png"}]}]""",
             ),
         )
     }
+
+    private fun cachedAttachmentIds(): List<String> =
+        client.artifacts.cachedArtifacts("s1").single().attachments.map { it.id }
+
+    private fun isCall(frame: ByteArray, method: String): Boolean =
+        runCatching { methodOf(frame) == method }.getOrDefault(false)
 
     /** Answer the last file's commit and let the chain finish. */
     private fun finishFile(key: String, slot: String, attachmentId: String) {

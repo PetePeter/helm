@@ -269,7 +269,7 @@ fun ArtifactDetailScreen(
 
         if (confirmingDelete) {
             ConfirmDelete(
-                title = title(artifact, state),
+                message = stringResource(R.string.artifacts_confirm_delete, title(artifact, state)),
                 onConfirm = {
                     confirmingDelete = false
                     onDelete()
@@ -410,7 +410,7 @@ private fun SaveStateLine(saveState: ArtifactSave, artifactId: String?) {
 }
 
 @Composable
-private fun ConfirmDelete(title: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
+internal fun ConfirmDelete(message: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -436,7 +436,7 @@ private fun ConfirmDelete(title: String, onConfirm: () -> Unit, onCancel: () -> 
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
             Text(
-                text = stringResource(R.string.artifacts_confirm_delete, title),
+                text = message,
                 color = HelmColors.Txt,
                 style = MaterialTheme.typography.bodyLarge,
             )

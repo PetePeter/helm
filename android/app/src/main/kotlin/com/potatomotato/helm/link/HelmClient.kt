@@ -442,6 +442,37 @@ class HelmClient(
     private var uploadAction: SessionAction = SessionAction.CreateArtifact
 
     /**
+     * Whether the chain's end should navigate (the create/revise landing). A
+     * replace started from inside the editor must NOT: the user is mid-edit, and
+     * being thrown to the detail screen would discard the body they are typing.
+     */
+    private var landOnFinish: Boolean = true
+
+    /**
+     * Swap an existing attachment for a newly picked file, in the one order that
+     * cannot lose data: upload + commit the new file first, and delete the old
+     * one only once that commit has answered Ok (see the commit handler). An
+     * upload that fails leaves the original untouched and a retryable chip.
+     *
+     * If a chain is already running the replacement just joins its queue — two
+     * chains at once would interleave slices on the link.
+     */
+    fun replaceArtifactAttachment(
+        sessionId: String,
+        artifactId: String,
+        oldAttachmentId: String,
+        staged: StagedAttachment,
+    ): Boolean {
+        if (!uploads.stageReplacement(staged, oldAttachmentId)) return false
+        artifacts.attachmentEditStarted(oldAttachmentId)
+        if (uploads.anyUploading()) return true
+        landOnFinish = false
+        uploads.beginUploads(artifactId, sessionId)
+        startArtifactUploads(sessionId, artifactId)
+        return true
+    }
+
+    /**
      * Start the staged-file chain against an artifact that now EXISTS.
      *
      * The one entry point for both halves of the editor: a create reaches it once
@@ -452,6 +483,7 @@ class HelmClient(
      */
     fun beginArtifactUploads(action: SessionAction, sessionId: String, artifactId: String) {
         uploadAction = action
+        landOnFinish = true
         uploads.beginUploads(artifactId, sessionId)
         startArtifactUploads(sessionId, artifactId)
     }
@@ -615,6 +647,7 @@ class HelmClient(
             when (outcome) {
                 is Outcome.Ok -> {
                     uploads.uploadDone(key, attachmentIdIn(outcome.result))
+                    retireReplaced(sessionId, artifactId, key)
                     startArtifactUploads(sessionId, artifactId)
                 }
                 is Outcome.Failed -> uploads.uploadFailed(key, outcome.message)
@@ -673,7 +706,7 @@ class HelmClient(
 
     /** The whole stage landed: NOW the edit moves the user, like a bare one would. */
     private fun finishArtifactUploads(sessionId: String, artifactId: String) {
-        control.artifactLanded(uploadAction, artifactId)
+        if (landOnFinish) control.artifactLanded(uploadAction, artifactId)
         refreshArtifacts(sessionId)
     }
 
@@ -912,21 +945,55 @@ class HelmClient(
     }
 
     /**
-     * Bin ONE attachment without binning the artifact that holds it. The tile
-     * goes with it; a file the desktop no longer has is not one to offer.
+     * Bin ONE attachment without binning the artifact that holds it — the single
+     * path for the editor's delete, a replace's second half, and a chat tile's
+     * delete. On Ok the cached artifact row loses it at once (and a re-pull
+     * reconciles); on failure the row stays and records why. [onDeleted] is for
+     * callers with their own mirror to prune, like the chat tile.
      */
-    fun deleteChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
-        act(
+    fun deleteArtifactAttachment(
+        sessionId: String,
+        artifactId: String,
+        attachmentId: String,
+        onDeleted: () -> Unit = {},
+    ): Boolean {
+        artifacts.attachmentEditStarted(attachmentId)
+        return act(
             SessionAction.DeleteArtifact,
             METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE,
             linkedMapOf(
                 "sessionId" to sessionId,
-                "artifactId" to attachment.artifactId,
-                "attachmentId" to attachment.attachmentId,
+                "artifactId" to artifactId,
+                "attachmentId" to attachmentId,
             ),
         ) { outcome ->
-            if (outcome is Outcome.Ok) chats.remove(sessionId, key)
+            when (outcome) {
+                is Outcome.Ok -> {
+                    artifacts.attachmentRemoved(sessionId, artifactId, attachmentId)
+                    onDeleted()
+                }
+                is Outcome.Failed -> artifacts.attachmentEditFailed(attachmentId, outcome.message)
+            }
         }
+    }
+
+    /** A chat tile's delete: the artifact attachment, then the tile that showed it. */
+    fun deleteChatAttachment(sessionId: String, key: String, attachment: ChatAttachment): Boolean =
+        deleteArtifactAttachment(sessionId, attachment.artifactId, attachment.attachmentId) {
+            chats.remove(sessionId, key)
+        }
+
+    /**
+     * A replacement's commit answered Ok: only NOW is the old file deleted. The
+     * chip retires once the delete lands, and the list re-pull shows the swap.
+     */
+    private fun retireReplaced(sessionId: String, artifactId: String, key: String) {
+        val old = uploads.replaces(key) ?: return
+        deleteArtifactAttachment(sessionId, artifactId, old) {
+            uploads.unstage(key)
+            refreshArtifacts(sessionId)
+        }
+    }
 
     /** One `session_artifact_download` ask; [artifactId] is who the answer belongs to. */
     private fun fetchArtifactFile(artifactId: String, params: Map<String, Any>): Boolean =
