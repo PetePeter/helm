@@ -14,24 +14,9 @@ const emit = defineEmits<{
   copy: [];
 }>();
 
-const STATUS_ICONS: Record<typeof props.status, string> = {
-  planning: '⚪',
-  ready: '🔵',
-  coding: '🟢',
-  review: '⏳',
-  blocked: '⛔',
-  done: '✅',
-};
-
-const displayTitle = computed(() => {
-  const titleWithPrefix = getDisplayTitle(props.title, props.type);
-  const withHumanId = props.humanId ? `${props.humanId} ${titleWithPrefix}` : titleWithPrefix;
-  return truncateTitle(withHumanId);
-});
-
-function truncateTitle(title: string): string {
-  return title.length > 20 ? `${title.slice(0, 20)}…` : title;
-}
+// Row one reads "P-0001 - coding"; without a human id the status stands alone.
+const statusText = computed(() => (props.humanId ? `- ${props.status}` : props.status));
+const displayTitle = computed(() => getDisplayTitle(props.title, props.type));
 
 function onKeyActivate(): void {
   emit('click');
@@ -40,7 +25,7 @@ function onKeyActivate(): void {
 
 <template>
   <div
-    class="plan-chip"
+    class="plan-chip plan-chip--two-line"
     :class="`plan-chip--${status}`"
     role="button"
     tabindex="0"
@@ -49,22 +34,52 @@ function onKeyActivate(): void {
     @keydown.enter.prevent="onKeyActivate"
     @keydown.space.prevent="onKeyActivate"
   >
-    <span>{{ STATUS_ICONS[status] }}</span>
-    <span class="plan-chip__label">{{ displayTitle }}</span>
-    <button
-      v-if="humanId"
-      type="button"
-      class="plan-chip__copy"
-      :title="`Copy reference ${humanId}`"
-      :aria-label="`Copy reference ${humanId}`"
-      @click.stop="emit('copy')"
-    >⧉</button>
+    <!-- The state colour comes from the plan-chip--<status> class, so it always
+         follows the persisted status the chip-bar store last loaded. -->
+    <span class="plan-chip__top">
+      <span v-if="humanId" class="plan-chip__id">{{ humanId }}</span>
+      <span class="plan-chip__status">{{ statusText }}</span>
+      <button
+        v-if="humanId"
+        type="button"
+        class="plan-chip__copy"
+        :title="`Copy reference ${humanId}`"
+        :aria-label="`Copy reference ${humanId}`"
+        @click.stop="emit('copy')"
+      >⧉</button>
+    </span>
+    <span class="plan-chip__title">{{ displayTitle }}</span>
   </div>
 </template>
 
 <style scoped>
-.plan-chip__label { overflow: hidden; text-overflow: ellipsis; }
+/* Two-row layout is scoped here so DraftEditor's single-line .plan-chip spans
+   keep the shared global styling. */
+.plan-chip--two-line {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 180px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 9px;
+}
+.plan-chip__top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.plan-chip__id { font-weight: 600; }
+.plan-chip__status { color: var(--text-secondary); }
+.plan-chip__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
 .plan-chip__copy {
+  margin-left: auto;
   border: 0;
   background: transparent;
   color: inherit;

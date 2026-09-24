@@ -38,6 +38,15 @@ describe('ChipActionBar.vue', () => {
     w.unmount();
   });
 
+  it('puts accelerator and label on row one and the preview on row two', () => {
+    const w = mount(ChipActionBar, { props: { actions: makeActions(1) } });
+    const top = w.find('.chip-action-btn__top');
+    expect(top.find('.chip-action-btn__accel').text()).toBe('⌥1');
+    expect(top.find('.chip-action-btn__label').text()).toBe('Action 1');
+    expect(w.find('.chip-action-btn__preview').text()).toBe('preview 1');
+    w.unmount();
+  });
+
   it('emits the action sequence on click', async () => {
     const w = mount(ChipActionBar, { props: { actions: makeActions(2) } });
     await w.findAll('.chip-action-btn')[1].trigger('click');

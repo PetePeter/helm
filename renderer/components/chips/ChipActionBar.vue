@@ -37,12 +37,15 @@ function tooltip(preview: string, index: number): string {
       :title="tooltip(action.preview, index)"
       @click="emit('actionClick', action.sequence)"
     >
-      <span
-        v-if="accelerator(index)"
-        class="chip-action-btn__accel"
-        aria-hidden="true"
-      >{{ accelerator(index) }}</span>
-      {{ action.label }}
+      <span class="chip-action-btn__top">
+        <span
+          v-if="accelerator(index)"
+          class="chip-action-btn__accel"
+          aria-hidden="true"
+        >{{ accelerator(index) }}</span>
+        <span class="chip-action-btn__label">{{ action.label }}</span>
+      </span>
+      <span class="chip-action-btn__preview">{{ action.preview }}</span>
     </button>
   </div>
 </template>
@@ -53,18 +56,27 @@ function tooltip(preview: string, index: number): string {
   flex-wrap: wrap;
   gap: 4px;
   align-items: center;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .chip-action-btn {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
   color: var(--text-primary);
-  border-radius: 999px;
-  padding: 2px 8px;
+  border-radius: 9px;
+  padding: 4px 9px;
   font-size: 11px;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 180px;
+  max-width: 100%;
+  overflow: hidden;
+  text-align: left;
   transition: background 0.12s, border-color 0.12s, color 0.12s;
   user-select: none;
 }
@@ -77,6 +89,23 @@ function tooltip(preview: string, index: number): string {
 .chip-action-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.chip-action-btn__top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.chip-action-btn__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip-action-btn__preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
 }
 
 /* Alt+number accelerator badge — uses the glyph in the template to stay

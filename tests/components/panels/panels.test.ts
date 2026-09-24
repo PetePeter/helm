@@ -1544,31 +1544,15 @@ describe('ChipBar', () => {
     expect(w.find('.chip-bar').exists()).toBe(false);
   });
 
-  it('renders plan chip titles with status icons', () => {
+  it('renders plan chip titles with textual status', () => {
     const w = mount(ChipBar, {
       props: { planChips: basePlanChips, actions: [], visible: true },
     });
     const chips = w.findAll('.plan-chip');
-    // basePlanChips[0] is 'ready' (blue circle), basePlanChips[1] is 'coding' (green circle)
-    expect(chips[0].text()).toContain('🔵');
+    expect(chips[0].text()).toContain('ready');
     expect(chips[0].text()).toContain('Setup DB');
-    expect(chips[1].text()).toContain('🟢');
+    expect(chips[1].text()).toContain('coding');
     expect(chips[1].text()).toContain('Write API');
-  });
-
-  it('renders plan chip with blocked status icon', () => {
-    const w = mount(ChipBar, {
-      props: { planChips: [{ id: 'p3', title: 'Blocked', status: 'blocked' as const }], actions: [], visible: true },
-    });
-    expect(w.find('.plan-chip').text()).toContain('⛔');
-  });
-
-  it('renders plan chip with blocked status icon', () => {
-    // Note: 'question' status was migrated to 'blocked' in P-0035
-    const w = mount(ChipBar, {
-      props: { planChips: [{ id: 'p4', title: 'Blocked', status: 'blocked' as const }], actions: [], visible: true },
-    });
-    expect(w.find('.plan-chip').text()).toContain('⛔');
   });
 
   it('emits planChipClick when plan chip clicked', async () => {

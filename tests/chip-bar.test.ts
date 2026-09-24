@@ -19,20 +19,32 @@ vi.mock('../renderer/bindings.js', () => ({
 }));
 
 describe('Chip components', () => {
-  it('truncates plan chip labels to the legacy 20 char limit', () => {
+  it('puts the human id and textual status on row one and the full title on row two', () => {
     const wrapper = mount(PlanChip, {
-      props: { title: 'abcdefghijklmnopqrstuvwxyz', status: 'coding' },
+      props: { humanId: 'P-0193', title: 'Refine chip bar with a very long title', status: 'coding' },
     });
-    expect(wrapper.text()).toContain('abcdefghijklmnopqrst…');
-    expect(wrapper.attributes('title')).toBe('abcdefghijklmnopqrstuvwxyz');
+    const top = wrapper.find('.plan-chip__top');
+    expect(top.find('.plan-chip__id').text()).toBe('P-0193');
+    expect(top.find('.plan-chip__status').text()).toBe('- coding');
+    expect(top.find('.plan-chip__copy').exists()).toBe(true);
+    expect(wrapper.find('.plan-chip__title').text()).toBe('Refine chip bar with a very long title');
+    expect(wrapper.attributes('title')).toBe('P-0193 Refine chip bar with a very long title');
+    expect(wrapper.classes()).toContain('plan-chip--two-line');
   });
 
-  it('includes the humanId in plan chip text when provided', () => {
-    const wrapper = mount(PlanChip, {
-      props: { humanId: 'P-0193', title: 'Refine chip bar', status: 'coding' },
-    });
-    expect(wrapper.text()).toContain('P-0193');
-    expect(wrapper.attributes('title')).toBe('P-0193 Refine chip bar');
+  it('derives the status class from the status prop on every update', async () => {
+    const wrapper = mount(PlanChip, { props: { humanId: 'P-1', title: 'T', status: 'ready' } });
+    expect(wrapper.classes()).toContain('plan-chip--ready');
+    await wrapper.setProps({ status: 'coding' });
+    expect(wrapper.classes()).toContain('plan-chip--coding');
+    expect(wrapper.classes()).not.toContain('plan-chip--ready');
+    expect(wrapper.find('.plan-chip__status').text()).toBe('- coding');
+  });
+
+  it('shows only the status on row one when there is no human id', () => {
+    const wrapper = mount(PlanChip, { props: { title: 'No ref', status: 'blocked' } });
+    expect(wrapper.find('.plan-chip__id').exists()).toBe(false);
+    expect(wrapper.find('.plan-chip__status').text()).toBe('blocked');
   });
 
   it('renders action button previews as tooltips with the Alt accelerator', () => {

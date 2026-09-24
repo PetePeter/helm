@@ -26,12 +26,17 @@ vi.mock('../renderer/paste-handler.js', () => ({
 }));
 
 describe('Plan chip components', () => {
-  it('renders the correct status icons', () => {
-    const blocked = mount(PlanChip, { props: { title: 'Blocked task', status: 'blocked' } });
-    const review = mount(PlanChip, { props: { title: 'Review task', status: 'review' } });
+  it.each(['planning', 'ready', 'coding', 'review', 'blocked', 'done'] as const)('renders %s as text and as its state class', (status) => {
+    const wrapper = mount(PlanChip, { props: { humanId: 'P-9', title: 'Task', status } });
+    expect(wrapper.find('.plan-chip__status').text()).toBe(`- ${status}`);
+    expect(wrapper.classes()).toContain(`plan-chip--${status}`);
+  });
 
-    expect(blocked.text()).toContain('⛔');
-    expect(review.text()).toContain('⏳');
+  it('opens the plan on Enter and Space', async () => {
+    const wrapper = mount(PlanChip, { props: { humanId: 'P-9', title: 'Task', status: 'ready' } });
+    await wrapper.trigger('keydown', { key: 'Enter' });
+    await wrapper.trigger('keydown', { key: ' ' });
+    expect(wrapper.emitted('click')).toHaveLength(2);
   });
 
   it('renders plan chips through ChipBar and emits planChipClick', async () => {
@@ -139,6 +144,23 @@ describe('Plan chip store integration', () => {
     expect(store.plans.map((plan) => plan.status)).toEqual(['blocked', 'blocked', 'ready']);
     expect(state.planCodingCounts.get('session-1')).toBe(2);
     expect(state.planStartableCounts.get('session-1')).toBe(1);
+  });
+
+  it('a claimed plan stays coding after switching sessions away and back', async () => {
+    const store = useChipBarStore();
+    state.sessions.push({ id: 'session-2', name: 'Other', cliType: 'claude-code', processId: 2, workingDir: '/other' });
+    window.gamepadCli.planGetAllDoingForDir.mockImplementation(async (dir: string) => (
+      dir === '/test/dir' ? [{ id: 'claimed-1', humanId: 'P-1', title: 'Claimed', status: 'coding' }] : []
+    ));
+    window.gamepadCli.planStartableForDir.mockResolvedValue([]);
+
+    await store.refresh('session-1');
+    state.activeSessionId = 'session-2';
+    await store.refresh('session-2');
+    state.activeSessionId = 'session-1';
+    await store.refresh('session-1');
+
+    expect(store.plans).toEqual([expect.objectContaining({ id: 'claimed-1', status: 'coding' })]);
   });
 
   it('openPlan exposes apply/save callbacks for a ready plan', async () => {
