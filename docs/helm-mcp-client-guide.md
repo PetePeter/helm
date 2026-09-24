@@ -285,6 +285,19 @@ The same bulk cleanup as the desktop planner (P-0805), exposed as MCP tools so t
 
 Call them in that order: clearing sequences first is what turns contexts bound only to empty sequences into unreferenced ones. Replies stay tiny on purpose — large replies have broken the phone link.
 
+## Revising a session artifact: `session_artifact_update`
+
+`session_artifact_update(sessionId, artifactId, content?, title?)` takes
+`content`, `title`, or both (at least one).
+
+- `content` appends a new version; earlier versions are kept.
+- `title` renames the artifact (it is trimmed first). A title-only call renames
+  **without** adding a version, because versions record body history and a
+  rename only changes metadata.
+- A blank title is rejected before anything changes, so a bad call never
+  leaves a half-applied revision.
+- Leave `title` out to keep the current name.
+
 ## Testing Your Envelope Handler
 
 ```bash

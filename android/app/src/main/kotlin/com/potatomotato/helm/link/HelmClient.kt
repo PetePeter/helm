@@ -716,30 +716,35 @@ class HelmClient(
     }
 
     /**
-     * Append a version to an artifact the session owns. No title rides the wire
-     * (`session_artifact_update` takes content only) and no follow-up ask is
-     * made: returning to the detail screen re-pulls the body the way every
-     * visit does, and that re-pull is the reconciliation.
+     * Revise an artifact the session owns. Only the CHANGED fields ride
+     * `session_artifact_update`: a new body appends a version, a new title
+     * renames (the desktop adds no version for a title-only call). No
+     * follow-up ask is made: returning to the detail screen re-pulls the body
+     * the way every visit does, and that re-pull is the reconciliation.
      *
-     * Staged files ride a revise exactly as they ride a create — the artifact
-     * already exists, so the chain can start the moment the update is
-     * acknowledged.
+     * Staged files ride a revise exactly as they ride a create, against the id
+     * being edited. A revise that ONLY adds files skips the update call and
+     * starts the upload chain straight away.
      */
     fun reviseArtifact(
         sessionId: String,
         artifactId: String,
-        content: String,
+        revision: ArtifactRules.Revision,
         attachmentKeys: List<String> = emptyList(),
     ): Boolean {
-        if (!ArtifactRules.fitsRevise(content)) {
+        if (!ArtifactRules.fitsRevise(revision)) {
             control.noticed(SessionAction.ReviseArtifact, ActionOutcome.Failed(TOO_LARGE))
             return false
         }
-        return act(
-            SessionAction.ReviseArtifact,
-            METHOD_SESSION_ARTIFACT_UPDATE,
-            linkedMapOf("sessionId" to sessionId, "artifactId" to artifactId, "content" to content),
-        ) { outcome ->
+        if (!revision.changesText) {
+            if (attachmentKeys.isEmpty()) return false
+            beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
+            return true
+        }
+        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
+        revision.newBody?.let { params["content"] = it }
+        revision.newTitle?.let { params["title"] = it }
+        return act(SessionAction.ReviseArtifact, METHOD_SESSION_ARTIFACT_UPDATE, params) { outcome ->
             if (outcome is Outcome.Ok) {
                 if (attachmentKeys.isEmpty()) {
                     control.artifactLanded(SessionAction.ReviseArtifact, artifactId)

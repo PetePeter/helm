@@ -801,7 +801,7 @@ class HelmClientTest {
         assertEquals(SessionAction.CreateArtifact, client.control.notice.value!!.action)
         assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
 
-        assertFalse(client.reviseArtifact("s1", "a1", big))
+        assertFalse(client.reviseArtifact("s1", "a1", body(big)))
         assertEquals(SessionAction.ReviseArtifact, client.control.notice.value!!.action)
         assertTrue(client.control.notice.value!!.outcome is ActionOutcome.Failed)
 
@@ -812,7 +812,7 @@ class HelmClientTest {
 
     @Test
     fun `a revise sends the session, the artifact and the new body, and adds no second ask`() {
-        client.reviseArtifact("s1", "a1", "# v2")
+        client.reviseArtifact("s1", "a1", body("# v2"))
 
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("session_artifact_update", record.getString("method"))
@@ -820,6 +820,7 @@ class HelmClientTest {
         assertEquals("s1", params.getString("sessionId"))
         assertEquals("a1", params.getString("artifactId"))
         assertEquals("# v2", params.getString("content"))
+        assertFalse("an unchanged title stays off the wire", params.has("title"))
 
         client.onInbound(resultFor(lastCallId(), """{"id":"a1","versions":[]}"""))
         assertNotice(SessionAction.ReviseArtifact, ActionOutcome.Done)
@@ -828,9 +829,28 @@ class HelmClientTest {
         assertEquals(1, sent.size)
     }
 
+    /** A revise of artifact "Report" whose body was "# v1". */
+    private fun body(content: String, title: String = "Report") =
+        ArtifactRules.Revision("Report", "# v1", title, content)
+
+    @Test
+    fun `a rename sends the trimmed title, and an unchanged body stays off the wire`() {
+        client.reviseArtifact("s1", "a1", body("# v1", title = "  Renamed "))
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("Renamed", params.getString("title"))
+        assertFalse("an unchanged body would append a duplicate version", params.has("content"))
+    }
+
+    @Test
+    fun `a revise with nothing changed and nothing staged sends nothing`() {
+        assertFalse(client.reviseArtifact("s1", "a1", body("# v1")))
+        assertTrue(sent.isEmpty())
+    }
+
     @Test
     fun `a revise refusal is a rule, not a dropped link`() {
-        client.reviseArtifact("s1", "a1", "# v2")
+        client.reviseArtifact("s1", "a1", body("# v2"))
 
         client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
 

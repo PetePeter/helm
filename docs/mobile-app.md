@@ -219,7 +219,7 @@ got a **session-addressed** family that takes the session as an argument:
 | `session_artifact_list` | id/title/kind/versionCount/timestamps for one session |
 | `session_artifact_get` | metadata plus ONE version's content — the latest, or the version asked for |
 | `session_artifact_create` | mint a new artifact — **markdown only in v1** |
-| `session_artifact_update` | append a version to an artifact that session owns |
+| `session_artifact_update` | append a version and/or rename (`title`) an artifact that session owns |
 | `session_artifact_download` | `{ filename, mimeType, base64 }` for saving as a file |
 | `session_artifact_delete` | delete one artifact — the only delete; the desktop-only `artifact_delete`/`artifact_delete_all` were removed, and there is **no bulk variant** (artifact-viewer.md) |
 
@@ -254,6 +254,13 @@ against the same 128KiB frame the desktop caps its answers with
 that would not fit is refused at the submit button instead of tearing the link.
 The screens re-pull on every visit, so a write needs no refresh of its own —
 returning from one reconciles the list for free.
+
+**Create and revise share one editor layout** — title, body, staged chips,
+attach toolbar, plus the existing attachments on a revise; only the app bar and
+submit label differ. A revise sends only what changed (`ArtifactRules.Revision`):
+a new title renames, a new body appends a version, and a files-only revise skips
+the update and goes straight to the upload chain. It is a no-op (submit dark)
+only when title and body are unchanged and nothing is staged.
 
 **The editor can attach files, on a create and on a revise alike.** Both halves
 enter the same staged-file chain (`HelmClient.beginArtifactUploads`) once the

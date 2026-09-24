@@ -34,6 +34,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.ble.LinkState
+import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
@@ -995,11 +996,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 // A revise chains its staged files too: the
                                 // artifact already exists, so the keys ride the
                                 // same chain a create's do.
-                                if (artifactId != null) {
+                                if (artifactId != null && edit is ArtifactEdit.Revision) {
                                     client.reviseArtifact(
                                         open.id,
                                         artifactId,
-                                        content,
+                                        ArtifactRules.Revision(edit.artifact.title, edit.shown, title, content),
                                         client.uploads.pendingKeys(),
                                     )
                                 }

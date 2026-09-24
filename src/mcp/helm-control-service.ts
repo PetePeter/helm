@@ -553,11 +553,21 @@ export class HelmControlService extends EventEmitter {
     return artifact;
   }
 
-  updateArtifact(callerSessionId: string, id: string, content: string): Artifact {
+  /**
+   * Revise an owned artifact: an optional rename and/or a new content version.
+   * A title-only call renames WITHOUT appending a version — versions record
+   * body history, and a rename is metadata. The rename is validated before any
+   * mutation so a blank title never leaves a half-applied revision behind.
+   */
+  updateArtifact(callerSessionId: string, id: string, content: string | undefined, title?: string): Artifact {
     this.requireOwnedArtifact(callerSessionId, id);
-    const updated = this.requireArtifactManager().update(id, content);
-    if (!updated) throw new Error(`Artifact not found: ${id}`);
-    return updated;
+    const newTitle = title === undefined ? undefined : title.trim();
+    if (newTitle === '') throw new Error('title must not be blank');
+    if (content === undefined && newTitle === undefined) throw new Error('content or title is required');
+    const manager = this.requireArtifactManager();
+    if (newTitle !== undefined) manager.rename(id, newTitle);
+    if (content !== undefined) manager.update(id, content);
+    return this.requireOwnedArtifact(callerSessionId, id);
   }
 
   updateArtifactFromFile(

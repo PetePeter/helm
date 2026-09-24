@@ -1987,3 +1987,45 @@ describe('HelmControlService artifact session ownership', () => {
     expect(service.getArtifact('sessA', owned.id).versions).toHaveLength(2);
   });
 });
+
+describe('HelmControlService artifact title revision', () => {
+  async function setup() {
+    const { ArtifactManager } = await import('../src/session/artifact-manager.js');
+    const { service } = makeService();
+    service.setArtifactManager(new ArtifactManager());
+    const created = service.createArtifact('sessA', 'Old', 'markdown', 'v1 body');
+    return { service, id: created.id };
+  }
+
+  it('renames with a new version and keeps prior versions', async () => {
+    const { service, id } = await setup();
+    const updated = service.updateArtifact('sessA', id, 'v2 body', '  New  ');
+    expect(updated.title).toBe('New');
+    expect(updated.versions.map(v => v.content)).toEqual(['v1 body', 'v2 body']);
+  });
+
+  it('renames without adding a version when content is omitted', async () => {
+    const { service, id } = await setup();
+    const updated = service.updateArtifact('sessA', id, undefined, 'New');
+    expect(updated.title).toBe('New');
+    expect(updated.versions).toHaveLength(1);
+  });
+
+  it('keeps the name when no title is given', async () => {
+    const { service, id } = await setup();
+    expect(service.updateArtifact('sessA', id, 'v2 body').title).toBe('Old');
+  });
+
+  it('rejects a blank title without mutating the artifact', async () => {
+    const { service, id } = await setup();
+    expect(() => service.updateArtifact('sessA', id, 'v2 body', '   ')).toThrow('title must not be blank');
+    const after = service.getArtifact('sessA', id);
+    expect(after.title).toBe('Old');
+    expect(after.versions).toHaveLength(1);
+  });
+
+  it('rejects a call with neither content nor title', async () => {
+    const { service, id } = await setup();
+    expect(() => service.updateArtifact('sessA', id, undefined)).toThrow('content or title is required');
+  });
+});

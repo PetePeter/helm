@@ -810,7 +810,8 @@ export async function callMcpTool(
         return service.updateArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
-          asString(args.content, 'content is required'),
+          args.content === undefined ? undefined : asStringValue(args.content, 'content must be a string'),
+          args.title === undefined ? undefined : asStringValue(args.title, 'title must be a string'),
         );
       }
       case 'session_artifact_download': {

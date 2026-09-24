@@ -61,7 +61,8 @@ sealed interface ArtifactEdit {
     data class New(val sessionId: String) : ArtifactEdit
 
     /**
-     * Append a version to an artifact. The body starts from what the detail
+     * Revise an artifact: rename it, append a version, and/or add files. The
+     * title starts from the artifact's own name; the body starts from what the detail
      * screen was SHOWING — the version the user read, so paging back to v2 of 3
      * and revising means editing from v2, which is the honest place to start.
      */
@@ -69,8 +70,10 @@ sealed interface ArtifactEdit {
 }
 
 /**
- * The one writing surface in the artifacts slice: a title, a body, and — for a
- * create — the files riding along with it. Create is markdown-only because the
+ * The one writing surface in the artifacts slice, ONE layout for create and
+ * revise: a title, a body, the files riding along, and — on a revise — the
+ * files the artifact already carries. Only the app bar and the submit label
+ * say which mode is open. Create is markdown-only because the
  * desktop's session-addressed create refuses every other kind (HTML authored
  * from a phone keyboard is a sanitization question nobody has answered —
  * invariant 9), so the form offers no kind choice at all; a revise inherits the
@@ -90,10 +93,11 @@ sealed interface ArtifactEdit {
 fun ArtifactEditorScreen(
     edit: ArtifactEdit,
     linkState: LinkState,
+    /** The raw title and body; the caller decides which fields changed. */
     onSubmit: (title: String, content: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    /** The staged files, in staged order. A create only. */
+    /** The staged files, in staged order. */
     staged: List<StagedAttachment> = emptyList(),
     /** Per-chip upload state, keyed by [StagedAttachment.key]. */
     uploadStates: Map<String, AttachmentUploadState> = emptyMap(),
@@ -104,7 +108,7 @@ fun ArtifactEditorScreen(
     onAttachFiles: () -> Unit = {},
     /** Open a staged file locally — the chip tap. */
     onOpenStaged: (StagedAttachment) -> Unit = {},
-    /** Take a staged file back off the create. */
+    /** Take a staged file back off the edit. */
     onRemoveStaged: (key: String) -> Unit = {},
     /** Send a failed attachment again. */
     onRetryStaged: (key: String) -> Unit = {},
@@ -126,14 +130,23 @@ fun ArtifactEditorScreen(
     var title by rememberSaveable { mutableStateOf(revision?.artifact?.title ?: "") }
     var body by rememberSaveable { mutableStateOf(revision?.shown ?: "") }
 
-    val verdict = when (edit) {        is ArtifactEdit.New -> ArtifactRules.judgeCreate(title, body)
-        is ArtifactEdit.Revision -> ArtifactRules.judgeRevision(edit.shown, body)
+    val verdict = when (edit) {
+        is ArtifactEdit.New -> ArtifactRules.judgeCreate(title, body)
+        is ArtifactEdit.Revision -> ArtifactRules.judgeRevision(
+            ArtifactRules.Revision(edit.artifact.title, edit.shown, title, body),
+            // A finished upload is already on the artifact, so it is no change.
+            hasStaged = staged.any { uploadStates[it.key] !is AttachmentUploadState.Done },
+        )
     }
     val sendable = verdict == Verdict.Ok
     // Anything past Waiting is a create already in motion; Create must not fire
     // a second artifact into the one being assembled.
     val uploadsRunning = staged.any { it.key !in uploadStates || uploadStates[it.key] is AttachmentUploadState.Uploading }
-    val isCreate = revision == null
+    // A revise whose chain has settled a chip has already sent its text. Sending
+    // again would diff against the ORIGINAL and append the same body twice, so a
+    // failed file is retried from its own chip instead.
+    val reviseSent = revision != null &&
+        staged.any { uploadStates[it.key] is AttachmentUploadState.Done || uploadStates[it.key] is AttachmentUploadState.Failed }
     var confirmingDelete by remember { mutableStateOf<HelmArtifactAttachment?>(null) }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -158,39 +171,30 @@ fun ArtifactEditorScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
-            if (revision == null) {
-                FieldLabel(stringResource(R.string.artifacts_title_label))
-                Field(
-                    value = title,
-                    onValue = { title = it },
-                    singleLine = true,
-                    label = stringResource(R.string.artifacts_title_label),
-                    // The reason the confirm is dark rides on the field, the way
-                    // the rename dialog announces an over-long name.
-                    semanticsError = if (verdict == Verdict.TooLong) {
-                        stringResource(R.string.artifacts_title_too_long)
-                    } else {
-                        null
-                    },
-                )
-                when (verdict) {
-                    Verdict.Blank -> Hint(stringResource(R.string.artifacts_title_blank))
-                    Verdict.TooLong -> Hint(stringResource(R.string.artifacts_title_too_long))
-                    else -> {}
-                }
-                FieldLabel(stringResource(R.string.artifacts_body_markdown))
-            } else {
-                // A revise carries no title on the wire; the artifact keeps its
-                // name, and the editor says which one is being revised.
-                Text(
-                    text = stringResource(R.string.artifacts_editor_revising, revision.artifact.title),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                FieldLabel(stringResource(R.string.artifacts_body_label))
+            FieldLabel(stringResource(R.string.artifacts_title_label))
+            Field(
+                value = title,
+                onValue = { title = it },
+                singleLine = true,
+                label = stringResource(R.string.artifacts_title_label),
+                // The reason the confirm is dark rides on the field, the way
+                // the rename dialog announces an over-long name.
+                semanticsError = if (verdict == Verdict.TooLong) {
+                    stringResource(R.string.artifacts_title_too_long)
+                } else {
+                    null
+                },
+            )
+            when (verdict) {
+                Verdict.Blank -> Hint(stringResource(R.string.artifacts_title_blank))
+                Verdict.TooLong -> Hint(stringResource(R.string.artifacts_title_too_long))
+                else -> {}
             }
+            // A create is markdown-only; a revise keeps the artifact's own kind,
+            // so its body is labelled neutrally.
+            FieldLabel(
+                stringResource(if (revision == null) R.string.artifacts_body_markdown else R.string.artifacts_body_label),
+            )
             val bodyLabel = stringResource(R.string.artifacts_body_label)
             Box(
                 modifier = Modifier
@@ -239,32 +243,21 @@ fun ArtifactEditorScreen(
                     onReplace = { onReplaceExisting(it.id) },
                 )
             }
-            // A replacement rides the staged chain, so its chip is the one place
-            // its progress or failure can show — in a revise as much as a create.
-            if (!isCreate && staged.isNotEmpty()) {
-                StagedChips(
-                    staged = staged,
-                    uploadStates = uploadStates,
-                    onOpen = onOpenStaged,
-                    onRemove = onRemoveStaged,
-                    onRetry = onRetryStaged,
-                )
-            }
-            if (isCreate) {
-                StagedChips(
-                    staged = staged,
-                    uploadStates = uploadStates,
-                    onOpen = onOpenStaged,
-                    onRemove = onRemoveStaged,
-                    onRetry = onRetryStaged,
-                )
-                AttachToolbar(attachSupport, onAttachCamera, onAttachGallery, onAttachFiles)
-            }
+            // A replacement rides the staged chain too, so its chip is where
+            // its progress or failure shows.
+            StagedChips(
+                staged = staged,
+                uploadStates = uploadStates,
+                onOpen = onOpenStaged,
+                onRemove = onRemoveStaged,
+                onRetry = onRetryStaged,
+            )
+            AttachToolbar(attachSupport, onAttachCamera, onAttachGallery, onAttachFiles)
             PrimaryButton(
                 text = stringResource(
                     if (revision == null) R.string.artifacts_submit_create else R.string.artifacts_submit_revise,
                 ),
-                enabled = sendable && !uploadsRunning,
+                enabled = sendable && !uploadsRunning && !reviseSent,
                 // The client enforces the same rules again before the radio; the
                 // trim here is the one place the title is settled.
                 onClick = { onSubmit(ArtifactRules.title(title), body) },

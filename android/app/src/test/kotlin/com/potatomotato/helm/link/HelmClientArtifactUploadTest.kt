@@ -1,5 +1,6 @@
 package com.potatomotato.helm.link
 
+import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.StagedAttachment
@@ -179,7 +180,7 @@ class HelmClientArtifactUploadTest {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
 
-        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
 
         assertEquals("session_artifact_update", methodOf(sent.first()))
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
@@ -207,9 +208,28 @@ class HelmClientArtifactUploadTest {
         assertTrue(client.uploads.allDone())
     }
 
+    private fun revised(body: String) = ArtifactRules.Revision("Doc", "# v1", "Doc", body)
+
+    @Test
+    fun `a revise that only adds files skips the update and uploads to the existing id`() {
+        files["a"] = byteArrayOf(1, 2, 3)
+        stage("a")
+
+        assertTrue(client.reviseArtifact("s1", "artifact-9", revised("# v1"), client.uploads.pendingKeys()))
+
+        assertEquals("session_artifact_attachment_add", methodOf(sent.first()))
+        assertEquals("artifact-9", paramsOf(sent.first()).getString("artifactId"))
+        client.onInbound(resultFor(callIdOf(sent[0]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
+        assertEquals("session_artifact_attachment_commit", methodOf(sent[2]))
+        client.onInbound(
+            resultFor(callIdOf(sent[2]), """{"artifactId":"artifact-9","attachment":{"id":"att-a"}}"""),
+        )
+        assertEquals(SessionAction.ReviseArtifact, client.control.artifactLanding.value?.action)
+    }
+
     @Test
     fun `a revise with nothing staged lands immediately, as it always did`() {
-        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
 
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
 
@@ -221,7 +241,7 @@ class HelmClientArtifactUploadTest {
     fun `a retry after a revise re-sends the whole file into a fresh slot`() {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")
-        client.reviseArtifact("s1", "artifact-9", "# v2", client.uploads.pendingKeys())
+        client.reviseArtifact("s1", "artifact-9", revised("# v2"), client.uploads.pendingKeys())
         client.onInbound(resultFor(callIdOf(sent[0]), """{"id":"artifact-9"}"""))
         client.onInbound(resultFor(callIdOf(sent[1]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
 

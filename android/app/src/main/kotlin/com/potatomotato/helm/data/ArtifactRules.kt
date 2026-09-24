@@ -55,7 +55,7 @@ object ArtifactRules {
         /** Past this phone's title cap. */
         data object TooLong : Verdict
 
-        /** A no-op: the revision is the body already showing, trimmed. */
+        /** A no-op: same title, same body (trimmed), nothing staged. */
         data object Unchanged : Verdict
 
         /** Title and body together would not fit the link's frames. */
@@ -86,27 +86,50 @@ object ArtifactRules {
     }
 
     /**
-     * Judge a revision against the body the editor was opened with.
-     * `session_artifact_update` APPENDS a version, so the unchanged body is a
-     * no-op worth keeping dark, the way rename keeps an unchanged name dark.
+     * One revise as the editor holds it: what the artifact showed when the
+     * editor opened, and what the user has now. Only the fields that CHANGED
+     * ride the wire — an unchanged body would append a duplicate version, and
+     * an unchanged title is a rename to itself.
      */
-    fun judgeRevision(shown: String, candidate: String): Verdict =
-        when {
-            candidate.trim() == shown.trim() -> Verdict.Unchanged
-            escapedLength(candidate) > MAX_EDIT_ESCAPED_BYTES -> Verdict.TooLarge
+    data class Revision(
+        val shownTitle: String,
+        val shownBody: String,
+        val candidateTitle: String,
+        val candidateBody: String,
+    ) {
+        /** The trimmed new title, or null when the name is unchanged. */
+        val newTitle: String? get() = title(candidateTitle).takeIf { it != title(shownTitle) }
+
+        /** The new body, or null when it matches the shown one (trim-insensitive). */
+        val newBody: String? get() = candidateBody.takeIf { it.trim() != shownBody.trim() }
+
+        /** Whether the text half of the revise has anything to send. */
+        val changesText: Boolean get() = newTitle != null || newBody != null
+    }
+
+    /** Whether the changed fields of a revise fit the link's frames together. */
+    fun fitsRevise(revision: Revision): Boolean =
+        fitsCreate(revision.newTitle ?: "", revision.newBody ?: "")
+
+    /**
+     * Judge a revise. The title obeys the create rules; the revise is a no-op
+     * (kept dark, the way rename keeps an unchanged name dark) only when the
+     * title and body are unchanged AND no files are staged to ride it.
+     */
+    fun judgeRevision(revision: Revision, hasStaged: Boolean): Verdict {
+        val trimmed = title(revision.candidateTitle)
+        return when {
+            trimmed.isEmpty() -> Verdict.Blank
+            trimmed.length > MAX_TITLE_LENGTH -> Verdict.TooLong
+            !revision.changesText && !hasStaged -> Verdict.Unchanged
+            !fitsRevise(revision) -> Verdict.TooLarge
             else -> Verdict.Ok
         }
-
-    /** Whether a revision's body fits the link's frames, alone on its wire call. */
-    fun fitsRevise(content: String): Boolean = escapedLength(content) <= MAX_EDIT_ESCAPED_BYTES
+    }
 
     /** The one question the create form's submit asks. */
     fun sendableCreate(candidateTitle: String, content: String): Boolean =
         judgeCreate(candidateTitle, content) == Verdict.Ok
-
-    /** The one question the revise form's submit asks. */
-    fun sendableRevision(shown: String, candidate: String): Boolean =
-        judgeRevision(shown, candidate) == Verdict.Ok
 
     /**
      * The JSON-escaped byte length of one string, estimated GENEROUSLY: every

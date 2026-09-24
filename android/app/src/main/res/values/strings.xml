@@ -278,7 +278,6 @@
 
     <string name="artifacts_editor_new">New artifact</string>
     <string name="artifacts_editor_revise">Revise “%1$s”</string>
-    <string name="artifacts_editor_revising">Revising %1$s</string>
     <string name="artifacts_title_label">Title</string>
     <string name="artifacts_body_markdown">Markdown</string>
     <string name="artifacts_body_label">Body</string>

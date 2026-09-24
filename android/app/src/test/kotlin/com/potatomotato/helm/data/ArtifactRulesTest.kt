@@ -2,6 +2,7 @@ package com.potatomotato.helm.data
 
 import com.potatomotato.helm.data.ArtifactRules.Verdict
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -51,22 +52,38 @@ class ArtifactRulesTest {
 
     // ------------------------------------------------------------------ revise
 
+    private fun rev(title: String = "Report", body: String = "# Report") =
+        ArtifactRules.Revision("Report", "# Report", title, body)
+
     @Test
-    fun `an unchanged body is a no-op and never sendable`() {
+    fun `an unchanged title and body with nothing staged is a no-op`() {
         // `session_artifact_update` APPENDS a version; sending the same body
         // again would add a version that says nothing new.
-        assertEquals(Verdict.Unchanged, ArtifactRules.judgeRevision("# Report", "# Report"))
-        assertFalse(ArtifactRules.sendableRevision("# Report", "# Report"))
+        assertEquals(Verdict.Unchanged, ArtifactRules.judgeRevision(rev(), hasStaged = false))
+        assertEquals(Verdict.Unchanged, ArtifactRules.judgeRevision(rev(body = "  # Report  "), hasStaged = false))
     }
 
     @Test
-    fun `a changed body is sendable`() {
-        assertEquals(Verdict.Ok, ArtifactRules.judgeRevision("# Report", "# Report, revised"))
+    fun `a changed body, a changed title, or a staged file each make it sendable`() {
+        assertEquals(Verdict.Ok, ArtifactRules.judgeRevision(rev(body = "# v2"), hasStaged = false))
+        assertEquals(Verdict.Ok, ArtifactRules.judgeRevision(rev(title = "Renamed"), hasStaged = false))
+        assertEquals(Verdict.Ok, ArtifactRules.judgeRevision(rev(), hasStaged = true))
     }
 
     @Test
-    fun `whitespace padding around an unchanged body is still a no-op`() {
-        assertEquals(Verdict.Unchanged, ArtifactRules.judgeRevision("# Report", "  # Report  "))
+    fun `a revise title obeys the create rules`() {
+        assertEquals(Verdict.Blank, ArtifactRules.judgeRevision(rev(title = "  "), hasStaged = true))
+        assertEquals(
+            Verdict.TooLong,
+            ArtifactRules.judgeRevision(rev(title = "x".repeat(ArtifactRules.MAX_TITLE_LENGTH + 1)), hasStaged = false),
+        )
+    }
+
+    @Test
+    fun `only changed fields are carried`() {
+        assertNull(rev(title = " Report ").newTitle)
+        assertEquals("Renamed", rev(title = " Renamed ").newTitle)
+        assertNull(rev(body = "# Report ").newBody)
     }
 
     // ------------------------------------------------------------- the frame
@@ -75,7 +92,7 @@ class ArtifactRulesTest {
     fun `a body that cannot fit the link is refused before it is sent`() {
         val over = "x".repeat(ArtifactRules.MAX_EDIT_ESCAPED_BYTES + 1)
         assertEquals(Verdict.TooLarge, ArtifactRules.judgeCreate("Note", over))
-        assertEquals(Verdict.TooLarge, ArtifactRules.judgeRevision("", over))
+        assertEquals(Verdict.TooLarge, ArtifactRules.judgeRevision(ArtifactRules.Revision("Note", "", "Note", over), hasStaged = false))
         assertFalse(ArtifactRules.sendableCreate("Note", over))
     }
 

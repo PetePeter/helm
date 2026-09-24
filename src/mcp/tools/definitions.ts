@@ -1487,15 +1487,16 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_update',
     title: 'Update Session Artifact',
     description:
-      'Append a NEW version to an artifact owned by a NAMED session (sessionId argument). The artifact must belong to that session — a cross-session id answers not-found. Prior versions are retained. Returns the updated artifact.',
+      'Revise an artifact owned by a NAMED session (sessionId argument): content appends a NEW version (prior versions retained), title renames it. Give content, title, or both; a title-only call renames without adding a version. A blank title is rejected. The artifact must belong to that session — a cross-session id answers not-found. Returns the updated artifact.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
         artifactId: { type: 'string', description: 'The artifact id to revise.' },
-        content: { type: 'string', description: 'The new full content body (becomes the latest version).' },
+        content: { type: 'string', description: 'Optional new full content body (becomes the latest version).' },
+        title: { type: 'string', description: 'Optional new title (trimmed; must not be blank). Renaming does not add a version.' },
       },
-      required: ['sessionId', 'artifactId', 'content'],
+      required: ['sessionId', 'artifactId'],
       additionalProperties: false,
     },
   },

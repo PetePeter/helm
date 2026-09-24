@@ -167,7 +167,7 @@ describe('session_artifact_* dispatch', () => {
     await callMcpTool(deps, 'session_artifact_update', {
       sessionId: SESSION, artifactId: 'a1', content: 'v2 body',
     }, {});
-    expect(deps.serviceMocks.updateArtifact).toHaveBeenCalledWith(SESSION, 'a1', 'v2 body');
+    expect(deps.serviceMocks.updateArtifact).toHaveBeenCalledWith(SESSION, 'a1', 'v2 body', undefined);
   });
 
   it('downloads as a base64 file envelope', async () => {
