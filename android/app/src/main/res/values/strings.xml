@@ -103,7 +103,6 @@
     <string name="plans_no_project">Pick a project to see its plans.</string>
     <string name="plans_no_session_directory">This session has no project directory, so it has no plans.</string>
     <string name="plans_ungrouped">Ungrouped</string>
-    <string name="plans_startable">ready to start</string>
     <string name="plans_lane_collapse">Collapse this group</string>
     <string name="plans_lane_expand">Expand this group</string>
     <string name="plan_detail_loading">Reading plan…</string>
