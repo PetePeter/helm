@@ -1120,13 +1120,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     },
                     onQuit = {
                         leaving = false
-                        // The stops-then-finish order and the always-finish
+                        // The stops-finish-end order and the always-end
                         // guarantee live in quitHelmApp; this site only wires
-                        // the three owners it belongs to.
+                        // the owners it belongs to. finishAndRemoveTask drops
+                        // the Recents entry so nothing stale is left to pick.
                         quitHelmApp(
                             stopLan = HelmPairing::stopLan,
                             stopLinkService = { HelmLinkService.stop(context) },
-                            finish = { (context as? Activity)?.finish() },
+                            finish = { (context as? Activity)?.finishAndRemoveTask() },
+                            endProcess = { android.os.Process.killProcess(android.os.Process.myPid()) },
                         )
                     },
                     onDismiss = { leaving = false },

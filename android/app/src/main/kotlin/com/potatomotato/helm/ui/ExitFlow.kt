@@ -13,17 +13,28 @@ import com.potatomotato.helm.log.HelmLog
  * process — and the socket — alive after finish(). That is why the stops come
  * before the finish, in this order.
  *
- * WHY lambdas rather than a Context: the three steps live in three different
- * owners (HelmPairing, HelmLinkService, the Activity), and this must test on
+ * The process ends last. finish() alone left the task in Recents and the
+ * process alive, so every in-memory holder (HelmPairing and friends) survived
+ * and reopening from Recents showed the pre-quit state, while a real kill came
+ * back empty. Ending the process makes quit and kill the same thing, instead of
+ * relying on every singleton remembering to reset itself.
+ *
+ * WHY lambdas rather than a Context: the steps live in different owners
+ * (HelmPairing, HelmLinkService, the Activity, the process), and this must test on
  * the JVM like the rest of the logic-only suite — a Context would drag Android
  * types in. The call site owns the wiring; this file owns the ORDER and the
- * guarantee that finish() always runs.
+ * guarantee that finish() and the process end always run.
  *
  * Each stop is individually try-caught, log-and-continue: a stop that throws
  * must not strand the user with a half-quit that still shows the notification,
  * and must never skip the finish that closes the UI.
  */
-fun quitHelmApp(stopLan: () -> Unit, stopLinkService: () -> Unit, finish: () -> Unit) {
+fun quitHelmApp(
+    stopLan: () -> Unit,
+    stopLinkService: () -> Unit,
+    finish: () -> Unit,
+    endProcess: () -> Unit,
+) {
     try {
         stopLan()
     } catch (e: Exception) {
@@ -34,5 +45,9 @@ fun quitHelmApp(stopLan: () -> Unit, stopLinkService: () -> Unit, finish: () -> 
     } catch (e: Exception) {
         HelmLog.w(HelmLog.UI, "link service stop failed during quit", e)
     }
-    finish()
+    try {
+        finish()
+    } finally {
+        endProcess()
+    }
 }

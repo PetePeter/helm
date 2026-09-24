@@ -9,21 +9,24 @@ import org.junit.Test
  *
  * The order IS the contract: LAN's non-daemon pump thread holds the process
  * alive past finish(), so it stops first; the service stops before the
- * activity goes away. And finish() runs even when a stop throws — a quit that
- * stops halfway leaves the notification and the link running with no UI left
- * to stop them from.
+ * activity goes away, and the process ends last — a finished activity leaves a
+ * live process whose in-memory state comes back when Recents reopens it. And
+ * finish() and the process end run even when a stop throws — a quit that stops
+ * halfway leaves the notification and the link running with no UI left to stop
+ * them from.
  */
 class ExitFlowTest {
 
     @Test
-    fun `quit stops lan, then the service, then finishes`() {
+    fun `quit stops lan, then the service, then finishes, then ends the process`() {
         val calls = mutableListOf<String>()
         quitHelmApp(
             stopLan = { calls += "lan" },
             stopLinkService = { calls += "service" },
             finish = { calls += "finish" },
+            endProcess = { calls += "end" },
         )
-        assertEquals(listOf("lan", "service", "finish"), calls)
+        assertEquals(listOf("lan", "service", "finish", "end"), calls)
     }
 
     @Test
@@ -33,8 +36,9 @@ class ExitFlowTest {
             stopLan = { throw IllegalStateException("lan") },
             stopLinkService = { calls += "service" },
             finish = { calls += "finish" },
+            endProcess = { calls += "end" },
         )
-        assertEquals(listOf("service", "finish"), calls)
+        assertEquals(listOf("service", "finish", "end"), calls)
     }
 
     @Test
@@ -44,18 +48,35 @@ class ExitFlowTest {
             stopLan = { },
             stopLinkService = { throw IllegalStateException("service") },
             finish = { finished = true },
+            endProcess = { },
         )
         assertTrue(finished)
     }
 
     @Test
-    fun `finish runs exactly once when every stop throws`() {
-        var finishCount = 0
+    fun `finish and process end run exactly once when every stop throws`() {
+        val calls = mutableListOf<String>()
         quitHelmApp(
             stopLan = { throw IllegalStateException("lan") },
             stopLinkService = { throw IllegalStateException("service") },
-            finish = { finishCount++ },
+            finish = { calls += "finish" },
+            endProcess = { calls += "end" },
         )
-        assertEquals(1, finishCount)
+        assertEquals(listOf("finish", "end"), calls)
+    }
+
+    @Test
+    fun `a throwing finish still ends the process`() {
+        var ended = false
+        try {
+            quitHelmApp(
+                stopLan = { },
+                stopLinkService = { },
+                finish = { throw IllegalStateException("finish") },
+                endProcess = { ended = true },
+            )
+        } catch (_: IllegalStateException) {
+        }
+        assertTrue(ended)
     }
 }
