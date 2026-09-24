@@ -519,7 +519,7 @@ export function registerIPCHandlers(
       win.webContents.send('artifact:reveal', { sessionId, artifactId });
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, undefined, patternMatcher);
+  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, undefined, patternMatcher, recycleBinManager);
   const messNotifier = messManager
     ? new MessNotifier(
       messManager,

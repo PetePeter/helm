@@ -78,6 +78,27 @@ canonical PascalCase common-core set (`agentStop` → `Stop`,
 `userPromptSubmitted` → `UserPromptSubmit`, …). Events outside the common
 core are logged and ignored.
 
+### Thread id capture
+
+Every event's `session_id`/`sessionId` is the CLI's **own** session/thread id.
+`HookTracker` stores it on `SessionInfo.cliThreadId`. It writes only when the
+id changes, so the newest id wins (codex `/new` and `/clear` start a new thread).
+The field is persisted and carried through the recycle bin. On resume,
+`{cliThreadId}` in `resumeCommand` resolves to it.
+
+This exists because codex's name-based resume (`codex resume helm-<name>`)
+refuses once history spans several pages ("Cannot verify a unique session
+label"). Resuming by UUID is always unambiguous. There is deliberately no
+fallback: a session that never reported an id fails its resume visibly.
+
+```mermaid
+graph LR
+  E[codex hook event<br/>session_id] --> N[normaliser<br/>cliSessionId]
+  N --> T[HookTracker<br/>updateSession cliThreadId]
+  T --> P[sessions.yaml /<br/>recycle-bin entry]
+  P --> R["resume: codex resume {cliThreadId}"]
+```
+
 ## Enforcement (G2) — PreToolUse denies
 
 Rules arrive as prompt text today ("don't use AskUserQuestion on mobile") —

@@ -173,6 +173,36 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('records the CLI thread id from a SessionStart session_id', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('codex', 'SessionStart', { session_id: 'thread-a' }));
+      expect(s.sessionManager.getSession('s1')?.cliThreadId).toBe('thread-a');
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('the newest thread id wins; an event without one keeps the stored id', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('codex', 'SessionStart', { session_id: 'thread-a' }));
+      s.hookReceiver.emit('hook', hookEvent('codex', 'UserPromptSubmit', { session_id: 'thread-b' }));
+      expect(s.sessionManager.getSession('s1')?.cliThreadId).toBe('thread-b');
+
+      s.updates.length = 0;
+      s.hookReceiver.emit('hook', hookEvent('codex', 'Stop', {}));
+      s.hookReceiver.emit('hook', hookEvent('codex', 'PreToolUse', { session_id: 'thread-b' }));
+      expect(s.sessionManager.getSession('s1')?.cliThreadId).toBe('thread-b');
+      // Unchanged id → no redundant session write.
+      expect(s.updates.filter(u => 'cliThreadId' in u)).toEqual([]);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('PreToolUse makes the dot green through the same activity-change contract as PTY output', () => {
     const s = setup();
     try {

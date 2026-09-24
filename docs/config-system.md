@@ -160,6 +160,15 @@ claude-code:
   initialPromptDelay: 2000    # ms to wait before sending first item (default 2000 for AI CLIs, 0 for generic)
 ```
 
+Resume templates accept two placeholders:
+
+| Placeholder | Source | Used by |
+|---|---|---|
+| `{cliSessionName}` | UUID Helm mints at spawn | claude (`--session-id`/`--resume`), copilot, codex rename |
+| `{cliThreadId}` | The CLI's own `session_id`, captured from its hook events (`SessionInfo.cliThreadId`) | codex: `codex resume {cliThreadId}` |
+
+`{cliThreadId}` has no fallback. If the CLI never reported an id (no hooks block, or a session from before capture existed), the literal placeholder reaches the CLI and the resume fails visibly. See [cli-hooks.md](cli-hooks.md#thread-id-capture).
+
 No `terminal` field — all CLIs run as embedded PTY sessions (no external window config). `initialPrompt` items are sent in order; use `{Wait N}` within sequences for inter-item timing.
 
 `renameCommand` runs **before** the `initialPrompt` items, onto a guaranteed-empty composer, and only once the PTY's output has been quiet for a beat (`waitForQuiet`): a full-screen TUI re-render landing mid-paste (e.g. a SessionStart hook reply) splits the paste and submits its tail as a stray user message. A wedge-proof second CR follows the rename for composers that swallow the submit after a paste.

@@ -19,6 +19,8 @@ export interface RecycleBinEntry {
   workingDir: string;
   /** CLI-internal resume UUID. Passed as resumeSessionName when restoring. */
   cliSessionName: string;
+  /** The CLI's own thread id at close time (SessionInfo.cliThreadId) — resolves `{cliThreadId}` on restore. */
+  cliThreadId?: string;
   /** Epoch ms the session was closed / added to the bin. */
   closedAt: number;
   /** Project the session belonged to at close time — used for the bin's Project tree level. Absent for entries whose dir maps to no project (or pre-dating this field). */

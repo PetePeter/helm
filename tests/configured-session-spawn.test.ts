@@ -15,6 +15,7 @@ describe('spawnConfiguredSession', () => {
       addSession,
       updateSession,
       hasSession,
+      getSession: () => undefined,
     };
 
     const result = spawnConfiguredSession({
@@ -53,6 +54,7 @@ describe('spawnConfiguredSession', () => {
       addSession,
       updateSession,
       hasSession,
+      getSession: () => undefined,
     };
 
     spawnConfiguredSession({

@@ -27,6 +27,9 @@ export interface ConfiguredSessionSpawnParams {
   extraArgs?: string;
   cwd?: string;
   resumeSessionName?: string;
+  /** The CLI's own thread id for `{cliThreadId}`, when the caller holds it and the
+   *  session record does not (a recycle-bin restore). Defaults to the session's. */
+  resumeThreadId?: string;
   contextText?: string;
   /** Delivery context for contextText; background keeps a scheduled run out of the foreground. */
   contextDeliveryContext?: DeliveryContext;
@@ -66,10 +69,14 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     || 'unknown';
   const isResume = Boolean(params.resumeSessionName);
   const cliSessionName = params.resumeSessionName || randomUUID();
+  const cliThreadId = isResume
+    ? params.resumeThreadId ?? params.sessionManager.getSession(sessionId)?.cliThreadId
+    : undefined;
   let { rawCommand, command, args } = resolveSpawnCommand({
     cfg,
     cliType: params.cliType ?? 'unknown',
     cliSessionName,
+    cliThreadId,
     isResume,
     fallbackCommand: params.command,
     fallbackArgs: params.args,
@@ -104,6 +111,7 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     processId: pty.pid,
     ...(normalizedCwd ? { workingDir: normalizedCwd } : {}),
     cliSessionName,
+    ...(cliThreadId ? { cliThreadId } : {}),
     lastOutputAt: now,
     ...(params.createdByPeerId ? { createdByPeerId: params.createdByPeerId } : {}),
     ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
@@ -236,13 +244,17 @@ function resolveSpawnCommand(options: {
   cfg: ReturnType<ConfigLoader['getCliTypeEntry']> | undefined;
   cliType: string;
   cliSessionName: string;
+  cliThreadId?: string;
   isResume: boolean;
   fallbackCommand?: string;
   fallbackArgs?: string[];
 }): { rawCommand?: string; command?: string; args?: string[] } {
   if (options.isResume) {
     if (options.cfg?.resumeCommand) {
-      const rawCommand = options.cfg.resumeCommand.replaceAll('{cliSessionName}', options.cliSessionName);
+      let rawCommand = options.cfg.resumeCommand.replaceAll('{cliSessionName}', options.cliSessionName);
+      // No fallback when the id was never captured: the literal placeholder
+      // reaches the CLI and the resume fails visibly.
+      if (options.cliThreadId) rawCommand = rawCommand.replaceAll('{cliThreadId}', options.cliThreadId);
       warnIfMissingPlaceholder('resumeCommand', options.cfg.resumeCommand, rawCommand);
       return { rawCommand };
     }
@@ -271,8 +283,8 @@ function resolveSpawnCommand(options: {
 }
 
 function warnIfMissingPlaceholder(field: string, template: string, resolved: string): void {
-  if (template === resolved) {
-    logger.warn(`[ConfiguredSessionSpawn] ${field} has no {cliSessionName} placeholder: ${template}`);
+  if (template === resolved && !template.includes('{cliThreadId}')) {
+    logger.warn(`[ConfiguredSessionSpawn] ${field} has no {cliSessionName}/{cliThreadId} placeholder: ${template}`);
   }
 }
 

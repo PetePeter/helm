@@ -49,10 +49,13 @@
   name: Codex
   displayName: Codex
   spawnCommand: codex
-  # Name the thread after Helm's session UUID so resume can target it by name.
-  # The helm- prefix keeps the name from parsing as a codex session-id UUID
-  # (codex resume: "UUIDs take precedence if it parses").
-  resumeCommand: codex resume helm-{cliSessionName}
+  # Resume by the thread UUID codex reports in its hook session_id: resume by
+  # NAME refuses once history spans several pages ("Cannot verify a unique
+  # session label"). Needs the hooks block; without a captured id the literal
+  # placeholder reaches codex and the resume fails visibly.
+  # The rename stays for codex's own picker; the helm- prefix keeps that name
+  # from parsing as a UUID.
+  resumeCommand: codex resume {cliThreadId}
   continueCommand: codex resume --last
   renameCommand: /rename helm-{cliSessionName}
   initialPrompt:

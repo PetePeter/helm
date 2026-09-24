@@ -123,6 +123,7 @@ export function recordRemovedSession(
     cliType: session.cliType,
     workingDir: session.workingDir,
     cliSessionName: session.cliSessionName,
+    ...(session.cliThreadId ? { cliThreadId: session.cliThreadId } : {}),
     closedAt: event.timestamp,
     // Capture the project (id + name) so the bin's Project tree level renders
     // without re-resolving, and survives the project being renamed later.

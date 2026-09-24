@@ -496,7 +496,7 @@ describe('pty:spawn resume logic', () => {
     await handler({}, 'sid-1', 'claude', [], '/work', 'claude-code');
 
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('spawnCommand has no {cliSessionName} placeholder'),
+      expect.stringContaining('spawnCommand has no {cliSessionName}/{cliThreadId} placeholder'),
     );
     // Should still use spawnCommand as rawCommand (even without substitution)
     expect(ptyManager.spawn).toHaveBeenCalledWith(
@@ -516,7 +516,7 @@ describe('pty:spawn resume logic', () => {
     await handler({}, 'sid-1', 'claude', [], '/work', 'claude-code', undefined, 'abc-uuid');
 
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('resumeCommand has no {cliSessionName} placeholder'),
+      expect.stringContaining('resumeCommand has no {cliSessionName}/{cliThreadId} placeholder'),
     );
   });
 

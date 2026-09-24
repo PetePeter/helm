@@ -18,6 +18,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.projectId ? { projectId: s.projectId } : {}),
     ...(s.projectPath ? { projectPath: s.projectPath } : {}),
     ...(s.cliSessionName ? { cliSessionName: s.cliSessionName } : {}),
+    ...(isString(s.cliThreadId) ? { cliThreadId: s.cliThreadId } : {}),
     ...(s.currentPlanId ? { currentPlanId: s.currentPlanId } : {}),
     // Generic per-provider chat bindings REPLACE the old Telegram-only topicId
     // on disk. serializeChatBindings derives the Telegram entry from topicId and
@@ -83,6 +84,9 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
       if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
         delete session.hookStall;
+      }
+      if (session.cliThreadId !== undefined && !isString(session.cliThreadId)) {
+        delete session.cliThreadId;
       }
       if (session.mission !== undefined && !isSessionMission(session.mission)) {
         delete session.mission;

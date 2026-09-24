@@ -4,6 +4,7 @@ import type { StateDetector } from '../../session/state-detector.js';
 import type { PatternMatcher } from '../../session/pattern-matcher.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { PipelineQueue } from '../../session/pipeline-queue.js';
+import type { RecycleBinManager } from '../../session/recycle-bin-manager.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import { type SessionState, type SessionInfo, VALID_SESSION_STATES } from '../../types/session.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
@@ -34,6 +35,8 @@ export function setupPtyHandlers(
   onActivityChange?: (sessionId: string, level: import('../../types/session.js').ActivityLevel) => void,
   onPtyInput?: (sessionId: string, data: string) => void,
   patternMatcher?: PatternMatcher,
+  /** A restored bin entry keeps its session id; its record carries the CLI thread id. */
+  recycleBin?: Pick<RecycleBinManager, 'list'>,
 ): void {
   const isRendererOwner = (event: Electron.IpcMainInvokeEvent, sessionId: string): boolean => {
     // Electron always supplies sender for a real invoke. The missing-sender
@@ -93,6 +96,10 @@ export function setupPtyHandlers(
         // type's displayName. Passing cliType here would surface a raw UUID.
         contextText,
         resumeSessionName,
+        // Only a bin restore needs this: a restart-restored session still holds its own.
+        resumeThreadId: resumeSessionName
+          ? recycleBin?.list().find(e => e.sessionId === sessionId)?.cliThreadId
+          : undefined,
         markRestored: sid => stateDetector.markRestored(sid),
         onPromptCancel: cancel => promptCancellers.set(sessionId, cancel),
       });

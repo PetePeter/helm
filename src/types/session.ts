@@ -38,6 +38,10 @@ export interface SessionInfo {
   questionPending?: boolean;
   /** CLI-internal session name used for resume (UUID v4, e.g., 'a1b2c3d4-e5f6-...'). Set after spawn. */
   cliSessionName?: string;
+  /** The CLI's OWN session/thread id, as reported by its hooks (`session_id`).
+   *  Distinct from cliSessionName, which Helm mints. Resolves `{cliThreadId}` in
+   *  resumeCommand — codex resumes by thread UUID. Newest reported id wins. */
+  cliThreadId?: string;
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
   /** Telegram forum topic ID for this session's topic thread. The typed view of

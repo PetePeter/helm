@@ -147,6 +147,8 @@ export class HookTracker {
     // Uncorrelated (Helm did not spawn this CLI) or already closed — untouched.
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) return;
 
+    this.recordThreadId(sessionId, event.cliSessionId);
+
     switch (event.event) {
       case 'SessionStart':
         // A fresh (or resumed) session: facts reset, stale stall irrelevant.
@@ -193,6 +195,17 @@ export class HookTracker {
         // SessionEnd-style noise and subagent events: observed, not acted on.
         break;
     }
+  }
+
+  /**
+   * The CLI's own thread id, from any event that carries one. Newest wins —
+   * codex /new and /clear start a new thread. Durable (resume depends on it),
+   * so it only writes when the id actually changes.
+   */
+  private recordThreadId(sessionId: string, cliThreadId: string | undefined): void {
+    if (!cliThreadId) return;
+    if (this.deps.sessionManager.getSession(sessionId)?.cliThreadId === cliThreadId) return;
+    this.deps.sessionManager.updateSession(sessionId, { cliThreadId });
   }
 
   private getOrCreateFacts(sessionId: string): SessionFacts {
