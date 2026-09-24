@@ -335,6 +335,9 @@
     <string name="spawn_retry">Retry</string>
     <string name="spawn_start">Start session</string>
     <string name="spawn_cancel">Cancel</string>
+    <string name="spawn_plan_title">Session for plan</string>
+    <string name="plans_spawn_glyph">&gt;_</string>
+    <string name="plans_spawn_description">Start a session for this plan</string>
 
     <!--
       Three channels so the classes can be silenced apart. The descriptions are

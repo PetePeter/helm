@@ -465,6 +465,7 @@ export async function callMcpTool(
           {
             ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
             ...(typeof args.runtimeGroupId === 'string' ? { runtimeGroupId: args.runtimeGroupId } : {}),
+            ...(typeof args.initialPrompt === 'string' ? { initialPrompt: args.initialPrompt } : {}),
           },
         );
       case 'session_group_list':

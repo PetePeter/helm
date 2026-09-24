@@ -80,7 +80,7 @@ export class HelmSessionService {
     cliType: string,
     dirPath: string,
     name: string | undefined,
-    opts: { creatorSessionId?: string; runtimeGroupId?: string } = {},
+    opts: { creatorSessionId?: string; runtimeGroupId?: string; initialPrompt?: string } = {},
   ): { id: string; runtimeGroupId?: string; runtimeGroupName?: string } {
     const workingDir = this.requireWorkingDirectory(dirPath);
     const cli = this.requireCliEntry(cliType);
@@ -94,6 +94,9 @@ export class HelmSessionService {
     // proxy. Recorded so MobileGate can let that phone — and only that phone —
     // close the session again.
     const createdByMobileDeviceId = deviceIdFromMobileSessionId(opts.creatorSessionId);
+    // A first instruction (the phone's plan-scoped spawn) rides contextText so it
+    // lands after the CLI's own init sequence, never into a half-started CLI.
+    const initialPrompt = opts.initialPrompt?.trim() ? opts.initialPrompt : undefined;
     const { sessionId } = spawnConfiguredSession({
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,
@@ -104,6 +107,7 @@ export class HelmSessionService {
       fallbackCompleteDelayMs: 500,
       ...(createdByPeerId ? { createdByPeerId } : {}),
       ...(createdByMobileDeviceId ? { createdByMobileDeviceId } : {}),
+      ...(initialPrompt ? { contextText: initialPrompt } : {}),
     });
 
     // A session is always made for its project; the runtime group is an optional

@@ -971,10 +971,14 @@ class HelmClient(
      * session after the CLI type. The created session id is recorded on success
      * so the UI can open the thread; everything else about the outcome is the
      * notice bar's to say.
+     *
+     * [initialPrompt] is the plan spawner's first instruction; the desktop
+     * delivers it once the CLI has started, so the phone never times it.
      */
-    fun spawn(dirPath: String, cliType: String, name: String): Boolean {
+    fun spawn(dirPath: String, cliType: String, name: String, initialPrompt: String? = null): Boolean {
         val params = linkedMapOf<String, Any>("dirPath" to dirPath, "cliType" to cliType)
         if (name.isNotBlank()) params["name"] = name.trim()
+        if (!initialPrompt.isNullOrBlank()) params["initialPrompt"] = initialPrompt
         control.spawnStarted()
         return act(SessionAction.Spawn, METHOD_SESSION_CREATE, params) { outcome ->
             // Every outcome path settles — act() delivers the verdict whatever it

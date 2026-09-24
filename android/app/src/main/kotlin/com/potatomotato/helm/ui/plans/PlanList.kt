@@ -19,7 +19,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmPlanSequence
+import com.potatomotato.helm.data.PlanStatus
 import com.potatomotato.helm.ui.HelmReferences
+import com.potatomotato.helm.ui.components.GlyphButton
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.LoadBody
@@ -60,6 +62,7 @@ fun PlanList(
     collapsedLaneIds: Set<String>,
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
+    onSpawn: (HelmPlanSummary) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -79,6 +82,7 @@ fun PlanList(
             collapsedLaneIds = collapsedLaneIds,
             onToggleLane = onToggleLane,
             onOpen = onOpen,
+            onSpawn = onSpawn,
         )
     }
 }
@@ -90,6 +94,7 @@ private fun PlanBuckets(
     collapsedLaneIds: Set<String>,
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
+    onSpawn: (HelmPlanSummary) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         for (bucket in buckets) {
@@ -113,6 +118,7 @@ private fun PlanBuckets(
                         plan = plan,
                         startable = plan.id in startableIds,
                         onClick = { onOpen(plan) },
+                        onSpawn = { onSpawn(plan) },
                     )
                 }
             }
@@ -176,7 +182,7 @@ private fun LaneHeader(
 }
 
 @Composable
-private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Unit) {
+private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Unit, onSpawn: () -> Unit) {
     HelmRow(
         title = plan.title,
         onClick = onClick,
@@ -203,7 +209,17 @@ private fun PlanRow(plan: HelmPlanSummary, startable: Boolean, onClick: () -> Un
             }
         },
         trailing = {
-            Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+            // Its own target, beside copy: spawning is not opening the plan.
+            GlyphButton(
+                glyph = stringResource(R.string.plans_spawn_glyph),
+                description = stringResource(R.string.plans_spawn_description),
+                onClick = onSpawn,
+            )
+            // Ready says nothing the subtitle's startability line does not
+            // already say; every other status still earns its pill.
+            if (plan.status != PlanStatus.Ready) {
+                Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+            }
         },
     )
 }

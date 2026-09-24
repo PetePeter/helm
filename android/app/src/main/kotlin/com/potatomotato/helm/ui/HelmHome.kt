@@ -40,6 +40,7 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.HelmProject
 import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.SessionAction
@@ -85,6 +86,7 @@ import com.potatomotato.helm.ui.pairing.DesktopsScreen
 import com.potatomotato.helm.ui.plans.PlanDetail
 import com.potatomotato.helm.ui.plans.PlanList
 import com.potatomotato.helm.ui.plans.PlanScope
+import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.sequences.SequenceDetail
 import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionListScreen
@@ -198,6 +200,14 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var homeTab by rememberSaveable { mutableStateOf(HomeTab.Sessions) }
     var chosenProjectId by rememberSaveable { mutableStateOf<String?>(null) }
     var openPlanId by rememberSaveable { mutableStateOf<String?>(null) }
+    // The plan a spawn form is aimed at; null is the ordinary New session form.
+    // Forgotten the moment the form is left, so the next New session is plain.
+    var planSpawn by rememberSaveable(
+        stateSaver = listSaver<PlanSpawn?, String>(
+            save = { it?.let { spawn -> listOf(spawn.dirPath, spawn.name, spawn.prompt) }.orEmpty() },
+            restore = { if (it.size == 3) PlanSpawn(it[0], it[1], it[2]) else null },
+        ),
+    ) { mutableStateOf(null) }
     // Which sequence lanes the reader has folded shut. SAVED, like every other
     // fact about where the user is: a rotation that silently re-opens eight
     // lanes undoes the tidying that was the point of folding them. Held here
@@ -559,6 +569,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // The retry/refresh affordances every pulled surface carries. They repeat
     // the arrival pull rather than being a second, quieter kind of ask: what a
     // retry must do is exactly what arriving does.
+    val spawnForPlan: (HelmPlanSummary) -> Unit = { plan ->
+        planDirPath?.let { dir ->
+            planSpawn = PlanSpawn.of(plan, dir)
+            where = Destination.Spawn
+        }
+    }
+    LaunchedEffect(where) {
+        if (where != Destination.Spawn) planSpawn = null
+    }
     val refreshPlanBoard: () -> Unit = {
         planDirPath?.let { dir ->
             client.refreshPlans(dir)
@@ -662,10 +681,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             // tap: success arrives as createdSessionId above,
                             // failure as the notice bar's to say — so the form
                             // keeps its choices instead of leaving on faith.
-                            client.spawn(dirPath, cliType, name)
+                            client.spawn(dirPath, cliType, name, planSpawn?.prompt)
                         },
                         onRetryDirectories = { client.refreshDirectories() },
                         onBack = toThread,
+                        plan = planSpawn,
                     )
                 }
 
@@ -800,6 +820,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         openPlanId = plan.id
                                         where = Destination.PlanDetail
                                     },
+                                    onSpawn = spawnForPlan,
                                     onRefresh = refreshPlanBoard,
                                 )
                             }
@@ -1027,6 +1048,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         openPlanId = plan.id
                                         where = Destination.PlanDetail
                                     },
+                                    onSpawn = spawnForPlan,
                                     onRefresh = refreshPlanBoard,
                                 )
                             }

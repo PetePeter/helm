@@ -65,16 +65,26 @@ private const val COPY_CLIP_LABEL = "Helm"
 @Composable
 fun CopyGlyphButton(text: String, modifier: Modifier = Modifier) {
     val copy = rememberCopy()
-    val description = stringResource(R.string.copy_content_description)
+    GlyphButton(
+        glyph = stringResource(R.string.copy_glyph),
+        description = stringResource(R.string.copy_content_description),
+        onClick = { copy(text) },
+        modifier = modifier,
+    )
+}
+
+/** A full-touch-target text glyph that acts — the shape the ⧉ copy button set. */
+@Composable
+fun GlyphButton(glyph: String, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .size(HelmSize.TouchTarget)
             .clip(CircleShape)
-            .clickable { copy(text) },
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = stringResource(R.string.copy_glyph),
+            text = glyph,
             color = HelmColors.Dim,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { contentDescription = description },

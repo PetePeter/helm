@@ -31,6 +31,7 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.HelmDirectory
 import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.PrimaryButton
@@ -56,6 +57,10 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  *
  * There is no confirmation. Creating is cheap and reversible; the confirmation
  * budget is spent on closing.
+ *
+ * [plan] turns the same form into a plan's spawner: its directory is shown but
+ * not choosable, its name is suggested but editable, and its read prompt rides
+ * the spawn. Null is the ordinary New session form, unchanged.
  */
 @Composable
 fun SpawnScreen(
@@ -70,6 +75,7 @@ fun SpawnScreen(
     onRetryDirectories: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    plan: PlanSpawn? = null,
 ) {
     // The catalogue when the desktop answered it; the distinct CLIs already
     // running when it did not. Each row labelled the way the desktop labels it.
@@ -83,13 +89,13 @@ fun SpawnScreen(
         }
     }
 
-    var dirPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var dirPath by rememberSaveable(plan) { mutableStateOf(plan?.dirPath) }
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
-    var name by rememberSaveable { mutableStateOf("") }
+    var name by rememberSaveable(plan) { mutableStateOf(plan?.name.orEmpty()) }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
-            title = stringResource(R.string.spawn_title),
+            title = stringResource(if (plan != null) R.string.spawn_plan_title else R.string.spawn_title),
             linkState = linkState,
             onBack = onBack,
         )
@@ -128,6 +134,18 @@ fun SpawnScreen(
 
             FieldLabel(stringResource(R.string.spawn_where))
             when {
+                // A plan's directory is fixed: shown, selected, and not a choice.
+                // Never swapped for another if the list lacks it — a plan read
+                // from the wrong project is worse than no session.
+                plan != null -> {
+                    val locked = directories.firstOrNull { it.path == plan.dirPath }
+                    Choice(
+                        label = locked?.let(::directoryLabel) ?: plan.dirPath,
+                        detail = locked?.path,
+                        selected = true,
+                        onClick = null,
+                    )
+                }
                 // A dead fetch says so, with a way to try again. The waiting
                 // hint is only for a fetch that has not answered yet.
                 directoriesError != null -> {
@@ -208,7 +226,7 @@ private fun Hint(text: String) {
 
 /** One selectable row. Selection is the accent hairline, never a lighter fill. */
 @Composable
-private fun Choice(label: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+private fun Choice(label: String, detail: String?, selected: Boolean, onClick: (() -> Unit)?) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -218,7 +236,7 @@ private fun Choice(label: String, detail: String?, selected: Boolean, onClick: (
                 if (selected) HelmColors.Accent else HelmColors.Line,
                 RoundedCornerShape(HelmRadius.Md),
             )
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
     ) {
         Text(
