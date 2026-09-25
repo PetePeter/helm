@@ -395,8 +395,10 @@ app.whenReady().then(async () => {
 
   // Register helm-artifact:// so HTML artifacts render as their own isolated
   // document with an authoritative CSP header (srcdoc would inherit the
-  // renderer's stricter policy and silently block artifact scripts).
-  registerHelmArtifactProtocol(protocol);
+  // renderer's stricter policy and silently block artifact scripts). The
+  // bundled mermaid is served from the same scheme so artifact diagrams need
+  // no network egress.
+  registerHelmArtifactProtocol(protocol, join(__dirname, 'assets', 'mermaid.min.js'));
 
   // Create main window
   createWindow();

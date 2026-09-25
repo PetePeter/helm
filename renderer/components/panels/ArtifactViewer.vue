@@ -184,6 +184,24 @@ async function renderMermaid(): Promise<void> {
     await mermaid.run({ nodes });
   } catch (err) {
     console.error('[ArtifactViewer] mermaid render failed', err);
+  } finally {
+    markUnrenderedMermaid(nodes);
+  }
+}
+
+/**
+ * mermaid.run() suppresses parse errors by default (leaves the raw source and
+ * moves on), so a broken diagram looked like styled code with no explanation.
+ * Any node that still has no SVG gets a visible one-line failure note instead.
+ */
+function markUnrenderedMermaid(nodes: HTMLElement[]): void {
+  for (const node of nodes) {
+    if (node.querySelector('svg') || node.querySelector('.mermaid-fail-note')) continue;
+    node.classList.add('mermaid-failed');
+    const note = document.createElement('div');
+    note.className = 'mermaid-fail-note';
+    note.textContent = '⚠ Diagram could not be rendered — see source above';
+    node.append(note);
   }
 }
 
@@ -1002,6 +1020,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-doc :deep(pre code) { background: none; padding: 0; }
 .ap-doc :deep(pre.mermaid) { background: transparent; padding: var(--spacing-sm) 0; text-align: center; overflow-x: auto; }
 .ap-doc :deep(pre.mermaid svg) { max-width: 100%; height: auto; }
+.ap-doc :deep(pre.mermaid-failed) { border: 1px dashed var(--danger-border); border-radius: var(--radius-sm); padding: var(--spacing-sm); text-align: left; }
+.ap-doc :deep(.mermaid-fail-note) { font-size: var(--font-size-xs); color: var(--danger); margin-top: var(--spacing-xs); }
 .ap-doc :deep(table) { border-collapse: collapse; width: 100%; margin: var(--spacing-sm) 0; font-size: var(--font-size-sm); }
 .ap-doc :deep(th), .ap-doc :deep(td) { border: 1px solid var(--border); padding: var(--spacing-xs) var(--spacing-sm); text-align: left; }
 .ap-doc :deep(th) { background: var(--bg-tertiary); color: var(--text-secondary); }

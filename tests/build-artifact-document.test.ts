@@ -121,3 +121,30 @@ describe('buildArtifactDocument — document shape', () => {
     expect(out).toContain(READY_MESSAGE);
   });
 });
+
+describe('buildArtifactDocument — mermaid CDN rewrite', () => {
+  const CDN_SRCS = [
+    'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js',
+    'https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js',
+    'https://unpkg.com/mermaid@12.0.0/dist/mermaid.min.js',
+  ];
+
+  for (const src of CDN_SRCS) {
+    it(`rewrites ${new URL(src).host} mermaid to the local asset`, () => {
+      const out = buildArtifactDocument(`<script src="${src}"></script><div class="mermaid">graph TD; A-->B</div>`);
+      expect(out).toContain('src="helm-artifact://asset/mermaid.js"');
+      expect(out).not.toContain(src);
+    });
+  }
+
+  it('leaves non-mermaid remote scripts untouched (the CSP still blocks them)', () => {
+    const out = buildArtifactDocument('<script src="https://cdn.example.com/chart.js"></script>');
+    expect(out).toContain('https://cdn.example.com/chart.js');
+    expect(out).not.toContain('helm-artifact://asset/mermaid.js');
+  });
+
+  it('leaves relative and already-local script srcs alone', () => {
+    const out = buildArtifactDocument('<script src="./local.js"></script>');
+    expect(out).toContain('./local.js');
+  });
+});

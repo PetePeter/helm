@@ -21,13 +21,19 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { Protocol } from 'electron';
+
+/** URL artifact documents use to load the locally-bundled mermaid. */
+export const MERMAID_ASSET_URL = 'helm-artifact://asset/mermaid.js';
 
 /**
  * The policy every artifact document is served under.
  *
  * `script-src 'unsafe-inline'` carries NO 'self' and no host source: the
  * artifact's own inline <script> runs, but no external script can be loaded.
+ * The single exception is the `helm-artifact:` scheme itself, so the locally
+ * bundled mermaid (MERMAID_ASSET_URL) loads with zero network egress.
  * With `default-src 'none'` there is no network egress at all — no CDN, no
  * fetch, no web fonts, no remote images. Local images arrive via helm-img://.
  */
@@ -36,7 +42,7 @@ export const ARTIFACT_CSP = [
   'img-src helm-img: data:',
   "style-src 'unsafe-inline'",
   'font-src data:',
-  "script-src 'unsafe-inline'",
+  "script-src 'unsafe-inline' helm-artifact:",
   "form-action 'none'",
   "base-uri 'none'",
   // The embedding Helm renderer is loaded from file://, not helm-artifact://.
@@ -87,12 +93,42 @@ export function setPendingDocument(html: string): string {
  * { standard:true, secure:true } — deliberately NOT bypassCSP, since the whole
  * point is that the CSP above is enforced.
  *
+ * `mermaidAssetPath` points at the build-copied mermaid bundle
+ * (dist-electron/assets/mermaid.min.js); without it the asset route 404s and
+ * artifacts simply keep failing as before, so the doc path is unaffected.
+ *
  * The protocol adapter is injected so this module stays unit-testable without a
  * runtime Electron dependency.
  */
-export function registerHelmArtifactProtocol(protocol: Pick<Protocol, 'handle'>): void {
+export function registerHelmArtifactProtocol(
+  protocol: Pick<Protocol, 'handle'>,
+  mermaidAssetPath?: string,
+): void {
+  // Cached per registration (not module scope) so a re-registration — or a
+  // test with a different path — never serves a stale bundle.
+  let mermaidAssetBytes: Buffer | null = null;
+
   protocol.handle('helm-artifact', async (request) => {
-    const nonce = new URL(request.url).searchParams.get('k');
+    const url = new URL(request.url);
+
+    // The one non-document route: the locally-bundled mermaid script.
+    if (url.host === 'asset' && url.pathname === '/mermaid.js') {
+      if (!mermaidAssetPath) return new Response('No mermaid asset configured', { status: 404 });
+      try {
+        mermaidAssetBytes ??= readFileSync(mermaidAssetPath);
+      } catch {
+        return new Response('Mermaid asset not found', { status: 404 });
+      }
+      return new Response(mermaidAssetBytes, {
+        headers: {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          // The bundle is Helm-owned and immutable per launch — cache freely.
+          'Cache-Control': 'max-age=3600',
+        },
+      });
+    }
+
+    const nonce = url.searchParams.get('k');
     const html = nonce ? pendingDocuments.get(nonce) : undefined;
     if (!nonce || html === undefined) {
       return new Response('No such artifact document', { status: 404 });

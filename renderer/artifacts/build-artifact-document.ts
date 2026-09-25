@@ -17,6 +17,7 @@
  */
 
 import { resolveImageSrc } from '../../src/electron/helm-img-protocol.js';
+import { MERMAID_ASSET_URL } from '../../src/electron/helm-artifact-protocol.js';
 import { ARTIFACT_BASE_CSS } from './artifact-base-css.js';
 
 /**
@@ -73,6 +74,35 @@ function rewriteImages(doc: Document): void {
 }
 
 /**
+ * A remote script src is a mermaid bundle when its path's last segment starts
+ * with "mermaid" (covers mermaid.min.js, mermaid@11/…, mermaid.esm.min.mjs).
+ * Used to retarget CDN diagrams at the locally-served copy.
+ */
+function isMermaidScriptSrc(src: string): boolean {
+  try {
+    const last = new URL(src).pathname.split('/').filter(Boolean).pop() ?? '';
+    return last.toLowerCase().startsWith('mermaid');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The artifact CSP has no network egress, so the near-universal pattern of
+ * `<script src="https://cdn…/mermaid.min.js">` renders nothing (and consoles a
+ * CSP refusal). Point mermaid references at the bundled local copy instead;
+ * every other remote script stays untouched and stays blocked.
+ */
+function rewriteMermaidScripts(doc: Document): void {
+  for (const script of Array.from(doc.querySelectorAll('script[src]'))) {
+    const src = script.getAttribute('src') ?? '';
+    if (/^https?:/i.test(src) && isMermaidScriptSrc(src)) {
+      script.setAttribute('src', MERMAID_ASSET_URL);
+    }
+  }
+}
+
+/**
  * Build the full document to serve for an HTML artifact.
  *
  * @param html Raw (untrusted) artifact body — a fragment or a full document.
@@ -82,6 +112,7 @@ export function buildArtifactDocument(html: string): string {
   const doc = new DOMParser().parseFromString(html ?? '', 'text/html');
 
   rewriteImages(doc);
+  rewriteMermaidScripts(doc);
 
   if (!hasAuthorStyling(doc)) {
     const style = doc.createElement('style');

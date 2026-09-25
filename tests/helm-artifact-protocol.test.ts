@@ -1,7 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   ARTIFACT_CSP,
   MAX_PENDING_DOCUMENTS,
+  MERMAID_ASSET_URL,
   encodeHelmArtifactUrl,
   setPendingDocument,
   registerHelmArtifactProtocol,
@@ -11,13 +16,13 @@ import {
  * Captures the handler `registerHelmArtifactProtocol` installs so tests can
  * invoke it directly with a plain { url } request — no Electron needed.
  */
-function captureHandler(): (req: { url: string }) => Promise<Response> {
+function captureHandler(mermaidAssetPath?: string): (req: { url: string }) => Promise<Response> {
   let captured: ((req: { url: string }) => Promise<Response>) | null = null;
   registerHelmArtifactProtocol({
     handle: (_scheme: string, handler: (req: never) => unknown) => {
       captured = handler as (req: { url: string }) => Promise<Response>;
     },
-  } as never);
+  } as never, mermaidAssetPath);
   if (!captured) throw new Error('handler was not registered');
   return captured;
 }
@@ -75,10 +80,49 @@ describe('helm-artifact:// protocol', () => {
     expect((await handle({ url: encodeHelmArtifactUrl(first) })).status).toBe(404);
   });
 
+  describe('mermaid asset route', () => {
+    let assetDir: string;
+
+    afterEach(() => {
+      if (assetDir) rmSync(assetDir, { recursive: true, force: true });
+    });
+
+    it('serves the configured bundle with a JS content type and no CSP header', async () => {
+      assetDir = join(tmpdir(), `helm-test-mermaid-asset-${randomUUID()}`);
+      mkdirSync(assetDir, { recursive: true });
+      const assetPath = join(assetDir, 'mermaid.min.js');
+      writeFileSync(assetPath, 'export {} // fake mermaid bundle');
+
+      const handle = captureHandler(assetPath);
+      const res = await handle({ url: MERMAID_ASSET_URL });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('Content-Type')).toBe('application/javascript; charset=utf-8');
+      expect(res.headers.get('Content-Security-Policy')).toBeNull();
+      expect(await res.text()).toContain('fake mermaid bundle');
+    });
+
+    it('404s the asset when no bundle path is configured or the file is gone', async () => {
+      const unconfigured = await captureHandler()({ url: MERMAID_ASSET_URL });
+      expect(unconfigured.status).toBe(404);
+
+      const handle = captureHandler(join(tmpdir(), `does-not-exist-${randomUUID()}.js`));
+      const missing = await handle({ url: MERMAID_ASSET_URL });
+      expect(missing.status).toBe(404);
+    });
+
+    it('404s unknown asset paths instead of falling through to documents', async () => {
+      const handle = captureHandler();
+      const res = await handle({ url: 'helm-artifact://asset/other.js' });
+      expect(res.status).toBe(404);
+    });
+  });
+
   describe('ARTIFACT_CSP', () => {
-    it('permits inline script but no external script source', () => {
+    it('permits inline script and only the local helm-artifact script source', () => {
       const scriptSrc = /script-src ([^;]*)/.exec(ARTIFACT_CSP)?.[1] ?? '';
       expect(scriptSrc).toContain("'unsafe-inline'");
+      expect(scriptSrc).toContain('helm-artifact:');
       expect(scriptSrc).not.toContain("'self'");
       expect(scriptSrc).not.toContain('http');
     });

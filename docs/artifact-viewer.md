@@ -266,14 +266,16 @@ document.
 
 ```
 default-src 'none'; img-src helm-img: data:; style-src 'unsafe-inline';
-font-src data:; script-src 'unsafe-inline'; form-action 'none';
+font-src data:; script-src 'unsafe-inline' helm-artifact:; form-action 'none';
 base-uri 'none'; frame-ancestors 'self' file:
 ```
 
 `script-src 'unsafe-inline'` carries **no** `'self'` and no host source: the
 artifact's own inline `<script>` runs, but no external script can load. The
-`sandbox` attribute adds denial of top-level navigation, popups and form
-submission on top of the opaque origin.
+single exception is the `helm-artifact:` scheme itself, which serves exactly
+one script — the locally-bundled mermaid (below). The `sandbox` attribute adds
+denial of top-level navigation, popups and form submission on top of the opaque
+origin.
 
 Denied: app DOM access, the preload bridge, `localStorage`/cookies, and **all
 network egress** — no CDN, no fetch, no web fonts, no remote images.
@@ -308,10 +310,23 @@ same handler as the footer button. Selecting another artifact resets the watch.
 Without this the user sees a blank panel and a footer button whose relevance is
 not obvious; the same document usually renders fine in a real browser.
 
+### Mermaid in HTML artifacts
+
+The one script the frame may load is mermaid itself: the build copies
+`node_modules/mermaid/dist/mermaid.min.js` to `dist-electron/assets/` and the
+protocol serves it at `helm-artifact://asset/mermaid.js` (`script-src
+helm-artifact:` above). Because AI-authored HTML almost always pulls mermaid
+from a CDN — which the zero-egress CSP refuses with the classic *"violates
+script-src 'unsafe-inline'"* console error — `buildArtifactDocument` rewrites
+any `http(s)` `<script src>` whose last path segment starts with `mermaid` to
+the local URL. Every other remote script stays untouched and stays blocked.
+
+A ` ```mermaid ` fence that fails to parse now leaves a visible ⚠ note under
+the kept source instead of looking like styled code.
+
 ### Limitations
 
 - **No network.** Artifacts must inline assets or use `data:` / `helm-img:`.
-- **No mermaid in HTML artifacts.** The library is lazily imported into the *renderer*, not the frame. Markdown ` ```mermaid ` fences are unaffected.
 - **No auto-height.** The frame fills the panel and scrolls internally.
 
 ## Selection & copy
