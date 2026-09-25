@@ -6,6 +6,7 @@ import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { Artifact } from '../../types/artifact.js';
+import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
@@ -1202,6 +1203,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Open an attachment file in the system's default app */
   artifactOpenAttachment: (artifactId: string, attachmentId: string): Promise<boolean> =>
     ipcRenderer.invoke('artifact:openAttachment', artifactId, attachmentId),
+
+  /** List an artifact's attachments (metadata only, no bytes) */
+  artifactAttachmentList: (artifactId: string): Promise<ArtifactAttachment[]> =>
+    ipcRenderer.invoke('artifact:attachmentList', artifactId),
+
+  /** Attach a base64-encoded file to an existing artifact */
+  artifactAttachmentAdd: (artifactId: string, input: {
+    filename: string;
+    contentBase64: string;
+    contentType?: string;
+  }): Promise<ArtifactAttachment> =>
+    ipcRenderer.invoke('artifact:attachmentAdd', artifactId, input),
+
+  /** Delete one attachment from an artifact */
+  artifactAttachmentDelete: (artifactId: string, attachmentId: string): Promise<boolean> =>
+    ipcRenderer.invoke('artifact:attachmentDelete', artifactId, attachmentId),
 
   /** Subscribe to artifact mutation events for a session */
   onArtifactChanged: (callback: (event: { sessionId: string }) => void) => {

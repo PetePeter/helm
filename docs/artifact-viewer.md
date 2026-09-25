@@ -148,6 +148,21 @@ is caught by the next startup sweep.
 **Export…** differs on both counts: it prompts for a location and always writes the
 **latest** version.
 
+**Attachments (desktop CRUD).** Below the detail body, an *Attachments (n)*
+section manages the side store for the selected artifact:
+
+- **Add** — native picker (`artifact:pickAndReadFile`) → `artifact:attachmentAdd`
+  (base64 in, 10 MB cap, body untouched — attachments are a side store, and any
+  body links stay as the AI/user wrote them).
+- **Open** — `artifact:openAttachment` (shell-open the stored file).
+- **Delete** — `artifact:attachmentDelete`; a body link to a deleted
+  attachment becomes inert text and never breaks rendering.
+
+The list loads through `artifact:attachmentList` whenever the selection or the
+session's artifact list changes (metadata only — no bytes cross the bridge).
+This is desktop-side CRUD on an *existing* artifact; the phone-only
+`session_artifact_attachment_add`/`_commit` upload path is unchanged.
+
 **Show / hide:** the dock owns pane visibility and close/restore, with the View
 menu recovering closed panes and the right rail revealing collapsed panes.
 `Ctrl+Shift+A` shows/focuses Artifacts and never toggles it. In a snapped-out

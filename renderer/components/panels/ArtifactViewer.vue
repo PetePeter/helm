@@ -56,6 +56,7 @@ const {
   selected,
   selectedVersion,
   unread,
+  attachments,
 } = viewer;
 
 // ── Version helpers ────────────────────────────────────────────────────────
@@ -341,6 +342,47 @@ function onDocClick(e: MouseEvent): void {
 async function openAttachmentLink(artifactId: string, attachmentId: string): Promise<void> {
   if (!await viewer.openAttachment(artifactId, attachmentId)) {
     addToast({ message: 'Could not open the attached file', type: 'error' });
+  }
+}
+
+// ── Attachments on the selected artifact ────────────────────────────────────
+
+function formatAttachmentSize(sizeBytes: number): string {
+  if (sizeBytes >= 1024 * 1024) return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`;
+  if (sizeBytes >= 1024) return `${Math.round(sizeBytes / 1024)} KB`;
+  return `${sizeBytes} B`;
+}
+
+const attachmentBusyId = ref<string | null>(null);
+
+async function onAddAttachment(): Promise<void> {
+  if (!selectedId.value) return;
+  attachmentBusyId.value = null;
+  const result = await viewer.addAttachmentToSelected();
+  // A cancelled picker is quiet; only a failed add is worth a toast.
+  if (result === false) addToast({ message: 'Could not attach file (max 10 MB)', type: 'error' });
+}
+
+async function onOpenAttachment(attachmentId: string): Promise<void> {
+  if (!selectedId.value) return;
+  attachmentBusyId.value = attachmentId;
+  try {
+    if (!await viewer.openAttachment(selectedId.value, attachmentId)) {
+      addToast({ message: 'Could not open attachment', type: 'error' });
+    }
+  } finally {
+    attachmentBusyId.value = null;
+  }
+}
+
+async function onDeleteAttachment(attachmentId: string): Promise<void> {
+  attachmentBusyId.value = attachmentId;
+  try {
+    if (!await viewer.removeAttachment(attachmentId)) {
+      addToast({ message: 'Could not delete attachment', type: 'error' });
+    }
+  } finally {
+    attachmentBusyId.value = null;
   }
 }
 
@@ -767,6 +809,23 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 
             <div v-else class="ap-doc" ref="docRef" v-html="renderedHtml" @click="onDocClick"></div>
           </div>
+
+          <!-- Attachments: a side store on the artifact; the body keeps its own links. -->
+          <div v-if="!isEditing" class="ap-att">
+            <div class="ap-att__head">
+              <span class="ap-att__title">Attachments ({{ attachments.length }})</span>
+              <button class="ap-btn ap-att__add" title="Attach a file to this artifact" @click="onAddAttachment">📎 Add</button>
+            </div>
+            <div v-if="attachments.length === 0" class="ap-att__empty">No attachments</div>
+            <div v-else class="ap-att__list">
+              <div v-for="att in attachments" :key="att.id" class="ap-att__row">
+                <span class="ap-att__name" :title="att.filename">{{ att.filename }}</span>
+                <span class="ap-att__size">{{ formatAttachmentSize(att.sizeBytes) }}</span>
+                <button class="ap-btn" :disabled="attachmentBusyId === att.id" @click="onOpenAttachment(att.id)">Open</button>
+                <button class="ap-btn ap-btn--danger" :disabled="attachmentBusyId === att.id" @click="onDeleteAttachment(att.id)">Delete</button>
+              </div>
+            </div>
+          </div>
         </template>
 
         <!-- Empty state -->
@@ -949,6 +1008,18 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-doc :deep(a) { color: var(--info); }
 .ap-doc :deep(a:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ap-doc :deep(img) { max-width: 100%; border-radius: var(--radius-md); border: 1px solid var(--border); }
+
+/* attachments on the selected artifact */
+.ap-att { border-top: 1px solid var(--border); background: var(--bg-secondary); padding: var(--spacing-sm) var(--spacing-md); display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.ap-att__head { display: flex; align-items: center; gap: var(--spacing-sm); }
+.ap-att__title { font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); }
+.ap-att__add { padding: var(--spacing-xs) var(--spacing-sm); }
+.ap-att__empty { font-size: var(--font-size-sm); color: var(--text-dim); }
+.ap-att__list { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+.ap-att__row { display: flex; align-items: center; gap: var(--spacing-sm); }
+.ap-att__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-sm); color: var(--text-primary); }
+.ap-att__size { font-size: var(--font-size-xs); color: var(--text-dim); flex-shrink: 0; }
+.ap-att__row .ap-btn { padding: var(--spacing-xs) var(--spacing-sm); }
 
 /* footer */
 .ap-foot { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); border-top: 1px solid var(--border); }

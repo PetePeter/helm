@@ -250,6 +250,9 @@ export const PRELOAD_API_DOMAINS = {
     'artifactRename',
     'artifactUpdate',
     'artifactOpenAttachment',
+    'artifactAttachmentList',
+    'artifactAttachmentAdd',
+    'artifactAttachmentDelete',
   ],
   peers: [
     'peerListDiscovered',

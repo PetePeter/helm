@@ -14,6 +14,7 @@
 import { ref, computed } from 'vue';
 import { artifactsClient, eventsClient } from '../ipc/clients.js';
 import type { Artifact } from '../../src/types/artifact.js';
+import type { ArtifactAttachment } from '../../src/types/artifact-attachment.js';
 import { buildTextArtifact, decodeBase64Text, isTextLikeFile } from '../artifacts/text-file-drop.js';
 
 const PANEL_VISIBLE_KEY = 'helm:artifact-panel-visible';
@@ -24,12 +25,15 @@ const selectedId = ref<string | null>(null);
 const selectedVersion = ref<number | null>(null);
 const panelVisible = ref<boolean>(loadBool(PANEL_VISIBLE_KEY, false));
 const unread = ref<Set<string>>(new Set());
+/** Attachments of the currently-selected artifact (metadata only). */
+const attachments = ref<ArtifactAttachment[]>([]);
 
 /** The session the panel is currently bound to (host-driven). */
 let activeSessionId: string | null = null;
 let subscribed = false;
 let refreshRequest = 0;
 let creationRequest = 0;
+let attachmentsRequest = 0;
 
 function loadBool(key: string, fallback: boolean): boolean {
   try {
@@ -62,6 +66,7 @@ async function refresh(sessionId: string | null = activeSessionId): Promise<void
   if (!sessionId) {
     artifacts.value = [];
     selectedId.value = null;
+    attachments.value = [];
     return;
   }
   let list: Artifact[] = [];
@@ -84,6 +89,9 @@ async function refresh(sessionId: string | null = activeSessionId): Promise<void
     selectedVersion.value = null;
     unread.value.delete(list[0].id);
   }
+
+  // Last, so the auto-select above has already settled which artifact is shown.
+  void loadAttachments();
 }
 
 function pruneUnread(liveIds: Set<string>): void {
@@ -109,6 +117,7 @@ function select(id: string): void {
   selectedId.value = id;
   selectedVersion.value = null;
   if (unread.value.delete(id)) unread.value = new Set(unread.value);
+  void loadAttachments();
 }
 
 /** Pin a specific version (1-based) in the detail pane. */
@@ -239,6 +248,55 @@ async function openAttachment(artifactId: string, attachmentId: string): Promise
   try { return await artifactsClient.artifactOpenAttachment(artifactId, attachmentId); } catch { return false; }
 }
 
+// ── Attachments on the selected artifact ──────────────────────────────────
+
+/** Reload the attachment list for the selected artifact (stale-safe). */
+async function loadAttachments(): Promise<void> {
+  const request = ++attachmentsRequest;
+  const artifactId = selectedId.value;
+  if (!artifactId) {
+    attachments.value = [];
+    return;
+  }
+  let list: ArtifactAttachment[] = [];
+  try {
+    list = (await artifactsClient.artifactAttachmentList(artifactId)) ?? [];
+  } catch {
+    // A transient IPC failure keeps whatever we had — rows only leave the
+    // screen when a successful list (or a switch) says so.
+    return;
+  }
+  if (request !== attachmentsRequest || selectedId.value !== artifactId) return;
+  attachments.value = list;
+}
+
+/**
+ * Pick a file and attach it to the selected artifact. Tri-state like attachFile:
+ * true = attached, false = the add failed, null = the picker was cancelled.
+ */
+async function addAttachmentToSelected(): Promise<boolean | null> {
+  const artifactId = selectedId.value;
+  if (!artifactId) return null;
+  try {
+    const fileData = await artifactsClient.artifactPickAndReadFile();
+    if (!fileData) return null;
+    await artifactsClient.artifactAttachmentAdd(artifactId, fileData);
+    await loadAttachments();
+    return true;
+  } catch { return false; }
+}
+
+/** Delete one attachment from the selected artifact. Returns true on success. */
+async function removeAttachment(attachmentId: string): Promise<boolean> {
+  const artifactId = selectedId.value;
+  if (!artifactId) return false;
+  try {
+    const ok = await artifactsClient.artifactAttachmentDelete(artifactId, attachmentId);
+    if (ok) await loadAttachments();
+    return ok;
+  } catch { return false; }
+}
+
 /**
  * Subscribe once to artifact IPC events. Safe to call repeatedly.
  *
@@ -265,6 +323,9 @@ function ensureSubscribed(): void {
     unread.value = next;
     selectedId.value = artifactId;
     selectedVersion.value = null;
+    // The reveal swaps the selection after refresh() already loaded the
+    // previous artifact's attachments — reload for the revealed one.
+    void loadAttachments();
     showPanel();
   });
 }
@@ -279,6 +340,7 @@ export function useArtifactViewer() {
     panelVisible,
     unread,
     unreadCount,
+    attachments,
     // lifecycle
     ensureSubscribed,
     setActiveSession,
@@ -302,5 +364,8 @@ export function useArtifactViewer() {
     renameArtifact,
     updateArtifact,
     openAttachment,
+    // attachments on the selected artifact
+    addAttachmentToSelected,
+    removeAttachment,
   };
 }

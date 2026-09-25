@@ -26,6 +26,27 @@ import { logger } from '../../utils/logger.js';
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Decode a base64 attachment input, refusing oversized files before decoding.
+ * Shared by every handler that turns renderer base64 into stored bytes.
+ */
+function decodeAttachmentInput(input: {
+  filename: string;
+  contentBase64: string;
+  contentType?: string;
+}): { filename: string; content: Buffer; contentType?: string } {
+  // Validate size before decoding (base64 is ~4/3 of raw size)
+  const rawSize = Math.ceil(input.contentBase64.length * 3 / 4);
+  if (rawSize > MAX_ATTACHMENT_BYTES) {
+    throw new Error('File exceeds 10MB size limit');
+  }
+  return {
+    filename: input.filename,
+    content: Buffer.from(input.contentBase64, 'base64'),
+    contentType: input.contentType,
+  };
+}
+
 export function setupArtifactHandlers(
   artifactManager: ArtifactManager,
   attachmentManager: ArtifactAttachmentManager,
@@ -170,19 +191,8 @@ export function setupArtifactHandlers(
     contentBase64: string;
     contentType?: string;
   }) => {
-    // Validate size before decoding (base64 is ~4/3 of raw size)
-    const rawSize = Math.ceil(input.contentBase64.length * 3 / 4);
-    if (rawSize > MAX_ATTACHMENT_BYTES) {
-      throw new Error('File exceeds 10MB size limit');
-    }
-    const buffer = Buffer.from(input.contentBase64, 'base64');
-
     try {
-      return createArtifactFromBytes(artifactManager, attachmentManager, sessionId, {
-        filename: input.filename,
-        content: buffer,
-        contentType: input.contentType,
-      }, undefined, 'manual', false);
+      return createArtifactFromBytes(artifactManager, attachmentManager, sessionId, decodeAttachmentInput(input), undefined, 'manual', false);
     } catch (err) {
       logger.error(`[artifact:createWithFile] Failed to store ${input.filename}: ${err}`);
       throw err;
@@ -249,6 +259,31 @@ export function setupArtifactHandlers(
       logger.error(`[artifact:openAttachment] Failed to open ${attachmentId}: ${err}`);
       return false;
     }
+  });
+
+  // ── Attachment CRUD on existing artifacts ──────────────────────────────────
+
+  /** List an artifact's attachments. Metadata only — no bytes cross the bridge. */
+  ipcMain.handle('artifact:attachmentList', (_event, artifactId: string) => {
+    return attachmentManager.list(artifactId);
+  });
+
+  /**
+   * Attach a base64-encoded file to an existing artifact. The artifact body is
+   * not rewritten — attachments are a side store, and body links stay as-is.
+   */
+  ipcMain.handle('artifact:attachmentAdd', (_event, artifactId: string, input: {
+    filename: string;
+    contentBase64: string;
+    contentType?: string;
+  }) => {
+    if (!artifactManager.get(artifactId)) throw new Error('Artifact not found');
+    return attachmentManager.add(artifactId, decodeAttachmentInput(input));
+  });
+
+  /** Delete one attachment. Any body link to it becomes inert text. */
+  ipcMain.handle('artifact:attachmentDelete', (_event, artifactId: string, attachmentId: string) => {
+    return attachmentManager.delete(artifactId, attachmentId);
   });
 
   logger.info('[IPC] Artifact handlers registered');
