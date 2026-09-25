@@ -340,10 +340,14 @@ export interface EditorPrefs {
   sequenceModalBounds?: { left: number; top: number; right: number; bottom: number };
 }
 
+export type UpdateCheckMode = 'auto' | 'manual';
+
 export interface SettingsConfig {
   hapticFeedback: boolean;
   notifications: boolean;
   escProtectionEnabled: boolean;
+  /** Self-update: 'auto' checks GitHub at launch, 'manual' only on "Check now". */
+  updateCheck?: UpdateCheckMode;
   sidebar?: SidebarPrefs;
   snapOutWindows?: Record<string, SnapOutWindowPrefs>;
   sorting?: SortingConfig;
@@ -817,6 +821,17 @@ export class ConfigLoader {
   setEscProtectionEnabled(enabled: boolean): void {
     this.ensureLoaded();
     this.settings!.escProtectionEnabled = enabled;
+    this.saveSettings();
+  }
+
+  getUpdateCheckMode(): UpdateCheckMode {
+    this.ensureLoaded();
+    return this.settings!.updateCheck === 'manual' ? 'manual' : 'auto';
+  }
+
+  setUpdateCheckMode(mode: UpdateCheckMode): void {
+    this.ensureLoaded();
+    this.settings!.updateCheck = mode;
     this.saveSettings();
   }
 

@@ -146,6 +146,8 @@ const OWNED_TEMP_PREFIXES = [
   'helm-attachment-',
   'helm-mcp-artifact-',
   'helm-mcp-attachment-',
+  // Self-update: a stranded installer or update script from a failed run
+  'helm-update-',
   ARTIFACT_TEMP_PREFIX,
   MEMORY_ATTACHMENT_TEMP_PREFIX,
 ];

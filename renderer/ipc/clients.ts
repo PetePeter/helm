@@ -60,6 +60,7 @@ export const telegramClient = domainClient('telegram');
 export const keyboardClient = domainClient('keyboard');
 export const dialogClient = domainClient('dialog');
 export const systemClient = domainClient('system');
+export const updateClient = domainClient('update');
 export const eventsClient = domainClient('events');
 export const promptTemplatesClient = domainClient('promptTemplates');
 export const peersClient = domainClient('peers');

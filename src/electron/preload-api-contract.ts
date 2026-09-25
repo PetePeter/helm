@@ -325,6 +325,12 @@ export const PRELOAD_API_DOMAINS = {
     'systemOpenHelp',
     'systemOpenExternalUrl',
   ],
+  update: [
+    'updateCheck',
+    'updateInstall',
+    'updateGetMode',
+    'updateSetMode',
+  ],
   events: [
     'onPtyData',
     'onPtyExit',
@@ -371,6 +377,7 @@ export const PRELOAD_API_DOMAINS = {
     'onPeerAuditChanged',
     'onMobileDevicesChanged',
     'onMobilePairingState',
+    'onUpdateProgress',
   ],
 } as const;
 

@@ -670,6 +670,39 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   systemOpenExternalUrl: (url: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('system:openExternalUrl', url),
 
+  // ========================================================================
+  // Update
+  // ========================================================================
+
+  /**
+   * Launch-time release check. Never rejects — a dead network answers
+   * `{ update: null }` and the renderer stays silent.
+   */
+  updateCheck: (): Promise<{
+    packaged: boolean;
+    current: string;
+    update: {
+      version: string;
+      releaseUrl: string;
+      installerUrl: string;
+      installerSize?: number;
+    } | null;
+  }> => ipcRenderer.invoke('update:check'),
+
+  /**
+   * Download the installer, silent-install, and restart Helm. Progress
+   * arrives via onUpdateProgress; the app quits about a second after
+   * this resolves.
+   */
+  updateInstall: (installerUrl: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('update:install', installerUrl),
+
+  /** 'auto' checks at launch; 'manual' only via Settings → Updates → Check now. */
+  updateGetMode: (): Promise<'auto' | 'manual'> => ipcRenderer.invoke('update:getMode'),
+
+  updateSetMode: (mode: 'auto' | 'manual'): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('update:setMode', mode),
+
   /** Get app version from package.json via Electron */
   appGetVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
 
@@ -1559,6 +1592,19 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('mobile-pairing:state', listener);
     return () => ipcRenderer.removeListener('mobile-pairing:state', listener);
+  },
+
+  /** Subscribe to self-update download/install progress. */
+  onUpdateProgress: (callback: (data: {
+    stage: 'downloading' | 'restarting' | 'failed';
+    percent: number;
+    receivedBytes?: number;
+    totalBytes?: number;
+    error?: string;
+  }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on('update:progress', listener);
+    return () => ipcRenderer.removeListener('update:progress', listener);
   },
 
 } as const;

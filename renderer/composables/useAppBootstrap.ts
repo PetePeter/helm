@@ -15,6 +15,7 @@ import { browserGamepad } from '../gamepad.js';
 import { setupGamepad, teardownGamepad } from './useGamepadBootstrap.js';
 import { startTimerRefresh, stopTimerRefresh } from './useTimerRefresh.js';
 import { useFlashAttention } from './useFlashAttention.js';
+import { checkForAppUpdate } from './useUpdateCheck.js';
 import { TerminalManager } from '../terminal/terminal-manager.js';
 import { formatElapsed } from '../../src/utils/time-parser.js';
 import { setTerminalManager, getTerminalManager } from '../runtime/terminal-provider.js';
@@ -788,6 +789,10 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
 
   // Timer refresh
   startTimerRefresh();
+
+  // Self-update: quiet launch-time GitHub check; toasts only when a newer
+  // packaged release exists. Fire-and-forget — never blocks startup.
+  checkForAppUpdate();
 
   logEvent('Helm ready');
   console.log('[Bootstrap] Ready');

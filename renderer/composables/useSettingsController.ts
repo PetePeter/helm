@@ -97,7 +97,7 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations']);
+const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates']);
 
 function emptySkillDraft(): SettingsSkillDraft {
   return {
@@ -166,20 +166,7 @@ export function useSettingsController(options: {
       ? state.cliTypes
       : (await configClient.configGetCliTypes());
 
-    const validTabs = new Set([
-      ...settingsCliTypes.value,
-      'tools',
-      'session-list',
-      'chipbar-actions',
-      'directories',
-      'projects',
-      'skills',
-      'telegram',
-      'mcp',
-      'peers',
-      'mobile',
-      'cli-integrations',
-    ]);
+    const validTabs = new Set([...settingsCliTypes.value, ...NON_CLI_SETTINGS_TABS]);
     if (!validTabs.has(settingsTab.value)) {
       settingsTab.value = 'tools';
     }
@@ -241,6 +228,7 @@ export function useSettingsController(options: {
       { id: 'peers', label: '🔗 Fleet' },
       { id: 'mobile', label: '📱 Mobile' },
       { id: 'cli-integrations', label: '🪝 CLI Integrations' },
+      { id: 'updates', label: '⬆ Updates' },
     ];
   }
 

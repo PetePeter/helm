@@ -104,6 +104,7 @@ import ChipbarActionsTab from './components/sidebar/ChipbarActionsTab.vue';
 import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
 import SessionListTab from './components/sidebar/SessionListTab.vue';
+import UpdatesTab from './components/sidebar/UpdatesTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
@@ -1176,6 +1177,9 @@ onUnmounted(() => {
             />
             <CliIntegrationsTab
               v-else-if="activeTab === 'cli-integrations'"
+            />
+            <UpdatesTab
+              v-else-if="activeTab === 'updates'"
             />
             <BindingsTab
               v-else

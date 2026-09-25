@@ -49,6 +49,7 @@ export const preloadDomainBuilders = {
   keyboard: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'keyboard'),
   dialog: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'dialog'),
   system: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'system'),
+  update: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'update'),
   events: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'events'),
 } satisfies Record<PreloadApiDomain, <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => object>;
 

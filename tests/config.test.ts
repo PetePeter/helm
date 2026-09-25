@@ -1367,6 +1367,26 @@ describe('ConfigLoader', () => {
     });
   });
 
+  describe('update check mode', () => {
+    it('defaults to auto, and treats an unknown value as auto', () => {
+      loader.load();
+      expect(loader.getUpdateCheckMode()).toBe('auto');
+      writeYaml('settings.yaml', { ...SETTINGS, updateCheck: 'sometimes' });
+      const loader2 = new ConfigLoader(TEST_DIR);
+      loader2.load();
+      expect(loader2.getUpdateCheckMode()).toBe('auto');
+    });
+
+    it('manual round-trips through settings.yaml', () => {
+      loader.load();
+      loader.setUpdateCheckMode('manual');
+      expect(readYaml<any>('settings.yaml').updateCheck).toBe('manual');
+      const loader2 = new ConfigLoader(TEST_DIR);
+      loader2.load();
+      expect(loader2.getUpdateCheckMode()).toBe('manual');
+    });
+  });
+
   // =========================================================================
   // Sidebar preferences
   // =========================================================================
