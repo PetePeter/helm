@@ -404,7 +404,7 @@ function onCardClick(e: MouseEvent): void {
     <!-- Passive PTY tail: read-only, never focused, clicks select the row. -->
     <div v-if="previewLines" class="session-preview" aria-hidden="true">
       <span v-for="(line, index) in previewLines" :key="index" class="session-preview__line">{{ line }}</span>
-      <span v-if="previewLines.length === 0" class="session-preview__line session-preview__line--empty">No output yet</span>
+      <span v-if="previewLines.length === 0" class="session-preview__line">No output yet</span>
     </div>
 
     <NotificationCarousel
@@ -469,7 +469,7 @@ function onCardClick(e: MouseEvent): void {
 .artifact-badge:hover { border-color: var(--accent); color: var(--accent); }
 .draft-badge + .artifact-badge { margin-left: 4px; }
 
-/* Five clipped lines; the fade on top hints at the older output above. */
+/* Five clipped lines, constant mid grey — no fade, no brighter last line. */
 .session-preview {
   display: flex;
   flex-direction: column;
@@ -485,7 +485,6 @@ function onCardClick(e: MouseEvent): void {
   color: var(--text-secondary);
   pointer-events: none;
   user-select: none;
-  mask-image: linear-gradient(to bottom, transparent 0, #000 40%);
 }
 .session-preview__line {
   display: block;
@@ -493,8 +492,6 @@ function onCardClick(e: MouseEvent): void {
   overflow: hidden;
   text-overflow: clip;
 }
-.session-preview__line:last-child { color: var(--text-primary); }
-.session-preview__line--empty:last-child { color: var(--text-dim); }
 
 /* An envelope just landed here: a short accent flash before the paste shows. */
 .session-card.message-landed { animation: session-message-landed 0.6s ease-out; }

@@ -174,6 +174,12 @@ the pane when the pane is moved, split or docked.
 the docked pane and a snapped-out window, so there is one chip-row
 implementation.
 
+Chip text lines that would be clipped by the fixed 180px chip width tick
+continuously instead: `TickerText` (renderer/components/chips/) measures each
+line, and only clipped ones loop as a seamless two-copy marquee at a constant
+speed. Lines that fit stay static with ellipsis, and `prefers-reduced-motion`
+falls back to plain ellipsis.
+
 ## Gamepad navigation
 
 The imperative nav in `renderer/screens/` must skip zones that cannot take

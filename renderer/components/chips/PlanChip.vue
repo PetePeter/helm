@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { getDisplayTitle } from '../../types.js';
+import TickerText from './TickerText.vue';
 
 const props = defineProps<{
   humanId?: string;
@@ -48,7 +49,7 @@ function onKeyActivate(): void {
         @click.stop="emit('copy')"
       >⧉</button>
     </span>
-    <span class="plan-chip__title">{{ displayTitle }}</span>
+    <TickerText class="plan-chip__title" :text="displayTitle" />
   </div>
 </template>
 
@@ -72,12 +73,8 @@ function onKeyActivate(): void {
 }
 .plan-chip__id { font-weight: 600; }
 .plan-chip__status { color: var(--text-secondary); }
-.plan-chip__title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
+/* Clipping/ellipsis/ticker behaviour lives in TickerText. */
+.plan-chip__title { font-size: 12px; }
 .plan-chip__copy {
   margin-left: auto;
   border: 0;

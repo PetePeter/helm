@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import TickerText from './TickerText.vue';
+
 defineProps<{
   actions: Array<{ label: string; sequence: string; preview: string }>;
 }>();
@@ -43,9 +45,9 @@ function tooltip(preview: string, index: number): string {
           class="chip-action-btn__accel"
           aria-hidden="true"
         >{{ accelerator(index) }}</span>
-        <span class="chip-action-btn__label">{{ action.label }}</span>
+        <TickerText class="chip-action-btn__label" :text="action.label" />
       </span>
-      <span class="chip-action-btn__preview">{{ action.preview }}</span>
+      <TickerText class="chip-action-btn__preview" :text="action.preview" />
     </button>
   </div>
 </template>
@@ -97,16 +99,9 @@ function tooltip(preview: string, index: number): string {
   min-width: 0;
 }
 
-.chip-action-btn__label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chip-action-btn__preview {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-secondary);
-}
+/* Clipping/ellipsis/ticker behaviour lives in TickerText. */
+.chip-action-btn__label { min-width: 0; }
+.chip-action-btn__preview { color: var(--text-secondary); }
 
 /* Alt+number accelerator badge — uses the glyph in the template to stay
    distinct from the Ctrl-based session-jump badge. */
