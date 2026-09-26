@@ -5,8 +5,8 @@ A phone-call-style voice conversation with Helm from the Android app. Tap
 driving: it runs through the car's Bluetooth, the earpiece or the speaker, and
 survives the screen turning off.
 
-**Hey Helm** is the opt-in standby: one spoken question, one spoken answer,
-no call — see [below](#hey-helm--standby).
+**Hey Helm** is the opt-in standby: an on-device wake word that starts a
+call hands-free — see [below](#hey-helm--standby).
 
 This page covers the phone half (P-0834, P-0835), the desktop's
 [operator session](#the-operator-session--helm) (P-0833) and
@@ -272,63 +272,59 @@ Off means no background mic: the service is stopped. The service observes
 call's comeback) whatever the UI is doing. Installs from builds that left the
 switch on are reset to off once (`hey_helm_reset_off_v1`).
 
-It is the same `CallController`, given a `Standby` config:
-
-```mermaid
-stateDiagram-v2
-    [*] --> Listening
-    Listening --> Listening: no wake phrase (ignored)
-    Listening --> Speaking: wake phrase alone → "Yes?"
-    Speaking --> Listening: done (next utterance is the question)
-    Listening --> Awaiting: wake + question → beep, send
-    Awaiting --> Speaking: first reply (timer cancelled)
-    Awaiting --> Speaking: 120 s timeout → "Still waiting. I'll tell you."
-    Speaking --> Listening: done
-```
-
-- **Wake phrase** — `stripWakePhrase`: case-insensitive, tolerant of the
-  recogniser's usual spellings (`hey/hay/hi helm`, `hey home`, `hey elm`,
-  `a helm`). The list is deliberately short: each spelling is another way an
-  ordinary sentence wakes the phone ("a home…" is excluded for that reason).
-- **"Yes?" has a window.** After a bare wake the next utterance is the
-  question only for 8 s; after that the wake is forgotten.
-- **One question at a time.** Wakes are ignored while a question awaits its
-  answer, so a second question can never orphan the first answer.
-- **Backed-off restarts.** Retryable recogniser errors restart after 1 s,
-  doubling to a 30 s cap, reset by any result — a phone with no language pack
-  must not spin for hours. A fatal error (no mic permission, no recogniser)
-  ends standby and turns the switch off, so the UI never claims it is on.
-- **The row is always reachable while on**, even with no target, so ON can be
-  turned off. With no target the service stops but the switch stays on.
-- **One question, one answer.** Only the first reply after a question is
-  spoken; anything else the target says is not read to the room. A slow reply
-  gets one holding line, and is still spoken when it arrives.
-- **No audio takeover.** Standby runs for hours, so it holds no audio focus, no
-  communication mode and no route — music keeps playing. Its voice is the
-  `USAGE_ASSISTANT` stream. The mic still pauses while it speaks.
-- **Calls win.** Starting a call during standby replaces it; when the call ends
-  with the switch still on, the service drops the call audio and returns to
-  standby. Otherwise the service stops and logs `mic released` — the decision
-  is `StandbyPolicy.resumeAfter`, pinned by `StandbyPolicyTest`.
-- **Leaving the call screen hangs up.** Back, or the call screen's composition
-  going away, ends the call (a rotation does not — it rejoins). The mic is
-  never left open behind a screen the user has left.
+Standby holds the mic with a `WakeWordEngine` — `VoskWakeWordEngine`, offline
+keyword spotting with [Vosk](https://alphacephei.com/vosk/) — and nothing
+else. No `SpeechRecognizer` runs during standby; it is used for in-call STT
+only. Nothing leaves the phone until the wake word fires.
 
 ```mermaid
 flowchart LR
-    E[controller ended] --> Q{was a call<br/>AND switch on<br/>AND target?}
-    Q -- yes --> S[back to standby]
-    Q -- no --> X[stop service · mic released]
+    On[switch on + target] --> V[Vosk standby<br/>one AudioRecord, 16 kHz mono]
+    V -- unk or low confidence --> V
+    V -- "hey helm" --> W[close recorder · beep]
+    W --> C[full call to the standby target]
+    C -- hang up --> P{StandbyPolicy:<br/>switch still on?}
+    P -- yes --> V
+    P -- no --> X[stop · mic released]
+    V -- switch off / Stop --> X
 ```
-- The timeout clock is a port (`Standby.schedule`), so the whole flow runs in
-  `StandbyControllerTest` against fakes.
 
-**Honest caveat** (also the setting's subtitle): Android's built-in STT is not a
-wake-word engine. It is a continuous recognise-restart loop — expect the
-platform's listening beeps, real battery drain, and possible OS kills; it is
-best on a charger. A real engine (openWakeWord, Porcupine, Whisper) can later
-replace it behind `SpeechEngine` without touching the controller. Standby does
-not survive a reboot or a process kill — reopen the app.
+- **Keyword spotting, not dictation.** Vosk's `SpeechService` reads ONE
+  `AudioRecord` continuously (16 kHz mono, `VOICE_RECOGNITION`) into a
+  recogniser whose grammar is only `["hey helm", "[unk]"]`: anything else
+  comes back as `[unk]`. No per-utterance recogniser churn, no platform beeps.
+- **False-wake guard** — `WakeDetector`, pinned by `WakeDetectorTest`: a FINAL
+  result must be exactly `hey helm`, every word must reach 0.75 confidence,
+  and a second detection within 2 s is ignored. A wake logs
+  `wake word detected`.
+- **A wake is a call.** It closes the recorder, beeps, and rings a full call to
+  the standby target, exactly as the Call button would. When the call ends,
+  standby comes back only if the switch is still on; otherwise the service
+  stops and logs `mic released`. The decision is `StandbyPolicy.resumeAfter`,
+  pinned by `StandbyPolicyTest`.
+- **Leaving the call screen hangs up.** Back, or the call screen's composition
+  going away, ends the call (a rotation does not — it rejoins). The mic is
+  never left open behind a screen the user has left.
+- **A failure turns the switch off.** If the model fails to unpack or the
+  recorder fails, standby ends and the switch goes off, so the UI never claims
+  it is listening.
+- **The row is always reachable while on**, even with no target, so ON can be
+  turned off. With no target the service stops but the switch stays on.
+- **No audio takeover.** Standby runs for hours, so it holds no audio focus, no
+  communication mode and no route — music keeps playing. **Calls win:**
+  starting a call during standby replaces it.
+
+**The model** is `vosk-model-small-en-us-0.15` (~40 MB zip). It is not checked
+in: the Gradle `voskModel` task downloads it once into `android/app/build/vosk/`
+and unpacks it into generated assets, with a `uuid` file. The model is
+unpacked to `filesDir` on first standby (`StorageService.unpack`, which uses
+the `uuid` to skip later copies) and loaded once per process. The release APK
+grew from 11.1 MB to 69.8 MB: ~41 MB of model, plus Vosk's native library for
+the two ARM ABIs the APK now ships (`abiFilters` = arm64-v8a, armeabi-v7a).
+
+**Caveats:** the mic indicator is on for as long as Hey Helm is on. Standby
+does not survive a reboot or a process kill — reopen the app. The small model
+is English only.
 
 ## Desktop voice
 
@@ -442,5 +438,5 @@ stateDiagram-v2
 - Built-in STT only, requested offline; a phone with no downloaded language
   pack reports a network error each utterance and the call keeps retrying.
 - No barge-in, as described above: wait for Helm to finish, or hang up.
-- Hey Helm is unjudged on a device, including the 30-minute screen-off run on a
-  charger; see the caveat above.
+- Hey Helm (Vosk) is unjudged on a device: wake latency (~1 s target), false
+  wakes over 5 minutes of speech or TV, and the 30-minute screen-off run.

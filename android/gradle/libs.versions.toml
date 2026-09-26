@@ -8,6 +8,8 @@ composeBom = "2024.09.03"
 junit = "4.13.2"
 json = "20240303"
 bouncycastle = "1.78.1"
+vosk = "0.3.47"
+jna = "5.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -24,6 +26,10 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 # scalar multiplication cannot come from the JCE. The jdk15to18 variant is the
 # one built for Android/Java 8 - jdk18on is a multi-release jar.
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk15to18", version.ref = "bouncycastle" }
+# Offline "Hey Helm" keyword spotting. Both are pulled as AARs (native libs
+# inside), which is how Vosk's own Android guide wires them.
+vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
+jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 # The real org.json, not the android.jar stub: unit tests parse the committed
 # cross-language fixture vectors and the stub throws "not mocked".

@@ -7,10 +7,9 @@ package com.potatomotato.helm.voice
  */
 internal object StandbyPolicy {
     /**
-     * The target to go back to "Hey Helm" standby for when a controller ends,
-     * or null to stop the service and free the mic. Only a CALL ending with the
-     * switch on comes back; standby ending (switched off, fatal error) never does.
+     * The target to go back to "Hey Helm" standby for when a call ends, or null
+     * to stop the service and free the mic: only with the switch still on.
      */
-    fun resumeAfter(wasStandby: Boolean, heyHelmOn: Boolean, target: String?): String? =
-        if (wasStandby || !heyHelmOn) null else target
+    fun resumeAfter(heyHelmOn: Boolean, target: String?): String? =
+        if (heyHelmOn) target else null
 }

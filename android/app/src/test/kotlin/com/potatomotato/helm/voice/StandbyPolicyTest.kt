@@ -8,26 +8,16 @@ import org.junit.Test
 class StandbyPolicyTest {
     @Test
     fun `a call ending with Hey Helm off stops`() {
-        assertNull(StandbyPolicy.resumeAfter(wasStandby = false, heyHelmOn = false, target = "s1"))
-    }
-
-    @Test
-    fun `standby ending after the switch goes off stops`() {
-        assertNull(StandbyPolicy.resumeAfter(wasStandby = true, heyHelmOn = false, target = "s1"))
-    }
-
-    @Test
-    fun `standby never resumes itself even with the switch on`() {
-        assertNull(StandbyPolicy.resumeAfter(wasStandby = true, heyHelmOn = true, target = "s1"))
+        assertNull(StandbyPolicy.resumeAfter(heyHelmOn = false, target = "s1"))
     }
 
     @Test
     fun `a call ending with Hey Helm on goes back to standby`() {
-        assertEquals("s1", StandbyPolicy.resumeAfter(wasStandby = false, heyHelmOn = true, target = "s1"))
+        assertEquals("s1", StandbyPolicy.resumeAfter(heyHelmOn = true, target = "s1"))
     }
 
     @Test
     fun `nobody to listen for stops`() {
-        assertNull(StandbyPolicy.resumeAfter(wasStandby = false, heyHelmOn = true, target = null))
+        assertNull(StandbyPolicy.resumeAfter(heyHelmOn = true, target = null))
     }
 }

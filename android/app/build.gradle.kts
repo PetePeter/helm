@@ -1,3 +1,5 @@
+import java.net.URI
+import javax.inject.Inject
 import java.util.Properties
 
 plugins {
@@ -66,6 +68,9 @@ android {
         targetSdk = 35
         versionCode = helmVersionCode
         versionName = helmVersionName
+        // Vosk ships ~9 MB of native code PER ABI; phones are ARM, so the x86
+        // (emulator) and legacy mips/armeabi copies are ~19 MB of dead weight.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {
@@ -133,8 +138,62 @@ tasks.withType<Test>().configureEach {
     systemProperty("helm.android.src.dir", file("src/main/kotlin").absolutePath)
 }
 
+/**
+ * The Vosk model for "Hey Helm" (~40 MB) is DOWNLOADED at build time into the
+ * build dir rather than checked in: a binary that size does not belong in git.
+ * Fetched once and cached under build/vosk; the assets carry a `uuid` file,
+ * which is what StorageService.unpack compares to decide whether the copy in
+ * filesDir is current — bump [voskModelName] and phones re-unpack.
+ */
+val voskModelName = "vosk-model-small-en-us-0.15"
+
+abstract class VoskModelTask : DefaultTask() {
+    @get:Input abstract val modelName: Property<String>
+    @get:Internal abstract val cacheDir: DirectoryProperty
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+    @get:Inject abstract val fs: FileSystemOperations
+    @get:Inject abstract val archives: ArchiveOperations
+
+    @TaskAction
+    fun unpack() {
+        val name = modelName.get()
+        val zipFile = cacheDir.file("$name.zip").get().asFile
+        if (!zipFile.exists()) {
+            zipFile.parentFile.mkdirs()
+            val part = File(zipFile.path + ".part")
+            URI("https://alphacephei.com/vosk/models/$name.zip").toURL().openStream().use { input ->
+                part.outputStream().use { input.copyTo(it) }
+            }
+            check(part.renameTo(zipFile)) { "could not move ${part.name} into place" }
+        }
+        val dest = outputDir.dir("model-en-us").get().asFile
+        fs.delete { delete(outputDir) }
+        fs.copy {
+            from(archives.zipTree(zipFile))
+            into(dest)
+            // Drop the zip's top-level folder: the assets dir IS the model.
+            eachFile { relativePath = RelativePath(true, *relativePath.segments.drop(1).toTypedArray()) }
+            includeEmptyDirs = false
+        }
+        File(dest, "uuid").writeText(name)
+    }
+}
+
+val voskModel = tasks.register<VoskModelTask>("voskModel") {
+    description = "Downloads and unpacks the Vosk wake-word model into generated assets."
+    modelName.set(voskModelName)
+    cacheDir.set(layout.buildDirectory.dir("vosk"))
+}
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(voskModel, VoskModelTask::outputDir)
+    }
+}
+
 dependencies {
     implementation(libs.bouncycastle)
+    implementation(libs.vosk.android) { artifact { type = "aar" } }
+    implementation(libs.jna) { artifact { type = "aar" } }
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
