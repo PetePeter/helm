@@ -350,16 +350,70 @@ sequenceDiagram
 - **One conversation.** The user's desktop words are journaled
   (`originId: desktop:<uuid>`) and pushed live to linked phones, so the phone
   thread shows both sides.
-- **Call window.** The first talk opens the call panel; while it is open each
+- **Call window.** The first talk opens the call; while it is open each
   reply is spoken once, strictly in arrival order. After **Hang up** replies
   are still listed but not spoken — the phone may be the one talking.
-- **Gating.** Talk refuses (with a message) while no operator exists.
+- **Gating.** Talk and Call refuse (with a message) while no operator exists.
+
+### The sidebar "Helm" section
+
+The desktop twin of the phone's first tab (`OperatorSummary.kt`):
+`OperatorSection.vue` is pinned above the session list and fed by the pure
+`operatorSummary()` (`renderer/operator-summary.ts`) — the operator's activity
+dot (`state-colors.ts`), its last reply, **Call / Hang up**, and while a call is
+open the live phase and transcript (it replaced the floating call panel — one
+UI). Clicking the title opens the operator's terminal. With no operator it
+reads "Enable in Settings > Operator". `buildSessionGroups` drops the operator
+(`withoutOperator`), so it is never listed twice — the same rule as the phone.
+Instead it is the pinned first gamepad nav item (`buildFlatNavList` →
+`type: 'operator'`), so the D-pad and stick reach it like any session card
+(Invariant 1: the gamepad reaches everything). Starting a call from any binding
+restores/activates/reveals the Sessions pane, so the Hang up button is always
+on screen.
+
+### Hands-free call
+
+**Call** (or a gamepad button bound to `voice-call`, a toggle) keeps the mic
+open and lets a voice-activity gate cut it into turns; hold-to-talk still works
+outside a hands-free call.
+
+```mermaid
+stateDiagram-v2
+    [*] --> listening: Call (mic.open + listen)
+    listening --> transcribing: Vad 'end' (quiet ≥ 800ms after ≥ 250ms speech, or 30s cap)
+    listening --> listening: Vad 'discard' (blip / 30s silence) — drop, fresh recording
+    transcribing --> listening: voice:transcribe → voice:ask
+    listening --> speaking: operator reply (mic.take — paused)
+    transcribing --> speaking: operator reply
+    speaking --> listening: clip played + 300ms (fresh recording)
+    listening --> [*]: Hang up (mic.close)
+    speaking --> [*]: Hang up
+```
+
+- **Vad** (`renderer/voice/vad.ts`) is pure: fed one RMS energy per 20ms frame
+  with its time, it emits `start` / `end` / `discard` (blips shorter than the
+  minimum speech length). No WebAudio in its tests.
+- **Mic** (`createBrowserMic`, `browser-audio.ts`): one stream for the call, an
+  `AnalyserNode` meter, and a fresh `MediaRecorder` per turn. A turn's clip
+  runs from when listening resumed, so the speech onset is never clipped.
+- **Bounded.** A turn is cut at 30s (forced `end`); a recording that held no
+  speech for 30s, or only a blip, is `discard`ed — dropped, and a fresh one starts.
+- **Race-safe.** A hang-up (or a second `voice-call` press) while the mic is
+  still opening cancels the call; the mic is closed as soon as it opens. A
+  generation counter makes late transcribe/playback work from an ended call inert.
+- **No echo.** The mic asks for browser echo cancellation, noise suppression
+  and AGC; recording and meter are paused while Piper speaks and resume 300ms
+  after it ends; words spoken over a reply are dropped. A failed or repeated
+  `open()` releases the stream and audio context. Empty transcripts send
+  nothing. No new main-process code — the same `voice:*` IPC.
 
 ## Limitations
 
-- Desktop voice: the transcript panel holds only this run's lines (the phone
+- Desktop voice: the transcript holds only this run's lines (the phone
   keeps history); no barge-in — a reply that arrives while you talk is spoken
-  after the one before it.
+  after the one before it, and in a hands-free call it pauses the mic even
+  mid-sentence. The VAD threshold is a fixed energy level, not calibrated.
+  Not yet judged live (needs a restart + a real call).
 
 - Not yet judged on a device: routing, screen-off survival, BT switching and
   hang-up from the notification need the manual adb check in P-0834's

@@ -3,7 +3,7 @@
  * a release during a pending getUserMedia must never leave the mic open.
  */
 import { describe, it, expect } from 'vitest';
-import { createAudioPlayer, createMediaRecorder } from '../renderer/voice/browser-audio';
+import { createAudioPlayer, createBrowserMic, createMediaRecorder } from '../renderer/voice/browser-audio';
 
 class FakeTrack { stopped = false; stop() { this.stopped = true; } }
 
@@ -88,5 +88,61 @@ describe('createAudioPlayer', () => {
 
     expect(paused).toBe(true);
     expect(revoked).toEqual(['blob:1']);
+  });
+});
+
+class FakeAudioContext {
+  closed = false;
+  failAnalyser = false;
+  createAnalyser() {
+    if (this.failAnalyser) throw new Error('no analyser');
+    return { fftSize: 0, getFloatTimeDomainData: () => {} } as unknown as AnalyserNode;
+  }
+  createMediaStreamSource() { return { connect: () => {} } as unknown as MediaStreamAudioSourceNode; }
+  async close() { this.closed = true; }
+}
+
+function micWith(stream: MediaStream, context: FakeAudioContext) {
+  const constraints: MediaStreamConstraints[] = [];
+  const mic = createBrowserMic({
+    getUserMedia: async (c) => { constraints.push(c); return stream; },
+    createRecorder: (s) => new FakeMediaRecorder(s) as unknown as MediaRecorder,
+    createAudioContext: () => context as unknown as AudioContext,
+  });
+  return { mic, constraints };
+}
+
+describe('createBrowserMic', () => {
+  it('asks for echo-cancelled audio and close() stops the tracks and the audio context', async () => {
+    const { track, stream } = fakeStream();
+    const context = new FakeAudioContext();
+    const { mic, constraints } = micWith(stream, context);
+
+    await mic.open(() => {});
+    mic.close();
+
+    expect(constraints[0].audio).toMatchObject({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+    expect(track.stopped).toBe(true);
+    expect(context.closed).toBe(true);
+  });
+
+  it('a failure after getUserMedia releases the mic and rethrows', async () => {
+    const { track, stream } = fakeStream();
+    const context = new FakeAudioContext();
+    context.failAnalyser = true;
+    const { mic } = micWith(stream, context);
+
+    await expect(mic.open(() => {})).rejects.toThrow('no analyser');
+    expect(track.stopped).toBe(true);
+    expect(context.closed).toBe(true);
+  });
+
+  it('re-opening releases the previous stream first', async () => {
+    const first = fakeStream();
+    const context = new FakeAudioContext();
+    const { mic } = micWith(first.stream, context);
+    await mic.open(() => {});
+    await mic.open(() => {});
+    expect(first.track.stopped).toBe(true);
   });
 });

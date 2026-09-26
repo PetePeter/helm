@@ -47,7 +47,7 @@ export type { ResolvedCliType } from './cli-type-store.js';
 // Action & Binding Types
 // ============================================================================
 
-export type ActionType = 'keyboard' | 'voice' | 'voice-talk' | 'scroll' | 'context-menu' | 'prompt-tree' | 'new-draft';
+export type ActionType = 'keyboard' | 'voice' | 'voice-talk' | 'voice-call' | 'scroll' | 'context-menu' | 'prompt-tree' | 'new-draft';
 
 interface BaseBinding {
   action: ActionType;
@@ -68,6 +68,11 @@ interface VoiceBinding extends BaseBinding {
 /** Hold-to-talk to the Helm operator: press records, release sends (docs/voice-operator.md). */
 interface VoiceTalkBinding extends BaseBinding {
   action: 'voice-talk';
+}
+
+/** Start / hang up a hands-free call with the Helm operator (docs/voice-operator.md). */
+interface VoiceCallBinding extends BaseBinding {
+  action: 'voice-call';
 }
 
 interface ScrollBinding extends BaseBinding {
@@ -93,7 +98,7 @@ interface NewDraftBinding extends BaseBinding {
   action: 'new-draft';
 }
 
-export type Binding = KeyboardBinding | VoiceBinding | VoiceTalkBinding | ScrollBinding | ContextMenuBinding | PromptTreeBinding | NewDraftBinding;
+export type Binding = KeyboardBinding | VoiceBinding | VoiceTalkBinding | VoiceCallBinding | ScrollBinding | ContextMenuBinding | PromptTreeBinding | NewDraftBinding;
 
 // ============================================================================
 // Pattern Rules

@@ -9,7 +9,7 @@ import { state } from '../state.js';
 import { sessionsState } from './sessions-state.js';
 import { logEvent } from '../utils.js';
 import type { TerminalManager } from '../terminal/terminal-manager.js';
-import { findNavIndexBySessionId } from '../session-groups.js';
+import { findNavIndexBySessionId, isSessionNavItem } from '../session-groups.js';
 
 // Circular import — safe: all usages are inside function bodies, not at module-evaluation time.
 import {
@@ -214,8 +214,7 @@ export async function switchToSession(sessionId: string): Promise<void> {
 /** Auto-switch terminal based on what the D-pad just focused. */
 export function autoSelectFocusedSession(): void {
   const navItem = sessionsState.navList[sessionsState.sessionsFocusIndex];
-  if (!navItem) return;
-  if (navItem.type !== 'session-card') return;
+  if (!navItem || !isSessionNavItem(navItem)) return;
 
   const session = state.sessions.find(s => s.id === navItem.id);
   if (!session) return;

@@ -70,7 +70,10 @@ const derivedGroups = computed<SessionGroup[]>(() => buildSessionGroups(
   useRuntimeGroups().groups.value,
 ));
 
-const derivedNavList = computed<NavItem[]>(() => buildFlatNavList(derivedGroups.value));
+const derivedNavList = computed<NavItem[]>(() => buildFlatNavList(
+  derivedGroups.value,
+  state.sessions.find(session => session.role === 'operator')?.id ?? null,
+));
 
 export const sessionsState: SessionsScreenState = reactive({
   activeFocus: 'sessions',

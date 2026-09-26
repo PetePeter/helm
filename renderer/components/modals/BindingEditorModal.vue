@@ -17,6 +17,7 @@ const ACTION_TYPES = [
   { value: 'keyboard', label: 'Keyboard sequence' },
   { value: 'voice', label: 'Voice key' },
   { value: 'voice-talk', label: 'Talk to Helm (hold)' },
+  { value: 'voice-call', label: 'Call Helm (hands-free)' },
   { value: 'scroll', label: 'Scroll' },
   { value: 'context-menu', label: 'Context menu' },
   { value: 'prompt-tree', label: 'Prompt tree' },
@@ -200,8 +201,8 @@ defineExpose({ handleButton });
             </div>
           </template>
 
-          <!-- Context menu / prompt-tree / new-draft / voice-talk — no extra params -->
-          <template v-if="actionType === 'context-menu' || actionType === 'prompt-tree' || actionType === 'new-draft' || actionType === 'voice-talk'">
+          <!-- Context menu / prompt-tree / new-draft / voice-talk / voice-call — no extra params -->
+          <template v-if="actionType === 'context-menu' || actionType === 'prompt-tree' || actionType === 'new-draft' || actionType === 'voice-talk' || actionType === 'voice-call'">
             <div class="binding-editor-field">
               <span class="form-help">No additional parameters needed.</span>
             </div>

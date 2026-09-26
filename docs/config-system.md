@@ -91,6 +91,10 @@ CLI-specific bindings are used. Each profile defines different button behaviours
 
 `{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Telegram (the Telegram bot itself need not be on). Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
 
+### voice-call
+
+`{ action: 'voice-call' }` — toggles a hands-free call with the Helm operator: the mic stays open, each pause (voice-activity detection) sends what was said, replies are spoken with the mic paused, until pressed again. Same requirements as `voice-talk`. See [voice-operator.md](voice-operator.md#hands-free-call).
+
 ### scroll
 
 `{ action: 'scroll', direction: 'up'|'down', lines?: 5 }` — Scroll active terminal buffer (or overview grid when visible).

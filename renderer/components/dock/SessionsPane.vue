@@ -9,6 +9,7 @@
 import { computed } from 'vue';
 import SortBar from '../sidebar/SortBar.vue';
 import SessionList from '../sidebar/SessionList.vue';
+import OperatorSection from '../sidebar/OperatorSection.vue';
 import { sessionsState } from '../../screens/sessions-state.js';
 import { useAppStore } from '../../stores/app.js';
 import { useNavigationStore } from '../../stores/navigation.js';
@@ -56,6 +57,7 @@ function sessionElapsedText(sessionId: string): string {
 
 <template>
   <section class="sessions-screen-section">
+    <OperatorSection @open="sidebar.onSessionClick" />
     <SortBar
       :options="SORT_OPTIONS"
       :field="sidebar.getSortField()"

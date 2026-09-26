@@ -6,7 +6,7 @@
 import { state } from '../state.js';
 import { voiceClient } from '../ipc/clients.js';
 import { createVoiceCall, type VoiceCall } from '../voice/voice-call.js';
-import { createAudioPlayer, createMediaRecorder } from '../voice/browser-audio.js';
+import { createAudioPlayer, createBrowserMic, createMediaRecorder } from '../voice/browser-audio.js';
 
 let call: VoiceCall | null = null;
 
@@ -15,6 +15,7 @@ export function useVoiceCall(): VoiceCall {
     client: voiceClient,
     recorder: createMediaRecorder(),
     player: createAudioPlayer(),
+    mic: createBrowserMic(),
     hasOperator: () => state.sessions.some(session => session.role === 'operator'),
   });
   return call;

@@ -165,6 +165,9 @@ async function executeCliBinding(button: string, binding: Binding): Promise<void
       case 'voice-talk':
         voiceTalkHolds.press(button);
         break;
+      case 'voice-call':
+        void useVoiceCall().toggleCall();
+        break;
       case 'scroll':
         executeScroll(binding);
         break;

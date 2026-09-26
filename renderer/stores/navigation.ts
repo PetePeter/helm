@@ -104,7 +104,8 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   /** Set sidebar focus to a specific session card by ID. */
   function syncSidebarToSession(sessionId: string): void {
-    focusedNavItem.value = { id: sessionId, type: 'session-card' };
+    const navItem = sessionsState.navList[findNavIndexBySessionId(sessionsState.navList, sessionId)];
+    focusedNavItem.value = { id: sessionId, type: navItem?.type ?? 'session-card' };
     focusColumn.value = 0;
     syncFocusIndex();
   }

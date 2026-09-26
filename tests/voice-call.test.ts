@@ -3,7 +3,7 @@
  * fake IPC bridge, a fake recorder and a fake speaker.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createVoiceCall, type VoiceCallClient, type VoiceRecorder, type VoicePlayer } from '../renderer/voice/voice-call';
+import { createVoiceCall, type VoiceCallClient, type VoiceRecorder, type VoicePlayer, type VoiceMic } from '../renderer/voice/voice-call';
 
 type ReplyListener = (reply: { sessionId: string; text: string }) => void;
 
@@ -54,13 +54,34 @@ class FakePlayer implements VoicePlayer {
   stop() { this.stops += 1; }
 }
 
+class FakeMic implements VoiceMic {
+  onEnergy: ((energy: number, atMs: number) => void) | null = null;
+  open_ = false;
+  listening = false;
+  takes = 0;
+  async open(onEnergy: (energy: number, atMs: number) => void) { this.onEnergy = onEnergy; this.open_ = true; }
+  listen() { this.listening = true; }
+  async take() {
+    this.listening = false;
+    this.takes += 1;
+    return { bytes: new Uint8Array([9]), mimeType: 'audio/webm' };
+  }
+  close() { this.open_ = false; this.listening = false; this.onEnergy = null; }
+  /** Say something: loud for 500ms, then silence past the hangover. */
+  talk(start: number) {
+    for (let t = start; t < start + 500; t += 20) if (this.listening) this.onEnergy?.(0.5, t);
+    for (let t = start + 500; t < start + 1500; t += 20) if (this.listening) this.onEnergy?.(0.001, t);
+  }
+}
+
 let client: FakeClient;
+let mic: FakeMic;
 let recorder: FakeRecorder;
 let player: FakePlayer;
 let operatorOn: boolean;
 
 function make() {
-  return createVoiceCall({ client, recorder, player, hasOperator: () => operatorOn });
+  return createVoiceCall({ client, recorder, player, mic, hasOperator: () => operatorOn, resumeDelayMs: 0 });
 }
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -69,6 +90,7 @@ beforeEach(() => {
   client = new FakeClient();
   recorder = new FakeRecorder();
   player = new FakePlayer();
+  mic = new FakeMic();
   operatorOn = true;
 });
 
@@ -183,5 +205,128 @@ describe('voice call operator replies', () => {
 
     call.dispose();
     expect(client.listener).toBeNull();
+  });
+});
+
+describe('voice call hands-free', () => {
+  it('listens, sends each spoken segment, speaks the reply with the mic paused, then listens again', async () => {
+    const call = make();
+    await call.startCall();
+    expect(call.handsFree.value).toBe(true);
+    expect(call.phase.value).toBe('listening');
+    expect(mic.listening).toBe(true);
+
+    mic.talk(0);
+    await flush(); await flush();
+    expect(client.asked).toEqual(['status please']);
+    expect(call.phase.value).toBe('listening');
+    expect(mic.listening).toBe(true);
+
+    let listeningWhilePlaying: boolean | null = null;
+    player.play = async (audio: Uint8Array) => { listeningWhilePlaying = mic.listening; player.played.push(new TextDecoder().decode(audio)); };
+    client.reply('all green');
+    await flush(); await flush(); await flush();
+    expect(player.played).toEqual(['all green']);
+    expect(listeningWhilePlaying).toBe(false);
+    expect(mic.listening).toBe(true);
+
+    mic.talk(5000);
+    await flush(); await flush();
+    expect(client.asked).toEqual(['status please', 'status please']);
+  });
+
+  it('an empty transcript asks nothing and keeps listening', async () => {
+    client.transcript = '   ';
+    const call = make();
+    await call.startCall();
+    mic.talk(0);
+    await flush(); await flush();
+    expect(client.asked).toEqual([]);
+    expect(mic.listening).toBe(true);
+  });
+
+  it('refuses to start with no operator', async () => {
+    operatorOn = false;
+    const call = make();
+    await call.startCall();
+    expect(mic.open_).toBe(false);
+    expect(call.error.value).toMatch(/operator/i);
+  });
+
+  it('hang up releases the mic and ends the call; toggleCall flips it', async () => {
+    const call = make();
+    await call.toggleCall();
+    expect(mic.open_).toBe(true);
+    await call.toggleCall();
+    expect(mic.open_).toBe(false);
+    expect(call.inCall.value).toBe(false);
+    expect(call.handsFree.value).toBe(false);
+    expect(call.phase.value).toBe('idle');
+  });
+
+  it('a blip is dropped and listening restarts with a fresh recording', async () => {
+    const call = make();
+    await call.startCall();
+    for (let t = 0; t < 60; t += 20) mic.onEnergy?.(0.5, t);
+    for (let t = 60; t < 1000; t += 20) mic.onEnergy?.(0.001, t);
+    await flush();
+    expect(mic.takes).toBe(1);
+    expect(mic.listening).toBe(true);
+    expect(client.asked).toEqual([]);
+    expect(call.phase.value).toBe('listening');
+  });
+
+  it('toggling twice while the mic is still opening cancels the call and closes the mic', async () => {
+    let finishOpen!: () => void;
+    let closes = 0;
+    mic.open = () => new Promise<void>(resolve => { finishOpen = resolve; });
+    mic.close = () => { closes += 1; };
+    const call = make();
+    const first = call.toggleCall();
+    await call.toggleCall();
+    finishOpen();
+    await first;
+    expect(closes).toBe(1);
+    expect(call.inCall.value).toBe(false);
+    expect(call.handsFree.value).toBe(false);
+    expect(mic.listening).toBe(false);
+  });
+
+  it('hang up during open closes the mic once it opens', async () => {
+    let finishOpen!: () => void;
+    let closes = 0;
+    mic.open = () => new Promise<void>(resolve => { finishOpen = resolve; });
+    mic.close = () => { closes += 1; };
+    const call = make();
+    const started = call.startCall();
+    call.hangUp();
+    finishOpen();
+    await started;
+    expect(closes).toBe(1);
+    expect(call.inCall.value).toBe(false);
+  });
+
+  it('hang up mid-transcribe does not resume listening', async () => {
+    let finishTranscribe!: () => void;
+    const transcribe = client.voiceTranscribe.bind(client);
+    client.voiceTranscribe = async (a, m) => { await new Promise<void>(r => { finishTranscribe = r; }); return transcribe(a, m); };
+    const call = make();
+    await call.startCall();
+    mic.talk(0);
+    await flush();
+    expect(call.phase.value).toBe('transcribing');
+    call.hangUp();
+    finishTranscribe();
+    await flush(); await flush();
+    expect(mic.listening).toBe(false);
+    expect(call.phase.value).toBe('idle');
+  });
+
+  it('a mic failure reports and leaves no call open', async () => {
+    mic.open = async () => { throw new Error('denied'); };
+    const call = make();
+    await call.startCall();
+    expect(call.inCall.value).toBe(false);
+    expect(call.error.value).toMatch(/denied/);
   });
 });

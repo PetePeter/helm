@@ -131,7 +131,8 @@ renderer/
 ├── paste-handler.ts            # Document-level Ctrl+V interceptor → clipboard text → active PTY (blocked during plan screen)
 ├── navigation.ts               # Gamepad navigation setup, event routing. Priority chain: sandwich → dirPicker → bindingEditor → formModal → closeConfirm → quickSpawn → draftEditor → draftAction → draftSubmenu → contextMenu → promptTree → planScreen (within sessions case) → overview → screen routing → configBinding fallback
 ├── gamepad.ts                  # Browser Gamepad API wrapper + repeat engine
-├── session-groups.ts           # Pure session grouping logic (by working directory) — types, grouping, nav list, reorder, bookmarked dirs
+├── session-groups.ts           # Pure session grouping logic (by working directory) — types, grouping, nav list, reorder, bookmarked dirs; excludes the operator
+├── operator-summary.ts         # operatorSummary / withoutOperator — the sidebar Helm section's selector (twin of Android OperatorSummary.kt)
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
 ├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards + overview grid.
 ├── tab-cycling.ts              # Ctrl+Tab / Ctrl+Shift+Tab terminal cycling resolver
@@ -167,8 +168,8 @@ renderer/
 │   │   ├── ToolsTab.vue        # CLI type management
 │   │   ├── TelegramTab.vue     # Telegram bot configuration
 │   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
+│   │   ├── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
 │   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
-│   ├── VoiceCallPanel.vue      # Floating "Helm" call panel: phase, recent operator transcript, hang up
 │   ├── dock/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
@@ -191,9 +192,10 @@ renderer/
 │   ├── chip-bar.ts             # useChipBarStore — chip bar action state + refresh for active session
 │   └── navigation.ts           # useNavigationStore — centralized view routing, active session, sidebar focus, overlay lifecycle
 ├── voice/
-│   ├── voice-call.ts           # createVoiceCall: hold-to-talk controller, ordered once-per-reply speech, shared transcript
+│   ├── voice-call.ts           # createVoiceCall: hold-to-talk + hands-free call controller, ordered once-per-reply speech, shared transcript
+│   ├── vad.ts                  # Vad: pure energy gate (threshold, 800ms hangover, min speech, 30s cap) for hands-free turns
 │   ├── voice-talk-binding.ts   # Press/release tracking for the `voice-talk` binding action
-│   └── browser-audio.ts        # MediaRecorder (no mic leak on release-before-open) + Audio player with stop()
+│   └── browser-audio.ts        # MediaRecorder (no mic leak on release-before-open), hands-free mic (AnalyserNode RMS meter), Audio player with stop()
 ├── composables/
 │   ├── index.ts                # Barrel export of all composables
 │   ├── useVoiceCall.ts         # Lazy singleton voice call with the browser MediaRecorder + Audio player

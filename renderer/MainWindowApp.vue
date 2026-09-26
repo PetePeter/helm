@@ -86,6 +86,7 @@ import { setPaneVisibilityBridge } from './dock-visibility-bridge.js';
 import {
   PANE_ARTIFACTS,
   PANE_PLAN_SCREEN,
+  PANE_SESSIONS,
   PANE_TERMINAL,
 } from './dock-types.js';
 import { confirmCloseSessionById } from './screens/sessions.js';
@@ -131,7 +132,6 @@ import { listRegisteredPanes, useDockWorkspace } from './composables/useDockWork
 import { createDockViewRouting } from './composables/useDockViewRouting.js';
 import DockViewMenu from './components/dock/DockViewMenu.vue';
 import DockWorkspace from './components/dock/DockWorkspace.vue';
-import VoiceCallPanel from './components/VoiceCallPanel.vue';
 import { createVoiceKeyHandler } from './keyboard/handlers/voice-keys.js';
 import { useVoiceCall } from './composables/useVoiceCall.js';
 import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
@@ -293,6 +293,21 @@ watch(() => activeView.value, (view) => {
   }
   if (!dockWorkspace.isVisible(paneId)) dockWorkspace.activate(paneId);
   dockWorkspace.focusPane(paneId);
+});
+
+// A call started from any binding must be visible and hang-up-able: bring the
+// Sessions pane (which hosts the pinned Helm section) back if it was closed or
+// hidden behind another tab or on an auto-hide rail.
+watch(() => useVoiceCall().inCall.value, (inCall) => {
+  if (!inCall) return;
+  try {
+    if (!dockWorkspace.isOpen(PANE_SESSIONS)) dockWorkspace.restore(PANE_SESSIONS);
+    if (!dockWorkspace.isVisible(PANE_SESSIONS)) dockWorkspace.activate(PANE_SESSIONS);
+    // A rail (auto-hide) pane only shows when revealed.
+    if (!dockWorkspace.isVisible(PANE_SESSIONS)) dockWorkspace.reveal(PANE_SESSIONS);
+  } catch {
+    // Already docked elsewhere; nothing to bring back.
+  }
 });
 
 // Bringing the window forward while viewing the active session means the user has
@@ -1244,6 +1259,5 @@ onUnmounted(() => {
       @task-updated="onScheduledTaskUpdated"
       @task-cancelled="onScheduledTaskCancelled"
     />
-    <VoiceCallPanel />
   </div>
 </template>

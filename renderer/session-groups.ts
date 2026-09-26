@@ -6,6 +6,7 @@
 import type { Session } from './state.js';
 import type { RuntimeGroup } from '../src/types/runtime-group.js';
 import { hasCaseInsensitivePaths } from './utils/platform.js';
+import { withoutOperator } from './operator-summary.js';
 
 // ============================================================================
 // Types
@@ -30,13 +31,14 @@ export interface SessionGroup {
   groupId?: string;
 }
 
-export type NavItemType = 'group-header' | 'session-card';
+/** 'operator' is the pinned Helm section — first in the list, outside every group. */
+export type NavItemType = 'operator' | 'group-header' | 'session-card';
 
 export interface NavItem {
   type: NavItemType;
-  /** For group-header: dirPath. For session-card: session id. */
+  /** For group-header: dirPath. For session-card / operator: session id. */
   id: string;
-  /** Index of the group this item belongs to (in the groups array). */
+  /** Index of the group this item belongs to (in the groups array); -1 for the operator. */
   groupIndex: number;
 }
 
@@ -189,13 +191,16 @@ export function groupSessionsByDirectory(
  * @param getDir         Resolve a session id to its working directory.
  * @param prefs          Directory group order/collapse/bookmark prefs.
  * @param runtimeGroups  Runtime groups in display order (array order preserved).
+ *
+ * The operator is never grouped: it has its own pinned sidebar section.
  */
 export function buildSessionGroups(
-  sessions: Session[],
+  allSessions: Session[],
   getDir: (id: string) => string,
   prefs: SessionGroupPrefs,
   runtimeGroups: RuntimeGroup[],
 ): SessionGroup[] {
+  const sessions = withoutOperator(allSessions);
   // Every session id owned by any runtime group — excluded from directory grouping.
   const claimed = new Set<string>();
   for (const rg of runtimeGroups) {
@@ -238,10 +243,11 @@ export function buildSessionGroups(
 
 /**
  * Build a flat navigation list from grouped sessions.
- * Includes group headers and (for expanded groups) their session cards.
+ * Includes the pinned operator (when there is one), then group headers and
+ * (for expanded groups) their session cards.
  */
-export function buildFlatNavList(groups: SessionGroup[]): NavItem[] {
-  const items: NavItem[] = [];
+export function buildFlatNavList(groups: SessionGroup[], operatorId: string | null = null): NavItem[] {
+  const items: NavItem[] = operatorId ? [{ type: 'operator', id: operatorId, groupIndex: -1 }] : [];
   for (let gi = 0; gi < groups.length; gi++) {
     const group = groups[gi];
     // Runtime groups persist as visible headers even when empty (so the UI can
@@ -286,7 +292,12 @@ export function isSessionHiddenFromOverview(
  * Returns -1 if not found (e.g. in a collapsed group).
  */
 export function findNavIndexBySessionId(navList: NavItem[], sessionId: string): number {
-  return navList.findIndex(item => item.type === 'session-card' && item.id === sessionId);
+  return navList.findIndex(item => isSessionNavItem(item) && item.id === sessionId);
+}
+
+/** A nav item that stands for one session: a card, or the pinned operator. */
+export function isSessionNavItem(item: NavItem): boolean {
+  return item.type === 'session-card' || item.type === 'operator';
 }
 
 /** Identity-based sidebar cursor — survives navList reorders/rebuilds. */

@@ -6,7 +6,7 @@ Gamepad button and keyboard shortcut mappings.
 
 | Input | Action |
 |-------|--------|
-| D-Pad Up/Down | Switch sessions (auto-selects terminal) / auto-opens overview on group headers |
+| D-Pad Up/Down | Switch sessions (auto-selects terminal) / auto-opens overview on group headers. The pinned **Helm** section is the first stop (it selects the operator's terminal) |
 | D-Pad Right | Session card: cycle sub-elements / Group header: open group overview (col 0) — 🗺️ Plans button (col 1) is click-only |
 | D-Pad Left | Back one sub-element column |
 | D-Pad directions | Overview grid: navigation between cards (Up/Down past edges exits overview) |
@@ -21,6 +21,7 @@ Gamepad button and keyboard shortcut mappings.
 | Back/Start | Switch profile (previous/next) |
 | Sandwich/Guide | Focus hub window + show sessions screen |
 | Any button bound to `voice-talk` | Hold to talk to Helm (the operator); release sends. The release is honoured from any pane |
+| Any button bound to `voice-call` | Start / hang up a hands-free call with Helm (voice-activity detection sends each pause). A press while the mic is still opening cancels. Starting a call brings the Sessions pane (and its Helm section) into view |
 
 ### Session card columns
 

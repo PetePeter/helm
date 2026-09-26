@@ -6,7 +6,7 @@
  * not leak an open mic — stop() waits for the pending start, and a start that
  * resolves after being cancelled releases its tracks without ever recording.
  */
-import type { VoicePlayer, VoiceRecorder } from './voice-call.js';
+import type { VoiceMic, VoicePlayer, VoiceRecorder } from './voice-call.js';
 
 export interface MediaRecorderDeps {
   getUserMedia: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
@@ -63,6 +63,104 @@ export function createMediaRecorder(deps: MediaRecorderDeps = browserRecorderDep
       });
     },
   };
+}
+
+/** Frame period of the hands-free energy meter. */
+const METER_INTERVAL_MS = 20;
+
+function rms(samples: Float32Array): number {
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  return Math.sqrt(sum / samples.length);
+}
+
+export interface BrowserMicDeps extends MediaRecorderDeps {
+  createAudioContext: () => AudioContext;
+}
+
+const browserMicDeps: BrowserMicDeps = {
+  ...browserRecorderDeps,
+  createAudioContext: () => new AudioContext(),
+};
+
+/** The call keeps the mic open while Helm speaks: let the browser cancel its echo. */
+const CALL_AUDIO: MediaStreamConstraints = {
+  audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+};
+
+/**
+ * Hands-free mic: one stream held for the whole call, an AnalyserNode RMS
+ * meter feeding the Vad, and a fresh MediaRecorder per segment. A failed or
+ * repeated open() never leaves an earlier stream or audio context running.
+ */
+export function createBrowserMic(deps: BrowserMicDeps = browserMicDeps): VoiceMic {
+  let stream: MediaStream | null = null;
+  let context: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let recorder: MediaRecorder | null = null;
+  let chunks: Blob[] = [];
+  let meter: ReturnType<typeof setInterval> | null = null;
+  let onEnergy: (energy: number, atMs: number) => void = () => {};
+
+  function stopMeter(): void {
+    if (meter !== null) clearInterval(meter);
+    meter = null;
+  }
+
+  const mic: VoiceMic = {
+    async open(callback) {
+      mic.close();
+      onEnergy = callback;
+      stream = await deps.getUserMedia(CALL_AUDIO);
+      try {
+        context = deps.createAudioContext();
+        analyser = context.createAnalyser();
+        analyser.fftSize = 1024;
+        context.createMediaStreamSource(stream).connect(analyser);
+      } catch (err) {
+        mic.close();
+        throw err;
+      }
+    },
+    listen() {
+      if (!stream || !analyser) return;
+      chunks = [];
+      recorder = deps.createRecorder(stream);
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data); };
+      recorder.start();
+      const frame = new Float32Array(analyser.fftSize);
+      const meterOf = analyser;
+      stopMeter();
+      meter = setInterval(() => {
+        meterOf.getFloatTimeDomainData(frame);
+        onEnergy(rms(frame), performance.now());
+      }, METER_INTERVAL_MS);
+    },
+    take() {
+      stopMeter();
+      const active = recorder;
+      recorder = null;
+      if (!active || active.state === 'inactive') return Promise.resolve(EMPTY_CLIP);
+      return new Promise((resolve) => {
+        active.onstop = async () => {
+          const blob = new Blob(chunks, { type: active.mimeType || 'audio/webm' });
+          resolve({ bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: blob.type });
+        };
+        active.stop();
+      });
+    },
+    close() {
+      stopMeter();
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      recorder = null;
+      if (stream) releaseTracks(stream);
+      stream = null;
+      void context?.close();
+      context = null;
+      analyser = null;
+    },
+  };
+  return mic;
 }
 
 export interface AudioPlayerDeps {
