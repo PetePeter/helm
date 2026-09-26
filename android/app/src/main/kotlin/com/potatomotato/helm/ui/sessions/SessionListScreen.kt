@@ -78,11 +78,6 @@ fun SessionListScreen(
     spawnInFlight: Boolean,
     onNewSession: () -> Unit,
     onPairDesktop: () -> Unit,
-    /** Ring the operator. Null while the desktop has no operator session. */
-    onCallHelm: (() -> Unit)? = null,
-    /** The "Hey Helm" standby switch. Null hides it. */
-    heyHelm: Boolean = false,
-    onHeyHelm: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // A Set is not Bundle-saveable; a List of the same strings is. The collapsed
@@ -101,11 +96,6 @@ fun SessionListScreen(
                 modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
             )
         }
-
-        // The operator is a place to talk to, not one session among many: it
-        // sits above every group, one tap from a call.
-        if (onCallHelm != null) CallHelmRow(onClick = onCallHelm)
-        if (onHeyHelm != null) HeyHelmRow(on = heyHelm, onToggle = { onHeyHelm(!heyHelm) })
 
         // The spawner stays pinned below either branch: zero sessions is exactly
         // when the user most needs to start one.
@@ -180,79 +170,6 @@ private fun NewSessionButton(capabilities: Capabilities, spawnInFlight: Boolean,
                 )
             }
         }
-    }
-}
-
-/**
- * The standby switch. A labelled On/Off rather than a Material Switch, the same
- * choice the link bar's bell makes. The subtitle carries the honest caveat: the
- * built-in recogniser is not a wake-word engine.
- */
-@Composable
-private fun HeyHelmRow(on: Boolean, onToggle: () -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .clickable(onClick = onToggle)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.hey_helm),
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.hey_helm_row_hint),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(
-                text = stringResource(if (on) R.string.hey_helm_on else R.string.hey_helm_off),
-                color = if (on) HelmColors.Accent else HelmColors.Faint,
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
-        Hairline(color = HelmColors.Separator)
-    }
-}
-
-@Composable
-private fun CallHelmRow(onClick: () -> Unit) {
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HelmSize.TouchTarget)
-                .clickable(onClick = onClick)
-                .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.call_helm),
-                    color = HelmColors.Txt,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(
-                    text = stringResource(R.string.call_helm_row_hint),
-                    color = HelmColors.Faint,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Text(
-                text = stringResource(R.string.control_glyph_call),
-                color = HelmColors.Accent,
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
-        Hairline(color = HelmColors.Separator)
     }
 }
 

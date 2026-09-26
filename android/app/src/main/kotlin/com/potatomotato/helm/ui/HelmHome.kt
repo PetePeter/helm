@@ -68,7 +68,6 @@ import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.call.CallScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.data.HeyHelmSetting
-import com.potatomotato.helm.voice.OPERATOR_ROLE
 import com.potatomotato.helm.voice.VoicePermission
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.voice.resolveCallTarget
@@ -94,6 +93,10 @@ import com.potatomotato.helm.ui.control.SnapshotScreen
 import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.pairing.AwaitingDesktopScreen
 import com.potatomotato.helm.ui.pairing.DesktopsScreen
+import com.potatomotato.helm.ui.operator.OperatorSection
+import com.potatomotato.helm.ui.operator.OperatorSummary
+import com.potatomotato.helm.ui.operator.operatorSummary
+import com.potatomotato.helm.ui.operator.withoutOperator
 import com.potatomotato.helm.ui.plans.PlanDetail
 import com.potatomotato.helm.ui.plans.PlanDetailActions
 import com.potatomotato.helm.ui.plans.PlanList
@@ -294,12 +297,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // answering every artifact buzz for it. The same predicate drives the
     // unread badge: a thread on screen is being read, so its count clears on
     // the way in and nothing counts as read once the user leaves it.
+    // The Helm home tab shows the operator's thread without opening it, so it
+    // counts as reading that thread too.
+    val operator = remember(sessions, threads) { operatorSummary(sessions, threads) }
+    val onScreenThread = openSessionId
+        ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }
     ReportVisibility(client)
-    LaunchedEffect(openSessionId, where) {
+    LaunchedEffect(onScreenThread, where) {
         val reading = where == Destination.Thread ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
-        client.alerts.opened(openSessionId?.takeIf { reading })
-        client.chats.reading(openSessionId?.takeIf { reading })
+        client.alerts.opened(onScreenThread?.takeIf { reading })
+        client.chats.reading(onScreenThread?.takeIf { reading })
     }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
@@ -344,7 +352,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // retry per link transition, which is exactly one per chance of succeeding.
     LaunchedEffect(homeTab, openSessionId, linkState) {
         val unasked = projectsState is ProjectList.Idle || projectsState is ProjectList.Failed
-        if (openSessionId == null && homeTab != HomeTab.Sessions && unasked) client.refreshProjects()
+        if (openSessionId == null && (homeTab == HomeTab.Plans || homeTab == HomeTab.Contexts) && unasked) client.refreshProjects()
     }
 
     // The plan, sequence and context surfaces pull ON ARRIVAL, the artifacts
@@ -682,13 +690,35 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         is ArtifactList.Refreshing -> listed.cached
         else -> openSessionId?.let { client.artifacts.cachedArtifacts(it) }.orEmpty()
     }
-    // Snapshot has two entry points (overflow and the composer shortcut), but
-    // one transition and one initial pull. Keeping that contract here prevents
-    // the convenient button drifting from the established context-menu action.
-    val openTerminalPreview = {
-        where = Destination.Snapshot
-        client.readTerminal(open?.id.orEmpty(), requestedLines)
-        Unit
+
+    // One chat surface, two homes: the open session's Chat tab and the Helm
+    // home tab's operator thread. The terminal shortcut opens the session it
+    // belongs to, so it works from either.
+    val sessionChat: @Composable (String) -> Unit = { sessionId ->
+        ChatScreen(
+            sessionId = sessionId,
+            messages = threads[sessionId].orEmpty(),
+            onSend = { text -> client.sendChat(sessionId, text) },
+            // Retry re-issues over the wire (the repository swaps the dead
+            // row); delete is a purely local take-back, so it goes straight
+            // to the store.
+            onRetry = { key, text -> client.resendChat(sessionId, key, text) },
+            onDelete = { key -> client.chats.remove(sessionId, key) },
+            onTerminal = {
+                openSessionId = sessionId
+                where = Destination.Snapshot
+                client.readTerminal(sessionId, requestedLines)
+            },
+            pulls = pulls,
+            onPull = { key, attachment ->
+                client.pullChatAttachment(sessionId, key, attachment)
+            },
+            onCancelPull = { key -> client.chats.pullCancelled(key) },
+            onDeleteAttachment = { key, attachment ->
+                client.deleteChatAttachment(sessionId, key, attachment)
+            },
+            onOpenAttachment = openAttachment,
+        )
     }
 
     // The editor's payload, built before composition so no branch has to render
@@ -898,8 +928,41 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     )
                     Box(modifier = Modifier.weight(1f)) {
                         when (homeTab) {
+                            HomeTab.Helm -> Column(modifier = Modifier.fillMaxSize()) {
+                                OperatorSection(
+                                    summary = operator,
+                                    onOpenChat = { id ->
+                                        openSessionId = id
+                                        tab = SessionTab.Chat
+                                    },
+                                    onCall = if (liveCall != null || operator is OperatorSummary.On) {
+                                        { where = Destination.Call }
+                                    } else {
+                                        null
+                                    },
+                                    heyHelm = heyHelm,
+                                    // Shown whenever it could run, and always while on,
+                                    // so an ON switch can always be turned off.
+                                    onHeyHelm = if (standbyTarget != null || heyHelm) {
+                                        { on ->
+                                            when {
+                                                !on -> HeyHelmSetting.set(false)
+                                                VoicePermission.granted(context) -> HeyHelmSetting.set(true)
+                                                else -> heyHelmPermission.launch(VoicePermission.required.first())
+                                            }
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                )
+                                // The operator's recent conversation, right under its controls.
+                                if (operator is OperatorSummary.On) {
+                                    Box(modifier = Modifier.weight(1f)) { sessionChat(operator.id) }
+                                }
+                            }
+
                             HomeTab.Sessions -> SessionListScreen(
-                                sessions = sessions,
+                                sessions = remember(sessions) { withoutOperator(sessions) },
                                 linkState = linkState,
                                 reach = reach,
                                 capabilities = capabilities,
@@ -921,25 +984,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 onPairDesktop = {
                                     HelmLinkService.forcePairingMode(context)
                                     where = Destination.Pairing
-                                },
-                                onCallHelm = if (liveCall != null || sessions.any { it.role == OPERATOR_ROLE }) {
-                                    { where = Destination.Call }
-                                } else {
-                                    null
-                                },
-                                heyHelm = heyHelm,
-                                // Shown whenever it could run, and always while on,
-                                // so an ON switch can always be turned off.
-                                onHeyHelm = if (standbyTarget != null || heyHelm) {
-                                    { on ->
-                                        when {
-                                            !on -> HeyHelmSetting.set(false)
-                                            VoicePermission.granted(context) -> HeyHelmSetting.set(true)
-                                            else -> heyHelmPermission.launch(VoicePermission.required.first())
-                                        }
-                                    }
-                                } else {
-                                    null
                                 },
                             )
 
@@ -1148,26 +1192,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onOverflow = { where = Destination.Sheet },
                     ) {
                         when (tab) {
-                            SessionTab.Chat -> ChatScreen(
-                                sessionId = open.id,
-                                messages = threads[open.id].orEmpty(),
-                                onSend = { text -> client.sendChat(open.id, text) },
-                                // Retry re-issues over the wire (the repository
-                                // swaps the dead row); delete is a purely local
-                                // take-back, so it goes straight to the store.
-                                onRetry = { key, text -> client.resendChat(open.id, key, text) },
-                                onDelete = { key -> client.chats.remove(open.id, key) },
-                                onTerminal = openTerminalPreview,
-                                pulls = pulls,
-                                onPull = { key, attachment ->
-                                    client.pullChatAttachment(open.id, key, attachment)
-                                },
-                                onCancelPull = { key -> client.chats.pullCancelled(key) },
-                                onDeleteAttachment = { key, attachment ->
-                                    client.deleteChatAttachment(open.id, key, attachment)
-                                },
-                                onOpenAttachment = openAttachment,
-                            )
+                            SessionTab.Chat -> sessionChat(open.id)
 
                             SessionTab.Artifacts -> ArtifactsScreen(
                                 state = artifactList,

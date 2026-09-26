@@ -43,8 +43,31 @@ disagree.
    while that session still exists.
 3. Otherwise nobody.
 
-The pinned **Call Helm** row on the session list appears only when an operator
-exists (or a call is live). The phone matches the literal string
+## The Helm home tab
+
+The operator is the FIRST entry of the phone's home dropdown — **Helm**, then
+Sessions, Plans, Contexts (`HomeTab`; Sessions stays the default). The Helm tab
+is `ui/operator/OperatorSection.kt` — status dot, last reply (tap → the full
+thread), 📞 Call, the Hey Helm switch — with the operator's chat thread below
+it, the same `ChatScreen` a session's Chat tab uses. Seeing it there counts as
+reading it (unread clears). The operator session is filtered OUT of the Sessions
+list (`withoutOperator`), so it is shown in one place only.
+
+```mermaid
+graph TD
+    S[session list + chat threads] --> Q["operatorSummary()"]
+    Q -->|operator present| On["On: name · activity dot · last reply"]
+    Q -->|none| Off["Off: 'enable it in desktop Settings > Operator'"]
+    On -->|tap| Chat[operator chat thread]
+    On --> Call[📞 → CallScreen]
+    On --> Thread[operator chat below the section]
+    Sec[Hey Helm switch] --> Standby[VoiceCallService standby]
+```
+
+The last reply is the newest non-phone row of the operator's thread — the same
+journal the chat screen reads. The 📞 appears only when an operator
+exists (or a call is live); without one, a picked session is still callable
+from its control sheet. The phone matches the literal string
 `"operator"` (`CallTarget.kt`), so that value is a wire contract.
 
 ## The operator session — "Helm"
@@ -154,7 +177,7 @@ call is never restarted behind the user's back.
 
 ## Hey Helm — standby
 
-Off by default. The **Hey Helm** row under Call Helm switches it (asking for the
+Off by default. The **Hey Helm** row on the Helm home tab switches it (asking for the
 microphone first); the choice persists in `PrefsHeyHelmStore` and is mirrored
 process-wide by `HeyHelmSetting`. While it is on and a target resolves (same
 `resolveCallTarget` as a call), `VoiceCallService` runs in standby with a

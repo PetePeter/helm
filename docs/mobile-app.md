@@ -138,12 +138,14 @@ removes.
   with a message already sent. **No audio ever crosses the link**, and the
   manifest carries no `INTERNET` permission, so the app is structurally incapable
   of uploading any.
-- **Call Helm** — a full, phone-call-style voice call to the operator (a pinned
-  row atop the session list) or to any session (📞 Call on its control sheet).
+- **Call Helm** — a full, phone-call-style voice call to the operator (the 📞 on the
+  **Helm** home tab — first in the home dropdown — which also shows the
+  operator's status, last reply and chat thread; the operator is not repeated
+  in the session list) or to any session (📞 Call on its control sheet).
   Each utterance is a gated `session_send_text`; replies in the target's thread
   are spoken back. Audio stays on the phone — speech in and out is on-device.
   See [voice-operator.md](voice-operator.md).
-- **Hey Helm** — opt-in standby (off by default; the row under Call Helm). Say
+- **Hey Helm** — opt-in standby (off by default; the switch on the Helm home tab). Say
   "Hey Helm, <question>": one question is sent, one reply is spoken, then back
   to listening. Built-in STT is not a wake-word engine — expect beeps and
   battery use. See [voice-operator.md](voice-operator.md#hey-helm--standby).

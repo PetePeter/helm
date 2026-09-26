@@ -70,6 +70,7 @@
     <string name="session_tab_plans">Plans</string>
     <string name="session_tab_sequences">Sequences</string>
 
+    <string name="home_tab_helm">Helm</string>
     <string name="home_tab_sessions">Sessions</string>
     <string name="home_tab_plans">Plans</string>
     <string name="home_tab_contexts">Contexts</string>
@@ -79,6 +80,7 @@
       plain words in a list are hard to tell apart at a glance; a leading mark
       makes each row recognisable before it is read.
     -->
+    <string name="context_glyph_helm">☎</string>
     <string name="context_glyph_sessions">▤</string>
     <string name="context_glyph_plans">✦</string>
     <string name="context_glyph_contexts">◈</string>
@@ -443,6 +445,8 @@
     <string name="call_title">Call</string>
     <string name="call_helm">Call Helm</string>
     <string name="call_helm_row_hint">Voice call your operator</string>
+    <string name="operator_section_title">Helm</string>
+    <string name="operator_section_off">Helm operator is off — enable it in desktop Settings > Operator</string>
     <string name="call_phase_idle">Connecting…</string>
     <string name="call_phase_listening">Listening</string>
     <string name="call_phase_sending">Sending</string>
