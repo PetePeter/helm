@@ -331,6 +331,7 @@ export const PRELOAD_API_DOMAINS = {
     'voiceTranscribe',
     'voiceSpeak',
     'voiceAsk',
+    'voiceLastOperatorReply',
     'onVoiceOperatorReply',
   ],
   update: [

@@ -1069,6 +1069,10 @@ export function registerIPCHandlers(
       getTools: () => voiceTools.getVoiceTools(),
       tempDir: getTempDir(dirname ?? process.cwd()),
     }),
+    lastReply: () => {
+      const operatorId = operatorSessionManager.getOperatorId();
+      return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
+    },
     ask: async (text) => {
       const operatorId = operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };

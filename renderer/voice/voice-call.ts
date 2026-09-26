@@ -27,6 +27,7 @@ export interface VoiceCallClient {
   voiceTranscribe(audio: Uint8Array, mimeType: string): Promise<{ ok: true; text: string } | Fail>;
   voiceSpeak(text: string): Promise<{ ok: true; audio: Uint8Array; mimeType: string } | Fail>;
   voiceAsk(text: string): Promise<{ ok: true } | Fail>;
+  voiceLastOperatorReply(): Promise<string | null>;
   onVoiceOperatorReply(callback: (reply: { sessionId: string; text: string }) => void): () => void;
 }
 
@@ -233,6 +234,14 @@ export function createVoiceCall(deps: VoiceCallDeps) {
       error.value = message(err);
     });
   });
+
+  // The transcript is memory-only; seed the last reply from the journal so it
+  // outlives a restart. A live reply that already landed is newer — keep it.
+  void deps.client.voiceLastOperatorReply().then((text) => {
+    if (text && !transcript.value.some(line => line.from === 'helm')) {
+      transcript.value = [{ from: 'helm', text }, ...transcript.value];
+    }
+  }).catch(() => undefined);
 
   function hangUp(): void {
     callGeneration += 1;

@@ -49,6 +49,8 @@ class AndroidTtsEngine(
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )
+        // A touch brisker than the default: replies are short and the caller is waiting.
+        setSpeechRate(SPEECH_RATE)
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
             override fun onDone(utteranceId: String?) {
@@ -106,5 +108,9 @@ class AndroidTtsEngine(
             owed = null
             onDone()
         }
+    }
+
+    private companion object {
+        const val SPEECH_RATE = 1.15f
     }
 }

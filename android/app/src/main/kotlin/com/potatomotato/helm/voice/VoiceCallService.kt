@@ -127,6 +127,8 @@ class VoiceCallService : Service() {
     /** The live controller's collectors; cancelled when it is swapped out. */
     private var job: Job? = null
     private var tone: ToneGenerator? = null
+    /** The stream [tone] was built on: a call cues on the call's route, standby on notifications. */
+    private var toneStream = AudioManager.STREAM_NOTIFICATION
 
     /** takeAudio() ran: the mode, focus and route are ours to restore. */
     private var active = false
@@ -236,7 +238,12 @@ class VoiceCallService : Service() {
                 this,
                 if (standby) AudioAttributes.USAGE_ASSISTANT else AudioAttributes.USAGE_VOICE_COMMUNICATION,
             ),
-            send = { text -> client.sendChat(target, text) },
+            send = { text ->
+                // The instant "heard you": the reply is seconds away, silence reads as deaf.
+                if (!standby) cue(AudioManager.STREAM_VOICE_CALL)
+                HelmLog.d(HelmLog.UI) { "call sending ${text.length} chars" }
+                client.sendChat(target, text)
+            },
             sendFailedLine = getString(R.string.call_send_failed),
             standby = if (standby) standbyConfig() else null,
         )
@@ -265,7 +272,7 @@ class VoiceCallService : Service() {
     }
 
     private fun standbyConfig() = Standby(
-        onWake = ::cue,
+        onWake = { cue(AudioManager.STREAM_NOTIFICATION) },
         yesLine = getString(R.string.hey_helm_yes),
         stillWaitingLine = getString(R.string.hey_helm_still_waiting),
         timeoutMs = STANDBY_TIMEOUT_MS,
@@ -277,9 +284,14 @@ class VoiceCallService : Service() {
     )
 
     /** The short beep that says "heard you" before the question goes. */
-    private fun cue() {
+    private fun cue(stream: Int) {
+        if (toneStream != stream) {
+            tone?.release()
+            tone = null
+            toneStream = stream
+        }
         val generator = tone
-            ?: runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, CUE_VOLUME) }.getOrNull()
+            ?: runCatching { ToneGenerator(stream, CUE_VOLUME) }.getOrNull()
             ?: return
         tone = generator
         generator.startTone(ToneGenerator.TONE_PROP_ACK, CUE_MS)

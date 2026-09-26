@@ -106,7 +106,10 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             firstResult(partialResults)?.let(out::onPartial)
         }
 
-        override fun onResults(results: Bundle?) = out.onFinal(firstResult(results).orEmpty())
+        override fun onResults(results: Bundle?) {
+            HelmLog.d(HelmLog.UI) { "speech final" }
+            out.onFinal(firstResult(results).orEmpty())
+        }
 
         override fun onError(error: Int) {
             // The raw code, not just the mapped error: Google's service reports
@@ -123,7 +126,7 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
         }
 
         override fun onBeginningOfSpeech() = Unit
-        override fun onEndOfSpeech() = Unit
+        override fun onEndOfSpeech() = HelmLog.d(HelmLog.UI) { "speech ended" }
         override fun onBufferReceived(buffer: ByteArray?) = Unit
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
@@ -144,8 +147,12 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
         const val RMS_FLOOR_DB = -2f
         const val RMS_CEILING_DB = 10f
 
-        /** End-of-speech silence window. Long enough to think mid-sentence. */
-        const val COMPLETE_SILENCE_MILLIS = 2500L
+        /**
+         * End-of-speech silence window: every reply waits this long before the
+         * send. Short, because a call reopens the mic at once — a pause that
+         * splits a sentence costs a second message, not lost words.
+         */
+        const val COMPLETE_SILENCE_MILLIS = 1200L
     }
 }
 

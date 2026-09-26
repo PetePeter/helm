@@ -98,6 +98,18 @@ export class MobileChatJournal {
     return this.entries.filter(entry => entry.seq > seq);
   }
 
+  /**
+   * The session's own newest plain message — what it last said, not what was
+   * said to it (user turns carry an originId) and not an artifact notice.
+   */
+  lastSessionMessage(sessionId: string): string | null {
+    for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+      const { record } = this.entries[index];
+      if (record.sessionId === sessionId && record.originId === undefined && record.kind === undefined) return record.text;
+    }
+    return null;
+  }
+
   /** The newest seq handed out — the cursor a fully caught-up phone reports. */
   latestSeq(): number {
     return this.nextSeq;

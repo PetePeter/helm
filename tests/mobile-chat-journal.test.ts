@@ -124,3 +124,27 @@ describe('MobileChatJournal retention', () => {
     expect(journal.since(0).map(entry => entry.record.text)).toEqual(['m2', 'm3', 'm4']);
   });
 });
+
+describe('MobileChatJournal lastSessionMessage', () => {
+  it("is the session's own newest plain message, skipping user turns and artifacts", () => {
+    const journal = new MobileChatJournal();
+    journal.append(record('first answer', 0));
+    journal.append(record('second answer', 1));
+    journal.append({ ...record('what the user said', 2), originId: 'desktop:1' });
+    journal.append({ ...record('report', 3), kind: 'artifact', artifactId: 'a1' });
+    journal.append({ ...record('other session', 4), sessionId: 's2' });
+
+    expect(journal.lastSessionMessage('s1')).toBe('second answer');
+    expect(journal.lastSessionMessage('nobody')).toBeNull();
+  });
+
+  it('survives a restart through the persisted state', () => {
+    let saved: ChatJournalState | undefined;
+    new MobileChatJournal({ persist: state => { saved = state; } }).append(record('before restart', 0));
+
+    const reloaded = new MobileChatJournal();
+    reloaded.hydrate(saved);
+
+    expect(reloaded.lastSessionMessage('s1')).toBe('before restart');
+  });
+});

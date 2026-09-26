@@ -29,6 +29,10 @@ class FakeClient implements VoiceCallClient {
     this.asked.push(text);
     return { ok: true as const };
   }
+  lastReply: string | null = null;
+  async voiceLastOperatorReply() {
+    return this.lastReply;
+  }
   onVoiceOperatorReply(callback: ReplyListener) {
     this.listener = callback;
     return () => { this.listener = null; };
@@ -170,6 +174,26 @@ describe('voice call operator replies', () => {
 
     expect(client.spoken).toEqual([]);
     expect(call.transcript.value).toEqual([{ from: 'helm', text: 'while away' }]);
+  });
+
+  // Regression: the sidebar's "last reply" was blank after every restart — the
+  // transcript lived only in memory while the reply sat in the chat journal.
+  it('shows the persisted last reply from before a restart, unspoken', async () => {
+    client.lastReply = 'On it.';
+    const call = make();
+    await flush();
+
+    expect(call.transcript.value).toEqual([{ from: 'helm', text: 'On it.' }]);
+    expect(client.spoken).toEqual([]);
+  });
+
+  it('a live reply that lands first is not buried by the persisted one', async () => {
+    client.lastReply = 'old';
+    const call = make();
+    client.reply('new');
+    await flush();
+
+    expect(call.transcript.value).toEqual([{ from: 'helm', text: 'new' }]);
   });
 
   it('hangUp cuts off the clip that is already playing', async () => {

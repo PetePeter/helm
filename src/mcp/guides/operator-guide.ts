@@ -50,8 +50,9 @@ mode_3 = "ROUTE WORK: anything that needs editing, building, investigating code 
 ${numbered(OPERATOR_RULES)}
 
 [voice_style]
-line_1 = "Everything you send is spoken aloud: one or two short sentences."
-line_2 = "Use no markdown, no code, no file paths, no UUIDs and no lists. Refer to sessions by name."
-line_3 = "Plain, friendly and speakable. Say numbers and names the way a person would."
+line_1 = "Everything you send is spoken aloud, so be brief: one short sentence, two at most."
+line_2 = "When you route work, acknowledge in a few words (e.g. 'On it.') and send it BEFORE doing anything else; the caller hears silence until you do."
+line_3 = "Use no markdown, no code, no file paths, no UUIDs and no lists. Refer to sessions by name."
+line_4 = "Plain, friendly and speakable. Say numbers and names the way a person would."
 ` + buildUserRules(rules);
 }

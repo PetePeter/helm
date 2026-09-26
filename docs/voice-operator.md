@@ -215,6 +215,12 @@ Why each rule exists:
 - **Continuous listening.** The platform closes an utterance on every pause, so
   each final is sent once and the mic reopens.
 - **Silence is never sent.** Empty or whitespace finals are dropped.
+- **Heard, instantly.** Each send plays a short ack tone on the call route, so
+  the caller knows they were heard while the operator's reply is seconds away.
+  The end-of-speech window is 1.2s (a split sentence costs a second message,
+  not lost words) and TTS runs at 1.15×. `speech ended` / `speech final` /
+  `call sending` / `call target replied` / `text to speech speaking` log lines
+  give the per-turn latency breakdown.
 - **Mic paused while speaking.** `cancel()` (not `stop()`) so no final follows —
   Helm cannot hear its own voice and send it back as the user's words.
 - **No barge-in.** Because the mic is paused, the user cannot talk over a
@@ -360,7 +366,8 @@ sequenceDiagram
 The desktop twin of the phone's first tab (`OperatorSummary.kt`):
 `OperatorSection.vue` is pinned above the session list and fed by the pure
 `operatorSummary()` (`renderer/operator-summary.ts`) — the operator's activity
-dot (`state-colors.ts`), its last reply, **Call / Hang up**, and while a call is
+dot (`state-colors.ts`), its last reply (seeded at startup from the chat
+journal via `voice:lastOperatorReply`, so it survives a restart), **Call / Hang up**, and while a call is
 open the live phase and transcript (it replaced the floating call panel — one
 UI). Clicking the title opens the operator's terminal. With no operator it
 reads "Enable in Settings > Operator". `buildSessionGroups` drops the operator

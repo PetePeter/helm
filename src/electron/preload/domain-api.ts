@@ -1630,6 +1630,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   voiceAsk: (text: string): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('voice:ask', text),
 
+  /** The operator's newest persisted chat_send, or null. */
+  voiceLastOperatorReply: (): Promise<string | null> =>
+    ipcRenderer.invoke('voice:lastOperatorReply'),
+
   /** Each operator chat_send, once. Returns an unsubscribe. */
   onVoiceOperatorReply: (callback: (reply: { sessionId: string; text: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, reply: { sessionId: string; text: string }) => callback(reply);

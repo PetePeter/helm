@@ -14,6 +14,8 @@ export interface VoiceHandlerDeps {
   voiceService: Pick<VoiceService, 'transcribe' | 'speak'>;
   /** Deliver the user's words to the operator; resolves to a result value. */
   ask: (text: string) => Promise<VoiceResult>;
+  /** The operator's newest persisted reply, so the sidebar survives a restart. */
+  lastReply: () => string | null;
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
@@ -28,6 +30,8 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
     if (typeof text !== 'string') return { ok: false, error: 'Invalid text' };
     return deps.voiceService.speak(text);
   });
+
+  ipcMain.handle('voice:lastOperatorReply', () => deps.lastReply());
 
   ipcMain.handle('voice:ask', async (_event, text: unknown) => {
     if (typeof text !== 'string' || text.trim() === '') return { ok: false, error: 'Nothing to send' };
