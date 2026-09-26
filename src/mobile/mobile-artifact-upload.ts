@@ -18,6 +18,11 @@
  *   3. `session_artifact_attachment_commit` → verifies size + sha256, commits
  *      the attachment into the artifact's managed storage, answers with it.
  *
+ * Share-to-Helm rides the same slots: `session_share_file_add` opens a slot
+ * whose commit (`session_share_file_commit`) hands the verified bytes to a
+ * `ShareSink` — the inbox + draft — instead of the attachment store. The slot's
+ * kind is fixed at open; a commit of the other kind answers not-found.
+ *
  * That keeps the boundary sentence true by construction rather than by
  * discipline: every inbound record is still a `call` through MobileGate, or a
  * payload for a slot only a gated call could have opened, bound to the device
@@ -65,14 +70,35 @@ export const UPLOAD_MAX_SLICE_BYTES = ARTIFACT_SLICE_MAX_BYTES - UPLOAD_SLICE_HE
 /** A sha256 digest rides as exactly this many lowercase hex characters. */
 const SHA256_HEX_LENGTH = 64;
 
-export interface ArtifactUploadOpenInput {
-  artifactId: string;
+/** What every upload declares up front, whatever it lands as. */
+export interface UploadOpenInput {
   filename: string;
   contentType?: string;
   /** The whole file's size, declared up front. It is the slot's hard ceiling. */
   sizeBytes: number;
   /** sha256 hex of the WHOLE file — verified once, at commit, not per slice. */
   sha256: string;
+}
+
+export interface ArtifactUploadOpenInput extends UploadOpenInput {
+  artifactId: string;
+}
+
+/** A file shared from the phone's share sheet into a session's draft. */
+export interface ShareUploadOpenInput extends UploadOpenInput {
+  sessionId: string;
+}
+
+/** Where a committed share landed: the inbox path and the draft naming it. */
+export interface ShareReceipt {
+  sessionId: string;
+  path: string;
+  draftId: string;
+}
+
+/** The sink a committed share is handed to — `MobileShareInbox` in production. */
+export interface ShareSink {
+  receive(sessionId: string, filename: string, content: Buffer): ShareReceipt;
 }
 
 export interface ArtifactUploadOffer {
@@ -111,7 +137,7 @@ export class ArtifactUploadSlot {
 
   constructor(
     readonly uploadId: string,
-    readonly input: ArtifactUploadOpenInput,
+    readonly input: UploadOpenInput,
     private readonly now: () => number,
   ) {
     this.lastActivity = now();
@@ -195,14 +221,22 @@ export class ArtifactUploadSlot {
   }
 }
 
+/** What a slot becomes once committed. The kind is fixed at open time. */
+type UploadTarget =
+  | { kind: 'artifact'; artifactId: string }
+  | { kind: 'share'; sessionId: string };
+
 interface SlotEntry {
   owner: string;
+  target: UploadTarget;
   slot: ArtifactUploadSlot;
 }
 
 export interface ArtifactUploadDeps {
   /** Where a finished upload is committed. Only `add` is needed. */
   attachments: Pick<ArtifactAttachmentManager, 'add'>;
+  /** Where a committed share lands. ABSENT means shares are refused at open. */
+  shares?: ShareSink;
   now?: () => number;
   ttlMs?: number;
 }
@@ -224,8 +258,20 @@ export class MobileArtifactUploadService {
     this.ttlMs = deps.ttlMs ?? UPLOAD_SLOT_TTL_MS;
   }
 
-  /** Move 1: open a slot. */
+  /** Move 1: open a slot for an artifact attachment. */
   open(deviceId: string, input: ArtifactUploadOpenInput): ArtifactUploadOffer {
+    const { artifactId, ...common } = input;
+    return this.openSlot(deviceId, common, { kind: 'artifact', artifactId });
+  }
+
+  /** Move 1, share flavour: the file will land in a session's draft. */
+  openShare(deviceId: string, input: ShareUploadOpenInput): ArtifactUploadOffer {
+    if (!this.deps.shares) throw new Error('File sharing is not available on this hub');
+    const { sessionId, ...common } = input;
+    return this.openSlot(deviceId, common, { kind: 'share', sessionId });
+  }
+
+  private openSlot(deviceId: string, input: UploadOpenInput, target: UploadTarget): ArtifactUploadOffer {
     this.sweep();
     const size = input.sizeBytes;
     if (!Number.isInteger(size) || size <= 0) {
@@ -244,11 +290,10 @@ export class MobileArtifactUploadService {
     const uploadId = randomUUID();
     this.entries.set(uploadId, {
       owner: deviceId,
+      target,
       slot: new ArtifactUploadSlot(uploadId, input, this.now),
     });
-    logger.info(
-      `[mobile-artifact-upload] opened slot for device ${deviceId} bytes=${size} artifact=${input.artifactId}`,
-    );
+    logger.info(`[mobile-artifact-upload] opened ${target.kind} slot for device ${deviceId} bytes=${size}`);
     return { uploadId, maxSliceBytes: UPLOAD_MAX_SLICE_BYTES, total: size };
   }
 
@@ -268,36 +313,55 @@ export class MobileArtifactUploadService {
 
   /** Move 3: verify and commit. Returns the attachment the CLI can now read. */
   commit(deviceId: string, uploadId: string): ArtifactAttachment {
+    const { target, input, whole } = this.verified(deviceId, uploadId, 'artifact');
+    const attachment = this.deps.attachments.add(target.artifactId, {
+      filename: input.filename,
+      content: whole,
+      ...(input.contentType ? { contentType: input.contentType } : {}),
+    });
+    logger.info(`[mobile-artifact-upload] committed attachment ${attachment.id} to artifact ${target.artifactId}`);
+    return attachment;
+  }
+
+  /** Move 3, share flavour: the file lands in the inbox and a draft names it. */
+  commitShare(deviceId: string, uploadId: string): ShareReceipt {
+    const { target, input, whole } = this.verified(deviceId, uploadId, 'share');
+    const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole);
+    logger.info(`[mobile-artifact-upload] shared file landed for session ${target.sessionId}`);
+    return receipt;
+  }
+
+  /**
+   * The whole file, checked. A slot of the OTHER kind answers not-found, same
+   * as another device's — an artifact commit can never finish a share, and
+   * vice versa. The slot is dropped whatever happens after the lookup.
+   */
+  private verified<K extends UploadTarget['kind']>(
+    deviceId: string,
+    uploadId: string,
+    kind: K,
+  ): { target: Extract<UploadTarget, { kind: K }>; input: UploadOpenInput; whole: Buffer } {
     this.sweep();
     const entry = this.entries.get(uploadId);
-    if (!entry || entry.owner !== deviceId) {
+    if (!entry || entry.owner !== deviceId || entry.target.kind !== kind) {
       throw new Error(`Upload not found: ${uploadId}`);
     }
+    this.drop(deviceId, uploadId);
     if (!entry.slot.complete) {
-      this.drop(deviceId, uploadId);
       throw new Error(
         `Upload is short: ${entry.slot.receivedBytes} of ${entry.slot.totalBytes} bytes arrived`,
       );
     }
-
     const whole = entry.slot.assemble();
-    const digest = createHash('sha256').update(whole).digest('hex');
-    this.drop(deviceId, uploadId);
-    if (digest !== entry.slot.input.sha256) {
-      // The slot is already dropped: a file that fails its checksum is not
-      // kept, and a retry must start from a clean slot anyway.
+    // A file that fails its checksum is not kept; a retry starts from a clean slot.
+    if (createHash('sha256').update(whole).digest('hex') !== entry.slot.input.sha256) {
       throw new Error('The uploaded file did not match its declared checksum');
     }
-
-    const attachment = this.deps.attachments.add(entry.slot.input.artifactId, {
-      filename: entry.slot.input.filename,
-      content: whole,
-      ...(entry.slot.input.contentType ? { contentType: entry.slot.input.contentType } : {}),
-    });
-    logger.info(
-      `[mobile-artifact-upload] committed attachment ${attachment.id} to artifact ${entry.slot.input.artifactId}`,
-    );
-    return attachment;
+    return {
+      target: entry.target as Extract<UploadTarget, { kind: K }>,
+      input: entry.slot.input,
+      whole,
+    };
   }
 
   /** Abandon a slot. Idempotent — an unknown id, or another device's, is a no-op. */

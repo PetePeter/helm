@@ -1584,6 +1584,38 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_share_file_add',
+    title: 'Open Share-to-Session Upload',
+    description:
+      'Open an upload slot for a file a PAIRED PHONE is sharing into a NAMED session (Android share sheet). Same slot protocol as session_artifact_attachment_add: returns { uploadId, maxSliceBytes, total }; the phone streams blob records keyed by uploadId and finishes with session_share_file_commit. The file lands in the Helm temp inbox and a draft naming its path is added to the session — nothing is sent to the CLI. Not for local callers.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session whose draft will name the file.' },
+        filename: { type: 'string', description: "The shared file's display name." },
+        contentType: { type: 'string', description: 'Optional MIME type, e.g. application/pdf.' },
+        sizeBytes: { type: 'number', description: "The whole file's size in bytes — the upload's hard ceiling." },
+        sha256: { type: 'string', description: 'Lowercase hex sha256 of the WHOLE file; verified at commit.' },
+      },
+      required: ['sessionId', 'filename', 'sizeBytes', 'sha256'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_share_file_commit',
+    title: 'Commit Share-to-Session Upload',
+    description:
+      'Finish one share upload: verify every declared byte arrived and matched its sha256, write the file under the Helm temp inbox, and add a draft "Attached: <name> at <path>" to the session the slot was opened for. Answers { sessionId, path, draftId }; a short or mismatched upload answers an error and leaves nothing behind.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uploadId: { type: 'string', description: 'The uploadId session_share_file_add returned.' },
+      },
+      required: ['uploadId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'memory_dream',
     title: 'Dream Memories',
     description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. This tool only identifies candidates; it never decides what to forget or merge.',

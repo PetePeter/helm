@@ -354,6 +354,53 @@ artifact you have already read does not buzz; only a change does. The new keys
 and the `'artifact'` kind are additive and omitted when absent, so the committed
 envelope vectors still match byte for byte.
 
+## Share to Helm — a file into a session's draft
+
+Any app's share sheet offers **Helm** for a single file (`ACTION_SEND`, `*/*`).
+`ShareActivity` copies the file into the app cache (the same staging the artifact
+editor uses), shows the live session list, and on a pick sends the bytes over
+the secure channel. The desktop writes the file to `<appData>/Helm/tmp/inbox/<uuid>/<name>`
+(never the repo tree, per [config-boundary.md](config-boundary.md)) and adds a
+**draft** to the picked session: `Attached: <name> at <absolute path>`. Nothing
+is sent to the CLI — the user sends the draft when ready ([drafts.md](drafts.md)).
+The phone answers **"Added to <session> draft"**, or the reason it did not.
+
+```mermaid
+sequenceDiagram
+    participant App as Other app
+    participant P as ShareActivity (phone)
+    participant G as MobileGate
+    participant U as Upload slots
+    participant I as MobileShareInbox
+    participant D as DraftManager
+    App->>P: ACTION_SEND (content:// uri)
+    P->>P: stage copy + sha256, pick session
+    P->>P: shareRefusal() — link, protocol, allow-list, size cap
+    P->>G: session_share_file_add {sessionId, filename, sizeBytes, sha256}
+    G->>U: openShare (session must exist, cap 10 MB)
+    U-->>P: {uploadId, maxSliceBytes}
+    P->>U: blob slices (uploadId)
+    P->>G: session_share_file_commit {uploadId}
+    G->>U: verify size + sha256
+    U->>I: receive(sessionId, filename, bytes)
+    I->>D: create draft "Attached: name at path"
+    I-->>P: {sessionId, path, draftId}
+    P->>P: "Added to <session> draft"
+```
+
+**Size cap — per link, refused on the phone before a byte leaves:**
+
+| Link | Cap | Why |
+|------|-----|-----|
+| LAN | 10 MB | the desktop's own upload ceiling (`MAX_ATTACHMENT_BYTES`) |
+| BLE | 2 MB | the radio moves tens of KB/s; a larger file is a many-minute transfer users abandon |
+
+The desktop's 10 MB check at slot-open is the backstop, not the message. The
+share reuses the artifact upload's slot machinery (`mobile-artifact-upload.ts`
+on the desktop, `pumpSlices` in `HelmClient`) — only the open/commit pair and
+where the committed bytes land differ. A slot opened for a share can never be
+finished by an artifact commit, and vice versa.
+
 ## Notifications — messages, a reply box, and one switch
 
 Until now the phone buzzed for **events** (a session needs you, finished, went

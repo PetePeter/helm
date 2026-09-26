@@ -23,6 +23,7 @@ import com.potatomotato.helm.data.SequenceRepository
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.SessionRepository
 import com.potatomotato.helm.data.SessionWire
+import com.potatomotato.helm.data.ShareFlow
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.RANK_LAN
 import com.potatomotato.helm.crypto.Cancellable
@@ -96,6 +97,7 @@ class HelmClient(
     val contexts: ContextRepository = ContextRepository(),
     val alerts: AlertRouter = AlertRouter(),
     val uploads: ArtifactUploads = ArtifactUploads(),
+    val shares: ShareFlow = ShareFlow(),
 ) {
     /**
      * Where a pushed LAN address list lands (P-0752).
@@ -595,52 +597,10 @@ class HelmClient(
         staged: StagedAttachment,
         offer: UploadOffer,
     ) {
-        val input = openStagedAttachment(staged)
-        if (input == null) {
-            uploads.uploadFailed(key, STAGE_GONE)
+        val failure = pumpSlices(staged, offer) { sent -> uploads.uploadProgress(key, sent) }
+        if (failure != null) {
+            uploads.uploadFailed(key, failure)
             return
-        }
-        input.use { stream ->
-            val buffer = ByteArray(sliceBudget(offer.maxSliceBytes))
-            var offset = 0L
-            while (offset < staged.sizeBytes) {
-                val want = minOf(buffer.size.toLong(), staged.sizeBytes - offset).toInt()
-                var filled = 0
-                while (filled < want) {
-                    val read = stream.read(buffer, filled, want - filled)
-                    if (read < 0) break
-                    filled += read
-                }
-                if (filled <= 0) {
-                    uploads.uploadFailed(key, STAGE_SHORT)
-                    return
-                }
-                val chunk = if (filled == buffer.size) buffer else buffer.copyOf(filled)
-                val eof = offset + filled >= staged.sizeBytes
-                val frame = MobileEnvelope.encodeBlobUpload(
-                    id = offer.uploadId,
-                    filename = staged.filename,
-                    mimeType = staged.mimeType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
-                    offset = offset,
-                    total = staged.sizeBytes,
-                    eof = eof,
-                    bytes = chunk,
-                )
-                val before = linkPending()
-                if (!send(frame)) {
-                    uploads.uploadFailed(key, NOT_LINKED)
-                    return
-                }
-                // Wait for the link to actually carry it before queueing more.
-                // The percentage is reported from HERE, never from the send
-                // above: over Bluetooth a send only enqueues, so a loop that
-                // believed itself would drain a 10MB file into the queue in
-                // milliseconds, show 100% at once, and then sit there for the
-                // several minutes the radio really takes.
-                awaitFlushed(key, base = offset, sliceBytes = filled, floor = before)
-                offset += filled
-                uploads.uploadProgress(key, offset)
-            }
         }
         // One file's chain, last half: the commit. The desktop verifies the size
         // and the sha256 declared at slot-open against what actually arrived —
@@ -665,6 +625,104 @@ class HelmClient(
     }
 
     /**
+     * The bytes of one staged file, as raw blob records addressed to an open
+     * slot — shared by artifact attachments and share-to-Helm, which differ
+     * only in how the slot is opened and committed. Returns null when every
+     * slice left the phone, or the reason it could not.
+     */
+    private suspend fun pumpSlices(
+        staged: StagedAttachment,
+        offer: UploadOffer,
+        onProgress: (Long) -> Unit,
+    ): String? {
+        val input = openStagedAttachment(staged) ?: return STAGE_GONE
+        input.use { stream ->
+            val buffer = ByteArray(sliceBudget(offer.maxSliceBytes))
+            var offset = 0L
+            while (offset < staged.sizeBytes) {
+                val want = minOf(buffer.size.toLong(), staged.sizeBytes - offset).toInt()
+                var filled = 0
+                while (filled < want) {
+                    val read = stream.read(buffer, filled, want - filled)
+                    if (read < 0) break
+                    filled += read
+                }
+                if (filled <= 0) return STAGE_SHORT
+                val chunk = if (filled == buffer.size) buffer else buffer.copyOf(filled)
+                val last = offset + filled >= staged.sizeBytes
+                val frame = MobileEnvelope.encodeBlobUpload(
+                    id = offer.uploadId,
+                    filename = staged.filename,
+                    mimeType = staged.mimeType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
+                    offset = offset,
+                    total = staged.sizeBytes,
+                    eof = last,
+                    bytes = chunk,
+                )
+                val before = linkPending()
+                if (!send(frame)) return NOT_LINKED
+                // Wait for the link to actually carry it before queueing more.
+                // The percentage is reported from HERE, never from the send
+                // above: over Bluetooth a send only enqueues, so a loop that
+                // believed itself would drain a 10MB file into the queue in
+                // milliseconds, show 100% at once, and then sit there for the
+                // several minutes the radio really takes.
+                awaitFlushed(base = offset, sliceBytes = filled, floor = before, onProgress = onProgress)
+                offset += filled
+                onProgress(offset)
+            }
+        }
+        return null
+    }
+
+    /**
+     * Share one staged file into [sessionId]'s DRAFT (share-to-Helm). The same
+     * open → slices → commit chain as an artifact attachment, against the
+     * `session_share_file_*` pair: the desktop writes the file to its inbox and
+     * adds a draft naming the path. Progress and the outcome land on [shares].
+     */
+    fun shareFile(sessionId: String, sessionName: String, staged: StagedAttachment): Boolean {
+        if (!shares.start(staged.sizeBytes)) return false
+        val params = linkedMapOf<String, Any>(
+            "sessionId" to sessionId,
+            "filename" to staged.filename,
+            "sizeBytes" to staged.sizeBytes,
+            "sha256" to staged.sha256,
+        )
+        staged.mimeType?.takeIf { it.isNotBlank() }?.let { params["contentType"] = it }
+        val issued = call(METHOD_SESSION_SHARE_FILE_ADD, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> {
+                    val offer = uploadOffer(outcome.result)
+                    if (offer == null) {
+                        shares.failed(UNREADABLE_UPLOAD_OFFER)
+                    } else {
+                        uploadScope.launch { streamShare(sessionName, staged, offer) }
+                    }
+                }
+                is Outcome.Failed -> shares.failed(outcome.message)
+            }
+        }
+        if (!issued) shares.failed(NOT_LINKED)
+        return issued
+    }
+
+    private suspend fun streamShare(sessionName: String, staged: StagedAttachment, offer: UploadOffer) {
+        val failure = pumpSlices(staged, offer, shares::progress)
+        if (failure != null) {
+            shares.failed(failure)
+            return
+        }
+        val issued = call(METHOD_SESSION_SHARE_FILE_COMMIT, linkedMapOf("uploadId" to offer.uploadId)) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> shares.done(sessionName)
+                is Outcome.Failed -> shares.failed(outcome.message)
+            }
+        }
+        if (!issued) shares.failed(NOT_LINKED)
+    }
+
+    /**
      * Block until the slice just sent has left the phone, reporting what has
      * really gone as it drains.
      *
@@ -684,7 +742,7 @@ class HelmClient(
      * dropped link empties it): both leave nothing of this slice pending, and
      * the commit that follows is what tells the user which one happened.
      */
-    private suspend fun awaitFlushed(key: String, base: Long, sliceBytes: Int, floor: Long) {
+    private suspend fun awaitFlushed(base: Long, sliceBytes: Int, floor: Long, onProgress: (Long) -> Unit) {
         val queued = (linkPending() - floor).coerceAtLeast(0L)
         // Nothing waiting means the transport flushes as it sends — LAN does —
         // and there is nothing to wait for.
@@ -694,7 +752,7 @@ class HelmClient(
             val outstanding = (linkPending() - floor).coerceAtLeast(0L)
             if (outstanding <= 0L) return
             val gone = (queued - outstanding) * sliceBytes / queued
-            uploads.uploadProgress(key, base + gone)
+            onProgress(base + gone)
         }
     }
 
@@ -1704,6 +1762,10 @@ class HelmClient(
          */
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
+
+        /** Share-to-Helm: the same slot protocol, landing in a session's draft. */
+        private const val METHOD_SESSION_SHARE_FILE_ADD = "session_share_file_add"
+        private const val METHOD_SESSION_SHARE_FILE_COMMIT = "session_share_file_commit"
 
         /** The local ceiling on one upload slice, inside this link's frame cap. */
         private const val MAX_UPLOAD_SLICE_BYTES = 64 * 1024

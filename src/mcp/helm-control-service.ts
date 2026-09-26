@@ -657,6 +657,23 @@ export class HelmControlService extends EventEmitter {
     return { artifactId: attachment.artifactId, attachment };
   }
 
+  /**
+   * Move 1 of a phone SHARE: open a slot whose bytes will land in the named
+   * session's draft. The session must exist; the slot is bound to the device.
+   */
+  openShareUpload(
+    targetSessionId: string,
+    deviceId: string,
+    input: Omit<import('../mobile/mobile-artifact-upload.js').ShareUploadOpenInput, 'sessionId'>,
+  ): import('../mobile/mobile-artifact-upload.js').ArtifactUploadOffer {
+    return this.requireArtifactUploadService().openShare(deviceId, { ...input, sessionId: targetSessionId });
+  }
+
+  /** Move 3 of a phone SHARE: verify, write to the inbox, add the draft. */
+  commitShareUpload(deviceId: string, uploadId: string): import('../mobile/mobile-artifact-upload.js').ShareReceipt {
+    return this.requireArtifactUploadService().commitShare(deviceId, uploadId);
+  }
+
   private requireArtifactUploadService(): import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService {
     if (!this.artifactUploadService) {
       throw new Error('Artifact uploads are not available: the upload service is not configured.');

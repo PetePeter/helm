@@ -96,6 +96,23 @@
         </activity>
 
         <!--
+          Share-to-Helm: any single file from any app's share sheet. The file is
+          saved to Helm's inbox and a draft on the picked session names its path
+          (docs/mobile-app.md). Exported because the share sheet is another app.
+        -->
+        <activity
+            android:name=".ui.share.ShareActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Helm">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <!--
           The advertiser lives here so it survives screen-off and backgrounding:
           being reachable from the kitchen is the whole point of the app.
           connectedDevice is the sanctioned foreground type for holding a BLE link.

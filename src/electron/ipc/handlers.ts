@@ -98,6 +98,7 @@ import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
 import { MobileArtifactUploadService } from '../../mobile/mobile-artifact-upload.js';
+import { MobileShareInbox } from '../../mobile/mobile-share-inbox.js';
 import { MobileChatJournal } from '../../mobile/mobile-chat-journal.js';
 import { MobileAddressAdvertiser } from '../../mobile/mobile-address-advertiser.js';
 import { PrimaryLanAddressResolver } from '../../mobile/primary-lan-address.js';
@@ -244,6 +245,8 @@ export function registerIPCHandlers(
   // desktop's own imports use.
   const artifactUploadService = new MobileArtifactUploadService({
     attachments: artifactAttachmentManager,
+    // Share-to-Helm: shared files land in the per-user tmp inbox + a draft.
+    shares: new MobileShareInbox(join(getTempDir(dirname ?? process.cwd()), 'inbox'), draftManager),
   });
   helmControlService.setArtifactUploadService(artifactUploadService);
   helmControlService.setMemoryManager(memoryManager, memoryAttachmentManager, artifactTempRegistry);

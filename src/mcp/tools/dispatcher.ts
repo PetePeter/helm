@@ -891,6 +891,34 @@ export async function callMcpTool(
           asString(args.uploadId, 'uploadId is required'),
         );
       }
+      // Share-to-Helm: the same upload slots, landing as a file in the Helm
+      // inbox plus a draft on the named session instead of an attachment.
+      case 'session_share_file_add': {
+        const target = requireTargetSession(service, args);
+        const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);
+        if (deviceId === undefined) {
+          throw new Error('session_share_file_add is the paired-phone upload surface');
+        }
+        const sizeBytes = asOptionalByteCount(args.sizeBytes, 'sizeBytes', 0);
+        if (sizeBytes === undefined) {
+          throw new Error('sizeBytes is required');
+        }
+        return service.openShareUpload(target, deviceId, {
+          filename: asString(args.filename, 'filename is required'),
+          ...(args.contentType !== undefined
+            ? { contentType: asString(args.contentType, 'contentType must not be empty') }
+            : {}),
+          sizeBytes,
+          sha256: asString(args.sha256, 'sha256 is required'),
+        });
+      }
+      case 'session_share_file_commit': {
+        const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);
+        if (deviceId === undefined) {
+          throw new Error('session_share_file_commit is the paired-phone upload surface');
+        }
+        return service.commitShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'));
+      }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');
         return service.listMemories(sessionId, {

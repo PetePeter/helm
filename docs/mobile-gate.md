@@ -90,6 +90,17 @@ takes no session argument. Artifact ownership *within* the named session is
 still enforced (a cross-session artifact id answers not-found, no existence
 leak), and the gate's allow-list still applies per device as for any tool.
 
+### Share-to-Helm
+
+`session_share_file_add` / `session_share_file_commit` follow the same rule:
+the subject is an explicit `sessionId` argument, checked to exist at open, so
+the pair is reachable and allow-list gated like any `session_*` tool. Both are
+**paired-phone only** — the dispatcher resolves the device from the
+`mobile:<deviceId>` proxy identity and refuses any other caller — and the slot
+is bound to that device for every slice and the commit. Denying the pair in a
+device's allow-list makes the phone refuse the share up front ("Helm has not allowed this phone to share files"), read from `__mobile_tools__`.
+See [mobile-app.md](mobile-app.md#share-to-helm--a-file-into-a-sessions-draft).
+
 ## Proxy identity
 
 Calls dispatch under `mobile:<deviceId>` (`mobile-identity.ts`), where
