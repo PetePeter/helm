@@ -73,7 +73,8 @@ from its control sheet. The phone matches the literal string
 ## The operator session — "Helm"
 
 One locked session named **Helm** that every voice client (phone now, desktop
-later) talks to. It is a router: it passes an instruction to the right work
+later) talks to. It answers questions about Helm state and general questions
+itself; for work, it is a router: it passes an instruction to the right work
 session, acknowledges at once, and speaks a short summary when the reply comes
 back. It never edits, runs commands, investigates, or creates/closes sessions —
 the work stays in the sessions that own it, and there is one conversation for
@@ -113,8 +114,24 @@ graph LR
   (invariant 6), in the renderer's session-refresh allow-list, and in
   `session_list`/`session_get` summaries. An unknown role drops on load.
 - **Rules.** `src/mcp/guides/operator-guide.ts` is delivered as the initial
-  prompt: route only, ask back when the target is ambiguous, speakable style
-  (no markdown, paths or UUIDs).
+  prompt. There are three modes (P-0838):
+
+  ```mermaid
+  flowchart LR
+      Q[User asks] --> K{Kind?}
+      K -->|Helm state| A[Read-only lookups:<br/>plan_* · sequence_* · session_* · context_*<br/>scheduler_list · memory_* · skill_list<br/>directory_list · project_list · tool_list] --> R[chat_send answer]
+      K -->|general| G[Own knowledge] --> R
+      K -->|work| W[session_send_text to owning session]
+  ```
+
+  The only writes are `chat_send` and `session_send_text`. It never edits
+  files, runs commands, reads repo code, mutates Helm state, or spawns or
+  closes sessions. It asks back when the target is ambiguous, and it keeps a
+  speakable style (no markdown, paths or UUIDs). CLI types come from the
+  existing `tool_list`, so no new tool was needed.
+  **Rule changes need a fresh prompt:** the guide is the operator's initial
+  prompt, so a running operator only picks up edits after it is respawned or
+  compacted.
 - **Launch race.** Main can spawn the operator before the renderer's
   auto-resume runs; `pty:spawn` treats a resume of an already-live PTY as an
   attach, not a second process.

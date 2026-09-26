@@ -147,14 +147,30 @@ describe('session_list exposes role (phone contract: HelmSession.kt reads "role"
 });
 
 describe('operator guide', () => {
-  it('carries the route-only rules', () => {
-    const guide = buildOperatorGuide();
+  const guide = buildOperatorGuide();
+
+  it('has three modes: answer from Helm state, answer from knowledge, route work', () => {
+    for (const line of ['ANSWER FROM HELM', 'ANSWER FROM KNOWLEDGE', 'ROUTE WORK']) {
+      expect(guide).toContain(line);
+    }
+  });
+
+  it('lists the read-only lookups, including tool_list for CLI types', () => {
+    for (const tool of [
+      'plan_list', 'plan_get', 'plan_summary', 'sequence_list', 'sequence_get',
+      'session_list', 'session_get', 'context_list', 'context_get', 'scheduler_list',
+      'memory_search', 'memory_get', 'skill_list', 'directory_list', 'project_list', 'tool_list',
+    ]) {
+      expect(guide).toContain(tool);
+    }
+  });
+
+  it('keeps the hard NOs and allows only chat_send and session_send_text as mutations', () => {
     for (const line of [
-      'ROUTE ONLY',
-      'session_send_text',
+      'NEVER edit files, run commands, read repo code, or create/close sessions',
+      'NEVER mutate plans, sequences, contexts, schedules, memories or sessions',
+      'Your only writes are chat_send and session_send_text',
       'expectsResponse=true',
-      'chat_send',
-      'NEVER edit files, run commands, investigate, or create/close sessions',
       'ask back',
       'no markdown',
     ]) {
