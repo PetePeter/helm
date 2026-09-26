@@ -127,6 +127,8 @@ export interface SessionSummary {
   aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle';
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
+  /** Set on a Remote row (`peer_attach`): the peer and ITS session id this row views. */
+  remote?: { peerId: string; sessionId: string };
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
@@ -239,6 +241,7 @@ export class HelmControlService extends EventEmitter {
   private readonly directoryService: HelmDirectoryService;
   /** Fleet is OFF by default → no manager until setPeerLinkManager wires one. */
   private peerLinkManager?: import('./peer/peer-link-manager.js').PeerLinkManager | null;
+  private remoteService: import('../session/remote/remote-service.js').RemoteService | null = null;
   private readonly peerService: HelmPeerService;
   /** Absent until the BLE stack is built and setMobileDeps wires it. */
   private mobileDeps?: MobileDeps | null;
@@ -471,6 +474,16 @@ export class HelmControlService extends EventEmitter {
 
   peerCall(peer: string, tool: string, args: Record<string, unknown>) {
     return this.peerService.call(peer, tool, args);
+  }
+
+  /** Wire the Remote service (viewer side of `peer_attach`). */
+  setRemoteService(service: import('../session/remote/remote-service.js').RemoteService): void {
+    this.remoteService = service;
+  }
+
+  peerAttach(peer: string, sessionId: string) {
+    if (!this.remoteService) throw new Error('Remote is not available');
+    return this.remoteService.open(peer, sessionId);
   }
 
   // ---------------------------------------------------------------------------

@@ -287,6 +287,7 @@ export class HelmSessionService {
         : {}),
       ...(session.activityLevel ? { activityLevel: session.activityLevel } : {}),
       ...(session.createdByPeerId ? { createdByPeerId: session.createdByPeerId } : {}),
+      ...(session.remote ? { remote: { ...session.remote } } : {}),
       ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),

@@ -26,6 +26,8 @@ const peerGetAudit = vi.fn(async () => state.audit);
 const peerSetAllowList = vi.fn(async () => ({ ok: true }));
 const peerSetEnabled = vi.fn(async () => ({ ok: true }));
 const peerUnpair = vi.fn(async () => ({ ok: true }));
+const peerSessions = vi.fn(async () => [{ id: 'h1', name: 'builder', cliType: 'Claude Code' }]);
+const peerAttach = vi.fn(async () => ({ ok: true, sessionId: 'remote-1' }));
 const peerStartPairing = vi.fn(async () => ({ ok: true, sessionId: 's-1' }));
 const peerConfirmPairing = vi.fn(async () => ({ ok: true }));
 const peerCancelPairing = vi.fn(async () => ({ ok: true }));
@@ -47,6 +49,8 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     peerSetAllowList: (...a: any[]) => peerSetAllowList(...a),
     peerSetEnabled: (...a: any[]) => peerSetEnabled(...a),
     peerUnpair: (...a: any[]) => peerUnpair(...a),
+    peerSessions: (...a: any[]) => peerSessions(...a),
+    peerAttach: (...a: any[]) => peerAttach(...a),
     peerStartPairing: (...a: any[]) => peerStartPairing(...a),
     peerConfirmPairing: (...a: any[]) => peerConfirmPairing(...a),
     peerCancelPairing: (...a: any[]) => peerCancelPairing(...a),
@@ -227,5 +231,40 @@ describe('PeersTab', () => {
     await box.setValue(true);
     await flushPromises();
     expect(configSetFleetConfig).toHaveBeenCalledWith({ enabled: true });
+  });
+
+  it('Attach lists the online peer sessions and opens the chosen one here', async () => {
+    state.peers = [onlinePeer()];
+    const w = mount(PeersTab);
+    await flushPromises();
+
+    await w.find('.peer-attach-toggle').trigger('click');
+    await flushPromises();
+    expect(peerSessions).toHaveBeenCalledWith('p1');
+    const item = w.find('.peer-session-row');
+    expect(item.text()).toContain('builder');
+
+    await item.find('.peer-session-attach').trigger('click');
+    await flushPromises();
+    expect(peerAttach).toHaveBeenCalledWith('p1', 'h1');
+  });
+
+  it('Attach is unavailable while the peer is offline', async () => {
+    state.peers = [onlinePeer({ online: false })];
+    const w = mount(PeersTab);
+    await flushPromises();
+    expect(w.find('.peer-attach-toggle').attributes('disabled')).toBeDefined();
+  });
+
+  it('shows the error when the peer refuses the attach', async () => {
+    state.peers = [onlinePeer()];
+    peerAttach.mockResolvedValueOnce({ ok: false, error: 'Tool not permitted' } as any);
+    const w = mount(PeersTab);
+    await flushPromises();
+    await w.find('.peer-attach-toggle').trigger('click');
+    await flushPromises();
+    await w.find('.peer-session-attach').trigger('click');
+    await flushPromises();
+    expect(w.find('.peer-attach-error').text()).toContain('Tool not permitted');
   });
 });

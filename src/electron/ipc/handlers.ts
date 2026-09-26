@@ -82,6 +82,9 @@ import { WindowManager } from '../window-manager.js';
 import { HelmControlService } from '../../mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import { InboundCallGate } from '../../mcp/peer/inbound-call-gate.js';
+import { peerIdFromProxySessionId } from '../../mcp/peer/proxy-identity.js';
+import { RemoteService } from '../../session/remote/remote-service.js';
+import { isRemoteMethod } from '../../session/remote/remote-protocol.js';
 import { createDefaultPeerRateLimiter } from '../../mcp/peer/rate-limiter.js';
 import { PeerAuditLog } from '../../mcp/peer/peer-audit-log.js';
 import { PeerConfigManager } from '../../session/peer-config-manager.js';
@@ -888,10 +891,18 @@ export function registerIPCHandlers(
   // Single audit log instance, reachable by both the inbound gate (appends) and
   // the peer-management handlers (reads for the Audit sub-view).
   const peerAuditLog = new PeerAuditLog();
+  // Remote (talk to a peer's sessions): owner + viewer over the fleet link. Its
+  // `remote.*` requests pass the SAME gate (allow-list, rate limit, audit) and are
+  // routed here instead of the MCP dispatcher; the proxy identity names the peer.
+  const remoteService = new RemoteService({ pty: ptyManager, sessions: sessionManager });
+  helmControlService.setRemoteService(remoteService);
   const inboundGate = new InboundCallGate({
     peerConfig: peerConfigManager,
-    dispatch: (method, params, ctx) =>
-      localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx),
+    dispatch: async (method, params, ctx) => {
+      const remotePeerId = isRemoteMethod(method) ? peerIdFromProxySessionId(ctx.sessionId) : undefined;
+      if (remotePeerId) return remoteService.handleCall(remotePeerId, method, params);
+      return localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx);
+    },
     rateLimiter: createDefaultPeerRateLimiter(),
     audit: peerAuditLog,
     sessionLookup: sessionManager,
@@ -914,7 +925,10 @@ export function registerIPCHandlers(
     pinnedCertStore,
     secretStore,
     peerConfigManager,
-    setLinkManager: (mgr) => helmControlService.setPeerLinkManager(mgr),
+    setLinkManager: (mgr) => {
+      helmControlService.setPeerLinkManager(mgr);
+      remoteService.setLinks(mgr);
+    },
     // The machine's own hostname — two Helms both advertising "Helm" is useless
     // in a pick-your-peer list.
     alias: hostname(),
@@ -934,6 +948,7 @@ export function registerIPCHandlers(
     secretStore,
     audit: peerAuditLog,
     getLinkManager: () => fleetController!.currentLinkManager(),
+    attach: (peerId, sessionId) => remoteService.open(peerId, sessionId),
   });
   // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
   // own secret store, kept separate from the fleet's: a revoked phone must never

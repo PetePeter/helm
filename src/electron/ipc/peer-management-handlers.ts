@@ -34,6 +34,15 @@ export interface PeerManagementDeps {
   audit: PeerAuditLog;
   /** Resolve the live transport (constructed asynchronously after start). */
   getLinkManager: () => PeerLinkManager | null;
+  /** Remote: open a peer's session here as a local row (RemoteService.open). */
+  attach: (peerId: string, sessionId: string) => Promise<{ id: string }>;
+}
+
+/** A session on a peer, as offered in the Peers tab's Attach picker. */
+export interface PeerSessionItem {
+  id: string;
+  name: string;
+  cliType: string;
 }
 
 export interface PeerListItem {
@@ -107,6 +116,29 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     return { ok: true };
   });
 
+  // Remote — discovery rides Fleet (the peer's own session_list, gated by its
+  // allow-list); attach adopts the chosen session as a local row.
+  ipcMain.handle('peer:sessions', async (_e, peerId: string): Promise<PeerSessionItem[]> => {
+    const link = deps.getLinkManager();
+    if (!deps.isEnabled() || !link) return [];
+    const listed = await link.call(peerId, 'session_list', {}) as { sessions?: Array<Record<string, unknown>> } | Array<Record<string, unknown>>;
+    const sessions = Array.isArray(listed) ? listed : listed?.sessions ?? [];
+    return sessions
+      // A peer's own Remote rows are views of someone else — not attachable.
+      .filter((s) => typeof s.id === 'string' && !s.remote)
+      .map((s) => ({ id: s.id as string, name: String(s.name ?? s.id), cliType: String(s.cliTypeName ?? s.cliType ?? '') }));
+  });
+
+  ipcMain.handle('peer:attach', async (_e, peerId: string, sessionId: string) => {
+    if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
+    try {
+      const session = await deps.attach(peerId, sessionId);
+      return { ok: true, sessionId: session.id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('peer:getAudit', () => {
     if (!deps.isEnabled()) return [];
     return deps.audit.list();
@@ -151,6 +183,8 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     ipcMain.removeHandler('peer:setEnabled');
     ipcMain.removeHandler('peer:unpair');
     ipcMain.removeHandler('peer:getAudit');
+    ipcMain.removeHandler('peer:sessions');
+    ipcMain.removeHandler('peer:attach');
     deps.peerConfigManager.off('peer-config:changed', onConfigChanged);
     deps.audit.off('peer-audit:changed', onAuditChanged);
     if (linkAttached) {

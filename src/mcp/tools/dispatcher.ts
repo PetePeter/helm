@@ -61,6 +61,21 @@ function requireTargetSession(service: HelmControlService, args: Record<string, 
 }
 
 /**
+ * A Remote row (`peer_attach`) is a view: its CLI — and so its artifacts — live
+ * on the owning peer. Forward the call there under the owner's session id, or
+ * return undefined for a local row.
+ */
+function forwardIfRemoteRow(
+  service: HelmControlService,
+  sessionId: string,
+  tool: string,
+  args: Record<string, unknown>,
+): Promise<unknown> | undefined {
+  const remote = service.getSession(sessionId)?.remote;
+  return remote ? Promise.resolve(service.peerCall(remote.peerId, tool, { ...args, sessionId: remote.sessionId })) : undefined;
+}
+
+/**
  * G5 usage feedback: note that THIS session actually fetched an item. Only
  * identifiable callers count — an anonymous peer fetch correlates with
  * nothing, and a failed fetch (thrown before this point) is not a fetch.
@@ -786,11 +801,11 @@ export async function callMcpTool(
       // is still enforced by the service (cross-session ids answer not-found).
       case 'session_artifact_list': {
         const target = requireTargetSession(service, args);
-        return service.listArtifacts(target);
+        return forwardIfRemoteRow(service, target, name, args) ?? service.listArtifacts(target);
       }
       case 'session_artifact_get': {
         const target = requireTargetSession(service, args);
-        return service.readArtifact(
+        return forwardIfRemoteRow(service, target, name, args) ?? service.readArtifact(
           target,
           asString(args.artifactId, 'artifactId is required'),
           asOptionalArtifactVersion(args.version),
@@ -1108,6 +1123,11 @@ export async function callMcpTool(
           asString(args.peer, 'peer is required'),
           asString(args.tool, 'tool is required'),
           asRecord(args.args),
+        );
+      case 'peer_attach':
+        return service.peerAttach(
+          asString(args.peer, 'peer is required'),
+          asString(args.sessionId, 'sessionId is required'),
         );
       case 'mobile_pair_start':
         return service.mobilePairStart();

@@ -217,4 +217,41 @@ describe('PeerLink', () => {
     release(undefined);
     void a;
   });
+
+  describe('notifications (fire-and-forget streams, e.g. remote PTY data)', () => {
+    it('notify() sends an id-less frame that surfaces as a notification event, not an onCall', async () => {
+      const [a, b] = makePair();
+      const sender = track(new PeerLink(a as any, { peerId: 'B', connectionEpoch: 1, onCall: async () => 'x' }));
+      const onCall = vi.fn(async () => 'x');
+      const receiver = track(new PeerLink(b as any, { peerId: 'A', connectionEpoch: 1, onCall }));
+      const got = new Promise<unknown[]>((resolve) => receiver.on('notification', (...args) => resolve(args)));
+
+      sender.notify('remote.data', { sessionId: 's1', seq: 1, data: 'hi' });
+
+      expect(await got).toEqual(['remote.data', { sessionId: 's1', seq: 1, data: 'hi' }]);
+      expect(JSON.parse(a.sent[0])).not.toHaveProperty('id');
+      expect(onCall).not.toHaveBeenCalled();
+    });
+
+    it('an inbound notification never produces a reply frame, even when a listener throws', async () => {
+      const [a, b] = makePair();
+      const sender = track(new PeerLink(a as any, { peerId: 'B', connectionEpoch: 1, onCall: async () => 'x' }));
+      const receiver = track(new PeerLink(b as any, { peerId: 'A', connectionEpoch: 1, onCall: async () => 'x' }));
+      receiver.on('notification', () => { throw new Error('listener blew up'); });
+
+      sender.notify('remote.write', { data: 'x' });
+      await new Promise((r) => setTimeout(r, 5));
+
+      expect(b.sent).toEqual([]);
+      expect(receiver.isOnline()).toBe(true);
+    });
+
+    it('notify() after dispose is a silent no-op', () => {
+      const [a] = makePair();
+      const link = track(new PeerLink(a as any, { peerId: 'B', connectionEpoch: 1, onCall: async () => 'x' }));
+      link.dispose('test');
+      expect(() => link.notify('remote.data', {})).not.toThrow();
+      expect(a.sent).toEqual([]);
+    });
+  });
 });

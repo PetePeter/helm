@@ -307,6 +307,13 @@ describe('InboundCallGate', () => {
     expect(calls).toHaveLength(0);
     expect(HARD_DENY_TOOLS.has('session_group_close')).toBe(true);
   });
+
+  it('hard-denies peer_attach — a peer must not chain Remote attaches through this host', async () => {
+    const { gate, calls } = build({ mac: ['*'] });
+    await expect(gate.handle('mac', 'peer_attach', { peer: 'third', sessionId: 's' }))
+      .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {

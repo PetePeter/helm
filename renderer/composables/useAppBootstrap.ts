@@ -190,6 +190,7 @@ export async function refreshSessions(): Promise<void> {
       createdAt: managed.createdAt,
       lastActiveAt: managed.lastActiveAt,
       createdByPeerId: managed.createdByPeerId,
+      remote: managed.remote,
       // Without this the card falls back to "unlocked" on every refresh, and
       // its toggle can then only ever ask to lock.
       locked: managed.locked,

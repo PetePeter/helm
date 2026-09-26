@@ -71,6 +71,10 @@ export interface SessionInfo {
    *  by an inbound peer proxy call rather than locally. Drives the sidebar's
    *  peer-created card tint. Persists across restarts. */
   createdByPeerId?: string;
+  /** Set when this row is a VIEW of a fleet peer's session (Remote): its PTY
+   *  lives on `peerId` as `sessionId`, streamed here. Ephemeral — remote rows
+   *  are never persisted, recycle-binned or resume-spawned locally. */
+  remote?: { peerId: string; sessionId: string };
   /** Id of the paired phone (MobileDevice record id) that created this session,
    *  when it was spawned by an inbound mobile proxy call rather than locally.
    *  Drives the MobileGate ownership rule — a phone may only close its own

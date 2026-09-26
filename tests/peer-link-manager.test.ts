@@ -20,10 +20,12 @@ class FakeLink extends EventEmitter {
   disposed = false;
   disposeReason = '';
   constructor(public readonly response: unknown = 'ok') { super(); }
+  notified: Array<[string, unknown]> = [];
   request(method: string, _params?: unknown): Promise<unknown> {
     if (this.disposed) return Promise.reject(new Error('closed'));
     return Promise.resolve(`${method}:${this.response}`);
   }
+  notify(method: string, params: unknown): void { this.notified.push([method, params]); }
   isOnline(): boolean { return !this.disposed; }
   dispose(reason: string): void {
     if (this.disposed) return;
@@ -96,6 +98,31 @@ describe('PeerLinkManager', () => {
     created.clients[0].emitLink(link, 'peerA');
     await expect(mgr.call('peerA', 'ping', {})).resolves.toBe('ping:R');
     await mgr.stop();
+  });
+
+  it('notify routes a notification to the live link, and inbound ones surface with the peerId', async () => {
+    const { mgr, created } = makeManager();
+    const inbound: unknown[] = [];
+    mgr.on('peer-notification', (e) => inbound.push(e));
+    await mgr.start();
+    const link = new FakeLink();
+    created.clients[0].emitLink(link, 'peerA');
+
+    expect(mgr.notify('A', 'remote.write', { d: 1 })).toBe(true);
+    link.emit('notification', 'remote.data', { d: 2 });
+
+    expect(link.notified).toEqual([['remote.write', { d: 1 }]]);
+    expect(inbound).toEqual([{ peerId: 'peerA', method: 'remote.data', params: { d: 2 } }]);
+    link.dispose('bye');
+    expect(mgr.notify('peerA', 'remote.write', {})).toBe(false);
+    await mgr.stop();
+  });
+
+  it('peerIdFor resolves an id or alias to the configured peer id, else undefined', () => {
+    const { mgr } = makeManager();
+    expect(mgr.peerIdFor('peerA')).toBe('peerA');
+    expect(mgr.peerIdFor('a')).toBe('peerA');
+    expect(mgr.peerIdFor('stranger')).toBeUndefined();
   });
 
   it('status reflects online/offline', async () => {

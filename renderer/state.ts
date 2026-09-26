@@ -28,6 +28,8 @@ export interface Session {
   lastActiveAt?: number;
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
+  /** Remote row (`peer_attach`): this terminal views `sessionId` running on `peerId`. */
+  remote?: { peerId: string; sessionId: string };
   /** True when deliberate closure is blocked until unlocked. */
   locked?: boolean;
   /** G8: consecutive Stop-hook auto-continues in flight. >0 means an active

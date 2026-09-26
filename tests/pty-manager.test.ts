@@ -46,6 +46,35 @@ describe('PtyManager', () => {
     manager = new PtyManager(factory);
   });
 
+  describe('adopt', () => {
+    it('an adopted process is indistinguishable from a spawned one', () => {
+      const adopted = createMockPty(7);
+      const outputs: Array<[string, string]> = [];
+      const exits: string[] = [];
+      manager.on('data', (id: string, d: string) => outputs.push([id, d]));
+      manager.on('exit', (id: string) => exits.push(id));
+
+      manager.adopt('r1', adopted.pty, { cols: 90, rows: 20 });
+      adopted.triggerData('remote screen');
+      manager.write('r1', 'keys');
+
+      expect(manager.has('r1')).toBe(true);
+      expect(manager.getSize('r1')).toEqual({ cols: 90, rows: 20 });
+      expect(adopted.pty.write).toHaveBeenCalledWith('keys');
+      expect(outputs).toEqual([['r1', 'remote screen']]);
+      expect(manager.getTerminalTail('r1', 5, 'stripped').stripped).toEqual(['remote screen']);
+
+      adopted.triggerExit(0);
+      expect(exits).toEqual(['r1']);
+      expect(manager.has('r1')).toBe(false);
+    });
+
+    it('refuses to adopt over an existing session', () => {
+      manager.spawn({ sessionId: 's1', command: 'x' });
+      expect(() => manager.adopt('s1', createMockPty(9).pty, { cols: 80, rows: 24 })).toThrow(/already exists/);
+    });
+  });
+
   describe('spawn', () => {
     it('creates a PTY and stores it by session ID', () => {
       manager.spawn({ sessionId: 's1', command: 'echo hello' });

@@ -64,7 +64,10 @@ function isHookStall(value: unknown): value is SessionInfo['hookStall'] {
 
 export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
   try {
-    atomicWriteFileSync(sessionsFile, YAML.stringify({ sessions: sessions.map(serializeSession) }));
+    // A Remote row is a live view of a peer's PTY, not a local CLI: restoring it
+    // would resume-spawn that CLI here. It is re-opened, never restored.
+    const local = sessions.filter(s => !s.remote);
+    atomicWriteFileSync(sessionsFile, YAML.stringify({ sessions: local.map(serializeSession) }));
   } catch (err) {
     logger.error(`Failed to save sessions: ${err}`);
   }

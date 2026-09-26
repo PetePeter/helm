@@ -302,6 +302,10 @@ Unaffected by design: the Telegram integration (separate PTY path, and its tools
 key on `authContext.sessionId`, never `senderSessionId`), and the peer-created
 session tint (`session_create` reads only the proxy identity).
 
+## Remote (driving a peer's session directly)
+
+Fleet delegates tool calls; **Remote** rides the same link to stream a peer's PTY into a local row you drive yourself (`peer_attach`, Peers tab → Attach…). `remote.attach` passes this gate like any call; the stream itself uses PeerLink notifications. See [remote.md](remote.md).
+
 ## Known limitations / deferred
 
 - **Pairing rate-limit key is spoofable.** `PairingCoordinator`'s per-source rate cap keys on the peer mDNS `machineId` (MVP), which an attacker on the LAN can spoof. The **real backstop is the GLOBAL cap of 10 pairing starts per 10 minutes**, which no spoofing bypasses. (The per-source cap adds a 3-fail → 15-min cooldown on top for honest sources.)

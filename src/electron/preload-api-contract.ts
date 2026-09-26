@@ -266,6 +266,8 @@ export const PRELOAD_API_DOMAINS = {
     'peerSetAllowList',
     'peerSetEnabled',
     'peerUnpair',
+    'peerSessions',
+    'peerAttach',
     'peerGetAudit',
     'peerFleetEnabled',
   ],

@@ -1943,6 +1943,21 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'peer_attach',
+    title: 'Attach A Peer Session Here',
+    description:
+      'Attach to a session running on a fleet peer and show it here as a normal session row: its terminal streams from the peer and keystrokes go back to it, so the user can drive the peer CLI directly (Fleet peer_call delegates; Remote lets the user talk to it). Find the session with peer_call(peer, "session_list", {}) first. The peer must allow `remote.attach` for this machine. Returns the LOCAL session (its `remote` field names the peer session). Idempotent per peer session. Closing the local row only detaches — the CLI keeps running on the peer. Local only — fleet peers can never invoke this.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        peer: { type: 'string', description: 'The peer id (or alias) from peer_list.' },
+        sessionId: { type: 'string', description: 'The session id ON THE PEER (from its session_list).' },
+      },
+      required: ['peer', 'sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'mobile_pair_start',
     title: 'Arm Phone Pairing',
     description:

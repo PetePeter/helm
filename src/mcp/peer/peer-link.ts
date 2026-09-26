@@ -158,6 +158,20 @@ export class PeerLink extends EventEmitter {
   }
 
   /**
+   * Fire-and-forget JSON-RPC notification (no id, no reply, no timeout) for
+   * streams where a round-trip per chunk would be too slow. No-op once closed.
+   */
+  notify(method: string, params: unknown): void {
+    if (this.disposed) return;
+    try {
+      this.ws.send(JSON.stringify({ jsonrpc: '2.0', method, params }));
+    } catch (err) {
+      logger.warn(`[PeerLink] Failed to send notification to peer ${this.peerId}: ${(err as Error).message}`);
+      this.dispose('notify-send-failed');
+    }
+  }
+
+  /**
    * Idempotent teardown: stop timers, drop ws listeners, terminate the socket,
    * reject every pending exactly once, and emit 'offline' exactly once.
    */
@@ -205,7 +219,8 @@ export class PeerLink extends EventEmitter {
     if (msg === null || typeof msg !== 'object') return;
 
     if (typeof msg.method === 'string') {
-      void this.handleInboundRequest(msg);
+      if (typeof msg.id === 'undefined') this.emitNotification(msg.method, msg.params);
+      else void this.handleInboundRequest(msg);
       return;
     }
     if (typeof msg.id !== 'undefined' && (('result' in msg) || ('error' in msg))) {
@@ -216,21 +231,33 @@ export class PeerLink extends EventEmitter {
     logger.debug?.(`[PeerLink] Ignored unrecognised frame from peer ${this.peerId}`);
   }
 
+  /**
+   * Id-less frames are JSON-RPC notifications: they never reach onCall (the MCP
+   * tool gate) and never get a reply. A throwing listener must not kill the link.
+   */
+  private emitNotification(method: string, params: unknown): void {
+    try {
+      this.emit('notification', method, params);
+    } catch (err) {
+      logger.warn(`[PeerLink] Notification handler for ${method} from peer ${this.peerId} threw: ${(err as Error).message}`);
+    }
+  }
+
   private async handleInboundRequest(msg: any): Promise<void> {
-    const id = msg.id;
-    if (typeof id !== 'undefined' && this.activeInbound.has(String(id))) {
-      this.reply({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Duplicate request id' } });
+    const id = String(msg.id);
+    if (this.activeInbound.has(id)) {
+      this.reply({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: 'Duplicate request id' } });
       return;
     }
-    if (typeof id !== 'undefined') this.activeInbound.add(String(id));
+    this.activeInbound.add(id);
     try {
       const result = await this.onCall(this.peerId, msg.method, msg.params);
-      if (typeof id !== 'undefined') this.reply({ jsonrpc: '2.0', id, result });
+      this.reply({ jsonrpc: '2.0', id: msg.id, result });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (typeof id !== 'undefined') this.reply({ jsonrpc: '2.0', id, error: { code: -32000, message } });
+      this.reply({ jsonrpc: '2.0', id: msg.id, error: { code: -32000, message } });
     } finally {
-      if (typeof id !== 'undefined') this.activeInbound.delete(String(id));
+      this.activeInbound.delete(id);
     }
   }
 

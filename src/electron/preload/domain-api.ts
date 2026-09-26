@@ -1429,6 +1429,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   peerUnpair: (peerId: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('peer:unpair', peerId),
 
+  /** Remote: the sessions running on a peer (its session_list, via Fleet). */
+  peerSessions: (peerId: string): Promise<Array<{ id: string; name: string; cliType: string }>> =>
+    ipcRenderer.invoke('peer:sessions', peerId),
+
+  /** Remote: open a peer's session here as a local row you can drive directly. */
+  peerAttach: (peerId: string, sessionId: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> =>
+    ipcRenderer.invoke('peer:attach', peerId, sessionId),
+
   /** Recent proxied-call audit entries (last 7 days, newest first). */
   peerGetAudit: (): Promise<Array<{
     id: string;

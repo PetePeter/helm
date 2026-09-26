@@ -169,8 +169,45 @@ export class PtyManager extends EventEmitter {
       env: { ...process.env, ...env } as Record<string, string>,
     });
 
+    this.register(sessionId, ptyProcess, { cols, rows });
+
+    // Write initial command to shell stdin.
+    // rawCommand: written as-is (for resume commands like `copilot --continue`)
+    // command+args: escaped to prevent metacharacter injection (for fresh spawns)
+    try {
+      if (rawCommand) {
+        ptyProcess.write(rawCommand + '\r');
+      } else if (command) {
+        const escapedArgs = args.map(arg => escapeShellArg(arg));
+        const escapedCommand = escapeShellArg(command);
+        const fullCommand = escapedArgs.length > 0
+          ? escapedCommand + ' ' + escapedArgs.join(' ')
+          : escapedCommand;
+        ptyProcess.write(fullCommand + '\r');
+      }
+    } catch (error) {
+      logger.error(`[PTY] Initial command write failed for ${sessionId}: ${error}`);
+    }
+
+    logger.info(`[PTY] Spawned session ${sessionId}: ${rawCommand || command} (PID ${ptyProcess.pid})`);
+    return ptyProcess;
+  }
+
+  /**
+   * Take ownership of a process that was created elsewhere — a remote PTY
+   * streamed from a fleet peer. From here on it is indistinguishable from a
+   * spawned one: output buffer, activity, write, resize and exit all apply.
+   */
+  adopt(sessionId: string, ptyProcess: PtyProcess, size: { cols: number; rows: number }): void {
+    if (this.ptys.has(sessionId)) {
+      throw new Error(`PTY already exists for session: ${sessionId}`);
+    }
+    this.register(sessionId, ptyProcess, size);
+  }
+
+  private register(sessionId: string, ptyProcess: PtyProcess, size: { cols: number; rows: number }): void {
     this.ptys.set(sessionId, ptyProcess);
-    this.sizes.set(sessionId, { cols, rows });
+    this.sizes.set(sessionId, { ...size });
     // Seed the quiet-window clock at spawn: a session that has never spoken
     // counts as busy from birth, not from the epoch — its first paint is
     // still ahead of it and a write landed now would be split by it.
@@ -205,27 +242,6 @@ export class PtyManager extends EventEmitter {
       if (this.shuttingDown) return;
       this.emit('exit', sessionId, exitCode);
     });
-
-    // Write initial command to shell stdin.
-    // rawCommand: written as-is (for resume commands like `copilot --continue`)
-    // command+args: escaped to prevent metacharacter injection (for fresh spawns)
-    try {
-      if (rawCommand) {
-        ptyProcess.write(rawCommand + '\r');
-      } else if (command) {
-        const escapedArgs = args.map(arg => escapeShellArg(arg));
-        const escapedCommand = escapeShellArg(command);
-        const fullCommand = escapedArgs.length > 0
-          ? escapedCommand + ' ' + escapedArgs.join(' ')
-          : escapedCommand;
-        ptyProcess.write(fullCommand + '\r');
-      }
-    } catch (error) {
-      logger.error(`[PTY] Initial command write failed for ${sessionId}: ${error}`);
-    }
-
-    logger.info(`[PTY] Spawned session ${sessionId}: ${rawCommand || command} (PID ${ptyProcess.pid})`);
-    return ptyProcess;
   }
 
   /**
@@ -362,6 +378,12 @@ export class PtyManager extends EventEmitter {
     } catch (error) {
       logger.error(`[PTY] Resize nudge failed for session=${sessionId}: ${error}`);
     }
+  }
+
+  /** Last known size of a session's PTY, or undefined when not running. */
+  getSize(sessionId: string): { cols: number; rows: number } | undefined {
+    const size = this.sizes.get(sessionId);
+    return size ? { ...size } : undefined;
   }
 
   /** Kill a session's PTY process. */

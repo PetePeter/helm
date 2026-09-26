@@ -290,11 +290,27 @@ async function unpair(peerId: string): Promise<void> {
   await refresh();
 }
 
+/** Remote: the sessions running on a peer, offered for attach. */
+async function listPeerSessions(peerId: string): Promise<PeerSession[]> {
+  return (await peersClient.peerSessions(peerId)) ?? [];
+}
+
+/** Remote: open a peer's session here as a local row. */
+async function attachPeerSession(peerId: string, sessionId: string): Promise<{ ok: boolean; error?: string }> {
+  return peersClient.peerAttach(peerId, sessionId);
+}
+
 /**
  * TEST-ONLY: reset the module-singleton so each test re-subscribes cleanly and
  * starts from empty state. Not used by production code — the singleton is meant
  * to persist for the app's lifetime.
  */
+export interface PeerSession {
+  id: string;
+  name: string;
+  cliType: string;
+}
+
 export function resetPeersStateForTesting(): void {
   cancelDismiss();
   subscribed = false;
@@ -328,5 +344,7 @@ export function usePeers() {
     setAllowList,
     setEnabled,
     unpair,
+    listPeerSessions,
+    attachPeerSession,
   };
 }

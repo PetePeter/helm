@@ -60,6 +60,9 @@ export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Running-session group killer: destructive to host/app lifecycle. A peer with a
   // wildcard `*` allow-list could otherwise batch-kill a whole group.
   'session_group_close',
+  // Remote viewer entry point: a peer driving it would make THIS host attach to
+  // a third machine on the peer's behalf — Remote attaches are never chained.
+  'peer_attach',
   // NOTE: session_close is NOT here — it is handled by the ownership gate below,
   // allowing peers to close only sessions they created via session_create.
 ]);

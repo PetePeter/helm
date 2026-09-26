@@ -31,9 +31,10 @@ import { normalizePeerAddress, splitHostPort } from './peer-address.js';
 /** The minimal PeerLink surface the manager depends on (real PeerLink satisfies). */
 export interface ManagedLink {
   request(method: string, params: unknown, timeoutMs?: number): Promise<unknown>;
+  notify(method: string, params: unknown): void;
   isOnline(): boolean;
   dispose(reason: string): void;
-  on(event: 'offline', listener: (...args: any[]) => void): unknown;
+  on(event: 'offline' | 'notification', listener: (...args: any[]) => void): unknown;
   once(event: 'offline', listener: (...args: any[]) => void): unknown;
 }
 
@@ -226,6 +227,12 @@ export class PeerLinkManager extends EventEmitter {
     return matches.length === 1 ? matches[0].id : peerRef;
   }
 
+  /** The configured peer id `peerRef` names (id or unique alias), or undefined. */
+  peerIdFor(peerRef: string): string | undefined {
+    const peerId = this.resolvePeerRef(peerRef);
+    return this.opts.listPeers().some((p) => p.id === peerId) ? peerId : undefined;
+  }
+
   /** Peers sharing `peerRef` as an alias — used to reject an ambiguous call. */
   private aliasMatches(peerRef: string): PeerConfig[] {
     const needle = peerRef.trim().toLowerCase();
@@ -265,6 +272,17 @@ export class PeerLinkManager extends EventEmitter {
       return Promise.reject(new Error(`No live link to peer ${peerRef}`));
     }
     return entry.link.request(method, params);
+  }
+
+  /**
+   * Fire-and-forget notification to a peer's live link. Returns false when no
+   * live link exists — streams treat that as "peer gone", never as an error.
+   */
+  notify(peerRef: string, method: string, params: unknown): boolean {
+    const entry = this.links.get(this.resolvePeerRef(peerRef));
+    if (!entry || !entry.link.isOnline()) return false;
+    entry.link.notify(method, params);
+    return true;
   }
 
   // ---------------------------------------------------------------- internals
@@ -322,6 +340,11 @@ export class PeerLinkManager extends EventEmitter {
 
     this.links.set(peerId, { link, origin });
     link.once('offline', () => this.onLinkOffline(peerId, link));
+    // Inbound notifications bypass onCall (the MCP gate) by design: consumers
+    // (the remote PTY host/viewer) authorize them against their own state.
+    link.on('notification', (method: string, params: unknown) => {
+      if (this.links.get(peerId)?.link === link) this.emit('peer-notification', { peerId, method, params });
+    });
     this.emit('peer-link:online', { peerId });
   }
 

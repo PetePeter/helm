@@ -200,3 +200,43 @@ describe('session_send_text — local behaviour is unaffected', () => {
     ).rejects.toThrow(/Unknown sender session/);
   });
 });
+
+/**
+ * Remote rows (`peer_attach`): the row's artifacts live with the CLI on the
+ * owning peer, so session-addressed artifact READS for a remote row are
+ * forwarded there under the owner's session id — the renderer, the phone and
+ * local AIs all see the owner's artifacts without knowing the row is remote.
+ */
+describe('session_artifact_* — Remote rows forward to the owning peer', () => {
+  class RemoteAwareService extends FakeService {
+    readonly localReads: string[] = [];
+    constructor(private readonly rows: Record<string, { remote?: { peerId: string; sessionId: string } }>) {
+      super([], (_peer, tool) => ({ forwarded: tool }));
+    }
+    getSession(id: string) { return this.rows[id] ? { id, ...this.rows[id] } : null; }
+    listArtifacts(id: string) { this.localReads.push(id); return []; }
+    readArtifact(id: string) { this.localReads.push(id); return {}; }
+  }
+
+  it('forwards list and get for a remote row with the owner-side session id', async () => {
+    const service = new RemoteAwareService({ 'remote-1': { remote: { peerId: 'mac', sessionId: 'h1' } } });
+    const call = (tool: string, args: Record<string, unknown>) =>
+      callMcpTool(deps(service), tool, args, {});
+
+    await expect(call('session_artifact_list', { sessionId: 'remote-1' })).resolves.toEqual({ forwarded: 'session_artifact_list' });
+    await call('session_artifact_get', { sessionId: 'remote-1', artifactId: 'a1' });
+
+    expect(service.peerCalls).toEqual([
+      { peer: 'mac', tool: 'session_artifact_list', args: { sessionId: 'h1' } },
+      { peer: 'mac', tool: 'session_artifact_get', args: { sessionId: 'h1', artifactId: 'a1' } },
+    ]);
+    expect(service.localReads).toEqual([]);
+  });
+
+  it('a local row is served locally, never forwarded', async () => {
+    const service = new RemoteAwareService({ local: {} });
+    await callMcpTool(deps(service), 'session_artifact_list', { sessionId: 'local' }, {});
+    expect(service.peerCalls).toEqual([]);
+    expect(service.localReads).toEqual(['local']);
+  });
+});

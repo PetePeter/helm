@@ -10,7 +10,7 @@
  * clear "fleet is off" hint rather than a blank tab.
  */
 import { computed, onMounted, ref } from 'vue';
-import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig } from '../../composables/usePeers.js';
+import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig, type PeerSession } from '../../composables/usePeers.js';
 import { getPeerStatusColor } from '../../state-colors.js';
 import PeerAuditModal from '../modals/PeerAuditModal.vue';
 import FleetConfigPanel from './FleetConfigPanel.vue';
@@ -28,6 +28,8 @@ const {
   setAllowList,
   setEnabled,
   unpair,
+  listPeerSessions,
+  attachPeerSession,
 } = usePeers();
 
 function onFleetUpdate(updates: Partial<FleetConfig>): void {
@@ -38,8 +40,32 @@ function onFleetUpdate(updates: Partial<FleetConfig>): void {
 const ALLOW_PRESETS: Array<{ label: string; globs: string[] }> = [
   { label: 'Read-only', globs: ['session_list', 'plan_*', 'directory_list', 'project_list'] },
   { label: 'Sessions', globs: ['session_*'] },
+  { label: 'Remote', globs: ['session_list', 'session_artifact_list', 'session_artifact_get', 'remote.*'] },
   { label: 'All', globs: ['*'] },
 ];
+
+// Remote attach picker — one peer at a time.
+const attachPeerId = ref<string | null>(null);
+const attachSessions = ref<PeerSession[]>([]);
+const attachError = ref('');
+
+async function toggleAttach(peer: ConfiguredPeer): Promise<void> {
+  attachError.value = '';
+  attachSessions.value = [];
+  if (attachPeerId.value === peer.id) { attachPeerId.value = null; return; }
+  attachPeerId.value = peer.id;
+  try {
+    attachSessions.value = await listPeerSessions(peer.id);
+  } catch (err) {
+    attachError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function onAttach(peer: ConfiguredPeer, session: PeerSession): Promise<void> {
+  const result = await attachPeerSession(peer.id, session.id);
+  if (result.ok) attachPeerId.value = null;
+  else attachError.value = result.error ?? 'Attach failed';
+}
 
 const expandedPeerId = ref<string | null>(null);
 const auditVisible = ref(false);
@@ -176,10 +202,28 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
             <span class="peer-toggle-label">{{ peer.enabled ? 'On' : 'Off' }}</span>
           </label>
 
+          <button
+            class="btn btn--secondary btn--sm peer-attach-toggle"
+            type="button"
+            :disabled="!peer.online"
+            title="Drive one of this peer's sessions from here (Remote)"
+            @click="toggleAttach(peer)"
+          >Attach…</button>
           <button class="btn btn--secondary btn--sm peer-allow-toggle" type="button" @click="toggleExpanded(peer.id)">
             Allow-list ({{ peer.allow.length }})
           </button>
           <button class="btn btn--danger btn--sm peer-unpair" type="button" @click="onUnpair(peer)">Unpair</button>
+        </div>
+
+        <div v-if="attachPeerId === peer.id" class="peer-attach-picker">
+          <div v-if="attachError" class="peer-attach-error">{{ attachError }}</div>
+          <div v-else-if="attachSessions.length === 0" class="peers-empty">No sessions on this peer.</div>
+          <div v-for="session in attachSessions" :key="session.id" class="peer-session-row">
+            <span class="peer-alias">{{ session.name }}</span>
+            <span class="peer-direction">{{ session.cliType }}</span>
+            <span class="peer-spacer"></span>
+            <button class="btn btn--primary btn--sm peer-session-attach" type="button" @click="onAttach(peer, session)">Attach</button>
+          </div>
         </div>
 
         <div v-if="expandedPeerId === peer.id" class="peer-allow-editor">
@@ -304,7 +348,8 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
 .peer-enable-input { width: 16px; height: 16px; cursor: pointer; }
 .peer-toggle-label { font-size: 0.78rem; color: var(--text-secondary); }
 
-.peer-allow-editor {
+.peer-allow-editor,
+.peer-attach-picker {
   border-top: 1px solid var(--border);
   padding-top: 8px;
   display: flex;
@@ -333,10 +378,15 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
   background: var(--bg-primary); color: var(--text-primary); font-size: 0.85rem;
 }
 
-.peer-discovered-row {
+.peer-discovered-row,
+.peer-session-row {
   display: flex; align-items: center; gap: 8px;
   border: 1px solid var(--border); border-radius: 6px;
   background: var(--bg-primary); padding: 5px 8px;
+}
+.peer-attach-error {
+  color: var(--danger);
+  font-size: 0.8rem;
 }
 .peers-discovery-state {
   margin-left: auto;

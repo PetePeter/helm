@@ -156,6 +156,14 @@ describe('persistence', () => {
       expect(parsed.sessions[0].createdByPeerId).toBe('desktop-b');
     });
 
+    it('never persists a Remote view — it would be resume-spawned locally on restart', () => {
+      saveSessions([mockSession1, { ...mockSession2, remote: { peerId: 'desktop-b', sessionId: 'h1' } }]);
+
+      const [, content] = (fs.writeFileSync as any).mock.calls[0];
+      const parsed = YAML.parse(content);
+      expect(parsed.sessions.map((s: { id: string }) => s.id)).toEqual([mockSession1.id]);
+    });
+
     it('omits createdByPeerId for locally created sessions', () => {
       saveSessions([mockSession1]);
 

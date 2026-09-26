@@ -27,6 +27,7 @@ export interface SessionCardSession {
   lastActiveAt?: number;
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
+  remote?: { peerId: string; sessionId: string };
   locked?: boolean;
 }
 
@@ -148,12 +149,13 @@ const flashClass = computed(() => {
   if (!props.flashEntry) return '';
   return props.flashEntry.phase === 'solid' ? 'flash-solid' : 'flash-pulse';
 });
-// Sessions opened here by a remote Helm peer are tinted so their origin is
-// obvious on the machine actually running them.
-const isPeerCreated = computed(() => !!props.session.createdByPeerId);
-const peerTitle = computed(() =>
-  props.session.createdByPeerId ? `Opened by peer: ${props.session.createdByPeerId}` : undefined,
-);
+// Rows tied to another Helm share one tint: sessions a peer opened HERE, and
+// Remote rows whose CLI actually runs on a peer.
+const isPeerCreated = computed(() => !!props.session.createdByPeerId || !!props.session.remote);
+const peerTitle = computed(() => {
+  if (props.session.remote) return `Remote — running on peer: ${props.session.remote.peerId}`;
+  return props.session.createdByPeerId ? `Opened by peer: ${props.session.createdByPeerId}` : undefined;
+});
 const stateLabel = computed(() => STATE_LABELS[props.sessionState] || '💤 Idle');
 const eyeIcon = computed(() => props.isHiddenFromOverview ? '👁‍🗨' : '👁');
 const eyeTitle = computed(() => props.isHiddenFromOverview ? 'Show in overview' : 'Hide from overview');
