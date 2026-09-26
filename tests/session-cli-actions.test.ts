@@ -70,6 +70,22 @@ describe('session_compact', () => {
     expect(deliveredText()).toBe('/compact {Enter}');
   });
 
+  // Regression: the shipped defaults said $instructions, and a raw substring
+  // replace of $instruction left a stray "s" — "/compact s" wedged Codex.
+  it('treats $instructions as the same placeholder, leaving no stray suffix', async () => {
+    const { service } = makeService({ helmActions: { compact: '/compact $instructions{Enter}' } });
+    await service.compactSession('s1', {});
+    expect(deliveredText()).toBe('/compact {Enter}');
+    await service.compactSession('s1', { instruction: 'focus' });
+    expect(deliveredText(1)).toBe('/compact focus{Enter}');
+  });
+
+  it('leaves unknown $placeholders untouched rather than splicing a known prefix', async () => {
+    const { service } = makeService({ helmActions: { compact: '/compact $instructionFoo{Enter}' } });
+    await service.compactSession('s1', { instruction: 'x' });
+    expect(deliveredText()).toBe('/compact $instructionFoo{Enter}');
+  });
+
   it('throws when the CLI has no compact action configured', async () => {
     const { service } = makeService({ helmActions: {} });
     await expect(service.compactSession('s1', {})).rejects.toThrow(/no "compact" action configured/);

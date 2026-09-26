@@ -19,7 +19,7 @@
   largeTextAsTempFile: true
   helmActions:
     clear: /clear{Enter}
-    compact: /compact $instructions{Enter}
+    compact: /compact $instruction{Enter}
     export: /export $path{Enter} {Wait 5000}
   # Which CLI family this tool speaks — the first-class provider mapping the
   # Tool mapping dropdown edits (auto-migrated onto older configs on load).
@@ -100,7 +100,7 @@
   largeTextAsTempFile: true
   helmActions:
     clear: /clear{Enter}
-    compact: /compact $instructions{Enter}
+    compact: /compact $instruction{Enter}
     export: /export $path{Enter} {Wait 5000}
   provider: copilot
   hooks:
