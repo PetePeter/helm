@@ -362,9 +362,17 @@ class VoiceCallService : Service() {
         super.onDestroy()
     }
 
-    /** Losing focus — a GSM call, another app's call — ends ours. */
+    /**
+     * A permanent loss (another app's call) ends ours. A transient loss is
+     * routine — our own SpeechRecognizer takes transient focus every time it
+     * starts listening — so it only ends the call when the phone is actually
+     * ringing or in a GSM call.
+     */
     private fun onFocusChange(change: Int) {
-        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+        val phoneCall = audio.mode == AudioManager.MODE_RINGTONE || audio.mode == AudioManager.MODE_IN_CALL
+        val ends = change == AudioManager.AUDIOFOCUS_LOSS ||
+            (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT && phoneCall)
+        if (ends) {
             HelmLog.i(HelmLog.UI, "voice call lost audio focus ($change), hanging up")
             controller?.hangUp()
         }
