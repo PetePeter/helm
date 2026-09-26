@@ -129,6 +129,12 @@ class CallController(
 
     override fun onError(error: SpeechError) {
         if (phase != CallPhase.Listening) return
+        // Some recognisers end an utterance with NO_MATCH or a timeout even
+        // after streaming partials; what was heard is still the user's words.
+        if (error.retryable && _state.value.heard.isNotBlank()) {
+            onFinal("")
+            return
+        }
         if (error.retryable) {
             // Silence, a busy recogniser, a network stumble: a call keeps its line open.
             if (standby == null) {

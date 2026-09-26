@@ -40,6 +40,7 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             existing.startListening(recognitionIntent())
             return
         }
+        HelmLog.d(HelmLog.UI) { "speech recogniser created" }
         val created = SpeechRecognizer.createSpeechRecognizer(context).apply {
             setRecognitionListener(Bridge(listener, ::invalidate))
         }
@@ -63,7 +64,8 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
     /**
      * An error can leave the platform recogniser unwilling to listen again;
      * drop it so the next start() builds a fresh one. Called by the bridge
-     * AFTER the error is delivered, so the controller always hears it first.
+     * BEFORE the error is delivered, so a start() from inside onError gets
+     * the fresh instance.
      */
     private fun invalidate() {
         recognizer?.destroy()
@@ -112,8 +114,12 @@ class AndroidSpeechEngine(private val context: Context) : SpeechEngine {
             // difference between "no language pack" and "service broken" is
             // only visible in this number. A code is a type, never a payload.
             HelmLog.w(HelmLog.UI, "speech recognition failed with code $error")
-            out.onError(speechErrorOf(error))
+            // Drop the broken recogniser BEFORE the controller hears the
+            // error: a call restarts listening from inside onError, and a
+            // restart on the old instance was destroyed straight after —
+            // the mic went deaf after the first NO_MATCH.
             onFailed()
+            out.onError(speechErrorOf(error))
         }
 
         override fun onBeginningOfSpeech() = Unit

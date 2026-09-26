@@ -51,16 +51,23 @@ class AndroidTtsEngine(
         )
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
-            override fun onDone(utteranceId: String?) = finished(utteranceId)
+            override fun onDone(utteranceId: String?) {
+                HelmLog.d(HelmLog.UI) { "text to speech done $utteranceId" }
+                finished(utteranceId)
+            }
 
             @Deprecated("Required override on older APIs")
-            override fun onError(utteranceId: String?) = finished(utteranceId)
-            override fun onError(utteranceId: String?, errorCode: Int) = finished(utteranceId)
+            override fun onError(utteranceId: String?) = onError(utteranceId, -1)
+            override fun onError(utteranceId: String?, errorCode: Int) {
+                HelmLog.w(HelmLog.UI, "text to speech failed on $utteranceId with code $errorCode")
+                finished(utteranceId)
+            }
         })
     }
 
     override fun speak(text: String, onDone: () -> Unit) {
         if (!initialised) {
+            HelmLog.d(HelmLog.UI) { "text to speech not initialised yet; the line waits" }
             waiting = text to onDone
             return
         }
@@ -71,6 +78,7 @@ class AndroidTtsEngine(
             return
         }
         val id = "call-${sequence++}"
+        HelmLog.d(HelmLog.UI) { "text to speech speaking $id, ${text.length} chars" }
         owed = id to onDone
         if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) != TextToSpeech.SUCCESS) {
             HelmLog.w(HelmLog.UI, "text to speech refused an utterance")

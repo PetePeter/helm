@@ -166,7 +166,11 @@ Why each rule exists:
 - **Mute** = heard but not sent.
 - **Send failures are spoken** ("That did not send.") and the call keeps going.
 - **Retryable STT errors** (silence, busy, network) keep the line open; a denied
-  microphone or missing recogniser ends the call instead of looping.
+  microphone or missing recogniser ends the call instead of looping. A
+  retryable error after partials sends what was heard first — some
+  recognisers close an utterance with NO_MATCH rather than a final. The
+  engine drops a failed recogniser *before* reporting the error, so the
+  restart issued from inside `onError` gets a fresh instance.
 
 `CallFeed` turns the target thread into events: rows present at call start are
 history and never read out; each new agent row is a reply; each own row that

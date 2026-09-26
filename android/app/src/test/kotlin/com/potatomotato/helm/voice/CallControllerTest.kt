@@ -180,6 +180,30 @@ class CallControllerTest {
     }
 
     @Test
+    fun `no match after partials sends what was heard and keeps listening`() {
+        controller.start()
+
+        speech.emitPartial("check the build")
+        speech.emitError(SpeechError.NoMatch)
+
+        assertEquals(listOf("check the build"), sent)
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+        assertEquals(2, speech.startCount)
+    }
+
+    @Test
+    fun `no match after partials while muted sends nothing`() {
+        controller.start()
+        controller.setMuted(true)
+
+        speech.emitPartial("private words")
+        speech.emitError(SpeechError.NoMatch)
+
+        assertTrue(sent.isEmpty())
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+    }
+
+    @Test
     fun `a denied microphone ends the call rather than looping`() {
         controller.start()
 

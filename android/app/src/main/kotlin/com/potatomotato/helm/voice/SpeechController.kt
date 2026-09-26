@@ -252,6 +252,7 @@ data class VoiceState(
  * logic lives on this side, Android classes stay on the other.
  */
 interface SpeechEngine {
+    /** Legal from inside [Listener.onError]: a call restarts listening there. */
     fun start(listener: Listener)
 
     /** Finish the utterance and deliver a final result. */

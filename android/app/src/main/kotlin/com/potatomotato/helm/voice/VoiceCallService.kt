@@ -247,6 +247,9 @@ class VoiceCallService : Service() {
             launch {
                 client.chats.threads.map { it[target].orEmpty() }.distinctUntilChanged().collect { thread ->
                     val events = feed.next(thread)
+                    if (events.replies.isNotEmpty()) {
+                        HelmLog.i(HelmLog.UI, "call target replied ${events.replies.size} line(s); queued to speak")
+                    }
                     events.replies.forEach(call::onReply)
                     repeat(events.failures) { call.onSendFailed() }
                 }
