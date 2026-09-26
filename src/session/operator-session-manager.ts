@@ -5,7 +5,8 @@
  * ensure() is idempotent and runs on startup and on every operator-settings
  * change. It never kills anything: disabling the setting demotes the operator
  * (role cleared, so clients stop routing to it), as does a surplus duplicate —
- * the session stays open, so no user conversation is ever lost.
+ * the session stays open, so no user conversation is ever lost. Changing the
+ * operator's CLI type demotes the old operator and spawns one on the new type.
  *
  * It also self-compacts the operator every `compactEveryMinutes`, but only when
  * something happened since the last compaction AND the operator is idle now;
@@ -82,7 +83,13 @@ export class OperatorSessionManager extends EventEmitter {
     }
     if (!config.cliType) return null;
 
-    const [keep, ...surplus] = operators;
+    // An operator on a CLI type other than the chosen one is replaced: the
+    // setting changed, and resuming the old CLI would silently ignore it.
+    const current = operators.filter(op => op.cliType === config.cliType);
+    for (const stale of operators) {
+      if (stale.cliType !== config.cliType) this.demote(stale, `CLI type changed to ${config.cliType}`);
+    }
+    const [keep, ...surplus] = current;
     for (const extra of surplus) this.demote(extra, `duplicate; keeping ${keep.id}`);
 
     const sessionId = keep?.id ?? this.spawn(config);
@@ -174,7 +181,8 @@ export class OperatorSessionManager extends EventEmitter {
 
   private demote(session: SessionInfo, reason: string): void {
     logger.warn(`[Operator] Demoted operator ${session.id} (${reason})`);
-    this.deps.sessionManager.updateSession(session.id, { role: undefined });
+    // Unlocked too, so the user can close the old conversation when done with it.
+    this.deps.sessionManager.updateSession(session.id, { role: undefined, locked: false });
   }
 
   /** Oldest first, so the longest-lived conversation wins a duplicate. */

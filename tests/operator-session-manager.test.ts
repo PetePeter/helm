@@ -77,12 +77,27 @@ describe('OperatorSessionManager.ensure', () => {
 
   it('keeps the oldest of duplicate operators and demotes the rest, without spawning', () => {
     const { sessionManager, operator, spawns } = setup(ENABLED, [
-      { id: 'newer', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', createdAt: 200 },
-      { id: 'older', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', createdAt: 100 },
+      { id: 'newer', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', createdAt: 200 },
+      { id: 'older', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', createdAt: 100 },
     ]);
     expect(operator.ensure()).toBe('older');
     expect(spawns).toHaveLength(0);
     expect(operators(sessionManager).map(s => s.id)).toEqual(['older']);
+  });
+
+  it('replaces an operator running on a different CLI type than the one now chosen', () => {
+    const { sessionManager, operator, spawns } = setup(ENABLED, [
+      { id: 'old', name: 'Helm', cliType: 'cli-uuid-OLD', processId: 1, role: 'operator', locked: true },
+    ]);
+    const id = operator.ensure();
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].cliType).toBe('cli-uuid-1');
+    expect(operators(sessionManager).map(s => s.id)).toEqual([id]);
+    // Demoted, not closed, and no longer locked so the user can close it.
+    expect(sessionManager.getSession('old')).toMatchObject({ role: undefined, locked: false });
+    // Settles: a second ensure keeps the new one.
+    expect(operator.ensure()).toBe(id);
+    expect(spawns).toHaveLength(1);
   });
 
   it('on disable, demotes the existing operator without closing it', () => {

@@ -110,7 +110,9 @@ graph LR
 - **Settings.** `settings.yaml → operator: { enabled, cliType, workingDir, compactEveryMinutes }`,
   edited in Settings → 🎙 Operator. `cliType` is a dropdown of your own CLI
   types — ids are per-machine UUIDs, so there is no shipped default and
-  nothing spawns until one is chosen.
+  nothing spawns until one is chosen. Changing `cliType` takes effect at once
+  (and on restart): the operator on the old type is demoted and unlocked, not
+  closed, and a fresh operator spawns on the new type.
 - **Persistence.** `SessionInfo.role` is in `serializeSession`'s allow-list
   (invariant 6), in the renderer's session-refresh allow-list, and in
   `session_list`/`session_get` summaries. An unknown role drops on load.
