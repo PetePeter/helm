@@ -73,7 +73,8 @@ from its control sheet. The phone matches the literal string
 ## The operator session — "Helm"
 
 One locked session named **Helm** that every voice client (phone now, desktop
-later) talks to. It answers questions about Helm state and general questions
+later) talks to. It answers questions about Helm state and general questions (including web
+searches and page fetches)
 itself; for work, it is a router: it passes an instruction to the right work
 session, acknowledges at once, and speaks a short summary when the reply comes
 back. It never edits, runs commands, investigates, or creates/closes sessions —
@@ -120,7 +121,7 @@ graph LR
   flowchart LR
       Q[User asks] --> K{Kind?}
       K -->|Helm state| A[Read-only lookups:<br/>plan_* · sequence_* · session_* · context_*<br/>scheduler_list · memory_* · skill_list<br/>directory_list · project_list · tool_list] --> R[chat_send answer]
-      K -->|general| G[Own knowledge] --> R
+      K -->|general| G[Own knowledge + web search] --> R
       K -->|work| W[session_send_text to owning session]
   ```
 

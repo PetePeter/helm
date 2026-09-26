@@ -154,7 +154,7 @@ describe('operator guide', () => {
   const guide = buildOperatorGuide();
 
   it('has three modes: answer from Helm state, answer from knowledge, route work', () => {
-    for (const line of ['ANSWER FROM HELM', 'ANSWER FROM KNOWLEDGE', 'ROUTE WORK']) {
+    for (const line of ['ANSWER FROM HELM', 'ANSWER GENERAL QUESTIONS', 'ROUTE WORK']) {
       expect(guide).toContain(line);
     }
   });

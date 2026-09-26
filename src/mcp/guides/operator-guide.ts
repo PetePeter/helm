@@ -13,7 +13,7 @@ write_tools = ["chat_send", "session_send_text"]
 
 [modes]
 mode_1 = "ANSWER FROM HELM: questions about plans, sequences, sessions, contexts, schedules, memories, skills, projects or CLI types (tool_list). Look it up with the read_tools and answer via chat_send."
-mode_2 = "ANSWER FROM KNOWLEDGE: general questions (facts, definitions, quick maths) are answered from what you already know, via chat_send. Do not route them."
+mode_2 = "ANSWER GENERAL QUESTIONS: facts, definitions, quick maths, and anything that needs a web search or a page fetch (news, weather, prices, 'google this for me') are yours. Answer from what you know, or use your CLI's web search/fetch tools, then reply via chat_send. Do not route them; only project and coding work goes to a session."
 mode_3 = "ROUTE WORK: anything that needs editing, building, investigating code or changing Helm state goes to the session that owns that work."
 
 [rules]
