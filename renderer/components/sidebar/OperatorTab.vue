@@ -7,9 +7,16 @@ import { onMounted, ref } from 'vue';
 import { configClient } from '../../ipc/clients.js';
 import { getCliDisplayName } from '../../utils.js';
 
-interface OperatorConfig { enabled: boolean; cliType: string; workingDir: string }
+interface OperatorConfig { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number }
 
-const config = ref<OperatorConfig>({ enabled: false, cliType: '', workingDir: '' });
+const config = ref<OperatorConfig>({ enabled: false, cliType: '', workingDir: '', compactEveryMinutes: 60 });
+const COMPACT_CHOICES = [
+  { minutes: 0, label: 'Off' },
+  { minutes: 30, label: 'Every 30 minutes' },
+  { minutes: 60, label: 'Every hour' },
+  { minutes: 120, label: 'Every 2 hours' },
+  { minutes: 240, label: 'Every 4 hours' },
+];
 const cliTypes = ref<string[]>([]);
 const dirs = ref<Array<{ name: string; path: string }>>([]);
 const status = ref('');
@@ -75,6 +82,20 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
       <select class="btn btn--secondary btn--sm focusable" :value="config.workingDir" @change="save({ workingDir: selectValue($event) })">
         <option value="">CLI default</option>
         <option v-for="dir in dirs" :key="dir.path" :value="dir.path">{{ dir.name }}</option>
+      </select>
+    </label>
+
+    <label class="operator-setting">
+      <span>Auto-compact when idle</span>
+      <select
+        class="btn btn--secondary btn--sm focusable"
+        :value="config.compactEveryMinutes"
+        @change="save({ compactEveryMinutes: Number(selectValue($event)) })"
+      >
+        <option v-if="!COMPACT_CHOICES.some(c => c.minutes === config.compactEveryMinutes)" :value="config.compactEveryMinutes">
+          Every {{ config.compactEveryMinutes }} minutes
+        </option>
+        <option v-for="choice in COMPACT_CHOICES" :key="choice.minutes" :value="choice.minutes">{{ choice.label }}</option>
       </select>
     </label>
 

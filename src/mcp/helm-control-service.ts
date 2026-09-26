@@ -1516,7 +1516,7 @@ export class HelmControlService extends EventEmitter {
     return this.sessionDelivery.clearSession(sessionRef, options);
   }
 
-  async compactSession(sessionRef: string, options?: { instruction?: string }) {
+  async compactSession(sessionRef: string, options?: { instruction?: string; handover?: string }) {
     return this.sessionDelivery.compactSession(sessionRef, options);
   }
 

@@ -1370,12 +1370,18 @@ describe('ConfigLoader', () => {
   describe('operator config', () => {
     it('defaults to disabled with no CLI type, and round-trips through settings.yaml', () => {
       loader.load();
-      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', workingDir: '' });
-      loader.setOperatorConfig({ enabled: true, cliType: 'uuid-1' });
-      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '' });
+      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', workingDir: '', compactEveryMinutes: 60 });
+      loader.setOperatorConfig({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0 });
+      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0 });
       const loader2 = new ConfigLoader(TEST_DIR);
       loader2.load();
-      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '' });
+      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0 });
+    });
+
+    it('falls back to 60 for an invalid compactEveryMinutes', () => {
+      loader.load();
+      loader.setOperatorConfig({ compactEveryMinutes: -5 });
+      expect(loader.getOperatorConfig().compactEveryMinutes).toBe(60);
     });
   });
 

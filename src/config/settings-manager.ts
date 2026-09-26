@@ -52,6 +52,7 @@ export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
   enabled: false,
   cliType: '',
   workingDir: '',
+  compactEveryMinutes: 60,
 };
 
 export class SettingsManager {

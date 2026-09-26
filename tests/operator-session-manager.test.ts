@@ -25,9 +25,11 @@ const { saveSessions, loadSessions } = await import('../src/session/session-pers
 const { buildOperatorGuide } = await import('../src/mcp/guides/operator-guide.js');
 const { HelmSessionService } = await import('../src/mcp/services/helm-session-service.js');
 
-type Config = { enabled: boolean; cliType: string; workingDir: string };
+type Config = { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes?: number };
 
-function setup(config: Config, existing: SessionInfo[] = []) {
+function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>) {
+  const compacts: Array<{ sessionId: string; handover: string }> = [];
+  const pendingHandovers = new Set<string>();
   const sessionManager = new SessionManager();
   for (const s of existing) sessionManager.addSession({ ...s });
   const spawns: Array<{ cliType: string; cwd?: string; sessionName: string; contextText: string }> = [];
@@ -41,11 +43,13 @@ function setup(config: Config, existing: SessionInfo[] = []) {
       sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}` });
       return { sessionId: id };
     },
+    compact: compact ?? (async (sessionId, handover) => { compacts.push({ sessionId, handover }); }),
+    isHandoverPending: (sessionId) => pendingHandovers.has(sessionId),
   });
-  return { sessionManager, operator, spawns };
+  return { sessionManager, operator, spawns, compacts, pendingHandovers };
 }
 
-const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', workingDir: 'X:/home' };
+const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', workingDir: 'X:/home', compactEveryMinutes: 0 };
 const operators = (sm: InstanceType<typeof SessionManager>) => sm.getAllSessions().filter(s => s.role === 'operator');
 
 describe('OperatorSessionManager.ensure', () => {
@@ -176,5 +180,148 @@ describe('operator guide', () => {
     ]) {
       expect(guide).toContain(line);
     }
+  });
+});
+
+describe('hourly self-compaction (fake clock)', () => {
+  const MIN = 60_000;
+  const HOURLY: Config = { ...ENABLED, compactEveryMinutes: 60 };
+  let ctx: ReturnType<typeof setup>;
+  let opId: string;
+
+  beforeEach(() => {
+    persisted = [];
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+  });
+  afterEach(() => {
+    ctx?.operator.dispose();
+    vi.useRealTimers();
+  });
+
+  function start(config: Config = HOURLY) {
+    ctx = setup(config);
+    opId = ctx.operator.ensure()!;
+  }
+  const touch = (patch: Partial<SessionInfo> = {}) =>
+    ctx.sessionManager.updateSession(opId, { lastOutputAt: Date.now(), activityLevel: 'inactive', ...patch });
+  const advance = (minutes: number) => vi.advanceTimersByTimeAsync(minutes * MIN);
+
+  it('compacts an idle operator that had activity, once, with the operator guide as handover', async () => {
+    start();
+    touch();
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.compacts[0].sessionId).toBe(opId);
+    expect(ctx.compacts[0].handover).toContain('You are Helm, the operator');
+    expect(ctx.compacts[0].handover).toContain(buildOperatorGuide());
+  });
+
+  it('skips an operator with no activity since the last compaction', async () => {
+    start();
+    touch();
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(1);
+    // The compaction's own echo (and the handover reply) is not "activity".
+    touch();
+    await advance(30);
+    await advance(60 * 3);
+    expect(ctx.compacts).toHaveLength(1);
+  });
+
+  it('compacts again after fresh activity in a later hour', async () => {
+    start();
+    touch();
+    await advance(60);
+    await advance(30); // settle: rebaseline
+    await advance(10);
+    touch();
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(2);
+  });
+
+  it.each([
+    ['active dot', { activityLevel: 'active' as const }],
+    ['implementing', { aiagentState: 'implementing' as const }],
+  ])('defers while busy (%s) and retries every 30 min until idle', async (_label, busy) => {
+    start();
+    touch(busy);
+    await advance(60);
+    await advance(30);
+    expect(ctx.compacts).toHaveLength(0);
+    ctx.sessionManager.updateSession(opId, { activityLevel: 'inactive', aiagentState: 'idle' });
+    await advance(30);
+    expect(ctx.compacts).toHaveLength(1);
+  });
+
+  it('treats a pending handover as busy', async () => {
+    start();
+    touch();
+    ctx.pendingHandovers.add(opId);
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(0);
+    ctx.pendingHandovers.delete(opId);
+    await advance(30);
+    expect(ctx.compacts).toHaveLength(1);
+  });
+
+  it('treats an open relay (operator sent with expectsResponse, no reply yet) as busy', async () => {
+    start();
+    touch();
+    const flight = { flightId: 'f1', senderSessionName: 'Helm', recipientName: 'w', isReply: false };
+    ctx.operator.noteFlight({ ...flight, senderSessionId: opId, recipientSessionId: 'worker', expectsResponse: true });
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(0);
+    ctx.operator.noteFlight({ ...flight, flightId: 'f2', senderSessionId: 'worker', recipientSessionId: opId, expectsResponse: false });
+    await advance(30);
+    expect(ctx.compacts).toHaveLength(1);
+  });
+
+  it('never compacts when compactEveryMinutes is 0', async () => {
+    start({ ...HOURLY, compactEveryMinutes: 0 });
+    touch();
+    await advance(60 * 5);
+    expect(ctx.compacts).toHaveLength(0);
+  });
+
+  it('stops the timer when the operator is disabled', async () => {
+    const config = { ...HOURLY };
+    ctx = setup(config);
+    opId = ctx.operator.ensure()!;
+    touch();
+    config.enabled = false;
+    ctx.operator.ensure();
+    await advance(60 * 3);
+    expect(ctx.compacts).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['disabled', (config: Config) => { config.enabled = false; ctx.operator.ensure(); }],
+    ['disposed', () => ctx.operator.dispose()],
+  ])('does not resurrect the timer when %s while a compact is in flight', async (_label, stop) => {
+    const config = { ...HOURLY };
+    let release!: () => void;
+    let calls = 0;
+    ctx = setup(config, [], () => { calls++; return new Promise<void>(resolve => { release = resolve; }); });
+    opId = ctx.operator.ensure()!;
+    touch();
+    await advance(60);
+    expect(calls).toBe(1);
+    stop(config);
+    release();
+    await advance(60 * 5);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(calls).toBe(1);
+  });
+
+  it('re-running ensure() does not stack timers', async () => {
+    start();
+    ctx.operator.ensure();
+    ctx.operator.ensure();
+    touch();
+    await advance(60);
+    expect(ctx.compacts).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(1);
   });
 });

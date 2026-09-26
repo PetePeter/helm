@@ -224,6 +224,19 @@ When a `wait-until` fires and a scheduled send is pending, the session card show
 | `tools:getPatterns(cliType)` | Return all pattern rules for a CLI type |
 | `pattern:cancelSchedule(sessionId)` | Cancel the pending `wait-until` for a session |
 
+## Operator (`operator`)
+
+`settings.yaml → operator` configures the Helm voice operator singleton. Edit it in Settings → Operator.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Keep one locked "Helm" operator session running |
+| `cliType` | `''` | CLI type id to run it on. Empty means nothing spawns |
+| `workingDir` | `''` | Spawn directory. Empty means the CLI's default |
+| `compactEveryMinutes` | `60` | Idle self-compaction cadence. `0` = off. It skips when there's been no activity and retries every 30 min while busy |
+
+See [voice-operator.md](voice-operator.md#the-operator-session--helm).
+
 ## Sequence Parser Syntax
 
 Used by both `sequence` bindings and `initialPrompt`:

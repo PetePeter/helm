@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
-import { getMessageFlightTimeoutMs } from '../../session/message-flight.js';
+import { getMessageFlightTimeoutMs, type SessionMessageFlight } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
 import { PtyManager } from '../../session/pty-manager.js';
 import { StateDetector } from '../../session/state-detector.js';
@@ -306,6 +306,9 @@ export function registerIPCHandlers(
   // Message-flight gate: every enveloped session_send_text broadcasts a
   // flight to all windows; the paste is held until a renderer acks the
   // landing (the delivery service enforces the timeout release).
+  // Rebound once the operator manager exists (after session restore), so the
+  // flight sink can feed its open-relay tracking.
+  let noteOperatorFlight: (flight: SessionMessageFlight) => void = () => {};
   const pendingFlightAcks = new Map<string, () => void>();
   ipcMain.handle('session:message-flight-ack', (_event, flightId: unknown) => {
     if (typeof flightId === 'string') {
@@ -315,6 +318,7 @@ export function registerIPCHandlers(
     return { ok: true };
   });
   helmControlService.setMessageFlightSink(flight => new Promise<void>(resolve => {
+    noteOperatorFlight(flight);
     pendingFlightAcks.set(flight.flightId, resolve);
     for (const window of windowManager.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send('session:message-flight', flight);
@@ -473,6 +477,8 @@ export function registerIPCHandlers(
   // Voice operator singleton (docs/voice-operator.md). Runs after
   // restoreSessions, so a persisted operator is found and left for the
   // renderer's normal auto-resume; only a missing one is spawned here.
+  // Rebound once HandoverDelivery exists further down; until then nothing is pending.
+  let isHandoverPending: (sessionId: string) => boolean = () => false;
   const operatorSessionManager = new OperatorSessionManager({
     sessionManager,
     getConfig: () => configLoader.getOperatorConfig(),
@@ -486,7 +492,10 @@ export function registerIPCHandlers(
       contextText,
       contextDeliveryContext: 'background',
     }),
+    compact: (sessionId, handover) => helmControlService.compactSession(sessionId, { handover }),
+    isHandoverPending: (sessionId) => isHandoverPending(sessionId),
   });
+  noteOperatorFlight = (flight) => operatorSessionManager.noteFlight(flight);
   setupOperatorHandlers(configLoader, operatorSessionManager);
   try {
     operatorSessionManager.ensure();
@@ -599,6 +608,7 @@ export function registerIPCHandlers(
     },
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
+  isHandoverPending = (sessionId) => handoverDelivery.isPending(sessionId);
   const cleanupHandover = setupHandoverHandlers(handoverDelivery, windowManager);
 
   // G3: hook-reported truth. The tracker turns canonical hook events into the
@@ -1130,6 +1140,7 @@ export function registerIPCHandlers(
       hookTracker.dispose();
       cleanupHandover();
       handoverDelivery.dispose();
+      operatorSessionManager.dispose();
       stateDetector.dispose();
       patternMatcher.dispose();
       notificationManager.dispose();

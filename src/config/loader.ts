@@ -342,6 +342,14 @@ export interface OperatorConfig {
   cliType: string;
   /** Working dir the operator spawns in; empty = the CLI's default. */
   workingDir: string;
+  /** Idle self-compaction cadence in minutes; 0 = off. */
+  compactEveryMinutes: number;
+}
+
+function normalizeCompactMinutes(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : DEFAULT_OPERATOR_CONFIG.compactEveryMinutes;
 }
 
 export interface EditorPrefs {
@@ -1192,6 +1200,7 @@ export class ConfigLoader {
       enabled: o?.enabled === true,
       cliType: typeof o?.cliType === 'string' ? o.cliType : DEFAULT_OPERATOR_CONFIG.cliType,
       workingDir: typeof o?.workingDir === 'string' ? o.workingDir : DEFAULT_OPERATOR_CONFIG.workingDir,
+      compactEveryMinutes: normalizeCompactMinutes(o?.compactEveryMinutes),
     };
   }
 
@@ -1203,6 +1212,7 @@ export class ConfigLoader {
       enabled: next.enabled === true,
       cliType: typeof next.cliType === 'string' ? next.cliType.trim() : '',
       workingDir: typeof next.workingDir === 'string' ? next.workingDir.trim() : '',
+      compactEveryMinutes: normalizeCompactMinutes(next.compactEveryMinutes),
     };
     this.saveSettings();
   }

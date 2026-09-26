@@ -6,15 +6,32 @@
  * change. It never kills anything: disabling the setting demotes the operator
  * (role cleared, so clients stop routing to it), as does a surplus duplicate —
  * the session stays open, so no user conversation is ever lost.
+ *
+ * It also self-compacts the operator every `compactEveryMinutes`, but only when
+ * something happened since the last compaction AND the operator is idle now;
+ * busy → retry every 30 min. The operator guide is the handover, so rule
+ * updates apply after every compaction.
  */
 import { EventEmitter } from 'node:events';
 import type { OperatorConfig } from '../config/loader.js';
 import type { SessionInfo } from '../types/session.js';
 import type { SessionManager } from './manager.js';
+import type { SessionMessageFlight } from './message-flight.js';
 import { buildOperatorGuide } from '../mcp/guides/operator-guide.js';
 import { logger } from '../utils/logger.js';
 
 export const OPERATOR_SESSION_NAME = 'Helm';
+
+const MINUTE_MS = 60_000;
+/** Busy-retry cadence (user-specified). Also the settle delay after a compaction. */
+export const OPERATOR_COMPACT_RETRY_MS = 30 * MINUTE_MS;
+/** A relay whose reply never came stops blocking compaction after this long. */
+const OPEN_RELAY_MAX_AGE_MS = 2 * 60 * MINUTE_MS;
+
+export function buildOperatorCompactHandover(): string {
+  return 'Your context was just compacted. You are Helm, the operator. Any earlier relays are closed; treat late replies as new requests. '
+    + 'Re-read your rules below and follow them from now on.\n\n' + buildOperatorGuide();
+}
 
 export interface OperatorSpawnParams {
   cliType: string;
@@ -29,9 +46,23 @@ export interface OperatorSessionManagerDeps {
   getConfig: () => OperatorConfig;
   /** Fresh spawn through the shared configured-session path. */
   spawn: (params: OperatorSpawnParams) => { sessionId: string };
+  /** The shared session_compact path (arms the handover, writes the compact sequence). */
+  compact: (sessionId: string, handover: string) => Promise<unknown>;
+  isHandoverPending: (sessionId: string) => boolean;
 }
 
 export class OperatorSessionManager extends EventEmitter {
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private timerIntervalMs = 0;
+  /** Bumped on every clear, so a tick whose compact outlived a dispose/disable/interval change does not reschedule. */
+  private timerGeneration = 0;
+  /** lastOutputAt already accounted for; in memory, so a restart counts old activity once. */
+  private activityBaseline = 0;
+  /** Set by a compaction: the next idle observation rebaselines past its own echo. */
+  private settling = false;
+  /** recipientSessionId → sentAt, for operator sends that expect a reply. */
+  private readonly openRelays = new Map<string, number>();
+
   constructor(private readonly deps: OperatorSessionManagerDeps) {
     super();
   }
@@ -44,6 +75,7 @@ export class OperatorSessionManager extends EventEmitter {
   ensure(): string | null {
     const config = this.deps.getConfig();
     const operators = this.findOperators();
+    this.syncCompactTimer(config);
     if (!config.enabled) {
       for (const op of operators) this.demote(op, 'operator disabled');
       return null;
@@ -62,6 +94,82 @@ export class OperatorSessionManager extends EventEmitter {
   /** The live operator's session id, or null. Read-only: never spawns or claims. */
   getOperatorId(): string | null {
     return this.findOperators()[0]?.id ?? null;
+  }
+
+  /** Track operator relays: a send expecting a reply opens one, the recipient's next message closes it. */
+  noteFlight(flight: SessionMessageFlight): void {
+    const operatorId = this.getOperatorId();
+    if (!operatorId) return;
+    if (flight.senderSessionId === operatorId && flight.expectsResponse) {
+      this.openRelays.set(flight.recipientSessionId, Date.now());
+    } else if (flight.recipientSessionId === operatorId) {
+      this.openRelays.delete(flight.senderSessionId);
+    }
+  }
+
+  dispose(): void {
+    this.clearTimer();
+  }
+
+  private syncCompactTimer(config: OperatorConfig): void {
+    const intervalMs = config.enabled ? config.compactEveryMinutes * MINUTE_MS : 0;
+    if (intervalMs === this.timerIntervalMs && (this.timer !== null) === (intervalMs > 0)) return;
+    this.clearTimer();
+    this.timerIntervalMs = intervalMs;
+    if (intervalMs > 0) this.schedule(intervalMs);
+  }
+
+  private clearTimer(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.timerIntervalMs = 0;
+    this.timerGeneration++;
+  }
+
+  private schedule(delayMs: number): void {
+    this.timer = setTimeout(() => { void this.tick(); }, delayMs);
+    this.timer.unref?.();
+  }
+
+  private async tick(): Promise<void> {
+    const generation = this.timerGeneration;
+    const delayMs = await this.checkCompaction();
+    if (generation !== this.timerGeneration || this.timerIntervalMs <= 0 || delayMs <= 0) return;
+    this.schedule(delayMs);
+  }
+
+  /** One compaction check; returns the delay until the next. */
+  private async checkCompaction(): Promise<number> {
+    const id = this.getOperatorId();
+    const session = id ? this.deps.sessionManager.getSession(id) : undefined;
+    if (!id || !session) return this.timerIntervalMs;
+    if (this.isBusy(session)) return OPERATOR_COMPACT_RETRY_MS;
+    const lastOutputAt = session.lastOutputAt ?? 0;
+    if (this.settling) {
+      this.settling = false;
+      this.activityBaseline = lastOutputAt;
+      return this.timerIntervalMs;
+    }
+    if (lastOutputAt <= this.activityBaseline) return this.timerIntervalMs;
+    try {
+      await this.deps.compact(id, buildOperatorCompactHandover());
+      this.settling = true;
+      logger.info(`[Operator] Compacted operator ${id}`);
+    } catch (error) {
+      logger.warn(`[Operator] Compaction of ${id} failed: ${error}`);
+    }
+    return OPERATOR_COMPACT_RETRY_MS;
+  }
+
+  private isBusy(session: SessionInfo): boolean {
+    const now = Date.now();
+    for (const [recipient, sentAt] of this.openRelays) {
+      if (now - sentAt > OPEN_RELAY_MAX_AGE_MS) this.openRelays.delete(recipient);
+    }
+    return session.activityLevel === 'active'
+      || session.aiagentState === 'implementing'
+      || this.deps.isHandoverPending(session.id)
+      || this.openRelays.size > 0;
   }
 
   private demote(session: SessionInfo, reason: string): void {

@@ -106,7 +106,7 @@ graph LR
 - **Restart.** A force-restart (`helm_restart` with `resume:false`) skips the
   operator: its lock is by design, so it neither blocks the restart nor gets
   closed, and it resumes next launch.
-- **Settings.** `settings.yaml → operator: { enabled, cliType, workingDir }`,
+- **Settings.** `settings.yaml → operator: { enabled, cliType, workingDir, compactEveryMinutes }`,
   edited in Settings → 🎙 Operator. `cliType` is a dropdown of your own CLI
   types — ids are per-machine UUIDs, so there is no shipped default and
   nothing spawns until one is chosen.
@@ -131,7 +131,42 @@ graph LR
   existing `tool_list`, so no new tool was needed.
   **Rule changes need a fresh prompt:** the guide is the operator's initial
   prompt, so a running operator only picks up edits after it is respawned or
-  compacted.
+  compacted. The idle self-compaction below re-sends it every time.
+- **Idle self-compaction (P-0839).** The operator lives for days, so its context
+  would grow without bound. Every `compactEveryMinutes` (default 60; 0 = off)
+  the manager checks it:
+
+  ```mermaid
+  flowchart TD
+      T[Tick] --> B{Busy?<br/>dot active · implementing ·<br/>handover pending · open relay}
+      B -->|yes| R[Retry in 30 min]
+      B -->|no| S{Settling after<br/>a compaction?}
+      S -->|yes| RB[Baseline = lastOutputAt] --> N[Next tick in interval]
+      S -->|no| A{lastOutputAt > baseline?}
+      A -->|no| N
+      A -->|yes| C[session_compact path<br/>handover = operator guide] --> R
+  ```
+
+  - It reuses `compactSession` with a handover, so [handover.md](handover.md)'s
+    delivery and terminal lock apply unchanged. The handover says "you are Helm,
+    the operator, no relays are open" and then repeats the full guide.
+  - **Why a settle step.** The compaction's output, and the operator's answer to
+    the handover, move `lastOutputAt` too. The first idle check afterwards
+    rebaselines, so that echo never counts as activity. Otherwise an untouched
+    operator would compact every hour forever. The cost: activity in that same
+    window is picked up an interval later. Rebaselining on `handover-delivered`
+    was rejected: the operator's reply to the handover comes *after* delivery,
+    so it would count as activity and bring back the hourly loop.
+  - **In-flight safety.** A tick awaits the compact. A generation counter,
+    bumped on every timer clear, stops a tick that outlived a
+    dispose/disable/interval change from rescheduling.
+  - **Open relays.** An operator send with `expectsResponse` (seen on the
+    message-flight sink) opens a relay. The recipient's next message to the
+    operator closes it. Compacting mid-relay would lose what the reply is for.
+    A relay stops blocking after 2 h, so a reply that never comes cannot pin the
+    context forever.
+  - The baseline is in memory. After a restart, the first idle tick compacts
+    once if the operator has any output at all.
 - **Launch race.** Main can spawn the operator before the renderer's
   auto-resume runs; `pty:spawn` treats a resume of an already-live PTY as an
   attach, not a second process.
