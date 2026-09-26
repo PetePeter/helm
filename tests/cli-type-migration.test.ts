@@ -47,7 +47,6 @@ beforeEach(() => {
   TEST_DIR = fs.mkdtempSync(path.join(process.cwd(), '.test-cli-type-migration-'));
   files = {
     cliTypesFile: path.join(TEST_DIR, 'cli-types.yaml'),
-    bindingsFile: path.join(TEST_DIR, 'bindings.yaml'),
     sessionsFile: path.join(TEST_DIR, 'sessions.yaml'),
     recycleBinFile: path.join(TEST_DIR, 'recycle-bin.yaml'),
     scheduledTasksFile: path.join(TEST_DIR, 'scheduled-tasks.yaml'),
@@ -93,21 +92,13 @@ describe('migrateCliTypeIds', () => {
     expect(Object.values(out)[0].displayName).toBe('bare-cli');
   });
 
-  it('rekeys bindings.yaml slug -> uuid with bindings intact', () => {
-    write('bindings.yaml', {
-      'claude-code': { A: { action: 'keyboard', sequence: '{Enter}' } },
-      zed: { B: { action: 'context-menu' } },
-    });
+  it('leaves bindings.yaml alone — binding profiles are not keyed by CLI type', () => {
+    write('bindings.yaml', { 'claude-code': { A: { action: 'keyboard', sequence: '{Enter}' } } });
+    const before = fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8');
 
     migrateCliTypeIds(files);
 
-    const types = read<Record<string, any>>('cli-types.yaml');
-    const byLegacy = Object.fromEntries(Object.values(types).map((e: any) => [e.legacyKey, e.id]));
-    const bindings = read<Record<string, any>>('bindings.yaml');
-
-    expect(Object.keys(bindings).sort()).toEqual([byLegacy['claude-code'], byLegacy.zed].sort());
-    expect(bindings[byLegacy['claude-code']]).toEqual({ A: { action: 'keyboard', sequence: '{Enter}' } });
-    expect(bindings[byLegacy.zed]).toEqual({ B: { action: 'context-menu' } });
+    expect(fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8')).toBe(before);
   });
 
   it('rewrites sessions, recycle-bin entries, scheduled tasks and history cliType slug -> uuid', () => {
@@ -136,7 +127,6 @@ describe('migrateCliTypeIds', () => {
   });
 
   it('is idempotent — a second run is a no-op and leaves files byte-identical', () => {
-    write('bindings.yaml', { 'claude-code': { A: { action: 'context-menu' } } });
     write('sessions.yaml', { sessions: [{ id: 's1', name: 'S1', cliType: 'claude-code', processId: 1 }] });
 
     expect(migrateCliTypeIds(files)).toBe(true);
@@ -156,15 +146,15 @@ describe('migrateCliTypeIds', () => {
   });
 
   it('leaves the originals untouched when staging fails', () => {
-    write('bindings.yaml', { 'claude-code': { A: { action: 'context-menu' } } });
+    write('sessions.yaml', { sessions: [{ id: 's1', name: 'S1', cliType: 'claude-code', processId: 1 }] });
     const beforeTypes = fs.readFileSync(files.cliTypesFile, 'utf8');
-    const beforeBindings = fs.readFileSync(files.bindingsFile, 'utf8');
+    const beforeSessions = fs.readFileSync(files.sessionsFile, 'utf8');
     // A directory where the staged temp file must go makes the write fail.
     fs.mkdirSync(files.cliTypesFile + '.migrating');
 
     expect(migrateCliTypeIds(files)).toBe(false);
     expect(fs.readFileSync(files.cliTypesFile, 'utf8')).toBe(beforeTypes);
-    expect(fs.readFileSync(files.bindingsFile, 'utf8')).toBe(beforeBindings);
+    expect(fs.readFileSync(files.sessionsFile, 'utf8')).toBe(beforeSessions);
   });
 });
 
@@ -195,13 +185,15 @@ describe('ConfigLoader CLI type identity', () => {
     expect(keys[0]).not.toBe(keys[1]);
   });
 
-  it('updateCliType changes displayName only — id and bindings key untouched', () => {
+  it('updateCliType changes displayName only — id and binding profile untouched', () => {
     const loader = new ConfigLoader(TEST_DIR);
     loader.load();
     const id = loader.getCliTypes().find(
       k => loader.getCliTypeEntry(k)?.displayName === 'Claude Code',
     )!;
-    loader.setBinding('A', id, { action: 'context-menu' });
+    const profileId = loader.createBindingProfile('P');
+    loader.setBinding(profileId, 'A', { action: 'context-menu' });
+    loader.updateCliType(id, 'Claude Code', [], 0, { bindingProfileId: profileId });
 
     loader.updateCliType(id, 'Renamed Claude');
 

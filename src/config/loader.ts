@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
@@ -15,7 +16,7 @@ import {
   type SpawnConfig,
 } from './loader-helpers.js';
 import { CliTypeStore, type ResolvedCliType } from './cli-type-store.js';
-import { BindingStore } from './binding-store.js';
+import { BindingStore, type BindingProfileSummary } from './binding-store.js';
 import { InputConfigStore } from './input-config-store.js';
 import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
@@ -188,6 +189,8 @@ export interface CliTypeConfig {
    * mouse modes are swallowed so plain click-drag selects text for copying.
    */
   mouseTracking?: boolean;
+  /** Id of the shared gamepad binding profile this tool uses. Unset = no bindings. */
+  bindingProfileId?: string;
   /** Named sequence groups — accessible via gamepad bindings and context menu */
   sequences?: Record<string, SequenceListItem[]>;
   /** Command sent to PTY after spawn to name the session for later resume. Template: {cliSessionName} replaced at runtime. */
@@ -536,6 +539,9 @@ const sourceConfigDir = isPackaged(__loader_dirname)
   : path.join(process.cwd(), 'src', 'config');
 seedConfigIfNeeded(sourceConfigDir, DEFAULT_CONFIG_DIR);
 
+/** Well-known id of the profile legacy per-CLI bindings migrate into. */
+export const DEFAULT_BINDING_PROFILE_ID = 'default';
+
 export class ConfigLoader {
   private configDir: string;
   private cliTypeStore: CliTypeStore;
@@ -567,12 +573,43 @@ export class ConfigLoader {
     this.inputConfigStore.load();
     migrateFromProfile(this.configDir, this.cliTypeStore, this.bindingStore, this.inputConfigStore);
     // Re-key slug-based CLI types to UUIDs. Runs after the profile migration so
-    // types it just imported are covered too; rewrites files directly, hence the
-    // reload of the two stores whose backing files it touched.
+    // types it just imported are covered too; rewrites the file directly, hence
+    // the reload.
     if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.configDir))) {
       this.cliTypeStore.load();
-      this.bindingStore.load();
     }
+    this.migrateLegacyBindings();
+  }
+
+  /**
+   * Fold pre-profile per-CLI bindings into one shared "Default" profile and
+   * point every tool at it. The map kept is the first one still owned by a live
+   * CLI type, else the first in the file — the per-tool copies were near
+   * duplicates, and one binding for all tools is the intended shape.
+   *
+   * Tool refs are written before the profile: if we die in between, the legacy
+   * file is still on disk, so the next load re-runs this and converges.
+   */
+  private migrateLegacyBindings(): void {
+    const legacy = this.bindingStore.takeLegacy();
+    if (!legacy) return;
+    const keys = Object.keys(legacy);
+    const owned = keys.find((key) => {
+      try { return !!this.cliTypeStore.resolve(key); } catch { return false; }
+    });
+    const chosen = legacy[owned ?? keys[0]];
+
+    for (const id of this.cliTypeStore.list()) {
+      const entry = this.cliTypeStore.get(id)!;
+      if (entry.bindingProfileId) continue;
+      entry.bindingProfileId = DEFAULT_BINDING_PROFILE_ID;
+      this.cliTypeStore.set(id, entry);
+    }
+    if (fs.existsSync(this.bindingStore.filePath)) {
+      fs.copyFileSync(this.bindingStore.filePath, `${this.bindingStore.filePath}.legacy.bak`);
+    }
+    this.bindingStore.create('Default', chosen, DEFAULT_BINDING_PROFILE_ID);
+    logger.info(`[Config] Migrated legacy bindings (${owned ?? keys[0]}) into the Default binding profile`);
   }
 
   private loadSettings(): void {
@@ -610,9 +647,11 @@ export class ConfigLoader {
     return this.cliTypeStore.resolveKey(cliType);
   }
 
+  /** Bindings for a CLI type, via its binding profile. Null = no profile (or a dangling one). */
   getBindings(cliType: string): ButtonBindings | null {
     this.ensureLoaded();
-    return this.bindingStore.get(this.resolveCliTypeKey(cliType));
+    const profileId = this.cliTypeStore.get(cliType)?.bindingProfileId;
+    return profileId ? this.bindingStore.get(profileId) : null;
   }
 
   getSpawnConfig(cliType: string): SpawnConfig | null {
@@ -775,52 +814,46 @@ export class ConfigLoader {
     this.projectStore = store;
   }
 
-  // ---------- Binding edit (backward compatible) -----------------------
+  // ---------- Binding profiles -----------------------------------------
 
-  setBinding(button: string, cliType: string, binding: Binding): void {
+  getBindingProfiles(): BindingProfileSummary[] {
     this.ensureLoaded();
-    cliType = this.resolveCliTypeKey(cliType);
-    // Auto-create binding entry if CLI type exists in tools but not yet in bindings
-    if (!this.bindingStore.get(cliType)) {
-      if (this.cliTypeStore.get(cliType)) {
-        this.bindingStore.ensureCliType(cliType);
-      } else {
-        throw new Error(`Unknown CLI type: ${cliType}`);
-      }
-    }
-    this.bindingStore.setButton(button, cliType, binding);
+    return this.bindingStore.list();
   }
 
-  removeBinding(button: string, cliType: string): void {
+  /** Create a profile, optionally seeded from an existing one. Returns its id. */
+  createBindingProfile(name: string, copyFromId?: string): string {
     this.ensureLoaded();
-    this.bindingStore.removeButton(button, this.resolveCliTypeKey(cliType));
+    const seed = copyFromId ? this.bindingStore.get(copyFromId) : null;
+    if (copyFromId && !seed) throw new Error(`Unknown binding profile: ${copyFromId}`);
+    return this.bindingStore.create(name, seed ?? {});
   }
 
-  copyCliBindings(sourceCli: string, targetCli: string): number {
+  renameBindingProfile(id: string, name: string): void {
     this.ensureLoaded();
-    sourceCli = this.resolveCliTypeKey(sourceCli);
-    targetCli = this.resolveCliTypeKey(targetCli);
-    // Validate source has bindings
-    if (!this.bindingStore.get(sourceCli)) {
-      throw new Error(`No bindings found for source: ${sourceCli}`);
-    }
-    // Validate target CLI type exists
-    if (!this.cliTypeStore.get(targetCli)) {
-      throw new Error(`Unknown target CLI type: ${targetCli}`);
-    }
-    const count = this.bindingStore.copy(sourceCli, targetCli);
+    this.bindingStore.rename(id, name);
+  }
 
-    // Copy sequences from source CLI type to target
-    const sourceEntry = this.cliTypeStore.get(sourceCli);
-    const sourceSequences = sourceEntry?.sequences;
-    if (sourceSequences && Object.keys(sourceSequences).length > 0) {
-      const targetEntry = this.cliTypeStore.get(targetCli);
-      if (!targetEntry) throw new Error(`Unknown target CLI type: ${targetCli}`);
-      targetEntry.sequences = structuredClone(sourceSequences);
-      this.cliTypeStore.set(targetCli, targetEntry);
+  /** Delete a profile; tools that used it fall back to no bindings. */
+  deleteBindingProfile(id: string): void {
+    this.ensureLoaded();
+    this.bindingStore.delete(id);
+    for (const key of this.cliTypeStore.list()) {
+      const entry = this.cliTypeStore.get(key)!;
+      if (entry.bindingProfileId !== id) continue;
+      delete entry.bindingProfileId;
+      this.cliTypeStore.set(key, entry);
     }
+  }
 
-    return count;
+  setBinding(profileId: string, button: string, binding: Binding): void {
+    this.ensureLoaded();
+    this.bindingStore.setButton(profileId, button, binding);
+  }
+
+  removeBinding(profileId: string, button: string): void {
+    this.ensureLoaded();
+    this.bindingStore.removeButton(profileId, button);
   }
 
   getHapticFeedback(): boolean {
@@ -1285,6 +1318,7 @@ export class ConfigLoader {
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
     if (options?.mouseTracking === true) tool.mouseTracking = true;
+    if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
     const helmActions = this.cleanHelmActions(options?.helmActions);
     if (helmActions) tool.helmActions = helmActions;
     this.cliTypeStore.add(id, tool);
@@ -1338,7 +1372,7 @@ export class ConfigLoader {
         if (options.env.length === 0) delete existing.env;
         else existing.env = options.env;
       }
-      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix'] as const) {
+      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix', 'bindingProfileId'] as const) {
         const val = options[field];
         if (val === undefined) continue;
         if (val === '') { delete (existing as any)[field]; }

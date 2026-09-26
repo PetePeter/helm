@@ -12,9 +12,9 @@ Gamepad button and keyboard shortcut mappings.
 | D-Pad directions | Overview grid: navigation between cards (Up/Down past edges exits overview) |
 | Left Stick | Same as D-pad |
 | Right Stick | Configurable (default: scroll terminal buffer / overview grid) |
-| A | Configurable per-CLI binding / overview: select session + exit |
-| B | Back to sessions zone / configurable per-CLI binding |
-| X | Configurable per-CLI binding / overview: close focused session |
+| A | Configurable binding (tool's binding profile) / overview: select session + exit |
+| B | Back to sessions zone / configurable binding (tool's binding profile) |
+| X | Configurable binding (tool's binding profile) / overview: close focused session |
 | Y | (planned: cycle terminal state) |
 | Left Trigger | Spawn Claude Code |
 | Right Bumper | Spawn Copilot CLI |
@@ -114,7 +114,7 @@ When a button is pressed, the navigation system checks handlers in this order:
 11. Prompt-template picker tree (`PromptTreeModal`)
 12. Screen-specific routing (sessions / settings)
     - **Sessions case:** Plan screen overlay (when visible, B exits) → Group overview → Session/spawn navigation
-13. Config binding fallback (per-CLI bindings)
+13. Config binding fallback (the active tool's binding profile)
 
 The first handler that returns `true` (consumed) stops the chain.
 

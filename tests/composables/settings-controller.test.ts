@@ -11,11 +11,12 @@ const mocks = vi.hoisted(() => ({
   configGetWorkingDirs: vi.fn(),
   configGetChipbarActions: vi.fn(),
   configGetSortPrefs: vi.fn(),
-  configGetBindings: vi.fn(),
+  configGetBindingProfiles: vi.fn(),
+  configRemoveBinding: vi.fn(),
+  configDeleteBindingProfile: vi.fn(),
   configGetMcpConfig: vi.fn(),
   telegramGetConfig: vi.fn(),
   telegramIsRunning: vi.fn(),
-  configCopyCliBindings: vi.fn(),
   toolsAddCliType: vi.fn(),
   toolsUpdateCliType: vi.fn(),
   toolsReorderCliType: vi.fn(),
@@ -32,9 +33,10 @@ vi.mock('../../renderer/ipc/clients.js', () => ({
     configGetWorkingDirs: mocks.configGetWorkingDirs,
     configGetChipbarActions: mocks.configGetChipbarActions,
     configGetSortPrefs: mocks.configGetSortPrefs,
-    configGetBindings: mocks.configGetBindings,
+    configGetBindingProfiles: mocks.configGetBindingProfiles,
+    configRemoveBinding: mocks.configRemoveBinding,
+    configDeleteBindingProfile: mocks.configDeleteBindingProfile,
     configGetMcpConfig: mocks.configGetMcpConfig,
-    configCopyCliBindings: mocks.configCopyCliBindings,
   },
   toolsClient: {
     toolsGetAll: mocks.toolsGetAll,
@@ -86,7 +88,7 @@ describe('useSettingsController', () => {
     mocks.configGetWorkingDirs.mockResolvedValue([{ name: 'Hub', path: 'X:\\coding\\gamepad-cli-hub' }]);
     mocks.configGetChipbarActions.mockResolvedValue({ actions: [{ label: 'Save', sequence: 'save' }] });
     mocks.configGetSortPrefs.mockResolvedValue({ field: 'button', direction: 'asc' });
-    mocks.configGetBindings.mockResolvedValue({});
+    mocks.configGetBindingProfiles.mockResolvedValue([]);
     mocks.configGetMcpConfig.mockResolvedValue({ enabled: true, port: 47400, authToken: 'token' });
     mocks.telegramGetConfig.mockResolvedValue({
       botToken: 'bot',
@@ -105,7 +107,6 @@ describe('useSettingsController', () => {
     await controller.loadSettingsData();
 
     expect(mocks.toolsGetAll).toHaveBeenCalled();
-    expect(controller.settingsCliTypes.value).toEqual(['codex']);
     expect(controller.settingsTools.value).toEqual([
       {
         key: 'codex',
@@ -149,7 +150,7 @@ describe('useSettingsController', () => {
 
     it('rejects a duplicate display name on add, ignoring case and whitespace', async () => {
       const controller = await loadedController();
-      controller.onToolAdd();
+      await controller.onToolAdd();
 
       expect(toolEditor.validateName?.('Codex')).toMatch(/already exists/i);
       expect(toolEditor.validateName?.('  cODEx  ')).toMatch(/already exists/i);
@@ -208,24 +209,66 @@ describe('useSettingsController', () => {
     expect(mocks.toolsReorderCliType).toHaveBeenCalledWith(1, 'up');
   });
 
-  it('carries the minted uuid from add into the clone binding copy', async () => {
+  it('clone carries the source binding profile into the add call', async () => {
     const cloneId = 'aaaabbbb-cccc-4ddd-8eee-ffff00001111';
+    const types = twoCliTypes();
+    types[CODEX_ID].bindingProfileId = 'p1';
     mocks.configGetCliTypes.mockResolvedValue([CODEX_ID, CLAUDE_ID]);
-    mocks.toolsGetAll.mockResolvedValue({ cliTypes: twoCliTypes() });
+    mocks.toolsGetAll.mockResolvedValue({ cliTypes: types });
+    mocks.configGetBindingProfiles.mockResolvedValue([{ id: 'p1', name: 'Default', bindings: {} }]);
     mocks.toolsAddCliType.mockResolvedValue({ success: true, id: cloneId });
-    mocks.configCopyCliBindings.mockResolvedValue({ success: true });
     const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
     await controller.loadSettingsData();
 
     await controller.onToolClone(CODEX_ID);
+    expect(toolEditor.initialData.bindingProfileId).toBe('p1');
+    expect(toolEditor.bindingProfiles).toEqual([{ id: 'p1', name: 'Default' }]);
     await getToolEditorCallback()?.({
       name: 'Codex Copy',
       env: [],
       initialPromptDelay: 0,
       _promptItems: [],
       helmActions: {},
+      bindingProfileId: 'p1',
     });
 
-    expect(mocks.configCopyCliBindings).toHaveBeenCalledWith(CODEX_ID, cloneId);
+    expect(mocks.toolsAddCliType.mock.calls[0][4].bindingProfileId).toBe('p1');
+  });
+
+  it('shows the first profile, and falls back to it when the selected one disappears', async () => {
+    const profiles = [
+      { id: 'p1', name: 'Default', bindings: { A: { action: 'keyboard', sequence: '{Enter}' } } },
+      { id: 'p2', name: 'Codex', bindings: { B: { action: 'context-menu' } } },
+    ];
+    mocks.configGetBindingProfiles.mockResolvedValue(profiles);
+    const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
+    await controller.loadSettingsData();
+    expect(controller.settingsBindingProfileId.value).toBe('p1');
+    expect(controller.settingsBindings.value.map((b) => b.button)).toEqual(['A']);
+
+    controller.onBindingProfileSelect('p2');
+    expect(controller.settingsBindings.value.map((b) => b.button)).toEqual(['B']);
+
+    mocks.configDeleteBindingProfile.mockResolvedValue({ success: true });
+    mocks.configGetBindingProfiles.mockResolvedValue([profiles[0]]);
+    await controller.onBindingProfileDelete();
+    expect(mocks.configDeleteBindingProfile).toHaveBeenCalledWith('p2');
+    // Tools that pointed at p2 lost their bindings — the runtime cache must be rebuilt.
+    expect(mocks.initConfigCache).toHaveBeenCalled();
+    expect(controller.settingsBindingProfileId.value).toBe('p1');
+  });
+
+  it('deletes a binding from the selected profile', async () => {
+    mocks.configGetBindingProfiles.mockResolvedValue([
+      { id: 'p1', name: 'Default', bindings: { A: { action: 'context-menu' } } },
+    ]);
+    mocks.configRemoveBinding.mockResolvedValue({ success: true });
+    const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
+    await controller.loadSettingsData();
+
+    await controller.onBindingDelete('A');
+
+    expect(mocks.configRemoveBinding).toHaveBeenCalledWith('p1', 'A');
+    expect(mocks.initConfigCache).toHaveBeenCalled();
   });
 });

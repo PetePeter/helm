@@ -63,10 +63,14 @@ export function comboToPtyEscape(keys: string[]): string {
 
 export async function initConfigCache(): Promise<void> {
   try {
+    // Rebuild rather than patch: a tool moved to "None" (or whose profile was
+    // deleted) resolves to null and must lose its stale entry.
+    const cache: typeof state.cliBindingsCache = {};
     for (const cliType of state.cliTypes) {
       const bindings = await configClient.configGetBindings(cliType);
-      if (bindings) state.cliBindingsCache[cliType] = bindings;
+      if (bindings) cache[cliType] = bindings;
     }
+    state.cliBindingsCache = cache;
 
     try {
       const tools = await toolsClient.toolsGetAll();

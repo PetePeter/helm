@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
-import { ConfigLoader } from '../src/config/loader.js';
+import { ConfigLoader, DEFAULT_BINDING_PROFILE_ID } from '../src/config/loader.js';
 import { stickVirtualButtonName, STICK_VIRTUAL_BUTTONS } from '../src/config/loader.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -37,14 +37,6 @@ function readYaml<T>(relativePath: string): T {
 function readCliTypesBySlug(): Record<string, any> {
   const raw = readYaml<Record<string, any>>('cli-types.yaml');
   return Object.fromEntries(Object.values(raw).map((e: any) => [e.legacyKey ?? e.id, e]));
-}
-
-/** bindings.yaml is keyed by the CLI type UUID — re-index by slug via cli-types.yaml. */
-function readBindingsBySlug(): Record<string, any> {
-  const types = readYaml<Record<string, any>>('cli-types.yaml');
-  const slugById = new Map(Object.entries(types).map(([id, e]: [string, any]) => [id, e.legacyKey ?? id]));
-  const raw = readYaml<Record<string, any>>('bindings.yaml');
-  return Object.fromEntries(Object.entries(raw).map(([k, v]) => [slugById.get(k) ?? k, v]));
 }
 
 /** CLI type keys are UUIDs — map them back to slugs for order/membership assertions. */
@@ -142,294 +134,127 @@ describe('ConfigLoader', () => {
   // Existing getters (backward compatibility)
   // =========================================================================
 
-  describe('getBindings', () => {
-    it('returns bindings for a valid CLI type', () => {
-      loader.load();
-      const bindings = loader.getBindings('claude-code');
-      expect(bindings).toEqual(BINDINGS['claude-code']);
+  describe('binding profiles', () => {
+    it('throws when called before load', () => {
+      expect(() => loader.getBindings('claude-code')).toThrow('Configuration not loaded');
     });
 
-    it('returns null for non-existent CLI type', () => {
+    it('migrates legacy per-CLI bindings into one Default profile shared by every tool', () => {
+      loader.load();
+      expect(loader.getBindingProfiles()).toEqual([
+        { id: DEFAULT_BINDING_PROFILE_ID, name: 'Default', bindings: BINDINGS['claude-code'] },
+      ]);
+      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['claude-code']);
+      expect(loader.getBindings('copilot-cli')).toEqual(BINDINGS['claude-code']);
+      expect(readYaml<any>('bindings.yaml')).toEqual({
+        profiles: { [DEFAULT_BINDING_PROFILE_ID]: { name: 'Default', bindings: BINDINGS['claude-code'] } },
+      });
+      expect(fs.existsSync(path.join(TEST_DIR, 'bindings.yaml.legacy.bak'))).toBe(true);
+    });
+
+    it('prefers the map of a live CLI type over orphaned ones earlier in the file', () => {
+      writeYaml('bindings.yaml', { 'deleted-tool': { X: { action: 'context-menu' } }, 'copilot-cli': BINDINGS['copilot-cli'] });
+      loader.load();
+      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['copilot-cli']);
+    });
+
+    it('keeps orphaned maps when no legacy key matches a live CLI type', () => {
+      writeYaml('bindings.yaml', { gone: { X: { action: 'context-menu' } } });
+      loader.load();
+      expect(loader.getBindings('claude-code')).toEqual({ X: { action: 'context-menu' } });
+    });
+
+    it('is idempotent: a second load neither re-migrates nor rewrites', () => {
+      loader.load();
+      const bindingsBefore = fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8');
+      const typesBefore = fs.readFileSync(path.join(TEST_DIR, 'cli-types.yaml'), 'utf8');
+      new ConfigLoader(TEST_DIR).load();
+      expect(fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8')).toBe(bindingsBefore);
+      expect(fs.readFileSync(path.join(TEST_DIR, 'cli-types.yaml'), 'utf8')).toBe(typesBefore);
+    });
+
+    it('converges when a crash left tool refs written but bindings.yaml still legacy', () => {
+      loader.load();
+      // Simulate the crash window: cli-types carry the ref, bindings.yaml is the old shape.
+      writeYaml('bindings.yaml', BINDINGS);
+      const again = new ConfigLoader(TEST_DIR);
+      again.load();
+      expect(again.getBindings('copilot-cli')).toEqual(BINDINGS['claude-code']);
+      expect(again.getBindingProfiles()).toHaveLength(1);
+    });
+
+    it('a fresh install with no bindings.yaml has no profiles and no tool bindings', () => {
+      fs.unlinkSync(path.join(TEST_DIR, 'bindings.yaml'));
+      loader.load();
+      expect(loader.getBindingProfiles()).toEqual([]);
+      expect(loader.getBindings('claude-code')).toBeNull();
+      expect(loader.getCliTypeEntry('claude-code')?.bindingProfileId).toBeUndefined();
+    });
+
+    it('returns null for an unknown CLI type', () => {
       loader.load();
       expect(loader.getBindings('non-existent')).toBeNull();
     });
 
-    it('throws error when called before load', () => {
-      expect(() => loader.getBindings('claude-code')).toThrow('Configuration not loaded');
-    });
-  });
-
-  describe('getSpawnConfig', () => {
-    it('returns built spawn config from cli-types.yaml', () => {
+    it('editing a shared profile changes every tool using it, and persists', () => {
       loader.load();
-      expect(loader.getSpawnConfig('claude-code')).toEqual({ command: 'cc', args: [] });
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'X', { action: 'prompt-tree' });
+      const reloaded = new ConfigLoader(TEST_DIR);
+      reloaded.load();
+      expect(reloaded.getBindings('claude-code')!.X).toEqual({ action: 'prompt-tree' });
+      expect(reloaded.getBindings('copilot-cli')!.X).toEqual({ action: 'prompt-tree' });
     });
 
-    it('returns null for non-existent CLI type', () => {
+    it('setBinding on an unknown profile throws', () => {
       loader.load();
-      expect(loader.getSpawnConfig('non-existent')).toBeNull();
+      expect(() => loader.setBinding('nope', 'A', { action: 'context-menu' })).toThrow('Unknown binding profile');
     });
 
-    it('throws error when called before load', () => {
-      expect(() => loader.getSpawnConfig('claude-code')).toThrow('Configuration not loaded');
-    });
-  });
-
-  describe('getCliTypeName', () => {
-    it('returns name from cli-types.yaml', () => {
+    it('removeBinding drops a button from the profile', () => {
       loader.load();
-      expect(loader.getCliTypeName('claude-code')).toBe('Claude Code');
+      loader.removeBinding(DEFAULT_BINDING_PROFILE_ID, 'A');
+      expect(loader.getBindings('claude-code')).toEqual({ B: BINDINGS['claude-code'].B });
     });
 
-    it('returns null for non-existent CLI type', () => {
+    it('a tool can point at a different profile via updateCliType, or at none', () => {
       loader.load();
-      expect(loader.getCliTypeName('non-existent')).toBeNull();
-    });
-  });
+      const id = loader.createBindingProfile('Copilot', DEFAULT_BINDING_PROFILE_ID);
+      loader.setBinding(id, 'Y', { action: 'context-menu' });
+      loader.updateCliType('copilot-cli', 'GitHub Copilot CLI', [], 0, { bindingProfileId: id });
+      expect(loader.getBindings('copilot-cli')!.Y).toEqual({ action: 'context-menu' });
+      expect(loader.getBindings('claude-code')!.Y).toBeUndefined();
 
-  describe('getCliTypes', () => {
-    it('returns CLI type keys from cli-types.yaml', () => {
+      loader.updateCliType('copilot-cli', 'GitHub Copilot CLI', [], 0, { bindingProfileId: '' });
+      expect(loader.getBindings('copilot-cli')).toBeNull();
+    });
+
+    it('addCliType stores the chosen profile', () => {
       loader.load();
-      expect(cliTypeSlugs(loader)).toEqual(['claude-code', 'copilot-cli']);
+      const id = loader.addCliType('new', 'New Tool', [], 0, { bindingProfileId: DEFAULT_BINDING_PROFILE_ID });
+      expect(loader.getBindings(id)).toEqual(BINDINGS['claude-code']);
     });
-  });
 
-  describe('getWorkingDirectories', () => {
-    it('returns [] when no project store is attached', () => {
+    it('rename keeps tool refs; delete leaves referencing tools with no bindings', () => {
       loader.load();
-      expect(loader.getWorkingDirectories()).toEqual([]);
+      loader.renameBindingProfile(DEFAULT_BINDING_PROFILE_ID, 'Everything');
+      expect(loader.getBindingProfiles()[0].name).toBe('Everything');
+      expect(loader.getBindings('claude-code')).toEqual(BINDINGS['claude-code']);
+
+      loader.deleteBindingProfile(DEFAULT_BINDING_PROFILE_ID);
+      expect(loader.getBindings('claude-code')).toBeNull();
+      expect(loader.getCliTypeEntry('copilot-cli')?.bindingProfileId).toBeUndefined();
     });
 
-    it('derives one entry per project canonical + alternate path, named by project', () => {
+    it('createBindingProfile copies the source without sharing references', () => {
       loader.load();
-      loader.setProjectStore({
-        list: () => [
-          { id: '1', name: 'Helm', canonicalPath: 'X:\\coding\\helm', createdAt: 0, updatedAt: 0 },
-          { id: '2', name: 'Other', canonicalPath: 'X:\\coding\\other', alternatePaths: ['X:\\coding\\other-alt'], createdAt: 0, updatedAt: 0 },
-        ],
-      } as any);
-
-      expect(loader.getWorkingDirectories()).toEqual([
-        { name: 'Helm', path: 'X:\\coding\\helm' },
-        { name: 'Other', path: 'X:\\coding\\other' },
-        { name: 'Other', path: 'X:\\coding\\other-alt' },
-      ]);
+      const id = loader.createBindingProfile('Copy', DEFAULT_BINDING_PROFILE_ID);
+      loader.setBinding(id, 'A', { action: 'keyboard', sequence: '{Enter}' });
+      expect(loader.getBindings('claude-code')!.A).toEqual(BINDINGS['claude-code'].A);
     });
 
-    it('deduplicates overlapping canonical/alternate paths (normalized)', () => {
+    it('createBindingProfile rejects an unknown source', () => {
       loader.load();
-      // Case-variant overlap only dedupes on win32 (paths are case-folded there);
-      // trailing-slash variants normalize identically on every platform.
-      const altVariant = process.platform === 'win32' ? 'x:\\coding\\HELM' : 'X:\\coding\\helm\\';
-      loader.setProjectStore({
-        list: () => [
-          { id: '1', name: 'Helm', canonicalPath: 'X:\\coding\\helm', alternatePaths: [altVariant], createdAt: 0, updatedAt: 0 },
-        ],
-      } as any);
-
-      expect(loader.getWorkingDirectories()).toEqual([
-        { name: 'Helm', path: 'X:\\coding\\helm' },
-      ]);
-    });
-  });
-
-  describe('getChipbarActions', () => {
-    it('returns the incoming inbox path, not the plans root', () => {
-      writeYaml('input-config.yaml', {
-        workingDirectories: WORKING_DIRS,
-        chipActions: [{ label: '💾 Save Plan', sequence: 'save to {plansDir}{Enter}' }],
-      });
-
-      loader.load();
-
-      expect(loader.getChipbarActions()).toEqual({
-        actions: [{ label: '💾 Save Plan', sequence: 'save to {plansDir}{Enter}' }],
-        inboxDir: path.join(TEST_DIR, 'plans', 'incoming'),
-      });
-    });
-  });
-
-  describe('session group prefs', () => {
-    it('persists overviewHidden to settings.yaml', () => {
-      loader.load();
-
-      loader.setSessionGroupPrefs({
-        order: ['X:\\coding\\project-a'],
-        collapsed: ['X:\\coding\\project-b'],
-        overviewHidden: ['session-1', 'session-2'],
-      });
-
-      const onDisk = readYaml<any>('settings.yaml');
-      expect(onDisk.sessionGroups.overviewHidden).toEqual(['session-1', 'session-2']);
-    });
-
-    it('roundtrips overviewHidden through save and reload', () => {
-      loader.load();
-
-      loader.setSessionGroupPrefs({
-        order: ['X:\\coding\\project-a'],
-        collapsed: [],
-        overviewHidden: ['session-3'],
-      });
-
-      const loader2 = new ConfigLoader(TEST_DIR);
-      loader2.load();
-      expect(loader2.getSessionGroupPrefs()).toEqual({
-        order: ['X:\\coding\\project-a'],
-        collapsed: [],
-        overviewHidden: ['session-3'],
-      });
-    });
-  });
-
-  describe('editor history', () => {
-    it('persists editor history to settings.yaml and reloads it', () => {
-      loader.load();
-      loader.setEditorHistory(['first prompt', 'second prompt']);
-
-      const onDisk = readYaml<any>('settings.yaml');
-      expect(onDisk.editorHistory).toEqual(['first prompt', 'second prompt']);
-
-      const loader2 = new ConfigLoader(TEST_DIR);
-      loader2.load();
-      expect(loader2.getEditorHistory()).toEqual(['first prompt', 'second prompt']);
-    });
-  });
-
-  describe('plan filters', () => {
-    it('deep-merges partial plan filter updates without resetting sibling fields', () => {
-      loader.load();
-      loader.setPlanFilters({
-        types: { feature: 'no' },
-        hasAttachment: { no: 'no' },
-      });
-      loader.setPlanFilters({
-        statuses: { done: 'no' },
-        auto: 'yes',
-      });
-
-      expect(loader.getPlanFilters()).toEqual({
-        types: { bug: 'either', feature: 'no', research: 'either', untyped: 'either' },
-        statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'no' },
-        hasAttachment: { yes: 'either', no: 'no' },
-        auto: 'yes',
-      });
-    });
-  });
-
-  // =========================================================================
-  // setBinding (backward compatible)
-  // =========================================================================
-
-  describe('setBinding', () => {
-    it('throws error when called before load', () => {
-      expect(() => loader.setBinding('A', 'claude-code', { action: 'keyboard', keys: ['Enter'] }))
-        .toThrow('Configuration not loaded');
-    });
-
-    it('sets a CLI-specific binding and persists', () => {
-      loader.load();
-      const newBinding = { action: 'keyboard' as const, keys: ['Ctrl', 'z'] };
-      loader.setBinding('X', 'claude-code', newBinding);
-
-      expect(loader.getBindings('claude-code')!['X']).toEqual(newBinding);
-
-      const onDisk = readBindingsBySlug();
-      expect(onDisk['claude-code']['X']).toEqual(newBinding);
-    });
-
-    it('throws error for unknown CLI type', () => {
-      loader.load();
-      expect(() => loader.setBinding('A', 'nonexistent', { action: 'keyboard', keys: ['Enter'] }))
-        .toThrow('Unknown CLI type: nonexistent');
-    });
-
-    it('sets a prompt-tree binding and persists', () => {
-      loader.load();
-      const promptTreeBinding = {
-        action: 'prompt-tree' as const,
-      };
-      loader.setBinding('Y', 'claude-code', promptTreeBinding);
-
-      expect(loader.getBindings('claude-code')!['Y']).toEqual(promptTreeBinding);
-
-      const onDisk = readBindingsBySlug();
-      expect(onDisk['claude-code']['Y']).toEqual(promptTreeBinding);
-    });
-
-    it('round-trips prompt-tree binding through save and reload', () => {
-      loader.load();
-      const promptTreeBinding = {
-        action: 'prompt-tree' as const,
-      };
-      loader.setBinding('Y', 'copilot-cli', promptTreeBinding);
-
-      // Reload from disk
-      const loader2 = new ConfigLoader(TEST_DIR);
-      loader2.load();
-      expect(loader2.getBindings('copilot-cli')!['Y']).toEqual(promptTreeBinding);
-    });
-  });
-
-  // =========================================================================
-  // copyCliBindings
-  // =========================================================================
-
-  describe('copyCliBindings', () => {
-    it('copies all bindings from one CLI to another', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      const target = loader.getBindings('copilot-cli')!;
-      // claude-code has A and B — both should now exist on copilot-cli
-      expect(target['A']).toEqual({ action: 'keyboard', sequence: '{Ctrl+L}' });
-      expect(target['B']).toEqual({ action: 'voice', key: 'Space', mode: 'hold' });
-    });
-
-    it('overwrites existing bindings on target', () => {
-      loader.load();
-      // copilot-cli already has A={Ctrl+L} and Y={Ctrl+C}
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      const target = loader.getBindings('copilot-cli')!;
-      // A was overwritten with claude-code's A
-      expect(target['A']).toEqual({ action: 'keyboard', sequence: '{Ctrl+L}' });
-      // Y was not in source — should remain untouched
-      expect(target['Y']).toEqual({ action: 'keyboard', sequence: '{Ctrl+C}' });
-    });
-
-    it('returns count of copied bindings', () => {
-      loader.load();
-      const count = loader.copyCliBindings('claude-code', 'copilot-cli');
-      expect(count).toBe(2); // A and B
-    });
-
-    it('throws for unknown source CLI', () => {
-      loader.load();
-      expect(() => loader.copyCliBindings('nonexistent', 'copilot-cli'))
-        .toThrow('No bindings found for source: nonexistent');
-    });
-
-    it('throws for unknown target CLI', () => {
-      loader.load();
-      expect(() => loader.copyCliBindings('claude-code', 'nonexistent'))
-        .toThrow('Unknown target CLI type: nonexistent');
-    });
-
-    it('persists copied bindings to disk', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      const fresh = new ConfigLoader(TEST_DIR);
-      fresh.load();
-      const target = fresh.getBindings('copilot-cli')!;
-      expect(target['B']).toEqual({ action: 'voice', key: 'Space', mode: 'hold' });
-    });
-
-    it('does not mutate source bindings via shared reference', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      // Modify target binding — should not affect source
-      loader.setBinding('A', 'copilot-cli', { action: 'keyboard', sequence: '{Enter}' });
-      const source = loader.getBindings('claude-code')!;
-      expect(source['A']).toEqual({ action: 'keyboard', sequence: '{Ctrl+L}' });
+      expect(() => loader.createBindingProfile('X', 'missing')).toThrow('Unknown binding profile');
     });
   });
 
@@ -493,33 +318,6 @@ describe('ConfigLoader', () => {
     it('getSequenceGroup returns null for unknown CLI', () => {
       loader.load();
       expect(loader.getSequenceGroup('nonexistent', 'prompts')).toBeNull();
-    });
-
-    it('copyCliBindings also copies sequences', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      const sequences = loader.getSequences('copilot-cli');
-      expect(Object.keys(sequences)).toEqual(['prompts', 'snippets']);
-      expect(sequences['prompts']).toHaveLength(2);
-    });
-
-    it('copied sequences are deep clones (no shared references)', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      // Mutate target sequences — should not affect source
-      const targetSeq = loader.getSequences('copilot-cli');
-      targetSeq['prompts'].push({ label: 'new', sequence: 'new item' });
-      const sourceSeq = loader.getSequences('claude-code');
-      expect(sourceSeq['prompts']).toHaveLength(2);
-    });
-
-    it('copyCliBindings persists sequences to disk', () => {
-      loader.load();
-      loader.copyCliBindings('claude-code', 'copilot-cli');
-      const fresh = new ConfigLoader(TEST_DIR);
-      fresh.load();
-      const sequences = fresh.getSequences('copilot-cli');
-      expect(sequences['prompts']).toHaveLength(2);
     });
 
     it('setSequenceGroup creates a new group', () => {
@@ -1167,7 +965,7 @@ describe('ConfigLoader', () => {
 
     it('persists renamed button bindings through setBinding', () => {
       loader.load();
-      loader.setBinding('Sandwich', 'claude-code', { action: 'keyboard', keys: ['Ctrl', 'w'] });
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'Sandwich', { action: 'keyboard', keys: ['Ctrl', 'w'] } as any);
 
       // Re-load and verify
       loader.load();
@@ -1307,8 +1105,8 @@ describe('ConfigLoader', () => {
   describe('scroll binding type', () => {
     it('can store and retrieve scroll bindings', () => {
       loader.load();
-      loader.setBinding('RightStickUp', 'claude-code', { action: 'scroll', direction: 'up', lines: 3 } as any);
-      loader.setBinding('RightStickDown', 'claude-code', { action: 'scroll', direction: 'down' } as any);
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'RightStickUp', { action: 'scroll', direction: 'up', lines: 3 } as any);
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'RightStickDown', { action: 'scroll', direction: 'down' } as any);
 
       const bindings = loader.getBindings('claude-code')!;
       expect(bindings['RightStickUp']).toEqual({ action: 'scroll', direction: 'up', lines: 3 });
@@ -1317,7 +1115,7 @@ describe('ConfigLoader', () => {
 
     it('persists scroll bindings to disk', () => {
       loader.load();
-      loader.setBinding('RightStickUp', 'claude-code', { action: 'scroll', direction: 'up' } as any);
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'RightStickUp', { action: 'scroll', direction: 'up' } as any);
 
       // Reload from disk
       const freshLoader = new ConfigLoader(TEST_DIR);

@@ -465,6 +465,15 @@ describe('initConfigCache', () => {
     expect(state.cliBindingsCache['claude-code']).toEqual(newBindings);
   });
 
+  it('drops a tool whose binding profile was unset or deleted', async () => {
+    state.cliBindingsCache['claude-code'] = { X: { action: 'keyboard', sequence: 'old' } };
+    (window as any).gamepadCli.configGetBindings.mockResolvedValue(null);
+
+    await initConfigCache();
+
+    expect(state.cliBindingsCache['claude-code']).toBeUndefined();
+  });
+
   it('does nothing when window.gamepadCli is unavailable', async () => {
     (window as any).gamepadCli = undefined;
 

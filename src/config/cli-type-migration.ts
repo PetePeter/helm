@@ -3,7 +3,7 @@
  * ('claude-code') to stable UUID v4 ids.
  *
  * Why: the slug doubled as both identity and label, so renaming a CLI type meant
- * rewriting its key everywhere it was referenced (bindings, sessions, recycle
+ * rewriting its key everywhere it was referenced (sessions, recycle
  * bin, scheduled tasks). With a UUID key, `displayName` is free text and a
  * rename touches exactly one field.
  *
@@ -25,7 +25,6 @@ import logger from '../utils/logger.js';
 /** Every file that stores a CLI type key and therefore has to be re-keyed together. */
 export interface CliTypeMigrationFiles {
   cliTypesFile: string;
-  bindingsFile: string;
   sessionsFile: string;
   recycleBinFile: string;
   scheduledTasksFile: string;
@@ -46,7 +45,6 @@ export interface CliTypeMigrationFiles {
 export function defaultCliTypeMigrationFiles(configDir: string): CliTypeMigrationFiles {
   return {
     cliTypesFile: path.join(configDir, 'cli-types.yaml'),
-    bindingsFile: path.join(configDir, 'bindings.yaml'),
     sessionsFile: path.join(configDir, 'sessions.yaml'),
     recycleBinFile: path.join(configDir, 'recycle-bin.yaml'),
     scheduledTasksFile: path.join(configDir, 'scheduled-tasks.yaml'),
@@ -87,8 +85,8 @@ export function migrateCliTypeIds(files: CliTypeMigrationFiles): boolean {
   if (entries.length === 0) return false;
 
   // cli-types.yaml is swapped first, so a crash (or a failed rename) between
-  // that swap and the downstream ones leaves the types re-keyed while bindings
-  // and sessions still point at slugs. An `id` on every entry therefore cannot
+  // that swap and the downstream ones leaves the types re-keyed while sessions
+  // still point at slugs. An `id` on every entry therefore cannot
   // be the whole idempotence story — it would strand those references forever.
   // Instead, rebuild the slug map from the recorded legacyKeys and re-run the
   // downstream rewrite; it stages nothing when there is nothing left to fix,
@@ -110,7 +108,6 @@ export function migrateCliTypeIds(files: CliTypeMigrationFiles): boolean {
   }
 
   const staged: StagedWrite[] = [{ filePath: files.cliTypesFile, text: YAML.stringify(migrated) }];
-  collectRekeyedBindings(files.bindingsFile, slugToId, staged);
   collectRekeyedList(files.sessionsFile, 'sessions', slugToId, staged);
   collectRekeyedList(files.recycleBinFile, 'entries', slugToId, staged);
   collectRekeyedList(files.scheduledTasksFile, 'tasks', slugToId, staged);
@@ -136,7 +133,6 @@ function repairDanglingSlugReferences(
   if (slugToId.size === 0) return false;
 
   const staged: StagedWrite[] = [];
-  collectRekeyedBindings(files.bindingsFile, slugToId, staged);
   collectRekeyedList(files.sessionsFile, 'sessions', slugToId, staged);
   collectRekeyedList(files.recycleBinFile, 'entries', slugToId, staged);
   collectRekeyedList(files.scheduledTasksFile, 'tasks', slugToId, staged);
@@ -145,27 +141,6 @@ function repairDanglingSlugReferences(
 
   logger.warn(`[Config] CLI type migration: repairing ${staged.length} file(s) still holding pre-UUID slugs`);
   return commit(staged);
-}
-
-/** Stage bindings.yaml with its top-level slug keys replaced by uuids. */
-function collectRekeyedBindings(
-  filePath: string,
-  slugToId: Map<string, string>,
-  staged: StagedWrite[],
-): void {
-  const parsed = readYamlFile(filePath);
-  if (!isRecord(parsed)) return;
-  const out: Record<string, unknown> = {};
-  let changed = false;
-  for (const [key, value] of Object.entries(parsed)) {
-    const id = slugToId.get(key);
-    if (id && id !== key) changed = true;
-    out[id ?? key] = value;
-  }
-  // Stage only a real re-key: rewriting an already-migrated bindings.yaml on
-  // every launch would churn the file and defeat the repair pass's no-op check.
-  if (!changed) return;
-  staged.push({ filePath, text: YAML.stringify(out) });
 }
 
 /**

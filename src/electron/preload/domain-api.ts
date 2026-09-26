@@ -127,16 +127,26 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('config:removeSequenceGroup', cliType, groupId),
 
   /**
-   * Set a binding (for settings screen)
+   * Binding profiles — shared button maps a CLI type points at via bindingProfileId
    */
-  configSetBinding: (button: string, cliType: string, binding: any) =>
-    ipcRenderer.invoke('config:setBinding', button, cliType, binding),
+  configGetBindingProfiles: () => ipcRenderer.invoke('config:getBindingProfiles') as Promise<
+    Array<{ id: string; name: string; bindings: Record<string, any> }>
+  >,
 
-  configRemoveBinding: (button: string, cliType: string) =>
-    ipcRenderer.invoke('config:removeBinding', button, cliType),
+  configSetBinding: (profileId: string, button: string, binding: any) =>
+    ipcRenderer.invoke('config:setBinding', profileId, button, binding),
 
-  configCopyCliBindings: (sourceCli: string, targetCli: string) =>
-    ipcRenderer.invoke('config:copyCliBindings', sourceCli, targetCli),
+  configRemoveBinding: (profileId: string, button: string) =>
+    ipcRenderer.invoke('config:removeBinding', profileId, button),
+
+  configCreateBindingProfile: (name: string, copyFromId?: string) =>
+    ipcRenderer.invoke('config:createBindingProfile', name, copyFromId),
+
+  configRenameBindingProfile: (id: string, name: string) =>
+    ipcRenderer.invoke('config:renameBindingProfile', id, name),
+
+  configDeleteBindingProfile: (id: string) =>
+    ipcRenderer.invoke('config:deleteBindingProfile', id),
 
   /**
    * Get haptic feedback setting

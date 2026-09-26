@@ -15,6 +15,12 @@ import {
 import { useChipBarStore } from '../stores/chip-bar.js';
 import { useToast } from './useToast.js';
 
+export interface SettingsBindingProfile {
+  id: string;
+  name: string;
+  bindings: Record<string, any>;
+}
+
 export interface SettingsToolItem {
   key: string;
   name: string;
@@ -97,7 +103,7 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator']);
+const SETTINGS_TABS = new Set(['bindings', 'tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator']);
 
 function emptySkillDraft(): SettingsSkillDraft {
   return {
@@ -122,10 +128,9 @@ export function useSettingsController(options: {
   doSpawnShell?: (command: string) => Promise<void>;
   reloadSessions?: () => void;
   closeSettings?: () => void;
-  openBindingEditor?: (button: string, cliType: string, binding?: any) => void;
+  openBindingEditor?: (button: string, profileId: string, binding?: any) => void;
 }) {
   const settingsTab = ref(state.settingsTab || 'tools');
-  const settingsCliTypes = ref<string[]>([]);
   const settingsTools = ref<SettingsToolItem[]>([]);
   const settingsDirectories = ref<SettingsDirectoryItem[]>([]);
   const settingsProjects = computed(() => state.projects);
@@ -146,6 +151,8 @@ export function useSettingsController(options: {
   const settingsSkills = ref<SettingsSkillSummary[]>([]);
   const settingsSkillDraft = ref<SettingsSkillDraft>(emptySkillDraft());
   const skillBodyCache = ref<Record<string, string>>({});
+  const settingsBindingProfiles = ref<SettingsBindingProfile[]>([]);
+  const settingsBindingProfileId = ref('');
   const settingsBindings = ref<SettingsBindingEntry[]>([]);
   const settingsBindingSortField = ref<BindingSortField>('button');
   const settingsBindingSortDirection = ref<SortDirection>('asc');
@@ -155,19 +162,8 @@ export function useSettingsController(options: {
     return CONTROLLER_BUTTONS.filter((button) => !mapped.has(button));
   });
 
-  const settingsBindingCopySources = computed(() =>
-    settingsCliTypes.value
-      .filter((cliType) => cliType !== settingsTab.value)
-      .map((cliType) => ({ id: cliType, label: getCliDisplayName(cliType) })),
-  );
-
   async function loadSettingsData(): Promise<void> {
-    settingsCliTypes.value = state.cliTypes.length > 0
-      ? state.cliTypes
-      : (await configClient.configGetCliTypes());
-
-    const validTabs = new Set([...settingsCliTypes.value, ...NON_CLI_SETTINGS_TABS]);
-    if (!validTabs.has(settingsTab.value)) {
+    if (!SETTINGS_TABS.has(settingsTab.value)) {
       settingsTab.value = 'tools';
     }
 
@@ -182,22 +178,22 @@ export function useSettingsController(options: {
       options.refreshProjects(),
     ]);
 
-    await loadCurrentTabBindings();
+    await loadBindingProfiles();
   }
 
-  async function loadCurrentTabBindings(): Promise<void> {
-    const tab = settingsTab.value;
-    if (NON_CLI_SETTINGS_TABS.has(tab)) {
-      settingsBindings.value = [];
-      return;
+  /** Refresh profiles from main; keep the selected one if it still exists. */
+  async function loadBindingProfiles(): Promise<void> {
+    const profiles = await configClient.configGetBindingProfiles();
+    settingsBindingProfiles.value = profiles ?? [];
+    if (!settingsBindingProfiles.value.some((p) => p.id === settingsBindingProfileId.value)) {
+      settingsBindingProfileId.value = settingsBindingProfiles.value[0]?.id ?? '';
     }
+    renderSelectedProfileBindings();
+  }
 
-    let bindings = state.cliBindingsCache[tab];
-    if (!bindings) {
-      bindings = await configClient.configGetBindings(tab);
-      if (bindings) state.cliBindingsCache[tab] = bindings;
-    }
-
+  function renderSelectedProfileBindings(): void {
+    const bindings = settingsBindingProfiles.value
+      .find((p) => p.id === settingsBindingProfileId.value)?.bindings;
     const sortedEntries = sortBindingEntries(
       Object.entries(bindings || {}),
       settingsBindingSortField.value,
@@ -214,11 +210,8 @@ export function useSettingsController(options: {
 
   function buildSettingsTabs() {
     return [
-      ...settingsCliTypes.value.map((cliType) => ({
-        id: cliType,
-        label: getCliDisplayName(cliType),
-      })),
       { id: 'tools', label: '🔧 Tools' },
+      { id: 'bindings', label: '🎮 Bindings' },
       { id: 'session-list', label: '🗂 Session List' },
       { id: 'chipbar-actions', label: '⚡ Quick Actions' },
       { id: 'projects', label: '📁 Projects' },
@@ -274,6 +267,7 @@ export function useSettingsController(options: {
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),
       mouseTracking: Boolean(value?.mouseTracking),
+      bindingProfileId: value?.bindingProfileId ?? '',
       messReminders: value?.messReminders !== false,
       submitSuffix: value?.submitSuffix ?? '\\r',
       helmActions: {
@@ -287,13 +281,9 @@ export function useSettingsController(options: {
     };
   }
 
-  async function refreshAfterToolChange(nextTab?: string): Promise<void> {
+  async function refreshAfterToolChange(): Promise<void> {
     state.cliTypes = await configClient.configGetCliTypes();
     state.availableSpawnTypes = state.cliTypes;
-    if (nextTab) {
-      settingsTab.value = nextTab;
-      state.settingsTab = nextTab;
-    }
     await initConfigCache();
     options.reloadSessions?.();
     await loadSettingsData();
@@ -414,7 +404,8 @@ export function useSettingsController(options: {
     }
   }
 
-  function onToolAdd(): void {
+  async function onToolAdd(): Promise<void> {
+    await loadToolEditorProfiles();
     toolEditor.mode = 'add';
     toolEditor.editKey = '';
     toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate);
@@ -467,6 +458,7 @@ export function useSettingsController(options: {
       const value = toolsData?.cliTypes?.[key];
       if (!value) return;
 
+      await loadToolEditorProfiles();
       toolEditor.mode = 'edit';
       toolEditor.editKey = key;
       toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate, key);
@@ -507,6 +499,7 @@ export function useSettingsController(options: {
       const value = toolsData?.cliTypes?.[key];
       if (!value) return;
 
+      await loadToolEditorProfiles();
       toolEditor.mode = 'clone';
       toolEditor.editKey = key;
       toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate);
@@ -530,11 +523,10 @@ export function useSettingsController(options: {
           initialPromptDelay,
           buildToolEditorOptions(values),
         );
-        // The clone's bindings are copied onto the uuid the loader just minted.
+        // The binding profile travels in the form, so the clone shares it.
         if (addResult.success && addResult.id) {
-          await configClient.configCopyCliBindings(key, addResult.id);
           logEvent(`Cloned CLI type ${getCliDisplayName(key)} to ${name}`);
-          await refreshAfterToolChange(addResult.id);
+          await refreshAfterToolChange();
           return;
         }
         logEvent(`Failed to clone CLI type: ${addResult.error || 'unknown error'}`);
@@ -934,41 +926,93 @@ export function useSettingsController(options: {
     }));
   }
 
+  async function loadToolEditorProfiles(): Promise<void> {
+    const profiles = await configClient.configGetBindingProfiles();
+    toolEditor.bindingProfiles = (profiles ?? []).map(({ id, name }) => ({ id, name }));
+  }
+
+  /** After any profile write: refresh the settings view and the runtime per-CLI cache. */
+  async function afterBindingChange(): Promise<void> {
+    await initConfigCache();
+    await loadBindingProfiles();
+  }
+
   function onBindingAdd(button?: string): void {
     const targetButton = button || settingsAddableButtons.value[0];
     if (!targetButton) {
       logEvent('All buttons already have bindings');
       return;
     }
-    options.openBindingEditor?.(targetButton, settingsTab.value);
+    if (!settingsBindingProfileId.value) {
+      logEvent('Create a binding profile first');
+      return;
+    }
+    options.openBindingEditor?.(targetButton, settingsBindingProfileId.value);
   }
 
   async function onBindingDelete(button: string): Promise<void> {
-    try {
-      const result = await configClient.configSetBinding(button, settingsTab.value, null);
-      if (result.success) {
-        await initConfigCache();
-        void loadCurrentTabBindings();
-        logEvent(`Deleted binding for ${button}`);
-      }
-    } catch (error) {
-      console.error('Failed to delete binding:', error);
+    const result = await configClient.configRemoveBinding(settingsBindingProfileId.value, button);
+    if (!result?.success) {
+      logEvent(`Failed to delete binding: ${result?.error || 'unknown error'}`);
+      return;
     }
+    await afterBindingChange();
+    logEvent(`Deleted binding for ${button}`);
   }
 
-  async function onBindingCopyFrom(sourceCli: string): Promise<void> {
-    try {
-      const result = await configClient.configCopyCliBindings(sourceCli, settingsTab.value);
-      if (result.success) {
-        await initConfigCache();
-        void loadCurrentTabBindings();
-        logEvent(`Copied bindings from ${getCliDisplayName(sourceCli)}`);
-      } else {
-        logEvent(`Failed to copy bindings: ${result.error || 'unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Failed to copy bindings:', error);
+  function onBindingProfileSelect(id: string): void {
+    settingsBindingProfileId.value = id;
+    renderSelectedProfileBindings();
+  }
+
+  async function promptProfileName(title: string, current = ''): Promise<string | null> {
+    const result = await showFormModal(title, [
+      { key: 'name', label: 'Profile name', required: true, defaultValue: current },
+    ]);
+    const name = result?.name?.trim();
+    return name || null;
+  }
+
+  async function onBindingProfileCreate(copyCurrent: boolean): Promise<void> {
+    const name = await promptProfileName(copyCurrent ? 'Duplicate Binding Profile' : 'New Binding Profile');
+    if (!name) return;
+    const result = await configClient.configCreateBindingProfile(
+      name,
+      copyCurrent ? settingsBindingProfileId.value || undefined : undefined,
+    );
+    if (!result?.success) {
+      logEvent(`Failed to create binding profile: ${result?.error || 'unknown error'}`);
+      return;
     }
+    settingsBindingProfileId.value = result.id;
+    await loadBindingProfiles();
+    logEvent(`Created binding profile ${name}`);
+  }
+
+  async function onBindingProfileRename(): Promise<void> {
+    const current = settingsBindingProfiles.value.find((p) => p.id === settingsBindingProfileId.value);
+    if (!current) return;
+    const name = await promptProfileName('Rename Binding Profile', current.name);
+    if (!name || name === current.name) return;
+    const result = await configClient.configRenameBindingProfile(current.id, name);
+    if (!result?.success) {
+      logEvent(`Failed to rename binding profile: ${result?.error || 'unknown error'}`);
+      return;
+    }
+    await loadBindingProfiles();
+  }
+
+  async function onBindingProfileDelete(): Promise<void> {
+    const id = settingsBindingProfileId.value;
+    if (!id) return;
+    const result = await configClient.configDeleteBindingProfile(id);
+    if (!result?.success) {
+      logEvent(`Failed to delete binding profile: ${result?.error || 'unknown error'}`);
+      return;
+    }
+    // Tools that used it now have no bindings — refresh the runtime cache too.
+    await afterBindingChange();
+    logEvent('Deleted binding profile');
   }
 
   async function onBindingSortChange(field: string, direction: 'asc' | 'desc'): Promise<void> {
@@ -979,12 +1023,11 @@ export function useSettingsController(options: {
     } catch (error) {
       console.error('Failed to save binding sort prefs:', error);
     }
-    await loadCurrentTabBindings();
+    renderSelectedProfileBindings();
   }
 
   return {
     settingsTab,
-    settingsCliTypes,
     settingsTools,
     settingsDirectories,
     settingsProjects,
@@ -999,9 +1042,10 @@ export function useSettingsController(options: {
     settingsBindingSortField,
     settingsBindingSortDirection,
     settingsAddableButtons,
-    settingsBindingCopySources,
+    settingsBindingProfiles,
+    settingsBindingProfileId,
     loadSettingsData,
-    loadCurrentTabBindings,
+    loadBindingProfiles,
     buildSettingsTabs,
     validateCliTypeName,
     onToolAdd,
@@ -1030,7 +1074,10 @@ export function useSettingsController(options: {
     onSkillLoadBodies,
     onBindingAdd,
     onBindingDelete,
-    onBindingCopyFrom,
+    onBindingProfileSelect,
+    onBindingProfileCreate,
+    onBindingProfileRename,
+    onBindingProfileDelete,
     onBindingSortChange,
   };
 }

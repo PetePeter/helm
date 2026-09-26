@@ -1,99 +1,102 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { BindingStore } from '../src/config/binding-store.js';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
-const TEST_DIR = path.join(process.cwd(), '.test-binding-store-' + Date.now());
+let TEST_DIR: string;
 
-beforeEach(() => fs.mkdirSync(TEST_DIR, { recursive: true }));
+beforeEach(() => { TEST_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'helm-binding-store-')); });
 afterEach(() => fs.rmSync(TEST_DIR, { recursive: true, force: true }));
 
+function fresh(): BindingStore {
+  const store = new BindingStore(TEST_DIR);
+  store.load();
+  return store;
+}
+
 describe('BindingStore', () => {
-  it('returns null for unknown cli type', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    expect(store.get('unknown')).toBeNull();
+  it('returns null for an unknown profile', () => {
+    expect(fresh().get('unknown')).toBeNull();
   });
 
-  it('setButton and get round-trip', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.setButton('A', 'cc', { action: 'keyboard', sequence: '{Enter}' });
-    const fresh = new BindingStore(TEST_DIR);
-    fresh.load();
-    expect(fresh.get('cc')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
+  it('create + setButton round-trip through disk, keyed by a stable id', () => {
+    const store = fresh();
+    const id = store.create('Main');
+    store.setButton(id, 'A', { action: 'keyboard', sequence: '{Enter}' });
+    const reloaded = fresh();
+    expect(reloaded.get(id)?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
+    expect(reloaded.list().map(p => p.name)).toEqual(['Main']);
+  });
+
+  it('create seeds from bindings without sharing references', () => {
+    const store = fresh();
+    const seed = { A: { action: 'keyboard' as const, sequence: 'x' } };
+    const id = store.create('Copy', seed);
+    store.setButton(id, 'A', { action: 'keyboard', sequence: 'changed' });
+    expect(seed.A.sequence).toBe('x');
+  });
+
+  it('rename changes the name only; delete removes the profile', () => {
+    const store = fresh();
+    const id = store.create('Old', { A: { action: 'context-menu' } });
+    store.rename(id, 'New');
+    expect(fresh().list()).toEqual([{ id, name: 'New', bindings: { A: { action: 'context-menu' } } }]);
+    store.delete(id);
+    expect(fresh().list()).toEqual([]);
+  });
+
+  it('setButton on an unknown profile throws', () => {
+    expect(() => fresh().setButton('nope', 'A', { action: 'context-menu' })).toThrow('Unknown binding profile');
   });
 
   it('removeButton deletes just that button', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.setButton('A', 'cc', { action: 'keyboard', sequence: '{Enter}' });
-    store.setButton('B', 'cc', { action: 'voice', key: 'Space', mode: 'hold' });
-    store.removeButton('A', 'cc');
-    expect(store.get('cc')?.A).toBeUndefined();
-    expect(store.get('cc')?.B).toBeDefined();
+    const store = fresh();
+    const id = store.create('P');
+    store.setButton(id, 'A', { action: 'keyboard', sequence: '{Enter}' });
+    store.setButton(id, 'B', { action: 'voice', key: 'Space', mode: 'hold' });
+    store.removeButton(id, 'A');
+    expect(fresh().get(id)).toEqual({ B: { action: 'voice', key: 'Space', mode: 'hold' } });
   });
 
-  it('copy duplicates all bindings to dst, leaves src unchanged', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.setButton('A', 'src', { action: 'keyboard', sequence: '{Enter}' });
-    store.copy('src', 'dst');
-    expect(store.get('dst')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
-    expect(store.get('src')?.A).toBeDefined();
+  it('removeButton does not save when the button does not exist', () => {
+    const store = fresh();
+    const id = store.create('P', { A: { action: 'context-menu' } });
+    const before = fs.readFileSync(store.filePath, 'utf8');
+    fs.writeFileSync(store.filePath, before + '\n# marker\n');
+    store.removeButton(id, 'Nonexistent');
+    expect(fs.readFileSync(store.filePath, 'utf8')).toContain('# marker');
   });
 
-  it('copy throws when source CLI type has no bindings', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    expect(() => store.copy('missing', 'dst')).toThrow();
+  it('stages a legacy per-CLI file for migration instead of treating it as profiles', () => {
+    fs.writeFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'cc:\n  A:\n    action: context-menu\n');
+    const store = fresh();
+    expect(store.list()).toEqual([]);
+    expect(store.takeLegacy()).toEqual({ cc: { A: { action: 'context-menu' } } });
+    expect(store.takeLegacy()).toBeNull();
   });
 
-  it('removeButton does not save when button does not exist', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.setButton('A', 'cc', { action: 'keyboard', sequence: '{Enter}' });
-    const mtimeBefore = fs.statSync(store.filePath).mtimeMs;
-    // Sleep one tick equivalent — use a busy loop with a fresh stat to ensure
-    // any subsequent write would update mtime (filesystems have ms resolution).
-    const start = Date.now();
-    while (Date.now() - start < 20) { /* spin */ }
-    store.removeButton('Nonexistent', 'cc');
-    const mtimeAfter = fs.statSync(store.filePath).mtimeMs;
-    expect(mtimeAfter).toBe(mtimeBefore);
-  });
-
-  it('migrates legacy sequence-list bindings to prompt-tree on load (PT-7)', () => {
-    // Seed a raw bindings.yaml containing the deprecated action name, as an
-    // upgraded user's file would after the rename.
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.setButton('Y', 'cc', { action: 'keyboard', sequence: '{Enter}' });
-    // Write the legacy action directly to disk, bypassing the typed setter.
-    const fs2 = require('fs') as typeof import('fs');
-    fs2.writeFileSync(
-      store.filePath,
+  it('rewrites sequence-list to prompt-tree in legacy maps (PT-7)', () => {
+    fs.writeFileSync(
+      path.join(TEST_DIR, 'bindings.yaml'),
       'cc:\n  Y:\n    action: sequence-list\n    sequenceGroup: quick-actions\n',
     );
-    const fresh = new BindingStore(TEST_DIR);
-    fresh.load();
-    expect(fresh.get('cc')?.Y?.action).toBe('prompt-tree');
-    // Migration is persisted, so a second load sees prompt-tree on disk.
-    const reread = new BindingStore(TEST_DIR);
-    reread.load();
-    expect(reread.get('cc')?.Y?.action).toBe('prompt-tree');
+    expect(fresh().takeLegacy()?.cc.Y.action).toBe('prompt-tree');
   });
 
-  it('importBulk populates all bindings and saves', () => {
-    const store = new BindingStore(TEST_DIR);
-    store.load();
-    store.importBulk({
-      cc: { A: { action: 'keyboard', sequence: '{Enter}' } },
-      cp: { B: { action: 'voice', key: 'Space', mode: 'tap' } },
-    });
-    const fresh = new BindingStore(TEST_DIR);
-    fresh.load();
-    expect(fresh.get('cc')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
-    expect(fresh.get('cp')?.B).toEqual({ action: 'voice', key: 'Space', mode: 'tap' });
+  it('rewrites sequence-list to prompt-tree inside profiles and persists it (PT-7)', () => {
+    fs.writeFileSync(
+      path.join(TEST_DIR, 'bindings.yaml'),
+      'profiles:\n  p1:\n    name: P\n    bindings:\n      Y:\n        action: sequence-list\n',
+    );
+    expect(fresh().get('p1')?.Y.action).toBe('prompt-tree');
+    expect(fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8')).toContain('prompt-tree');
+  });
+
+  it('importLegacy is ignored once profiles exist', () => {
+    const store = fresh();
+    store.create('P');
+    store.importLegacy({ cc: { A: { action: 'context-menu' } } });
+    expect(store.takeLegacy()).toBeNull();
   });
 });

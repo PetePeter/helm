@@ -41,6 +41,7 @@ export interface ToolEditorData {
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
   mouseTracking?: boolean;
+  bindingProfileId?: string;
   submitSuffix: string;
   helmActions: { clear: string; compact: string; export: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
@@ -51,6 +52,8 @@ const props = defineProps<{
   mode: 'add' | 'edit' | 'clone';
   editKey: string;
   initialData: ToolEditorData;
+  /** Binding profiles the tool can point at; '' in the picker means none. */
+  bindingProfiles?: Array<{ id: string; name: string }>;
   /** Returns an error message when the name is not usable, or null when it is. */
   validateName?: (name: string) => string | null;
 }>();
@@ -68,6 +71,7 @@ const emit = defineEmits<{
     largeTextAsTempFile: boolean;
     messReminders?: boolean;
     mouseTracking?: boolean;
+    bindingProfileId: string;
     submitSuffix: string;
     helmActions: { clear: string; compact: string; export: string };
     _promptItems: Array<{ label: string; sequence: string }>;
@@ -89,6 +93,7 @@ const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
 const messReminders = ref(true);
 const mouseTracking = ref(false);
+const bindingProfileId = ref('');
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
 const helmActionClear = ref('');
 const helmActionCompact = ref('');
@@ -150,6 +155,7 @@ function initForm(): void {
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
   mouseTracking.value = Boolean(d.mouseTracking);
+  bindingProfileId.value = d.bindingProfileId ?? '';
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
@@ -209,6 +215,7 @@ function onSave(): void {
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
     mouseTracking: mouseTracking.value,
+    bindingProfileId: bindingProfileId.value,
     submitSuffix: submitSuffix.value,
     helmActions: {
       clear: helmActionClear.value.trim(),
@@ -302,6 +309,14 @@ defineExpose({ handleButton });
                 <label for="te-delay">Initial Prompt Delay (ms)</label>
                 <input id="te-delay" v-model.number="initialPromptDelay" type="number" min="0" step="100" class="te-input" />
               </div>
+            </div>
+            <div class="te-field">
+              <label for="te-binding-profile">Binding Profile</label>
+              <select id="te-binding-profile" v-model="bindingProfileId" class="te-select">
+                <option value="">None</option>
+                <option v-for="profile in bindingProfiles ?? []" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+              </select>
+              <p class="te-section__hint">Gamepad button map this CLI type uses. Profiles are edited in Settings → Bindings.</p>
             </div>
             <div class="te-field">
               <label for="te-submit-suffix">Submit Suffix</label>

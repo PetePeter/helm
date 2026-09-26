@@ -158,7 +158,9 @@ describe('ConfigLoader.resolveCliType', () => {
   it('keeps bindings resolvable through every handle after a rename', () => {
     const loader = loadedLoader();
     const id = idForLegacy(loader, 'claude-code');
-    loader.setBinding('A', 'claude-code', { action: 'context-menu' });
+    const profileId = loader.createBindingProfile('P');
+    loader.setBinding(profileId, 'A', { action: 'context-menu' });
+    loader.updateCliType('claude-code', 'Claude Code', [], 0, { bindingProfileId: profileId });
 
     loader.updateCliType(id, 'Claude (work)');
 

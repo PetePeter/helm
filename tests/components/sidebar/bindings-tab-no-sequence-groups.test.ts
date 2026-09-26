@@ -13,10 +13,9 @@ function mountTab() {
   return mount(BindingsTab, {
     props: {
       bindings: [],
-      cliType: 'cc',
-      cliLabel: 'Claude Code',
+      profiles: [{ id: 'p1', name: 'Default' }],
+      profileId: 'p1',
       addableButtons: [],
-      copySourceOptions: [],
       sortField: 'button',
       sortDirection: 'asc' as const,
     },

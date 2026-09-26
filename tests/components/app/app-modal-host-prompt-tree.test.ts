@@ -27,7 +27,7 @@ const BASE_PROPS = {
   isActiveSessionSnappedOut: false,
   bindingEditorVisible: false,
   bindingEditorButton: '',
-  bindingEditorCliType: '',
+  bindingEditorProfileName: '',
   bindingEditorBinding: null,
   schedulerPopupVisible: false,
   schedulerPopupTaskId: null,

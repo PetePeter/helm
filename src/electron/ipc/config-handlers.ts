@@ -50,6 +50,15 @@ export function setupConfigHandlers(
     }
   });
 
+  ipcMain.handle('config:getBindingProfiles', () => {
+    try {
+      return configLoader.getBindingProfiles();
+    } catch (error) {
+      logger.error(`[IPC] Failed to get binding profiles: ${error}`);
+      return [];
+    }
+  });
+
   ipcMain.handle('config:getCliTypes', () => {
     try {
       return configLoader.getCliTypes();
@@ -90,33 +99,51 @@ export function setupConfigHandlers(
     }
   });
 
-  ipcMain.handle('config:setBinding', (_event, button: string, cliType: string, binding: any) => {
+  ipcMain.handle('config:setBinding', (_event, profileId: string, button: string, binding: any) => {
     try {
-      configLoader.setBinding(button, cliType, binding);
-      logger.info(`[IPC] Set binding: ${button} for ${cliType} ${JSON.stringify(binding)}`);
+      configLoader.setBinding(profileId, button, binding);
       return { success: true };
     } catch (error) {
-      logger.error(`[IPC] Failed to set binding: ${button} ${error}`);
+      logger.error(`[IPC] config:setBinding failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });
 
-  ipcMain.handle('config:removeBinding', (_event, button: string, cliType: string) => {
+  ipcMain.handle('config:removeBinding', (_event, profileId: string, button: string) => {
     try {
-      configLoader.removeBinding(button, cliType);
+      configLoader.removeBinding(profileId, button);
       return { success: true };
     } catch (error) {
+      logger.error(`[IPC] config:removeBinding failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });
 
-  ipcMain.handle('config:copyCliBindings', (_event, sourceCli: string, targetCli: string) => {
+  ipcMain.handle('config:createBindingProfile', (_event, name: string, copyFromId?: string) => {
     try {
-      const count = configLoader.copyCliBindings(sourceCli, targetCli);
-      logger.info(`[IPC] Copied ${count} bindings from ${sourceCli} to ${targetCli}`);
-      return { success: true, count };
+      return { success: true, id: configLoader.createBindingProfile(name, copyFromId) };
     } catch (error) {
-      logger.error(`[IPC] Failed to copy bindings: ${error}`);
+      logger.error(`[IPC] config:createBindingProfile failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:renameBindingProfile', (_event, id: string, name: string) => {
+    try {
+      configLoader.renameBindingProfile(id, name);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] config:renameBindingProfile failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:deleteBindingProfile', (_event, id: string) => {
+    try {
+      configLoader.deleteBindingProfile(id);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] config:deleteBindingProfile failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });

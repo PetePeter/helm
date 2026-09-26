@@ -5,7 +5,7 @@
  */
 
 import { ipcMain } from 'electron';
-import type { ConfigLoader, EnvVarEntry, PatternRule, SequenceListItem } from '../../config/loader.js';
+import type { CliTypeOptions, ConfigLoader, PatternRule, SequenceListItem } from '../../config/loader.js';
 import { logger } from '../../utils/logger.js';
 
 export function setupToolsHandlers(configLoader: ConfigLoader): void {
@@ -25,7 +25,7 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
   ipcMain.handle('tools:addCliType', (
     _event, key: string, name: string,
     initialPrompt: SequenceListItem[], initialPromptDelay: number,
-    options?: { env?: EnvVarEntry[]; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; mouseTracking?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
+    options?: CliTypeOptions,
   ) => {
     try {
       // The minted uuid goes back to the caller — a clone needs it to copy
@@ -41,7 +41,7 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
   ipcMain.handle('tools:updateCliType', (
     _event, key: string, name: string,
     initialPrompt: SequenceListItem[], initialPromptDelay: number,
-    options?: { env?: EnvVarEntry[]; renameCommand?: string; spawnCommand?: string; resumeCommand?: string; continueCommand?: string; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; messReminders?: boolean; mouseTracking?: boolean; submitSuffix?: string; helmActions?: { clear?: string; compact?: string; export?: string } },
+    options?: CliTypeOptions,
   ) => {
     try {
       configLoader.updateCliType(key, name, initialPrompt, initialPromptDelay, options);

@@ -8,7 +8,6 @@
 import { ref, watch, computed } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useFocusTrap } from '../../composables/useFocusTrap.js';
-import { getCliDisplayName } from '../../utils.js';
 import PromptTextarea from '../common/PromptTextarea.vue';
 
 const MODAL_ID = 'binding-editor';
@@ -37,7 +36,7 @@ interface Binding {
 const props = defineProps<{
   visible: boolean;
   buttonName: string;
-  cliType: string;
+  profileName: string;
   binding: Binding | null;
 }>();
 
@@ -114,7 +113,7 @@ function onCancel(): void {
 }
 
 const title = computed(() =>
-  `${props.buttonName} — ${getCliDisplayName(props.cliType)}`,
+  `${props.buttonName} — ${props.profileName}`,
 );
 
 defineExpose({ handleButton });

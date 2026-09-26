@@ -45,7 +45,7 @@ Every feature manager follows the same shape: an `EventEmitter` class in `src/se
 ```
 Gamepad → Browser Gamepad API (renderer polling, 16ms)
   → IPC gamepad:event → debounce (250ms)
-    → Resolve binding (per-CLI type)
+    → Resolve binding (the CLI type's binding profile)
       → Execute action (keyboard/voice/spawn/switch/prompt-tree)
 
 D-pad / left stick navigates sessions and auto-selects the terminal.

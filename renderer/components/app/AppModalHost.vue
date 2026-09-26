@@ -48,7 +48,7 @@ defineProps<{
   contextMenuGroupName?: string | null;
   bindingEditorVisible: boolean;
   bindingEditorButton: string;
-  bindingEditorCliType: string;
+  bindingEditorProfileName: string;
   bindingEditorBinding: any;
   schedulerPopupVisible: boolean;
   schedulerPopupTaskId: string | null;
@@ -277,6 +277,7 @@ function onRuntimeGroupMoveCancel(): void {
     :mode="toolEditor.mode"
     :edit-key="toolEditor.editKey"
     :initial-data="toolEditor.initialData"
+    :binding-profiles="toolEditor.bindingProfiles"
     :validate-name="toolEditor.validateName ?? undefined"
     @save="onToolEditorSave"
     @cancel="toolEditor.visible = false"
@@ -295,7 +296,7 @@ function onRuntimeGroupMoveCancel(): void {
   <BindingEditorModal
     :visible="bindingEditorVisible"
     :button-name="bindingEditorButton"
-    :cli-type="bindingEditorCliType"
+    :profile-name="bindingEditorProfileName"
     :binding="bindingEditorBinding"
     @update:visible="emit('update:bindingEditorVisible', $event)"
     @save="emit('binding-save', $event)"

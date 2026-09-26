@@ -39,6 +39,8 @@ export type CliTypeOptions = {
   mouseTracking?: boolean;
   submitSuffix?: string;
   helmActions?: HelmActionMap;
+  /** Binding profile id; '' clears it on update. */
+  bindingProfileId?: string;
 };
 
 export function parseCliArgs(argsText?: string): string[] {

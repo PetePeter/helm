@@ -14,7 +14,7 @@ Gamepad Button Press / Keyboard Input
   → Keyboard: routes to active terminal (PTY stdin)
   → Ctrl+V: paste-handler intercepts → clipboard text → ptyWrite() (any DOM focus)
   → Ctrl+G: paste-handler intercepts → in-app Prompt Editor (EditorPopup.vue) → Ctrl+Enter → deliverPromptSequence() → PTY
-  → Non-nav buttons: per-CLI configurable bindings
+  → Non-nav buttons: configurable bindings (the tool's binding profile)
 
 Modal keyboard capture:
   When a blocking modal is visible (context-menu, close-confirm, prompt-tree picker,

@@ -46,10 +46,11 @@ export function migrateFromProfile(
       logger.info('[Config] Migrated CLI types from profile');
     }
 
-    // Migrate bindings only if the store is currently empty.
-    if (raw.bindings && typeof raw.bindings === 'object' && Object.keys(bindingStore.getAll()).length === 0) {
-      bindingStore.importBulk(raw.bindings);
-      logger.info('[Config] Migrated bindings from profile');
+    // Stage legacy per-CLI bindings; ConfigLoader folds them into a profile.
+    // importLegacy is a no-op when the store already holds data.
+    if (raw.bindings && typeof raw.bindings === 'object') {
+      bindingStore.importLegacy(raw.bindings);
+      logger.info('[Config] Staged bindings from profile for migration');
     }
 
     // Migrate input config only on first migration (file absence is our flag).

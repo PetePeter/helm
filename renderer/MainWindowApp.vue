@@ -7,12 +7,6 @@
  * Components are presentational — they receive props and emit events.
  */
 
-declare global {
-  interface Window {
-    openLegacyBindingEditor?: (button: string, cliType: string, binding: any) => void;
-  }
-}
-
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { sessionsState } from './screens/sessions-state.js';
 import { useAppStore } from './stores/app.js';
@@ -372,7 +366,7 @@ let unsubAppCloseRequest: (() => void) | null = null;
 // Non-modal local state
 const bindingEditorVisible = ref(false);
 const bindingEditorButton = ref('');
-const bindingEditorCliType = ref('');
+const bindingEditorProfileId = ref('');
 const bindingEditorBinding = ref<any>(null);
 
 // Settings panel state
@@ -392,9 +386,10 @@ const {
   settingsBindingSortField,
   settingsBindingSortDirection,
   settingsAddableButtons,
-  settingsBindingCopySources,
+  settingsBindingProfiles,
+  settingsBindingProfileId,
   loadSettingsData,
-  loadCurrentTabBindings,
+  loadBindingProfiles,
   buildSettingsTabs,
   onToolAdd,
   onToolEdit,
@@ -422,7 +417,10 @@ const {
   onSkillLoadBodies,
   onBindingAdd,
   onBindingDelete,
-  onBindingCopyFrom,
+  onBindingProfileSelect,
+  onBindingProfileCreate,
+  onBindingProfileRename,
+  onBindingProfileDelete,
   onBindingSortChange,
 } = useSettingsController({
   refreshProjects,
@@ -432,7 +430,7 @@ const {
     settingsVisible.value = false;
     navStore.closeSettings();
   },
-  openBindingEditor: (button, cliType, binding) => onEditBinding(button, cliType, binding),
+  openBindingEditor: (button, profileId, binding) => onEditBinding(button, profileId, binding),
 });
 
 const sidebarController = useSidebarController({
@@ -694,7 +692,6 @@ function onOpenSettings(): void {
 
 watch(settingsTab, () => {
   state.settingsTab = settingsTab.value;
-  void loadCurrentTabBindings();
 });
 
 watch(() => toolEditor.visible, (visible) => {
@@ -756,34 +753,27 @@ async function onDraftSubmenuDelete(draft: { id: string }): Promise<void> {
 }
 
 // Binding editor handlers
-function onEditBinding(button: string, cliType: string, binding: any = { action: 'keyboard', sequence: '' }): void {
+function onEditBinding(button: string, profileId: string, binding?: any): void {
+  binding ??= settingsBindingProfiles.value.find((p) => p.id === profileId)?.bindings[button]
+    ?? { action: 'keyboard', sequence: '' };
   bindingEditorButton.value = button;
-  bindingEditorCliType.value = cliType;
+  bindingEditorProfileId.value = profileId;
   bindingEditorBinding.value = { ...binding };
   bindingEditorVisible.value = true;
 }
-
-// Bridge function for legacy binding editor
-function openLegacyBindingEditor(button: string, cliType: string, binding: any): void {
-  onEditBinding(button, cliType, binding);
-}
-
-// Make this function available globally for legacy code
-window.openLegacyBindingEditor = openLegacyBindingEditor;
 
 // Binding editor save
 async function onBindingEditorSave(binding: any): Promise<void> {
   try {
     const result = await configClient.configSetBinding(
+      bindingEditorProfileId.value,
       bindingEditorButton.value,
-      bindingEditorCliType.value,
       binding
     );
     if (result.success) {
-      // Refresh bindings cache to reflect the changes
+      // Refresh the runtime per-CLI cache and the settings view
       await initConfigCache();
-      // Refresh the settings display to show updated bindings
-      void loadCurrentTabBindings();
+      void loadBindingProfiles();
     }
     bindingEditorVisible.value = false;
   } catch (error) {
@@ -1207,16 +1197,18 @@ onUnmounted(() => {
             <BindingsTab
               v-else
               :bindings="settingsBindings"
-              :cli-type="activeTab"
-              :cli-label="getCliDisplayName(activeTab)"
+              :profiles="settingsBindingProfiles"
+              :profile-id="settingsBindingProfileId"
               :addable-buttons="settingsAddableButtons"
-              :copy-source-options="settingsBindingCopySources"
               :sort-field="settingsBindingSortField"
               :sort-direction="settingsBindingSortDirection"
               @add-binding="onBindingAdd"
-              @edit-binding="onEditBinding($event, activeTab)"
+              @edit-binding="onEditBinding($event, settingsBindingProfileId)"
               @delete-binding="onBindingDelete"
-              @copy-from="onBindingCopyFrom"
+              @select-profile="onBindingProfileSelect"
+              @create-profile="onBindingProfileCreate"
+              @rename-profile="onBindingProfileRename"
+              @delete-profile="onBindingProfileDelete"
               @sort-change="onBindingSortChange"
             />
           </template>
@@ -1242,7 +1234,7 @@ onUnmounted(() => {
       :context-menu-group-name="contextMenuGroupName"
       v-model:binding-editor-visible="bindingEditorVisible"
       :binding-editor-button="bindingEditorButton"
-      :binding-editor-cli-type="bindingEditorCliType"
+      :binding-editor-profile-name="settingsBindingProfiles.find((p) => p.id === bindingEditorProfileId)?.name ?? ''"
       :binding-editor-binding="bindingEditorBinding"
       v-model:scheduler-popup-visible="schedulerPopupVisible"
       :scheduler-popup-task-id="schedulerPopupTaskId"

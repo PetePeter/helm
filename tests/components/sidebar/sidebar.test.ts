@@ -961,82 +961,81 @@ describe('BindingsTab', () => {
     { button: 'A', action: 'keyboard', label: 'A Button', detail: '{Enter}' },
     { button: 'B', action: 'voice', label: 'B Button', detail: 'F1 tap' },
   ];
+  const profiles = [{ id: 'p1', name: 'Default' }, { id: 'p2', name: 'Codex' }];
 
-  it('renders binding cards', () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
+  function mountTab(props: Record<string, unknown> = {}) {
+    return mount(BindingsTab, {
+      props: { bindings, profiles, profileId: 'p1', addableButtons: ['X', 'Y'], sortField: 'button', sortDirection: 'asc' as const, ...props },
     });
+  }
+
+  it('renders binding cards with button and action', () => {
+    const w = mountTab();
     expect(w.findAll('.binding-card').length).toBe(2);
-  });
-
-  it('shows button and action', () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
     expect(w.find('.binding-card__button').text()).toBe('A');
     expect(w.find('.binding-card__action-badge').text()).toBe('keyboard');
   });
 
-  it('shows empty message when no bindings', () => {
-    const w = mount(BindingsTab, {
-      props: { bindings: [], cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['A'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
-    expect(w.find('.settings-empty').text()).toContain('No bindings configured');
+  it('shows an empty-profile message when the profile has no bindings', () => {
+    const w = mountTab({ bindings: [] });
+    expect(w.find('.settings-empty').text()).toContain('No bindings in this profile');
+  });
+
+  it('with no profiles, hides binding controls and prompts to create one', () => {
+    const w = mountTab({ bindings: [], profiles: [], profileId: '' });
+    expect(w.find('.settings-empty').text()).toContain('No binding profiles yet');
+    expect(w.find('.bindings-add-select').exists()).toBe(false);
+    expect(w.find('.bindings-profile-delete').exists()).toBe(false);
+  });
+
+  it('emits selectProfile from the profile picker', async () => {
+    const w = mountTab();
+    await w.find('.bindings-profile-select').setValue('p2');
+    expect(w.emitted('selectProfile')).toEqual([['p2']]);
+  });
+
+  it('emits createProfile (blank vs duplicate) and renameProfile', async () => {
+    const w = mountTab();
+    await w.find('.bindings-profile-new').trigger('click');
+    await w.find('.bindings-profile-duplicate').trigger('click');
+    await w.find('.bindings-profile-rename').trigger('click');
+    expect(w.emitted('createProfile')).toEqual([[false], [true]]);
+    expect(w.emitted('renameProfile')).toHaveLength(1);
+  });
+
+  it('deleteProfile needs a confirming second click', async () => {
+    const w = mountTab();
+    const del = w.find('.bindings-profile-delete');
+    await del.trigger('click');
+    expect(w.emitted('deleteProfile')).toBeUndefined();
+    await del.trigger('click');
+    expect(w.emitted('deleteProfile')).toHaveLength(1);
   });
 
   it('emits editBinding on card click', async () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
-    const cards = w.findAll('.binding-card');
-    await cards[0].trigger('click');
+    const w = mountTab();
+    await w.findAll('.binding-card')[0].trigger('click');
     expect(w.emitted('editBinding')).toEqual([['A']]);
   });
 
   it('emits deleteBinding on delete button double-click (confirm pattern)', async () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
-    const cards = w.findAll('.binding-card');
-    const deleteBtn = cards[0].find('.binding-card__delete');
-    await deleteBtn.trigger('click'); // first click: arm confirm
-    await deleteBtn.trigger('click'); // second click: confirm delete
+    const w = mountTab();
+    const deleteBtn = w.findAll('.binding-card')[0].find('.binding-card__delete');
+    await deleteBtn.trigger('click');
+    await deleteBtn.trigger('click');
     expect(w.emitted('deleteBinding')).toEqual([['A']]);
   });
 
   it('emits addBinding from the add selector', async () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X', 'Y'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
-    await w.find('.bindings-toolbar select').setValue('Y');
+    const w = mountTab();
+    await w.find('.bindings-add-select').setValue('Y');
     expect(w.emitted('addBinding')).toEqual([['Y']]);
   });
 
-  it('emits copyFrom from the copy selector', async () => {
-    const w = mount(BindingsTab, {
-      props: {
-        bindings,
-        cliType: 'claude-code',
-        cliLabel: 'Claude',
-        addableButtons: ['X'],
-        copySourceOptions: [{ id: 'copilot-cli', label: 'Copilot' }],
-        sortField: 'button',
-        sortDirection: 'asc' as const,
-      },
-    });
-    const selects = w.findAll('.bindings-toolbar select');
-    await selects[1].setValue('copilot-cli');
-    expect(w.emitted('copyFrom')).toEqual([['copilot-cli']]);
-  });
-
   it('emits sortChange when sort controls change', async () => {
-    const w = mount(BindingsTab, {
-      props: { bindings, cliType: 'claude-code', cliLabel: 'Claude', addableButtons: ['X'], copySourceOptions: [], sortField: 'button', sortDirection: 'asc' as const },
-    });
-    const selects = w.findAll('.bindings-toolbar select');
-    // No copySourceOptions → selects: [0]=add, [1]=sort-field (copy select absent)
-    await selects[1].setValue('action');
-    await w.find('.bindings-toolbar button').trigger('click');
+    const w = mountTab();
+    await w.find('.bindings-sort-select').setValue('action');
+    await w.find('.bindings-sort-direction').trigger('click');
     expect(w.emitted('sortChange')).toEqual([
       ['action', 'asc'],
       ['button', 'desc'],

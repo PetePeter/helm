@@ -164,7 +164,7 @@ renderer/
 │   │   ├── StatusStrip.vue     # Gamepad dot, count, profile badge
 │   │   ├── SettingsPanel.vue   # Settings slide-over with tab switching
 │   │   ├── ProfilesTab.vue     # Profile list CRUD
-│   │   ├── BindingsTab.vue     # Per-CLI binding list
+│   │   ├── BindingsTab.vue     # Binding profile picker + button list
 │   │   ├── ToolsTab.vue        # CLI type management
 │   │   ├── TelegramTab.vue     # Telegram bot configuration
 │   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL

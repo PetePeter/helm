@@ -49,7 +49,8 @@ describe('migrateFromProfile', () => {
     const { ct, b, ic } = makeStores();
     migrateFromProfile(TEST_DIR, ct, b, ic);
     expect(ct.get('cc')?.name).toBe('Claude');
-    expect(b.get('cc')?.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
+    // Bindings are staged as legacy maps; ConfigLoader folds them into a profile.
+    expect(b.takeLegacy()?.cc.A).toEqual({ action: 'keyboard', sequence: '{Enter}' });
   });
 
   it('renames profiles/default.yaml to .migrated', () => {

@@ -1176,7 +1176,7 @@ describe('BindingEditorModal.vue', () => {
       props: {
         visible: true,
         buttonName: 'A',
-        cliType: 'claude-code',
+        profileName: 'Default',
         binding: null,
         ...props,
       },
@@ -1185,11 +1185,9 @@ describe('BindingEditorModal.vue', () => {
     });
   }
 
-  it('renders title with button and CLI name', () => {
-    state.cliToolsCache = { 'claude-code': { displayName: 'Claude', name: 'Claude' } };
+  it('renders title with button and profile name', () => {
     const w = factory();
-    expect(w.text()).toContain('A');
-    expect(w.text()).toContain('Claude');
+    expect(w.text()).toContain('A — Default');
     w.unmount();
   });
 

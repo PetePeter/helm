@@ -52,7 +52,7 @@ graph TB
     ROUTER["Input router<br/>modal · global · pane · terminal"]
     ROUTER --> MODAL[Modal handlers]
     ROUTER --> PANEH[Pane handlers<br/>PaneInput contract]
-    ROUTER --> TERM[Terminal → PTY<br/>per-CLI bindings]
+    ROUTER --> TERM[Terminal → PTY<br/>binding profile]
 
     LBRB[LB / RB] --> RING[Pane focus ring]
     RING --> PANEH
@@ -116,7 +116,7 @@ The 13-step chain collapses to `modal > pane > CLI binding`. Handlers return
 router already enforces and the reason it never suppresses a key it declines.
 
 **Backward compatibility:** the terminal pane's handler falls through to the
-per-CLI `Binding` resolution exactly as today. Existing profile YAML keeps
+binding-profile resolution exactly as today. Existing binding YAML keeps
 working unchanged; no binding is reinterpreted.
 
 ---
@@ -172,7 +172,7 @@ spent on two commands.
 | RT (hold) | Shift layer — RT+D-pad reorders session or pane, RT+A confirms a destructive action, RT+face buttons are spawn slots |
 | Left stick / D-pad | Pane-declared directional intent |
 | Right stick | Pane-declared continuous axis: terminal scrollback, plan-canvas pan/zoom, artifact scroll, memory-graph pan |
-| A / B / X / Y | Pane-declared intents; fall through to the per-CLI binding in the terminal pane |
+| A / B / X / Y | Pane-declared intents; fall through to the tool's binding profile in the terminal pane |
 | L3 | Session switcher HUD (currently unused) |
 | R3 | Toggle overview (currently unused) |
 | Back / Start | Profile switch (unchanged) |
@@ -208,7 +208,7 @@ spawn access with nothing replacing it.
 - The Browser Gamepad API as sole input source (invariant 1) — this is a
   routing change downstream of polling, not a second source.
 - xterm.js keeping imperative ownership of keys that land inside it.
-- Per-CLI bindings, which survive as the terminal pane's fallthrough.
+- Binding profiles, which survive as the terminal pane's fallthrough.
 
 ## Open questions
 

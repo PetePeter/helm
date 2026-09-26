@@ -297,6 +297,7 @@ export interface ToolEditorBridgeData {
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
   mouseTracking?: boolean;
+  bindingProfileId?: string;
   submitSuffix: string;
   helmActions: { clear: string; compact: string; export: string };
   initialPrompt: Array<{ label: string; sequence: string }>;
@@ -317,6 +318,8 @@ export const toolEditor = reactive({
   /** Inline name check owned by the settings controller (blocks duplicate labels). */
   validateName: null as ((name: string) => string | null) | null,
   initialData: { ...EMPTY_TOOL_DATA } as ToolEditorBridgeData,
+  /** Profiles offered by the Binding Profile picker; refreshed each time the editor opens. */
+  bindingProfiles: [] as Array<{ id: string; name: string }>,
 });
 
 let _toolEditorOnSave: ((values: any) => void) | null = null;
@@ -338,6 +341,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
   mouseTracking?: boolean;
+  bindingProfileId?: string;
   submitSuffix?: string;
   helmActions?: { clear?: string; compact?: string; export?: string };
 } {
@@ -368,6 +372,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     largeTextAsTempFile: Boolean(values.largeTextAsTempFile),
     messReminders: values.messReminders !== false,
     mouseTracking: Boolean(values.mouseTracking),
+    bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,
   };

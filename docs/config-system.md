@@ -29,11 +29,11 @@ A CLI type has two separate handles, and confusing them is the bug this split ex
 | `id` | UUID v4, minted once at creation. Also the map key in `cli-types.yaml`, and the key everything else joins on. | Nobody. Never rendered. |
 | `displayName` | Free-text label the user edits. `name` is a deprecated alias kept in sync for legacy readers. | Everywhere — sidebar, spawn grid, settings, Telegram, session default names. |
 
-Renaming writes `displayName` and nothing else. No key changes, so bindings, live sessions, recycle-bin entries and scheduled tasks all keep resolving.
+Renaming writes `displayName` and nothing else. No key changes, so binding-profile refs, live sessions, recycle-bin entries and scheduled tasks all keep resolving.
 
 ```mermaid
 graph LR
-    ID[id · uuid] --> B[bindings.yaml key]
+    ID[id · uuid] --> BP[bindingProfileId]
     ID --> S[Session.cliType]
     ID --> RB[recycle bin]
     ID --> ST[scheduled tasks]
@@ -58,7 +58,7 @@ An ambiguous `displayName` throws `AmbiguousCliTypeError` naming the conflicting
 
 ### Migration
 
-`src/config/cli-type-migration.ts` runs from `ConfigLoader.load()`. A `cli-types.yaml` whose entries have no `id` is pre-UUID: each entry gets a minted uuid, `displayName` from the old `name`, and `legacyKey` set to the old slug, preserving order. The slug→uuid map is then applied to `bindings.yaml`, persisted sessions, recycle-bin entries, and scheduled tasks plus their history. Staged write, verify, then swap — a failure leaves the originals untouched. Running it again is a no-op.
+`src/config/cli-type-migration.ts` runs from `ConfigLoader.load()`. A `cli-types.yaml` whose entries have no `id` is pre-UUID: each entry gets a minted uuid, `displayName` from the old `name`, and `legacyKey` set to the old slug, preserving order. The slug→uuid map is then applied to persisted sessions, recycle-bin entries, and scheduled tasks plus their history. Staged write, verify, then swap — a failure leaves the originals untouched. Running it again is a no-op.
 
 ## Profiles
 
@@ -66,9 +66,30 @@ An ambiguous `displayName` throws `AmbiguousCliTypeError` naming the conflicting
 
 **Auto-migration:** On first load, if legacy `config/tools.yaml` and `config/directories.yaml` exist, their contents are merged into all profiles and the old files are deleted.
 
-## Binding Resolution
+## Binding Profiles
 
-CLI-specific bindings are used. Each profile defines different button behaviours per CLI type.
+Gamepad button maps live in named **binding profiles** in `bindings.yaml`; each CLI type points at one via `bindingProfileId`, or at none (no config bindings for that tool). Why: the old per-CLI-type maps were near-identical copies kept in sync by hand ("Copy from…", clone-copies). One shared map is the normal case; a second profile exists only where a tool genuinely needs different buttons.
+
+```mermaid
+graph LR
+    CT1[CLI type A] -- bindingProfileId --> P1[profile · Default]
+    CT2[CLI type B] -- bindingProfileId --> P1
+    CT3[CLI type C] -- bindingProfileId --> P2[profile · Codex]
+    CT4[CLI type D] -. none .-> X[no bindings]
+```
+
+```yaml
+# bindings.yaml
+profiles:
+  default:              # opaque stable id — rename touches `name` only
+    name: Default
+    bindings:
+      A: { action: keyboard, sequence: "{Enter}" }
+```
+
+- **Resolution:** `ConfigLoader.getBindings(cliType)` → the CLI type's `bindingProfileId` → that profile's buttons. A missing or dangling id resolves to `null`. The renderer still caches per CLI type (`state.cliBindingsCache`), so button dispatch is unchanged.
+- **Editing:** Settings → 🎮 Bindings (pick a profile; new / duplicate / rename / delete). The tool editor's **Binding Profile** dropdown assigns it per tool; cloning a tool keeps the source's profile. Deleting a profile leaves its tools on "None".
+- **Legacy migration** (`ConfigLoader.migrateLegacyBindings`): a pre-profile `bindings.yaml` (`{ <cliType>: buttons }`, including one imported from `profiles/default.yaml`) becomes a single `Default` profile — the map of the first live CLI type, else the first in the file — and every tool without a profile is pointed at it. The original is kept as `bindings.yaml.legacy.bak`. Tool refs are written before the new file, so a crash in between re-runs to the same result.
 
 ## Binding Action Types
 

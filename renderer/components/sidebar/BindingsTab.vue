@@ -8,17 +8,16 @@ export interface BindingEntry {
   detail: string;
 }
 
-export interface BindingSourceOption {
+export interface BindingProfileOption {
   id: string;
-  label: string;
+  name: string;
 }
 
 const props = defineProps<{
   bindings: BindingEntry[];
-  cliType: string;
-  cliLabel: string;
+  profiles: BindingProfileOption[];
+  profileId: string;
   addableButtons: string[];
-  copySourceOptions: BindingSourceOption[];
   sortField: string;
   sortDirection: 'asc' | 'desc';
 }>();
@@ -27,7 +26,10 @@ const emit = defineEmits<{
   addBinding: [button: string];
   editBinding: [button: string];
   deleteBinding: [button: string];
-  copyFrom: [sourceCli: string];
+  selectProfile: [id: string];
+  createProfile: [copyCurrent: boolean];
+  renameProfile: [];
+  deleteProfile: [];
   sortChange: [field: string, direction: 'asc' | 'desc'];
 }>();
 
@@ -41,11 +43,20 @@ function onAddBinding(event: Event): void {
   target.value = '';
 }
 
-function onCopyFrom(event: Event): void {
-  const target = event.target as HTMLSelectElement;
-  if (!target.value) return;
-  emit('copyFrom', target.value);
-  target.value = '';
+const PROFILE_DELETE_KEY = '__profile__';
+
+function onProfileChange(event: Event): void {
+  emit('selectProfile', (event.target as HTMLSelectElement).value);
+}
+
+function onDeleteProfileClick(): void {
+  if (pendingDelete.value === PROFILE_DELETE_KEY) {
+    clearTimer(PROFILE_DELETE_KEY);
+    pendingDelete.value = null;
+    emit('deleteProfile');
+    return;
+  }
+  armDelete(PROFILE_DELETE_KEY);
 }
 
 function onSortFieldChange(event: Event): void {
@@ -64,13 +75,18 @@ function onDeleteClick(button: string): void {
     emit('deleteBinding', button);
     return;
   }
+  armDelete(button);
+}
+
+/** Two-click confirm: the first click arms, a second within 3s commits. */
+function armDelete(key: string): void {
   if (pendingDelete.value) clearTimer(pendingDelete.value);
-  pendingDelete.value = button;
+  pendingDelete.value = key;
   const timer = setTimeout(() => {
     pendingDelete.value = null;
-    deleteTimers.delete(button);
+    deleteTimers.delete(key);
   }, 3000);
-  deleteTimers.set(button, timer);
+  deleteTimers.set(key, timer);
 }
 
 function clearTimer(button: string): void {
@@ -82,10 +98,33 @@ function clearTimer(button: string): void {
 <template>
   <div class="settings-bindings-panel">
     <div class="settings-panel__header">
-      <span class="settings-panel__title">{{ cliLabel }} Bindings</span>
+      <span class="settings-panel__title">Binding Profiles</span>
       <div class="bindings-toolbar">
         <select
-          class="btn btn--primary btn--sm focusable"
+          class="bindings-profile-select btn btn--secondary btn--sm focusable"
+          :value="profileId"
+          :disabled="profiles.length === 0"
+          @change="onProfileChange"
+        >
+          <option v-if="profiles.length === 0" value="">No profiles</option>
+          <option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+        </select>
+        <button class="bindings-profile-new btn btn--primary btn--sm focusable" @click="emit('createProfile', false)">+ New</button>
+        <template v-if="profileId">
+          <button class="bindings-profile-duplicate btn btn--secondary btn--sm focusable" @click="emit('createProfile', true)">Duplicate</button>
+          <button class="bindings-profile-rename btn btn--secondary btn--sm focusable" @click="emit('renameProfile')">Rename</button>
+          <button
+            class="bindings-profile-delete btn btn--danger btn--sm focusable"
+            :title="pendingDelete === PROFILE_DELETE_KEY ? 'Click again to confirm — tools using it get no bindings' : 'Delete profile'"
+            @click="onDeleteProfileClick"
+          >{{ pendingDelete === PROFILE_DELETE_KEY ? 'Confirm?' : 'Delete' }}</button>
+        </template>
+      </div>
+    </div>
+
+    <div v-if="profileId" class="bindings-toolbar">
+        <select
+          class="bindings-add-select btn btn--primary btn--sm focusable"
           :disabled="addableButtons.length === 0"
           @change="onAddBinding"
         >
@@ -93,29 +132,23 @@ function clearTimer(button: string): void {
           <option v-for="button in addableButtons" :key="button" :value="button">{{ button }}</option>
         </select>
         <select
-          v-if="copySourceOptions.length > 0"
-          class="btn btn--secondary btn--sm focusable"
-          @change="onCopyFrom"
-        >
-          <option value="">Copy from…</option>
-          <option v-for="option in copySourceOptions" :key="option.id" :value="option.id">{{ option.label }}</option>
-        </select>
-        <select
-          class="btn btn--secondary btn--sm focusable"
+          class="bindings-sort-select btn btn--secondary btn--sm focusable"
           :value="sortField"
           @change="onSortFieldChange"
         >
           <option value="button">Sort: Button</option>
           <option value="action">Sort: Action</option>
         </select>
-        <button class="btn btn--secondary btn--sm focusable" @click="onToggleDirection">
+        <button class="bindings-sort-direction btn btn--secondary btn--sm focusable" @click="onToggleDirection">
           {{ sortDirection === 'asc' ? '↑' : '↓' }}
         </button>
-      </div>
     </div>
 
-    <div v-if="bindings.length === 0" class="settings-empty">
-      No bindings configured for {{ cliLabel }}.
+    <div v-if="!profileId" class="settings-empty">
+      No binding profiles yet. Create one, then pick it per tool in the tool editor.
+    </div>
+    <div v-else-if="bindings.length === 0" class="settings-empty">
+      No bindings in this profile.
     </div>
 
     <div class="bindings-display">
