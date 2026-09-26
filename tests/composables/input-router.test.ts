@@ -49,6 +49,7 @@ vi.mock('../../renderer/utils.js', () => ({
 vi.mock('../../renderer/bindings.js', () => ({
   processConfigBinding: mocks.processConfigBinding,
   processConfigRelease: mocks.processConfigRelease,
+  releaseVoiceTalk: () => false,
 }));
 vi.mock('../../renderer/screens/group-overview.js', () => ({ getOverviewSessions: mocks.getOverviewSessions }));
 vi.mock('../../renderer/plans/plan-screen.js', () => ({

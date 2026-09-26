@@ -6,6 +6,7 @@
  * are never imported directly by the application.
  */
 
+import { randomUUID } from 'node:crypto';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
 import { getMessageFlightTimeoutMs } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
@@ -56,6 +57,10 @@ import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
 import { setupUpdateHandlers } from './update-handlers.js';
 import { setupOperatorHandlers } from './operator-handlers.js';
+import { setupVoiceHandlers } from './voice-handlers.js';
+import { VoiceService } from '../../voice/voice-service.js';
+import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
+import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
@@ -1035,6 +1040,33 @@ export function registerIPCHandlers(
   });
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
+
+  // Desktop voice (docs/voice-operator.md): hold-to-talk to the operator over
+  // the SAME OpenWhispr/Piper tools Telegram uses. The operator's chat_send
+  // replies reach the desktop as one more broker surface, and the user's words
+  // are echoed to the phone, so both show one conversation.
+  const voiceTools = new CapabilityDetector(configLoader);
+  chatBroker.register(new DesktopVoiceBridge({
+    getOperatorId: () => operatorSessionManager.getOperatorId(),
+    emitReply: (reply) => {
+      const win = windowManager.getMainWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('voice:operatorReply', reply);
+    },
+  }));
+  setupVoiceHandlers({
+    voiceService: new VoiceService({
+      getConfig: () => configLoader.getTelegramConfig(),
+      getTools: () => voiceTools.getVoiceTools(),
+      tempDir: getTempDir(dirname ?? process.cwd()),
+    }),
+    ask: async (text) => {
+      const operatorId = operatorSessionManager.getOperatorId();
+      if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
+      await deliverPromptSequenceToSession({ sessionId: operatorId, text, ptyManager, sessionManager, configLoader });
+      mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
+      return { ok: true };
+    },
+  });
 
   // Where to dial this desktop, pushed down the authenticated link (P-0752).
   // Without it the phone's address is a typed string that dies silently the day

@@ -16,6 +16,7 @@ const MODAL_ID = 'binding-editor';
 const ACTION_TYPES = [
   { value: 'keyboard', label: 'Keyboard sequence' },
   { value: 'voice', label: 'Voice key' },
+  { value: 'voice-talk', label: 'Talk to Helm (hold)' },
   { value: 'scroll', label: 'Scroll' },
   { value: 'context-menu', label: 'Context menu' },
   { value: 'prompt-tree', label: 'Prompt tree' },
@@ -199,8 +200,8 @@ defineExpose({ handleButton });
             </div>
           </template>
 
-          <!-- Context menu / prompt-tree / new-draft — no extra params -->
-          <template v-if="actionType === 'context-menu' || actionType === 'prompt-tree' || actionType === 'new-draft'">
+          <!-- Context menu / prompt-tree / new-draft / voice-talk — no extra params -->
+          <template v-if="actionType === 'context-menu' || actionType === 'prompt-tree' || actionType === 'new-draft' || actionType === 'voice-talk'">
             <div class="binding-editor-field">
               <span class="form-help">No additional parameters needed.</span>
             </div>

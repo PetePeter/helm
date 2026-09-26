@@ -20,6 +20,7 @@ Gamepad button and keyboard shortcut mappings.
 | Right Bumper | Spawn Copilot CLI |
 | Back/Start | Switch profile (previous/next) |
 | Sandwich/Guide | Focus hub window + show sessions screen |
+| Any button bound to `voice-talk` | Hold to talk to Helm (the operator); release sends. The release is honoured from any pane |
 
 ### Session card columns
 
@@ -66,6 +67,7 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+G | Open in-app Prompt Editor (`EditorPopup.vue`) — multi-line textarea + recent-prompts list + prompt-template tree pane; Ctrl+Enter / Send delivers to active terminal via `deliverPromptSequence()`. Works from any pane while a terminal is **visible**; a no-op when none is |
 | Ctrl+1-9, Ctrl+0 | Jump directly to the Nth session in sidebar order (badge: `^n`) |
 | Alt+1-9 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`) |
+| Ctrl+Shift+Space | Talk to Helm: press to start, press again to send (a toggle — the router is keydown-only and key repeat makes a keyboard hold unreliable). Global scope, so a modal blocks it like the other workspace keys |
 | Tab / Shift+Tab (selection-mode modal) | Cycle buttons in close-confirm, context-menu, prompt-tree picker, or quick-spawn |
 
 ## Keyboard Ownership

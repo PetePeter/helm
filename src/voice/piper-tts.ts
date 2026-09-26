@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { runProcess } from './ffmpeg.js';
 
 /**
  * Build the piper CLI args: read text from stdin, write a WAV to the given path.
@@ -27,7 +28,7 @@ export interface PiperTtsOptions {
 
 /**
  * Helm-side text-to-speech: piper synthesizes a WAV, ffmpeg transcodes it to
- * OGG/Opus for Telegram. The calling LLM never touches these binaries — it
+ * OGG/Opus (Telegram voice notes; Chromium plays it natively for desktop voice). The calling LLM never touches these binaries — it
  * only supplies text.
  */
 export class PiperTts {
@@ -95,14 +96,5 @@ function runPiper(command: string, args: string[], text: string): Promise<void> 
       if (err) return;
       child.stdin.end();
     });
-  });
-}
-
-/** Spawn a process and resolve with its exit code (null on spawn error). */
-function runProcess(command: string, args: string[]): Promise<number | null> {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, stdio: 'ignore' });
-    child.on('error', () => resolve(null));
-    child.on('exit', (code) => resolve(code));
   });
 }

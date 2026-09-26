@@ -59,6 +59,11 @@ export class OperatorSessionManager extends EventEmitter {
     return sessionId;
   }
 
+  /** The live operator's session id, or null. Read-only: never spawns or claims. */
+  getOperatorId(): string | null {
+    return this.findOperators()[0]?.id ?? null;
+  }
+
   private demote(session: SessionInfo, reason: string): void {
     logger.warn(`[Operator] Demoted operator ${session.id} (${reason})`);
     this.deps.sessionManager.updateSession(session.id, { role: undefined });

@@ -222,6 +222,20 @@ describe('CapabilityDetector', () => {
       expect(capabilities.piper).toBe(false);
       expect(capabilities.openwhisper).toBe(false);
     });
+
+    it('still reports the voice tools themselves, for desktop voice', () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.accessSync).mockReturnValue(undefined);
+      fakeConfigLoader = new FakeConfigLoader({
+        enabled: false,
+        ffmpegPath: '/usr/bin/ffmpeg',
+        piperPath: '/usr/bin/piper',
+        openWhisprPath: '',
+      });
+      detector = new CapabilityDetector(fakeConfigLoader as any);
+
+      expect(detector.getVoiceTools()).toEqual({ openwhisper: false, piper: true, ffmpeg: true });
+    });
   });
 
   describe('caching behavior', () => {

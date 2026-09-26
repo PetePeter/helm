@@ -650,3 +650,37 @@ describe('MobileChatBridge answering a download', () => {
     expect(deniedLinks.records()[0]).toMatchObject({ t: 'error', error: { message: MOBILE_DENY_MESSAGE } });
   });
 });
+
+describe('MobileChatBridge echoing a desktop voice turn', () => {
+  it('journals the desktop words desktop-origin and pushes them live to linked phones', () => {
+    links.online.add('phone-machine');
+
+    bridge.recordDesktopTurn('s1', 'what is running?', 't1');
+
+    expect(journal.since(0)).toEqual([
+      {
+        seq: 1,
+        record: {
+          sessionId: 's1', sessionName: 'work', text: 'what is running?',
+          at: 1700000000000, originId: 'desktop:t1',
+        },
+      },
+    ]);
+    expect(links.records()).toEqual([{
+      v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'what is running?',
+      at: 1700000000000, seq: 1, originId: 'desktop:t1',
+    }]);
+  });
+
+  it('still journals when no phone is linked, so catch-up carries it later', () => {
+    bridge.recordDesktopTurn('s1', 'hello', 't2');
+
+    expect(journal.since(0)).toHaveLength(1);
+    expect(links.sent).toEqual([]);
+  });
+
+  it('skips an unknown session', () => {
+    bridge.recordDesktopTurn('nope', 'hello', 't3');
+    expect(journal.since(0)).toEqual([]);
+  });
+});

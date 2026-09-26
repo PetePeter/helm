@@ -42,6 +42,7 @@ export const preloadDomainBuilders = {
   runtimeGroups: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'runtimeGroups'),
   artifacts: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'artifacts'),
   peers: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'peers'),
+  voice: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'voice'),
   mobile: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'mobile'),
   patterns: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'patterns'),
   promptTemplates: <TMethodMap extends PreloadMethodMap>(methodMap: TMethodMap) => pickDomainApi(methodMap, 'promptTemplates'),

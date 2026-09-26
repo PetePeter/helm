@@ -1615,6 +1615,27 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('update:progress', listener);
   },
 
+
+  // ---- voice (desktop hold-to-talk to the Helm operator) ---------------------
+
+  /** Recorded clip → text via the shared OpenWhispr setup. */
+  voiceTranscribe: (audio: Uint8Array, mimeType: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:transcribe', audio, mimeType),
+
+  /** Text → OGG/Opus bytes via the shared Piper setup. */
+  voiceSpeak: (text: string): Promise<{ ok: true; audio: Uint8Array; mimeType: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:speak', text),
+
+  /** Deliver the user's words to the operator (and echo them to the phone). */
+  voiceAsk: (text: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text),
+
+  /** Each operator chat_send, once. Returns an unsubscribe. */
+  onVoiceOperatorReply: (callback: (reply: { sessionId: string; text: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, reply: { sessionId: string; text: string }) => callback(reply);
+    ipcRenderer.on('voice:operatorReply', listener);
+    return () => ipcRenderer.removeListener('voice:operatorReply', listener);
+  },
 } as const;
 
 export type PreloadMethodImplementations = typeof PRELOAD_METHOD_IMPLEMENTATIONS;

@@ -7,7 +7,7 @@ const ttsMocks = vi.hoisted(() => ({
   synthesize: vi.fn(async () => ({ oggPath: 'C:/Temp/helm-voice.ogg' })),
 }));
 
-vi.mock('../src/telegram/piper-tts.js', () => ({
+vi.mock('../src/voice/piper-tts.js', () => ({
   PiperTts: vi.fn().mockImplementation(function () {
     return {
       synthesize: ttsMocks.synthesize,

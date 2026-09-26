@@ -23,6 +23,7 @@ src/
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
+│       ├── voice-handlers.ts   # voice:transcribe / voice:speak / voice:ask (desktop hold-to-talk to the operator)
 │       └── mobile-handlers.ts  # 9 IPC channels (mobile:list/setEnabled/setAllowList/revoke/startPairing/confirmPairing/cancelPairing/pairingState/apkRelease). Secrets never cross this boundary
 ├── input/
 │   └── sequence-parser.ts      # {Enter}, {Ctrl+C}, {Wait 500}, {Mod Down/Up}, {{/}} — used by bindings + initialPrompt
@@ -94,7 +95,6 @@ src/
 │   ├── commands.ts             # Slash command handlers (/status, /switch, /send, /close, /spawn, /output)
 │   ├── keyboards.ts            # Inline keyboard layout builders (session list, controls, commands, spawn wizard)
 │   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards. NOTE: `handleStateChange` has no production caller — orchestrator.ts takes the notifier as `_notifier`, so Telegram's state-change notifications have never fired. The live path is session-alert.ts → MobileAlertNotifier
-│   ├── openwhispr-transcriber.ts # OpenWhispr-backed audio attachment transcription, writes transcript files beside downloads
 │   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, notifier, terminal mirror, dashboard
 │   ├── output-summarizer.ts    # PTY buffer → 3-5 line smart summary
 │   ├── pinned-dashboard.ts     # Auto-updating pinned message with all-sessions status + Close All button
@@ -104,6 +104,12 @@ src/
 │   ├── topic-input.ts          # Topic message → PTY stdin forwarding
 │   ├── topic-manager.ts        # Forum topic lifecycle: ensureTopic on session:added, deleteForumTopic on session:removed
 │   └── utils.ts                # Shared Telegram utilities
+├── voice/                       # Local STT/TTS shared by Telegram and desktop voice. See docs/voice-operator.md
+│   ├── openwhispr-transcriber.ts # OpenWhispr-backed audio → text (whisper-server + ffmpeg WAV conversion)
+│   ├── piper-tts.ts            # Piper text → WAV → OGG/Opus
+│   ├── ffmpeg.ts               # ffmpeg resolution (configured path → OpenWhispr bundle) + the shared process runner
+│   ├── voice-service.ts        # VoiceService: desktop transcribe(clip)/speak(text) over the above; temp files in app-data, always cleaned
+│   └── desktop-voice-bridge.ts # ChatBridge 'desktop-voice': forwards the operator's chat_send replies to the renderer
 ├── types/
 │   ├── session.ts              # SessionInfo (includes cliSessionName for resume), DraftPrompt, SessionChangeEvent, AnalogEvent types
 │   ├── plan.ts                 # PlanItem, PlanDependency, PlanStatus ('planning'|'ready'|'coding'|'review'|'blocked'|'done'), DirectoryPlan, PlanSequence types
@@ -162,6 +168,7 @@ renderer/
 │   │   ├── TelegramTab.vue     # Telegram bot configuration
 │   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
 │   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
+│   ├── VoiceCallPanel.vue      # Floating "Helm" call panel: phase, recent operator transcript, hang up
 │   ├── dock/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
@@ -183,8 +190,13 @@ renderer/
 │   ├── plans.ts                # usePlansStore — planDoingCounts, planStartableCounts
 │   ├── chip-bar.ts             # useChipBarStore — chip bar action state + refresh for active session
 │   └── navigation.ts           # useNavigationStore — centralized view routing, active session, sidebar focus, overlay lifecycle
+├── voice/
+│   ├── voice-call.ts           # createVoiceCall: hold-to-talk controller, ordered once-per-reply speech, shared transcript
+│   ├── voice-talk-binding.ts   # Press/release tracking for the `voice-talk` binding action
+│   └── browser-audio.ts        # MediaRecorder (no mic leak on release-before-open) + Audio player with stop()
 ├── composables/
 │   ├── index.ts                # Barrel export of all composables
+│   ├── useVoiceCall.ts         # Lazy singleton voice call with the browser MediaRecorder + Audio player
 │   ├── useHandover.ts          # Reactive mirror of pending compaction handovers; drives the terminal lock
 │   ├── useMessageFlights.ts    # Inter-session envelope flights: anchor resolve, landing ack, release on unmount
 │   ├── useSessionPreviews.ts   # Throttled passive PTY tails for Session List rows (reads PtyOutputBuffer)

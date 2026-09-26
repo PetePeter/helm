@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
-import { resolveFfmpegPath } from '../src/telegram/ffmpeg.js';
+import { resolveFfmpegPath } from '../src/voice/ffmpeg.js';
 import { extractVideoFrames } from '../src/telegram/video-frames.js';
 
 /**

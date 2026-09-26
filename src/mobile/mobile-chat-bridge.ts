@@ -165,6 +165,29 @@ export class MobileChatBridge implements ChatBridge {
     // here, regardless of how many phones take it — and regardless of whether
     // ANY do — is the whole reason the journal and the fan-out row can stay
     // honest independently.
+    return this.journalAndPush(input);
+  }
+
+  /**
+   * Echo what the user SAID at the desktop (voice hold-to-talk) into the
+   * conversation, so the phone shows the same exchange. Unlike a phone reply —
+   * which its sender already shows — no phone has these words yet, so they are
+   * pushed live as well as journaled. `originId` is desktop-namespaced so it can
+   * never match a phone's own call id.
+   */
+  recordDesktopTurn(sessionId: string, text: string, turnId: string): void {
+    const session = this.deps.sessions.getSession(sessionId);
+    if (!session) return;
+    this.journalAndPush({
+      sessionId: session.id,
+      sessionName: session.name,
+      text,
+      at: this.now(),
+      originId: `desktop:${turnId}`,
+    });
+  }
+
+  private journalAndPush(input: ChatRecordInput): ChatSendResult {
     const { seq } = this.deps.journal.append(input);
     const payload = encodeChat({ ...input, seq });
 

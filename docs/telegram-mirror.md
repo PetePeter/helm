@@ -73,10 +73,10 @@ graph TB
 | `src/telegram/keyboards.ts` | Inline keyboard layouts (`notificationKeyboard`, …) |
 | `src/telegram/pinned-dashboard.ts` | Pinned message summarising live sessions |
 | `src/telegram/utils.ts` | `stripAnsi`, `cleanTerminalOutput`, `escapeHtml`, `formatAgentMessageForTelegram`, `validateMobileFriendlyTelegramText` |
-| `src/telegram/openwhispr-transcriber.ts` | Voice/audio/video track → text transcription |
-| `src/telegram/ffmpeg.ts` | Shared ffmpeg resolution (configured path → OpenWhispr bundle) and process runner |
+| `src/voice/openwhispr-transcriber.ts` | Voice/audio/video track → text transcription |
+| `src/voice/ffmpeg.ts` | Shared ffmpeg resolution (configured path → OpenWhispr bundle) and process runner |
 | `src/telegram/video-frames.ts` | Video → JPEG contact sheet, plus the seek command the agent uses for other timestamps |
-| `src/telegram/piper-tts.ts` | Text → voice replies |
+| `src/voice/piper-tts.ts` | Text → voice replies |
 | `src/electron/ipc/telegram-handlers.ts` | Settings/start/stop IPC surface |
 | `src/mcp/services/helm-telegram-service.ts` | MCP tools `telegram_chat`, `telegram_status`, `telegram_channel_close` |
 
@@ -176,7 +176,7 @@ the frame paths *and* the ffmpeg command for seeking any other timestamp, so the
 agent decides which moments matter rather than the app hardcoding a sampling
 policy. Extraction never throws — frames are a bonus on top of the attachment.
 
-**ffmpeg resolution** lives in `src/telegram/ffmpeg.ts`, shared by the transcriber
+**ffmpeg resolution** lives in `src/voice/ffmpeg.ts`, shared by the transcriber
 and the frame extractor: the configured `ffmpegPath` wins, the OpenWhispr bundled
 copy is the fallback. PATH is deliberately *not* searched — resolution stays
 config-driven so behaviour cannot vary with whatever is installed on the machine.

@@ -25,8 +25,8 @@ import {
   writeLargeTextTempFile,
 } from '../session/large-text-temp-file.js';
 import { formatAgentMessageForTelegram } from './utils.js';
-import { OpenWhisprTranscriber, type AudioTranscriber, type AudioTranscriptionResult } from './openwhispr-transcriber.js';
-import { resolveFfmpegPath } from './ffmpeg.js';
+import { OpenWhisprTranscriber, type AudioTranscriber, type AudioTranscriptionResult } from '../voice/openwhispr-transcriber.js';
+import { resolveFfmpegPath } from '../voice/ffmpeg.js';
 import { buildFrameSeekHint, extractVideoFrames } from './video-frames.js';
 import type { SessionInfo } from '../types/session.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';

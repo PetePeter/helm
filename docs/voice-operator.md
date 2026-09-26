@@ -8,8 +8,9 @@ survives the screen turning off.
 **Hey Helm** is the opt-in standby: one spoken question, one spoken answer,
 no call — see [below](#hey-helm--standby).
 
-This page covers the phone half (P-0834, P-0835) and the desktop's
-[operator session](#the-operator-session--helm) (P-0833). With no operator
+This page covers the phone half (P-0834, P-0835), the desktop's
+[operator session](#the-operator-session--helm) (P-0833) and
+[desktop voice](#desktop-voice) (P-0836). With no operator
 configured, a call targets a session the user picks.
 
 ## Shape
@@ -207,7 +208,56 @@ best on a charger. A real engine (openWakeWord, Porcupine, Whisper) can later
 replace it behind `SpeechEngine` without touching the controller. Standby does
 not survive a reboot or a process kill — reopen the app.
 
+## Desktop voice
+
+Hold a gamepad button bound to `voice-talk` (or press **Ctrl+Shift+Space**,
+press again to send) and talk; the words go to the operator and its reply is
+spoken through the speakers. It reuses the local tools Telegram already has —
+no second STT/TTS stack.
+
+```mermaid
+sequenceDiagram
+    participant R as Renderer<br/>useVoiceCall
+    participant M as Main<br/>VoiceService
+    participant OP as Operator "Helm"
+    participant P as Phone
+    R->>M: voice:transcribe(clip)
+    M->>M: OpenWhisprTranscriber (src/voice)
+    M-->>R: text
+    R->>M: voice:ask(text)
+    M->>OP: deliverPromptSequenceToSession
+    M->>P: recordDesktopTurn (journal + live push)
+    OP->>M: chat_send (ChatBroker fan-out)
+    M-->>P: MobileChatBridge
+    M-->>R: DesktopVoiceBridge → voice:operatorReply
+    R->>M: voice:speak(text)
+    M-->>R: OGG/Opus bytes (PiperTts)
+```
+
+- **Shared modules.** `openwhispr-transcriber.ts`, `piper-tts.ts` and `ffmpeg.ts`
+  moved from `src/telegram/` to `src/voice/`; Telegram imports them from there
+  unchanged. Piper keeps its OGG/Opus output — Chromium plays it natively.
+- **Configuration.** The tool paths are the ones in Settings → Telegram.
+  `CapabilityDetector.getVoiceTools()` checks them without requiring the bot to
+  be enabled; a missing tool is a clear error, and nothing is spawned.
+- **Config boundary.** The recorded clip, its transcript and the synthesized
+  OGG live in the app-data temp dir and are deleted on success and failure.
+- **Replies.** The operator answers with `chat_send`, as for the phone.
+  `DesktopVoiceBridge` is one more ChatBroker surface, so the desktop hears
+  exactly what the phone receives; it declines every non-operator session.
+- **One conversation.** The user's desktop words are journaled
+  (`originId: desktop:<uuid>`) and pushed live to linked phones, so the phone
+  thread shows both sides.
+- **Call window.** The first talk opens the call panel; while it is open each
+  reply is spoken once, strictly in arrival order. After **Hang up** replies
+  are still listed but not spoken — the phone may be the one talking.
+- **Gating.** Talk refuses (with a message) while no operator exists.
+
 ## Limitations
+
+- Desktop voice: the transcript panel holds only this run's lines (the phone
+  keeps history); no barge-in — a reply that arrives while you talk is spoken
+  after the one before it.
 
 - Not yet judged on a device: routing, screen-off survival, BT switching and
   hang-up from the notification need the manual adb check in P-0834's

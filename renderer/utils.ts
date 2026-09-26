@@ -140,6 +140,8 @@ export function formatBindingDetails(binding: any): string {
     }
     case 'voice':
       return binding.key ? `${binding.mode || 'tap'}: ${binding.key}` : '—';
+    case 'voice-talk':
+      return 'hold: talk to Helm';
     case 'scroll':
       return `scroll: ${binding.direction || 'down'}${binding.lines ? ` (${binding.lines} lines)` : ''}`;
     default:

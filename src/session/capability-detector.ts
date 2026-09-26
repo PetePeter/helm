@@ -11,6 +11,13 @@ export interface TelegramCapabilities {
   ffmpegPath?: string;
 }
 
+/** The three local voice binaries, independent of whether Telegram is on. */
+export interface VoiceToolCapabilities {
+  openwhisper: boolean;
+  piper: boolean;
+  ffmpeg: boolean;
+}
+
 export class CapabilityDetector {
   private cache: TelegramCapabilities | null = null;
 
@@ -51,6 +58,19 @@ export class CapabilityDetector {
 
     this.cache = capabilities;
     return capabilities;
+  }
+
+  /**
+   * The voice tools alone, ungated and uncached. Desktop voice uses the same
+   * binaries as Telegram but must not require the Telegram bot to be enabled.
+   */
+  getVoiceTools(): VoiceToolCapabilities {
+    const config = this.configLoader.getTelegramConfig();
+    return {
+      openwhisper: this.verifyToolPath(config?.openWhisprPath),
+      piper: this.verifyToolPath(config?.piperPath),
+      ffmpeg: this.verifyToolPath(config?.ffmpegPath),
+    };
   }
 
   invalidateCache(): void {

@@ -327,6 +327,12 @@ export const PRELOAD_API_DOMAINS = {
     'systemOpenHelp',
     'systemOpenExternalUrl',
   ],
+  voice: [
+    'voiceTranscribe',
+    'voiceSpeak',
+    'voiceAsk',
+    'onVoiceOperatorReply',
+  ],
   update: [
     'updateCheck',
     'updateInstall',

@@ -15,7 +15,7 @@ import type { ChatOutboundMessage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
-import { PiperTts } from '../../telegram/piper-tts.js';
+import { PiperTts } from '../../voice/piper-tts.js';
 import { getTempDir } from '../../utils/app-paths.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));

@@ -13,6 +13,8 @@ import { getTerminalManager } from './runtime/terminal-provider.js';
 import { deliverBulkText } from './paste-handler.js';
 import { showDraftEditor } from './stores/draft-editor-registry.js';
 import { configClient, keyboardClient, terminalClient, toolsClient } from './ipc/clients.js';
+import { createVoiceTalkHolds } from './voice/voice-talk-binding.js';
+import { useVoiceCall } from './composables/useVoiceCall.js';
 
 function executeScroll(binding: { direction: string; lines?: number }): void {
   const overviewGrid = document.getElementById('overviewGrid');
@@ -38,6 +40,18 @@ function executeScroll(binding: { direction: string; lines?: number }): void {
 
 const heldKeys = new Map<string, string[]>();
 const ptyRoutedHolds = new Set<string>();
+const voiceTalkHolds = createVoiceTalkHolds({
+  startTalk: () => useVoiceCall().startTalk(),
+  stopTalk: () => useVoiceCall().stopTalk(),
+});
+
+/**
+ * End a held `voice-talk`. Called ahead of any focus gating: a talk started on
+ * the terminal must still send when the button is released elsewhere.
+ */
+export function releaseVoiceTalk(button: string): boolean {
+  return voiceTalkHolds.release(button);
+}
 
 export function keyToPtyEscape(key: string): string {
   return keyToPtySequence(key) ?? key;
@@ -92,6 +106,7 @@ export function processConfigRelease(button: string): void {
 }
 
 export function releaseAllHeldKeys(): void {
+  voiceTalkHolds.releaseAll();
   for (const [button, keys] of heldKeys) {
     if (!ptyRoutedHolds.has(button)) keyboardClient.keyboardComboUp(keys);
   }
@@ -147,6 +162,9 @@ async function executeCliBinding(button: string, binding: Binding): Promise<void
         }
         break;
       }
+      case 'voice-talk':
+        voiceTalkHolds.press(button);
+        break;
       case 'scroll':
         executeScroll(binding);
         break;

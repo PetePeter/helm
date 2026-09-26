@@ -1,4 +1,4 @@
-// src/telegram/ffmpeg.ts
+// src/voice/ffmpeg.ts
 
 /**
  * Single place that answers "where is ffmpeg, and how do I run it".

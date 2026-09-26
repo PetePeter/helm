@@ -131,6 +131,9 @@ import { listRegisteredPanes, useDockWorkspace } from './composables/useDockWork
 import { createDockViewRouting } from './composables/useDockViewRouting.js';
 import DockViewMenu from './components/dock/DockViewMenu.vue';
 import DockWorkspace from './components/dock/DockWorkspace.vue';
+import VoiceCallPanel from './components/VoiceCallPanel.vue';
+import { createVoiceKeyHandler } from './keyboard/handlers/voice-keys.js';
+import { useVoiceCall } from './composables/useVoiceCall.js';
 import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
 
 // ============================================================================
@@ -855,6 +858,7 @@ onMounted(async () => {
   for (const handler of workspaceKeyHandlers) {
     keyHandlerCleanups.push(registerKeyHandler(handler));
   }
+  keyHandlerCleanups.push(registerKeyHandler(createVoiceKeyHandler(() => { void useVoiceCall().toggleTalk(); })));
   keyHandlerCleanups.push(registerKeyHandler({
     id: 'modal-stack-bridge',
     scope: 'modal',
@@ -1240,5 +1244,6 @@ onUnmounted(() => {
       @task-updated="onScheduledTaskUpdated"
       @task-cancelled="onScheduledTaskCancelled"
     />
+    <VoiceCallPanel />
   </div>
 </template>

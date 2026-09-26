@@ -14,7 +14,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { runProcess } from './ffmpeg.js';
+import { runProcess } from '../voice/ffmpeg.js';
 import { logger } from '../utils/logger.js';
 
 /** Enough to see the shape of a clip; more just burns context. */

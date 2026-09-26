@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPiperArgs, buildFfmpegArgs, PiperTts } from '../src/telegram/piper-tts';
+import { buildPiperArgs, buildFfmpegArgs, PiperTts } from '../src/voice/piper-tts';
 
 describe('buildPiperArgs', () => {
   it('produces the exact piper argument array', () => {

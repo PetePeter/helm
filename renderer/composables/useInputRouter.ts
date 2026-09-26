@@ -3,7 +3,7 @@ import { state } from '../state.js';
 import { sessionsState } from '../screens/sessions-state.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import { toDirection, navigateFocus } from '../utils.js';
-import { processConfigBinding, processConfigRelease } from '../bindings.js';
+import { processConfigBinding, processConfigRelease, releaseVoiceTalk } from '../bindings.js';
 import { getOverviewSessions } from '../screens/group-overview.js';
 import {
   handlePlanScreenDpad,
@@ -219,6 +219,7 @@ export function useInputRouter(deps: InputRouterDeps) {
    * into a tool pane would otherwise reach the PTY behind the user's back.
    */
   function handleRelease(button: string): void {
+    if (releaseVoiceTalk(button)) return;
     const focusedPane = deps.focusedPaneId?.value;
     if (focusedPane !== undefined && focusedPane !== null && focusedPane !== 'terminal') return;
     const tm = getTerminalManager();

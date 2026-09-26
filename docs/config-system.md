@@ -87,6 +87,10 @@ CLI-specific bindings are used. Each profile defines different button behaviours
 - Key supports single keys (`F1`, `Space`) and combos (`Ctrl+Alt`)
 - Supports F1-F12 (VT220 escape sequences), navigation keys, and modifier combos
 
+### voice-talk
+
+`{ action: 'voice-talk' }` — hold-to-talk to the Helm operator: press starts recording, release transcribes (OpenWhispr) and sends to the operator; replies are spoken (Piper). Needs the operator enabled and the OpenWhispr/Piper/ffmpeg paths set in Settings → Telegram (the Telegram bot itself need not be on). Not to be confused with `voice`, which only simulates a key for an external dictation app. See [voice-operator.md](voice-operator.md#desktop-voice).
+
 ### scroll
 
 `{ action: 'scroll', direction: 'up'|'down', lines?: 5 }` — Scroll active terminal buffer (or overview grid when visible).
