@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.call
 
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +49,7 @@ import com.potatomotato.helm.voice.VoicePermission
  * The transcript IS the target's chat thread, not a copy: the call and the
  * chat can never disagree about what was said. Everything else is read off
  * [VoiceCallService.call]; this screen holds no call state of its own, so the
- * screen can go (or the phone can sleep) and the call carries on.
+ * phone can sleep and the call carries on. Leaving the screen hangs up.
  */
 @Composable
 fun CallScreen(
@@ -72,6 +74,15 @@ fun CallScreen(
             VoiceCallService.start(context, targetId)
         } else {
             request.launch(VoicePermission.required.first())
+        }
+    }
+
+    // Leaving the screen (Back, or the composition going away) IS hanging up:
+    // a call must never keep the mic open behind the user's back. A rotation
+    // is not leaving — the recreated screen rejoins the live call.
+    DisposableEffect(Unit) {
+        onDispose {
+            if ((context as? Activity)?.isChangingConfigurations != true) VoiceCallService.hangUp(context)
         }
     }
 

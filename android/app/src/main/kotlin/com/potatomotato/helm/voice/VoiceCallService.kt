@@ -48,8 +48,10 @@ import kotlinx.coroutines.launch
  * same microphone service, but none of the call's audio takeover — standby runs
  * for hours, so it must not hold focus or the communication mode while music
  * plays; its voice goes out as the ASSISTANT stream instead. A call started
- * during standby replaces it, and standby resumes when the call ends if the
- * switch is still on.
+ * during standby replaces it, and standby resumes when the call ends ONLY if
+ * the switch is still on ([StandbyPolicy]); otherwise the service stops and the
+ * mic is released. The switch is observed here, so turning it off always stops
+ * standby.
  *
  * Wiring only. What the call does is [CallController]; which route it takes is
  * [pickAudioRoute]; what counts as a reply is [CallFeed].
@@ -153,6 +155,17 @@ class VoiceCallService : Service() {
         )
         channel.description = getString(R.string.call_channel_description)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        // The service obeys the switch itself, so turning it off frees the mic
+        // however the UI happens to be composed (or not composed at all).
+        scope.launch {
+            HeyHelmSetting.enabled.collect { on -> if (!on) switchedOff() }
+        }
+    }
+
+    /** Standby stops now; a live call just loses its comeback. */
+    private fun switchedOff() {
+        standbyTarget = null
+        if (standby) controller?.hangUp()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -210,8 +223,7 @@ class VoiceCallService : Service() {
         }
         when (action) {
             ACTION_HANG_UP -> call.hangUp()
-            // During a call, switching standby off only cancels its comeback.
-            ACTION_STOP_STANDBY -> if (standby) call.hangUp() else standbyTarget = null
+            ACTION_STOP_STANDBY -> switchedOff()
             ACTION_MUTE -> call.setMuted(intent.getBooleanExtra(EXTRA_VALUE, false))
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
@@ -307,21 +319,26 @@ class VoiceCallService : Service() {
         // Standby killed by a fatal recogniser error (no mic permission, no
         // recognition service) is off; the switch must not claim otherwise.
         if (standby && state.error != null) HeyHelmSetting.set(false)
-        if (standby || !HeyHelmSetting.enabled.value || resume == null) {
+        val back = StandbyPolicy.resumeAfter(standby, HeyHelmSetting.enabled.value, resume)
+        if (back == null) {
+            endCurrent()
             stopSelf()
             return
         }
         endCurrent()
         releaseAudio()
-        startForegroundWith(resume, standby = true)
-        begin(resume, standby = true)
+        startForegroundWith(back, standby = true)
+        begin(back, standby = true)
     }
 
     /** Swap the live controller out without stopping the service. */
     private fun endCurrent() {
         job?.cancel()
         job = null
-        controller?.hangUp()
+        controller?.let {
+            it.hangUp()
+            HelmLog.i(HelmLog.UI, "mic released")
+        }
         controller = null
         _call.value = null
         _standingBy.value = false

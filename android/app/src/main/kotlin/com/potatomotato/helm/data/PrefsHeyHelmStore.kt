@@ -18,7 +18,15 @@ class PrefsHeyHelmStore(context: Context) : HeyHelmStore {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    override fun load(): Boolean = prefs.getBoolean(KEY, false)
+    override fun load(): Boolean {
+        // Once per install: builds that shipped the switch on by default left
+        // it on for users who never chose it; reset them to off.
+        if (!prefs.getBoolean(KEY_RESET_OFF, false)) {
+            prefs.edit().putBoolean(KEY, false).putBoolean(KEY_RESET_OFF, true).apply()
+            return false
+        }
+        return prefs.getBoolean(KEY, false)
+    }
 
     override fun save(enabled: Boolean) {
         prefs.edit().putBoolean(KEY, enabled).apply()
@@ -27,5 +35,6 @@ class PrefsHeyHelmStore(context: Context) : HeyHelmStore {
     private companion object {
         const val PREFS_NAME = "helm_voice"
         const val KEY = "hey_helm"
+        const val KEY_RESET_OFF = "hey_helm_reset_off_v1"
     }
 }

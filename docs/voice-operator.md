@@ -267,7 +267,10 @@ microphone first); the choice persists in `PrefsHeyHelmStore` and is mirrored
 process-wide by `HeyHelmSetting`. While it is on and a target resolves (same
 `resolveCallTarget` as a call), `VoiceCallService` runs in standby with a
 "Listening for Hey Helm" notification whose **Stop** also turns the switch off.
-Off means no background mic: the service is stopped.
+Off means no background mic: the service is stopped. The service observes
+`HeyHelmSetting` itself, so switching off stops standby (and cancels a live
+call's comeback) whatever the UI is doing. Installs from builds that left the
+switch on are reset to off once (`hey_helm_reset_off_v1`).
 
 It is the same `CallController`, given a `Standby` config:
 
@@ -305,7 +308,18 @@ stateDiagram-v2
   `USAGE_ASSISTANT` stream. The mic still pauses while it speaks.
 - **Calls win.** Starting a call during standby replaces it; when the call ends
   with the switch still on, the service drops the call audio and returns to
-  standby.
+  standby. Otherwise the service stops and logs `mic released` — the decision
+  is `StandbyPolicy.resumeAfter`, pinned by `StandbyPolicyTest`.
+- **Leaving the call screen hangs up.** Back, or the call screen's composition
+  going away, ends the call (a rotation does not — it rejoins). The mic is
+  never left open behind a screen the user has left.
+
+```mermaid
+flowchart LR
+    E[controller ended] --> Q{was a call<br/>AND switch on<br/>AND target?}
+    Q -- yes --> S[back to standby]
+    Q -- no --> X[stop service · mic released]
+```
 - The timeout clock is a port (`Standby.schedule`), so the whole flow runs in
   `StandbyControllerTest` against fakes.
 
