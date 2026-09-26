@@ -25,6 +25,7 @@ import {
   DEFAULT_FLEET_CONFIG,
   DEFAULT_MCP_CONFIG,
   DEFAULT_MOBILE_LAN_CONFIG,
+  DEFAULT_OPERATOR_CONFIG,
   SettingsManager,
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
@@ -329,6 +330,15 @@ export interface MobileLanConfig {
   port: number;
 }
 
+/** The router-only "Helm" operator session (docs/voice-operator.md). */
+export interface OperatorConfig {
+  enabled: boolean;
+  /** Id of one of the user's CLI types; empty = not chosen, nothing spawns. */
+  cliType: string;
+  /** Working dir the operator spawns in; empty = the CLI's default. */
+  workingDir: string;
+}
+
 export interface EditorPrefs {
   draftEditorHeight?: number;
   contextEditorHeight?: number;
@@ -382,6 +392,8 @@ export interface SettingsConfig {
   reminderDelivery?: Partial<Record<ReminderId, ReminderDeliveryMode>>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
+  /** Voice operator singleton. Absent means the defaults, i.e. off. */
+  operator?: OperatorConfig;
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
    * consecutive auto-continue cap. Absent means allowed at the shipped cap —
@@ -1164,6 +1176,28 @@ export class ConfigLoader {
     this.settings.mobileLan = {
       enabled: next.enabled === true,
       port: normalizeMobileLanPort(next.port),
+    };
+    this.saveSettings();
+  }
+
+  /** Get the voice operator config (OFF by default). */
+  getOperatorConfig(): OperatorConfig {
+    const o = this.settings?.operator;
+    return {
+      enabled: o?.enabled === true,
+      cliType: typeof o?.cliType === 'string' ? o.cliType : DEFAULT_OPERATOR_CONFIG.cliType,
+      workingDir: typeof o?.workingDir === 'string' ? o.workingDir : DEFAULT_OPERATOR_CONFIG.workingDir,
+    };
+  }
+
+  /** Update the voice operator config (partial merge). */
+  setOperatorConfig(updates: Partial<OperatorConfig>): void {
+    if (!this.settings) return;
+    const next = { ...this.getOperatorConfig(), ...updates };
+    this.settings.operator = {
+      enabled: next.enabled === true,
+      cliType: typeof next.cliType === 'string' ? next.cliType.trim() : '',
+      workingDir: typeof next.workingDir === 'string' ? next.workingDir.trim() : '',
     };
     this.saveSettings();
   }

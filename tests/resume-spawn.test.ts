@@ -168,6 +168,18 @@ describe('pty:spawn resume logic', () => {
     }));
   });
 
+  it('treats a resume of an already-live PTY as success without respawning (main-spawned operator race)', async () => {
+    sessions.set('sid-live', { id: 'sid-live', name: 'Helm', cliType: 'claude-code', processId: 77 });
+    ptyManager.has.mockImplementation((id: string) => id === 'sid-live');
+    ptyManager.getPid.mockReturnValue(77);
+
+    const handler = handlers.get('pty:spawn')!;
+    const result = await handler({}, 'sid-live', 'claude', [], '/work', 'claude-code', undefined, 'cli-name');
+
+    expect(result).toEqual({ success: true, pid: 77 });
+    expect(ptyManager.spawn).not.toHaveBeenCalled();
+  });
+
   it('falls back to base command when no resumeCommand and no continueCommand', async () => {
     configLoader.getCliTypeEntry.mockReturnValue({
       name: 'Generic',

@@ -105,6 +105,7 @@ import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
 import SessionListTab from './components/sidebar/SessionListTab.vue';
 import UpdatesTab from './components/sidebar/UpdatesTab.vue';
+import OperatorTab from './components/sidebar/OperatorTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
@@ -1180,6 +1181,9 @@ onUnmounted(() => {
             />
             <UpdatesTab
               v-else-if="activeTab === 'updates'"
+            />
+            <OperatorTab
+              v-else-if="activeTab === 'operator'"
             />
             <BindingsTab
               v-else

@@ -81,6 +81,13 @@ export function setupPtyHandlers(
     // Reload profile from disk if the file changed — ensures profile edits take
     // effect for new sessions without restarting the app.
     configLoader?.reloadActiveProfileIfChanged();
+    // Main can spawn a session before the renderer's auto-resume sees it (the
+    // operator on first enable, a scheduled run at launch). Resuming a PTY that
+    // is already running is then a no-op success, never a second process.
+    if (resumeSessionName && ptyManager.has(sessionId) && sessionManager.hasSession(sessionId)) {
+      logger.info(`[PTY IPC] Resume of live PTY ${sessionId} — attaching instead of respawning`);
+      return { success: true, pid: ptyManager.getPid(sessionId) };
+    }
     try {
       const normalizedCwd = cwd ? normalizeProjectPath(cwd) : undefined;
       const { pty } = spawnConfiguredSession({

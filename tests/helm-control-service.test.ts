@@ -1634,6 +1634,19 @@ describe('HelmControlService.restartHelmGated (helm_restart two-phase gate)', ()
       .toThrow('Cannot force-restart while locked sessions exist');
     expect(listener).not.toHaveBeenCalled();
   });
+
+  it('resume:false proceeds past the locked operator, leaving it open to resume next launch', () => {
+    const { service, sessionManager } = makeGatedService();
+    (sessionManager.getAllSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: 'op', name: 'Helm', cliType: 'claude-code', locked: true, role: 'operator' },
+    ]);
+    const artifact = service.createArtifact('caller-1', 'Restart handover', 'markdown', 'Force it.');
+    const listener = vi.fn();
+    service.on('restart-requested', listener);
+
+    expect(service.restartHelmGated('caller-1', artifact.id, false)).toMatchObject({ sessionsClosed: 0 });
+    expect(listener).toHaveBeenCalled();
+  });
 });
 
 describe('HelmControlService.sendTextToSession — helmPreambleForInterSession toggle', () => {

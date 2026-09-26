@@ -97,7 +97,7 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates']);
+const NON_CLI_SETTINGS_TABS = new Set(['tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator']);
 
 function emptySkillDraft(): SettingsSkillDraft {
   return {
@@ -227,6 +227,7 @@ export function useSettingsController(options: {
       { id: 'mcp', label: '🧩 MCP' },
       { id: 'peers', label: '🔗 Fleet' },
       { id: 'mobile', label: '📱 Mobile' },
+      { id: 'operator', label: '🎙 Operator' },
       { id: 'cli-integrations', label: '🪝 CLI Integrations' },
       { id: 'updates', label: '⬆ Updates' },
     ];

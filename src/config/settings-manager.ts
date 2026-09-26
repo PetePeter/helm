@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as YAML from 'yaml';
 import logger from '../utils/logger.js';
 import { normalizeMcpPort } from './loader-helpers.js';
-import type { FleetConfig, McpConfig, MobileLanConfig, SettingsConfig, TelegramConfig } from './loader.js';
+import type { FleetConfig, McpConfig, MobileLanConfig, OperatorConfig, SettingsConfig, TelegramConfig } from './loader.js';
 
 export const DEFAULT_TELEGRAM_CONFIG: TelegramConfig = {
   enabled: false,
@@ -45,6 +45,13 @@ export const DEFAULT_FLEET_CONFIG: FleetConfig = {
 export const DEFAULT_MOBILE_LAN_CONFIG: MobileLanConfig = {
   enabled: false,
   port: 47475,
+};
+
+/** Voice operator singleton — OFF, and no CLI type: ids are per-machine UUIDs. */
+export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
+  enabled: false,
+  cliType: '',
+  workingDir: '',
 };
 
 export class SettingsManager {

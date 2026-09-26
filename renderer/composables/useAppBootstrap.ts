@@ -196,6 +196,8 @@ export async function refreshSessions(): Promise<void> {
       // Same trap for the mission bar: this refresh runs on every plan change.
       mission: managed.mission,
       missionBarHeight: managed.missionBarHeight,
+      // Allow-list again: without it the operator badge blanks on refresh.
+      role: managed.role,
     } as Session);
 
     const displayState = managed.aiagentState ?? managed.state;

@@ -290,6 +290,7 @@ export class HelmSessionService {
       ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
+      ...(session.role ? { role: session.role } : {}),
     };
   }
 

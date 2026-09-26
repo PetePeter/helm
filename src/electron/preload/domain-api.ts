@@ -169,6 +169,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   configSetMcpConfig: (updates: { enabled?: boolean; port?: number; authToken?: string }) =>
     ipcRenderer.invoke('config:setMcpConfig', updates),
 
+  /** Voice operator singleton settings (docs/voice-operator.md). */
+  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; workingDir: string }> =>
+    ipcRenderer.invoke('config:getOperatorConfig'),
+
+  /** Persist operator settings; main re-ensures the operator session at once. */
+  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; workingDir?: string }): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('config:setOperatorConfig', updates),
+
   /**
    * Get cross-machine fleet transport settings (enabled/host/port).
    */

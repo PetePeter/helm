@@ -131,6 +131,9 @@ export interface SessionSummary {
   locked?: boolean;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
   mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
+  /** 'operator' marks the router-only "Helm" session. Voice clients (the
+   *  phone's CallTarget) find the operator by this exact string. */
+  role?: 'operator';
 }
 
 export interface CliSummary {
@@ -1396,7 +1399,9 @@ export class HelmControlService extends EventEmitter {
     }
     let sessionsClosed = 0;
     if (!resume) {
-      const sessions = this.sessionService.listSessions();
+      // The operator is locked by design, not by the user, and must survive a
+      // restart anyway — so it neither blocks a force-restart nor gets closed.
+      const sessions = this.sessionService.listSessions().filter((session) => session.role !== 'operator');
       const locked = sessions.filter((session) => session.locked);
       if (locked.length > 0) {
         throw new Error(`Cannot force-restart while locked sessions exist: ${locked.map((session) => session.name).join(', ')}`);

@@ -55,6 +55,9 @@ import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
 import { setupUpdateHandlers } from './update-handlers.js';
+import { setupOperatorHandlers } from './operator-handlers.js';
+import { OperatorSessionManager } from '../../session/operator-session-manager.js';
+import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -461,6 +464,30 @@ export function registerIPCHandlers(
   setupKeyboardHandlers(keyboard);
   setupSystemHandlers(dirname ?? process.cwd());
   setupUpdateHandlers({ tempDir: getTempDir(dirname ?? process.cwd()), modeStore: configLoader });
+
+  // Voice operator singleton (docs/voice-operator.md). Runs after
+  // restoreSessions, so a persisted operator is found and left for the
+  // renderer's normal auto-resume; only a missing one is spawned here.
+  const operatorSessionManager = new OperatorSessionManager({
+    sessionManager,
+    getConfig: () => configLoader.getOperatorConfig(),
+    spawn: ({ cliType, cwd, sessionName, contextText }) => spawnConfiguredSession({
+      ptyManager,
+      sessionManager,
+      configLoader,
+      cliType,
+      cwd,
+      sessionName,
+      contextText,
+      contextDeliveryContext: 'background',
+    }),
+  });
+  setupOperatorHandlers(configLoader, operatorSessionManager);
+  try {
+    operatorSessionManager.ensure();
+  } catch (error) {
+    logger.error(`[IPC] Operator ensure failed: ${error}`);
+  }
   setupDraftHandlers(draftManager);
   setupProjectHandlers(projectStore, planManager, contextManager, windowManager);
   setupSkillHandlers(skillManager, skillAnalyticsManager);

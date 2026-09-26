@@ -42,6 +42,9 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     // The mission TL;DR and its bar height (docs/mission-statement.md).
     ...(isSessionMission(s.mission) ? { mission: s.mission } : {}),
     ...(isNumber(s.missionBarHeight) ? { missionBarHeight: s.missionBarHeight } : {}),
+    // System role (docs/voice-operator.md): the operator must survive a restart
+    // or a second "Helm" would be spawned next launch.
+    ...(s.role === 'operator' ? { role: s.role } : {}),
     // Always written, both states. The renderer folds this snapshot over its
     // cached session records with a spread merge, so an omitted key means
     // "keep whatever you had" — which would make unlocking invisible.
@@ -93,6 +96,9 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       }
       if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
         delete session.missionBarHeight;
+      }
+      if (session.role !== undefined && session.role !== 'operator') {
+        delete session.role;
       }
       // G10 removed SessionInfo.loopDriving (the per-session loop-driving
       // opt-in). A stale key in pre-G10 sessions.yaml is not an error — the

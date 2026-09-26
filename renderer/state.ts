@@ -37,6 +37,8 @@ export interface Session {
   mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
   /** Persisted mission-bar height in px. */
   missionBarHeight?: number;
+  /** 'operator' marks the router-only "Helm" session (docs/voice-operator.md). */
+  role?: 'operator';
 }
 
 export interface ProjectSummary {

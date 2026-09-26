@@ -8,9 +8,9 @@ survives the screen turning off.
 **Hey Helm** is the opt-in standby: one spoken question, one spoken answer,
 no call — see [below](#hey-helm--standby).
 
-This page covers the phone half (P-0834, P-0835). The operator session itself (the
-`role=operator` session on the desktop) is P-0833; until it exists, a call
-targets a session the user picks.
+This page covers the phone half (P-0834, P-0835) and the desktop's
+[operator session](#the-operator-session--helm) (P-0833). With no operator
+configured, a call targets a session the user picks.
 
 ## Shape
 
@@ -43,8 +43,57 @@ disagree.
 3. Otherwise nobody.
 
 The pinned **Call Helm** row on the session list appears only when an operator
-exists (or a call is live). Once P-0833 ships, the phone switches to the
-operator with no further change.
+exists (or a call is live). The phone matches the literal string
+`"operator"` (`CallTarget.kt`), so that value is a wire contract.
+
+## The operator session — "Helm"
+
+One locked session named **Helm** that every voice client (phone now, desktop
+later) talks to. It is a router: it passes an instruction to the right work
+session, acknowledges at once, and speaks a short summary when the reply comes
+back. It never edits, runs commands, investigates, or creates/closes sessions —
+the work stays in the sessions that own it, and there is one conversation for
+phone and desktop to share.
+
+```mermaid
+graph LR
+    V[Phone / desktop<br/>voice or chat] -- session_send_text<br/>gated --> OP[Helm operator<br/>role=operator, locked]
+    OP -- session_send_text<br/>expectsResponse=true --> W[Work session]
+    W -- HELM_MSG reply --> OP
+    OP -- chat_send<br/>1–2 spoken sentences --> V
+    subgraph Main process
+        CFG[Settings → Operator<br/>enabled · cliType · workingDir] --> OSM[OperatorSessionManager.ensure]
+        OSM -- spawn once --> SPAWN[spawnConfiguredSession<br/>+ operator guide]
+    end
+    SPAWN --> OP
+```
+
+- **Singleton.** `OperatorSessionManager.ensure()` (`src/session/operator-session-manager.ts`)
+  runs at startup, after `restoreSessions`, and on every settings save. It
+  keeps exactly one `role: 'operator'` session: a persisted one is reused (the
+  renderer's auto-resume brings it back on the same `cliSessionName`), a
+  missing one is spawned through `spawnConfiguredSession`. Duplicates keep the
+  oldest and have their role cleared — demoted, never closed. Lock and the
+  name "Helm" are re-asserted on every ensure.
+- **Off means demoted.** Disabling the setting clears the operator's role, so
+  the phone stops routing to it; the session itself stays open until you close
+  it (force, since it stays locked).
+- **Restart.** A force-restart (`helm_restart` with `resume:false`) skips the
+  operator: its lock is by design, so it neither blocks the restart nor gets
+  closed, and it resumes next launch.
+- **Settings.** `settings.yaml → operator: { enabled, cliType, workingDir }`,
+  edited in Settings → 🎙 Operator. `cliType` is a dropdown of your own CLI
+  types — ids are per-machine UUIDs, so there is no shipped default and
+  nothing spawns until one is chosen.
+- **Persistence.** `SessionInfo.role` is in `serializeSession`'s allow-list
+  (invariant 6), in the renderer's session-refresh allow-list, and in
+  `session_list`/`session_get` summaries. An unknown role drops on load.
+- **Rules.** `src/mcp/guides/operator-guide.ts` is delivered as the initial
+  prompt: route only, ask back when the target is ambiguous, speakable style
+  (no markdown, paths or UUIDs).
+- **Launch race.** Main can spawn the operator before the renderer's
+  auto-resume runs; `pty:spawn` treats a resume of an already-live PTY as an
+  attach, not a second process.
 
 ## The call state machine — `CallController`
 

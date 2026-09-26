@@ -43,6 +43,7 @@ src/
 │   ├── draft-manager.ts        # Per-session draft prompt CRUD (EventEmitter, emits draft:changed, persisted to config/drafts.yaml)
 │   ├── plan-manager.ts         # Per-directory plan DAG CRUD (EventEmitter, emits plan:changed, cycle prevention via DFS, ready-state computation, persisted to config/plans/*.json)
 │   ├── mess-manager.ts         # Project-scoped durable coordination, ordered unread cursors, bounded history, and mess:appended events
+│   ├── operator-session-manager.ts # Keeps exactly one locked role=operator "Helm" session (voice router); ensure() on startup + settings save
 │   ├── mess-persistence.ts     # Per-project JSONL log plus atomic cursor metadata, retention pruning, compaction recovery, and corruption diagnostics
 │   ├── mess-notifier.ts        # Best-effort idle reminders with append-while-idle detection, cooldown, retry, and system delivery verification
 │   ├── persistence-paths.ts    # Stable per-user app-data paths, including the UUID-keyed Mess directory and log/cursor files
@@ -60,7 +61,8 @@ src/
 │   └── loader.ts               # Self-contained profile YAML config + CRUD + StickConfig + haptic settings + auto-migration + bookmark CRUD (addBookmarkedDir/removeBookmarkedDir) + ChipbarAction interface + chipActions profile field + getChipbarActions()
 ├── mcp/
 │   ├── guides/
-│   │   └── mess-guide.ts       # Agent-facing Mess tool rules and local-only/social-coordination constraints
+│   │   ├── mess-guide.ts       # Agent-facing Mess tool rules and local-only/social-coordination constraints
+│   │   └── operator-guide.ts   # Route-only rules + speakable voice style, the operator session's initial prompt
 │   └── services/
 │       └── helm-mess-service.ts # Authenticated mess_post/check/history facade and compact wire-shape conversion
 ├── mobile/                      # The Helm half of the phone link. See docs/mobile-app.md
@@ -158,7 +160,8 @@ renderer/
 │   │   ├── BindingsTab.vue     # Per-CLI binding list
 │   │   ├── ToolsTab.vue        # CLI type management
 │   │   ├── TelegramTab.vue     # Telegram bot configuration
-│   │   └── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
+│   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
+│   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
 │   ├── dock/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)

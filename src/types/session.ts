@@ -96,7 +96,14 @@ export interface SessionInfo {
   mission?: SessionMission;
   /** Per-session height (px) of the resizable mission bar. Persists. */
   missionBarHeight?: number;
+  /** System role. 'operator' marks the router-only "Helm" singleton voice
+   *  clients talk to (docs/voice-operator.md). Persists; clients match the
+   *  literal string, so it is a wire contract. */
+  role?: SessionRole;
 }
+
+/** Known system roles. Only one today; unknown values drop on load. */
+export type SessionRole = 'operator';
 
 /** A session's mission statement. Text is trimmed, 1–500 chars (src/session/mission.ts). */
 export interface SessionMission {

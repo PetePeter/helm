@@ -64,6 +64,8 @@ export const PRELOAD_API_DOMAINS = {
     'configSetNotifications',
     'configGetMcpConfig',
     'configSetMcpConfig',
+    'configGetOperatorConfig',
+    'configSetOperatorConfig',
     'configGetFleetConfig',
     'configGetFleetStatus',
     'configSetFleetConfig',
