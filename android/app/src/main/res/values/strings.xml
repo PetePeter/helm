@@ -220,6 +220,8 @@
     <string name="control_glyph_compact">🛠</string>
     <string name="control_glyph_spawn">✦</string>
     <string name="control_glyph_close">✕</string>
+    <string name="control_action_call">Call</string>
+    <string name="control_glyph_call">📞</string>
     <string name="control_glyph_artifacts">🗂</string>
     <string name="control_not_permitted">not permitted</string>
     <string name="control_asking">checking…</string>
@@ -436,4 +438,28 @@
     <string name="sequence_clear_confirm">Delete %1$d empty sequences and %2$d unused contexts? This cannot be undone.</string>
     <string name="plans_blocked">blocked</string>
     <string name="plans_claimed">claimed</string>
+
+    <!-- Voice call ("Call Helm") -->
+    <string name="call_title">Call</string>
+    <string name="call_helm">Call Helm</string>
+    <string name="call_helm_row_hint">Voice call your operator</string>
+    <string name="call_phase_idle">Connecting…</string>
+    <string name="call_phase_listening">Listening</string>
+    <string name="call_phase_sending">Sending</string>
+    <string name="call_phase_speaking">Speaking</string>
+    <string name="call_phase_ended">Call ended</string>
+    <string name="call_muted">Muted</string>
+    <string name="call_mute">Mute</string>
+    <string name="call_unmute">Unmute</string>
+    <string name="call_back">Back</string>
+    <string name="call_hang_up">Hang up</string>
+    <string name="call_route_earpiece">Earpiece</string>
+    <string name="call_route_speaker">Speaker</string>
+    <string name="call_route_bluetooth">Bluetooth</string>
+    <string name="call_send_failed">That did not send.</string>
+    <string name="call_no_target">Nobody to call — pick a session first.</string>
+    <string name="call_permission">The microphone is needed for a call.</string>
+    <string name="call_channel_name">Voice call</string>
+    <string name="call_channel_description">Shown while a voice call with Helm is live.</string>
+    <string name="call_notification_text">On a call with %1$s</string>
 </resources>

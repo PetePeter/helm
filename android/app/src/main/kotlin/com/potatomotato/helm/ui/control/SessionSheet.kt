@@ -165,10 +165,11 @@ fun SessionSheet(
 }
 
 /**
- * The sheet's order, top to bottom: what you look at, what you tidy, what you
+ * The sheet's order, top to bottom: talking to it, what you look at, what you tidy, what you
  * create, what you destroy. Destructive last, furthest from the reading position.
  */
 private val SHEET_ACTIONS = listOf(
+    SessionAction.Call,
     SessionAction.Snapshot,
     SessionAction.Rename,
     SessionAction.Compact,
@@ -428,6 +429,7 @@ internal val SessionAction.labelRes: Int
         SessionAction.Compact -> R.string.control_action_compact
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
+        SessionAction.Call -> R.string.control_action_call
         SessionAction.CreateArtifact -> R.string.artifacts_action_new
         SessionAction.ReviseArtifact -> R.string.artifacts_action_revise
         SessionAction.SaveArtifact -> R.string.artifacts_action_save
@@ -442,6 +444,7 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Compact -> R.string.control_glyph_compact
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
+        SessionAction.Call -> R.string.control_glyph_call
         SessionAction.CreateArtifact -> R.string.artifacts_glyph_new
         SessionAction.ReviseArtifact -> R.string.artifacts_glyph_revise
         SessionAction.SaveArtifact -> R.string.artifacts_glyph_save

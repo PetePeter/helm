@@ -138,6 +138,11 @@ removes.
   with a message already sent. **No audio ever crosses the link**, and the
   manifest carries no `INTERNET` permission, so the app is structurally incapable
   of uploading any.
+- **Call Helm** — a full, phone-call-style voice call to the operator (a pinned
+  row atop the session list) or to any session (📞 Call on its control sheet).
+  Each utterance is a gated `session_send_text`; replies in the target's thread
+  are spoken back. Audio stays on the phone — speech in and out is on-device.
+  See [voice-operator.md](voice-operator.md).
 - **Links** — a URL in agent-written text (chat, a context body, plan prose, an
   artifact) is tappable and opens in the system resolver. `LinkRules` is the one
   allow-list — `http`/`https` only — so a `javascript:`, `intent:`, `file:` or
@@ -536,6 +541,9 @@ decision or a known gap at the time of writing.
   were built to committed vectors and to unit tests over fakes. The first live
   pairing, the notification look, lock-screen truncation, the cold-start deep
   link and voice quality are all still unjudged.
+- **Call Helm has not been judged on a device.** Audio routing, screen-off
+  survival and Bluetooth switching are framework behaviour the JVM suite cannot
+  reach; see [voice-operator.md](voice-operator.md#limitations).
 - **The reply box has never been typed into on a phone.** Everything it decides
   is unit-tested through `ReplyDelivery`, but `RemoteInput` extraction, the
   heads-up presentation and the "not sent" rewrite are framework behaviour, and

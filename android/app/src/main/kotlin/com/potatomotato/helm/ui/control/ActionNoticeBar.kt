@@ -94,6 +94,7 @@ private val SessionAction.doneRes: Int
         SessionAction.DeleteArtifact -> R.string.artifacts_notice_done_delete
         SessionAction.Snapshot -> R.string.snapshot_title
         SessionAction.Artifacts -> R.string.artifacts_title
+        SessionAction.Call -> R.string.call_title
     }
 
 /** Long enough to read a sentence, short enough to stop being scenery. */

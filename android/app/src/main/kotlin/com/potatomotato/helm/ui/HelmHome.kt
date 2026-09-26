@@ -65,7 +65,11 @@ import com.potatomotato.helm.ui.artifacts.ArtifactDetailScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
+import com.potatomotato.helm.ui.call.CallScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.voice.OPERATOR_ROLE
+import com.potatomotato.helm.voice.VoiceCallService
+import com.potatomotato.helm.voice.resolveCallTarget
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -120,6 +124,9 @@ private enum class Destination {
     ArtifactEditor,
     Desktops,
     Pairing,
+
+    /** A "Call Helm" voice call. Reachable with no session open — the pinned Helm row. */
+    Call,
 
     /**
      * The plan, sequence and context detail screens.
@@ -191,6 +198,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // never asked, and back is one tap away if they still mean it.
     var leaving by remember { mutableStateOf(false) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
+    // The session the user chose to call from its sheet; the operator, once the
+    // desktop has one, outranks it — see resolveCallTarget.
+    var callPickedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val liveCall by VoiceCallService.call.collectAsState()
     // Which of the open session's tabs is showing. Saveable for the same reason
     // [where] is: a rotation must not drop a user reading the artifact list back
     // into the conversation.
@@ -696,6 +707,23 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 // branches below keep their non-null smart cast.
                 // Same reasoning as Spawn: reachable with no session open, so
                 // it sits above the null check rather than inside it.
+                where == Destination.Call -> {
+                    BackHandler(onBack = toThread)
+                    // A live call keeps its own target; a new one resolves now.
+                    val target = liveCall?.targetId ?: resolveCallTarget(sessions, callPickedId)
+                    if (target == null) {
+                        LaunchedEffect(Unit) { where = Destination.Thread }
+                    } else {
+                        CallScreen(
+                            targetId = target,
+                            targetName = sessions.firstOrNull { it.id == target }?.name ?: target,
+                            call = liveCall,
+                            thread = threads[target].orEmpty(),
+                            onBack = toThread,
+                        )
+                    }
+                }
+
                 where == Destination.Desktops -> {
                     BackHandler(onBack = toThread)
                     DesktopsScreen(
@@ -875,6 +903,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 onPairDesktop = {
                                     HelmLinkService.forcePairingMode(context)
                                     where = Destination.Pairing
+                                },
+                                onCallHelm = if (liveCall != null || sessions.any { it.role == OPERATOR_ROLE }) {
+                                    { where = Destination.Call }
+                                } else {
+                                    null
                                 },
                             )
 
@@ -1192,6 +1225,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             // rows live on the artifacts tab and the screens
                             // under it, where the thing acted on is visible.
                             SessionAction.Rename -> Destination.Thread
+                            SessionAction.Call -> Destination.Call.also { callPickedId = open.id }
                             else -> Destination.Thread
                         }
                         // A snapshot is pulled as soon as it is asked for, at the

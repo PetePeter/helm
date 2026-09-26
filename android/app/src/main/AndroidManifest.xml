@@ -36,6 +36,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- "Call Helm" (docs/voice-operator.md): the call holds the microphone in a
+         foreground service through screen-off, and switches the audio mode and
+         route (earpiece / speaker / Bluetooth) the way a phone call does. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- The LAN transport (P-0752). Helm listens and the phone dials, so the
          app opens an outbound socket on the local network. Without this a
          dial throws SecurityException before it ever touches the wire. -->
@@ -54,6 +60,10 @@
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <!-- The same visibility rule for the call's text-to-speech engine. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
         </intent>
     </queries>
 
@@ -94,6 +104,12 @@
             android:name=".ble.HelmLinkService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- A live "Call Helm" voice call. microphone is the only honest type for it. -->
+        <service
+            android:name=".voice.VoiceCallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!--
           Reboots restart the link on their own. exported is required for a

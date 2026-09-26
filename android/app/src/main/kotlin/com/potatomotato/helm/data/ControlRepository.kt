@@ -17,6 +17,12 @@ enum class SessionAction(val tool: String) {
     Close("session_close"),
 
     /**
+     * "Call Helm" on this session — a voice call whose every utterance is a
+     * `session_send_text`, so it gates on exactly that tool.
+     */
+    Call("session_send_text"),
+
+    /**
      * Opens the session's artifacts. It gates on the LIST tool — the screen's
      * first ask — though the detail screen then needs `session_artifact_get`
      * too; the gate is the authority either way, and a refusal there is state
