@@ -12,10 +12,14 @@ import com.potatomotato.helm.log.HelmLog
  * The platform voice, behind [TtsEngine]. Translation only — like
  * [AndroidSpeechEngine], any decision made here could not be tested.
  *
- * Spoken as VOICE_COMMUNICATION, so the words follow the call's route
- * (earpiece, speaker or the car) rather than the media stream.
+ * A call speaks as VOICE_COMMUNICATION, so the words follow the call's route
+ * (earpiece, speaker or the car) rather than the media stream. Standby holds no
+ * call audio, so it speaks as ASSISTANT.
  */
-class AndroidTtsEngine(context: Context) : TtsEngine {
+class AndroidTtsEngine(
+    context: Context,
+    usage: Int = AudioAttributes.USAGE_VOICE_COMMUNICATION,
+) : TtsEngine {
     private val main = Handler(Looper.getMainLooper())
     /** The engine answered its init, successfully or not. */
     private var initialised = false
@@ -41,7 +45,7 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
     }.apply {
         setAudioAttributes(
             AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setUsage(usage)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )

@@ -9,6 +9,8 @@ import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.FileChatStore
 import com.potatomotato.helm.data.LanAddressStore
+import com.potatomotato.helm.data.HeyHelmSetting
+import com.potatomotato.helm.data.PrefsHeyHelmStore
 import com.potatomotato.helm.data.PrefsTransportPreferenceStore
 import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.data.PrefsLanAddressStore
@@ -134,6 +136,7 @@ object HelmPairing {
         // The user's transport choice, adopted before anything dials so a
         // Bluetooth-only phone never makes one attempt it was told not to.
         TransportPreferences.bind(PrefsTransportPreferenceStore(context))
+        HeyHelmSetting.bind(PrefsHeyHelmStore(context))
         lan = LanLinkController(
             addresses = addresses,
             allowDial = { TransportPreferences.preference.value.allowsLan },

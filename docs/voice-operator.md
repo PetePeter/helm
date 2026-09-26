@@ -5,7 +5,10 @@ A phone-call-style voice conversation with Helm from the Android app. Tap
 driving: it runs through the car's Bluetooth, the earpiece or the speaker, and
 survives the screen turning off.
 
-This page covers the phone half (P-0834). The operator session itself (the
+**Hey Helm** is the opt-in standby: one spoken question, one spoken answer,
+no call — see [below](#hey-helm--standby).
+
+This page covers the phone half (P-0834, P-0835). The operator session itself (the
 `role=operator` session on the desktop) is P-0833; until it exists, a call
 targets a session the user picks.
 
@@ -99,6 +102,62 @@ audio device add/remove, so losing Bluetooth falls back to the earpiece.
 The notification carries a **Hang up** action. The call is not sticky: a killed
 call is never restarted behind the user's back.
 
+## Hey Helm — standby
+
+Off by default. The **Hey Helm** row under Call Helm switches it (asking for the
+microphone first); the choice persists in `PrefsHeyHelmStore` and is mirrored
+process-wide by `HeyHelmSetting`. While it is on and a target resolves (same
+`resolveCallTarget` as a call), `VoiceCallService` runs in standby with a
+"Listening for Hey Helm" notification whose **Stop** also turns the switch off.
+Off means no background mic: the service is stopped.
+
+It is the same `CallController`, given a `Standby` config:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Listening
+    Listening --> Listening: no wake phrase (ignored)
+    Listening --> Speaking: wake phrase alone → "Yes?"
+    Speaking --> Listening: done (next utterance is the question)
+    Listening --> Awaiting: wake + question → beep, send
+    Awaiting --> Speaking: first reply (timer cancelled)
+    Awaiting --> Speaking: 120 s timeout → "Still waiting. I'll tell you."
+    Speaking --> Listening: done
+```
+
+- **Wake phrase** — `stripWakePhrase`: case-insensitive, tolerant of the
+  recogniser's usual spellings (`hey/hay/hi helm`, `hey home`, `hey elm`,
+  `a helm`). The list is deliberately short: each spelling is another way an
+  ordinary sentence wakes the phone ("a home…" is excluded for that reason).
+- **"Yes?" has a window.** After a bare wake the next utterance is the
+  question only for 8 s; after that the wake is forgotten.
+- **One question at a time.** Wakes are ignored while a question awaits its
+  answer, so a second question can never orphan the first answer.
+- **Backed-off restarts.** Retryable recogniser errors restart after 1 s,
+  doubling to a 30 s cap, reset by any result — a phone with no language pack
+  must not spin for hours. A fatal error (no mic permission, no recogniser)
+  ends standby and turns the switch off, so the UI never claims it is on.
+- **The row is always reachable while on**, even with no target, so ON can be
+  turned off. With no target the service stops but the switch stays on.
+- **One question, one answer.** Only the first reply after a question is
+  spoken; anything else the target says is not read to the room. A slow reply
+  gets one holding line, and is still spoken when it arrives.
+- **No audio takeover.** Standby runs for hours, so it holds no audio focus, no
+  communication mode and no route — music keeps playing. Its voice is the
+  `USAGE_ASSISTANT` stream. The mic still pauses while it speaks.
+- **Calls win.** Starting a call during standby replaces it; when the call ends
+  with the switch still on, the service drops the call audio and returns to
+  standby.
+- The timeout clock is a port (`Standby.schedule`), so the whole flow runs in
+  `StandbyControllerTest` against fakes.
+
+**Honest caveat** (also the setting's subtitle): Android's built-in STT is not a
+wake-word engine. It is a continuous recognise-restart loop — expect the
+platform's listening beeps, real battery drain, and possible OS kills; it is
+best on a charger. A real engine (openWakeWord, Porcupine, Whisper) can later
+replace it behind `SpeechEngine` without touching the controller. Standby does
+not survive a reboot or a process kill — reopen the app.
+
 ## Limitations
 
 - Not yet judged on a device: routing, screen-off survival, BT switching and
@@ -107,3 +166,5 @@ call is never restarted behind the user's back.
 - Built-in STT only, requested offline; a phone with no downloaded language
   pack reports a network error each utterance and the call keeps retrying.
 - No barge-in, as described above: wait for Helm to finish, or hang up.
+- Hey Helm is unjudged on a device, including the 30-minute screen-off run on a
+  charger; see the caveat above.

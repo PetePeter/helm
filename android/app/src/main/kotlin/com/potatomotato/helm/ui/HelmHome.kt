@@ -67,7 +67,9 @@ import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.call.CallScreen
 import com.potatomotato.helm.ui.chat.ChatScreen
+import com.potatomotato.helm.data.HeyHelmSetting
 import com.potatomotato.helm.voice.OPERATOR_ROLE
+import com.potatomotato.helm.voice.VoicePermission
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.voice.resolveCallTarget
 import com.potatomotato.helm.ui.components.ContextMenuItem
@@ -202,6 +204,22 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // desktop has one, outranks it — see resolveCallTarget.
     var callPickedId by rememberSaveable { mutableStateOf<String?>(null) }
     val liveCall by VoiceCallService.call.collectAsState()
+    // "Hey Helm" standby follows the switch: on (and allowed the mic) means the
+    // service listens for whoever a call would ring; off means no mic at all.
+    val heyHelm by HeyHelmSetting.enabled.collectAsState()
+    val standingBy by VoiceCallService.standingBy.collectAsState()
+    val standbyTarget = resolveCallTarget(sessions, callPickedId)
+    val heyHelmPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) HeyHelmSetting.set(true)
+    }
+    LaunchedEffect(heyHelm, standbyTarget) {
+        if (heyHelm && standbyTarget != null && VoicePermission.granted(context)) {
+            VoiceCallService.standby(context, standbyTarget)
+        } else if (standingBy && (!heyHelm || standbyTarget == null)) {
+            // Off, or nobody left to ask: no background mic.
+            VoiceCallService.stopStandby(context)
+        }
+    }
     // Which of the open session's tabs is showing. Saveable for the same reason
     // [where] is: a rotation must not drop a user reading the artifact list back
     // into the conversation.
@@ -906,6 +924,20 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 },
                                 onCallHelm = if (liveCall != null || sessions.any { it.role == OPERATOR_ROLE }) {
                                     { where = Destination.Call }
+                                } else {
+                                    null
+                                },
+                                heyHelm = heyHelm,
+                                // Shown whenever it could run, and always while on,
+                                // so an ON switch can always be turned off.
+                                onHeyHelm = if (standbyTarget != null || heyHelm) {
+                                    { on ->
+                                        when {
+                                            !on -> HeyHelmSetting.set(false)
+                                            VoicePermission.granted(context) -> HeyHelmSetting.set(true)
+                                            else -> heyHelmPermission.launch(VoicePermission.required.first())
+                                        }
+                                    }
                                 } else {
                                     null
                                 },

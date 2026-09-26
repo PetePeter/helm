@@ -462,4 +462,12 @@
     <string name="call_channel_name">Voice call</string>
     <string name="call_channel_description">Shown while a voice call with Helm is live.</string>
     <string name="call_notification_text">On a call with %1$s</string>
+    <string name="hey_helm">Hey Helm</string>
+    <string name="hey_helm_row_hint">Say \"Hey Helm, …\" for one spoken answer. Keeps the mic on in the background: expect beeps and battery use, best on a charger.</string>
+    <string name="hey_helm_on">On</string>
+    <string name="hey_helm_off">Off</string>
+    <string name="hey_helm_stop">Stop</string>
+    <string name="hey_helm_notification_text">Listening for Hey Helm</string>
+    <string name="hey_helm_yes">Yes?</string>
+    <string name="hey_helm_still_waiting">Still waiting. I\'ll tell you.</string>
 </resources>
