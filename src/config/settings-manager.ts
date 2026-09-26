@@ -53,6 +53,7 @@ export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
   cliType: '',
   workingDir: '',
   compactEveryMinutes: 60,
+  rules: '',
 };
 
 export class SettingsManager {

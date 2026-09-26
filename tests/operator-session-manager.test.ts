@@ -22,10 +22,10 @@ vi.mock('../src/session/persistence.js', () => ({
 const { SessionManager } = await import('../src/session/manager.js');
 const { OperatorSessionManager, OPERATOR_SESSION_NAME } = await import('../src/session/operator-session-manager.js');
 const { saveSessions, loadSessions } = await import('../src/session/session-persistence.js');
-const { buildOperatorGuide } = await import('../src/mcp/guides/operator-guide.js');
+const { buildOperatorGuide, OPERATOR_RULES } = await import('../src/mcp/guides/operator-guide.js');
 const { HelmSessionService } = await import('../src/mcp/services/helm-session-service.js');
 
-type Config = { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes?: number };
+type Config = { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number; rules: string };
 
 function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>) {
   const compacts: Array<{ sessionId: string; handover: string }> = [];
@@ -49,7 +49,7 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
   return { sessionManager, operator, spawns, compacts, pendingHandovers };
 }
 
-const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', workingDir: 'X:/home', compactEveryMinutes: 0 };
+const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', workingDir: 'X:/home', compactEveryMinutes: 0, rules: '' };
 const operators = (sm: InstanceType<typeof SessionManager>) => sm.getAllSessions().filter(s => s.role === 'operator');
 
 describe('OperatorSessionManager.ensure', () => {
@@ -153,6 +153,26 @@ describe('session_list exposes role (phone contract: HelmSession.kt reads "role"
 describe('operator guide', () => {
   const guide = buildOperatorGuide();
 
+  it('renders every exported built-in rule, so the Settings list and the guide never drift', () => {
+    OPERATOR_RULES.forEach((rule, i) => expect(guide).toContain(`rule_${i + 1} = ${JSON.stringify(rule)}`));
+  });
+
+  it('has no [user_rules] section when the user rules are empty or blank', () => {
+    expect(guide).not.toContain('[user_rules]');
+    expect(buildOperatorGuide('  \n \n')).toBe(guide);
+  });
+
+  it('appends the user rules, one per non-blank line, after the built-ins, as highest priority', () => {
+    const withRules = buildOperatorGuide('Never message the build session.\n\n  Say "done" when done.  ');
+    expect(withRules.startsWith(guide)).toBe(true);
+    const section = withRules.slice(guide.length);
+    expect(section).toContain('[user_rules]');
+    expect(section).toContain('highest priority');
+    expect(section).toContain('rule_1 = "Never message the build session."');
+    expect(section).toContain('rule_2 = "Say \\"done\\" when done."');
+    expect(section).not.toContain('rule_3');
+  });
+
   it('has three modes: answer from Helm state, answer from knowledge, route work', () => {
     for (const line of ['ANSWER FROM HELM', 'ANSWER GENERAL QUESTIONS', 'ROUTE WORK']) {
       expect(guide).toContain(line);
@@ -215,6 +235,17 @@ describe('hourly self-compaction (fake clock)', () => {
     expect(ctx.compacts[0].sessionId).toBe(opId);
     expect(ctx.compacts[0].handover).toContain('You are Helm, the operator');
     expect(ctx.compacts[0].handover).toContain(buildOperatorGuide());
+  });
+
+  it('spawn and compaction handover both carry the rules current at that moment', async () => {
+    const config: Config = { ...HOURLY, rules: 'Rule at spawn.' };
+    start(config);
+    expect(ctx.spawns[0].contextText).toBe(buildOperatorGuide('Rule at spawn.'));
+    config.rules = 'Rule after edit.';
+    touch();
+    await advance(60);
+    expect(ctx.compacts[0].handover).toContain(buildOperatorGuide('Rule after edit.'));
+    expect(ctx.compacts[0].handover).not.toContain('Rule at spawn.');
   });
 
   it('skips an operator with no activity since the last compaction', async () => {

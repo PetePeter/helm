@@ -133,6 +133,28 @@ graph LR
   **Rule changes need a fresh prompt:** the guide is the operator's initial
   prompt, so a running operator only picks up edits after it is respawned or
   compacted. The idle self-compaction below re-sends it every time.
+- **User rules (P-0842).** Settings → Operator has a **Rules** section. It
+  lists the built-in hard rules read-only and has a "Your rules" box.
+
+  ```mermaid
+  flowchart LR
+      OR[OPERATOR_RULES<br/>operator-guide.ts] --> G[buildOperatorGuide rules]
+      OR --> TAB[OperatorTab.vue<br/>read-only list]
+      TAB -->|Save| CFG[settings.yaml<br/>operator.rules]
+      CFG --> G
+      G --> SP[spawn: initial prompt]
+      G --> HC[compaction handover]
+  ```
+
+  - **The built-ins remain.** User rules are appended as a `[user_rules]`
+    section (one `rule_N` per non-blank line), ranked as the highest priority.
+    They can narrow the operator or grant it more. The built-in `[rules]` are
+    still sent every time, and blank rules add no section.
+  - **One source.** The tab imports `OPERATOR_RULES` from the guide module, so
+    the list shown is exactly the text the operator receives.
+  - Both deliveries read the rules from config at that moment, so an edit
+    applies from the next spawn or compaction. Saving goes through the existing
+    `config:setOperatorConfig` channel; there is no new IPC.
 - **Idle self-compaction (P-0839).** The operator lives for days, so its context
   would grow without bound. Every `compactEveryMinutes` (default 60; 0 = off)
   the manager checks it:

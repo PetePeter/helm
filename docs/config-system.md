@@ -234,6 +234,7 @@ When a `wait-until` fires and a scheduled send is pending, the session card show
 | `cliType` | `''` | CLI type id to run it on. Empty means nothing spawns |
 | `workingDir` | `''` | Spawn directory. Empty means the CLI's default |
 | `compactEveryMinutes` | `60` | Idle self-compaction cadence. `0` = off. It skips when there's been no activity and retries every 30 min while busy |
+| `rules` | `''` | Your operator rules, one per line (multi-line YAML string). Appended to the guide as the highest-priority `[user_rules]`; the built-in rules still apply. Takes effect on the next spawn or compaction |
 
 See [voice-operator.md](voice-operator.md#the-operator-session--helm).
 

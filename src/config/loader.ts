@@ -344,6 +344,8 @@ export interface OperatorConfig {
   workingDir: string;
   /** Idle self-compaction cadence in minutes; 0 = off. */
   compactEveryMinutes: number;
+  /** User rules appended to the operator guide, one per line; built-in rules still apply. */
+  rules: string;
 }
 
 function normalizeCompactMinutes(value: unknown): number {
@@ -1201,6 +1203,7 @@ export class ConfigLoader {
       cliType: typeof o?.cliType === 'string' ? o.cliType : DEFAULT_OPERATOR_CONFIG.cliType,
       workingDir: typeof o?.workingDir === 'string' ? o.workingDir : DEFAULT_OPERATOR_CONFIG.workingDir,
       compactEveryMinutes: normalizeCompactMinutes(o?.compactEveryMinutes),
+      rules: typeof o?.rules === 'string' ? o.rules : DEFAULT_OPERATOR_CONFIG.rules,
     };
   }
 
@@ -1213,6 +1216,7 @@ export class ConfigLoader {
       cliType: typeof next.cliType === 'string' ? next.cliType.trim() : '',
       workingDir: typeof next.workingDir === 'string' ? next.workingDir.trim() : '',
       compactEveryMinutes: normalizeCompactMinutes(next.compactEveryMinutes),
+      rules: typeof next.rules === 'string' ? next.rules.trim() : '',
     };
     this.saveSettings();
   }

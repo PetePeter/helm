@@ -1370,12 +1370,20 @@ describe('ConfigLoader', () => {
   describe('operator config', () => {
     it('defaults to disabled with no CLI type, and round-trips through settings.yaml', () => {
       loader.load();
-      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', workingDir: '', compactEveryMinutes: 60 });
+      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', workingDir: '', compactEveryMinutes: 60, rules: '' });
       loader.setOperatorConfig({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0 });
-      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0 });
+      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0, rules: '' });
       const loader2 = new ConfigLoader(TEST_DIR);
       loader2.load();
-      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0 });
+      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', workingDir: '', compactEveryMinutes: 0, rules: '' });
+    });
+
+    it('round-trips multi-line user rules, trimming only the outer whitespace', () => {
+      loader.load();
+      loader.setOperatorConfig({ rules: '  Never message the build session.\nYou may read the gamepad terminal in full.\n\n' });
+      const loader2 = new ConfigLoader(TEST_DIR);
+      loader2.load();
+      expect(loader2.getOperatorConfig().rules).toBe('Never message the build session.\nYou may read the gamepad terminal in full.');
     });
 
     it('falls back to 60 for an invalid compactEveryMinutes', () => {

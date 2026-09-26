@@ -170,11 +170,11 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('config:setMcpConfig', updates),
 
   /** Voice operator singleton settings (docs/voice-operator.md). */
-  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number }> =>
+  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number; rules: string }> =>
     ipcRenderer.invoke('config:getOperatorConfig'),
 
   /** Persist operator settings; main re-ensures the operator session at once. */
-  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; workingDir?: string; compactEveryMinutes?: number }): Promise<{ success: boolean; error?: string }> =>
+  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; workingDir?: string; compactEveryMinutes?: number; rules?: string }): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('config:setOperatorConfig', updates),
 
   /**

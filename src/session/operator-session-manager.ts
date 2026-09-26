@@ -28,9 +28,9 @@ export const OPERATOR_COMPACT_RETRY_MS = 30 * MINUTE_MS;
 /** A relay whose reply never came stops blocking compaction after this long. */
 const OPEN_RELAY_MAX_AGE_MS = 2 * 60 * MINUTE_MS;
 
-export function buildOperatorCompactHandover(): string {
+export function buildOperatorCompactHandover(rules = ''): string {
   return 'Your context was just compacted. You are Helm, the operator. Any earlier relays are closed; treat late replies as new requests. '
-    + 'Re-read your rules below and follow them from now on.\n\n' + buildOperatorGuide();
+    + 'Re-read your rules below and follow them from now on.\n\n' + buildOperatorGuide(rules);
 }
 
 export interface OperatorSpawnParams {
@@ -152,7 +152,7 @@ export class OperatorSessionManager extends EventEmitter {
     }
     if (lastOutputAt <= this.activityBaseline) return this.timerIntervalMs;
     try {
-      await this.deps.compact(id, buildOperatorCompactHandover());
+      await this.deps.compact(id, buildOperatorCompactHandover(this.deps.getConfig().rules));
       this.settling = true;
       logger.info(`[Operator] Compacted operator ${id}`);
     } catch (error) {
@@ -189,7 +189,7 @@ export class OperatorSessionManager extends EventEmitter {
       cliType: config.cliType,
       ...(config.workingDir ? { cwd: config.workingDir } : {}),
       sessionName: OPERATOR_SESSION_NAME,
-      contextText: buildOperatorGuide(),
+      contextText: buildOperatorGuide(config.rules),
     });
     logger.info(`[Operator] Spawned operator session ${sessionId}`);
     return sessionId;
