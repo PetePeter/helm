@@ -183,6 +183,8 @@
   <a href="#recycle-bin">Recycle Bin</a>
   <a href="#runtime-groups">Runtime Groups</a>
   <a href="#fleet">Fleet</a>
+  <a href="#phone-app">Phone App</a>
+  <a href="#voice-operator">Helm Operator &amp; Voice</a>
 </nav>
 
 <main>
@@ -590,6 +592,59 @@
 
 <div class="callout">
   Closing a session, closing a group and restarting Helm can <strong>never</strong> be triggered remotely, even by a peer allowed everything.
+</div>
+
+<!-- ═══════════════════ 14. Phone App ═══════════════════ -->
+<h2 id="phone-app">14. Phone App</h2>
+
+<p>The <strong>Helm Android app</strong> is a companion for your sessions: read and answer them, get notified, call Helm by voice and send files &mdash; over <strong>Wi-Fi (LAN)</strong> at home or <strong>Bluetooth</strong> in the office. Everything is end-to-end encrypted between the phone and this PC.</p>
+
+<h3>Pairing</h3>
+<ul>
+  <li>Install the APK from the GitHub release (the QR code in <strong>Settings</strong> points at the matching version)</li>
+  <li>Start pairing on the desktop, pick this PC on the phone, and check the <strong>6-digit code</strong> matches on both screens before confirming</li>
+  <li>Wi-Fi is preferred automatically when both are on the same network; Bluetooth takes over when it isn't</li>
+</ul>
+
+<h3>Sharing a file to a session</h3>
+<table>
+  <thead><tr><th>Step</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td>Share</td><td>In any app, <strong>Share &rarr; Helm</strong></td></tr>
+    <tr><td>Pick a session</td><td>The phone lists your sessions; tap one</td></tr>
+    <tr><td>Result</td><td>The file is saved in Helm's inbox on this PC and the session's <strong>draft</strong> gains <code>Attached: &lt;name&gt; at &lt;path&gt;</code>. Nothing is sent to the AI until you send the draft</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  Size limit: <strong>10&nbsp;MB</strong> over Wi-Fi, <strong>2&nbsp;MB</strong> over Bluetooth. Bigger files are refused on the phone before anything is sent.
+</div>
+
+<!-- ═══════════════════ 15. Helm Operator & Voice ═══════════════════ -->
+<h2 id="voice-operator">15. Helm Operator &amp; Voice</h2>
+
+<p>The <strong>operator</strong> is a single always-on session named <strong>Helm</strong>. You talk to it (by voice or chat) instead of picking a session: it answers questions about Helm and general questions itself (including web searches), and passes real work to the right session, then tells you the answer when it comes back.</p>
+
+<h3>Turning it on</h3>
+<ul>
+  <li><strong>Settings &rarr; &#127897; Operator</strong>: enable it and choose the <strong>CLI type</strong> and working folder</li>
+  <li>Changing the CLI type takes effect straight away: the old operator is demoted and unlocked (not closed, so no conversation is lost) and a fresh one starts on the new CLI</li>
+  <li><strong>Rules</strong>: add your own rules, one per line &mdash; they rank above the built-in ones</li>
+  <li>The operator compacts itself about hourly when idle, so it stays fast</li>
+</ul>
+
+<h3>Talking to it</h3>
+<table>
+  <thead><tr><th>Where</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td>Desktop</td><td>The <strong>Helm</strong> section pinned at the top of the sidebar shows its last reply; start a hands-free call there (it listens until you pause, then sends)</td></tr>
+    <tr><td>Phone &mdash; Call Helm</td><td>The <strong>Helm</strong> tab: tap <strong>Call</strong>, speak, hear the reply. A short tone confirms each send. Hanging up or leaving the call screen releases the microphone</td></tr>
+    <tr><td>Phone &mdash; Hey Helm</td><td>Turn on <strong>Hey Helm</strong> and say &ldquo;Hey Helm&rdquo; to start a call hands-free. Off by default</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  Hey Helm listens <strong>on the phone only</strong> (offline, nothing leaves the phone until it hears the wake word), but Android still shows the microphone indicator while it is on &mdash; that is expected. Turn it off to free the mic.
 </div>
 
 </main>
