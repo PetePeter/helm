@@ -216,6 +216,12 @@ describe('operator guide', () => {
     expect(section).not.toContain('rule_3');
   });
 
+  it('tells the operator how to honour the answer to its ring: yes, no, or call me back', () => {
+    expect(guide).toContain('Is now a good time?');
+    expect(guide).toContain('Call me back in N');
+    expect(guide).toContain('do not add your own retry');
+  });
+
   it('tracks every in-flight ask as a task plan with a linked self-timer until it is done', () => {
     expect(guide).toContain('TASKS');
     for (const term of ['FIRST plan_summary', 'instead of making a duplicate', 'plan_create', 'task', 'waitingOn', 'planIds', 'scheduler_cancel', 'plan_complete']) {

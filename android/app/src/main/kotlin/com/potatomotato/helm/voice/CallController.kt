@@ -40,10 +40,16 @@ class CallController(
     private val phase get() = _state.value.phase
     private val live get() = phase != CallPhase.Idle && phase != CallPhase.Ended
 
-    fun start() {
+    /**
+     * [opening]: an answered ring speaks first (RingGreeting) so picking up is
+     * never met with silence; the mic is already open, so the user can answer
+     * over it. A call the user started opens listening.
+     */
+    fun start(opening: String? = null) {
         if (phase != CallPhase.Idle) return
         _state.value = _state.value.copy(phase = CallPhase.Listening)
         mic.start(this)
+        opening?.takeIf { it.isNotBlank() }?.let(::say)
     }
 
     fun setMuted(muted: Boolean) {

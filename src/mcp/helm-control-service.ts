@@ -32,6 +32,7 @@ import { HelmPeerService } from './services/helm-peer-service.js';
 import { HelmMobileService, type MobileDeps } from './services/helm-mobile-service.js';
 import { logger } from '../utils/logger.js';
 import type { ScheduledTaskManager } from '../session/scheduled-task-manager.js';
+import type { RingRetry } from '../session/ring-retry.js';
 import type { CreateScheduledTaskParams, ScheduledTask, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
 import type { ContextBindingTargetType, ContextNode, ContextPermission, PlanContextRef } from '../types/context.js';
 import type { Skill, SkillCreateInput, SkillReview, SkillSummary, SkillUpdateInput } from '../types/skill.js';
@@ -230,6 +231,7 @@ export class HelmControlService extends EventEmitter {
   private readonly planAttachmentService: HelmPlanAttachmentService;
   private readonly telegramService: HelmTelegramService;
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
+  private ringRetry: RingRetry | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
@@ -1611,6 +1613,16 @@ export class HelmControlService extends EventEmitter {
     this.phoneRinger = ringer;
   }
 
+  /** Retries a ring nobody answered (src/session/ring-retry.ts); absent = no retry. */
+  setRingRetry(retry: RingRetry | null): void {
+    this.ringRetry = retry;
+  }
+
+  /** A linked phone picked up: no retry for this ring. */
+  ringAnswered(): void {
+    this.ringRetry?.answered();
+  }
+
   /**
    * Ring the user's phone (ring_user). OPERATOR ONLY: one voice calls the user;
    * any other session hands the operator what to say (session_send_text or an
@@ -1623,6 +1635,7 @@ export class HelmControlService extends EventEmitter {
     if (!this.phoneRinger?.(callerSessionId, reason)) {
       throw new Error('No linked phone took the ring. Fall back to chat_send or notify_user.');
     }
+    this.ringRetry?.rang(callerSessionId, reason);
     return { rung: true };
   }
 

@@ -37,6 +37,7 @@ import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.PairingState
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.IncomingRing
+import com.potatomotato.helm.notify.RingGreeting
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
@@ -111,7 +112,10 @@ class MainActivity : ComponentActivity() {
             // screen, like a phone call does, not wait for an unlock.
             showOverLockScreen(true)
             val canTalk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (canTalk) VoiceCallService.start(this, sessionId)
+            if (canTalk) {
+                val opening = RingGreeting.line(intent.getStringExtra(IncomingRing.EXTRA_ACCEPT_REASON).orEmpty())
+                VoiceCallService.start(this, sessionId, opening)
+            }
             PendingOpen.request(sessionId)
             return
         }

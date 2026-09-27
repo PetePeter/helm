@@ -50,6 +50,7 @@ class IncomingRing(private val context: Context) {
         val accept = activityIntent(record.sessionId, REQUEST_ACCEPT)
             .putExtra(EXTRA_ACCEPT_SESSION, record.sessionId)
             .putExtra(EXTRA_ACCEPT_TICKET, tickets.issue(record.sessionId))
+            .putExtra(EXTRA_ACCEPT_REASON, record.text)
         val open = activityIntent(record.sessionId, REQUEST_OPEN)
             .putExtra(AndroidNotifications.EXTRA_SESSION_ID, record.sessionId)
         val decline = PendingIntent.getBroadcast(
@@ -99,6 +100,9 @@ class IncomingRing(private val context: Context) {
 
         /** The ring's one-shot ticket; an accept without the live one is refused. */
         const val EXTRA_ACCEPT_TICKET = "com.potatomotato.helm.RING_TICKET"
+
+        /** The ring's reason, so the answered call can open by naming the topic. */
+        const val EXTRA_ACCEPT_REASON = "com.potatomotato.helm.RING_REASON"
 
         /** Process-wide, so the ring that minted a ticket and the activity that redeems it agree. */
         val tickets = RingTicket()

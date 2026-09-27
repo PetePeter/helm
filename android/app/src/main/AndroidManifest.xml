@@ -6,6 +6,8 @@
       Helm (Windows) is the central and connects in. See docs/mobile-ble-transport.md
       and context af250949-a1a4-4c0c-a75c-dbf69987d0e1 (the ratified role flip).
     -->
+    <!-- The call's ear sensor: screen off while the phone is held to the ear. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 

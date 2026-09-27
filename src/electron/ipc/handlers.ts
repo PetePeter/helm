@@ -140,6 +140,7 @@ import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
+import { RingRetry } from '../../session/ring-retry.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
@@ -1049,6 +1050,7 @@ export function registerIPCHandlers(
     rateLimiter: createDefaultMobileRateLimiter(),
     sessionLookup: sessionManager,
     restartHelm: (resume) => helmControlService.restartHelm(resume),
+    ringAnswered: () => helmControlService.ringAnswered(),
   });
 
   // The rolling record of chat messages fanned out to phones, so a phone that
@@ -1081,6 +1083,18 @@ export function registerIPCHandlers(
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
   helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
+  helmControlService.setRingRetry(new RingRetry({
+    ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
+    // Both rings missed: leave it in the operator's chat, where the phone shows it.
+    missedTwice: (sessionId, reason) => {
+      const text = `Missed call from Helm (tried twice): ${reason}`;
+      // No phone linked right now: the alert is not queued, so fall back to
+      // Helm's own notification path rather than drop the only notice.
+      if (!mobileChatBridge.sendAlert(sessionId, 'attention', text)) {
+        helmControlService.notifyUser(sessionId, 'Missed call from Helm', reason);
+      }
+    },
+  }));
 
   // Desktop voice (docs/voice-operator.md): hold-to-talk to the operator over
   // the SAME OpenWhispr/Piper tools Telegram uses. The operator's chat_send

@@ -18,6 +18,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.link.HelmPairing
@@ -66,16 +67,22 @@ class VoiceCallService : Service() {
         private const val ACTION_ROUTE = "com.potatomotato.helm.call.ROUTE"
         private const val EXTRA_TARGET = "target"
         private const val EXTRA_VALUE = "value"
+        private const val EXTRA_OPENING = "opening"
         private const val CUE_VOLUME = 80
         private const val CUE_MS = 150
+        /** A backstop only: the lock is released when the call ends or leaves the earpiece. */
+        private const val EAR_SENSOR_MAX_MS = 4 * 60 * 60 * 1000L
 
         private val _call = MutableStateFlow<Call?>(null)
 
         /** The live call, or null. Process-scoped: there is at most one call. */
         val call: StateFlow<Call?> = _call.asStateFlow()
 
-        fun start(context: Context, targetId: String) {
-            context.startForegroundService(command(context, ACTION_START).putExtra(EXTRA_TARGET, targetId))
+        /** [opening]: spoken first, for an answered ring (see [CallController.start]). */
+        fun start(context: Context, targetId: String, opening: String? = null) {
+            context.startForegroundService(
+                command(context, ACTION_START).putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_OPENING, opening),
+            )
         }
 
         fun hangUp(context: Context) = context.startService(command(context, ACTION_HANG_UP))
@@ -109,6 +116,24 @@ class VoiceCallService : Service() {
     private var focus: AudioFocusRequest? = null
     private var route: AudioRoute? = null
 
+    /**
+     * Screen off at the ear, like a phone call — only on the earpiece: on the
+     * speaker or Bluetooth the phone is held away and the screen must stay usable.
+     */
+    private val earSensor by lazy {
+        getSystemService(PowerManager::class.java)
+            .takeIf { it.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK) }
+            ?.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "helm:call-ear")
+    }
+
+    private fun syncEarSensor() {
+        val lock = earSensor ?: return
+        val wanted = controller != null && route == AudioRoute.Earpiece
+        if (wanted && !lock.isHeld) lock.acquire(EAR_SENSOR_MAX_MS)
+        // WAIT flag: a release while at the ear keeps the screen dark until moved away.
+        if (!wanted && lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
+    }
+
     private val devices = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) = applyRoute(route)
         override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) = applyRoute(route)
@@ -139,7 +164,7 @@ class VoiceCallService : Service() {
             startForegroundWith(target)
             when {
                 target == null -> if (call == null) stopSelf()
-                call == null -> begin(target)
+                call == null -> begin(target, intent.getStringExtra(EXTRA_OPENING))
             }
             return START_NOT_STICKY
         }
@@ -160,7 +185,7 @@ class VoiceCallService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun begin(target: String) {
+    private fun begin(target: String, opening: String?) {
         targetId = target
         HelmLog.i(HelmLog.UI, "voice call starting")
         if (!takeAudio()) {
@@ -181,6 +206,7 @@ class VoiceCallService : Service() {
             sendFailedLine = getString(R.string.call_send_failed),
         )
         controller = call
+        syncEarSensor()
 
         val feed = CallFeed(client.chats.thread(target))
         job = scope.launch {
@@ -201,7 +227,11 @@ class VoiceCallService : Service() {
                 }
             }
         }
-        call.start()
+        call.start(opening)
+        // An answered ring that really became a call: tell Helm, so it does not
+        // ring again in 10 minutes. Only here — a call that never started (no
+        // mic grant, no audio focus) leaves the retry armed.
+        if (opening != null) client.ringAnswered()
     }
 
     /** The short beep that says "heard you" before the question goes. */
@@ -226,6 +256,7 @@ class VoiceCallService : Service() {
         val live = controller != null
         controller?.hangUp()
         controller = null
+        syncEarSensor()
         if (live) HelmLog.i(HelmLog.UI, "mic released")
         _call.value = null
     }
@@ -304,6 +335,7 @@ class VoiceCallService : Service() {
     private fun applyRoute(wanted: AudioRoute?) {
         val next = pickAudioRoute(wanted, availableRoutes())
         route = next
+        syncEarSensor()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             audio.availableCommunicationDevices.firstOrNull { routeOf(it.type) == next }
                 ?.let(audio::setCommunicationDevice)

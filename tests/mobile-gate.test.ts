@@ -13,6 +13,7 @@ import {
   GateError,
   RESERVED_MOBILE_TOOLS_METHOD,
   RESERVED_RESTART_HELM_METHOD,
+  RESERVED_RING_ANSWERED_METHOD,
   stripCallerIdentityOverrides,
   MOBILE_DENY_MESSAGE,
   isMobileUnreachableTool,
@@ -58,6 +59,7 @@ function build(
   const now = opts.now ?? (() => 0);
   const calls: Built['calls'] = [];
   const restarts: boolean[] = [];
+  let answeredRings = 0;
   const store = new MobileDeviceStore(undefined, now);
   const device = store.add({
     machineId: 'phone-machine',
@@ -75,6 +77,7 @@ function build(
     },
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
+    ringAnswered: () => { answeredRings++; },
     ...(opts.noRestart ? {} : {
       restartHelm: (resume: boolean) => {
         restarts.push(resume);
@@ -82,7 +85,7 @@ function build(
       },
     }),
   });
-  return { gate, store, calls, restarts, deviceId: device.id };
+  return { gate, store, calls, restarts, deviceId: device.id, answered: () => answeredRings };
 }
 
 describe('MobileGate — default-deny', () => {
@@ -323,6 +326,21 @@ describe('MobileGate — permitted-tool discovery', () => {
     await expect(gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})).rejects.toThrow(
       'Rate limit exceeded',
     );
+  });
+});
+
+describe('MobileGate — ring answered', () => {
+  it('reports the answer in-gate, for any trusted device, without dispatching', async () => {
+    const { gate, deviceId, calls, answered } = build(['session_list']);
+    await gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {});
+    expect(answered()).toBe(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('denies a disabled device', async () => {
+    const { gate, deviceId, answered } = build(['*'], { enabled: false });
+    await expect(gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
+    expect(answered()).toBe(0);
   });
 });
 

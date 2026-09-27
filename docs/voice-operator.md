@@ -433,6 +433,17 @@ sequenceDiagram
   exported, Accept carries a one-shot `RingTicket` minted with the ring; an accept
   intent without the live ticket (another app's) only opens the thread. Decline just stops ringing;
   nothing is reported back.
+- **Opens speaking.** Within a breath of Answer the phone says "Hi, it's Helm.
+  I have a message about <reason>. Is now a good time?" (`RingGreeting`, spoken
+  via `CallController.start(opening)` with the mic already open). The user's
+  spoken yes / no / "call me back in N" reaches the operator, whose guide says
+  how to honour each — a call-back is a once scheduler self-timer.
+- **One retry.** The phone reports only ANSWERED (`__ring_answered__`, in-gate).
+  No answer inside 45 s — declined, timed out, phone off — and Helm rings once
+  more 10 min later (`src/session/ring-retry.ts`); a second miss leaves an
+  attention alert instead. In memory: a restart drops a pending retry.
+- **Ear sensor.** On the earpiece a proximity wake lock darkens the screen at
+  the ear; speaker or Bluetooth keeps it on. Released when the call ends.
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 

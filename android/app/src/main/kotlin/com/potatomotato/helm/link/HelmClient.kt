@@ -304,6 +304,9 @@ class HelmClient(
             onOutcome((outcome as? Outcome.Failed)?.message)
         }
 
+    /** The operator's ring was answered here: Helm drops its one retry. Best-effort. */
+    fun ringAnswered(): Boolean = call(METHOD_RING_ANSWERED) { }
+
     /**
      * Directories Helm knows about, for the spawn form. A failure is STATE, not
      * a log line: an unanswered fetch used to leave the form hinting "waiting
@@ -1776,6 +1779,7 @@ class HelmClient(
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
         private const val METHOD_RESTART_HELM = "__restart_helm__"
+        private const val METHOD_RING_ANSWERED = "__ring_answered__"
         private const val RING_KIND = "ring"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"

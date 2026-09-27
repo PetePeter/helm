@@ -39,6 +39,23 @@ class CallControllerTest {
     }
 
     @Test
+    fun `an answered ring opens by speaking, with the mic already open`() {
+        controller.start(opening = "Hi, it's Helm, calling about the build")
+
+        assertEquals(listOf("Hi, it's Helm, calling about the build"), tts.spoken)
+        assertEquals(CallPhase.Speaking, controller.state.value.phase)
+        assertTrue(mic.open)
+    }
+
+    @Test
+    fun `a call the user starts opens silent, listening`() {
+        controller.start()
+
+        assertTrue(tts.spoken.isEmpty())
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+    }
+
+    @Test
     fun `an empty or whitespace final is never sent`() {
         controller.start()
 

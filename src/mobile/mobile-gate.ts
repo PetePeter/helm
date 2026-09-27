@@ -70,6 +70,13 @@ export const RESERVED_CHAT_CURSOR_METHOD = '__chat_cursor__';
  */
 export const RESERVED_RESTART_HELM_METHOD = '__restart_helm__';
 
+/**
+ * The phone answered the operator's ring. Only ends the retry chain
+ * (src/session/ring-retry.ts), so any device the registry trusts may say it —
+ * the ring itself went to every linked phone.
+ */
+export const RESERVED_RING_ANSWERED_METHOD = '__ring_answered__';
+
 /** The allow-list name a phone's restart is granted under. */
 const RESTART_GRANT = 'helm_restart';
 
@@ -225,6 +232,8 @@ export interface MobileGateDeps {
    * restart meta-method is denied — the safe default.
    */
   restartHelm?: (resume: boolean) => unknown;
+  /** A linked phone picked up the operator's ring. */
+  ringAnswered?: () => void;
 }
 
 export class MobileGate {
@@ -233,6 +242,7 @@ export class MobileGate {
   private readonly rateLimiter: PeerRateLimiter;
   private readonly sessionLookup: MobileSessionLookup | undefined;
   private readonly restartHelm: MobileGateDeps['restartHelm'];
+  private readonly ringAnswered: MobileGateDeps['ringAnswered'];
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
@@ -240,6 +250,7 @@ export class MobileGate {
     this.rateLimiter = deps.rateLimiter;
     this.sessionLookup = deps.sessionLookup;
     this.restartHelm = deps.restartHelm;
+    this.ringAnswered = deps.ringAnswered;
   }
 
   /** Gate + dispatch one inbound phone call. */
@@ -272,6 +283,14 @@ export class MobileGate {
     // device the registry currently trusts.
     if (method === RESERVED_CHAT_CURSOR_METHOD) {
       this.consumeOrThrow(deviceId, method);
+      this.logOutcome(deviceId, method, 'ok');
+      return { ok: true };
+    }
+
+    // 2b'. The ring was answered: stop the retry chain.
+    if (method === RESERVED_RING_ANSWERED_METHOD) {
+      this.consumeOrThrow(deviceId, method);
+      this.ringAnswered?.();
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };
     }
