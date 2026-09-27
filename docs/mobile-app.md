@@ -385,12 +385,27 @@ sequenceDiagram
     P->>P: "Added to <session> draft"
 ```
 
-**Size cap — per link, refused on the phone before a byte leaves:**
+**Size cap — 10 MB on either link, refused on the phone before a byte leaves.**
+That is the desktop's own upload ceiling (`MAX_ATTACHMENT_BYTES`). BLE was once
+held to 2 MB for speed; the user chose the bigger file over the shorter wait, so
+a 10 MB file over Bluetooth is a minutes-long transfer by design.
 
-| Link | Cap | Why |
-|------|-----|-----|
-| LAN | 10 MB | the desktop's own upload ceiling (`MAX_ATTACHMENT_BYTES`) |
-| BLE | 2 MB | the radio moves tens of KB/s; a larger file is a many-minute transfer users abandon |
+### Chat attach — the send button's second mode
+
+Holding the chat composer's send button switches it between **Send** and
+**Attach** (📎), like the voice button's mic/phone modes; the choice is
+remembered. In Attach mode, with nothing typed, a tap opens the file picker and
+the file rides the same share upload — but the commit carries `draft: false`,
+so no desktop draft is made. The returned desktop `path` is inserted into the
+composer as `[file] <path>` and goes out with the message. Typed text always
+wins: with words in the box the button sends.
+
+```mermaid
+flowchart LR
+  H[hold send] --> M{mode}
+  M -->|Attach, box empty| P[file picker] --> U[share upload] --> C["commit {draft:false}"] --> I["composer += [file] path"]
+  M -->|Send, or text typed| S[send message]
+```
 
 The desktop's 10 MB check at slot-open is the backstop, not the message. The
 share reuses the artifact upload's slot machinery (`mobile-artifact-upload.ts`

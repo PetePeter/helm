@@ -697,8 +697,16 @@ class HelmClient(
      * open → slices → commit chain as an artifact attachment, against the
      * `session_share_file_*` pair: the desktop writes the file to its inbox and
      * adds a draft naming the path. Progress and the outcome land on [shares].
+     *
+     * With [onLanded] it is a CHAT attachment instead: the commit asks for no
+     * draft, and the desktop path is handed back for the composer to carry.
      */
-    fun shareFile(sessionId: String, sessionName: String, staged: StagedAttachment): Boolean {
+    fun shareFile(
+        sessionId: String,
+        sessionName: String,
+        staged: StagedAttachment,
+        onLanded: ((path: String) -> Unit)? = null,
+    ): Boolean {
         if (!shares.start(staged.sizeBytes)) return false
         val params = linkedMapOf<String, Any>(
             "sessionId" to sessionId,
@@ -714,7 +722,7 @@ class HelmClient(
                     if (offer == null) {
                         shares.failed(UNREADABLE_UPLOAD_OFFER)
                     } else {
-                        uploadScope.launch { streamShare(sessionName, staged, offer) }
+                        uploadScope.launch { streamShare(sessionName, staged, offer, onLanded) }
                     }
                 }
                 is Outcome.Failed -> shares.failed(outcome.message)
@@ -724,15 +732,25 @@ class HelmClient(
         return issued
     }
 
-    private suspend fun streamShare(sessionName: String, staged: StagedAttachment, offer: UploadOffer) {
+    private suspend fun streamShare(
+        sessionName: String,
+        staged: StagedAttachment,
+        offer: UploadOffer,
+        onLanded: ((String) -> Unit)?,
+    ) {
         val failure = pumpSlices(staged, offer, shares::progress)
         if (failure != null) {
             shares.failed(failure)
             return
         }
-        val issued = call(METHOD_SESSION_SHARE_FILE_COMMIT, linkedMapOf("uploadId" to offer.uploadId)) { outcome ->
+        val params = linkedMapOf<String, Any>("uploadId" to offer.uploadId)
+        if (onLanded != null) params["draft"] = false
+        val issued = call(METHOD_SESSION_SHARE_FILE_COMMIT, params) { outcome ->
             when (outcome) {
-                is Outcome.Ok -> shares.done(sessionName)
+                is Outcome.Ok -> {
+                    shares.done(sessionName)
+                    ((outcome.result as? JSONObject)?.opt("path") as? String)?.let { onLanded?.invoke(it) }
+                }
                 is Outcome.Failed -> shares.failed(outcome.message)
             }
         }

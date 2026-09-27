@@ -8,22 +8,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
 /**
- * Share-to-Helm: one file from the Android share sheet lands in the Helm inbox
- * and a DRAFT on the picked session names its path (docs/mobile-app.md).
+ * Share-to-Helm: one file from the Android share sheet (or the chat composer's
+ * attach mode) lands in the Helm inbox (docs/mobile-app.md).
  *
- * The cap depends on the link carrying it. LAN takes the desktop's own 10 MB
- * ceiling; BLE is held to 2 MB because the radio moves tens of KB a second, and
- * a transfer measured in many minutes is one the user abandons half-way. The
+ * One cap on either link: the desktop's own 10 MB ceiling. BLE used to be held
+ * to 2 MB for speed; the user chose the bigger file over the shorter wait. The
  * refusal happens HERE, before a byte leaves — the desktop's cap is the
  * backstop, not the message.
  */
-const val MAX_SHARE_BYTES_LAN: Long = MAX_STAGED_BYTES.toLong()
-const val MAX_SHARE_BYTES_BLE: Long = 2L * 1024 * 1024
+const val MAX_SHARE_BYTES: Long = MAX_STAGED_BYTES.toLong()
 
-/** The cap for the transport that holds the link now; null with no link. */
+/** The tool a share opens with — what the permitted-tools answer must grant. */
+const val METHOD_SHARE_ADD = "session_share_file_add"
+
+/** The cap while a link is held; null with no link. */
 fun shareCapBytes(holderRank: Int?): Long? = when (holderRank) {
-    RANK_LAN -> MAX_SHARE_BYTES_LAN
-    RANK_BLE -> MAX_SHARE_BYTES_BLE
+    RANK_LAN, RANK_BLE -> MAX_SHARE_BYTES
     else -> null
 }
 

@@ -93,12 +93,13 @@ export interface ShareUploadOpenInput extends UploadOpenInput {
 export interface ShareReceipt {
   sessionId: string;
   path: string;
-  draftId: string;
+  /** Absent when the commit asked for no draft (a chat attachment). */
+  draftId?: string;
 }
 
 /** The sink a committed share is handed to — `MobileShareInbox` in production. */
 export interface ShareSink {
-  receive(sessionId: string, filename: string, content: Buffer): ShareReceipt;
+  receive(sessionId: string, filename: string, content: Buffer, draft?: boolean): ShareReceipt;
 }
 
 export interface ArtifactUploadOffer {
@@ -323,10 +324,14 @@ export class MobileArtifactUploadService {
     return attachment;
   }
 
-  /** Move 3, share flavour: the file lands in the inbox and a draft names it. */
-  commitShare(deviceId: string, uploadId: string): ShareReceipt {
+  /**
+   * Move 3, share flavour: the file lands in the inbox and — unless [draft] is
+   * false, as for a chat attachment whose message names the path — a draft
+   * names it.
+   */
+  commitShare(deviceId: string, uploadId: string, draft = true): ShareReceipt {
     const { target, input, whole } = this.verified(deviceId, uploadId, 'share');
-    const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole);
+    const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole, draft);
     logger.info(`[mobile-artifact-upload] shared file landed for session ${target.sessionId}`);
     return receipt;
   }

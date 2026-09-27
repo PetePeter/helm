@@ -42,6 +42,10 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.data.METHOD_SHARE_ADD
+import com.potatomotato.helm.data.ShareState
+import com.potatomotato.helm.data.shareRefusal
 import com.potatomotato.helm.data.HelmPlanSequence
 import com.potatomotato.helm.data.HelmPlanSummary
 import com.potatomotato.helm.data.PlanWrite
@@ -623,6 +627,53 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         linked = linkState == LinkState.Linked,
     )
 
+    // The chat composer's attach mode: the same share-to-Helm upload, committed
+    // without a draft, whose desktop path lands in the composer instead.
+    var chatInsert by remember { mutableStateOf<((String) -> Unit)?>(null) }
+    var chatAttachSession by remember { mutableStateOf<HelmSession?>(null) }
+    val shareState by client.shares.state.collectAsState()
+    LaunchedEffect(shareState) {
+        val failed = shareState as? ShareState.Failed ?: return@LaunchedEffect
+        if (chatAttachSession != null) Toast.makeText(context, failed.message, Toast.LENGTH_LONG).show()
+        chatAttachSession = null
+    }
+    val chatAttachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val insert = chatInsert
+        val session = chatAttachSession
+        chatInsert = null
+        if (uri == null || insert == null || session == null) {
+            chatAttachSession = null
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val staged = staging.stage(uri.toString(), displayName = null, mimeType = null)
+            if (staged == null) {
+                chatAttachSession = null
+                attachNote(R.string.artifacts_attach_refused)
+                return@launch
+            }
+            val support = uploadSupport(
+                toolPermitted = (capabilities as? Capabilities.Known)?.let { METHOD_SHARE_ADD in it.tools },
+                negotiatedProtocol = client.negotiatedProtocol(),
+                linked = linkState == LinkState.Linked,
+            )
+            val refusal = shareRefusal(staged.sizeBytes, HelmLink.holderRank, support)
+            if (refusal != null) {
+                chatAttachSession = null
+                Toast.makeText(context, refusal, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            Toast.makeText(context, context.getString(R.string.chat_attach_sending, staged.filename), Toast.LENGTH_SHORT).show()
+            client.shareFile(session.id, session.name, staged) { path ->
+                // The answer lands on the link's thread; the draft is main-thread state.
+                scope.launch(Dispatchers.Main) {
+                    chatAttachSession = null
+                    insert(path)
+                }
+            }
+        }
+    }
+
     val toThread = { where = Destination.Thread }
     // The retry/refresh affordances every pulled surface carries. They repeat
     // the arrival pull rather than being a second, quieter kind of ask: what a
@@ -702,6 +753,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 { dial(sessionId) }
             } else {
                 null
+            },
+            onAttach = { insert ->
+                chatInsert = insert
+                chatAttachSession = sessions.firstOrNull { it.id == sessionId }
+                chatAttachLauncher.launch("*/*")
             },
         )
     }

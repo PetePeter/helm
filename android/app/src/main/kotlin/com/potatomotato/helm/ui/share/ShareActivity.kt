@@ -34,6 +34,7 @@ import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.data.ShareState
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.megabytes
+import com.potatomotato.helm.data.METHOD_SHARE_ADD
 import com.potatomotato.helm.data.shareRefusal
 import com.potatomotato.helm.data.uploadSupport
 import com.potatomotato.helm.link.HelmClient
@@ -219,4 +220,3 @@ private fun Footer(content: @Composable () -> Unit) {
 }
 
 /** The tool the gate must have granted for a share to be offered. */
-private const val METHOD_SHARE_ADD = "session_share_file_add"

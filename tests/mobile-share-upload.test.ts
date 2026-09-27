@@ -48,7 +48,7 @@ function build(allow: string[] = ['*']) {
     getSession: (id: string) => (id === SESSION ? { id } : null),
     openShareUpload: (target: string, deviceId: string, input: Record<string, unknown>) =>
       uploads.openShare(deviceId, { ...(input as { filename: string; sizeBytes: number; sha256: string }), sessionId: target }),
-    commitShareUpload: (deviceId: string, uploadId: string) => uploads.commitShare(deviceId, uploadId),
+    commitShareUpload: (deviceId: string, uploadId: string, draft?: boolean) => uploads.commitShare(deviceId, uploadId, draft),
     commitArtifactAttachmentUpload: (_caller: string, deviceId: string, uploadId: string) =>
       uploads.commit(deviceId, uploadId),
   };
@@ -104,6 +104,22 @@ describe('share-to-Helm through the mobile gate', () => {
     const [draft] = built.drafts.getForSession(SESSION);
     expect(draft.id).toBe(receipt.draftId);
     expect(draft.text).toBe(`Attached: receipt.pdf at ${receipt.path}`);
+  });
+
+  it('lands a chat attachment without a draft when the commit says draft:false', async () => {
+    const built = build();
+    const offer = await open(built);
+    sendWhole(built, offer.uploadId);
+
+    const receipt = await built.gate.handle(built.deviceId, 'session_share_file_commit', {
+      uploadId: offer.uploadId,
+      draft: false,
+    }) as { path: string; draftId?: string };
+
+    // The chat composer carries the path itself; a draft too would say it twice.
+    expect(readFileSync(receipt.path)).toEqual(FILE);
+    expect(receipt.draftId).toBeUndefined();
+    expect(built.drafts.getForSession(SESSION)).toEqual([]);
   });
 
   it('is on the permitted surface a wildcard phone discovers', async () => {

@@ -177,6 +177,11 @@
     <string name="chat_placeholder">Reply…</string>
     <string name="chat_send">Send</string>
     <string name="chat_send_glyph">↑</string>
+    <string name="chat_attach">Attach a file</string>
+    <string name="chat_attach_glyph">📎</string>
+    <string name="send_mode_send">↑ Send</string>
+    <string name="send_mode_attach">📎 Attach</string>
+    <string name="chat_attach_sending">Attaching %1$s…</string>
     <string name="chat_sending">Sending…</string>
     <string name="chat_sent">✓ Sent</string>
     <string name="chat_failed">Not delivered</string>

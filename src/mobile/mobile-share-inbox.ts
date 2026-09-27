@@ -26,14 +26,15 @@ export class MobileShareInbox implements ShareSink {
     private readonly drafts: Pick<DraftManager, 'create'>,
   ) {}
 
-  receive(sessionId: string, filename: string, content: Buffer): ShareReceipt {
+  receive(sessionId: string, filename: string, content: Buffer, draft = true): ShareReceipt {
     const name = safeShareFilename(filename);
     // A per-share folder keeps the user's filename intact and collision-free.
     const folder = join(this.dir, randomUUID());
     mkdirSync(folder, { recursive: true });
     const path = join(folder, name);
     writeFileSync(path, content);
-    const draft = this.drafts.create(sessionId, `Shared: ${name}`, `Attached: ${name} at ${path}`);
-    return { sessionId, path, draftId: draft.id };
+    if (!draft) return { sessionId, path };
+    const created = this.drafts.create(sessionId, `Shared: ${name}`, `Attached: ${name} at ${path}`);
+    return { sessionId, path, draftId: created.id };
   }
 }

@@ -684,8 +684,8 @@ export class HelmControlService extends EventEmitter {
   }
 
   /** Move 3 of a phone SHARE: verify, write to the inbox, add the draft. */
-  commitShareUpload(deviceId: string, uploadId: string): import('../mobile/mobile-artifact-upload.js').ShareReceipt {
-    return this.requireArtifactUploadService().commitShare(deviceId, uploadId);
+  commitShareUpload(deviceId: string, uploadId: string, draft = true): import('../mobile/mobile-artifact-upload.js').ShareReceipt {
+    return this.requireArtifactUploadService().commitShare(deviceId, uploadId, draft);
   }
 
   private requireArtifactUploadService(): import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService {

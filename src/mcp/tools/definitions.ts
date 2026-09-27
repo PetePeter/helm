@@ -1623,6 +1623,7 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: {
         uploadId: { type: 'string', description: 'The uploadId session_share_file_add returned.' },
+        draft: { type: 'boolean', description: 'Default true. false = no draft (a chat attachment whose message carries the returned path).' },
       },
       required: ['uploadId'],
       additionalProperties: false,

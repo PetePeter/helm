@@ -937,7 +937,7 @@ export async function callMcpTool(
         if (deviceId === undefined) {
           throw new Error('session_share_file_commit is the paired-phone upload surface');
         }
-        return service.commitShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'));
+        return service.commitShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'), args.draft !== false);
       }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');

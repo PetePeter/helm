@@ -115,6 +115,23 @@ class HelmClientArtifactUploadTest {
     }
 
     @Test
+    fun `a chat attach commits without a draft and hands back the desktop path`() {
+        files["a"] = byteArrayOf(1, 2, 3)
+        val landed = mutableListOf<String>()
+
+        client.shareFile("s1", "work", stagedFile("a"), onLanded = { landed += it })
+        assertEquals("session_share_file_add", methodOf(sent[0]))
+        client.onInbound(resultFor(callIdOf(sent[0]), """{"uploadId":"slot-a","maxSliceBytes":64,"total":3}"""))
+
+        val commit = sent.last()
+        assertEquals("session_share_file_commit", methodOf(commit))
+        assertEquals(false, paramsOf(commit).getBoolean("draft"))
+        client.onInbound(resultFor(callIdOf(commit), """{"sessionId":"s1","path":"C:/inbox/a.jpg"}"""))
+
+        assertEquals(listOf("C:/inbox/a.jpg"), landed)
+    }
+
+    @Test
     fun `a failed commit fails its chip and a retry reopens a fresh slot`() {
         files["a"] = byteArrayOf(1, 2, 3)
         stage("a")

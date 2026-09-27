@@ -111,6 +111,11 @@ fun ChatScreen(
     call: VoiceCallService.Call? = null,
     /** Dial this session. Null hides the call button (a call elsewhere is live). */
     onCall: (() -> Unit)? = null,
+    /**
+     * Pick and upload a file; the host calls `insert` with its desktop path once
+     * it lands, and the path joins the draft to be sent with the message.
+     */
+    onAttach: ((insert: (path: String) -> Unit) -> Unit)? = null,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. It also
@@ -215,6 +220,16 @@ fun ChatScreen(
             },
             onTerminal = onTerminal,
             onCall = onCall,
+            onAttach = onAttach?.let { attach ->
+                {
+                    attach { path ->
+                        val lead = draft.text.trimEnd().let { if (it.isEmpty()) it else "$it " }
+                        val text = "$lead[file] $path "
+                        draft = TextFieldValue(text, TextRange(text.length))
+                        drafts.save(sessionId, Draft(text, text.length))
+                    }
+                }
+            },
             onSend = {
                 val text = draft.text.trim()
                 if (text.isNotEmpty()) {
@@ -523,6 +538,7 @@ private fun Composer(
     onDraft: (TextFieldValue) -> Unit,
     onTerminal: () -> Unit,
     onCall: (() -> Unit)?,
+    onAttach: (() -> Unit)?,
     onSend: () -> Unit,
 ) {
     Hairline()
@@ -556,7 +572,7 @@ private fun Composer(
         ) {
             ComposerTerminal(onTerminal)
             ComposerVoice(dictation = dictation, onCall = onCall)
-            ComposerSend(enabled = draft.text.isNotBlank(), onSend = onSend)
+            ComposerSend(hasText = draft.text.isNotBlank(), onSend = onSend, onAttach = onAttach)
         }
     }
 }
@@ -782,29 +798,59 @@ private fun ComposerPhone(onCall: (() -> Unit)?, onLongPress: () -> Unit) {
 // read as one pair, and the one that delivers sits last — where a thumb
 // already is. Until there is something to send it is dark — an enabled
 // control that does nothing is worse than a visibly dead one.
+//
+// Like the voice button it has two modes, switched by holding it: Send, and
+// Attach (📎, tap to pick a file). Typed text always wins — with words in the
+// box the button sends, so attach mode can never swallow a message.
 @Composable
-private fun ComposerSend(enabled: Boolean, onSend: () -> Unit) {
-    val sendLabel = stringResource(R.string.chat_send)
-    Box(
-        modifier = Modifier
-            .size(HelmSize.MicButton)
-            .clip(CircleShape)
-            .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
-            .then(
-                if (enabled) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape),
+private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> Unit)?) {
+    val context = LocalContext.current
+    val prefs = remember { context.applicationContext.getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE) }
+    var attachMode by remember { mutableStateOf(prefs.getBoolean(ATTACH_MODE_KEY, false)) }
+    var choosing by remember { mutableStateOf(false) }
+    val choose: (Boolean) -> Unit = { next ->
+        attachMode = next
+        choosing = false
+        prefs.edit().putBoolean(ATTACH_MODE_KEY, next).apply()
+    }
+    val attaching = attachMode && !hasText && onAttach != null
+    val enabled = hasText || attaching
+    val currentSend by rememberUpdatedState(onSend)
+    val currentAttach by rememberUpdatedState(onAttach)
+    val currentAttaching by rememberUpdatedState(attaching)
+    val sendLabel = stringResource(if (attaching) R.string.chat_attach else R.string.chat_send)
+    Box {
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
+                .then(
+                    if (enabled) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape),
+                )
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { if (currentAttaching) currentAttach?.invoke() else currentSend() },
+                        // Nothing to switch to without an attach path.
+                        onLongPress = { if (currentAttach != null) choosing = true },
+                    )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(if (attaching) R.string.chat_attach_glyph else R.string.chat_send_glyph),
+                // Dim rather than Faint while disabled: Faint is the placeholder's
+                // colour, and a send arrow in it disappears against the Surface2
+                // circle — which reads as a layout hole, not a dead button.
+                color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
+                style = HelmType.SendGlyph,
+                modifier = Modifier.semantics { contentDescription = sendLabel },
             )
-            .clickable(enabled = enabled, onClick = onSend),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.chat_send_glyph),
-            // Dim rather than Faint while disabled: Faint is the placeholder's
-            // colour, and a send arrow in it disappears against the Surface2
-            // circle — which reads as a layout hole, not a dead button.
-            color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
-            style = HelmType.SendGlyph,
-            modifier = Modifier.semantics { contentDescription = sendLabel },
-        )
+        }
+        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.send_mode_send)) }, onClick = { choose(false) })
+            DropdownMenuItem(text = { Text(stringResource(R.string.send_mode_attach)) }, onClick = { choose(true) })
+        }
     }
 }
 
@@ -831,6 +877,7 @@ private val SLIDE_TO_SWITCH = 48.dp
 
 private const val VOICE_PREFS = "helm_composer"
 private const val VOICE_MODE_KEY = "voice_mode"
+private const val ATTACH_MODE_KEY = "send_attach_mode"
 
 /** Immutable, so one instance serves every bubble. Compose is single-threaded anyway. */
 private val bubbleTime = java.time.format.DateTimeFormatter.ofPattern("HH:mm")

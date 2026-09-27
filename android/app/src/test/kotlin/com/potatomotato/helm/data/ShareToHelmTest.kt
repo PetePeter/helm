@@ -14,13 +14,13 @@ class ShareToHelmTest {
     private val mb = 1024L * 1024
 
     @Test
-    fun `the cap follows the transport holding the link`() {
+    fun `one 10 MB cap on either link, named after the link that refused`() {
         assertNull(shareRefusal(10 * mb, RANK_LAN, UploadSupport.Available))
         assertTrue(shareRefusal(10 * mb + 1, RANK_LAN, UploadSupport.Available)!!.startsWith("Too large for Wi-Fi"))
-        assertNull(shareRefusal(2 * mb, RANK_BLE, UploadSupport.Available))
+        assertNull(shareRefusal(10 * mb, RANK_BLE, UploadSupport.Available))
         assertEquals(
-            "Too large for Bluetooth: 3.0 MB (limit 2.0 MB)",
-            shareRefusal(3 * mb, RANK_BLE, UploadSupport.Available),
+            "Too large for Bluetooth: 11.0 MB (limit 10.0 MB)",
+            shareRefusal(11 * mb, RANK_BLE, UploadSupport.Available),
         )
     }
 
