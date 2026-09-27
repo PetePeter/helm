@@ -3,6 +3,7 @@ import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
+import { parsePlanTask } from '../../session/operator-tasks.js';
 import {
   asAiagentState,
   asArtifactKind,
@@ -271,6 +272,7 @@ export async function callMcpTool(
             ...(Object.prototype.hasOwnProperty.call(args, 'type') ? { type: asPlanTypeOrNull(args.type) } : {}),
             ...(typeof args.autoImplement === 'boolean' ? { autoImplement: args.autoImplement } : {}),
             ...(typeof args.completionRecap === 'boolean' ? { completionRecap: args.completionRecap } : {}),
+            ...(Object.prototype.hasOwnProperty.call(args, 'task') ? { task: parsePlanTask(args.task) } : {}),
           }),
           `Plan not found: ${asString(args.uuid, 'uuid is required')}`,
         );

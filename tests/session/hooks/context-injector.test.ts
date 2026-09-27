@@ -92,6 +92,23 @@ describe('SessionStart injection', () => {
     expect(await injector.respond(hookEvent())).toBeNull();
   });
 
+  it('re-lists the OPERATOR its open tasks so a compaction never drops one', async () => {
+    const { injector } = makeInjector(
+      { getOpenTasks: () => ['P-0901 "build G" (waiting on: coder finishes)'] },
+      { role: 'operator' },
+    );
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('P-0901 "build G" (waiting on: coder finishes)');
+    expect(context).toContain('plan_complete');
+  });
+
+  it('never lists operator tasks to a non-operator session', async () => {
+    const getOpenTasks = vi.fn(() => ['P-0901 "build G"']);
+    const { injector } = makeInjector({ getOpenTasks });
+    expect(await injector.respond(hookEvent())).toBeNull();
+    expect(getOpenTasks).not.toHaveBeenCalled();
+  });
+
   it('sends NOTHING when there is no plan, draft or handover', async () => {
     const { injector } = makeInjector();
     expect(await injector.respond(hookEvent())).toBeNull();

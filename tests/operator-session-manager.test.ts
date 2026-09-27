@@ -201,6 +201,13 @@ describe('operator guide', () => {
     expect(section).not.toContain('rule_3');
   });
 
+  it('tracks every in-flight ask as a task plan with a linked self-timer until it is done', () => {
+    expect(guide).toContain('TASKS');
+    for (const term of ['FIRST plan_summary', 'instead of making a duplicate', 'plan_create', 'task', 'waitingOn', 'planIds', 'scheduler_cancel', 'plan_complete']) {
+      expect(guide).toContain(term);
+    }
+  });
+
   it('has three modes: answer from Helm state, answer from knowledge, route work', () => {
     for (const line of ['ANSWER FROM HELM', 'ANSWER GENERAL QUESTIONS', 'ROUTE WORK']) {
       expect(guide).toContain(line);

@@ -429,6 +429,39 @@ sequenceDiagram
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 
+## Operator tasks — asks it follows through
+
+"Check ABC and get it done later", "check EF too", "build G": each is an ask the
+operator must keep chasing across compactions. A task is an ordinary plan in the
+operator's own project carrying a `task` block — `builderSessionId`,
+`watchPlanId`, `waitingOn` — set with `plan_update`. **Why a plan:** plans already
+persist, render on both boards and complete with notes; a task differs only in
+being a follow-up in flight, which its project and block say.
+
+The check timer is an ordinary scheduler row (`targetSession:"caller"`) whose
+`planIds` include the task, so "next check" is derived (`nextCheckAt` in
+`src/session/operator-tasks.ts`) and never stored twice. `plan_summary` rows
+carry the task block plus the builder's name and next check, so the phone and PC
+cards need no full record. After every compaction SessionStart re-lists the
+operator's open tasks.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant O as Operator
+    participant S as Builder session
+    U->>O: build G
+    O->>O: plan_create + plan_update task
+    O->>O: scheduler_create interval, planIds [task]
+    O->>S: session_send_text
+    loop every check
+        O->>S: check progress, update waitingOn
+    end
+    S-->>O: done
+    O->>O: scheduler_cancel, plan_complete
+    O->>U: ring_user (if asked)
+```
+
 ## Limitations
 
 - Desktop voice: the transcript holds only this run's lines (the phone

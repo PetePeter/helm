@@ -16,6 +16,13 @@ export type PlanStatus = 'planning' | 'ready' | 'coding' | 'review' | 'blocked' 
 /** Type classification for a plan item. */
 export type PlanType = 'bug' | 'feature' | 'research';
 
+/** What an operator task is following: the builder, the plan it works, what it waits on. */
+export interface PlanTask {
+  builderSessionId?: string;
+  watchPlanId?: string;
+  waitingOn?: string;
+}
+
 /** A single plan item (node in the DAG). */
 export interface PlanItem {
   /** Unique identifier (UUID v4) */
@@ -44,6 +51,8 @@ export interface PlanItem {
   completionRecap?: boolean;
   /** Optional first-class sequence/swimlane membership. */
   sequenceId?: string;
+  /** Present when this plan is an operator task (see src/session/operator-tasks.ts). */
+  task?: PlanTask;
   /** Session that has claimed this plan. Set by session_plan_claim. Cleared on done. */
   sessionId?: string;
   /** Creation timestamp */

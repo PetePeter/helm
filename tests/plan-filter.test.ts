@@ -193,6 +193,36 @@ describe('HelmPlanService plan listing filters', () => {
     expect(row).not.toHaveProperty('description');
   });
 
+  it('plansSummary carries an operator task block with the builder name and next check', () => {
+    const task = pm.create(dir, 'build G', 'desc');
+    const plain = pm.create(dir, 'Plain', 'desc');
+    pm.updateWithType(task.id, { task: { builderSessionId: 's-2', watchPlanId: 'P-0007', waitingOn: 'coder finishes' } });
+
+    const summary = service.plansSummary(
+      dir, 'active',
+      id => (id === 's-2' ? 'coder' : undefined),
+      id => (id === task.id ? 1234 : undefined),
+    );
+    expect(summary.find(s => s.id === task.id)!.task).toEqual({
+      builderSessionId: 's-2', builderName: 'coder', watchPlanId: 'P-0007', waitingOn: 'coder finishes', nextCheckAt: 1234,
+    });
+    expect(summary.find(s => s.id === plain.id)).not.toHaveProperty('task');
+  });
+
+  it('updateWithType merges a task patch so a waitingOn update keeps the builder', () => {
+    const item = pm.create(dir, 'build G', 'desc');
+    pm.updateWithType(item.id, { task: { builderSessionId: 's-2', watchPlanId: 'P-0007' } });
+    pm.updateWithType(item.id, { task: { waitingOn: 'tests', watchPlanId: '' } });
+    expect(pm.getItem(item.id)!.task).toEqual({ builderSessionId: 's-2', waitingOn: 'tests' });
+  });
+
+  it('updateWithType clears the task block when given null', () => {
+    const item = pm.create(dir, 'build G', 'desc');
+    pm.updateWithType(item.id, { task: { waitingOn: 'x' } });
+    pm.updateWithType(item.id, { task: null });
+    expect(pm.getItem(item.id)).not.toHaveProperty('task');
+  });
+
   it('returns [] for a directory with no plans', () => {
     expect(service.listPlans(normalizeProjectPath('/empty'))).toEqual([]);
     expect(service.plansSummary(normalizeProjectPath('/empty'))).toEqual([]);

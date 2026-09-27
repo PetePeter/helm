@@ -139,6 +139,7 @@ import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
+import { openTaskLines } from '../../session/operator-tasks.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
@@ -702,6 +703,10 @@ export function registerIPCHandlers(
     getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records
       .map((record) => record.tldr)
       .filter((tldr) => tldr.startsWith(RING_ME_PREFIX)),
+    getOpenTasks: (sessionId) => {
+      const dir = sessionManager.getSession(sessionId)?.workingDir;
+      return dir ? openTaskLines(planManager.getForDirectory(dir)) : [];
+    },
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],

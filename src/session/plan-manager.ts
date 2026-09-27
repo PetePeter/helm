@@ -17,8 +17,9 @@ import {
   loadPlanSequences,
   savePlanSequences,
 } from './persistence.js';
-import type { PlanItem, PlanDependency, DirectoryPlan, PlanStatus, PlanType, PlanSequence } from '../types/plan.js';
+import type { PlanItem, PlanDependency, DirectoryPlan, PlanStatus, PlanType, PlanSequence, PlanTask } from '../types/plan.js';
 import { isStartable } from '../types/plan.js';
+import { mergePlanTask } from './operator-tasks.js';
 import type { ProjectStore } from './project-store.js';
 
 const CURRENT_PLAN_STATUSES = new Set<PlanStatus>(['planning', 'ready', 'coding', 'review', 'blocked', 'done']);
@@ -163,7 +164,7 @@ export class PlanManager extends EventEmitter {
   }
 
   /** Update an existing plan item's title, description, and/or type. */
-  updateWithType(id: string, updates: { title?: string; description?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean }): PlanItem | null {
+  updateWithType(id: string, updates: { title?: string; description?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null }): PlanItem | null {
     const item = this.items.get(id);
     if (!item) return null;
 
@@ -178,6 +179,8 @@ export class PlanManager extends EventEmitter {
     if (Object.prototype.hasOwnProperty.call(updates, 'completionRecap')) {
       item.completionRecap = updates.completionRecap ? true : undefined;
     }
+    if (updates.task === null) delete item.task;
+    else if (updates.task) item.task = mergePlanTask(item.task, updates.task);
     item.updatedAt = Date.now();
 
     savePlanFile(item);

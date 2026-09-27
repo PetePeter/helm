@@ -213,7 +213,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'plan_update',
     title: 'Update Plan',
-    description: 'Update a plan item title, description, type, auto-implement flag, and/or completion recap flag by UUID. Set type to "bug", "feature", or "research"; pass null to clear the type. Set autoImplement true or false to control whether a ready follow-up plan may be picked up automatically after its prerequisite is completed. Set completionRecap true or false to control whether plan_complete runs the read-verification recap gate. Use plan_get_id to convert P-00xx format to UUID.',
+    description: 'Update a plan item title, description, type, auto-implement flag, and/or completion recap flag by UUID. Set type to "bug", "feature", or "research"; pass null to clear the type. Set autoImplement true or false to control whether a ready follow-up plan may be picked up automatically after its prerequisite is completed. Set completionRecap true or false to control whether plan_complete runs the read-verification recap gate. Set task to mark an operator task (builderSessionId, watchPlanId, waitingOn); null clears it. Use plan_get_id to convert P-00xx format to UUID.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -223,6 +223,20 @@ export const MCP_TOOLS: McpTool[] = [
         type: { anyOf: [{ type: 'string', enum: ['bug', 'feature', 'research'] }, { type: 'null' }] },
         autoImplement: { type: 'boolean' },
         completionRecap: { type: 'boolean' },
+        task: {
+          description: 'Operator task block: what this in-flight ask follows. null clears it.',
+          anyOf: [
+            {
+              type: 'object',
+              properties: {
+                builderSessionId: { type: 'string', description: 'Session building the work' },
+                watchPlanId: { type: 'string', description: 'Plan the builder works (UUID or P-00xx)' },
+                waitingOn: { type: 'string', description: 'What the task is waiting on' },
+              },
+            },
+            { type: 'null' },
+          ],
+        },
       },
       required: ['uuid'],
       additionalProperties: false,

@@ -7,7 +7,8 @@ import type { PlanManager, PlanRefResolution } from '../../session/plan-manager.
 import type { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
 import type { ContextManager } from '../../session/context-manager.js';
 import type { SequenceContextMetadata } from '../../types/context.js';
-import { filterPlanItems, type PlanFilter, type PlanItem, type PlanStatus, type PlanType } from '../../types/plan.js';
+import { filterPlanItems, type PlanFilter, type PlanItem, type PlanStatus, type PlanTask, type PlanType } from '../../types/plan.js';
+import { taskCardOf } from '../../session/operator-tasks.js';
 
 function claimOf(
   sessionId: string,
@@ -45,6 +46,7 @@ export class HelmPlanService {
     dirPath: string,
     filter: PlanFilter = 'active',
     sessionNameOf: (sessionId: string) => string | undefined = () => undefined,
+    nextCheckOf: (planId: string) => number | undefined = () => undefined,
   ) {
     const exported = this.planManager.exportDirectory(normalizeProjectPath(dirPath));
     if (!exported) return [];
@@ -68,6 +70,8 @@ export class HelmPlanService {
       // Who is working it, so the phone board can show a claim at a glance.
       // Only the name rides along, never the session record.
       ...(item.sessionId ? claimOf(item.sessionId, sessionNameOf) : {}),
+      // An operator task's card lines, so neither board needs the full record.
+      ...(item.task ? { task: taskCardOf(item.id, item.task, sessionNameOf, nextCheckOf) } : {}),
       blockedBy: dependencies
         .filter((d) => d.toId === item.id)
         .map((d) => idToHumanId.get(d.fromId) ?? d.fromId),
@@ -119,12 +123,13 @@ export class HelmPlanService {
     return { id: item.id, humanId: item.humanId ?? item.id };
   }
 
-  updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean }): { ok: true; updatedAt: number } {
+  updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null }): { ok: true; updatedAt: number } {
     const plan = this.resolvePlanRef(id, 'Plan');
     if (!plan) throw new Error(`Plan not found: ${id}`);
-    const nextUpdates: { title?: string; description?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean } = {
+    const nextUpdates: { title?: string; description?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null } = {
       ...(updates.title !== undefined ? { title: updates.title } : {}),
       ...(updates.description !== undefined ? { description: updates.description } : {}),
+      ...(updates.task !== undefined ? { task: updates.task } : {}),
     };
     if (Object.prototype.hasOwnProperty.call(updates, 'type')) {
       nextUpdates.type = updates.type ?? undefined;

@@ -72,6 +72,8 @@ export interface ContextInjectorDeps {
    * survives the context it was made in.
    */
   getRingRequests?(sessionId: string): string[];
+  /** The operator's open task plans, one line each. Asked for the operator only. */
+  getOpenTasks?(sessionId: string): string[];
   /** The hint-only suggester: tuple payload or null. Promise = the worker seam. */
   suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null>;
   /** Directory → project id, for pre-filtering suggester candidates. */
@@ -169,6 +171,16 @@ export class ContextInjector {
           SOURCE_CAP_CHARS,
         ),
       );
+    }
+    // Open tasks lead: the total cap drops trailing sources first, and a
+    // dropped task is an ask the operator silently stops chasing.
+    const tasks = session.role === 'operator' ? this.deps.getOpenTasks?.(session.id) ?? [] : [];
+    if (tasks.length > 0) {
+      parts.push(truncate(
+        `Your open tasks: ${tasks.join('; ')}. ` +
+          'Keep following each until done; when one is, scheduler_cancel its timer and plan_complete it.',
+        SOURCE_CAP_CHARS,
+      ));
     }
     for (const draft of this.deps.getDrafts(session.id)) {
       parts.push(truncate(`Draft memo "${draft.label}": ${draft.text}`, SOURCE_CAP_CHARS));

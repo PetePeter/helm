@@ -5,7 +5,8 @@ import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalOutputMode } from '../session/terminal-output-buffer.js';
-import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanType } from '../types/plan.js';
+import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanTask, PlanType } from '../types/plan.js';
+import { nextCheckAt } from '../session/operator-tasks.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import type { Artifact, ArtifactKind } from '../types/artifact.js';
@@ -996,7 +997,13 @@ export class HelmControlService extends EventEmitter {
   }
 
   plansSummary(dirPath: string, filter: PlanFilter = 'active') {
-    return this.planService.plansSummary(dirPath, filter, (id) => this.sessionManager.getSession(id)?.name);
+    const timers = this.schedulerService?.listTasks() ?? [];
+    return this.planService.plansSummary(
+      dirPath,
+      filter,
+      (id) => this.sessionManager.getSession(id)?.name,
+      (planId) => nextCheckAt(planId, timers),
+    );
   }
 
   getPlan(id: string): (Omit<PlanItem, 'sequenceId'> & {
@@ -1020,7 +1027,7 @@ export class HelmControlService extends EventEmitter {
     return this.planService.createPlan(dirPath, title, description, type, autoImplement);
   }
 
-  updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean }): { ok: true; updatedAt: number } {
+  updatePlan(id: string, updates: { title?: string; description?: string; type?: PlanType | null; autoImplement?: boolean; completionRecap?: boolean; task?: PlanTask | null }): { ok: true; updatedAt: number } {
     return this.planService.updatePlan(id, updates);
   }
 
