@@ -144,6 +144,13 @@ class SessionRowTextTest {
         assertNull(SessionRowText.relativeTime(atEpochMs = null, nowMs = NOW))
     }
 
+    @Test
+    fun `a mission becomes one ticker line, and a blank one no line at all`() {
+        assertEquals("Fix the BLE link. Then ship it.", SessionRowText.missionLine("  Fix the BLE link.\n\n  Then ship it.  "))
+        assertEquals(null, SessionRowText.missionLine("   \n "))
+        assertEquals(null, SessionRowText.missionLine(null))
+    }
+
     private companion object {
         const val NOW = 1_700_000_000_000L
     }

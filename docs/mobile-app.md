@@ -72,6 +72,9 @@ removes.
   notification bell and the log export. Tapping the **link badge** opens Desktops
   — the badge is already what you look at to ask "what am I connected to", so the
   longer answer costs no extra chrome on a full bar.
+  A session with a mission shows it as a dim third line that scrolls like a
+  ticker when it does not fit (`MissionTicker`), so each row says what the
+  session is for at a glance; with system animations off it holds still.
 - **Desktops** — every desktop this phone holds a key for, the live one first.
   Pairing more than one has always worked (keys are stored per `machineId`); until
   this screen existed, nothing said so, a second pairing was invisible, and a key

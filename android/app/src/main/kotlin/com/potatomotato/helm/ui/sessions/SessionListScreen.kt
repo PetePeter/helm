@@ -2,6 +2,10 @@
 
 package com.potatomotato.helm.ui.sessions
 
+import android.provider.Settings
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -270,6 +274,7 @@ private fun SessionRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                SessionRowText.missionLine(session.mission)?.let { MissionTicker(it) }
             }
             // Unread chat is a count chip, not a sub-line word — it must be
             // findable without reading anything, the same way a plan-claimed
@@ -316,6 +321,35 @@ private fun SessionRow(
         Hairline(color = HelmColors.Separator)
     }
 }
+
+/**
+ * What the session is for, at a glance: one line that scrolls like a ticker
+ * when it does not fit. Dim, so it never competes with the name. With system
+ * animations off it holds still and ellipsizes — a moving line is the kind of
+ * thing reduce-motion exists to stop.
+ */
+@Composable
+private fun MissionTicker(mission: String) {
+    val context = LocalContext.current
+    val animate = remember {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+    }
+    Text(
+        text = mission,
+        color = HelmColors.Dim,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+        overflow = if (animate) TextOverflow.Clip else TextOverflow.Ellipsis,
+        modifier = if (animate) {
+            Modifier.basicMarquee(iterations = Int.MAX_VALUE, repeatDelayMillis = TICKER_PAUSE_MS)
+        } else {
+            Modifier
+        },
+    )
+}
+
+/** How long the ticker rests at the start of each pass, so the line can be read. */
+private const val TICKER_PAUSE_MS = 2_000
 
 /**
  * Nothing to show is five different situations, and conflating them is how a

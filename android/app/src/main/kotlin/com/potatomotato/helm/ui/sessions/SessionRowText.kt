@@ -70,4 +70,14 @@ object SessionRowText {
             else -> "${minutes / (24 * 60)}d"
         }
     }
+
+    /**
+     * The mission as the row's ticker line: one line, whitespace collapsed (a
+     * mission may carry newlines), or null so a session without one keeps the
+     * compact two-line row.
+     */
+    fun missionLine(mission: String?): String? =
+        mission?.trim()?.replace(WHITESPACE, " ")?.takeIf { it.isNotEmpty() }
+
+    private val WHITESPACE = Regex("\\s+")
 }
