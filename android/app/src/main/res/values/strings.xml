@@ -179,6 +179,7 @@
     <string name="chat_send_glyph">↑</string>
     <string name="chat_attach">Attach a file</string>
     <string name="chat_attach_glyph">📎</string>
+    <string name="hold_hint_arrow">⌃</string>
     <string name="send_mode_send">↑ Send</string>
     <string name="send_mode_attach">📎 Attach</string>
     <string name="chat_attach_sending">Attaching %1$s…</string>

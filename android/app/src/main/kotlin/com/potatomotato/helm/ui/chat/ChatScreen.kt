@@ -8,6 +8,12 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -720,49 +726,56 @@ private fun ComposerMic(dictation: DictationHandle, onSlideUp: () -> Unit) {
     // latest handle through this.
     val current by rememberUpdatedState(dictation)
     val currentSlideUp by rememberUpdatedState(onSlideUp)
+    val haptics = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
 
-    Box(
-        modifier = Modifier
-            .size(HelmSize.MicButton)
-            .drawBehind {
-                if (halo <= 0f) return@drawBehind
-                val core = size.minDimension / 2
-                // Wider is fainter, so the fall-off reads as light, not rings.
-                drawCircle(accent.copy(alpha = 0.10f * halo), radius = core + HALO_SPREAD.toPx() * halo)
-                drawCircle(accent.copy(alpha = 0.22f * halo), radius = core + HALO_SPREAD.toPx() * halo * 0.5f)
-            }
-            .clip(CircleShape)
-            .background(accent)
-            .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    current.onPress()
-                    var slid = false
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        if (down.position.y - change.position.y > slidePx) {
-                            slid = true
-                            break
+    HoldHint(pressed) {
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .drawBehind {
+                    if (halo <= 0f) return@drawBehind
+                    val core = size.minDimension / 2
+                    // Wider is fainter, so the fall-off reads as light, not rings.
+                    drawCircle(accent.copy(alpha = 0.10f * halo), radius = core + HALO_SPREAD.toPx() * halo)
+                    drawCircle(accent.copy(alpha = 0.22f * halo), radius = core + HALO_SPREAD.toPx() * halo * 0.5f)
+                }
+                .clip(CircleShape)
+                .background(accent)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        pressed = true
+                        current.onPress()
+                        var slid = false
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            if (down.position.y - change.position.y > slidePx) {
+                                slid = true
+                                break
+                            }
+                        }
+                        // A finger lifted and a gesture the system took away are the
+                        // same "stop"; a slide up keeps nothing and switches modes.
+                        pressed = false
+                        if (slid) {
+                            current.onCancel()
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentSlideUp()
+                        } else {
+                            current.onRelease()
                         }
                     }
-                    // A finger lifted and a gesture the system took away are the
-                    // same "stop"; a slide up keeps nothing and switches modes.
-                    if (slid) {
-                        current.onCancel()
-                        currentSlideUp()
-                    } else {
-                        current.onRelease()
-                    }
                 }
-            }
-            .semantics { contentDescription = micLabel },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.voice_mic_glyph),
-            style = MaterialTheme.typography.bodyMedium,
-        )
+                .semantics { contentDescription = micLabel },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.voice_mic_glyph),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
@@ -772,25 +785,37 @@ private fun ComposerPhone(onCall: (() -> Unit)?, onLongPress: () -> Unit) {
     val label = stringResource(R.string.control_action_call)
     val currentCall by rememberUpdatedState(onCall)
     val currentLongPress by rememberUpdatedState(onLongPress)
-    Box(
-        modifier = Modifier
-            .size(HelmSize.MicButton)
-            .clip(CircleShape)
-            .background(if (onCall != null) HelmColors.Accent else HelmColors.Surface2)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { currentCall?.invoke() },
-                    onLongPress = { currentLongPress() },
-                )
-            }
-            .semantics { contentDescription = label },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.control_glyph_call),
-            color = if (onCall != null) HelmColors.OnAccent else HelmColors.Dim,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+    val haptics = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
+    HoldHint(pressed) {
+        Box(
+            modifier = Modifier
+                .size(HelmSize.MicButton)
+                .clip(CircleShape)
+                .background(if (onCall != null) HelmColors.Accent else HelmColors.Surface2)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            pressed = true
+                            tryAwaitRelease()
+                            pressed = false
+                        },
+                        onTap = { currentCall?.invoke() },
+                        onLongPress = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            currentLongPress()
+                        },
+                    )
+                }
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(R.string.control_glyph_call),
+                color = if (onCall != null) HelmColors.OnAccent else HelmColors.Dim,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
@@ -819,33 +844,47 @@ private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> 
     val currentAttach by rememberUpdatedState(onAttach)
     val currentAttaching by rememberUpdatedState(attaching)
     val sendLabel = stringResource(if (attaching) R.string.chat_attach else R.string.chat_send)
+    val haptics = LocalHapticFeedback.current
+    var pressed by remember { mutableStateOf(false) }
     Box {
-        Box(
-            modifier = Modifier
-                .size(HelmSize.MicButton)
-                .clip(CircleShape)
-                .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
-                .then(
-                    if (enabled) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape),
-                )
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = { if (currentAttaching) currentAttach?.invoke() else currentSend() },
-                        // Nothing to switch to without an attach path.
-                        onLongPress = { if (currentAttach != null) choosing = true },
+        HoldHint(pressed, holdable = onAttach != null) {
+            Box(
+                modifier = Modifier
+                    .size(HelmSize.MicButton)
+                    .clip(CircleShape)
+                    .background(if (enabled) HelmColors.Accent else HelmColors.Surface2)
+                    .then(
+                        if (enabled) Modifier else Modifier.border(HelmSize.Hairline, HelmColors.Line, CircleShape),
                     )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = stringResource(if (attaching) R.string.chat_attach_glyph else R.string.chat_send_glyph),
-                // Dim rather than Faint while disabled: Faint is the placeholder's
-                // colour, and a send arrow in it disappears against the Surface2
-                // circle — which reads as a layout hole, not a dead button.
-                color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
-                style = HelmType.SendGlyph,
-                modifier = Modifier.semantics { contentDescription = sendLabel },
-            )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                pressed = currentAttach != null
+                                tryAwaitRelease()
+                                pressed = false
+                            },
+                            onTap = { if (currentAttaching) currentAttach?.invoke() else currentSend() },
+                            // Nothing to switch to without an attach path.
+                            onLongPress = {
+                                if (currentAttach != null) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    choosing = true
+                                }
+                            },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(if (attaching) R.string.chat_attach_glyph else R.string.chat_send_glyph),
+                    // Dim rather than Faint while disabled: Faint is the placeholder's
+                    // colour, and a send arrow in it disappears against the Surface2
+                    // circle — which reads as a layout hole, not a dead button.
+                    color = if (enabled) HelmColors.OnAccent else HelmColors.Dim,
+                    style = HelmType.SendGlyph,
+                    modifier = Modifier.semantics { contentDescription = sendLabel },
+                )
+            }
         }
         DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.send_mode_send)) }, onClick = { choose(false) })
@@ -853,6 +892,48 @@ private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> 
         }
     }
 }
+
+/**
+ * Says a composer circle has a second, HELD action. At rest: a small dot on
+ * its rim. While held: the circle grows over exactly the long-press time and a
+ * ^ rises above it, so the hold visibly fills up to the moment the menu opens
+ * — letting go before then is just a tap.
+ */
+@Composable
+private fun HoldHint(pressed: Boolean, holdable: Boolean = true, content: @Composable () -> Unit) {
+    val holdMs = LocalViewConfiguration.current.longPressTimeoutMillis.toInt()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) HOLD_SCALE else 1f,
+        animationSpec = tween(durationMillis = if (pressed) holdMs else HOLD_RELEASE_MS),
+        label = "holdHint",
+    )
+    Box(contentAlignment = Alignment.Center) {
+        Box(modifier = Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { content() }
+        if (!holdable) return@Box
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = -HOLD_DOT_INSET, y = -HOLD_DOT_INSET)
+                .size(HOLD_DOT)
+                .clip(CircleShape)
+                .background(HelmColors.OnAccent.copy(alpha = 0.8f)),
+        )
+        if (pressed) {
+            Text(
+                text = stringResource(R.string.hold_hint_arrow),
+                color = HelmColors.Accent,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.align(Alignment.TopCenter).offset(y = -HOLD_ARROW_RISE),
+            )
+        }
+    }
+}
+
+private const val HOLD_SCALE = 1.25f
+private const val HOLD_RELEASE_MS = 120
+private val HOLD_DOT = 5.dp
+private val HOLD_DOT_INSET = 6.dp
+private val HOLD_ARROW_RISE = 18.dp
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private const val BUBBLE_WIDTH_FRACTION = 0.75f
