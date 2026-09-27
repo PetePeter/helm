@@ -484,4 +484,11 @@
     <string name="call_channel_name">Voice call</string>
     <string name="call_channel_description">Shown while a voice call with Helm is live.</string>
     <string name="call_notification_text">On a call with %1$s</string>
+    <string name="operator_tasks">Tasks</string>
+    <string name="task_builder">👷 %1$s</string>
+    <string name="task_watch">📋 %1$s</string>
+    <string name="task_waiting">⏳ %1$s</string>
+    <string name="task_next_check">⏰ %1$s</string>
+    <string name="task_no_timer">no timer</string>
+    <string name="task_due_now">due now</string>
 </resources>

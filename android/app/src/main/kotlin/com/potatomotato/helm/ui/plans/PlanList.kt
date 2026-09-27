@@ -72,6 +72,7 @@ fun PlanList(
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
     onSpawn: (HelmPlanSummary) -> Unit,
+    taskLinks: TaskLinks,
     onRefresh: () -> Unit,
     write: PlanWrite,
     onDismissWrite: () -> Unit,
@@ -90,7 +91,7 @@ fun PlanList(
                 modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
             )
             PlanWriteLine(write, onDismissWrite)
-            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, onRefresh, Modifier.weight(1f))
+            PlanBoard(plans, sequences, collapsedLaneIds, onToggleLane, onOpen, onSpawn, taskLinks, onRefresh, Modifier.weight(1f))
         }
         if (creating) {
             NewPlanDialog(
@@ -112,6 +113,7 @@ private fun PlanBoard(
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
     onSpawn: (HelmPlanSummary) -> Unit,
+    taskLinks: TaskLinks,
     onRefresh: () -> Unit,
     modifier: Modifier,
 ) {
@@ -132,6 +134,7 @@ private fun PlanBoard(
             onToggleLane = onToggleLane,
             onOpen = onOpen,
             onSpawn = onSpawn,
+            taskLinks = taskLinks,
         )
     }
 }
@@ -144,6 +147,7 @@ private fun PlanBuckets(
     onToggleLane: (String) -> Unit,
     onOpen: (HelmPlanSummary) -> Unit,
     onSpawn: (HelmPlanSummary) -> Unit,
+    taskLinks: TaskLinks,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         for (bucket in buckets) {
@@ -170,6 +174,7 @@ private fun PlanBuckets(
                         blocked = plan.status != PlanStatus.Done && plan.id !in startableIds,
                         onClick = { onOpen(plan) },
                         onSpawn = { onSpawn(plan) },
+                        taskLinks = taskLinks,
                     )
                 }
             }
@@ -233,57 +238,68 @@ private fun LaneHeader(
 }
 
 @Composable
-private fun PlanRow(plan: HelmPlanSummary, blocked: Boolean, onClick: () -> Unit, onSpawn: () -> Unit) {
+private fun PlanRow(
+    plan: HelmPlanSummary,
+    blocked: Boolean,
+    onClick: () -> Unit,
+    onSpawn: () -> Unit,
+    taskLinks: TaskLinks,
+) {
     HelmRow(
         title = plan.title,
         onClick = onClick,
         // The row's actions ride on line 2, not the right edge: on a phone the
         // right edge is where the title needs its width.
         subtitle = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-            ) {
-                // A plan with no P-00xx name yet shows none: the human id is
-                // the desktop's to mint, and inventing one here would put a
-                // label on screen no other surface would agree with.
-                plan.humanId?.takeIf { it.isNotBlank() }?.let { humanId ->
-                    Text(
-                        text = humanId,
-                        color = HelmColors.Dim,
-                        style = MaterialTheme.typography.bodySmall,
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                ) {
+                    // A plan with no P-00xx name yet shows none: the human id is
+                    // the desktop's to mint, and inventing one here would put a
+                    // label on screen no other surface would agree with.
+                    plan.humanId?.takeIf { it.isNotBlank() }?.let { humanId ->
+                        Text(
+                            text = humanId,
+                            color = HelmColors.Dim,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    // The plan's own state, always. "Ready to start" (no unmet
+                    // prerequisites) read as a state and hid the real one.
+                    Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
+                    if (blocked) {
+                        Text(
+                            text = stringResource(R.string.plans_blocked),
+                            color = HelmColors.Danger,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    // Who is on it. Once a plan is done, the claim no longer matters.
+                    if (plan.sessionId != null && plan.status != PlanStatus.Done) {
+                        Text(
+                            text = plan.sessionName ?: stringResource(R.string.plans_claimed),
+                            color = HelmColors.State.Active,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    CopyGlyphButton(text = HelmReferences.plan(plan))
+                    // Its own target, beside copy: spawning is not opening the plan.
+                    GlyphButton(
+                        glyph = stringResource(R.string.plans_spawn_glyph),
+                        description = stringResource(R.string.plans_spawn_description),
+                        onClick = onSpawn,
                     )
                 }
-                // The plan's own state, always. "Ready to start" (no unmet
-                // prerequisites) read as a state and hid the real one.
-                Pill(text = stringResource(plan.status.labelRes), color = plan.status.pillColor)
-                if (blocked) {
-                    Text(
-                        text = stringResource(R.string.plans_blocked),
-                        color = HelmColors.Danger,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                // Who is on it. Once a plan is done, the claim no longer matters.
-                if (plan.sessionId != null && plan.status != PlanStatus.Done) {
-                    Text(
-                        text = plan.sessionName ?: stringResource(R.string.plans_claimed),
-                        color = HelmColors.State.Active,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                CopyGlyphButton(text = HelmReferences.plan(plan))
-                // Its own target, beside copy: spawning is not opening the plan.
-                GlyphButton(
-                    glyph = stringResource(R.string.plans_spawn_glyph),
-                    description = stringResource(R.string.plans_spawn_description),
-                    onClick = onSpawn,
-                )
+                // An operator task says who is on it, what it waits on, and when
+                // the operator looks again — the row IS the follow-up.
+                plan.task?.let { TaskLine(it, taskLinks) }
             }
         },
     )

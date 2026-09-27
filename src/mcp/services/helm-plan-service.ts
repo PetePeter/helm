@@ -71,7 +71,7 @@ export class HelmPlanService {
       // Only the name rides along, never the session record.
       ...(item.sessionId ? claimOf(item.sessionId, sessionNameOf) : {}),
       // An operator task's card lines, so neither board needs the full record.
-      ...(item.task ? { task: taskCardOf(item.id, item.task, sessionNameOf, nextCheckOf) } : {}),
+      ...(item.task ? { task: { ...taskCardOf(item.id, item.task, sessionNameOf, nextCheckOf), ...this.watchedUuidOf(item.task.watchPlanId) } } : {}),
       blockedBy: dependencies
         .filter((d) => d.toId === item.id)
         .map((d) => idToHumanId.get(d.fromId) ?? d.fromId),
@@ -79,6 +79,13 @@ export class HelmPlanService {
         .filter((d) => d.fromId === item.id)
         .map((d) => idToHumanId.get(d.toId) ?? d.toId),
     }));
+  }
+
+  /** A task names its watched plan as P-00xx or UUID; readers keyed on UUIDs need the canonical one. */
+  private watchedUuidOf(ref: string | undefined): { watchPlanUuid?: string } {
+    if (!ref) return {};
+    const resolved = this.planManager.resolveItemRef(ref);
+    return resolved.status === 'found' ? { watchPlanUuid: resolved.item.id } : {};
   }
 
   getPlanIdMapping(humanId: string): { uuid: string; humanId: string } {

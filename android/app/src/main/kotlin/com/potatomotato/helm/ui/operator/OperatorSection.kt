@@ -32,6 +32,8 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 fun OperatorSection(
     summary: OperatorSummary,
     onOpenChat: (String) -> Unit,
+    /** Open the operator's task board: its own Plans tab. */
+    onOpenTasks: (String) -> Unit,
     /** Ring the call. Null while there is nobody to ring and no call to return to. */
     onCall: (() -> Unit)?,
     modifier: Modifier = Modifier,
@@ -62,6 +64,17 @@ fun OperatorSection(
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (summary is OperatorSummary.On) {
+                Text(
+                    text = stringResource(R.string.operator_tasks),
+                    color = HelmColors.Accent,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier
+                        .heightIn(min = HelmSize.TouchTarget)
+                        .clickable { onOpenTasks(summary.id) }
+                        .padding(HelmSpacing.Sm),
                 )
             }
             if (onCall != null) {

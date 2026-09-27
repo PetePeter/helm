@@ -101,6 +101,7 @@ import com.potatomotato.helm.ui.operator.withoutOperator
 import com.potatomotato.helm.ui.plans.PlanDetail
 import com.potatomotato.helm.ui.plans.PlanDetailActions
 import com.potatomotato.helm.ui.plans.PlanList
+import com.potatomotato.helm.ui.plans.TaskLinks
 import com.potatomotato.helm.ui.plans.PlanScope
 import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.sequences.SequenceDetail
@@ -687,6 +688,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     LaunchedEffect(where) {
         if (where != Destination.Spawn) planSpawn = null
     }
+    // An operator task row's links: the builder's chat, the watched plan's detail.
+    val taskLinks = TaskLinks(
+        openSession = { id ->
+            openSessionId = id
+            tab = SessionTab.Chat
+            where = Destination.Thread
+        },
+        openPlan = { id, builderSessionId ->
+            if (builderSessionId != null) openSessionId = builderSessionId
+            openPlanId = id
+            where = Destination.PlanDetail
+        },
+    )
     val refreshPlanBoard: () -> Unit = {
         planDirPath?.let { dir ->
             client.refreshPlans(dir)
@@ -970,6 +984,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         openSessionId = id
                                         tab = SessionTab.Chat
                                     },
+                                    // The operator's tasks are the plans of its own project.
+                                    onOpenTasks = { id ->
+                                        openSessionId = id
+                                        tab = SessionTab.Plans
+                                        where = Destination.Thread
+                                    },
                                     // The operator's chat is right below, so ringing it turns
                                     // that chat's composer into the call.
                                     onCall = if (operator is OperatorSummary.On && liveCall == null) {
@@ -1027,6 +1047,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         where = Destination.PlanDetail
                                     },
                                     onSpawn = spawnForPlan,
+                                    taskLinks = taskLinks,
                                     onRefresh = refreshPlanBoard,
                                     write = planWriteState,
                                     onDismissWrite = client.planWrites::dismiss,
@@ -1255,6 +1276,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         where = Destination.PlanDetail
                                     },
                                     onSpawn = spawnForPlan,
+                                    taskLinks = taskLinks,
                                     onRefresh = refreshPlanBoard,
                                     write = planWriteState,
                                     onDismissWrite = client.planWrites::dismiss,

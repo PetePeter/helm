@@ -452,6 +452,12 @@ task card replaces its description with 👷 builder (click: go to the session),
 waiting-on. "no timer" is shown deliberately: a task nobody will check is a
 dropped ask.
 
+**On the phone** the Helm home tab's operator row has a **Tasks** link that opens
+the operator session's Plans tab — its project's plans are its tasks. A task row
+adds 👷 builder (tap: its chat), 📋 watched plan (tap: its detail, via the
+`watchPlanUuid` the summary resolves), ⏰ next check and ⏳ waiting-on. Everything
+rides `plan_summary`, so the phone never asks for full records.
+
 ```mermaid
 sequenceDiagram
     participant U as User

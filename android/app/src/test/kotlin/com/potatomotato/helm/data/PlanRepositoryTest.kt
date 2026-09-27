@@ -48,6 +48,23 @@ class PlanRepositoryTest {
     }
 
     @Test
+    fun `an operator task row carries its builder, watched plan, waiting-on and next check`() {
+        repo.listArrived(
+            "/op",
+            parse(
+                "[{\"id\":\"t1\",\"title\":\"build G\",\"status\":\"coding\"," +
+                    "\"task\":{\"builderSessionId\":\"s2\",\"builderName\":\"coder\"," +
+                    "\"watchPlanId\":\"P-0007\",\"watchPlanUuid\":\"u7\",\"waitingOn\":\"tests\",\"nextCheckAt\":1234}}," +
+                    "{\"id\":\"p2\",\"title\":\"plain\"}]",
+            ),
+        )
+
+        val plans = (repo.list.value as PlanList.Ready).plans
+        assertEquals(HelmPlanTask("s2", "coder", "P-0007", "tests", 1234L, "u7"), plans[0].task)
+        assertEquals(null, plans[1].task)
+    }
+
+    @Test
     fun `a status this build has never met is carried as unknown, not refused`() {
         repo.listArrived("/work", parse("""[{"id":"p1","title":"X","status":"triaging"},{"id":"p2","title":"Y"}]"""))
 

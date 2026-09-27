@@ -209,6 +209,15 @@ describe('HelmPlanService plan listing filters', () => {
     expect(summary.find(s => s.id === plain.id)).not.toHaveProperty('task');
   });
 
+  it('plansSummary resolves a task watched-plan P-00xx ref to its UUID for readers keyed on ids', () => {
+    const watched = pm.create(dir, 'G itself', 'desc');
+    const task = pm.create(dir, 'build G', 'desc');
+    pm.updateWithType(task.id, { task: { watchPlanId: watched.humanId! } });
+
+    const row = service.plansSummary(dir).find(s => s.id === task.id)!;
+    expect(row.task).toMatchObject({ watchPlanId: watched.humanId, watchPlanUuid: watched.id });
+  });
+
   it('updateWithType merges a task patch so a waitingOn update keeps the builder', () => {
     const item = pm.create(dir, 'build G', 'desc');
     pm.updateWithType(item.id, { task: { builderSessionId: 's-2', watchPlanId: 'P-0007' } });

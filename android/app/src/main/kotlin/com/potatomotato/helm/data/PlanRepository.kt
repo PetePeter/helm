@@ -67,6 +67,23 @@ data class HelmPlanSummary(
     val blocks: List<String>,
     val sessionId: String? = null,
     val sessionName: String? = null,
+    val task: HelmPlanTask? = null,
+)
+
+/**
+ * Present when a plan is an OPERATOR TASK: an ask the operator is following
+ * through. [builderName] and [nextCheckAtEpochMs] are resolved by the desktop
+ * (the builder's live name, the earliest pending timer linked to the task);
+ * absent means the session is gone or nothing will check the task.
+ */
+data class HelmPlanTask(
+    val builderSessionId: String? = null,
+    val builderName: String? = null,
+    val watchPlanId: String? = null,
+    val waitingOn: String? = null,
+    val nextCheckAtEpochMs: Long? = null,
+    /** [watchPlanId] resolved to its UUID by the desktop, for opening the plan's detail. */
+    val watchPlanUuid: String? = null,
 )
 
 /**
@@ -374,6 +391,18 @@ class PlanRepository {
             blocks = parseIds(entry.optJSONArray("blocks")),
             sessionId = entry.opt("sessionId") as? String,
             sessionName = entry.opt("sessionName") as? String,
+            task = parseTask(entry.optJSONObject("task")),
+        )
+    }
+
+    private fun parseTask(task: JSONObject?): HelmPlanTask? = task?.let {
+        HelmPlanTask(
+            builderSessionId = it.opt("builderSessionId") as? String,
+            builderName = it.opt("builderName") as? String,
+            watchPlanId = it.opt("watchPlanId") as? String,
+            waitingOn = it.opt("waitingOn") as? String,
+            nextCheckAtEpochMs = (it.opt("nextCheckAt") as? Number)?.toLong(),
+            watchPlanUuid = it.opt("watchPlanUuid") as? String,
         )
     }
 
