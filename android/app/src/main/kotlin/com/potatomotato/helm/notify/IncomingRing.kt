@@ -12,16 +12,16 @@ import android.media.RingtoneManager
 import android.util.Log
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
+import com.potatomotato.helm.telecom.HelmTelecom
 import com.potatomotato.helm.wire.MobileRecord
 
 /**
  * The operator calling the user: a `kind: "ring"` chat record raised as an
  * incoming call rather than a shade row.
  *
- * WHY A NOTIFICATION, NOT A TELECOM CALL: accepting only has to start the
- * ordinary Call Helm flow, which already owns audio. A high-importance CALL
- * notification with a full-screen intent rings over the lock screen without a
- * ConnectionService, and stops ringing on its own after [RING_TIMEOUT_MS].
+ * The ring is offered to Telecom first ([HelmTelecom]) so the car and headset
+ * can answer it; this CALL notification is its incoming UI either way, and the
+ * whole ring when Telecom refuses. It stops on its own after [RING_TIMEOUT_MS].
  *
  * Accept opens [MainActivity] with [EXTRA_ACCEPT_SESSION]; starting the
  * microphone service from a visible activity is always permitted, from a
@@ -45,14 +45,25 @@ class IncomingRing(private val context: Context) {
         manager.createNotificationChannel(channel)
     }
 
+    /**
+     * A ring goes to Android's call system first (a real incoming call the car
+     * and headset can answer); only when Telecom refuses does this notification
+     * ring on its own.
+     */
     fun ring(record: MobileRecord.Chat) {
         if (record.sessionId.isBlank()) return
-        val accept = activityIntent(record.sessionId, REQUEST_ACCEPT)
-            .putExtra(EXTRA_ACCEPT_SESSION, record.sessionId)
-            .putExtra(EXTRA_ACCEPT_TICKET, tickets.issue(record.sessionId))
-            .putExtra(EXTRA_ACCEPT_REASON, record.text)
-        val open = activityIntent(record.sessionId, REQUEST_OPEN)
-            .putExtra(AndroidNotifications.EXTRA_SESSION_ID, record.sessionId)
+        if (HelmTelecom.offer(context, record.sessionId, record.sessionName, record.text)) return
+        show(record.sessionId, record.sessionName, record.text)
+    }
+
+    /** The incoming-call UI: Telecom asks for it (self-managed calls draw their own), or the fallback uses it. */
+    fun show(sessionId: String, sessionName: String, reason: String) {
+        val accept = activityIntent(sessionId, REQUEST_ACCEPT)
+            .putExtra(EXTRA_ACCEPT_SESSION, sessionId)
+            .putExtra(EXTRA_ACCEPT_TICKET, tickets.issue(sessionId))
+            .putExtra(EXTRA_ACCEPT_REASON, reason)
+        val open = activityIntent(sessionId, REQUEST_OPEN)
+            .putExtra(AndroidNotifications.EXTRA_SESSION_ID, sessionId)
         val decline = PendingIntent.getBroadcast(
             context,
             REQUEST_DECLINE,
@@ -61,8 +72,8 @@ class IncomingRing(private val context: Context) {
         )
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_helm)
-            .setContentTitle(context.getString(R.string.ring_title, record.sessionName.ifBlank { "Helm" }))
-            .setContentText(record.text)
+            .setContentTitle(context.getString(R.string.ring_title, sessionName.ifBlank { "Helm" }))
+            .setContentText(reason)
             .setCategory(Notification.CATEGORY_CALL)
             .setOngoing(true)
             .setTimeoutAfter(RING_TIMEOUT_MS)
@@ -125,5 +136,9 @@ class IncomingRing(private val context: Context) {
 
 /** Decline: stop ringing without dragging the user into the app. */
 class RingDeclineReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = IncomingRing.dismiss(context)
+    override fun onReceive(context: Context, intent: Intent) {
+        IncomingRing.dismiss(context)
+        // A real incoming call must be told too, or the car keeps ringing.
+        HelmTelecom.reject()
+    }
 }

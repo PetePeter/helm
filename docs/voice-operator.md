@@ -433,6 +433,13 @@ sequenceDiagram
   exported, Accept carries a one-shot `RingTicket` minted with the ring; an accept
   intent without the live ticket (another app's) only opens the thread. Decline just stops ringing;
   nothing is reported back.
+- **A real incoming call.** The ring is offered to Android Telecom first
+  (`telecom/HelmTelecom.kt`, a self-managed PhoneAccount + `HelmConnectionService`),
+  so car Bluetooth call screens, steering-wheel and headset buttons can answer or
+  decline it. Self-managed calls draw their own UI, so the same ring notification
+  is still shown; Answer from anywhere runs the same MainActivity accept path.
+  The system call ends with ours, times out with the notification (30 s, missed),
+  and if Telecom refuses the ring falls back to the notification alone.
 - **Opens speaking.** Within a breath of Answer the phone says "Hi, it's Helm.
   I have a message about <reason>. Is now a good time?" (`RingGreeting`, spoken
   via `CallController.start(opening)` with the mic already open). The user's

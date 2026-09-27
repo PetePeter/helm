@@ -22,6 +22,7 @@ import android.os.PowerManager
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.telecom.HelmTelecom
 import com.potatomotato.helm.log.HelmLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -245,6 +246,8 @@ class VoiceCallService : Service() {
 
     /** The call ended: free the mic and the audio, and stop. */
     private fun ended() {
+        // The system call (car screen, headset) ends with ours.
+        HelmTelecom.end()
         endCurrent()
         releaseAudio()
         stopSelf()

@@ -19,6 +19,8 @@ export const RING_RETRY_AFTER_MS = 10 * 60_000;
 export interface RingRetryDeps {
   /** Ring again. False when no phone took it. */
   ring: (sessionId: string, reason: string) => boolean;
+  /** The first ring went unanswered; the retry comes at `retryAt` (epoch ms). */
+  missedOnce: (sessionId: string, reason: string, retryAt: number) => void;
   /** Both rings went unanswered. */
   missedTwice: (sessionId: string, reason: string) => void;
 }
@@ -62,6 +64,7 @@ export class RingRetry {
       this.deps.missedTwice(sessionId, reason);
       return;
     }
+    this.deps.missedOnce(sessionId, reason, Date.now() + RING_RETRY_AFTER_MS);
     const timer = setTimeout(() => {
       this.pending = null;
       if (this.deps.ring(sessionId, reason)) this.awaitAnswer(sessionId, reason, 2);

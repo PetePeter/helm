@@ -7,6 +7,8 @@
       and context af250949-a1a4-4c0c-a75c-dbf69987d0e1 (the ratified role flip).
     -->
     <!-- The call's ear sensor: screen off while the phone is held to the ear. -->
+    <!-- Rings as real (self-managed) calls: car Bluetooth and headset buttons can answer. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
@@ -125,6 +127,16 @@
             android:name=".ble.HelmLinkService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- Telecom's handle on Helm's rings (self-managed PhoneAccount). -->
+        <service
+            android:name=".telecom.HelmConnectionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.ConnectionService" />
+            </intent-filter>
+        </service>
 
         <!-- A live "Call Helm" voice call. microphone is the only honest type for it. -->
         <service

@@ -1085,9 +1085,13 @@ export function registerIPCHandlers(
   helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
   helmControlService.setRingRetry(new RingRetry({
     ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
-    // Both rings missed: leave it in the operator's chat, where the phone shows it.
+    // Missed calls leave a note in the operator's chat, where the phone shows it.
+    missedOnce: (sessionId, reason, retryAt) => {
+      const at = new Date(retryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      mobileChatBridge.sendAlert(sessionId, 'attention', `Missed call: ${reason}. I'll call back ~${at}`);
+    },
     missedTwice: (sessionId, reason) => {
-      const text = `Missed call from Helm (tried twice): ${reason}`;
+      const text = `Missed call again: ${reason}. No more retries, read me here`;
       // No phone linked right now: the alert is not queued, so fall back to
       // Helm's own notification path rather than drop the only notice.
       if (!mobileChatBridge.sendAlert(sessionId, 'attention', text)) {

@@ -4,16 +4,36 @@ import { RingRetry, RING_ANSWER_WINDOW_MS, RING_RETRY_AFTER_MS } from '../src/se
 describe('RingRetry', () => {
   let rings: Array<{ sessionId: string; reason: string }>;
   let missed: Array<{ sessionId: string; reason: string }>;
+  let missedOnce: Array<{ sessionId: string; reason: string; retryAt: number }>;
   let retry: RingRetry;
 
   beforeEach(() => {
     vi.useFakeTimers();
     rings = [];
     missed = [];
+    missedOnce = [];
     retry = new RingRetry({
       ring: (sessionId, reason) => { rings.push({ sessionId, reason }); return true; },
+      missedOnce: (sessionId, reason, retryAt) => { missedOnce.push({ sessionId, reason, retryAt }); },
       missedTwice: (sessionId, reason) => { missed.push({ sessionId, reason }); },
     });
+  });
+
+  it('a first miss leaves word of when the retry will come, once', () => {
+    retry.rang('op', 'build done');
+    vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS - 1);
+    expect(missedOnce).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(missedOnce).toEqual([{ sessionId: 'op', reason: 'build done', retryAt: Date.now() + RING_RETRY_AFTER_MS }]);
+    vi.advanceTimersByTime(RING_RETRY_AFTER_MS + RING_ANSWER_WINDOW_MS);
+    expect(missedOnce).toHaveLength(1);
+  });
+
+  it('an answered ring leaves no missed-call word', () => {
+    retry.rang('op', 'build done');
+    retry.answered();
+    vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS);
+    expect(missedOnce).toEqual([]);
   });
   afterEach(() => { retry.dispose(); vi.useRealTimers(); });
 
@@ -59,7 +79,7 @@ describe('RingRetry', () => {
   });
 
   it('a retry no phone takes counts as the second miss', () => {
-    retry = new RingRetry({ ring: () => false, missedTwice: (s, r) => { missed.push({ sessionId: s, reason: r }); } });
+    retry = new RingRetry({ ring: () => false, missedOnce: () => {}, missedTwice: (s, r) => { missed.push({ sessionId: s, reason: r }); } });
     retry.rang('op', 'build done');
     vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS + RING_RETRY_AFTER_MS);
     expect(missed).toEqual([{ sessionId: 'op', reason: 'build done' }]);

@@ -38,6 +38,7 @@ import com.potatomotato.helm.link.PairingState
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.IncomingRing
 import com.potatomotato.helm.notify.RingGreeting
+import com.potatomotato.helm.telecom.HelmTelecom
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
@@ -108,6 +109,8 @@ class MainActivity : ComponentActivity() {
                 return
             }
             IncomingRing.dismiss(this)
+            // A real incoming call (Telecom) turns active on the car's screen.
+            HelmTelecom.active()
             // Answered on a locked phone: the call must start over the lock
             // screen, like a phone call does, not wait for an unlock.
             showOverLockScreen(true)
