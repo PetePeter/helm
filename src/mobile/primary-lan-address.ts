@@ -1,17 +1,22 @@
 /**
- * The ONE address a phone should dial: the IPv4 on the interface that carries
- * the default route.
+ * The IPv4 addresses a phone should dial to reach this desktop over LAN:
+ * every physical adapter, the default-route one first.
  *
  * Why not every interface (as the fleet pairing panel shows)? A phone dials the
  * advertised list in order with a per-address timeout, and a Windows dev box
  * owns a pile of addresses no phone can ever reach — WSL/Hyper-V vEthernet,
  * VirtualBox host-only, Docker, VPN tunnels. A real phone spent ~3s timing out
- * on 172.23.128.1 and 192.168.56.1 before reaching 10.98.1.140. The default-
- * route interface is the one the LAN (and the phone) actually sits on.
+ * on 172.23.128.1 and 192.168.56.1 before reaching 10.98.1.140. Those are
+ * dropped by name.
  *
- * The OS is asked via a connected UDP socket: connect() on UDP sends nothing,
- * it just makes the kernel pick a route and bind the local address. Offline
- * (no default route) falls back to a name/range filter over the interfaces.
+ * Why not only the default-route address? A PC on Ethernet and Wi-Fi at once
+ * routes out Ethernet, stranding a phone on the Wi-Fi subnet. The route
+ * address only decides the order. Tailscale is kept but dialled last: it
+ * reaches a phone on the tailnet, but a LAN hop is preferred.
+ *
+ * The OS is asked for the route via a connected UDP socket: connect() on UDP
+ * sends nothing, it just makes the kernel pick a route and bind the local
+ * address.
  */
 
 import { createSocket } from 'node:dgram';
@@ -21,27 +26,31 @@ import { logger } from '../utils/logger.js';
 type Interfaces = NodeJS.Dict<NetworkInterfaceInfo[]>;
 
 /** Adapter names that are never the LAN a phone is on. */
-const VIRTUAL_NAME = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|vpn|TAP|Tailscale|ZeroTier/i;
+const VIRTUAL_NAME = /vEthernet|WSL|Hyper-V|VirtualBox|VMware|Docker|vpn|TAP|ZeroTier/i;
+
+/** Reachable only over the tailnet — kept, but after every LAN address. */
+const OVERLAY_NAME = /Tailscale/i;
 
 /** Any routable unicast works; no packet is sent to it. */
 const ROUTE_PROBE_TARGET = '8.8.8.8';
 
 export interface PickedAddresses {
   addresses: string[];
-  /** True when the default route could not be used and the name filter chose. */
+  /** True when the default route is not one of the advertised addresses. */
   fallback: boolean;
 }
 
 /** Pure selection over an interface table — the testable heart of this module. */
 export function pickLanAddresses(interfaces: Interfaces, routeAddress: string | null): PickedAddresses {
-  const candidates = externalIpv4(interfaces);
-  if (routeAddress && candidates.some((c) => c.address === routeAddress)) {
-    return { addresses: [routeAddress], fallback: false };
-  }
-  const addresses = candidates
-    .filter((c) => !VIRTUAL_NAME.test(c.name) && !c.address.startsWith('169.254.'))
-    .map((c) => c.address);
-  return { addresses, fallback: true };
+  const physical = externalIpv4(interfaces)
+    .filter((c) => !VIRTUAL_NAME.test(c.name) && !c.address.startsWith('169.254.'));
+  const rank = (c: { name: string; address: string }) =>
+    c.address === routeAddress ? 0 : OVERLAY_NAME.test(c.name) ? 2 : 1;
+  const addresses = physical
+    .map((c, i) => ({ c, i }))
+    .sort((x, y) => rank(x.c) - rank(y.c) || x.i - y.i)
+    .map(({ c }) => c.address);
+  return { addresses, fallback: !physical.some((c) => c.address === routeAddress) };
 }
 
 function externalIpv4(interfaces: Interfaces): Array<{ name: string; address: string }> {
@@ -96,7 +105,7 @@ export class PrimaryLanAddressResolver {
     }
   }
 
-  /** `host:port` strings to advertise — normally exactly one. */
+  /** `host:port` strings to advertise, default-route first. */
   addresses(port: number): string[] {
     const picked = pickLanAddresses((this.deps.interfaces ?? networkInterfaces)(), this.routeAddress);
     this.noteFallback(picked);
@@ -108,8 +117,8 @@ export class PrimaryLanAddressResolver {
     if (picked.fallback === this.lastFallback) return;
     this.lastFallback = picked.fallback;
     const message = picked.fallback
-      ? `no default-route address; fallback filter chose [${picked.addresses.join(', ')}]`
-      : `default-route address is ${picked.addresses[0]}`;
+      ? `no usable default-route address; advertising [${picked.addresses.join(', ')}] in adapter order`
+      : `default-route address is ${picked.addresses[0]}; advertising [${picked.addresses.join(', ')}]`;
     if (this.deps.logger) this.deps.logger(message);
     else logger.info(`[MobileAddresses] ${message}`);
   }

@@ -1,7 +1,9 @@
 /**
  * Which address the desktop tells a phone to dial. A real phone log showed it
  * dialling a WSL vEthernet address and a VirtualBox host-only address (1.5s each)
- * before the real Wi-Fi one — these tests pin "only the default-route address".
+ * before the real Wi-Fi one, so virtual adapters are never advertised. A PC on
+ * Wi-Fi and Ethernet at once put the route on Ethernet and stranded a Wi-Fi
+ * phone, so every physical address is advertised, default-route first.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -22,37 +24,53 @@ const DESKTOP: Record<string, NetworkInterfaceInfo[]> = {
   'Loopback Pseudo-Interface 1': [v4('127.0.0.1', true)],
 };
 
+/** Today's desktop: Ethernet and Wi-Fi on different subnets, plus virtual adapters. */
+const DUAL_HOMED: Record<string, NetworkInterfaceInfo[]> = {
+  'Ethernet 2': [v4('10.99.4.231')],
+  'vEthernet (Default Switch)': [v4('172.23.64.1')],
+  'VirtualBox Host-Only Network': [v4('192.168.56.1')],
+  'Wi-Fi': [v4('10.98.1.140')],
+};
+
 describe('pickLanAddresses', () => {
-  it('returns only the default-route address when it is a real interface', () => {
-    const result = pickLanAddresses(DESKTOP, '10.98.1.140');
-    expect(result).toEqual({ addresses: ['10.98.1.140'], fallback: false });
+  it('advertises Wi-Fi too when the default route is on Ethernet', () => {
+    expect(pickLanAddresses(DUAL_HOMED, '10.99.4.231'))
+      .toEqual({ addresses: ['10.99.4.231', '10.98.1.140'], fallback: false });
   });
 
-  it('falls back when the route address is unknown (offline)', () => {
-    const result = pickLanAddresses(DESKTOP, null);
-    expect(result).toEqual({ addresses: ['10.98.1.140'], fallback: true });
+  it('puts the default-route address first', () => {
+    expect(pickLanAddresses(DUAL_HOMED, '10.98.1.140').addresses)
+      .toEqual(['10.98.1.140', '10.99.4.231']);
   });
 
-  it('falls back when the route address is not on any non-internal interface', () => {
-    // e.g. the route goes out a VPN whose address vanished between probe and read.
-    const result = pickLanAddresses(DESKTOP, '10.8.0.5');
-    expect(result.fallback).toBe(true);
-    expect(result.addresses).toEqual(['10.98.1.140']);
+  it('never advertises virtual or link-local adapters', () => {
+    expect(pickLanAddresses(DESKTOP, '10.98.1.140'))
+      .toEqual({ addresses: ['10.98.1.140'], fallback: false });
   });
 
-  it('fallback drops Docker, VMware, VPN, TAP, Tailscale and ZeroTier by name', () => {
+  it('ignores a route address that is a virtual adapter', () => {
+    expect(pickLanAddresses(DUAL_HOMED, '172.23.64.1'))
+      .toEqual({ addresses: ['10.99.4.231', '10.98.1.140'], fallback: true });
+  });
+
+  it('falls back to adapter order when the route address is unknown (offline)', () => {
+    expect(pickLanAddresses(DUAL_HOMED, null))
+      .toEqual({ addresses: ['10.99.4.231', '10.98.1.140'], fallback: true });
+  });
+
+  it('drops Docker, VMware, VPN, TAP and ZeroTier by name; keeps Tailscale last', () => {
     const result = pickLanAddresses({
+      'Tailscale': [v4('100.64.0.1')],
       'vEthernet (nat)': [v4('172.17.0.1')],
       'VMware Network Adapter VMnet8': [v4('192.168.80.1')],
       'docker0': [v4('172.18.0.1')],
       'NordVPN': [v4('10.5.0.2')],
       'TAP-Windows Adapter V9': [v4('10.9.0.2')],
-      'Tailscale': [v4('100.64.0.1')],
       'ZeroTier One [abc]': [v4('10.147.0.2')],
       'wsl-bridge': [v4('172.20.0.1')],
       'Ethernet': [v4('192.168.1.20')],
     }, null);
-    expect(result.addresses).toEqual(['192.168.1.20']);
+    expect(result.addresses).toEqual(['192.168.1.20', '100.64.0.1']);
   });
 });
 
@@ -82,7 +100,7 @@ describe('PrimaryLanAddressResolver', () => {
     await resolver.refresh();
     resolver.addresses(1);
     resolver.addresses(1);
-    expect(logs.filter((m) => m.includes('fallback'))).toHaveLength(1);
+    expect(logs.filter((m) => m.includes('no usable default-route'))).toHaveLength(1);
   });
 
   it('treats a probe that throws as offline', async () => {

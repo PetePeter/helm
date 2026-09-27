@@ -205,23 +205,31 @@ Rules:
 - The phone stores the list **replacing**, never merging — otherwise stale
   leases accumulate and every connection slows down dialling ghosts.
 
-### Why only the default-route address is advertised
+### Which addresses are advertised
 
 The phone dials the list **in order**, with a per-address timeout (~1.5s). A
 Windows dev box owns many IPv4 addresses no phone can reach — WSL/Hyper-V
 `vEthernet` (172.23.x, 172.30.x), VirtualBox host-only (192.168.56.1), Docker,
 VPN/TAP tunnels. A real phone log showed it burning ~3s on 172.23.128.1 and
-192.168.56.1 before reaching the Wi-Fi address 10.98.1.140. So Helm advertises
-**one** address: the IPv4 of the interface carrying the default route
-(`src/mobile/primary-lan-address.ts`).
+192.168.56.1 before reaching the Wi-Fi address 10.98.1.140. Those are never
+advertised.
 
-- **How it is found:** a UDP socket `connect()`ed to a public IP — no packet is
-  sent; the OS just picks the route and binds the local address — then checked
-  against a non-internal entry of `os.networkInterfaces()`.
-- **Offline fallback** (no default route, or the address is not a real
-  interface): every non-internal IPv4 except 169.254/16 and adapters named like
-  vEthernet/WSL/Hyper-V/VirtualBox/VMware/Docker/vpn/TAP/Tailscale/ZeroTier. The
-  switch is logged once per transition.
+Advertising only the default-route address was tried and broke a dual-homed PC:
+with Ethernet and Wi-Fi both up, the route went out Ethernet (10.99.x) and a
+phone on the Wi-Fi subnet (10.98.x) could never dial it. So Helm advertises
+**every physical IPv4**, ordered (`src/mobile/primary-lan-address.ts`):
+
+1. the default-route address,
+2. other physical adapters, in adapter order,
+3. Tailscale last — reachable over the tailnet, but a LAN hop is preferred.
+
+Dropped: internal, 169.254/16, and adapters named like
+vEthernet/WSL/Hyper-V/VirtualBox/VMware/Docker/vpn/TAP/ZeroTier.
+
+- **Default route:** a UDP socket `connect()`ed to a public IP — no packet is
+  sent; the OS just picks the route and binds the local address. It only
+  decides the order; with no usable route the list is adapter order, logged
+  once per transition.
 - **Change detection:** the advertiser re-probes every 30s and re-pushes to live
   phones **only when the list changed** (a laptop hopping Wi-Fi networks gets no
   link event). The log names the addresses sent, not just a count.
@@ -250,8 +258,7 @@ different kinds of peer, so one firewall rule never means two things at once.
 There is **no host field**, following `FleetConfigPanel.vue`'s precedent — the
 bind is a wildcard in every real deployment, and the only thing a user can act
 on is the concrete address to type into the phone. Settings → 📱 Mobile shows
-the same default-route address the phone is told to dial, as a
-copy-to-clipboard chip.
+the same addresses the phone is told to dial, as copy-to-clipboard chips.
 
 Changes hot-apply: toggling or changing the port rebinds the listener and
 re-advertises to every live phone. No restart.
@@ -278,7 +285,7 @@ transfer and a slice sized for the wrong transport is refused, not merely slow.
 | `src/mobile/lan/socket-link-transport.ts` | The listener, `SocketLink`, and live enable/port |
 | `src/mobile/mobile-link-manager.ts` | Owns N transports; ranking, preemption, generations |
 | `src/mobile/mobile-address-advertiser.ts` | Pushes the address down the authenticated link; 30s change poll |
-| `src/mobile/primary-lan-address.ts` | Default-route IPv4 resolution + virtual-adapter fallback filter |
+| `src/mobile/primary-lan-address.ts` | Physical IPv4 list, default-route first; virtual adapters filtered by name |
 | `src/mobile/mobile-envelope.ts` | The `lan` record |
 | `android/…/lan/LanLinkSession.kt` | The phone's dialling policy |
 | `android/…/data/LanAddressStore.kt` | Stored addresses and strict `host:port` parsing |
@@ -385,5 +392,5 @@ single writer thread, exactly as the BLE queue absorbs its callers.
   every 20s while that phone is on but unreachable. Harmless to the live link;
   annoying on the radio.
 - WAN access (P-0753) is out of scope and remains unbuilt; a VPN that routes the
-  home subnet makes it unnecessary, because the desktop then keeps one address
-  from either side.
+  home subnet makes it unnecessary, because the desktop then keeps a reachable
+  address from either side.
