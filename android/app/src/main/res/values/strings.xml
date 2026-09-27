@@ -378,6 +378,7 @@
     <string name="desktops_rename_title">Name this desktop</string>
     <string name="desktops_rename_label">Desktop name</string>
     <string name="desktops_rename_save">Save name</string>
+    <string name="desktops_use">Use this computer</string>
     <string name="desktops_forget">Forget this desktop</string>
 
     <string name="exit_title">Leave Helm?</string>
@@ -443,6 +444,8 @@
 
     <!-- Voice call ("Call Helm") -->
     <string name="call_title">Call</string>
+    <string name="voice_mode_mic">🎙 Microphone</string>
+    <string name="voice_mode_phone">📞 Phone call</string>
     <string name="call_helm">Call Helm</string>
     <string name="call_helm_row_hint">Voice call your operator</string>
     <string name="operator_section_title">Helm</string>
@@ -455,21 +458,13 @@
     <string name="call_muted">Muted</string>
     <string name="call_mute">Mute</string>
     <string name="call_unmute">Unmute</string>
-    <string name="call_back">Back</string>
     <string name="call_hang_up">Hang up</string>
-    <string name="call_route_earpiece">Earpiece</string>
+    <string name="call_route_earpiece">Handset</string>
     <string name="call_route_speaker">Speaker</string>
     <string name="call_route_bluetooth">Bluetooth</string>
     <string name="call_send_failed">That did not send.</string>
-    <string name="call_no_target">Nobody to call — pick a session first.</string>
     <string name="call_permission">The microphone is needed for a call.</string>
     <string name="call_channel_name">Voice call</string>
     <string name="call_channel_description">Shown while a voice call with Helm is live.</string>
     <string name="call_notification_text">On a call with %1$s</string>
-    <string name="hey_helm">Hey Helm</string>
-    <string name="hey_helm_row_hint">Say \"Hey Helm\" to start a call hands-free. Listens on the phone only (nothing is sent until it hears the phrase), but keeps the mic on in the background: expect battery use, best on a charger.</string>
-    <string name="hey_helm_on">On</string>
-    <string name="hey_helm_off">Off</string>
-    <string name="hey_helm_stop">Stop</string>
-    <string name="hey_helm_notification_text">Listening for Hey Helm</string>
 </resources>

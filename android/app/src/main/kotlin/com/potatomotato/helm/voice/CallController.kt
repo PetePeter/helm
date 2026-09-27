@@ -1,5 +1,6 @@
 package com.potatomotato.helm.voice
 
+import com.potatomotato.helm.log.HelmLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -7,40 +8,42 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * "Call Helm", as a state machine with no Android in it.
  *
- * The recogniser and the voice are ports ([SpeechEngine], [TtsEngine]) so the
+ * The microphone and the voice are ports ([CallMic], [TtsEngine]) so the
  * orderings that break a hands-free call run in a JVM test. Every method and
  * callback must arrive on ONE thread — the main thread in the app.
  *
- * The rules, each one a way a call goes wrong for someone driving:
- * - listening is continuous: every finalised utterance is sent, once, and the
- *   mic reopens — the platform closes an utterance on every pause;
+ * It behaves like a phone call, not a walkie-talkie:
+ * - the mic opens once and stays open; every finalised utterance is sent, once;
  * - silence is never sent: an empty or whitespace final is dropped;
- * - the mic is paused while Helm speaks, so Helm cannot hear itself and send
- *   its own words back as the user's — which also means there is no barge-in:
- *   anything heard while speaking is ignored;
- * - muted means heard-but-not-sent.
+ * - Helm speaks with the mic still open, so the user can talk over it: a
+ *   partial of [BARGE_IN_WORDS]+ words while speaking stops Helm, drops what was
+ *   queued, and what the user says is sent. Fewer words while speaking is taken
+ *   as residual echo of Helm's own voice and ignored;
+ * - muted means heard-but-not-sent, and a muted user never interrupts.
  */
 class CallController(
-    private val speech: SpeechEngine,
+    private val mic: CallMic,
     private val tts: TtsEngine,
     /** Hand the words to the target. False when the link could not carry them. */
     private val send: (String) -> Boolean,
     /** What is said aloud when a send fails. A resource string in the app. */
     private val sendFailedLine: String,
-) : SpeechEngine.Listener {
+) : CallMic.Listener {
     private val _state = MutableStateFlow(CallState())
     val state: StateFlow<CallState> = _state.asStateFlow()
 
     private val queue = ArrayDeque<String>()
 
-    /** Bumped per utterance, so a stale onDone after a stop cannot resume anything. */
+    /** Bumped per utterance and per interruption, so a stale onDone resumes nothing. */
     private var utterance = 0
 
     private val phase get() = _state.value.phase
+    private val live get() = phase != CallPhase.Idle && phase != CallPhase.Ended
 
     fun start() {
         if (phase != CallPhase.Idle) return
-        listen()
+        _state.value = _state.value.copy(phase = CallPhase.Listening)
+        mic.start(this)
     }
 
     fun setMuted(muted: Boolean) {
@@ -52,7 +55,7 @@ class CallController(
         queue.clear()
         utterance++
         tts.release()
-        speech.release()
+        mic.release()
         _state.value = _state.value.copy(phase = CallPhase.Ended, heard = "")
     }
 
@@ -62,69 +65,70 @@ class CallController(
     /** A send the link carried was later refused or lost. */
     fun onSendFailed() = say(sendFailedLine)
 
-    override fun onReady() = Unit
-
-    override fun onLevel(level: Float) = Unit
-
     override fun onPartial(text: String) {
-        if (_state.value.muted || phase != CallPhase.Listening) return
+        if (!live || _state.value.muted) return
+        if (phase == CallPhase.Speaking) {
+            if (wordCount(text) < BARGE_IN_WORDS) return
+            interrupt()
+        }
         _state.value = _state.value.copy(heard = text)
     }
 
     override fun onFinal(text: String) {
-        if (phase != CallPhase.Listening) return
-        val words = text.ifBlank { _state.value.heard }.trim()
-        if (_state.value.muted || words.isEmpty()) {
-            if (phase == CallPhase.Listening) listen()
-            return
+        if (!live) return
+        val words = text.trim()
+        if (_state.value.muted || words.isEmpty()) return
+        if (phase == CallPhase.Speaking) {
+            if (wordCount(words) < BARGE_IN_WORDS) return
+            interrupt()
         }
         _state.value = _state.value.copy(phase = CallPhase.Sending, heard = words)
         val carried = send(words)
-        // A reply can already have started speaking during the send; only an
-        // untouched Sending returns to the microphone.
-        if (phase == CallPhase.Sending) listen()
+        // A reply can already have started speaking during the send.
+        if (phase == CallPhase.Sending) _state.value = _state.value.copy(phase = CallPhase.Listening)
         if (!carried) onSendFailed()
     }
 
-    override fun onError(error: SpeechError) {
-        if (phase != CallPhase.Listening) return
-        // Some recognisers end an utterance with NO_MATCH or a timeout even
-        // after streaming partials; what was heard is still the user's words.
-        if (error.retryable && _state.value.heard.isNotBlank()) {
-            onFinal("")
-            return
-        }
-        if (error.retryable) {
-            // Silence, a busy recogniser, a network stumble: a call keeps its line open.
-            speech.start(this)
-            return
-        }
+    override fun onFailed(reason: String) {
+        if (!live) return
+        HelmLog.w(HelmLog.UI, "call microphone failed: $reason")
         hangUp()
-        _state.value = _state.value.copy(error = error)
+        _state.value = _state.value.copy(error = SpeechError.Audio)
+    }
+
+    /** The user talked over Helm: stop, forget what was queued, listen. */
+    private fun interrupt() {
+        HelmLog.d(HelmLog.UI) { "call barge-in; ${queue.size} queued line(s) dropped" }
+        queue.clear()
+        utterance++
+        tts.stop()
+        _state.value = _state.value.copy(phase = CallPhase.Listening)
     }
 
     /** Speak now, or queue behind what is being said. */
     private fun say(text: String) {
-        if (phase == CallPhase.Idle || phase == CallPhase.Ended || text.isBlank()) return
+        if (!live || text.isBlank()) return
         queue.addLast(text)
         if (phase != CallPhase.Speaking) speakNext()
-    }
-
-    private fun listen() {
-        _state.value = _state.value.copy(phase = CallPhase.Listening, heard = "")
-        speech.start(this)
     }
 
     private fun speakNext() {
         val next = queue.removeFirstOrNull()
         if (next == null) {
-            listen()
+            _state.value = _state.value.copy(phase = CallPhase.Listening)
             return
         }
-        if (phase != CallPhase.Speaking) speech.cancel()
         _state.value = _state.value.copy(phase = CallPhase.Speaking, spoken = next)
         val mine = ++utterance
         tts.speak(next) { if (mine == utterance && phase == CallPhase.Speaking) speakNext() }
+    }
+
+    private fun wordCount(text: String): Int = text.trim().split(WHITESPACE).count { it.isNotEmpty() }
+
+    private companion object {
+        /** Words heard while Helm speaks before it counts as the user, not echo. */
+        const val BARGE_IN_WORDS = 2
+        val WHITESPACE = Regex("\\s+")
     }
 }
 

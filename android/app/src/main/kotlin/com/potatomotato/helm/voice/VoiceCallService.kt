@@ -20,7 +20,6 @@ import android.os.IBinder
 import android.os.Looper
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
-import com.potatomotato.helm.data.HeyHelmSetting
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.log.HelmLog
 import kotlinx.coroutines.CoroutineScope
@@ -31,8 +30,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -42,16 +41,8 @@ import kotlinx.coroutines.launch
  * sleeps is not a call. The audio side is the phone-call shape: the mode is
  * MODE_IN_COMMUNICATION for the call's lifetime (and restored after), focus is
  * held, and the route is earpiece / speaker / Bluetooth with Bluetooth taken
- * whenever it is there.
- *
- * It also holds "Hey Helm" standby: a [WakeWordEngine] (Vosk keyword spotting)
- * in the same microphone service, with none of the call's audio takeover —
- * standby runs for hours, so it must not hold focus or the communication mode
- * while music plays. The wake word frees the recorder and rings a full call;
- * a call started during standby replaces it, and standby resumes when the call ends ONLY if
- * the switch is still on ([StandbyPolicy]); otherwise the service stops and the
- * mic is released. The switch is observed here, so turning it off always stops
- * standby.
+ * whenever it is there. The microphone is [VoskCallMic], one stream open for
+ * the whole call.
  *
  * Wiring only. What the call does is [CallController]; which route it takes is
  * [pickAudioRoute]; what counts as a reply is [CallFeed].
@@ -70,8 +61,6 @@ class VoiceCallService : Service() {
         private const val CHANNEL_ID = "helm_call"
         private const val NOTIFICATION_ID = 2
         private const val ACTION_START = "com.potatomotato.helm.call.START"
-        private const val ACTION_STANDBY = "com.potatomotato.helm.call.STANDBY"
-        private const val ACTION_STOP_STANDBY = "com.potatomotato.helm.call.STOP_STANDBY"
         private const val ACTION_HANG_UP = "com.potatomotato.helm.call.HANG_UP"
         private const val ACTION_MUTE = "com.potatomotato.helm.call.MUTE"
         private const val ACTION_ROUTE = "com.potatomotato.helm.call.ROUTE"
@@ -85,21 +74,9 @@ class VoiceCallService : Service() {
         /** The live call, or null. Process-scoped: there is at most one call. */
         val call: StateFlow<Call?> = _call.asStateFlow()
 
-        private val _standingBy = MutableStateFlow(false)
-
-        /** "Hey Helm" standby is running. */
-        val standingBy: StateFlow<Boolean> = _standingBy.asStateFlow()
-
         fun start(context: Context, targetId: String) {
             context.startForegroundService(command(context, ACTION_START).putExtra(EXTRA_TARGET, targetId))
         }
-
-        /** Listen for "Hey Helm" on behalf of [targetId]. A live call is left alone. */
-        fun standby(context: Context, targetId: String) {
-            context.startForegroundService(command(context, ACTION_STANDBY).putExtra(EXTRA_TARGET, targetId))
-        }
-
-        fun stopStandby(context: Context) = context.startService(command(context, ACTION_STOP_STANDBY))
 
         fun hangUp(context: Context) = context.startService(command(context, ACTION_HANG_UP))
 
@@ -119,22 +96,12 @@ class VoiceCallService : Service() {
     /** The live call, or null. */
     private var controller: CallController? = null
 
-    /** "Hey Helm" standby's ear, or null. Never live at the same time as [controller]. */
-    private var wake: WakeWordEngine? = null
-
-    /** The call's target, or standby's. */
+    /** The call's target. */
     private var targetId: String? = null
-
-    private val standby get() = wake != null
-
-    /** Standby's target while a call holds the service, so standby can come back. */
-    private var standbyTarget: String? = null
 
     /** The live controller's collectors; cancelled when it is swapped out. */
     private var job: Job? = null
     private var tone: ToneGenerator? = null
-    /** The stream [tone] was built on: a call cues on the call's route, standby on notifications. */
-    private var toneStream = AudioManager.STREAM_NOTIFICATION
 
     /** takeAudio() ran: the mode, focus and route are ours to restore. */
     private var active = false
@@ -159,77 +126,27 @@ class VoiceCallService : Service() {
         )
         channel.description = getString(R.string.call_channel_description)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        // The service obeys the switch itself, so turning it off frees the mic
-        // however the UI happens to be composed (or not composed at all).
-        scope.launch {
-            HeyHelmSetting.enabled.collect { on -> if (!on) switchedOff() }
-        }
-    }
-
-    /** Standby stops now; a live call just loses its comeback. */
-    private fun switchedOff() {
-        standbyTarget = null
-        if (standby) {
-            endCurrent()
-            stopSelf()
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         val call = controller
-        // Both start paths go foreground FIRST, whatever happens next: a service
-        // started with startForegroundService that never calls startForeground
-        // crashes.
         if (action == ACTION_START) {
+            // Foreground FIRST, whatever happens next: a service started with
+            // startForegroundService that never calls startForeground crashes.
             // A live call keeps its own target; a second START only rejoins it.
-            // A START during standby replaces the standby.
             val target = (if (call != null) targetId else null) ?: intent.getStringExtra(EXTRA_TARGET)
-            startForegroundWith(target, standby = false)
+            startForegroundWith(target)
             when {
-                target == null -> if (call == null && !standby) stopSelf()
-                call == null -> {
-                    if (standby) standbyTarget = targetId
-                    endCurrent()
-                    begin(target)
-                }
+                target == null -> if (call == null) stopSelf()
+                call == null -> begin(target)
             }
             return START_NOT_STICKY
         }
-        if (action == ACTION_STANDBY) {
-            val target = intent.getStringExtra(EXTRA_TARGET)
-            if (call != null) {
-                // A live call wins; standby comes back when it ends.
-                startForegroundWith(targetId, standby = false)
-                standbyTarget = target
-                return START_NOT_STICKY
-            }
-            startForegroundWith(target, standby = true)
-            when {
-                target == null -> {
-                    endCurrent()
-                    stopSelf()
-                }
-                !standby || target != targetId -> {
-                    endCurrent()
-                    beginStandby(target)
-                }
-            }
-            return START_NOT_STICKY
-        }
-        if (action == ACTION_STOP_STANDBY) {
-            // The notification's Stop is the switch: standby must not come back
-            // on the next app open after the user silenced it. The app's own
-            // stops (switch off, no target) leave the switch as it is.
-            if (intent.getBooleanExtra(EXTRA_VALUE, false)) HeyHelmSetting.set(false)
-            switchedOff()
-            if (controller == null) stopSelf()
-            return START_NOT_STICKY
-        }
-        // Any other command with nothing live would start a ghost service and
-        // touch the audio stack for nothing; during standby it is a no-op.
+        // Any other command with no live call would start a ghost service and
+        // touch the audio stack for nothing.
         if (call == null) {
-            if (!standby) stopSelf()
+            stopSelf()
             return START_NOT_STICKY
         }
         when (action) {
@@ -253,11 +170,11 @@ class VoiceCallService : Service() {
 
         val client = HelmPairing.client
         val call = CallController(
-            speech = AndroidSpeechEngine(this),
+            mic = VoskCallMic(this),
             tts = AndroidTtsEngine(this),
             send = { text ->
                 // The instant "heard you": the reply is seconds away, silence reads as deaf.
-                cue(AudioManager.STREAM_VOICE_CALL)
+                cue()
                 HelmLog.d(HelmLog.UI) { "call sending ${text.length} chars" }
                 client.sendChat(target, text)
             },
@@ -287,82 +204,30 @@ class VoiceCallService : Service() {
         call.start()
     }
 
-    /**
-     * "Hey Helm" standby: only the keyword spotter holds the mic - no
-     * SpeechRecognizer, no audio takeover, so music keeps playing.
-     */
-    private fun beginStandby(target: String) {
-        targetId = target
-        _standingBy.value = true
-        HelmLog.i(HelmLog.UI, "hey helm standby starting")
-        val engine = VoskWakeWordEngine(this)
-        wake = engine
-        engine.start(
-            onWake = { if (wake === engine) woke(target) },
-            onError = { reason ->
-                if (wake === engine) {
-                    HelmLog.w(HelmLog.UI, "hey helm standby failed: $reason")
-                    // Off: the switch must not claim a standby that cannot run.
-                    HeyHelmSetting.set(false)
-                    endCurrent()
-                    stopSelf()
-                }
-            },
-        )
-    }
-
-    /** The wake word: free the recorder, beep, and ring [target] as a full call. */
-    private fun woke(target: String) {
-        endCurrent()
-        cue(AudioManager.STREAM_NOTIFICATION)
-        standbyTarget = target
-        startForegroundWith(target, standby = false)
-        begin(target)
-    }
-
     /** The short beep that says "heard you" before the question goes. */
-    private fun cue(stream: Int) {
-        if (toneStream != stream) {
-            tone?.release()
-            tone = null
-            toneStream = stream
-        }
+    private fun cue() {
         val generator = tone
-            ?: runCatching { ToneGenerator(stream, CUE_VOLUME) }.getOrNull()
+            ?: runCatching { ToneGenerator(AudioManager.STREAM_VOICE_CALL, CUE_VOLUME) }.getOrNull()
             ?: return
         tone = generator
         generator.startTone(ToneGenerator.TONE_PROP_ACK, CUE_MS)
     }
 
-    /**
-     * The call ended. With the switch still on it goes back to standby rather
-     * than leaving the phone deaf; anything else stops and frees the mic.
-     */
+    /** The call ended: free the mic and the audio, and stop. */
     private fun ended() {
-        val back = StandbyPolicy.resumeAfter(HeyHelmSetting.enabled.value, standbyTarget ?: targetId)
-        standbyTarget = null
         endCurrent()
         releaseAudio()
-        if (back == null) {
-            stopSelf()
-            return
-        }
-        startForegroundWith(back, standby = true)
-        beginStandby(back)
+        stopSelf()
     }
 
-    /** Swap the live call or standby out without stopping the service. */
     private fun endCurrent() {
         job?.cancel()
         job = null
-        val live = controller != null || wake != null
+        val live = controller != null
         controller?.hangUp()
         controller = null
-        wake?.stop()
-        wake = null
         if (live) HelmLog.i(HelmLog.UI, "mic released")
         _call.value = null
-        _standingBy.value = false
     }
 
     /** The call's audio: communication mode, focus and route. False when refused. */
@@ -416,10 +281,9 @@ class VoiceCallService : Service() {
     }
 
     /**
-     * A permanent loss (another app's call) ends ours. A transient loss is
-     * routine — our own SpeechRecognizer takes transient focus every time it
-     * starts listening — so it only ends the call when the phone is actually
-     * ringing or in a GSM call.
+     * A permanent loss (another app's call) ends ours. A transient loss (a
+     * notification, the navigation voice) only ends it when the phone is
+     * actually ringing or in a GSM call.
      */
     private fun onFocusChange(change: Int) {
         val phoneCall = audio.mode == AudioManager.MODE_RINGTONE || audio.mode == AudioManager.MODE_IN_CALL
@@ -432,8 +296,6 @@ class VoiceCallService : Service() {
     }
 
     private fun publish(state: CallState = controller?.state?.value ?: CallState()) {
-        // Standby is not a call: the call screen never draws it.
-        if (standby) return
         val target = targetId ?: return
         _call.value = Call(target, state, route ?: AudioRoute.Earpiece, availableRoutes())
     }
@@ -489,39 +351,20 @@ class VoiceCallService : Service() {
         }
     }
 
-    private fun startForegroundWith(target: String?, standby: Boolean) {
+    private fun startForegroundWith(target: String?) {
         val name = target?.let { HelmPairing.client.sessions.find(it)?.name ?: it }.orEmpty()
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getService(
-            this,
-            if (standby) 2 else 1,
-            if (standby) {
-                command(this, ACTION_STOP_STANDBY).putExtra(EXTRA_VALUE, true)
-            } else {
-                command(this, ACTION_HANG_UP)
-            },
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+        val stop = PendingIntent.getService(this, 1, command(this, ACTION_HANG_UP), PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(if (standby) R.string.hey_helm else R.string.call_helm))
-            .setContentText(
-                if (standby) {
-                    getString(R.string.hey_helm_notification_text)
-                } else {
-                    getString(R.string.call_notification_text, name)
-                },
-            )
+            .setContentTitle(getString(R.string.call_helm))
+            .setContentText(getString(R.string.call_notification_text, name))
             .setSmallIcon(R.drawable.ic_notification_helm)
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(
-                Notification.Action.Builder(
-                    null,
-                    getString(if (standby) R.string.hey_helm_stop else R.string.call_hang_up),
-                    stop,
-                ).build(),
+                Notification.Action.Builder(null, getString(R.string.call_hang_up), stop).build(),
             )
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

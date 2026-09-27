@@ -65,12 +65,9 @@ import com.potatomotato.helm.ui.artifacts.ArtifactDetailScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactEdit
 import com.potatomotato.helm.ui.artifacts.ArtifactEditorScreen
 import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
-import com.potatomotato.helm.ui.call.CallScreen
+import com.potatomotato.helm.ui.call.rememberDialer
 import com.potatomotato.helm.ui.chat.ChatScreen
-import com.potatomotato.helm.data.HeyHelmSetting
-import com.potatomotato.helm.voice.VoicePermission
 import com.potatomotato.helm.voice.VoiceCallService
-import com.potatomotato.helm.voice.resolveCallTarget
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -129,9 +126,6 @@ private enum class Destination {
     ArtifactEditor,
     Desktops,
     Pairing,
-
-    /** A "Call Helm" voice call. Reachable with no session open — the pinned Helm row. */
-    Call,
 
     /**
      * The plan, sequence and context detail screens.
@@ -203,26 +197,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // never asked, and back is one tap away if they still mean it.
     var leaving by remember { mutableStateOf(false) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
-    // The session the user chose to call from its sheet; the operator, once the
-    // desktop has one, outranks it — see resolveCallTarget.
-    var callPickedId by rememberSaveable { mutableStateOf<String?>(null) }
+    // A call is a mode of a session's chat: it rings the session whose call
+    // button was pressed, and its controls replace that chat's composer.
     val liveCall by VoiceCallService.call.collectAsState()
-    // "Hey Helm" standby follows the switch: on (and allowed the mic) means the
-    // service listens for whoever a call would ring; off means no mic at all.
-    val heyHelm by HeyHelmSetting.enabled.collectAsState()
-    val standingBy by VoiceCallService.standingBy.collectAsState()
-    val standbyTarget = resolveCallTarget(sessions, callPickedId)
-    val heyHelmPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
-        if (allowed) HeyHelmSetting.set(true)
-    }
-    LaunchedEffect(heyHelm, standbyTarget) {
-        if (heyHelm && standbyTarget != null && VoicePermission.granted(context)) {
-            VoiceCallService.standby(context, standbyTarget)
-        } else if (standingBy && (!heyHelm || standbyTarget == null)) {
-            // Off, or nobody left to ask: no background mic.
-            VoiceCallService.stopStandby(context)
-        }
-    }
+    val dial = rememberDialer()
     // Which of the open session's tabs is showing. Saveable for the same reason
     // [where] is: a rotation must not drop a user reading the artifact list back
     // into the conversation.
@@ -718,6 +696,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 client.deleteChatAttachment(sessionId, key, attachment)
             },
             onOpenAttachment = openAttachment,
+            call = liveCall?.takeIf { it.targetId == sessionId },
+            // One call at a time: while another session is on a call, this one cannot ring.
+            onCall = if (liveCall == null) {
+                { dial(sessionId) }
+            } else {
+                null
+            },
         )
     }
 
@@ -755,23 +740,6 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 // branches below keep their non-null smart cast.
                 // Same reasoning as Spawn: reachable with no session open, so
                 // it sits above the null check rather than inside it.
-                where == Destination.Call -> {
-                    BackHandler(onBack = toThread)
-                    // A live call keeps its own target; a new one resolves now.
-                    val target = liveCall?.targetId ?: resolveCallTarget(sessions, callPickedId)
-                    if (target == null) {
-                        LaunchedEffect(Unit) { where = Destination.Thread }
-                    } else {
-                        CallScreen(
-                            targetId = target,
-                            targetName = sessions.firstOrNull { it.id == target }?.name ?: target,
-                            call = liveCall,
-                            thread = threads[target].orEmpty(),
-                            onBack = toThread,
-                        )
-                    }
-                }
-
                 where == Destination.Desktops -> {
                     BackHandler(onBack = toThread)
                     DesktopsScreen(
@@ -779,6 +747,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         linkState = linkState,
                         onRename = HelmPairing::rename,
                         onForget = HelmPairing::forget,
+                        onUse = HelmPairing::use,
                         onBack = toThread,
                     )
                 }
@@ -935,22 +904,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         openSessionId = id
                                         tab = SessionTab.Chat
                                     },
-                                    onCall = if (liveCall != null || operator is OperatorSummary.On) {
-                                        { where = Destination.Call }
-                                    } else {
-                                        null
-                                    },
-                                    heyHelm = heyHelm,
-                                    // Shown whenever it could run, and always while on,
-                                    // so an ON switch can always be turned off.
-                                    onHeyHelm = if (standbyTarget != null || heyHelm) {
-                                        { on ->
-                                            when {
-                                                !on -> HeyHelmSetting.set(false)
-                                                VoicePermission.granted(context) -> HeyHelmSetting.set(true)
-                                                else -> heyHelmPermission.launch(VoicePermission.required.first())
-                                            }
-                                        }
+                                    // The operator's chat is right below, so ringing it turns
+                                    // that chat's composer into the call.
+                                    onCall = if (operator is OperatorSummary.On && liveCall == null) {
+                                        { dial(operator.id) }
                                     } else {
                                         null
                                     },
@@ -1282,7 +1239,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             // rows live on the artifacts tab and the screens
                             // under it, where the thing acted on is visible.
                             SessionAction.Rename -> Destination.Thread
-                            SessionAction.Call -> Destination.Call.also { callPickedId = open.id }
+                            SessionAction.Call -> Destination.Thread.also {
+                                tab = SessionTab.Chat
+                                dial(open.id)
+                            }
                             else -> Destination.Thread
                         }
                         // A snapshot is pulled as soon as it is asked for, at the

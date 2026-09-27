@@ -134,9 +134,15 @@ class ChatRepository(
      * session-list sync, so the saved file cannot collect the dead.
      */
     @Synchronized
-    fun retainSessions(liveIds: Set<String>) {
-        if (_threads.value.keys.all { it in liveIds }) return
-        setThreads(_threads.value.filterKeys { it in liveIds })
+    fun retainSessions(liveIds: Set<String>, now: Long = System.currentTimeMillis()) {
+        // A thread goes only when it is unlisted AND idle past the journal
+        // window. One short list (a desktop mid-restart, a partial answer) must
+        // not erase history: the cursor stays high, so nothing would refill it.
+        val keep = _threads.value.filter { (id, thread) ->
+            id in liveIds || (thread.lastOrNull()?.at ?: 0L) > now - JOURNAL_WINDOW_MS
+        }
+        if (keep.size == _threads.value.size) return
+        setThreads(keep)
     }
 
     /**
@@ -418,6 +424,9 @@ class ChatRepository(
          * Oldest goes first; scrollback beyond this is the desktop's job.
          */
         const val MAX_THREAD = 200
+
+        /** How far back the desktop journal replays; older history cannot come back. */
+        const val JOURNAL_WINDOW_MS = 24L * 60 * 60 * 1000
 
         /** How many of this phone's own recently sent ids stay recognisable. */
         private const val MAX_SENT_IDS = 256

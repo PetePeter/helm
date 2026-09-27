@@ -36,6 +36,9 @@ class FakeTtsEngine : TtsEngine {
         onDone = null
     }
 
+    /** The current utterance's done callback, kept to fire late (after a stop). */
+    fun pendingDone(): () -> Unit = onDone ?: error("Nothing is being spoken")
+
     /** The current utterance reached its end. */
     fun finish() {
         val done = onDone ?: error("Nothing is being spoken, so the platform would have nothing to finish")

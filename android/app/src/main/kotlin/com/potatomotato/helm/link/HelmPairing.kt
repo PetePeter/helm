@@ -9,8 +9,6 @@ import com.potatomotato.helm.lan.LanLinkController
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.FileChatStore
 import com.potatomotato.helm.data.LanAddressStore
-import com.potatomotato.helm.data.HeyHelmSetting
-import com.potatomotato.helm.data.PrefsHeyHelmStore
 import com.potatomotato.helm.data.PrefsTransportPreferenceStore
 import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.data.PrefsLanAddressStore
@@ -62,6 +60,9 @@ object HelmPairing {
     private var store: PskStore? = null
     private var lanAddresses: LanAddressStore? = null
     private var lan: LanLinkController? = null
+
+    /** Which desktop the user chose to use, dialled first when several are paired. */
+    private var chosen: android.content.SharedPreferences? = null
     private var started = false
 
     /**
@@ -127,6 +128,7 @@ object HelmPairing {
         client.openStagedAttachment = staging::open
         val keys = DeviceKeyStore(context)
         store = keys
+        chosen = context.applicationContext.getSharedPreferences(CHOSEN_PREFS, Context.MODE_PRIVATE)
         // Where the desktop says it can be reached (P-0752). Keyed on the LIVE
         // desktop, because that is the only one that could have sent it — and
         // an address is only ever believed when it arrives over the
@@ -136,7 +138,6 @@ object HelmPairing {
         // The user's transport choice, adopted before anything dials so a
         // Bluetooth-only phone never makes one attempt it was told not to.
         TransportPreferences.bind(PrefsTransportPreferenceStore(context))
-        HeyHelmSetting.bind(PrefsHeyHelmStore(context))
         lan = LanLinkController(
             addresses = addresses,
             allowDial = { TransportPreferences.preference.value.allowsLan },
@@ -223,7 +224,7 @@ object HelmPairing {
         // dials paired desktops until one links (one LAN session) and the controller's own
         // backoff carries it from there.
         scope.launch(Dispatchers.IO) {
-            for (desktopId in keys.pairedMachineIds()) if (lan?.tryConnect(desktopId) == true) break
+            for (desktopId in chosenFirst(keys.pairedMachineIds())) if (lan?.tryConnect(desktopId) == true) break
         }
     }
 
@@ -241,7 +242,7 @@ object HelmPairing {
      */
     fun onLinkServiceStarted() {
         val keys = store ?: return
-        scope.launch(Dispatchers.IO) { lan?.resume(keys.pairedMachineIds()) }
+        scope.launch(Dispatchers.IO) { lan?.resume(chosenFirst(keys.pairedMachineIds())) }
     }
 
     fun stopLan() {
@@ -261,6 +262,21 @@ object HelmPairing {
         // forget() only moves the pairing state when the REVOKED desktop is the
         // live one, so the row must be dropped here too.
         refreshDesktops()
+    }
+
+    /**
+     * Use [desktopId] from now on: remembered, so it is dialled first after a
+     * restart too, and switched to at once over the network. With two desktops
+     * on the LAN this is the only way to say which one the phone talks to.
+     */
+    fun use(desktopId: String) {
+        chosen?.edit()?.putString(CHOSEN_KEY, desktopId)?.apply()
+        scope.launch(Dispatchers.IO) { lan?.switchTo(desktopId) }
+    }
+
+    private fun chosenFirst(ids: Collection<String>): List<String> {
+        val pick = chosen?.getString(CHOSEN_KEY, null)
+        return ids.sortedByDescending { it == pick }
     }
 
     /** Blank clears the nickname and returns the row to its derived default. */
@@ -311,6 +327,9 @@ object HelmPairing {
 
     private fun requireController(): PairingController =
         controller ?: error("HelmPairing.init has not been called")
+
+    private const val CHOSEN_PREFS = "helm_desktop_choice"
+    private const val CHOSEN_KEY = "chosen_desktop"
 
     /** Alongside the log, under the app's own files — never shared storage. */
     private const val NOTIFY_DIRECTORY = "notify"

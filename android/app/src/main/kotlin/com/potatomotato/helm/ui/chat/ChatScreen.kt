@@ -1,5 +1,9 @@
 package com.potatomotato.helm.ui.chat
 
+import com.potatomotato.helm.ui.call.CallPanel
+import com.potatomotato.helm.voice.CallPhase
+import com.potatomotato.helm.voice.VoiceCallService
+import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
@@ -25,9 +29,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -99,6 +107,10 @@ fun ChatScreen(
     onCancelPull: (key: String) -> Unit = {},
     onDeleteAttachment: (key: String, attachment: ChatAttachment) -> Unit = { _, _ -> },
     onOpenAttachment: (uri: String, mimeType: String) -> Unit = { _, _ -> },
+    /** The live call with THIS session, or null. While live it replaces the composer. */
+    call: VoiceCallService.Call? = null,
+    /** Dial this session. Null hides the call button (a call elsewhere is live). */
+    onCall: (() -> Unit)? = null,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. It also
@@ -188,6 +200,10 @@ fun ChatScreen(
             }
         }
 
+        if (call != null && call.state.phase != CallPhase.Ended) {
+            CallPanel(call = call)
+            return@Column
+        }
         Composer(
             draft = draft,
             onDraft = { next ->
@@ -198,6 +214,7 @@ fun ChatScreen(
                 drafts.save(sessionId, Draft(next.text, next.selection.min))
             },
             onTerminal = onTerminal,
+            onCall = onCall,
             onSend = {
                 val text = draft.text.trim()
                 if (text.isNotEmpty()) {
@@ -505,6 +522,7 @@ private fun Composer(
     draft: TextFieldValue,
     onDraft: (TextFieldValue) -> Unit,
     onTerminal: () -> Unit,
+    onCall: (() -> Unit)?,
     onSend: () -> Unit,
 ) {
     Hairline()
@@ -537,7 +555,7 @@ private fun Composer(
             horizontalAlignment = Alignment.End,
         ) {
             ComposerTerminal(onTerminal)
-            ComposerMic(dictation)
+            ComposerVoice(dictation = dictation, onCall = onCall)
             ComposerSend(enabled = draft.text.isNotBlank(), onSend = onSend)
         }
     }
@@ -622,19 +640,70 @@ private fun ComposerTerminal(onTerminal: () -> Unit) {
  * microphone is being held by something else.
  */
 @Composable
-private fun ComposerMic(dictation: DictationHandle) {
+private fun ComposerVoice(dictation: DictationHandle, onCall: (() -> Unit)?) {
+    val context = LocalContext.current
+    val prefs = remember { context.applicationContext.getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE) }
+    var mode by remember { mutableStateOf(VoiceMode.of(prefs.getString(VOICE_MODE_KEY, null))) }
+    var choosing by remember { mutableStateOf(false) }
+    val choose: (VoiceMode) -> Unit = { next ->
+        mode = next
+        choosing = false
+        prefs.edit().putString(VOICE_MODE_KEY, next.name).apply()
+    }
+
+    Box {
+        when (mode) {
+            VoiceMode.Mic -> ComposerMic(dictation = dictation, onSlideUp = { choosing = true })
+            VoiceMode.Phone -> ComposerPhone(onCall = onCall, onLongPress = { choosing = true })
+        }
+        DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.voice_mode_mic)) },
+                onClick = { choose(VoiceMode.Mic) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.voice_mode_phone)) },
+                onClick = { choose(VoiceMode.Phone) },
+            )
+        }
+    }
+}
+
+/**
+ * The composer's one voice button, Telegram-style: it is either the mic (hold
+ * to dictate) or the phone (tap to call). Sliding up off a held mic, or holding
+ * the phone, offers the other. The choice is remembered.
+ */
+private enum class VoiceMode {
+    Mic, Phone;
+
+    companion object {
+        fun of(name: String?): VoiceMode = entries.firstOrNull { it.name == name } ?: Mic
+    }
+}
+
+/**
+ * Hold to dictate. While held it wears a halo that breathes with what the
+ * recogniser is hearing: a flat ring while someone speaks is how you tell the
+ * microphone is being held by something else. Sliding up abandons the
+ * dictation and asks for the mode switch instead.
+ */
+@Composable
+private fun ComposerMic(dictation: DictationHandle, onSlideUp: () -> Unit) {
     val halo by animateFloatAsState(
         targetValue = if (dictation.listening) MIN_HALO + (1f - MIN_HALO) * dictation.level else 0f,
         label = "micHalo",
     )
     val accent = HelmColors.Accent
     val micLabel = stringResource(R.string.voice_mic_hold)
+    val slidePx = with(LocalDensity.current) { SLIDE_TO_SWITCH.toPx() }
 
     // The handle changes on every loudness reading. Keying the gesture on it
     // would restart the pointer filter mid-hold — cancelling the very press it
     // is meant to be tracking — so the gesture is installed once and reads the
     // latest handle through this.
     val current by rememberUpdatedState(dictation)
+    val currentSlideUp by rememberUpdatedState(onSlideUp)
 
     Box(
         modifier = Modifier
@@ -649,22 +718,61 @@ private fun ComposerMic(dictation: DictationHandle) {
             .clip(CircleShape)
             .background(accent)
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onPress = {
-                        current.onPress()
-                        // Both outcomes end the utterance: a finger lifted and a
-                        // gesture the system took away are the same "stop" to a
-                        // held microphone.
-                        tryAwaitRelease()
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    current.onPress()
+                    var slid = false
+                    while (true) {
+                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        if (down.position.y - change.position.y > slidePx) {
+                            slid = true
+                            break
+                        }
+                    }
+                    // A finger lifted and a gesture the system took away are the
+                    // same "stop"; a slide up keeps nothing and switches modes.
+                    if (slid) {
+                        current.onCancel()
+                        currentSlideUp()
+                    } else {
                         current.onRelease()
-                    },
-                )
+                    }
+                }
             }
             .semantics { contentDescription = micLabel },
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = stringResource(R.string.voice_mic_glyph),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+/** Tap to call; hold for the mode switch. Dark while a call elsewhere is live. */
+@Composable
+private fun ComposerPhone(onCall: (() -> Unit)?, onLongPress: () -> Unit) {
+    val label = stringResource(R.string.control_action_call)
+    val currentCall by rememberUpdatedState(onCall)
+    val currentLongPress by rememberUpdatedState(onLongPress)
+    Box(
+        modifier = Modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(if (onCall != null) HelmColors.Accent else HelmColors.Surface2)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { currentCall?.invoke() },
+                    onLongPress = { currentLongPress() },
+                )
+            }
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.control_glyph_call),
+            color = if (onCall != null) HelmColors.OnAccent else HelmColors.Dim,
             style = MaterialTheme.typography.bodyMedium,
         )
     }
@@ -717,6 +825,12 @@ private val HALO_SPREAD = 14.dp
 
 /** A held mic glows even in silence: the halo says "open", the swell says "heard". */
 private const val MIN_HALO = 0.35f
+
+/** How far up a held mic must slide to become the mode switch. */
+private val SLIDE_TO_SWITCH = 48.dp
+
+private const val VOICE_PREFS = "helm_composer"
+private const val VOICE_MODE_KEY = "voice_mode"
 
 /** Immutable, so one instance serves every bubble. Compose is single-threaded anyway. */
 private val bubbleTime = java.time.format.DateTimeFormatter.ofPattern("HH:mm")

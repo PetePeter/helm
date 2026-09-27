@@ -64,6 +64,7 @@ fun DesktopsScreen(
     linkState: LinkState,
     onRename: (machineId: String, label: String) -> Unit,
     onForget: (machineId: String) -> Unit,
+    onUse: (machineId: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -114,6 +115,10 @@ fun DesktopsScreen(
                 },
                 onForget = {
                     onForget(underEdit.machineId)
+                    editing = null
+                },
+                onUse = {
+                    onUse(underEdit.machineId)
                     editing = null
                 },
                 onDismiss = { editing = null },
@@ -179,6 +184,7 @@ private fun DesktopDialog(
     desktop: PairedDesktop,
     onRename: (String) -> Unit,
     onForget: () -> Unit,
+    onUse: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember(desktop.machineId) { mutableStateOf(desktop.label) }
@@ -213,6 +219,10 @@ private fun DesktopDialog(
         // Blank is a legitimate answer: it clears the nickname and puts the row
         // back on its derived default, so Save is never dark.
         DialogAction(text = stringResource(R.string.desktops_rename_save), onClick = { onRename(name) })
+        // Only offered for a desktop that is not already the one in use.
+        if (!desktop.linked) {
+            DialogAction(text = stringResource(R.string.desktops_use), onClick = onUse, emphasised = false)
+        }
         DialogAction(
             text = stringResource(R.string.desktops_forget),
             onClick = onForget,

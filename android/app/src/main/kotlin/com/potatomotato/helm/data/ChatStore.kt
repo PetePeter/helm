@@ -94,7 +94,12 @@ class FileChatStore(
 
 /** The file format. Row keys are not saved: the repository re-keys on load. */
 internal object ChatSnapshotJson {
-    private const val VERSION = 1
+    /**
+     * 2: saved after the short-list pruning fix. A version 1 file may be missing
+     * threads that pruning erased while its cursor stayed high, so it loads with
+     * cursor zero: the journal replays in full and seq dedupe keeps what is held.
+     */
+    private const val VERSION = 2
 
     fun encode(snapshot: ChatSnapshot): JSONObject = JSONObject().apply {
         put("v", VERSION)
@@ -128,7 +133,8 @@ internal object ChatSnapshotJson {
 
     /** Throws on anything malformed; the caller turns that into a cold start. */
     fun decode(json: JSONObject): ChatSnapshot {
-        require(json.getInt("v") == VERSION) { "unknown chat store version" }
+        val version = json.getInt("v")
+        require(version in 1..VERSION) { "unknown chat store version" }
         val threads = json.getJSONObject("threads")
         val sentIds = json.optJSONArray("sentIds")
         return ChatSnapshot(
@@ -136,7 +142,7 @@ internal object ChatSnapshotJson {
                 val rows = threads.getJSONArray(sessionId)
                 (0 until rows.length()).map { decodeRow(rows.getJSONObject(it)) }
             },
-            lastSeq = json.getLong("lastSeq"),
+            lastSeq = if (version >= VERSION) json.getLong("lastSeq") else 0L,
             sentIds = if (sentIds == null) emptyList() else (0 until sentIds.length()).map { sentIds.getString(it) },
         )
     }

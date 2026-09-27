@@ -100,6 +100,7 @@ fun rememberDictation(draft: TextFieldValue, onDraft: (TextFieldValue) -> Unit):
                 controller.stop()
             }
         },
+        onCancel = { controller.cancel() },
     )
 }
 
@@ -111,6 +112,8 @@ data class DictationHandle(
     val message: Int?,
     val onPress: () -> Unit,
     val onRelease: () -> Unit,
+    /** Abandon the hold without keeping a word (the finger slid off to switch modes). */
+    val onCancel: () -> Unit,
 )
 
 /**

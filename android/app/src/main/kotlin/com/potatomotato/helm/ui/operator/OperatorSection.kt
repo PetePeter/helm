@@ -25,8 +25,8 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 /**
  * The front page's "Helm" section — the operator is a place to talk to, not
  * one session among many, so it owns the top of the page: its status and last
- * reply (tap → its chat), the Call button, and the Hey Helm switch. The one
- * home of all three; the session list no longer carries any of them.
+ * reply (tap → its chat) and the Call button. The one home of both; the
+ * session list no longer carries either.
  */
 @Composable
 fun OperatorSection(
@@ -34,9 +34,6 @@ fun OperatorSection(
     onOpenChat: (String) -> Unit,
     /** Ring the call. Null while there is nobody to ring and no call to return to. */
     onCall: (() -> Unit)?,
-    /** The "Hey Helm" standby switch. Null hides it. */
-    heyHelm: Boolean,
-    onHeyHelm: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth().background(HelmColors.Surface)) {
@@ -79,44 +76,6 @@ fun OperatorSection(
                 )
             }
         }
-        if (onHeyHelm != null) HeyHelmRow(on = heyHelm, onToggle = { onHeyHelm(!heyHelm) })
         Hairline(color = HelmColors.Separator)
-    }
-}
-
-/**
- * The standby switch. A labelled On/Off rather than a Material Switch, the same
- * choice the link bar's bell makes. The subtitle carries the honest caveat: the
- * built-in recogniser is not a wake-word engine.
- */
-@Composable
-private fun HeyHelmRow(on: Boolean, onToggle: () -> Unit) {
-    Hairline(color = HelmColors.Separator)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = HelmSize.TouchTarget)
-            .clickable(onClick = onToggle)
-            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.hey_helm),
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.hey_helm_row_hint),
-                color = HelmColors.Faint,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Text(
-            text = stringResource(if (on) R.string.hey_helm_on else R.string.hey_helm_off),
-            color = if (on) HelmColors.Accent else HelmColors.Faint,
-            style = MaterialTheme.typography.titleMedium,
-        )
     }
 }

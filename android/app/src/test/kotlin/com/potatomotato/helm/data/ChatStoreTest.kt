@@ -102,11 +102,11 @@ class ChatStoreTest {
     }
 
     @Test
-    fun `threads of sessions the desktop no longer lists are pruned, on disk too`() {
+    fun `an unlisted thread idle past the journal window is pruned, on disk too`() {
         repository().apply {
             receive(chat("keep", seq = 1, sessionId = "s1"))
-            receive(chat("gone", seq = 2, sessionId = "s2"))
-            retainSessions(setOf("s1"))
+            receive(chat("gone", seq = 2, sessionId = "s2", at = NOW - DAY - 1))
+            retainSessions(setOf("s1"), now = NOW)
         }
 
         val restarted = repository()
@@ -115,19 +115,44 @@ class ChatStoreTest {
         assertEquals(2L, restarted.lastSeq())
     }
 
+    // Regression: one short session_list (a desktop mid-restart listed 1 of 4)
+    // erased every other thread, and the high cursor meant nothing refilled them.
+    @Test
+    fun `a short session list does not erase a recent thread`() {
+        val repo = repository().apply {
+            receive(chat("recent", seq = 1, sessionId = "s2", at = NOW - 1_000))
+            retainSessions(setOf("s1"), now = NOW)
+        }
+
+        assertEquals(listOf("recent"), repo.thread("s2").map { it.text })
+    }
+
+    @Test
+    fun `a version 1 snapshot keeps its threads but reports cursor zero, so the journal refills`() {
+        file.writeText("""{"v":1,"lastSeq":42,"sentIds":[],"threads":{}}""")
+
+        assertEquals(0L, repository().lastSeq())
+    }
+
     private fun chat(
         text: String,
         seq: Long? = null,
         sessionId: String = "s1",
         originId: String? = null,
         replay: Boolean = false,
+        at: Long = seq ?: 0,
     ) = MobileRecord.Chat(
         sessionId = sessionId,
         sessionName = "work",
         text = text,
-        at = seq ?: 0,
+        at = at,
         seq = seq,
         originId = originId,
         replay = replay,
     )
+
+    private companion object {
+        const val DAY = 24L * 60 * 60 * 1000
+        const val NOW = 10L * DAY
+    }
 }

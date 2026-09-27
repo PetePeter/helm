@@ -6,211 +6,179 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The call, driven by a fake recogniser and a fake voice.
+ * The call, driven by a fake always-open microphone and a fake voice.
  *
- * Each case is a way a hands-free call goes wrong for someone who cannot look
- * at the screen: words sent twice, silence sent at all, Helm talking over itself
- * or hearing its own voice, a hang-up that leaves the microphone open.
+ * Each case is a way a phone-style call goes wrong for someone who cannot look
+ * at the screen: words sent twice, silence sent at all, the mic dropping between
+ * sentences, Helm unable to be interrupted, or its own echo taken as the user.
  */
 class CallControllerTest {
-    private val speech = FakeSpeechEngine()
+    private val mic = FakeCallMic()
     private val tts = FakeTtsEngine()
     private val sent = mutableListOf<String>()
     private var sendWorks = true
     private val controller = CallController(
-        speech = speech,
+        mic = mic,
         tts = tts,
         send = { text -> sent += text; sendWorks },
         sendFailedLine = SEND_FAILED,
     )
 
     @Test
-    fun `a finalised utterance is sent once and listening carries on`() {
+    fun `the mic opens once and stays open across utterances`() {
         controller.start()
 
-        speech.emitPartial("check the")
-        speech.emitFinal("check the build")
+        mic.partial("check the")
+        mic.final("check the build")
+        mic.final("and run the tests")
 
-        assertEquals(listOf("check the build"), sent)
+        assertEquals(listOf("check the build", "and run the tests"), sent)
+        assertEquals(1, mic.startCount)
+        assertTrue(mic.open)
         assertEquals(CallPhase.Listening, controller.state.value.phase)
-        // The platform closed the utterance; the call is not over, so the mic reopens.
-        assertEquals(2, speech.startCount)
     }
 
     @Test
     fun `an empty or whitespace final is never sent`() {
         controller.start()
 
-        speech.emitFinal("")
-        speech.emitFinal("   ")
+        mic.final("")
+        mic.final("   ")
 
         assertTrue(sent.isEmpty())
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
     }
 
     @Test
-    fun `a reply is spoken with the mic paused, and the mic reopens after`() {
+    fun `a reply is spoken while the mic stays open`() {
         controller.start()
 
         controller.onReply("on it")
 
         assertEquals(listOf("on it"), tts.spoken)
         assertEquals(CallPhase.Speaking, controller.state.value.phase)
-        // Paused with cancel(), which asks for no final: Helm's own voice can
-        // never come back as something the user "said".
-        assertEquals(1, speech.cancelCount)
-        val startsBefore = speech.startCount
+        assertTrue(mic.open)
 
         tts.finish()
 
         assertEquals(CallPhase.Listening, controller.state.value.phase)
-        assertEquals(startsBefore + 1, speech.startCount)
+        assertEquals(1, mic.startCount)
     }
 
     @Test
-    fun `a final arriving while speaking is not sent`() {
+    fun `talking over Helm stops it and what was said is sent`() {
+        controller.start()
+        controller.onReply("here is a long answer")
+        controller.onReply("and a second line")
+
+        mic.partial("wait stop")
+
+        assertEquals(1, tts.stopCount)
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+
+        mic.final("wait stop that")
+
+        assertEquals(listOf("wait stop that"), sent)
+        // The queued second line was dropped with the interrupted one.
+        assertEquals(listOf("here is a long answer"), tts.spoken)
+    }
+
+    @Test
+    fun `a single stray word while speaking is echo, not the user`() {
         controller.start()
         controller.onReply("on it")
 
-        speech.emitFinal("on it")
+        mic.partial("on")
+        mic.final("on")
 
+        assertEquals(0, tts.stopCount)
         assertTrue(sent.isEmpty())
+        assertEquals(CallPhase.Speaking, controller.state.value.phase)
     }
 
     @Test
-    fun `there is no barge-in - a partial while speaking neither stops the voice nor is heard`() {
+    fun `a late done from an interrupted line does not resume the queue`() {
         controller.start()
-        controller.onReply("the build is green")
+        controller.onReply("first")
+        controller.onReply("second")
+        val interruptedDone = tts.pendingDone()
 
-        speech.emitPartial("stop")
+        mic.partial("hold on")
+        interruptedDone()
 
-        // The mic is paused while speaking so Helm never hears itself; a stray
-        // partial from that window is not the user and must not cut the reply.
+        assertEquals(listOf("first"), tts.spoken)
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+    }
+
+    @Test
+    fun `replies queue behind the one being spoken, in order`() {
+        controller.start()
+
+        controller.onReply("one")
+        controller.onReply("two")
+        tts.finish()
+        tts.finish()
+
+        assertEquals(listOf("one", "two"), tts.spoken)
+        assertEquals(CallPhase.Listening, controller.state.value.phase)
+    }
+
+    @Test
+    fun `muted means heard but not sent, and never interrupts`() {
+        controller.start()
+        controller.setMuted(true)
+        controller.onReply("on it")
+
+        mic.partial("private remark here")
+        mic.final("private remark here")
+
+        assertTrue(sent.isEmpty())
         assertEquals(0, tts.stopCount)
-        assertEquals(CallPhase.Speaking, controller.state.value.phase)
         assertEquals("", controller.state.value.heard)
     }
 
     @Test
-    fun `replies queue and are spoken in order`() {
-        controller.start()
-
-        controller.onReply("first")
-        controller.onReply("second")
-        controller.onReply("third")
-
-        assertEquals(listOf("first"), tts.spoken)
-        tts.finish()
-        assertEquals(listOf("first", "second"), tts.spoken)
-        tts.finish()
-        tts.finish()
-        assertEquals(listOf("first", "second", "third"), tts.spoken)
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
-    }
-
-    @Test
-    fun `muted - finals are ignored`() {
-        controller.start()
-        controller.setMuted(true)
-
-        speech.emitFinal("private aside")
-
-        assertTrue(sent.isEmpty())
-        assertTrue(controller.state.value.muted)
-
-        controller.setMuted(false)
-        speech.emitFinal("now send this")
-        assertEquals(listOf("now send this"), sent)
-    }
-
-    @Test
-    fun `hang up stops both engines and ends the call`() {
-        controller.start()
-        controller.onReply("talking")
-
-        controller.hangUp()
-
-        assertEquals(CallPhase.Ended, controller.state.value.phase)
-        assertEquals(1, speech.releaseCount)
-        assertEquals(1, tts.releaseCount)
-        assertFalse(tts.speaking)
-    }
-
-    @Test
-    fun `a reply after hanging up is not spoken`() {
-        controller.start()
-        controller.hangUp()
-
-        controller.onReply("too late")
-
-        assertTrue(tts.spoken.isEmpty())
-        assertEquals(CallPhase.Ended, controller.state.value.phase)
-    }
-
-    @Test
-    fun `a send that fails is spoken as a short error and listening continues`() {
+    fun `a send the link cannot carry is said aloud`() {
         sendWorks = false
         controller.start()
 
-        speech.emitFinal("deploy it")
-
-        assertEquals(listOf(SEND_FAILED), tts.spoken)
-        tts.finish()
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
-    }
-
-    @Test
-    fun `a delivery failure reported later is spoken too`() {
-        controller.start()
-        speech.emitFinal("deploy it")
-
-        controller.onSendFailed()
+        mic.final("status please")
 
         assertEquals(listOf(SEND_FAILED), tts.spoken)
     }
 
     @Test
-    fun `a silence timeout keeps the call listening`() {
+    fun `hang up releases the mic and the voice, and late results are ignored`() {
         controller.start()
+        controller.onReply("on it")
 
-        speech.emitError(SpeechError.NoMatch)
+        controller.hangUp()
+        mic.final("too late")
 
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
-        assertEquals(2, speech.startCount)
-    }
-
-    @Test
-    fun `no match after partials sends what was heard and keeps listening`() {
-        controller.start()
-
-        speech.emitPartial("check the build")
-        speech.emitError(SpeechError.NoMatch)
-
-        assertEquals(listOf("check the build"), sent)
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
-        assertEquals(2, speech.startCount)
-    }
-
-    @Test
-    fun `no match after partials while muted sends nothing`() {
-        controller.start()
-        controller.setMuted(true)
-
-        speech.emitPartial("private words")
-        speech.emitError(SpeechError.NoMatch)
-
+        assertEquals(1, mic.releaseCount)
+        assertEquals(1, tts.releaseCount)
+        assertFalse(mic.open)
         assertTrue(sent.isEmpty())
-        assertEquals(CallPhase.Listening, controller.state.value.phase)
+        assertEquals(CallPhase.Ended, controller.state.value.phase)
     }
 
     @Test
-    fun `a denied microphone ends the call rather than looping`() {
+    fun `a mic that cannot run ends the call with an error`() {
         controller.start()
 
-        speech.emitError(SpeechError.PermissionDenied)
+        mic.fail("no recorder")
 
         assertEquals(CallPhase.Ended, controller.state.value.phase)
-        assertEquals(SpeechError.PermissionDenied, controller.state.value.error)
+        assertEquals(SpeechError.Audio, controller.state.value.error)
+    }
+
+    @Test
+    fun `nothing is spoken before the call starts or after it ends`() {
+        controller.onReply("early")
+        controller.start()
+        controller.hangUp()
+        controller.onReply("late")
+
+        assertTrue(tts.spoken.isEmpty())
     }
 
     private companion object {

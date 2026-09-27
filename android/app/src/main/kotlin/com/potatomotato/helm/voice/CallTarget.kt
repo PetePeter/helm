@@ -2,18 +2,9 @@ package com.potatomotato.helm.voice
 
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.Delivery
-import com.potatomotato.helm.data.HelmSession
 
 /** The desktop's role value for the one Helm operator session. */
 const val OPERATOR_ROLE = "operator"
-
-/**
- * Who "Call Helm" rings: the operator when the desktop has one, else the
- * session the user picked — and only while that session still exists.
- */
-fun resolveCallTarget(sessions: List<HelmSession>, pickedId: String?): String? =
-    sessions.firstOrNull { it.role == OPERATOR_ROLE }?.id
-        ?: pickedId?.takeIf { id -> sessions.any { it.id == id } }
 
 /** What one look at the target's thread found: replies to speak, sends that failed. */
 data class CallEvents(val replies: List<String>, val failures: Int)

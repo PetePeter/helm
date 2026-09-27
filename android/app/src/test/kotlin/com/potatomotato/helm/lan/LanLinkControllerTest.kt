@@ -435,6 +435,34 @@ class LanLinkControllerTest {
     }
 
     @Test
+    fun `switching desktops drops the live LAN link, dials the chosen one, and redials it after a drop`() {
+        val store = MemoryAddresses(mutableMapOf(
+            "A" to listOf("192.168.1.20:47475"),
+            "B" to listOf("192.168.1.30:47475"),
+        ))
+        val toA = FakeConnection()
+        val reachable = mutableMapOf("192.168.1.20:47475" to toA, "192.168.1.30:47475" to FakeConnection())
+        val dialer = FakeDialer(reachable)
+        val pumps = PumpQueue()
+        val schedule = ManualSchedule()
+        val controller = LanLinkController(store, dialer, pumps, schedule = schedule)
+        controller.resume(listOf("A", "B"))
+
+        controller.switchTo("B")
+
+        assertTrue(toA.closed)
+        assertEquals(listOf("192.168.1.20:47475", "192.168.1.30:47475"), dialer.attempts)
+
+        // A's pump unwinds late; B's link then drops and the redial is for B.
+        pumps.bodies[0]()
+        reachable["192.168.1.30:47475"] = FakeConnection()
+        pumps.bodies[1]()
+        schedule.runNext()
+
+        assertEquals("192.168.1.30:47475", dialer.attempts.last())
+    }
+
+    @Test
     fun `resume falls through an unreachable desktop and retries target the one that linked`() {
         val store = MemoryAddresses(mutableMapOf(
             "A" to listOf("192.168.1.20:47475"),

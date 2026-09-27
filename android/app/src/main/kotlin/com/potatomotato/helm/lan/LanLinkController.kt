@@ -270,6 +270,19 @@ class LanLinkController(
     }
 
     /**
+     * The user chose [machineId] in the desktops list: drop whatever LAN link
+     * is up and dial that desktop. It also becomes who a redial is for, so a
+     * drop comes back to the chosen desktop rather than the one it replaced.
+     */
+    fun switchTo(machineId: String): Boolean {
+        if (stopped) return false
+        closeSession()
+        lastMachineId = machineId
+        retryDelayMs = RETRY_MIN_MS
+        return tryConnect(machineId)
+    }
+
+    /**
      * A live session whose rank is no longer registered carries nothing, yet
      * blocks every dial as "already connected". Close it so the phone redials.
      */

@@ -1,26 +1,27 @@
 # Voice operator — "Call Helm"
 
-A phone-call-style voice conversation with Helm from the Android app. Tap
-**Call Helm**, talk; Helm says "on it" and later speaks the result. Built for
-driving: it runs through the car's Bluetooth, the earpiece or the speaker, and
-survives the screen turning off.
+A phone-call-style voice conversation with Helm from the Android app. A call
+is a mode of a chat: the composer's round voice button, set to 📞, rings that
+session and the composer turns into the call's controls. Talk; Helm says "on it"
+and later speaks the result. Built for driving: it runs through the car's
+Bluetooth, the handset or the speaker, and survives the screen turning off.
 
-**Hey Helm** is the opt-in standby: an on-device wake word that starts a
-call hands-free — see [below](#hey-helm--standby).
+It is full duplex like a phone call, not a walkie-talkie: the mic stays open
+while Helm speaks, and talking over Helm stops it.
 
 This page covers the phone half (P-0834, P-0835), the desktop's
 [operator session](#the-operator-session--helm) (P-0833) and
 [desktop voice](#desktop-voice) (P-0836). With no operator
-configured, a call targets a session the user picks.
+configured, any session's chat can be called.
 
 ## Shape
 
 ```mermaid
 graph LR
     subgraph Phone
-        UI[CallScreen] -- intents --> SVC[VoiceCallService<br/>FGS: microphone]
+        UI[ChatScreen<br/>CallPanel in the composer] -- intents --> SVC[VoiceCallService<br/>FGS: microphone]
         SVC --> CC[CallController<br/>pure state machine]
-        CC --> STT[SpeechEngine<br/>AndroidSpeechEngine]
+        CC --> STT[CallMic<br/>VoskCallMic]
         CC --> TTS[TtsEngine<br/>AndroidTtsEngine]
         SVC -- sendChat --> CL[HelmClient]
         CL --> CR[ChatRepository<br/>target thread]
@@ -33,22 +34,32 @@ graph LR
 
 No new wire surface: an utterance is the same gated `session_send_text` a typed
 chat message is, and a reply is whatever lands in the target's chat thread. The
-call screen's transcript **is** that thread, so the call and the chat can never
-disagree.
+call is drawn inside that thread's chat, so the transcript **is** the thread and
+the call and the chat can never disagree.
 
-## Who is called — `resolveCallTarget`
+## Who is called
 
-1. The session whose `role` is `operator` in `session_list`, when there is one.
-2. Otherwise the session the user picked (📞 **Call** on its control sheet),
-   while that session still exists.
-3. Otherwise nobody.
+The session whose chat the call was started from — its composer's 📞, the 📞
+on its control sheet, or (for the operator) the 📞 on the Helm home tab. One
+call at a time: while a call is live, other chats' phone buttons go dark.
+
+## The composer's voice button
+
+One round button, Telegram-style, either 🎙 or 📞 (remembered):
+
+- 🎙 **hold** to dictate into the draft; **slide up** while holding to switch mode.
+- 📞 **tap** to call this session; **hold** to switch mode.
+
+While a call with the session is live, `CallPanel` replaces the composer:
+status, what was heard, Handset / Speaker / Bluetooth, Mute, Hang up. Leaving
+the chat does not hang up — like a phone app; the notification can.
 
 ## The Helm home tab
 
 The operator is the FIRST entry of the phone's home dropdown — **Helm**, then
 Sessions, Plans, Contexts (`HomeTab`; Sessions stays the default). The Helm tab
 is `ui/operator/OperatorSection.kt` — status dot, last reply (tap → the full
-thread), 📞 Call, the Hey Helm switch — with the operator's chat thread below
+thread), 📞 Call — with the operator's chat thread below
 it, the same `ChatScreen` a session's Chat tab uses. Seeing it there counts as
 reading it (unread clears). The operator session is filtered OUT of the Sessions
 list (`withoutOperator`), so it is shown in one place only.
@@ -59,15 +70,13 @@ graph TD
     Q -->|operator present| On["On: name · activity dot · last reply"]
     Q -->|none| Off["Off: 'enable it in desktop Settings > Operator'"]
     On -->|tap| Chat[operator chat thread]
-    On --> Call[📞 → CallScreen]
+    On --> Call[📞 → call in the operator chat below]
     On --> Thread[operator chat below the section]
-    Sec[Hey Helm switch] --> Standby[VoiceCallService standby]
 ```
 
 The last reply is the newest non-phone row of the operator's thread — the same
-journal the chat screen reads. The 📞 appears only when an operator
-exists (or a call is live); without one, a picked session is still callable
-from its control sheet. The phone matches the literal string
+journal the chat screen reads. The 📞 appears only when an operator exists and
+no call is live; any session is still callable from its own chat. The phone matches the literal string
 `"operator"` (`CallTarget.kt`), so that value is a wire contract.
 
 ## The operator session — "Helm"
@@ -201,42 +210,51 @@ graph LR
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Listening: start
+    Idle --> Listening: start (mic opens once)
     Listening --> Sending: non-empty final (unmuted)
     Sending --> Listening: carried
     Sending --> Speaking: send failed (spoken error)
-    Listening --> Speaking: reply arrives (mic paused)
+    Listening --> Speaking: reply arrives (mic stays open)
     Speaking --> Speaking: next queued reply
     Speaking --> Listening: queue empty
-    Listening --> Ended: hang up / non-retryable STT error
+    Speaking --> Listening: barge-in (2+ words heard)
+    Listening --> Ended: hang up / mic failure
     Speaking --> Ended: hang up
 ```
 
 Why each rule exists:
 
-- **Continuous listening.** The platform closes an utterance on every pause, so
-  each final is sent once and the mic reopens.
+- **One open mic.** `CallMic` is a single stream from pick-up to hang-up. The
+  old per-utterance `SpeechRecognizer` restarted on every pause, grabbed audio
+  focus on each restart (which churned the Bluetooth headset's call link) and
+  could not listen while Helm spoke.
 - **Silence is never sent.** Empty or whitespace finals are dropped.
-- **Heard, instantly.** Each send plays a short ack tone on the call route, so
-  the caller knows they were heard while the operator's reply is seconds away.
-  The end-of-speech window is 1.2s (a split sentence costs a second message,
-  not lost words) and TTS runs at 1.15×. `speech ended` / `speech final` /
-  `call sending` / `call target replied` / `text to speech speaking` log lines
-  give the per-turn latency breakdown.
-- **Mic paused while speaking.** `cancel()` (not `stop()`) so no final follows —
-  Helm cannot hear its own voice and send it back as the user's words.
-- **No barge-in.** Because the mic is paused, the user cannot talk over a
-  reply; anything heard while speaking is ignored. Real barge-in needs echo
-  cancellation and a real engine behind `SpeechEngine` — a later plan.
+- **Heard, instantly.** Each send plays a short ack tone on the call route.
+  TTS runs at 1.15×. `call sending` / `call target replied` /
+  `text to speech speaking` / `call barge-in` log lines give the per-turn trace.
+- **Barge-in.** Helm speaks with the mic open; a partial of 2+ words stops it,
+  drops what was queued, and what the user says is sent. One stray word while
+  speaking is taken as residual echo and ignored — echo removal itself is the
+  recorder's job (below).
 - **Replies queue in order**, including ones that arrive mid-send.
-- **Mute** = heard but not sent.
+- **Mute** = heard but not sent, and a muted user never interrupts.
 - **Send failures are spoken** ("That did not send.") and the call keeps going.
-- **Retryable STT errors** (silence, busy, network) keep the line open; a denied
-  microphone or missing recogniser ends the call instead of looping. A
-  retryable error after partials sends what was heard first — some
-  recognisers close an utterance with NO_MATCH rather than a final. The
-  engine drops a failed recogniser *before* reporting the error, so the
-  restart issued from inside `onError` gets a fresh instance.
+- **A mic that cannot run** (no recorder, no model) ends the call with an error.
+
+## The call mic — `VoskCallMic`
+
+One `AudioRecord` as `VOICE_COMMUNICATION` (so the platform's call echo
+canceller applies; `AcousticEchoCanceler` and `NoiseSuppressor` are enabled
+when present), 16 kHz mono in 100 ms frames, fed to an offline
+[Vosk](https://alphacephei.com/vosk/) recogniser. Partials drive barge-in;
+finals are utterances. Nothing leaves the phone but the recognised text.
+
+**The model** is `vosk-model-small-en-us-0.15` (~40 MB zip, English only). It
+is not checked in: the Gradle `voskModel` task downloads it once into
+`android/app/build/vosk/` and unpacks it into generated assets with a `uuid`
+file; on first call it is unpacked to `filesDir` (`StorageService.unpack`) and
+loaded once per process. The dictation mic (🎙) still uses the platform
+recogniser — it is per-utterance by nature.
 
 `CallFeed` turns the target thread into events: rows present at call start are
 history and never read out; each new agent row is a reply; each own row that
@@ -252,7 +270,8 @@ lifetime it:
   (only if the call actually began — a service that never began touches nothing);
 - requests transient audio focus as `USAGE_VOICE_COMMUNICATION` and abandons it;
   a refused request ends the call, and losing focus (e.g. a GSM call) hangs up;
-- routes via `setCommunicationDevice` (API 31+) or speakerphone/SCO (older);
+- routes via `setCommunicationDevice` (API 31+) or speakerphone/SCO (older), so
+  the recorder and the voice share the call route (handset, speaker, Bluetooth);
 - speaks TTS as `USAGE_VOICE_COMMUNICATION`, so replies follow the call route.
 
 Route choice is the pure `pickAudioRoute`: keep the current route while it is
@@ -261,72 +280,6 @@ audio device add/remove, so losing Bluetooth falls back to the earpiece.
 
 The notification carries a **Hang up** action. The call is not sticky: a killed
 call is never restarted behind the user's back.
-
-## Hey Helm — standby
-
-Off by default. The **Hey Helm** row on the Helm home tab switches it (asking for the
-microphone first); the choice persists in `PrefsHeyHelmStore` and is mirrored
-process-wide by `HeyHelmSetting`. While it is on and a target resolves (same
-`resolveCallTarget` as a call), `VoiceCallService` runs in standby with a
-"Listening for Hey Helm" notification whose **Stop** also turns the switch off.
-Off means no background mic: the service is stopped. The service observes
-`HeyHelmSetting` itself, so switching off stops standby (and cancels a live
-call's comeback) whatever the UI is doing. Installs from builds that left the
-switch on are reset to off once (`hey_helm_reset_off_v1`).
-
-Standby holds the mic with a `WakeWordEngine` — `VoskWakeWordEngine`, offline
-keyword spotting with [Vosk](https://alphacephei.com/vosk/) — and nothing
-else. No `SpeechRecognizer` runs during standby; it is used for in-call STT
-only. Nothing leaves the phone until the wake word fires.
-
-```mermaid
-flowchart LR
-    On[switch on + target] --> V[Vosk standby<br/>one AudioRecord, 16 kHz mono]
-    V -- unk or low confidence --> V
-    V -- "hey helm" --> W[close recorder · beep]
-    W --> C[full call to the standby target]
-    C -- hang up --> P{StandbyPolicy:<br/>switch still on?}
-    P -- yes --> V
-    P -- no --> X[stop · mic released]
-    V -- switch off / Stop --> X
-```
-
-- **Keyword spotting, not dictation.** Vosk's `SpeechService` reads ONE
-  `AudioRecord` continuously (16 kHz mono, `VOICE_RECOGNITION`) into a
-  recogniser whose grammar is only `["hey helm", "[unk]"]`: anything else
-  comes back as `[unk]`. No per-utterance recogniser churn, no platform beeps.
-- **False-wake guard** — `WakeDetector`, pinned by `WakeDetectorTest`: a FINAL
-  result must be exactly `hey helm`, every word must reach 0.75 confidence,
-  and a second detection within 2 s is ignored. A wake logs
-  `wake word detected`.
-- **A wake is a call.** It closes the recorder, beeps, and rings a full call to
-  the standby target, exactly as the Call button would. When the call ends,
-  standby comes back only if the switch is still on; otherwise the service
-  stops and logs `mic released`. The decision is `StandbyPolicy.resumeAfter`,
-  pinned by `StandbyPolicyTest`.
-- **Leaving the call screen hangs up.** Back, or the call screen's composition
-  going away, ends the call (a rotation does not — it rejoins). The mic is
-  never left open behind a screen the user has left.
-- **A failure turns the switch off.** If the model fails to unpack or the
-  recorder fails, standby ends and the switch goes off, so the UI never claims
-  it is listening.
-- **The row is always reachable while on**, even with no target, so ON can be
-  turned off. With no target the service stops but the switch stays on.
-- **No audio takeover.** Standby runs for hours, so it holds no audio focus, no
-  communication mode and no route — music keeps playing. **Calls win:**
-  starting a call during standby replaces it.
-
-**The model** is `vosk-model-small-en-us-0.15` (~40 MB zip). It is not checked
-in: the Gradle `voskModel` task downloads it once into `android/app/build/vosk/`
-and unpacks it into generated assets, with a `uuid` file. The model is
-unpacked to `filesDir` on first standby (`StorageService.unpack`, which uses
-the `uuid` to skip later copies) and loaded once per process. The release APK
-grew from 11.1 MB to 69.8 MB: ~41 MB of model, plus Vosk's native library for
-the two ARM ABIs the APK now ships (`abiFilters` = arm64-v8a, armeabi-v7a).
-
-**Caveats:** the mic indicator is on for as long as Hey Helm is on. Standby
-does not survive a reboot or a process kill — reopen the app. The small model
-is English only.
 
 ## Desktop voice
 
@@ -437,8 +390,7 @@ stateDiagram-v2
 - Not yet judged on a device: routing, screen-off survival, BT switching and
   hang-up from the notification need the manual adb check in P-0834's
   acceptance criteria.
-- Built-in STT only, requested offline; a phone with no downloaded language
-  pack reports a network error each utterance and the call keeps retrying.
-- No barge-in, as described above: wait for Helm to finish, or hang up.
-- Hey Helm (Vosk) is unjudged on a device: wake latency (~1 s target), false
-  wakes over 5 minutes of speech or TV, and the 30-minute screen-off run.
+- The small Vosk model is less accurate than Google's recogniser; a larger
+  model (~128 MB more) is the upgrade path.
+- Barge-in quality depends on the phone's echo canceller; on speaker, a loud
+  reply can still leak two words and cut itself off.

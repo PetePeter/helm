@@ -141,15 +141,12 @@ removes.
 - **Call Helm** — a full, phone-call-style voice call to the operator (the 📞 on the
   **Helm** home tab — first in the home dropdown — which also shows the
   operator's status, last reply and chat thread; the operator is not repeated
-  in the session list) or to any session (📞 Call on its control sheet).
+  in the session list) or to any session (the round voice button in its chat,
+  set to 📞 — hold 🎙 and slide up, or hold 📞, to switch). Full duplex: the mic
+  stays open and talking over Helm stops it.
   Each utterance is a gated `session_send_text`; replies in the target's thread
   are spoken back. Audio stays on the phone — speech in and out is on-device.
   See [voice-operator.md](voice-operator.md).
-- **Hey Helm** — opt-in standby (off by default; the switch on the Helm home tab).
-  Say "Hey Helm" to start a call to the operator. The wake word is on-device
-  Vosk keyword spotting, so nothing leaves the phone until it fires. After the
-  call it goes back to listening while the switch is on. See
-  [voice-operator.md](voice-operator.md#hey-helm--standby).
 - **Links** — a URL in agent-written text (chat, a context body, plan prose, an
   artifact) is tappable and opens in the system resolver. `LinkRules` is the one
   allow-list — `http`/`https` only — so a `javascript:`, `intent:`, `file:` or
@@ -598,8 +595,6 @@ decision or a known gap at the time of writing.
 - **Call Helm has not been judged on a device.** Audio routing, screen-off
   survival and Bluetooth switching are framework behaviour the JVM suite cannot
   reach; see [voice-operator.md](voice-operator.md#limitations).
-- **Hey Helm has not been judged on a device**: Vosk wake latency, the false-wake
-  rate, and the 30-minute screen-off run on a charger.
 - **The reply box has never been typed into on a phone.** Everything it decides
   is unit-tested through `ReplyDelivery`, but `RemoteInput` extraction, the
   heads-up presentation and the "not sent" rewrite are framework behaviour, and
