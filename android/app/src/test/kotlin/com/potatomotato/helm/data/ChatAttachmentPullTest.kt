@@ -159,6 +159,7 @@ class ChatRepositoryPullTest {
 
     private fun arriveWithFile(sizeBytes: Long = 6L): String {
         chats.receive(
+            DESK,
             MobileRecord.Chat(
                 sessionId = "s1",
                 sessionName = "work",
@@ -187,7 +188,7 @@ class ChatRepositoryPullTest {
 
     @Test
     fun `an ordinary message carries no file`() {
-        chats.receive(MobileRecord.Chat(sessionId = "s1", sessionName = "work", text = "hi", at = 1L))
+        chats.receive(DESK, MobileRecord.Chat(sessionId = "s1", sessionName = "work", text = "hi", at = 1L))
 
         assertNull(chats.thread("s1").last().attachment)
     }
@@ -197,6 +198,7 @@ class ChatRepositoryPullTest {
         // kind:'artifact' records carry artifactId too, and there is nothing to
         // pull: without an attachmentId the tile must not appear.
         chats.receive(
+            DESK,
             MobileRecord.Chat(
                 sessionId = "s1",
                 sessionName = "work",

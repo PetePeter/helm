@@ -119,6 +119,14 @@ class HelmClient(
     var machineId: String = ""
 
     /**
+     * The machineId of the desktop the link is up with — whose journal the chat
+     * cursor counts (see [ChatRepository]). Read from the pairing state on every
+     * use rather than stamped by [onLinkUp], because a relink can come up usable
+     * without that hook firing. Settable like [machineId], for the same reason.
+     */
+    var linkedDesktop: () -> String = { "" }
+
+    /**
      * The wire protocol the live link negotiated — 0 with no link. Uploads are a
      * protocol-4 feature, so the editor's attach toolbar greys from THIS rather
      * than from this build's own maximum: a protocol-3 desktop links fine and
@@ -1509,7 +1517,7 @@ class HelmClient(
             is MobileRecord.Chat ->
                 when (record.kind) {
                     null -> {
-                        chats.receive(record)
+                        chats.receive(linkedDesktop(), record)
                         alerts.onMessage(record)
                     }
                     RING_KIND -> ringer?.invoke(record) ?: alerts.onAlert(record)
@@ -1619,7 +1627,7 @@ class HelmClient(
      */
     private fun reportChatCursorIfNeeded(): Boolean {
         if (chatCursorReported && now() - chatCursorReportedAt < CURSOR_REPORT_FRESH_MS) return true
-        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq())) { outcome ->
+        val issued = call(METHOD_CHAT_CURSOR, linkedMapOf<String, Any>("seq" to chats.lastSeq(linkedDesktop()))) { outcome ->
             if (outcome is Outcome.Failed) chatCursorReported = false
         }
         chatCursorReported = issued

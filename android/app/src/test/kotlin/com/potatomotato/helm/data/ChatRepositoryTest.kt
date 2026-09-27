@@ -13,9 +13,9 @@ class ChatRepositoryTest {
 
     @Test
     fun `a reconnect backlog delivered in arrival order reads in the order it was written`() {
-        repository.receive(chat(text = "first", at = 10))
-        repository.receive(chat(text = "second", at = 20))
-        repository.receive(chat(text = "third", at = 30))
+        repository.receive(DESK, chat(text = "first", at = 10))
+        repository.receive(DESK, chat(text = "second", at = 20))
+        repository.receive(DESK, chat(text = "third", at = 30))
 
         assertEquals(listOf("first", "second", "third"), repository.thread("s1").map { it.text })
     }
@@ -26,7 +26,7 @@ class ChatRepositoryTest {
         // stamped with the phone clock sorted before every desktop message whose
         // `at` was ahead of it. Ordering is by arrival, never by `at`.
         repository.sending("s1", "go on", at = 100)
-        repository.receive(chat(text = "here you go", at = 165))
+        repository.receive(DESK, chat(text = "here you go", at = 165))
         repository.sending("s1", "thanks", at = 102)
 
         assertEquals(listOf("go on", "here you go", "thanks"), repository.thread("s1").map { it.text })
@@ -34,8 +34,8 @@ class ChatRepositoryTest {
 
     @Test
     fun `two identical messages in the same millisecond stay two messages`() {
-        repository.receive(chat(text = "done", at = 10))
-        repository.receive(chat(text = "done", at = 10))
+        repository.receive(DESK, chat(text = "done", at = 10))
+        repository.receive(DESK, chat(text = "done", at = 10))
 
         val thread = repository.thread("s1")
         assertEquals(2, thread.size)
@@ -44,7 +44,7 @@ class ChatRepositoryTest {
 
     @Test
     fun `an endless session cannot grow the thread without bound`() {
-        repeat(250) { repository.receive(chat(text = "line $it", at = it.toLong())) }
+        repeat(250) { repository.receive(DESK, chat(text = "line $it", at = it.toLong())) }
 
         val thread = repository.thread("s1")
         assertEquals(200, thread.size)
@@ -73,7 +73,7 @@ class ChatRepositoryTest {
 
     @Test
     fun `a voice attachment survives into the thread`() {
-        repository.receive(chat(text = "", at = 10).copy(filePath = "C:\\tmp\\note.ogg", voice = true))
+        repository.receive(DESK, chat(text = "", at = 10).copy(filePath = "C:\\tmp\\note.ogg", voice = true))
 
         val message = repository.thread("s1").single()
         assertEquals("C:\\tmp\\note.ogg", message.filePath)
@@ -83,7 +83,7 @@ class ChatRepositoryTest {
     @Test
     fun `removing a message deletes only the one it names and leaves the order intact`() {
         val first = repository.sending("s1", "carry on", at = 10)
-        repository.receive(chat(text = "here you go", at = 165))
+        repository.receive(DESK, chat(text = "here you go", at = 165))
         val third = repository.sending("s1", "thanks", at = 102)
 
         repository.remove("s1", first)

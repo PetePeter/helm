@@ -162,6 +162,9 @@ private fun InlineImage(image: MdBlock.Image) {
  * [annotate], so a link here opens exactly the way a link in an artifact does,
  * and it reuses [MarkdownRules.linksOnly], so markdown markers around it stay
  * literal characters rather than quietly gaining a second renderer.
+ *
+ * [linkColor] is for a surface already painted in the accent — the user's own
+ * chat bubble — where an accent link would vanish into its background.
  */
 @Composable
 fun LinkedText(
@@ -169,9 +172,10 @@ fun LinkedText(
     color: Color,
     style: TextStyle,
     modifier: Modifier = Modifier,
+    linkColor: Color = HelmColors.Accent,
 ) {
     Text(
-        text = annotate(MarkdownRules.linksOnly(text)),
+        text = annotate(MarkdownRules.linksOnly(text), linkColor),
         color = color,
         style = style,
         modifier = modifier,
@@ -192,10 +196,10 @@ fun LinkedText(
  * the honest outcome there — better than a crash on someone's phone.
  */
 @Composable
-private fun annotate(spans: List<MdSpan>): AnnotatedString {
+private fun annotate(spans: List<MdSpan>, linkColor: Color = HelmColors.Accent): AnnotatedString {
     val uriHandler = LocalUriHandler.current
     val linkStyles = TextLinkStyles(
-        style = SpanStyle(color = HelmColors.Accent, textDecoration = TextDecoration.Underline),
+        style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
     )
     return buildAnnotatedString {
         for (span in spans) {

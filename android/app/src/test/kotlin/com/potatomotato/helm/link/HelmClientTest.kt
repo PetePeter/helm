@@ -59,7 +59,10 @@ class HelmClientTest {
         send = { bytes -> if (linked) sent.add(bytes) else false },
         now = { clock },
         scheduler = scheduler,
-    )
+    ).also { it.linkedDesktop = { desktop } }
+
+    /** The machineId of the desktop the link is up with. */
+    private var desktop = "desk-1"
 
     @Test
     fun `a session list result lands in the repository`() {
@@ -243,6 +246,22 @@ class HelmClientTest {
         assertEquals("the build is green", client.chats.thread("s1").single().text)
         assertEquals(1, client.chats.thread("s2").size)
         assertFalse(client.chats.thread("s1").single().fromPhone)
+    }
+
+    /** Regression: a second desktop's live pushes were dropped under the first one's higher seq. */
+    @Test
+    fun `a chat record is counted against the desktop the link is up with`() {
+        desktop = "box"
+        client.onLinkUp()
+        client.onInbound(chatBytes(sessionId = "box-s", text = "box", at = 1, seq = 500))
+
+        desktop = "mac"
+        client.onLinkUp()
+        client.onInbound(chatBytes(sessionId = "mac-s", text = "from the mac", at = 2, seq = 11))
+
+        assertEquals("from the mac", client.chats.thread("mac-s").single().text)
+        assertEquals(11L, client.chats.lastSeq("mac"))
+        assertEquals(500L, client.chats.lastSeq("box"))
     }
 
     @Test
@@ -1373,6 +1392,7 @@ class HelmClientTest {
     @Test
     fun `link up reports the chat cursor the phone holds, as a number param`() {
         client.chats.receive(
+            "desk-1",
             com.potatomotato.helm.wire.MobileRecord.Chat(
                 sessionId = "s1", sessionName = "work", text = "kept", at = 1, seq = 12,
             ),
@@ -1384,6 +1404,23 @@ class HelmClientTest {
         val frame = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("__chat_cursor__", frame.getString("method"))
         assertEquals(12L, frame.getJSONObject("params").getLong("seq"))
+    }
+
+    @Test
+    fun `link up reports the cursor of the desktop it linked to, not another desktop's`() {
+        client.chats.receive(
+            "box",
+            com.potatomotato.helm.wire.MobileRecord.Chat(
+                sessionId = "box-s", sessionName = "work", text = "box", at = 1, seq = 500,
+            ),
+        )
+        sent.clear()
+
+        desktop = "mac"
+        assertTrue(client.onLinkUp())
+
+        val frame = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals(0L, frame.getJSONObject("params").getLong("seq"))
     }
 
     @Test

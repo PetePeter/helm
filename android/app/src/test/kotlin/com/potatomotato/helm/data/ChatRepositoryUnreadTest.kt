@@ -16,7 +16,7 @@ class ChatRepositoryUnreadTest {
         val store = MemoryUnreadStore()
         val repository = ChatRepository(store)
 
-        repository.receive(chat(text = "ping", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "ping", sessionId = "s1"))
 
         assertEquals(1, repository.unreadCounts.value["s1"])
         // And it lands in the store, so a process death cannot lose the badge.
@@ -28,7 +28,7 @@ class ChatRepositoryUnreadTest {
         val repository = ChatRepository(MemoryUnreadStore())
         repository.reading("s1")
 
-        repository.receive(chat(text = "still here", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "still here", sessionId = "s1"))
 
         assertTrue(repository.unreadCounts.value.isEmpty())
     }
@@ -37,8 +37,8 @@ class ChatRepositoryUnreadTest {
     fun `opening a thread clears the count it arrived with`() {
         val store = MemoryUnreadStore()
         val repository = ChatRepository(store)
-        repository.receive(chat(text = "one", sessionId = "s1"))
-        repository.receive(chat(text = "two", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "one", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "two", sessionId = "s1"))
 
         repository.reading("s1")
 
@@ -49,7 +49,7 @@ class ChatRepositoryUnreadTest {
     @Test
     fun `leaving a thread does not resurrect a cleared count`() {
         val repository = ChatRepository(MemoryUnreadStore())
-        repository.receive(chat(text = "hello", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "hello", sessionId = "s1"))
         repository.reading("s1")
 
         repository.reading(null)
@@ -60,9 +60,9 @@ class ChatRepositoryUnreadTest {
     @Test
     fun `two sessions count independently and markRead touches only the one it names`() {
         val repository = ChatRepository(MemoryUnreadStore())
-        repository.receive(chat(text = "alpha", sessionId = "s1"))
-        repository.receive(chat(text = "beta", sessionId = "s2"))
-        repository.receive(chat(text = "beta again", sessionId = "s2"))
+        repository.receive(DESK, chat(text = "alpha", sessionId = "s1"))
+        repository.receive(DESK, chat(text = "beta", sessionId = "s2"))
+        repository.receive(DESK, chat(text = "beta again", sessionId = "s2"))
 
         repository.markRead("s2")
 

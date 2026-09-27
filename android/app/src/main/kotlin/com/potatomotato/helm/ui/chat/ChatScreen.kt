@@ -305,6 +305,8 @@ private fun Bubble(
                         LinkedText(
                             text = message.text.ifEmpty { stringResource(R.string.chat_attachment) },
                             color = if (fromPhone) HelmColors.OnAccent else HelmColors.Txt,
+                            // Accent on the accent bubble is invisible; the underline carries it.
+                            linkColor = if (fromPhone) HelmColors.OnAccent else HelmColors.Accent,
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 // The mockup sets the me-bubble one weight heavier:
                                 // OnAccent on Accent needs it to hold up.

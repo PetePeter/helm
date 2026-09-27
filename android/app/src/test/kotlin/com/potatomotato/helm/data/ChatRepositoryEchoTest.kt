@@ -20,7 +20,7 @@ class ChatRepositoryEchoTest {
         repository.sending("s1", "on my way", at = 10)
         repository.sent("phone-machine:p2")
 
-        repository.receive(chat(text = "on my way", at = 11, seq = 3, originId = "phone-machine:p2"))
+        repository.receive(DESK, chat(text = "on my way", at = 11, seq = 3, originId = "phone-machine:p2"))
 
         // One row — the optimistic copy. A second would read as the user having
         // said it twice.
@@ -28,7 +28,7 @@ class ChatRepositoryEchoTest {
         // The cursor advanced BEFORE the drop: forgetting history this phone
         // holds is exactly the gap the cursor exists to close, and the echo is
         // history it now holds whether or not it was shown twice.
-        assertEquals(3L, repository.lastSeq())
+        assertEquals(3L, repository.lastSeq(DESK))
     }
 
     @Test
@@ -37,7 +37,7 @@ class ChatRepositoryEchoTest {
         repository.sending("s1", "from pixel", at = 10)
         repository.sent("phone-machine:p1")
 
-        repository.receive(chat(text = "from tablet", at = 11, seq = 4, originId = "tablet-machine:p1"))
+        repository.receive(DESK, chat(text = "from tablet", at = 11, seq = 4, originId = "tablet-machine:p1"))
 
         // The pixel copy is this phone's own optimistic row; the tablet's echo
         // lands beside it, NOT dropped by a sent id that was never its own.
@@ -53,10 +53,10 @@ class ChatRepositoryEchoTest {
 
         // An old desktop build replays by id alone; the drop must not depend on
         // the cursor having already covered it.
-        repository.receive(chat(text = "hi", at = 11, originId = "phone-machine:p1"))
+        repository.receive(DESK, chat(text = "hi", at = 11, originId = "phone-machine:p1"))
 
         assertEquals(1, repository.thread("s1").size)
-        assertEquals(0L, repository.lastSeq())
+        assertEquals(0L, repository.lastSeq(DESK))
     }
 
     @Test
@@ -67,7 +67,7 @@ class ChatRepositoryEchoTest {
         // Flood the bounded set well past any sane bound.
         for (i in 1..400) repository.sent("phone-machine:later$i")
 
-        repository.receive(chat(text = "old", at = 11, seq = 1, originId = "phone-machine:p0"))
+        repository.receive(DESK, chat(text = "old", at = 11, seq = 1, originId = "phone-machine:p0"))
 
         assertEquals(2, repository.thread("s1").size)
     }

@@ -25,21 +25,21 @@ class ChatRepositoryCursorTest {
     fun `a seq-bearing record advances the cursor`() {
         val repository = ChatRepository()
 
-        repository.receive(chat(text = "one", at = 10, seq = 4))
+        repository.receive(DESK, chat(text = "one", at = 10, seq = 4))
 
-        assertEquals(4L, repository.lastSeq())
+        assertEquals(4L, repository.lastSeq(DESK))
     }
 
     @Test
     fun `a fresh repository starts at zero, so a restart asks for the whole journal`() {
         val first = ChatRepository()
-        first.receive(chat(text = "kept", at = 10, seq = 7))
+        first.receive(DESK, chat(text = "kept", at = 10, seq = 7))
 
         // A brand-new repository — the post-restart shape. It holds nothing and
         // must say so, even though some earlier process had reached seq 7.
         val restarted = ChatRepository()
 
-        assertEquals(0L, restarted.lastSeq())
+        assertEquals(0L, restarted.lastSeq(DESK))
         assertEquals(emptyList<ChatMessage>(), restarted.thread("s1"))
     }
 
@@ -55,11 +55,11 @@ class ChatRepositoryCursorTest {
             chat(text = "agent 2", at = 3, seq = 3, sessionId = "s1"),
             chat(text = "agent 3", at = 4, seq = 4, sessionId = "s2"),
         )
-        journal.forEach(repository::receive)
+        journal.forEach { repository.receive(DESK, it) }
 
         assertEquals(listOf("agent 1", "agent 2"), repository.thread("s1").map { it.text })
         assertEquals(listOf("phone 1", "agent 3"), repository.thread("s2").map { it.text })
-        assertEquals(4L, repository.lastSeq())
+        assertEquals(4L, repository.lastSeq(DESK))
     }
 
     @Test
@@ -70,26 +70,26 @@ class ChatRepositoryCursorTest {
         // seq 5 lands first and the cursor jumps OVER 3 and 4. The replayed gap
         // then arrives — flagged replay, at or below the cursor — and must
         // render, in seq order, or the conversation reads with a hole in it.
-        repository.receive(chat(text = "raced", at = 20, seq = 5))
-        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
-        repository.receive(chat(text = "old 4", at = 4, seq = 4, replay = true))
+        repository.receive(DESK, chat(text = "raced", at = 20, seq = 5))
+        repository.receive(DESK, chat(text = "old 3", at = 3, seq = 3, replay = true))
+        repository.receive(DESK, chat(text = "old 4", at = 4, seq = 4, replay = true))
 
         assertEquals(listOf("old 3", "old 4", "raced"), repository.thread("s1").map { it.text })
         // The gap was history, not a new high-water mark: filling it must not
         // drag the cursor backwards.
-        assertEquals(5L, repository.lastSeq())
+        assertEquals(5L, repository.lastSeq(DESK))
     }
 
     @Test
     fun `a replayed record already in the thread does not double it`() {
         val repository = ChatRepository()
 
-        repository.receive(chat(text = "raced", at = 20, seq = 5))
+        repository.receive(DESK, chat(text = "raced", at = 20, seq = 5))
         // The replay's own copy of the record that already won the race...
-        repository.receive(chat(text = "raced again", at = 5, seq = 5, replay = true))
+        repository.receive(DESK, chat(text = "raced again", at = 5, seq = 5, replay = true))
         // ...and the same gap record said twice, as a re-run replay would.
-        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
-        repository.receive(chat(text = "old 3", at = 3, seq = 3, replay = true))
+        repository.receive(DESK, chat(text = "old 3", at = 3, seq = 3, replay = true))
+        repository.receive(DESK, chat(text = "old 3", at = 3, seq = 3, replay = true))
 
         assertEquals(listOf("old 3", "raced"), repository.thread("s1").map { it.text })
     }
@@ -97,12 +97,12 @@ class ChatRepositoryCursorTest {
     @Test
     fun `a live record at or below the cursor is still dropped, so a race cannot double it`() {
         val repository = ChatRepository()
-        repository.receive(chat(text = "live", at = 10, seq = 5))
+        repository.receive(DESK, chat(text = "live", at = 10, seq = 5))
 
         // A LIVE record (no replay flag) at or below the cursor can only be a
         // duplicate of something already held: the desktop numbers forward, so
         // live fan-out never re-sends old news unflagged.
-        repository.receive(chat(text = "live again", at = 10, seq = 5))
+        repository.receive(DESK, chat(text = "live again", at = 10, seq = 5))
 
         assertEquals(listOf("live"), repository.thread("s1").map { it.text })
     }
@@ -110,29 +110,29 @@ class ChatRepositoryCursorTest {
     @Test
     fun `a replayed record below the cursor never moves it`() {
         val repository = ChatRepository()
-        repository.receive(chat(text = "live", at = 10, seq = 9))
+        repository.receive(DESK, chat(text = "live", at = 10, seq = 9))
 
-        repository.receive(chat(text = "old", at = 3, seq = 3, replay = true))
+        repository.receive(DESK, chat(text = "old", at = 3, seq = 3, replay = true))
 
         // The next report must keep asking after 9, not after the gap.
-        assertEquals(9L, repository.lastSeq())
+        assertEquals(9L, repository.lastSeq(DESK))
     }
 
     @Test
     fun `a record without a seq leaves the cursor untouched, so an old desktop degrades safely`() {
         val repository = ChatRepository()
-        repository.receive(chat(text = "numbered", at = 10, seq = 9))
+        repository.receive(DESK, chat(text = "numbered", at = 10, seq = 9))
 
-        repository.receive(chat(text = "unnumbered", at = 11))
+        repository.receive(DESK, chat(text = "unnumbered", at = 11))
 
-        assertEquals(9L, repository.lastSeq())
+        assertEquals(9L, repository.lastSeq(DESK))
         assertEquals(listOf("numbered", "unnumbered"), repository.thread("s1").map { it.text })
     }
 
     @Test
     fun `an unnumbered message is otherwise treated exactly like a numbered one`() {
         val repository = ChatRepository()
-        repository.receive(chat(text = "unnumbered", at = 11))
+        repository.receive(DESK, chat(text = "unnumbered", at = 11))
 
         assertEquals(1, repository.unreadCounts.value["s1"])
         assertEquals("unnumbered", repository.thread("s1").single().text)

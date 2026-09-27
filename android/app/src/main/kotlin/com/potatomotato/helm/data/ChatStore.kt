@@ -15,7 +15,8 @@ import java.util.concurrent.Executors
  */
 data class ChatSnapshot(
     val threads: Map<String, List<ChatMessage>>,
-    val lastSeq: Long,
+    /** The catch-up cursor per desktop machineId. */
+    val cursors: Map<String, Long>,
     /** This phone's recent originIds, so a replayed echo of its own words still drops. */
     val sentIds: List<String> = emptyList(),
 )
@@ -98,12 +99,15 @@ internal object ChatSnapshotJson {
      * 2: saved after the short-list pruning fix. A version 1 file may be missing
      * threads that pruning erased while its cursor stayed high, so it loads with
      * cursor zero: the journal replays in full and seq dedupe keeps what is held.
+     * 3: one cursor per desktop. A version 2 file's single cursor cannot be
+     * attributed to any one desktop, so it loads with no cursors — each desktop
+     * replays its journal once, deduped the same way.
      */
-    private const val VERSION = 2
+    private const val VERSION = 3
 
     fun encode(snapshot: ChatSnapshot): JSONObject = JSONObject().apply {
         put("v", VERSION)
-        put("lastSeq", snapshot.lastSeq)
+        put("cursors", JSONObject(snapshot.cursors))
         put("sentIds", JSONArray(snapshot.sentIds))
         put("threads", JSONObject().apply {
             for ((sessionId, thread) in snapshot.threads) {
@@ -142,10 +146,13 @@ internal object ChatSnapshotJson {
                 val rows = threads.getJSONArray(sessionId)
                 (0 until rows.length()).map { decodeRow(rows.getJSONObject(it)) }
             },
-            lastSeq = if (version >= VERSION) json.getLong("lastSeq") else 0L,
+            cursors = if (version >= VERSION) decodeCursors(json.getJSONObject("cursors")) else emptyMap(),
             sentIds = if (sentIds == null) emptyList() else (0 until sentIds.length()).map { sentIds.getString(it) },
         )
     }
+
+    private fun decodeCursors(json: JSONObject): Map<String, Long> =
+        json.keys().asSequence().associateWith { json.getLong(it) }
 
     private fun decodeRow(row: JSONObject): ChatMessage = ChatMessage(
         key = "",

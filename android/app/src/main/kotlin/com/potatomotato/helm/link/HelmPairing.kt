@@ -115,6 +115,7 @@ object HelmPairing {
         // The machineId the desktop prefixes onto an echoed reply's originId —
         // without it this phone cannot recognise its own words in a replay.
         client.machineId = PhoneIdentity.machineId(context)
+        client.linkedDesktop = { (controller?.state?.value as? PairingState.Linked)?.desktopId.orEmpty() }
         // Where a pulled chat file lands. Downloads, like an artifact download:
         // a file the user cannot find in the place they look for files has not
         // really arrived. Attached late for the same Context reason as above.

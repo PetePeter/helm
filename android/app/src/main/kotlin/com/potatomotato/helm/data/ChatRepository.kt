@@ -63,7 +63,12 @@ data class ChatMessage(
  * leave the conversation reading with exactly the hole the replay exists to
  * close.
  *
- * The catch-up cursor persists TOGETHER with the threads, as one snapshot. A
+ * The catch-up cursor is PER DESKTOP, keyed by its machineId: each desktop's
+ * journal numbers its own seq from 1, so one shared cursor let a busy desktop's
+ * high number swallow a quieter desktop's live records as "duplicates". Threads
+ * need no such key — session ids are already unique across desktops.
+ *
+ * The cursors persist TOGETHER with the threads, as one snapshot. A
  * cursor saved on its own would describe history the restarted process no
  * longer holds, and the link-up report of it would talk Helm out of the very
  * replay the restart needs. Saved with its threads, it only ever claims what
@@ -89,8 +94,8 @@ class ChatRepository(
 
     private var sequence = 0L
 
-    /** The catch-up cursor: the highest seq held, saved only beside its threads. */
-    private var lastSeqValue = 0L
+    /** The catch-up cursors: the highest seq held per desktop, saved only beside its threads. */
+    private var cursors: Map<String, Long> = emptyMap()
 
     /** The session whose thread is on screen, when there is one. */
     private var readingSessionId: String? = null
@@ -116,9 +121,9 @@ class ChatRepository(
     @Synchronized
     fun useChatStore(chatStore: ChatStore) {
         store = chatStore
-        if (lastSeqValue != 0L || _threads.value.isNotEmpty()) return
+        if (cursors.isNotEmpty() || _threads.value.isNotEmpty()) return
         val saved = chatStore.load() ?: return
-        lastSeqValue = saved.lastSeq
+        cursors = saved.cursors
         saved.sentIds.forEach { sentIds[it] = Unit }
         _threads.value = saved.threads.mapValues { (_, thread) ->
             thread.takeLast(MAX_THREAD).map { row ->
@@ -149,7 +154,7 @@ class ChatRepository(
      * The seq of the last chat message held — what the desktop replays after.
      * Survives a restart with the threads it counts; see the class doc.
      */
-    fun lastSeq(): Long = lastSeqValue
+    fun lastSeq(desktopId: String): Long = cursors[desktopId] ?: 0L
 
     /**
      * Record that a call carrying this phone's own words was SENT, so the echoed
@@ -196,11 +201,14 @@ class ChatRepository(
      * arrives at or below the cursor. Dropping it there loses the hole until
      * the app restarts, so a record flagged `replay` below the cursor is
      * FILLED into its thread instead — deduped by seq, cursor untouched.
+     *
+     * [desktopId] is the machineId of the desktop the record came from — the
+     * cursor it counts against.
      */
     @Synchronized
-    fun receive(record: MobileRecord.Chat) {
+    fun receive(desktopId: String, record: MobileRecord.Chat) {
         val seq = record.seq
-        if (seq != null && seq <= lastSeqValue) {
+        if (seq != null && seq <= lastSeq(desktopId)) {
             // A LIVE record at or below the cursor can only be a duplicate of
             // something already held: the desktop numbers forward, so live
             // fan-out never re-sends old news unflagged. Only a flagged replay
@@ -218,7 +226,7 @@ class ChatRepository(
         // sends share. A record WITHOUT a seq — an old desktop build, an alert
         // — updates nothing, so catch-up degrades to today's live-only
         // behaviour rather than to a cursor that claims history it never held.
-        if (seq != null) lastSeqValue = seq
+        if (seq != null) cursors = cursors + (desktopId to seq)
         // This phone's OWN words, echoed back from the journal. Dropped AFTER the
         // cursor advanced: the message is history this phone holds either way,
         // and a cursor that refused it would ask for it again on every link up.
@@ -226,7 +234,9 @@ class ChatRepository(
         // row, as typed, not two.
         // The cursor is saved WITH the row it counts (append persists), never
         // ahead of it — a cursor-only snapshot on disk would skip that row.
-        if (isOwnEcho(record)) {
+        // A row the thread already holds is the same kind of history: a cursor
+        // that was forgotten (a snapshot migration) replays what is on screen.
+        if (isOwnEcho(record) || (seq != null && holds(record.sessionId, seq))) {
             persist()
             return
         }
@@ -405,7 +415,7 @@ class ChatRepository(
         persist()
     }
 
-    private fun persist() = store.save(ChatSnapshot(_threads.value, lastSeqValue, sentIds.keys.toList()))
+    private fun persist() = store.save(ChatSnapshot(_threads.value, cursors, sentIds.keys.toList()))
 
     /** One write, to the flow the screens read and the store the app restarts from. */
     private fun setUnread(sessionId: String, count: Int) {
