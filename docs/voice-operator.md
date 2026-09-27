@@ -447,8 +447,9 @@ sequenceDiagram
   how to honour each — a call-back is a once scheduler self-timer.
 - **One retry.** The phone reports only ANSWERED (`__ring_answered__`, in-gate).
   No answer inside 45 s — declined, timed out, phone off — and Helm rings once
-  more 10 min later (`src/session/ring-retry.ts`); a second miss leaves an
-  attention alert instead. In memory: a restart drops a pending retry.
+  more 10 min later (`src/session/ring-retry.ts`). Each miss leaves a note in
+  the operator chat: the first says when Helm will call back (~HH:MM), the
+  second says there are no more retries. In memory: a restart drops a pending retry.
 - **Ear sensor.** On the earpiece a proximity wake lock darkens the screen at
   the ear; speaker or Bluetooth keeps it on. Released when the call ends.
 - **Fails legibly** when no phone takes the ring; the operator falls back to
