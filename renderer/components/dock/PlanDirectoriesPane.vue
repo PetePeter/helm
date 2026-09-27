@@ -14,10 +14,17 @@ import { sessionsState } from '../../screens/sessions-state.js';
 import { useAppStore } from '../../stores/app.js';
 import { buildPlannerDirectories, buildPlannerDirectorySource } from '../../screens/planner-directories.js';
 import { useHelmMainPaneContext } from '../../dock-pane-context.js';
+import { useNavigationStore } from '../../stores/navigation.js';
 
 const sidebar = useHelmMainPaneContext().sidebar;
 const appStore = useAppStore();
+// Not sidebar.onShowPlans: that always opens the ACTIVE session's directory.
+const navStore = useNavigationStore();
 const state = appStore.state;
+
+// The operator's own project holds its tasks; found through the running
+// operator rather than by project name, which the user may rename.
+const operatorDir = computed(() => state.sessions.find((session) => session.role === 'operator')?.workingDir);
 
 const directories = computed(() => {
   const plannerDirectories = buildPlannerDirectories(
@@ -37,6 +44,15 @@ const directories = computed(() => {
 
 <template>
   <div class="dock-pane-body">
+    <button
+      v-if="operatorDir"
+      class="spawn-btn plans-tasks-btn focusable"
+      title="The operator's in-flight tasks"
+      @click="navStore.openPlan(operatorDir)"
+    >
+      <span class="spawn-icon">🧭</span>
+      <span class="spawn-label">Operator tasks</span>
+    </button>
     <PlansGrid
       :directories="directories"
       :focus-index="sessionsState.plansFocusIndex"
@@ -45,3 +61,10 @@ const directories = computed(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.plans-tasks-btn {
+  width: 100%;
+  margin-bottom: 8px;
+}
+</style>

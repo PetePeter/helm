@@ -39,6 +39,9 @@ import {
   onPlanUpdateSequence,
   bindPlanScreenToDir,
   planScreenState,
+  planSessionNames,
+  watchTaskTimers,
+  openPlanRef,
   setPlanScreenPaneMounted,
 } from '../../plans/plan-screen.js';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
@@ -59,7 +62,11 @@ watch(() => appStore.activeSessionDir, () => {
   void bindPlanScreenToDir(appStore.activeSessionDir);
 });
 
-onUnmounted(() => { setPlanScreenPaneMounted(false); });
+const stopTaskTimers = watchTaskTimers();
+onUnmounted(() => {
+  setPlanScreenPaneMounted(false);
+  stopTaskTimers();
+});
 </script>
 
 <template>
@@ -80,6 +87,10 @@ onUnmounted(() => { setPlanScreenPaneMounted(false); });
     :related-transient-ids="planScreenState.relatedTransientIds"
     :filters="planScreenState.filters"
     :attachment-has-any="planScreenState.attachmentHasAny"
+    :task-next-checks="planScreenState.taskNextChecks"
+    :session-names="planSessionNames()"
+    @task-watch="openPlanRef"
+    @task-builder="navStore.navigateToSession($event)"
     @close="navStore.closePlan()"
     @pop-out="planWorkspace.onPlanPopOut()"
     @add-node="onPlanAddNode()"

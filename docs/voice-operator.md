@@ -445,6 +445,13 @@ carry the task block plus the builder's name and next check, so the phone and PC
 cards need no full record. After every compaction SessionStart re-lists the
 operator's open tasks.
 
+**On the PC** the Plans pane shows an "Operator tasks" button while the operator
+runs (found via its session's working dir, not the renameable project name). A
+task card replaces its description with 👷 builder (click: go to the session),
+📋 watched plan (click: open it in its own canvas), ⏰ next check, and ⏳
+waiting-on. "no timer" is shown deliberately: a task nobody will check is a
+dropped ask.
+
 ```mermaid
 sequenceDiagram
     participant U as User

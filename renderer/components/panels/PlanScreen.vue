@@ -13,6 +13,8 @@ import type { PlanCleanupKind } from '../../plans/plan-screen.js';
 import SequencePanel from './SequencePanel.vue';
 import { isEditableElement } from '../../input/input-ownership.js';
 import { getPlanStatusColor } from '../../state-colors.js';
+import { taskCardLines } from '../../plans/task-card.js';
+import { taskCardOf as taskCardSourceOf } from '../../../src/session/operator-tasks.js';
 
 const NODE_W = 200;
 const NODE_H = 102;
@@ -51,6 +53,12 @@ const props = withDefaults(defineProps<{
     auto: TriState;
   };
   attachmentHasAny?: Record<string, boolean>;
+  /** Operator task plan id -> next check (epoch ms). */
+  taskNextChecks?: Record<string, number>;
+  /** Session id -> display name, for a task's builder. */
+  sessionNames?: Record<string, string>;
+  /** False where no session can be switched to (the pop-out): the builder shows as text. */
+  canOpenSession?: boolean;
   canPopOut?: boolean;
 }>(), {
   sequences: () => [],
@@ -66,6 +74,9 @@ const props = withDefaults(defineProps<{
     hasAttachment: { yes: 'either', no: 'either' },
     auto: 'either',
   }),
+  taskNextChecks: () => ({}),
+  sessionNames: () => ({}),
+  canOpenSession: true,
   canPopOut: true,
 });
 
@@ -95,6 +106,8 @@ const emit = defineEmits<{
   applyNode: [id: string];
   completeNode: [id: string];
   deleteNode: [id: string];
+  taskBuilder: [sessionId: string];
+  taskWatch: [planRef: string];
   addDep: [fromId: string, toId: string];
   removeDep: [fromId: string, toId: string];
   toggleRelatedFocus: [];
@@ -661,6 +674,17 @@ function onPlanKeydown(event: KeyboardEvent): void {
 onUnmounted(() => {
   if (viewportSaveTimer) clearTimeout(viewportSaveTimer);
 });
+
+/** An operator task's card lines, in place of its description. */
+function taskCardOf(item: PlanItem) {
+  const card = taskCardSourceOf(
+    item.id,
+    item.task ?? {},
+    (id) => props.sessionNames[id],
+    (id) => props.taskNextChecks[id],
+  );
+  return taskCardLines(card, Date.now());
+}
 </script>
 
 <template>
@@ -878,7 +902,32 @@ onUnmounted(() => {
             </div>
           </foreignObject>
           <foreignObject x="8" y="42" width="184" :height="item.stateInfo || item.autoImplement || contextCountByPlanId.get(item.id) ? 24 : 34">
-            <div xmlns="http://www.w3.org/1999/xhtml" class="plan-node__desc">{{ item.description }}</div>
+            <div v-if="item.task" xmlns="http://www.w3.org/1999/xhtml" class="plan-node__task">
+              <div class="plan-node__task-line">
+                <template v-if="taskCardOf(item).builder">
+                  <button
+                    v-if="canOpenSession && item.task.builderSessionId"
+                    type="button"
+                    class="plan-node__task-link"
+                    title="Go to the builder session"
+                    @click.stop="emit('taskBuilder', item.task.builderSessionId)"
+                  >👷 {{ taskCardOf(item).builder }}</button>
+                  <span v-else>👷 {{ taskCardOf(item).builder }}</span>
+                </template>
+                <button
+                  v-if="item.task.watchPlanId"
+                  type="button"
+                  class="plan-node__task-link"
+                  title="Open the watched plan"
+                  @click.stop="emit('taskWatch', item.task.watchPlanId)"
+                >📋 {{ item.task.watchPlanId }}</button>
+              </div>
+              <div class="plan-node__task-line">
+                <span>⏰ {{ taskCardOf(item).nextCheck }}</span>
+                <span v-if="item.task.waitingOn">⏳ {{ item.task.waitingOn }}</span>
+              </div>
+            </div>
+            <div v-else xmlns="http://www.w3.org/1999/xhtml" class="plan-node__desc">{{ item.description }}</div>
           </foreignObject>
           <foreignObject v-if="item.stateInfo || item.autoImplement || item.completionRecap || contextCountByPlanId.get(item.id) || attachmentHasAny?.[item.id]" x="8" y="78" width="184" height="18">
             <div xmlns="http://www.w3.org/1999/xhtml" class="plan-node__bottom-row">
@@ -1155,6 +1204,31 @@ onUnmounted(() => {
   user-select: none;
 }
 
+.plan-node__task {
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 13px;
+  overflow: hidden;
+}
+.plan-node__task-line {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-node__task-link {
+  cursor: pointer;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-node__task-link:focus-visible { outline: 1px solid var(--accent); }
+.plan-node__task-link:hover { text-decoration: underline; }
 .plan-node__desc {
   color: var(--text-primary);
   font-size: 11px;

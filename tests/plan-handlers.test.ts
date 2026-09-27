@@ -143,6 +143,12 @@ describe('plan IPC handlers', () => {
     expect(missing).toBeNull();
   });
 
+  it('plan:getItem resolves a P-00xx ref, so a task card can open its watched plan', async () => {
+    const created = await handlers.get('plan:create')!({}, '/proj', 'Watched', '');
+    const found = await handlers.get('plan:getItem')!({}, created.humanId);
+    expect(found.id).toBe(created.id);
+  });
+
   // ─── Dependencies ──────────────────────────────────────
 
   it('plan:addDep adds a dependency and returns true', async () => {

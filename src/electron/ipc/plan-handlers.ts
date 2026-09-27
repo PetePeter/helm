@@ -165,8 +165,10 @@ export function setupPlanHandlers(
     return exported?.dependencies ?? [];
   });
 
+  // Accepts a P-00xx ref too: an operator task names its watched plan either way.
   ipcMain.handle('plan:getItem', (_event, id: string) => {
-    return planManager.getItem(id);
+    const resolved = planManager.resolveItemRef(id);
+    return resolved.status === 'found' ? resolved.item : null;
   });
 
   ipcMain.handle('plan:sequence-list', (_event, dirPath: string) => {

@@ -9,6 +9,9 @@ import {
   hidePlanScreen,
   refreshCanvasIfVisible,
   planScreenState,
+  planSessionNames,
+  watchTaskTimers,
+  openPlanRef,
   onPlanAddDependency,
   onPlanAddContext,
   onPlanAddNode,
@@ -131,7 +134,9 @@ onMounted(async () => {
   window.addEventListener('focus', loadSessions);
 });
 
+const stopTaskTimers = watchTaskTimers();
 onUnmounted(() => {
+  stopTaskTimers();
   offPlanChanged?.();
   offSessionUpdated?.();
   offSessionSpawned?.();
@@ -194,6 +199,10 @@ onUnmounted(() => {
       :related-transient-ids="planScreenState.relatedTransientIds"
       :filters="planScreenState.filters"
       :attachment-has-any="planScreenState.attachmentHasAny"
+      :task-next-checks="planScreenState.taskNextChecks"
+      :session-names="planSessionNames()"
+      :can-open-session="false"
+      @task-watch="openPlanRef"
       :can-pop-out="false"
       @close="closeWindow()"
       @add-node="onPlanAddNode()"

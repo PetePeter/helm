@@ -18,9 +18,12 @@ import {
   configClient,
   contextsClient,
   dialogClient,
+  eventsClient,
   incomingClient,
   plansClient,
+  schedulerClient,
 } from '../ipc/clients.js';
+import { nextCheckAt } from '../../src/session/operator-tasks.js';
 
 export type TriState = 'either' | 'yes' | 'no';
 type TypeFilterKey = 'bug' | 'feature' | 'research' | 'untyped';
@@ -63,6 +66,8 @@ export const planScreenState = reactive({
   relatedTransientIds: new Set<string>(),
   filters: makeDefaultFilters(),
   attachmentHasAny: {} as Record<string, boolean>,
+  /** Operator task plan id -> epoch ms of its next check timer run. */
+  taskNextChecks: {} as Record<string, number>,
 });
 
 interface SetPlanDataOptions {
@@ -363,7 +368,11 @@ async function loadPlanData(dirPath: string, context?: ViewMountContext, options
     : {};
   if ((context && !context.isActive()) || loadToken !== latestPlanDataLoadToken) return;
 
+  const taskNextChecks = await loadTaskNextChecks(items);
+  if ((context && !context.isActive()) || loadToken !== latestPlanDataLoadToken) return;
+
   planScreenState.attachmentHasAny = attachmentHasAny;
+  planScreenState.taskNextChecks = taskNextChecks;
   setPlanData(items, deps, sequences, contexts, options);
 
   syncSelection();
@@ -376,6 +385,42 @@ async function loadPlanData(dirPath: string, context?: ViewMountContext, options
   } else if (isPlanHelpVisible()) {
     hidePlanHelpModal();
   }
+}
+
+/** Next check per operator task; the scheduler is only asked when a task is on screen. */
+async function loadTaskNextChecks(items: PlanItem[]): Promise<Record<string, number>> {
+  if (!items.some((item) => item.task)) return {};
+  const timers = (await schedulerClient.scheduledTaskList()) ?? [];
+  const checks: Record<string, number> = {};
+  for (const item of items) {
+    const at = item.task ? nextCheckAt(item.id, timers) : undefined;
+    if (at !== undefined) checks[item.id] = at;
+  }
+  return checks;
+}
+
+/** Keep task cards' next checks live as timers are created, run or cancelled. Returns the unsubscribe. */
+export function watchTaskTimers(): () => void {
+  const off = eventsClient.onScheduledTaskChanged?.(() => {
+    void loadTaskNextChecks(planScreenState.items).then((checks) => { planScreenState.taskNextChecks = checks; });
+  });
+  return () => off?.();
+}
+
+/** Session id -> name, so a task card can name its builder. */
+export function planSessionNames(): Record<string, string> {
+  return Object.fromEntries(state.sessions.map((session) => [session.id, session.name]));
+}
+
+/** Open a plan by UUID or P-00xx in its own directory's canvas, selected. */
+export async function openPlanRef(ref: string): Promise<void> {
+  const item = await plansClient.planGetItem(ref);
+  if (!item) {
+    showBriefNotice(`Plan ${ref} not found`);
+    return;
+  }
+  await showPlanScreen(item.dirPath);
+  selectNodeById(item.id);
 }
 
 function selectNodeById(id: string | null): void {
@@ -522,6 +567,7 @@ function clearPlanDataForSession(): void {
   planScreenState.sequences = [];
   planScreenState.contexts = [];
   planScreenState.attachmentHasAny = {};
+  planScreenState.taskNextChecks = {};
   planScreenState.layout = { nodes: [], width: 0, height: 0 };
   planScreenState.selectedId = null;
   planScreenState.selectedContextId = null;

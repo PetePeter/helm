@@ -42,7 +42,8 @@ export function nextCheckAt(planId: string, timers: readonly ScheduledTask[]): n
   let earliest: number | undefined;
   for (const t of timers) {
     if (t.status !== 'pending' || t.enabled === false || !t.planIds.includes(planId)) continue;
-    const at = (t.nextRunAt ?? t.scheduledTime).getTime();
+    // new Date(): rows that crossed IPC or JSON may carry ISO strings.
+    const at = new Date(t.nextRunAt ?? t.scheduledTime).getTime();
     if (earliest === undefined || at < earliest) earliest = at;
   }
   return earliest;
