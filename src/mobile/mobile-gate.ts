@@ -5,7 +5,8 @@
  * pocket, so it gets the same treatment the fleet gives a peer: deny by default,
  * no impersonation, rate limited. For every inbound call it, IN ORDER:
  *   1. rejects explicitly disabled devices,
- *   2. answers (never dispatches) the reserved permitted-tools meta-method,
+ *   2. answers (never dispatches) the reserved meta-methods — permitted tools,
+ *      chat cursor, and the user's own restart,
  *   3. rejects hard-denied and structurally unreachable tools — even under a
  *      wildcard `*` allow-list,
  *   4. rejects ownership-gated tools on sessions the device did not create,
@@ -56,6 +57,21 @@ export const RESERVED_MOBILE_TOOLS_METHOD = '__mobile_tools__';
  * underscores keep it clear of every real tool name.
  */
 export const RESERVED_CHAT_CURSOR_METHOD = '__chat_cursor__';
+
+/**
+ * A third reserved meta-method: the user restarting Helm from their phone.
+ *
+ * WHY NOT `helm_restart`: that tool stays hard-denied. It is gated on a handover
+ * artifact owned by the CALLING AI session — a phone proxy owns none and cannot
+ * satisfy it honestly — and the same set keeps fleet peers out. A paired phone
+ * is the user's own hand, like Telegram's `/restart`, so it gets the user's
+ * restart (`restartHelm(resume)`), not the AI's. Still gated by the device's
+ * allow-list under the `helm_restart` name, so a narrowed phone loses it.
+ */
+export const RESERVED_RESTART_HELM_METHOD = '__restart_helm__';
+
+/** The allow-list name a phone's restart is granted under. */
+const RESTART_GRANT = 'helm_restart';
 
 /**
  * Tool-name prefixes that are STRUCTURALLY UNREACHABLE from a phone.
@@ -204,6 +220,11 @@ export interface MobileGateDeps {
    * are denied outright — the safe default.
    */
   sessionLookup?: MobileSessionLookup;
+  /**
+   * The user's restart (HelmControlService.restartHelm). Absent means the
+   * restart meta-method is denied — the safe default.
+   */
+  restartHelm?: (resume: boolean) => unknown;
 }
 
 export class MobileGate {
@@ -211,12 +232,14 @@ export class MobileGate {
   private readonly dispatch: MobileGateDeps['dispatch'];
   private readonly rateLimiter: PeerRateLimiter;
   private readonly sessionLookup: MobileSessionLookup | undefined;
+  private readonly restartHelm: MobileGateDeps['restartHelm'];
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
     this.dispatch = deps.dispatch;
     this.rateLimiter = deps.rateLimiter;
     this.sessionLookup = deps.sessionLookup;
+    this.restartHelm = deps.restartHelm;
   }
 
   /** Gate + dispatch one inbound phone call. */
@@ -251,6 +274,24 @@ export class MobileGate {
       this.consumeOrThrow(deviceId, method);
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };
+    }
+
+    // 2c. The user's restart. Keeping sessions is the default: the destructive
+    // choice must be an explicit `resume: false`, never inferred from junk.
+    if (method === RESERVED_RESTART_HELM_METHOD) {
+      if (!this.restartHelm || !this.deviceStore.isToolAllowed(deviceId, RESTART_GRANT)) {
+        return this.denied(deviceId, method);
+      }
+      this.consumeOrThrow(deviceId, method);
+      const resume = (params as { resume?: unknown } | null)?.resume !== false;
+      try {
+        const result = this.restartHelm(resume);
+        this.logOutcome(deviceId, method, 'ok');
+        return result;
+      } catch (err) {
+        this.logOutcome(deviceId, method, 'error');
+        throw new GateError(JSONRPC_SERVER_ERROR, err instanceof Error ? err.message : String(err));
+      }
     }
 
     // 3. Hard-deny, and the structurally unreachable families with it: a tool

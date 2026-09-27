@@ -288,6 +288,16 @@ class HelmClient(
     }
 
     /**
+     * Restart Helm on the linked desktop — the user's restart, answered in-gate
+     * (`RESERVED_RESTART_HELM_METHOD`), never the AI's handover-gated tool.
+     * [onOutcome] gets null on success, else the desktop's reason.
+     */
+    fun restartHelm(resume: Boolean, onOutcome: (String?) -> Unit): Boolean =
+        call(METHOD_RESTART_HELM, linkedMapOf<String, Any>("resume" to resume)) { outcome ->
+            onOutcome((outcome as? Outcome.Failed)?.message)
+        }
+
+    /**
      * Directories Helm knows about, for the spawn form. A failure is STATE, not
      * a log line: an unanswered fetch used to leave the form hinting "waiting
      * for the directory list" forever, which reads as patience when the truth is
@@ -1736,6 +1746,7 @@ class HelmClient(
 
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
+        private const val METHOD_RESTART_HELM = "__restart_helm__"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"

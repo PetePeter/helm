@@ -12,6 +12,7 @@ import {
   MobileGate,
   GateError,
   RESERVED_MOBILE_TOOLS_METHOD,
+  RESERVED_RESTART_HELM_METHOD,
   stripCallerIdentityOverrides,
   MOBILE_DENY_MESSAGE,
   isMobileUnreachableTool,
@@ -34,6 +35,7 @@ interface Built {
   gate: MobileGate;
   store: MobileDeviceStore;
   calls: Array<{ method: string; params: unknown; ctx: AuthContext }>;
+  restarts: boolean[];
   /** Local record id of the device registered from `allow`. */
   deviceId: string;
 }
@@ -45,6 +47,8 @@ function build(
     enabled?: boolean;
     capacity?: number;
     dispatchImpl?: (method: string, params: unknown, ctx: AuthContext) => Promise<unknown>;
+    restartImpl?: (resume: boolean) => unknown;
+    noRestart?: boolean;
     sessionLookup?: {
       getSession(id: string): { createdByMobileDeviceId?: string } | null;
       findByName(name: string): { createdByMobileDeviceId?: string } | undefined;
@@ -53,6 +57,7 @@ function build(
 ): Built {
   const now = opts.now ?? (() => 0);
   const calls: Built['calls'] = [];
+  const restarts: boolean[] = [];
   const store = new MobileDeviceStore(undefined, now);
   const device = store.add({
     machineId: 'phone-machine',
@@ -70,8 +75,14 @@ function build(
     },
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
+    ...(opts.noRestart ? {} : {
+      restartHelm: (resume: boolean) => {
+        restarts.push(resume);
+        return opts.restartImpl ? opts.restartImpl(resume) : { sessionsClosed: 0, resume };
+      },
+    }),
   });
-  return { gate, store, calls, deviceId: device.id };
+  return { gate, store, calls, restarts, deviceId: device.id };
 }
 
 describe('MobileGate — default-deny', () => {
@@ -312,6 +323,59 @@ describe('MobileGate — permitted-tool discovery', () => {
     await expect(gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})).rejects.toThrow(
       'Rate limit exceeded',
     );
+  });
+});
+
+describe('MobileGate — restart Helm', () => {
+  it('restarts in-gate with the chosen resume flag and never dispatches', async () => {
+    const { gate, deviceId, calls, restarts } = build(['*']);
+    await gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: true });
+    await gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: false });
+    expect(restarts).toEqual([true, false]);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('defaults to keeping sessions when resume is not an explicit false', async () => {
+    // The destructive choice must be asked for, never inferred from junk.
+    const { gate, deviceId, restarts } = build(['*']);
+    await gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, {});
+    await gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: 'no' });
+    expect(restarts).toEqual([true, true]);
+  });
+
+  it('denies a disabled device', async () => {
+    const { gate, deviceId, restarts } = build(['*'], { enabled: false });
+    await expect(gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: true }))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    expect(restarts).toHaveLength(0);
+  });
+
+  it('denies a device whose allow-list does not grant helm_restart', async () => {
+    const { gate, deviceId, restarts } = build(['session_list']);
+    await expect(gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: true }))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+    expect(restarts).toHaveLength(0);
+  });
+
+  it('denies when no restart capability is wired', async () => {
+    const { gate, deviceId } = build(['*'], { noRestart: true });
+    await expect(gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: true }))
+      .rejects.toThrow(MOBILE_DENY_MESSAGE);
+  });
+
+  it('surfaces a refused force-restart to the phone', async () => {
+    const { gate, deviceId } = build(['*'], {
+      restartImpl: () => { throw new Error('Cannot force-restart while locked sessions exist: a'); },
+    });
+    const err = await gate.handle(deviceId, RESERVED_RESTART_HELM_METHOD, { resume: false }).catch(e => e);
+    expect(err).toBeInstanceOf(GateError);
+    expect(err.message).toContain('locked sessions');
+  });
+
+  it('keeps the raw helm_restart tool hard-denied', async () => {
+    const { gate, deviceId, restarts } = build(['*']);
+    await expect(gate.handle(deviceId, 'helm_restart', {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
+    expect(restarts).toHaveLength(0);
   });
 });
 

@@ -65,6 +65,7 @@ fun DesktopsScreen(
     onRename: (machineId: String, label: String) -> Unit,
     onForget: (machineId: String) -> Unit,
     onUse: (machineId: String) -> Unit,
+    onRestart: (resume: Boolean) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -72,6 +73,7 @@ fun DesktopsScreen(
     // change, and holding a stale copy would rename whatever took its place.
     var editing by remember { mutableStateOf<String?>(null) }
     val underEdit = desktops.firstOrNull { it.machineId == editing }
+    var restarting by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -121,7 +123,21 @@ fun DesktopsScreen(
                     onUse(underEdit.machineId)
                     editing = null
                 },
+                onRestart = {
+                    editing = null
+                    restarting = true
+                },
                 onDismiss = { editing = null },
+            )
+        }
+
+        if (restarting) {
+            RestartDialog(
+                onRestart = { resume ->
+                    restarting = false
+                    onRestart(resume)
+                },
+                onDismiss = { restarting = false },
             )
         }
     }
@@ -185,6 +201,7 @@ private fun DesktopDialog(
     onRename: (String) -> Unit,
     onForget: () -> Unit,
     onUse: () -> Unit,
+    onRestart: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember(desktop.machineId) { mutableStateOf(desktop.label) }
@@ -223,6 +240,11 @@ private fun DesktopDialog(
         if (!desktop.linked) {
             DialogAction(text = stringResource(R.string.desktops_use), onClick = onUse, emphasised = false)
         }
+        // Only the linked desktop: a restart travels over the live link, so any
+        // other row would offer a button that cannot reach its target.
+        if (desktop.linked) {
+            DialogAction(text = stringResource(R.string.desktops_restart), onClick = onRestart, emphasised = false)
+        }
         DialogAction(
             text = stringResource(R.string.desktops_forget),
             onClick = onForget,
@@ -233,5 +255,28 @@ private fun DesktopDialog(
             onClick = onDismiss,
             emphasised = false,
         )
+    }
+}
+
+/**
+ * The restart's confirm IS its choice: both answers drop this link while Helm
+ * relaunches, so neither fires from the first tap. Keep sessions leads — the
+ * one that loses nothing — and Close sessions is the quiet, destructive one
+ * (Helm refuses it while any session is locked, and says so).
+ */
+@Composable
+private fun RestartDialog(onRestart: (resume: Boolean) -> Unit, onDismiss: () -> Unit) {
+    ScrimDialog(
+        title = stringResource(R.string.desktops_restart_title),
+        body = stringResource(R.string.desktops_restart_body),
+        onDismiss = onDismiss,
+    ) {
+        DialogAction(text = stringResource(R.string.desktops_restart_keep), onClick = { onRestart(true) })
+        DialogAction(
+            text = stringResource(R.string.desktops_restart_close),
+            onClick = { onRestart(false) },
+            emphasised = false,
+        )
+        DialogAction(text = stringResource(R.string.pairing_cancel), onClick = onDismiss, emphasised = false)
     }
 }

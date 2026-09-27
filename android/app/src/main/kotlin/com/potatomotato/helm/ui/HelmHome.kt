@@ -748,6 +748,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onRename = HelmPairing::rename,
                         onForget = HelmPairing::forget,
                         onUse = HelmPairing::use,
+                        onRestart = { resume ->
+                            val sent = context.getString(R.string.desktops_restart_sent)
+                            // The answer lands on the link's thread; a Toast needs main.
+                            val issued = client.restartHelm(resume) { failure ->
+                                scope.launch(Dispatchers.Main) {
+                                    Toast.makeText(context, failure ?: sent, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            if (!issued) Toast.makeText(context, R.string.desktops_restart_unsent, Toast.LENGTH_LONG).show()
+                        },
                         onBack = toThread,
                     )
                 }

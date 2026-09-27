@@ -1037,6 +1037,7 @@ export function registerIPCHandlers(
       localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx),
     rateLimiter: createDefaultMobileRateLimiter(),
     sessionLookup: sessionManager,
+    restartHelm: (resume) => helmControlService.restartHelm(resume),
   });
 
   // The rolling record of chat messages fanned out to phones, so a phone that

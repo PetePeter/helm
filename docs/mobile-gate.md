@@ -61,6 +61,26 @@ message, since it is a retry signal rather than an authorisation answer.
 whatever the allow-list says. The set is imported from the fleet gate — one list,
 one rationale. `session_close` is deliberately *not* in it.
 
+### The user's restart (`__restart_helm__`)
+
+The raw `helm_restart` tool stays hard-denied: it is gated on a handover
+artifact owned by the calling AI session, which a phone proxy cannot honestly
+satisfy. A paired phone is the user's own hand, so it gets the *user's* restart
+instead — the same `restartHelm(resume)` Telegram's `/restart` and
+`/restart_force` call — through a reserved meta-method answered in-gate.
+
+```mermaid
+flowchart LR
+  P[Desktops screen<br/>linked PC → Restart Helm] -->|"__restart_helm__ {resume}"| G{MobileGate}
+  G -->|disabled / allow-list lacks helm_restart / not wired| D[Tool not permitted]
+  G -->|ok, rate-limited| R["restartHelm(resume)"]
+  R -->|resume:false + locked session| E[error text to phone]
+```
+
+- Granted under the `helm_restart` allow-list name, so a narrowed phone loses it.
+- `resume` defaults to **true**; only an explicit `false` closes sessions.
+- Fleet peers are untouched — they still see only the hard-deny.
+
 ### Structurally unreachable tools
 
 `MOBILE_UNREACHABLE_TOOL_PREFIXES` — `artifact_`, `memory_`, `mess_` — are denied
