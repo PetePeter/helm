@@ -170,6 +170,21 @@ describe('MobileChatBridge as a chat surface', () => {
     });
   });
 
+  it('rings as a ring-kind record carrying the reason', () => {
+    links.online.add('phone-machine');
+
+    expect(bridge.sendRing('s1', 'P-0850 finished')).toBe(true);
+    expect(links.records()[0]).toEqual({
+      v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'P-0850 finished',
+      at: 1700000000000, kind: 'ring',
+    });
+  });
+
+  it('reports a ring nobody could receive', () => {
+    expect(bridge.sendRing('s1', 'x')).toBe(false);
+    expect(links.sent).toHaveLength(0);
+  });
+
   it('an ordinary message still carries no kind, so it stays a message', async () => {
     links.online.add('phone-machine');
 

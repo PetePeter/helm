@@ -204,11 +204,11 @@ describe('operator guide', () => {
     }
   });
 
-  it('keeps the hard NOs and allows only chat_send and session_send_text as mutations', () => {
+  it('keeps the hard NOs and limits mutations to chat, routing and ring-me', () => {
     for (const line of [
       'NEVER edit files, run commands, read repo code, or create/close sessions',
       'NEVER mutate plans, sequences, contexts, schedules, memories or sessions',
-      'Your only writes are chat_send and session_send_text',
+      'Your only writes are chat_send, session_send_text, ring_user, and memory_create/memory_delete for [RING-ME] watches only',
       'expectsResponse=true',
       'ask back',
       'no markdown',

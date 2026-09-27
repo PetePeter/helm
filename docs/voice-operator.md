@@ -379,6 +379,43 @@ stateDiagram-v2
   `open()` releases the stream and audio context. Empty transcripts send
   nothing. No new main-process code — the same `voice:*` IPC.
 
+## Ring me — the operator calls the user
+
+"Hey operator, call me when P-0850 finishes or has blocking questions." Calls
+were phone-initiated only; `ring_user` is the one reverse path.
+
+```mermaid
+sequenceDiagram
+  participant U as User (phone)
+  participant O as Operator
+  participant W as Work session
+  U->>O: "call me when X"
+  O->>O: memory_create "[RING-ME] X"
+  O->>W: session_send_text "tell me when X"
+  Note over O: /compact → SessionStart re-lists [RING-ME] memories
+  W->>O: X happened (text or artifact id)
+  O->>U: ring_user {reason} → chat kind:"ring"
+  U->>O: Answer → ordinary Call Helm to the operator
+  O->>O: memory_delete the watch
+```
+
+- **Operator only.** `ring_user` refuses every other role. Work sessions hand the
+  operator what to say (`session_send_text`, or an artifact id it reads with
+  `session_artifact_get`) and it paraphrases on the call — one voice calls the user.
+- **Watches are plain memories**, tldr prefixed `[RING-ME]` (`RING_ME_PREFIX`,
+  `context-injector.ts`). No new store: SessionStart fires after every
+  compaction, and for the operator it lists those tldrs with the instruction to
+  check them.
+- **Wire:** the existing alert push with `kind: "ring"` (`MobileChatBridge.sendRing`).
+  A phone that predates it degrades to an ordinary notification.
+- **Phone:** `notify/IncomingRing.kt` — high-importance CALL notification with a
+  full-screen intent and the default ringtone, 30 s timeout. Answer opens the
+  app and starts `VoiceCallService` (a visible activity may start the mic FGS;
+  a background broadcast may not). Decline just stops ringing; nothing is
+  reported back.
+- **Fails legibly** when no phone takes the ring; the operator falls back to
+  `chat_send`.
+
 ## Limitations
 
 - Desktop voice: the transcript holds only this run's lines (the phone

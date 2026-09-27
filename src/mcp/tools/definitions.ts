@@ -1155,6 +1155,19 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'ring_user',
+    title: 'Ring the User (operator only)',
+    description: 'OPERATOR ONLY. Ring the user\'s paired phone with a full-screen incoming call; Accept starts a voice call to you. reason is what the phone shows (short). Use when the user asked "call me when X": save the watch first with memory_create, tldr prefixed [RING-ME] (it is re-surfaced to you after every compaction), ring when X is met, then memory_delete it. Other sessions cannot ring: they send the operator what to say (session_send_text, or an artifact id) and the operator paraphrases it on the call. Fails if no phone is linked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Why you are calling, shown on the ring screen. One short line.' },
+      },
+      required: ['reason'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'flash_attention',
     title: 'Flash Session For Attention',
     description: 'Grab the user\'s attention by flashing a session in the Helm sidebar. The session card beats between its normal background and the Windows theme accent colour for 15 seconds, then holds the accent colour until the user focuses the session. If the session\'s directory group is collapsed, the group header flashes instead. Use this when you need the user to look at a specific session — e.g. you are blocked waiting for input or a long task just finished. Provide sessionId or exact session name.',

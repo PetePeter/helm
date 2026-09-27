@@ -70,6 +70,28 @@ function contextOf(body: unknown): string {
 }
 
 describe('SessionStart injection', () => {
+  it('reminds the OPERATOR of its pending ring-me requests', async () => {
+    const { injector } = makeInjector(
+      { getRingRequests: () => ['[RING-ME] call when P-0850 finishes'] },
+      { role: 'operator' },
+    );
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('[RING-ME] call when P-0850 finishes');
+    expect(context).toContain('ring_user');
+  });
+
+  it('never gives ring-me reminders to a non-operator session', async () => {
+    const getRingRequests = vi.fn(() => ['[RING-ME] call when done']);
+    const { injector } = makeInjector({ getRingRequests });
+    expect(await injector.respond(hookEvent())).toBeNull();
+    expect(getRingRequests).not.toHaveBeenCalled();
+  });
+
+  it('says nothing about ring-me when the operator has none pending', async () => {
+    const { injector } = makeInjector({ getRingRequests: () => [] }, { role: 'operator' });
+    expect(await injector.respond(hookEvent())).toBeNull();
+  });
+
   it('sends NOTHING when there is no plan, draft or handover', async () => {
     const { injector } = makeInjector();
     expect(await injector.respond(hookEvent())).toBeNull();

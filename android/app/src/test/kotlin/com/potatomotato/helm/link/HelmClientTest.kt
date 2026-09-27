@@ -1,6 +1,7 @@
 package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionNotice
+import com.potatomotato.helm.wire.MobileRecord
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
@@ -242,6 +243,20 @@ class HelmClientTest {
         assertEquals("the build is green", client.chats.thread("s1").single().text)
         assertEquals(1, client.chats.thread("s2").size)
         assertFalse(client.chats.thread("s1").single().fromPhone)
+    }
+
+    @Test
+    fun `a ring goes to the ringer, not the shade or the thread`() {
+        val port = FakeNotificationPort()
+        client.alerts.port = port
+        val rings = mutableListOf<MobileRecord.Chat>()
+        client.ringer = { rings += it }
+
+        client.onInbound(chatBytes(sessionId = "op", text = "P-0850 finished", at = 7, kind = "ring"))
+
+        assertEquals(listOf("op" to "P-0850 finished"), rings.map { it.sessionId to it.text })
+        assertTrue(client.chats.thread("op").isEmpty())
+        assertEquals(null, port.showing("op"))
     }
 
     @Test

@@ -380,6 +380,10 @@
     <string name="desktops_rename_save">Save name</string>
     <string name="desktops_use">Use this computer</string>
     <string name="desktops_forget">Forget this desktop</string>
+    <string name="ring_channel_name">Calls from Helm</string>
+    <string name="ring_title">%1$s is calling</string>
+    <string name="ring_accept">Answer</string>
+    <string name="ring_decline">Decline</string>
     <string name="desktops_restart">Restart Helm</string>
     <string name="desktops_restart_title">Restart Helm?</string>
     <string name="desktops_restart_body">The link drops while Helm relaunches, then reconnects.</string>

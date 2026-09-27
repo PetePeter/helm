@@ -228,6 +228,7 @@ export class HelmControlService extends EventEmitter {
   private readonly contextService: HelmContextService;
   private readonly planAttachmentService: HelmPlanAttachmentService;
   private readonly telegramService: HelmTelegramService;
+  private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
@@ -1598,6 +1599,26 @@ export class HelmControlService extends EventEmitter {
    * MCP tool). Resolves the session ref to its canonical id, then delegates to
    * NotificationManager which owns accent-colour resolution and renderer broadcast.
    */
+  /** Wired to the mobile bridge's sendRing; absent = no phones in this build. */
+  setPhoneRinger(ringer: ((sessionId: string, reason: string) => boolean) | null): void {
+    this.phoneRinger = ringer;
+  }
+
+  /**
+   * Ring the user's phone (ring_user). OPERATOR ONLY: one voice calls the user;
+   * any other session hands the operator what to say (session_send_text or an
+   * artifact id) and the operator paraphrases it on the call.
+   */
+  ringUser(callerSessionId: string, reason: string): { rung: true } {
+    if (this.sessionService.getSession(callerSessionId)?.role !== 'operator') {
+      throw new Error('ring_user is operator-only. Send the operator what to tell the user (session_send_text, or an artifact id) and it will call.');
+    }
+    if (!this.phoneRinger?.(callerSessionId, reason)) {
+      throw new Error('No linked phone took the ring. Fall back to chat_send or notify_user.');
+    }
+    return { rung: true };
+  }
+
   flashAttention(sessionRef: string): { flashed: boolean } {
     if (!this.notificationManager) {
       throw new Error('flash_attention is unavailable — notification manager not initialised.');

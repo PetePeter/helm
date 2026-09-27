@@ -288,6 +288,13 @@ class HelmClient(
     }
 
     /**
+     * Where an incoming RING goes (the operator calling). Set by the Android
+     * shell; null — tests, or before wiring — degrades to an ordinary alert.
+     */
+    @Volatile
+    var ringer: ((MobileRecord.Chat) -> Unit)? = null
+
+    /**
      * Restart Helm on the linked desktop — the user's restart, answered in-gate
      * (`RESERVED_RESTART_HELM_METHOD`), never the AI's handover-gated tool.
      * [onOutcome] gets null on success, else the desktop's reason.
@@ -1476,12 +1483,16 @@ class HelmClient(
             // the notification is how the user finds out it arrived while they
             // were elsewhere. It is one message told once on two surfaces, the
             // same shape as the ratified Telegram/app duplication.
+            // A RING is the operator calling: its own surface, never the shade's
+            // ordinary row — a buzz you can swipe away is not a phone call.
             is MobileRecord.Chat ->
-                if (record.kind == null) {
-                    chats.receive(record)
-                    alerts.onMessage(record)
-                } else {
-                    alerts.onAlert(record)
+                when (record.kind) {
+                    null -> {
+                        chats.receive(record)
+                        alerts.onMessage(record)
+                    }
+                    RING_KIND -> ringer?.invoke(record) ?: alerts.onAlert(record)
+                    else -> alerts.onAlert(record)
                 }
 
             // Where this desktop can be reached over the network. Accepted ONLY
@@ -1747,6 +1758,7 @@ class HelmClient(
         /** The gate's reserved meta-method — answered in-gate, never dispatched. */
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
         private const val METHOD_RESTART_HELM = "__restart_helm__"
+        private const val RING_KIND = "ring"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"

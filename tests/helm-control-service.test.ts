@@ -1382,6 +1382,41 @@ describe('HelmControlService.closeSession', () => {
   });
 });
 
+describe('HelmControlService.ringUser', () => {
+  function withCaller(role?: 'operator') {
+    const { service, sessionManager } = makeService();
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockImplementation((id: string) =>
+      id === 'op' ? { id: 'op', name: 'Helm', cliType: 'claude-code', ...(role ? { role } : {}) } : null);
+    return service;
+  }
+
+  it('rings the phone for the operator', () => {
+    const service = withCaller('operator');
+    const rings: Array<[string, string]> = [];
+    service.setPhoneRinger((id, reason) => { rings.push([id, reason]); return true; });
+    expect(service.ringUser('op', 'build done')).toEqual({ rung: true });
+    expect(rings).toEqual([['op', 'build done']]);
+  });
+
+  it('refuses any session that is not the operator', () => {
+    const service = withCaller();
+    const ringer = vi.fn(() => true);
+    service.setPhoneRinger(ringer);
+    expect(() => service.ringUser('op', 'x')).toThrow(/operator/);
+    expect(ringer).not.toHaveBeenCalled();
+  });
+
+  it('fails legibly when no phone took the ring', () => {
+    const service = withCaller('operator');
+    service.setPhoneRinger(() => false);
+    expect(() => service.ringUser('op', 'x')).toThrow(/No linked phone/);
+  });
+
+  it('fails legibly when phones are not wired at all', () => {
+    expect(() => withCaller('operator').ringUser('op', 'x')).toThrow(/No linked phone/);
+  });
+});
+
 describe('HelmControlService.restartHelm', () => {
   afterEach(() => {
     vi.restoreAllMocks();

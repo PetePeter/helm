@@ -1,6 +1,8 @@
 package com.potatomotato.helm
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -32,6 +34,8 @@ import com.potatomotato.helm.ble.HelmLinkService
 import com.potatomotato.helm.link.HelmPairing
 import com.potatomotato.helm.link.PairingState
 import com.potatomotato.helm.notify.AndroidNotifications
+import com.potatomotato.helm.notify.IncomingRing
+import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.PermissionRationale
@@ -69,6 +73,16 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun takeNotificationTap(intent: Intent?) {
+        // Answering the operator's ring: the activity is visible, which is what
+        // lets the microphone service start. Without the mic grant the thread
+        // opens instead, where the call button asks for it.
+        intent?.getStringExtra(IncomingRing.EXTRA_ACCEPT_SESSION)?.let { sessionId ->
+            IncomingRing.dismiss(this)
+            val canTalk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (canTalk) VoiceCallService.start(this, sessionId)
+            PendingOpen.request(sessionId)
+            return
+        }
         PendingOpen.request(
             intent?.getStringExtra(AndroidNotifications.EXTRA_SESSION_ID),
             intent?.getBooleanExtra(AndroidNotifications.EXTRA_ARTIFACTS, false) == true,

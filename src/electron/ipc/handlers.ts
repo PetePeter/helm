@@ -137,7 +137,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
-import { ContextInjector } from '../../session/hooks/context-injector.js';
+import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
@@ -696,6 +696,9 @@ export function registerIPCHandlers(
     getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
+    getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records
+      .map((record) => record.tldr)
+      .filter((tldr) => tldr.startsWith(RING_ME_PREFIX)),
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
@@ -1069,6 +1072,7 @@ export function registerIPCHandlers(
   });
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
+  helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
 
   // Desktop voice (docs/voice-operator.md): hold-to-talk to the operator over
   // the SAME OpenWhispr/Piper tools Telegram uses. The operator's chat_send

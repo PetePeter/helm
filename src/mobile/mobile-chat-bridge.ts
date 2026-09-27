@@ -37,7 +37,7 @@ import {
   BLOB_UPLOAD_MIN_PROTOCOL,
 } from './protocol-version.js';
 import { decodeBlobResult, decodeRecord, encodeBlobResult, encodeChat, encodeError, encodeResult, isBlobPayload } from './mobile-envelope.js';
-import type { ChatRecordInput, MobileCallRecord } from './mobile-envelope.js';
+import type { ChatRecordInput, MobileCallRecord, MobileChatKind } from './mobile-envelope.js';
 import type { MobileArtifactUploadService } from './mobile-artifact-upload.js';
 import { isArtifactDownloadBinary } from '../session/artifact-download.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
@@ -217,6 +217,20 @@ export class MobileChatBridge implements ChatBridge {
    * alert is only true at the moment it happens.
    */
   sendAlert(sessionId: string, kind: SessionAlertKind, text: string): boolean {
+    return this.pushKind(sessionId, kind, text);
+  }
+
+  /**
+   * RING the user — an incoming voice call from `sessionId` (the operator),
+   * with `reason` as what the phone shows. Same alert shape, `kind: 'ring'`;
+   * the phone raises a full-screen call and Accept starts an ordinary Call Helm
+   * to that session. Fire-and-forget: a ring nobody took is reported, not queued.
+   */
+  sendRing(sessionId: string, reason: string): boolean {
+    return this.pushKind(sessionId, 'ring', reason);
+  }
+
+  private pushKind(sessionId: string, kind: MobileChatKind, text: string): boolean {
     const session = this.deps.sessions.getSession(sessionId);
     if (!session) return false;
 

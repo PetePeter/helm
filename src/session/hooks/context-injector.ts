@@ -45,6 +45,9 @@ export interface ClaimedPlanSummary {
   status: string;
 }
 
+/** Tldr prefix marking an operator memory as a pending "call me when…" watch. */
+export const RING_ME_PREFIX = '[RING-ME]';
+
 export interface ContextInjectorDeps {
   /** Session lookup; null means the hook was uncorrelated — never nudge it. */
   getSession(helmSessionId: string): SessionInfo | null;
@@ -62,6 +65,13 @@ export interface ContextInjectorDeps {
    * = no mission yet, and the AI is asked to set one.
    */
   getMission?(sessionId: string): SessionMission | undefined;
+  /**
+   * The operator's pending "call me when…" requests — the tldrs of its
+   * `RING_ME_PREFIX` memories. Asked only for the operator, the one session
+   * allowed to ring; SessionStart fires after every compaction, so the watch
+   * survives the context it was made in.
+   */
+  getRingRequests?(sessionId: string): string[];
   /** The hint-only suggester: tuple payload or null. Promise = the worker seam. */
   suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null>;
   /** Directory → project id, for pre-filtering suggester candidates. */
@@ -165,6 +175,14 @@ export class ContextInjector {
     }
     const mission = this.deps.getMission?.(session.id);
     if (mission) parts.push(truncate(missionLine(mission), SOURCE_CAP_CHARS));
+    const rings = session.role === 'operator' ? this.deps.getRingRequests?.(session.id) ?? [] : [];
+    if (rings.length > 0) {
+      parts.push(truncate(
+        `Pending ring-me requests (your ${RING_ME_PREFIX} memories): ${rings.join('; ')}. ` +
+          'Check each; when one is met, ring_user with a short reason, then memory_delete it.',
+        SOURCE_CAP_CHARS,
+      ));
+    }
     const handover = this.deps.getHandover(session.id);
     if (handover) {
       parts.push(truncate(`Handover note carried across your last compaction:\n${handover}`, SOURCE_CAP_CHARS));
