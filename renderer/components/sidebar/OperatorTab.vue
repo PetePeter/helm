@@ -10,9 +10,9 @@ import { configClient } from '../../ipc/clients.js';
 import { getCliDisplayName } from '../../utils.js';
 import { OPERATOR_RULES } from '../../../src/mcp/guides/operator-guide.js';
 
-interface OperatorConfig { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number; rules: string }
+interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }
 
-const config = ref<OperatorConfig>({ enabled: false, cliType: '', workingDir: '', compactEveryMinutes: 60, rules: '' });
+const config = ref<OperatorConfig>({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '' });
 /** Edited locally; persisted only on Save, since every save re-runs ensure(). */
 const rulesDraft = ref('');
 const COMPACT_CHOICES = [
@@ -23,19 +23,16 @@ const COMPACT_CHOICES = [
   { minutes: 240, label: 'Every 4 hours' },
 ];
 const cliTypes = ref<string[]>([]);
-const dirs = ref<Array<{ name: string; path: string }>>([]);
 const status = ref('');
 
 onMounted(async () => {
-  const [loaded, types, workingDirs] = await Promise.all([
+  const [loaded, types] = await Promise.all([
     configClient.configGetOperatorConfig(),
     configClient.configGetCliTypes(),
-    configClient.configGetWorkingDirs(),
   ]);
   config.value = loaded;
   rulesDraft.value = loaded.rules;
   cliTypes.value = types ?? [];
-  dirs.value = workingDirs ?? [];
 });
 
 async function save(updates: Partial<OperatorConfig>): Promise<void> {
@@ -89,13 +86,6 @@ const selectValue = (event: Event): string => (event.target as HTMLSelectElement
       </select>
     </label>
 
-    <label class="operator-setting">
-      <span>Working directory</span>
-      <select class="btn btn--secondary btn--sm focusable" :value="config.workingDir" @change="save({ workingDir: selectValue($event) })">
-        <option value="">CLI default</option>
-        <option v-for="dir in dirs" :key="dir.path" :value="dir.path">{{ dir.name }}</option>
-      </select>
-    </label>
 
     <label class="operator-setting">
       <span>Auto-compact when idle</span>

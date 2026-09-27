@@ -348,8 +348,6 @@ export interface OperatorConfig {
   enabled: boolean;
   /** Id of one of the user's CLI types; empty = not chosen, nothing spawns. */
   cliType: string;
-  /** Working dir the operator spawns in; empty = the CLI's default. */
-  workingDir: string;
   /** Idle self-compaction cadence in minutes; 0 = off. */
   compactEveryMinutes: number;
   /** User rules appended to the operator guide, one per line; built-in rules still apply. */
@@ -1239,7 +1237,6 @@ export class ConfigLoader {
     return {
       enabled: o?.enabled === true,
       cliType: typeof o?.cliType === 'string' ? o.cliType : DEFAULT_OPERATOR_CONFIG.cliType,
-      workingDir: typeof o?.workingDir === 'string' ? o.workingDir : DEFAULT_OPERATOR_CONFIG.workingDir,
       compactEveryMinutes: normalizeCompactMinutes(o?.compactEveryMinutes),
       rules: typeof o?.rules === 'string' ? o.rules : DEFAULT_OPERATOR_CONFIG.rules,
     };
@@ -1252,7 +1249,6 @@ export class ConfigLoader {
     this.settings.operator = {
       enabled: next.enabled === true,
       cliType: typeof next.cliType === 'string' ? next.cliType.trim() : '',
-      workingDir: typeof next.workingDir === 'string' ? next.workingDir.trim() : '',
       compactEveryMinutes: normalizeCompactMinutes(next.compactEveryMinutes),
       rules: typeof next.rules === 'string' ? next.rules.trim() : '',
     };

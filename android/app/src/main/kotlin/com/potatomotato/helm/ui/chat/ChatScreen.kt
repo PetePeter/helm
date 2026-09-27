@@ -787,7 +787,7 @@ private fun ComposerPhone(onCall: (() -> Unit)?, onLongPress: () -> Unit) {
     val currentLongPress by rememberUpdatedState(onLongPress)
     val haptics = LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
-    HoldHint(pressed) {
+    HoldHint(pressed, onAccent = onCall != null) {
         Box(
             modifier = Modifier
                 .size(HelmSize.MicButton)
@@ -847,7 +847,7 @@ private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> 
     val haptics = LocalHapticFeedback.current
     var pressed by remember { mutableStateOf(false) }
     Box {
-        HoldHint(pressed, holdable = onAttach != null) {
+        HoldHint(pressed, holdable = onAttach != null, onAccent = enabled) {
             Box(
                 modifier = Modifier
                     .size(HelmSize.MicButton)
@@ -898,9 +898,13 @@ private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> 
  * its rim. While held: the circle grows over exactly the long-press time and a
  * ^ rises above it, so the hold visibly fills up to the moment the menu opens
  * — letting go before then is just a tap.
+ *
+ * [onAccent]: the button is filled with the accent, so the dot is drawn light;
+ * on a greyed-out button the same light dot vanishes, so it is drawn in the
+ * accent instead — the hint must read on both.
  */
 @Composable
-private fun HoldHint(pressed: Boolean, holdable: Boolean = true, content: @Composable () -> Unit) {
+private fun HoldHint(pressed: Boolean, holdable: Boolean = true, onAccent: Boolean = true, content: @Composable () -> Unit) {
     val holdMs = LocalViewConfiguration.current.longPressTimeoutMillis.toInt()
     val scale by animateFloatAsState(
         targetValue = if (pressed) HOLD_SCALE else 1f,
@@ -916,7 +920,7 @@ private fun HoldHint(pressed: Boolean, holdable: Boolean = true, content: @Compo
                 .offset(x = -HOLD_DOT_INSET, y = -HOLD_DOT_INSET)
                 .size(HOLD_DOT)
                 .clip(CircleShape)
-                .background(HelmColors.OnAccent.copy(alpha = 0.8f)),
+                .background(if (onAccent) HelmColors.OnAccent.copy(alpha = 0.8f) else HelmColors.Accent),
         )
         if (pressed) {
             Text(

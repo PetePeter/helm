@@ -503,7 +503,7 @@ export function registerIPCHandlers(
     }),
     compact: (sessionId, handover) => helmControlService.compactSession(sessionId, { handover }),
     isHandoverPending: (sessionId) => isHandoverPending(sessionId),
-    defaultWorkingDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), projectStore),
+    homeDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), projectStore),
   });
   noteOperatorFlight = (flight) => operatorSessionManager.noteFlight(flight);
   setupOperatorHandlers(configLoader, operatorSessionManager);

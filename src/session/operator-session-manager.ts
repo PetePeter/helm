@@ -13,6 +13,7 @@
  * busy → retry every 30 min. The operator guide is the handover, so rule
  * updates apply after every compaction.
  */
+import { normalizeProjectPath } from './project-identity.js';
 import { EventEmitter } from 'node:events';
 import type { OperatorConfig } from '../config/loader.js';
 import type { SessionInfo } from '../types/session.js';
@@ -50,8 +51,11 @@ export interface OperatorSessionManagerDeps {
   /** The shared session_compact path (arms the handover, writes the compact sequence). */
   compact: (sessionId: string, handover: string) => Promise<unknown>;
   isHandoverPending: (sessionId: string) => boolean;
-  /** The operator's own home (ensureOperatorHome), used when no workingDir is configured. */
-  defaultWorkingDir?: () => string;
+  /**
+   * The operator's own home (ensureOperatorHome). It ALWAYS lives there: its
+   * memories and task plans belong to its own project, never to a repo's.
+   */
+  homeDir: () => string;
 }
 
 export class OperatorSessionManager extends EventEmitter {
@@ -87,9 +91,15 @@ export class OperatorSessionManager extends EventEmitter {
 
     // An operator on a CLI type other than the chosen one is replaced: the
     // setting changed, and resuming the old CLI would silently ignore it.
-    const current = operators.filter(op => op.cliType === config.cliType);
+    // Likewise one living outside its home (an older build let a setting move
+    // it): its tasks and memories would land in that directory's project.
+    const home = normalizeProjectPath(this.deps.homeDir());
+    // No recorded dir counts as outside too: it would resume in the CLI's default.
+    const outsideHome = (op: SessionInfo) => !op.workingDir || normalizeProjectPath(op.workingDir) !== home;
+    const current = operators.filter(op => op.cliType === config.cliType && !outsideHome(op));
     for (const stale of operators) {
       if (stale.cliType !== config.cliType) this.demote(stale, `CLI type changed to ${config.cliType}`);
+      else if (outsideHome(stale)) this.demote(stale, `outside its home ${home}`);
     }
     const [keep, ...surplus] = current;
     for (const extra of surplus) this.demote(extra, `duplicate; keeping ${keep.id}`);
@@ -195,10 +205,9 @@ export class OperatorSessionManager extends EventEmitter {
   }
 
   private spawn(config: OperatorConfig): string {
-    const cwd = config.workingDir || this.deps.defaultWorkingDir?.();
     const { sessionId } = this.deps.spawn({
       cliType: config.cliType,
-      ...(cwd ? { cwd } : {}),
+      cwd: this.deps.homeDir(),
       sessionName: OPERATOR_SESSION_NAME,
       contextText: buildOperatorGuide(config.rules),
     });

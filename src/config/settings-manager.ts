@@ -51,7 +51,6 @@ export const DEFAULT_MOBILE_LAN_CONFIG: MobileLanConfig = {
 export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
   enabled: false,
   cliType: '',
-  workingDir: '',
   compactEveryMinutes: 60,
   rules: '',
 };

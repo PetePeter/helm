@@ -25,9 +25,9 @@ const { saveSessions, loadSessions } = await import('../src/session/session-pers
 const { buildOperatorGuide, OPERATOR_RULES } = await import('../src/mcp/guides/operator-guide.js');
 const { HelmSessionService } = await import('../src/mcp/services/helm-session-service.js');
 
-type Config = { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number; rules: string };
+type Config = { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string };
 
-function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>, defaultWorkingDir?: () => string) {
+function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>) {
   const compacts: Array<{ sessionId: string; handover: string }> = [];
   const pendingHandovers = new Set<string>();
   const sessionManager = new SessionManager();
@@ -40,17 +40,18 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
     spawn: (params) => {
       spawns.push(params);
       const id = `op-${++next}`;
-      sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}` });
+      sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}`, workingDir: params.cwd });
       return { sessionId: id };
     },
     compact: compact ?? (async (sessionId, handover) => { compacts.push({ sessionId, handover }); }),
     isHandoverPending: (sessionId) => pendingHandovers.has(sessionId),
-    ...(defaultWorkingDir ? { defaultWorkingDir } : {}),
+    homeDir: () => HOME,
   });
   return { sessionManager, operator, spawns, compacts, pendingHandovers };
 }
 
-const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', workingDir: 'X:/home', compactEveryMinutes: 0, rules: '' };
+const HOME = 'C:/cfg/operator';
+const ENABLED: Config = { enabled: true, cliType: 'cli-uuid-1', compactEveryMinutes: 0, rules: '' };
 const operators = (sm: InstanceType<typeof SessionManager>) => sm.getAllSessions().filter(s => s.role === 'operator');
 
 describe('OperatorSessionManager.ensure', () => {
@@ -61,27 +62,41 @@ describe('OperatorSessionManager.ensure', () => {
     const id = operator.ensure();
 
     expect(spawns).toHaveLength(1);
-    expect(spawns[0]).toMatchObject({ cliType: 'cli-uuid-1', cwd: 'X:/home', sessionName: OPERATOR_SESSION_NAME });
+    expect(spawns[0]).toMatchObject({ cliType: 'cli-uuid-1', cwd: HOME, sessionName: OPERATOR_SESSION_NAME });
     expect(spawns[0].contextText).toBe(buildOperatorGuide());
     const session = sessionManager.getSession(id!)!;
     expect(session).toMatchObject({ role: 'operator', locked: true, name: 'Helm' });
   });
 
-  it('spawns in its own home when no working dir is configured', () => {
-    const { operator, spawns } = setup({ ...ENABLED, workingDir: '' }, [], undefined, () => 'C:/cfg/operator');
-    operator.ensure();
-    expect(spawns[0].cwd).toBe('C:/cfg/operator');
+  it('replaces an operator living outside its home, so its tasks and memories land in its own project', () => {
+    const { sessionManager, operator, spawns } = setup(ENABLED, [
+      { id: 'in-repo', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', workingDir: 'X:/coding/repo' },
+    ]);
+    const id = operator.ensure();
+    expect(id).not.toBe('in-repo');
+    expect(spawns[0].cwd).toBe(HOME);
+    expect(sessionManager.getSession('in-repo')).toMatchObject({ role: undefined, locked: false });
   });
 
-  it('a configured working dir wins over the operator home', () => {
-    const { operator, spawns } = setup(ENABLED, [], undefined, () => 'C:/cfg/operator');
-    operator.ensure();
-    expect(spawns[0].cwd).toBe('X:/home');
+  it('replaces a restored operator with no recorded dir, which would resume in the CLI default', () => {
+    const { operator, spawns } = setup(ENABLED, [
+      { id: 'pathless', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator' } as SessionInfo,
+    ]);
+    expect(operator.ensure()).not.toBe('pathless');
+    expect(spawns[0].cwd).toBe(HOME);
+  });
+
+  it('keeps an operator already in its home, however the path is spelt', () => {
+    const { operator, spawns } = setup(ENABLED, [
+      { id: 'home', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', workingDir: 'c:\\cfg\\operator\\' },
+    ]);
+    expect(operator.ensure()).toBe('home');
+    expect(spawns).toHaveLength(0);
   });
 
   it('does not spawn when an operator already exists (restart resume path), and re-asserts lock + name', () => {
     const { sessionManager, operator, spawns } = setup(ENABLED, [
-      { id: 'existing', name: 'renamed', cliType: 'cli-uuid-1', processId: 1, cliSessionName: 'keep-me', role: 'operator' },
+      { id: 'existing', name: 'renamed', cliType: 'cli-uuid-1', processId: 1, cliSessionName: 'keep-me', role: 'operator', workingDir: HOME },
     ]);
     expect(operator.ensure()).toBe('existing');
     expect(spawns).toHaveLength(0);
@@ -90,8 +105,8 @@ describe('OperatorSessionManager.ensure', () => {
 
   it('keeps the oldest of duplicate operators and demotes the rest, without spawning', () => {
     const { sessionManager, operator, spawns } = setup(ENABLED, [
-      { id: 'newer', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', createdAt: 200 },
-      { id: 'older', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', createdAt: 100 },
+      { id: 'newer', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', workingDir: HOME, createdAt: 200 },
+      { id: 'older', name: 'Helm', cliType: 'cli-uuid-1', processId: 1, role: 'operator', workingDir: HOME, createdAt: 100 },
     ]);
     expect(operator.ensure()).toBe('older');
     expect(spawns).toHaveLength(0);
@@ -100,7 +115,7 @@ describe('OperatorSessionManager.ensure', () => {
 
   it('replaces an operator running on a different CLI type than the one now chosen', () => {
     const { sessionManager, operator, spawns } = setup(ENABLED, [
-      { id: 'old', name: 'Helm', cliType: 'cli-uuid-OLD', processId: 1, role: 'operator', locked: true },
+      { id: 'old', name: 'Helm', cliType: 'cli-uuid-OLD', processId: 1, role: 'operator', workingDir: HOME, locked: true },
     ]);
     const id = operator.ensure();
     expect(spawns).toHaveLength(1);
@@ -115,7 +130,7 @@ describe('OperatorSessionManager.ensure', () => {
 
   it('on disable, demotes the existing operator without closing it', () => {
     const { sessionManager, operator, spawns } = setup({ ...ENABLED, enabled: false }, [
-      { id: 'op', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', locked: true },
+      { id: 'op', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', workingDir: HOME, locked: true },
     ]);
     expect(operator.ensure()).toBeNull();
     expect(spawns).toHaveLength(0);
@@ -150,7 +165,7 @@ describe('role persistence (invariant 6)', () => {
   it('round-trips role through sessions.yaml and drops an unknown role', () => {
     const file = join(dir, 'sessions.yaml');
     saveSessions([
-      { id: 'a', name: 'Helm', cliType: 'c', processId: 1, role: 'operator' },
+      { id: 'a', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', workingDir: HOME },
       { id: 'b', name: 'x', cliType: 'c', processId: 1, role: 'bogus' as never },
     ], file);
     const [a, b] = loadSessions(file);
@@ -162,7 +177,7 @@ describe('role persistence (invariant 6)', () => {
 describe('session_list exposes role (phone contract: HelmSession.kt reads "role")', () => {
   it('includes role: "operator" on the operator summary only', () => {
     const sessions = [
-      { id: 'op', name: 'Helm', cliType: 'c', processId: 1, role: 'operator' as const },
+      { id: 'op', name: 'Helm', cliType: 'c', processId: 1, role: 'operator', workingDir: HOME as const },
       { id: 'w', name: 'work', cliType: 'c', processId: 1 },
     ];
     const service = new HelmSessionService(

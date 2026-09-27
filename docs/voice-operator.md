@@ -96,9 +96,11 @@ plans, contexts, sequences, artifacts, and sessions — it may `session_create` 
 session for work nothing fits, hand it over, and `session_close` it when done
 (never one it did not create, unless asked).
 
-**Its own memories.** With no `workingDir` configured it spawns in
-`<config>/operator`, registered as the **Helm Operator** project
-(`ensureOperatorHome`), so what it remembers is its own. It may READ every
+**Its own memories and tasks.** It ALWAYS lives in `<config>/operator`,
+registered as the **Helm Operator** project (`ensureOperatorHome`); there is no
+working-dir setting, because a repo dir put its memories and task plans in that
+repo's project. An operator found anywhere else (restored from an older build)
+is demoted and a fresh one spawned at home. It may READ every
 project's memories — `MemoryManager.canReadAll`, wired to `role === 'operator'` —
 but writes stay fenced to its own project: reading is never owning, enforced in
 `owns()`, not in the prompt.
