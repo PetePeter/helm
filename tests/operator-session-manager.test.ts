@@ -224,7 +224,7 @@ describe('operator guide', () => {
 
   it('tracks every in-flight ask as a task plan with a linked self-timer until it is done', () => {
     expect(guide).toContain('TASKS');
-    for (const term of ['FIRST plan_summary', 'instead of making a duplicate', 'plan_create', 'task', 'waitingOn', 'planIds', 'scheduler_cancel', 'plan_complete']) {
+    for (const term of ['never yourself', 'REPEATING check timer', 'never \\"once\\"', 'FIRST plan_summary', 'instead of making a duplicate', 'plan_create', 'task', 'waitingOn', 'planIds', 'scheduler_cancel', 'plan_complete']) {
       expect(guide).toContain(term);
     }
   });
