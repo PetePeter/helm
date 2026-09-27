@@ -424,8 +424,13 @@ sequenceDiagram
 - **Phone:** `notify/IncomingRing.kt` — high-importance CALL notification with a
   full-screen intent and the default ringtone, 30 s timeout. Answer opens the
   app and starts `VoiceCallService` (a visible activity may start the mic FGS;
-  a background broadcast may not). Decline just stops ringing; nothing is
-  reported back.
+  a background broadcast may not). Answering on a locked phone shows the app
+  over the lock screen and turns the screen on (`MainActivity.showOverLockScreen`),
+  so the call starts without an unlock; the pass is dropped in `onStop`, so only
+  the answered call ever sits over the keyguard. Because `MainActivity` is
+  exported, Accept carries a one-shot `RingTicket` minted with the ring; an accept
+  intent without the live ticket (another app's) only opens the thread. Decline just stops ringing;
+  nothing is reported back.
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 

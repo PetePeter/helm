@@ -47,7 +47,9 @@ class IncomingRing(private val context: Context) {
 
     fun ring(record: MobileRecord.Chat) {
         if (record.sessionId.isBlank()) return
-        val accept = activityIntent(record.sessionId, REQUEST_ACCEPT).putExtra(EXTRA_ACCEPT_SESSION, record.sessionId)
+        val accept = activityIntent(record.sessionId, REQUEST_ACCEPT)
+            .putExtra(EXTRA_ACCEPT_SESSION, record.sessionId)
+            .putExtra(EXTRA_ACCEPT_TICKET, tickets.issue(record.sessionId))
         val open = activityIntent(record.sessionId, REQUEST_OPEN)
             .putExtra(AndroidNotifications.EXTRA_SESSION_ID, record.sessionId)
         val decline = PendingIntent.getBroadcast(
@@ -94,6 +96,12 @@ class IncomingRing(private val context: Context) {
     companion object {
         /** The session whose call the user accepted. Read by [MainActivity]. */
         const val EXTRA_ACCEPT_SESSION = "com.potatomotato.helm.RING_ACCEPT"
+
+        /** The ring's one-shot ticket; an accept without the live one is refused. */
+        const val EXTRA_ACCEPT_TICKET = "com.potatomotato.helm.RING_TICKET"
+
+        /** Process-wide, so the ring that minted a ticket and the activity that redeems it agree. */
+        val tickets = RingTicket()
 
         /** Stop ringing — Accept, Decline, or the call starting some other way. */
         fun dismiss(context: Context) =

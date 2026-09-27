@@ -3,7 +3,9 @@ package com.potatomotato.helm
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -72,12 +74,42 @@ class MainActivity : ComponentActivity() {
         takeNotificationTap(intent)
     }
 
+    /**
+     * Only an answered ring earns the lock-screen pass, and only while visible:
+     * once the activity is left, Helm is back behind the keyguard like any app.
+     */
+    override fun onStop() {
+        super.onStop()
+        showOverLockScreen(false)
+    }
+
+    private fun showOverLockScreen(show: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(show)
+            setTurnScreenOn(show)
+        } else {
+            // API 26 only has the (deprecated since 27) window flags.
+            @Suppress("DEPRECATION")
+            val flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            if (show) window.addFlags(flags) else window.clearFlags(flags)
+        }
+    }
+
     private fun takeNotificationTap(intent: Intent?) {
         // Answering the operator's ring: the activity is visible, which is what
         // lets the microphone service start. Without the mic grant the thread
         // opens instead, where the call button asks for it.
         intent?.getStringExtra(IncomingRing.EXTRA_ACCEPT_SESSION)?.let { sessionId ->
+            // This activity is exported: without the ring's live ticket the
+            // "answer" came from elsewhere, and it only opens the thread.
+            if (!IncomingRing.tickets.redeem(sessionId, intent.getStringExtra(IncomingRing.EXTRA_ACCEPT_TICKET))) {
+                PendingOpen.request(sessionId)
+                return
+            }
             IncomingRing.dismiss(this)
+            // Answered on a locked phone: the call must start over the lock
+            // screen, like a phone call does, not wait for an unlock.
+            showOverLockScreen(true)
             val canTalk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             if (canTalk) VoiceCallService.start(this, sessionId)
             PendingOpen.request(sessionId)
