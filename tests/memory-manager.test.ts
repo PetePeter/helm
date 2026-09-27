@@ -117,6 +117,26 @@ describe('MemoryManager', () => {
     expect(manager.listRecordsForSession('s1').map((record) => record.id)).toEqual(['a', 'c']);
   });
 
+  it('lets a read-all session (the operator) read every project but write only its own', () => {
+    const projects: Record<string, string> = { op: 'p-operator', w: 'p-work' };
+    const manager = new MemoryManager({
+      idFactory: (() => { const ids = ['mine', 'theirs']; return () => ids.shift()!; })(),
+      resolveSessionProject: (id) => projects[id] ?? null,
+      canReadAll: (id) => id === 'op',
+    });
+    manager.createForSession('op', { tldr: 'operator note', content: '' });
+    manager.createForSession('w', { tldr: 'work fact', content: 'the build uses vite' });
+
+    expect(manager.getRecordForSession('op', 'theirs')?.tldr).toBe('work fact');
+    expect(manager.searchForSession('op', 'vite').results.map((r) => r.rootId)).toEqual(['theirs']);
+    expect(manager.listRecordsForSession('op').map((r) => r.id).sort()).toEqual(['mine', 'theirs']);
+    // Reading is not owning: another project's memory stays read-only.
+    expect(manager.updateForSession('op', 'theirs', { tldr: 'nope' })).toBeNull();
+    expect(manager.deleteForSession('op', 'theirs')).toBe(false);
+    // Everyone else is still fenced to their own project.
+    expect(manager.getRecordForSession('w', 'mine')).toBeNull();
+  });
+
   it('purges only the owning session and its graph and attachment records', () => {
     const manager = new MemoryManager({
       idFactory: (() => { const ids = ['a', 'b']; return () => ids.shift()!; })(),

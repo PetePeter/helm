@@ -86,9 +86,22 @@ later) talks to. It answers questions about Helm state and general questions (in
 searches and page fetches)
 itself; for work, it is a router: it passes an instruction to the right work
 session, acknowledges at once, and speaks a short summary when the reply comes
-back. It never edits, runs commands, investigates, or creates/closes sessions —
-the work stays in the sessions that own it, and there is one conversation for
+back. It never edits files, runs commands, reads repo code or restarts Helm —
+coding stays in the sessions that own it, and there is one conversation for
 phone and desktop to share.
+
+**It manages Helm itself.** Every other Helm MCP tool is open to it: schedules
+(a "remind me" is a `scheduler_create` direct task with `targetSession:"caller"`),
+plans, contexts, sequences, artifacts, and sessions — it may `session_create` a
+session for work nothing fits, hand it over, and `session_close` it when done
+(never one it did not create, unless asked).
+
+**Its own memories.** With no `workingDir` configured it spawns in
+`<config>/operator`, registered as the **Helm Operator** project
+(`ensureOperatorHome`), so what it remembers is its own. It may READ every
+project's memories — `MemoryManager.canReadAll`, wired to `role === 'operator'` —
+but writes stay fenced to its own project: reading is never owning, enforced in
+`owns()`, not in the prompt.
 
 ```mermaid
 graph LR

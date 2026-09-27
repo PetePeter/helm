@@ -48,6 +48,11 @@ export interface MemoryManagerOptions {
    */
   resolveSessionProject?: (sessionId: string) => string | null;
   resolveSessionPlan?: (sessionId: string) => string | null;
+  /**
+   * Sessions that may READ every project's memories (the operator). Writing
+   * is untouched: `owns` stays project-fenced, so reading is never owning.
+   */
+  canReadAll?: (sessionId: string) => boolean;
   graceEpochs?: number;
 }
 
@@ -70,6 +75,7 @@ export class MemoryManager extends EventEmitter {
   private readonly idFactory: () => string;
   private readonly resolveSessionProject?: (sessionId: string) => string | null;
   private readonly resolveSessionPlan?: (sessionId: string) => string | null;
+  private readonly canReadAll?: (sessionId: string) => boolean;
   private readonly graceEpochs: number;
   private persistenceDiagnostic?: MemoryDiagnostic;
 
@@ -77,6 +83,7 @@ export class MemoryManager extends EventEmitter {
     super();
     this.resolveSessionProject = options.resolveSessionProject;
     this.resolveSessionPlan = options.resolveSessionPlan;
+    this.canReadAll = options.canReadAll;
     this.graceEpochs = options.graceEpochs ?? GRACE_EPOCHS;
     this.persistence = options.persistence;
     this.attachmentManager = options.attachmentManager;
@@ -131,6 +138,12 @@ export class MemoryManager extends EventEmitter {
     return this.state.records.filter((record) =>
       this.isVisible(record, sessionId, projectId)
       && (includeDormant || record.dormantSince === undefined));
+  }
+
+  /** What a session may READ: its own scope, or everything for a read-all session. */
+  private readableRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
+    if (!this.canReadAll?.(sessionId)) return this.scopedRecords(sessionId, includeDormant);
+    return this.state.records.filter((record) => includeDormant || record.dormantSince === undefined);
   }
 
   /** Whether a session may operate on a record at all — dormancy is no bar. */
@@ -332,7 +345,7 @@ export class MemoryManager extends EventEmitter {
 
   getRecordForSession(sessionId: string, id: string, options: MemoryListOptions = {}): MemoryRecord | null {
     assertSessionId(sessionId);
-    const record = this.scopedRecords(sessionId, options.includeDormant).find((item) => item.id === id);
+    const record = this.readableRecords(sessionId, options.includeDormant).find((item) => item.id === id);
     if (!record) return null;
     this.stampAccess([record.id], sessionId);
     return cloneMemoryRecord(this.state.records.find((item) => item.id === id)!);
@@ -340,13 +353,13 @@ export class MemoryManager extends EventEmitter {
 
   listRecordsForSession(sessionId: string, options: MemoryListOptions = {}): MemoryRecord[] {
     assertSessionId(sessionId);
-    const records = this.scopedRecords(sessionId, options.includeDormant).map(cloneMemoryRecord);
+    const records = this.readableRecords(sessionId, options.includeDormant).map(cloneMemoryRecord);
     return options.sortBy ? sortRecords(records, options.sortBy, options.order ?? 'desc') : records;
   }
 
   getForSession(sessionId: string, rootId: string, graphDepth = 0): MemoryTraversal | null {
     assertSessionId(sessionId);
-    const scopedRecords = this.scopedRecords(sessionId);
+    const scopedRecords = this.readableRecords(sessionId);
     if (!scopedRecords.some((record) => record.id === rootId)) return null;
     const allowedIds = new Set(scopedRecords.map((record) => record.id));
     return new MemoryGraph({
@@ -367,7 +380,7 @@ export class MemoryManager extends EventEmitter {
    */
   forestForSession(sessionId: string, options: MemoryListOptions = {}): MemoryForest {
     assertSessionId(sessionId);
-    const scoped = this.scopedRecords(sessionId, options.includeDormant);
+    const scoped = this.readableRecords(sessionId, options.includeDormant);
     const ownedIds = new Set(scoped.map((record) => record.id));
     return {
       records: scoped.map(toMemorySummary),
@@ -379,7 +392,7 @@ export class MemoryManager extends EventEmitter {
 
   searchForSession(sessionId: string, query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     assertSessionId(sessionId);
-    const scopedRecords = this.scopedRecords(sessionId, options.includeDormant);
+    const scopedRecords = this.readableRecords(sessionId, options.includeDormant);
     const allowedIds = new Set(scopedRecords.map((record) => record.id));
     const graphDepth = options.graphDepth ?? 0;
     validateGraphDepth(graphDepth);

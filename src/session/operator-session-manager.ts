@@ -50,6 +50,8 @@ export interface OperatorSessionManagerDeps {
   /** The shared session_compact path (arms the handover, writes the compact sequence). */
   compact: (sessionId: string, handover: string) => Promise<unknown>;
   isHandoverPending: (sessionId: string) => boolean;
+  /** The operator's own home (ensureOperatorHome), used when no workingDir is configured. */
+  defaultWorkingDir?: () => string;
 }
 
 export class OperatorSessionManager extends EventEmitter {
@@ -193,9 +195,10 @@ export class OperatorSessionManager extends EventEmitter {
   }
 
   private spawn(config: OperatorConfig): string {
+    const cwd = config.workingDir || this.deps.defaultWorkingDir?.();
     const { sessionId } = this.deps.spawn({
       cliType: config.cliType,
-      ...(config.workingDir ? { cwd: config.workingDir } : {}),
+      ...(cwd ? { cwd } : {}),
       sessionName: OPERATOR_SESSION_NAME,
       contextText: buildOperatorGuide(config.rules),
     });

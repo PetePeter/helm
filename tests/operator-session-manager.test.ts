@@ -27,7 +27,7 @@ const { HelmSessionService } = await import('../src/mcp/services/helm-session-se
 
 type Config = { enabled: boolean; cliType: string; workingDir: string; compactEveryMinutes: number; rules: string };
 
-function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>) {
+function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>, defaultWorkingDir?: () => string) {
   const compacts: Array<{ sessionId: string; handover: string }> = [];
   const pendingHandovers = new Set<string>();
   const sessionManager = new SessionManager();
@@ -45,6 +45,7 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
     },
     compact: compact ?? (async (sessionId, handover) => { compacts.push({ sessionId, handover }); }),
     isHandoverPending: (sessionId) => pendingHandovers.has(sessionId),
+    ...(defaultWorkingDir ? { defaultWorkingDir } : {}),
   });
   return { sessionManager, operator, spawns, compacts, pendingHandovers };
 }
@@ -64,6 +65,18 @@ describe('OperatorSessionManager.ensure', () => {
     expect(spawns[0].contextText).toBe(buildOperatorGuide());
     const session = sessionManager.getSession(id!)!;
     expect(session).toMatchObject({ role: 'operator', locked: true, name: 'Helm' });
+  });
+
+  it('spawns in its own home when no working dir is configured', () => {
+    const { operator, spawns } = setup({ ...ENABLED, workingDir: '' }, [], undefined, () => 'C:/cfg/operator');
+    operator.ensure();
+    expect(spawns[0].cwd).toBe('C:/cfg/operator');
+  });
+
+  it('a configured working dir wins over the operator home', () => {
+    const { operator, spawns } = setup(ENABLED, [], undefined, () => 'C:/cfg/operator');
+    operator.ensure();
+    expect(spawns[0].cwd).toBe('X:/home');
   });
 
   it('does not spawn when an operator already exists (restart resume path), and re-asserts lock + name', () => {
@@ -204,11 +217,12 @@ describe('operator guide', () => {
     }
   });
 
-  it('keeps the hard NOs and limits mutations to chat, routing and ring-me', () => {
+  it('keeps the hard NOs and grants Helm management, reminders and own memories', () => {
     for (const line of [
-      'NEVER edit files, run commands, read repo code, or create/close sessions',
-      'NEVER mutate plans, sequences, contexts, schedules, memories or sessions',
-      'Your only writes are chat_send, session_send_text, ring_user, and memory_create/memory_delete for [RING-ME] watches only',
+      'NEVER edit files, run commands or read repo code, and never call helm_restart',
+      'targetSession:\\"caller\\"',
+      'you cannot change another project',
+      'Never close a session you did not create',
       'expectsResponse=true',
       'ask back',
       'no markdown',

@@ -137,6 +137,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
+import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
@@ -218,6 +219,7 @@ export function registerIPCHandlers(
     persistence: memoryPersistence,
     attachmentManager: memoryAttachmentManager,
     resolveSessionProject: (id) => sessionManager.getSession(id)?.projectId ?? null,
+    canReadAll: (id) => sessionManager.getSession(id)?.role === 'operator',
     resolveSessionPlan: (id) => planManager.claimedPlanFor(id)?.id ?? null,
   });
   const contextManager = new ContextManager(planManager);
@@ -500,6 +502,7 @@ export function registerIPCHandlers(
     }),
     compact: (sessionId, handover) => helmControlService.compactSession(sessionId, { handover }),
     isHandoverPending: (sessionId) => isHandoverPending(sessionId),
+    defaultWorkingDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), projectStore),
   });
   noteOperatorFlight = (flight) => operatorSessionManager.noteFlight(flight);
   setupOperatorHandlers(configLoader, operatorSessionManager);
