@@ -818,6 +818,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onRename = HelmPairing::rename,
                         onForget = HelmPairing::forget,
                         onUse = HelmPairing::use,
+                        onPairDesktop = {
+                            HelmLinkService.forcePairingMode(context)
+                            where = Destination.Pairing
+                        },
                         onRestart = { resume ->
                             val sent = context.getString(R.string.desktops_restart_sent)
                             // The answer lands on the link's thread; a Toast needs main.
@@ -843,6 +847,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     AwaitingDesktopScreen(
                         linkState = linkState,
                         onReadvertise = { HelmLinkService.forcePairingMode(context) },
+                        onPairAt = HelmPairing::pairAt,
                         onBack = toThread,
                     )
                 }

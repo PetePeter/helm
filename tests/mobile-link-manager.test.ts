@@ -904,6 +904,78 @@ describe('MobileLinkManager pairing mode', () => {
  * by a link nobody was using. No disconnect, no rescan, radio wedged until Helm
  * restarted. Observed on real hardware.
  */
+/**
+ * Pairing over LAN, for a desktop whose radio cannot hear the phone. It gets
+ * its OWN listener, open only while pairing is armed, so an already-paired phone
+ * dialling the normal LAN port can never be pulled into a pairing flow again.
+ * The SAS comparison remains the check against a stranger on the network.
+ */
+describe('MobileLinkManager LAN pairing listener', () => {
+  function harness() {
+    const h = makeHarness({}, undefined, { ranks: [RANK_BLE, RANK_LAN, RANK_LAN] });
+    const pairingPort = h.transports[2];
+    pairingPort.pairingOnly = true;
+    pairingPort.persistsAddressHint = false;
+    return { h, pairingPort };
+  }
+
+  it('runs only while pairing is armed', async () => {
+    const { h, pairingPort } = harness();
+    pair(h, PHONE);
+    await h.manager.start();
+    expect(h.transports[1].started).toBe(true);
+    expect(pairingPort.started).toBe(false);
+
+    h.pairing.start();
+    await flush();
+    expect(pairingPort.started).toBe(true);
+
+    h.pairing.cancel('cancelled by the user');
+    await flush();
+    expect(pairingPort.started).toBe(false);
+    expect(h.transports[1].started).toBe(true);
+  });
+
+  it('hands its link to the pairing coordinator and pairs after the SAS check', async () => {
+    const { h, pairingPort } = harness();
+    await h.manager.start();
+    h.pairing.start();
+    await flush();
+
+    const { a, b } = createMemoryPipePair();
+    const link: MobileLink = { deviceId: '10.98.1.10:50000', pipe: a as BytePipe, onFramingDrop: () => {} };
+    const phone = SecureChannel.open({ pipe: b as BytePipe, role: 'responder', machineId: PHONE });
+    pairingPort.offer(link);
+    const phoneChannel = await phone;
+    await flush();
+
+    expect(h.pairing.getState().status).toBe('awaiting-sas');
+    h.pairing.confirm(true);
+    phoneChannel.confirmSas(true);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.attempts).toEqual([]);
+  });
+
+  it('refuses a link the coordinator declines instead of identifying it', async () => {
+    const { h, pairingPort } = harness();
+    pair(h, PHONE);
+    await h.manager.start();
+    h.pairing.start();
+    await flush();
+    // Occupy the flow so offerLink says no to the next link.
+    const { a, b } = createMemoryPipePair();
+    void SecureChannel.open({ pipe: b as BytePipe, role: 'responder', machineId: 'first' });
+    pairingPort.offer({ deviceId: 'first', pipe: a as BytePipe, onFramingDrop: () => {} });
+    await flush();
+
+    pairingPort.offer(new FakeLink('10.98.1.10:50001'));
+    await flush();
+
+    expect(pairingPort.rejected.map((r) => r.deviceId)).toContain('10.98.1.10:50001');
+    expect(h.attempts).toEqual([]);
+  });
+});
+
 describe('MobileLinkManager pairing link ownership', () => {
   /** Arm pairing, offer a link, and settle the phone's end of the handshake. */
   async function armAndOffer(h: Harness) {

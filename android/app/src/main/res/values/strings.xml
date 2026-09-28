@@ -28,6 +28,8 @@
     <string name="pairing_reject">Reject</string>
     <string name="pairing_cancel">Cancel</string>
     <string name="pairing_pair_desktop">Pair a desktop</string>
+    <string name="pairing_by_address_label">Or pair over Wi-Fi: the desktop address</string>
+    <string name="pairing_by_address_button">Pair over Wi-Fi</string>
     <string name="pairing_handshaking">Verifying…</string>
     <string name="pairing_handshaking_detail">Your desktop connected. Waiting for it to answer.</string>
     <string name="pairing_failed_title">Pairing failed</string>

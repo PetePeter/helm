@@ -8,11 +8,13 @@
  * enough to be worth knowing. That is also why no address is configured here:
  * Helm binds a port, and the phone is the end that holds an address.
  *
- * PAIRING NEVER HAPPENS HERE. Physical proximity is the trust anchor (P-0752),
- * so a socket may only ever carry a handshake against an ALREADY stored PSK.
- * This file cannot enforce that by itself — `MobileLinkManager` offers a link to
- * the pairing coordinator only while pairing is armed, and pairing is armed only
- * over BLE — but anything added here that would let a stranger pair is a bug.
+ * PAIRING NEVER HAPPENS ON THE NORMAL PORT: it only ever carries a handshake
+ * against an ALREADY stored PSK. First pairings over LAN use a SECOND instance
+ * with `pairingOnly`, on its own port (see mobilePairingPort), which the manager
+ * binds only while pairing is armed and whose links it never identifies. The
+ * six-digit SAS comparison is what stops a stranger on the network; the
+ * separate port is what stops an already-paired phone being pulled into a
+ * pairing flow — which is exactly what happened when they shared one.
  *
  * What escapes this file is a `MobileLink`, exactly as `BleLinkClient` produces.
  * SecureChannel does its own length-prefixed framing and tolerates partial
@@ -37,6 +39,11 @@ import type { BytePipe } from '../secure-channel.js';
  */
 export const DEFAULT_MOBILE_LAN_PORT = 47475;
 
+/** The first-pairing listener sits one above the phone port, so one firewall range covers both. */
+export function mobilePairingPort(lanPort: number): number {
+  return lanPort + 1;
+}
+
 /** Bind every interface: which one the phone arrives on is not ours to guess. */
 const DEFAULT_HOST = '0.0.0.0';
 
@@ -46,6 +53,8 @@ export interface SocketLinkTransportOptions {
   host?: string;
   /** Off binds nothing at all. Defaults to on; the caller supplies the policy. */
   enabled?: boolean;
+  /** Carry first pairings only; see MobileLinkTransport.pairingOnly. */
+  pairingOnly?: boolean;
   logger?: (message: string, error?: unknown) => void;
 }
 
@@ -71,6 +80,7 @@ export class SocketLinkTransport extends EventEmitter {
    * would then degrade every later BLE reconnect.
    */
   readonly persistsAddressHint = false;
+  readonly pairingOnly: boolean;
 
   private port: number;
   private enabled: boolean;
@@ -86,6 +96,7 @@ export class SocketLinkTransport extends EventEmitter {
   constructor(options: SocketLinkTransportOptions = {}) {
     super();
     this.port = options.port ?? DEFAULT_MOBILE_LAN_PORT;
+    this.pairingOnly = options.pairingOnly ?? false;
     this.enabled = options.enabled ?? true;
     this.host = options.host ?? DEFAULT_HOST;
     this.log = options.logger ?? ((message, error) => {
@@ -156,6 +167,15 @@ export class SocketLinkTransport extends EventEmitter {
    */
   async stop(): Promise<void> {
     this.wanted = false;
+    if (this.pairingOnly) {
+      // Pairing ends by closing this listener, and the phone just paired is
+      // still on it — now owned by the manager, which releases what it does not
+      // keep. So stop LISTENING only. server.close() is not awaited: its
+      // callback waits for those very connections to end.
+      this.server?.close();
+      this.server = null;
+      return;
+    }
     await this.unbind();
   }
 

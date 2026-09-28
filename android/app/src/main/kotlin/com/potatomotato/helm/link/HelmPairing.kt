@@ -273,6 +273,15 @@ object HelmPairing {
      * restart too, and switched to at once over the network. With two desktops
      * on the LAN this is the only way to say which one the phone talks to.
      */
+    /**
+     * Pair over Wi-Fi with the desktop at [address] (host, or host:port). A bare
+     * host means the desktop's first-pairing port: its phone port plus one.
+     */
+    fun pairAt(address: String) {
+        val target = if (':' in address) address else "$address:$PAIRING_PORT"
+        scope.launch(Dispatchers.IO) { lan?.pairAt(target) }
+    }
+
     fun use(desktopId: String) {
         chosen?.edit()?.putString(CHOSEN_KEY, desktopId)?.apply()
         scope.launch(Dispatchers.IO) { lan?.switchTo(desktopId) }
@@ -334,6 +343,8 @@ object HelmPairing {
 
     private const val CHOSEN_PREFS = "helm_desktop_choice"
     private const val CHOSEN_KEY = "chosen_desktop"
+    /** Desktop default phone port 47475 plus one — see mobilePairingPort on the desktop. */
+    private const val PAIRING_PORT = 47476
 
     /** Alongside the log, under the app's own files — never shared storage. */
     private const val NOTIFY_DIRECTORY = "notify"

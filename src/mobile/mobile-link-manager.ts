@@ -153,6 +153,14 @@ export interface MobileLinkTransport {
    * a property of the transport and not a BLE branch in the manager.
    */
   readonly persistsAddressHint?: boolean;
+  /**
+   * A listener that exists only to carry FIRST pairings — the LAN pairing port,
+   * for a desktop whose radio cannot hear the phone. It runs only while pairing
+   * is armed, and a link it produces is never identified against a stored PSK:
+   * the coordinator takes it, or it is refused. Keeping it off the normal LAN
+   * port is what stops an already-paired phone being pulled into a pairing.
+   */
+  readonly pairingOnly?: boolean;
   start(): Promise<void>;
   stop(): Promise<void>;
   /** Disconnect a link the manager refused, and go back to scanning. */
@@ -248,6 +256,8 @@ export class MobileLinkManager extends EventEmitter {
   private transports: MobileLinkTransport[] | null = null;
   private enabled = false;
   private running = false;
+  /** Whether the pairing-only listeners are open; see syncPairingTransports. */
+  private pairingTransportsRunning = false;
   private keepaliveTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Links with a handshake currently running. The keepalive skips exactly
@@ -464,6 +474,7 @@ export class MobileLinkManager extends EventEmitter {
 
   /** Start or stop the radio to match "is there anything to connect to". */
   private ensure(): void {
+    this.syncPairingTransports();
     const wanted = this.enabled && (this.opts.deviceStore.list().length > 0 || this.pairingArmed());
     if (wanted === this.running) return;
     this.running = wanted;
@@ -479,13 +490,30 @@ export class MobileLinkManager extends EventEmitter {
       return;
     }
     for (const transport of transports) {
+      if (transport.pairingOnly) continue;
       void transport.start().catch((error) => this.log('starting a mobile transport failed', error));
     }
+    this.syncPairingTransports();
   }
 
   private async stopTransports(): Promise<void> {
     for (const transport of this.transports ?? []) {
+      if (transport.pairingOnly && !this.pairingTransportsRunning) continue;
       await transport.stop().catch((error) => this.log('stopping a mobile transport failed', error));
+    }
+    this.pairingTransportsRunning = false;
+  }
+
+  /** Open the pairing-only listeners exactly while pairing is armed. */
+  private syncPairingTransports(): void {
+    const wanted = this.enabled && this.pairingArmed();
+    if (wanted === this.pairingTransportsRunning) return;
+    const transports = wanted ? this.ensureTransports() : (this.transports ?? []);
+    this.pairingTransportsRunning = wanted;
+    for (const transport of transports) {
+      if (!transport.pairingOnly) continue;
+      const step = wanted ? transport.start() : transport.stop();
+      void step.catch((error) => this.log(`${wanted ? 'starting' : 'stopping'} a pairing listener failed`, error));
     }
   }
 
@@ -633,6 +661,20 @@ export class MobileLinkManager extends EventEmitter {
     // holds no PSK, and fail() took the whole attempt down with it. Arming
     // pairing on a home network destroyed itself within seconds of the next LAN
     // dial. Observed on real hardware.
+    if (this.origin.get(link)?.pairingOnly) {
+      // Never identified: a first pairing or nothing. See MobileLinkTransport.pairingOnly.
+      if (this.pairingArmed()) {
+        this.holdForPairing(link);
+        const taken = await this.opts.pairing.offerLink(link);
+        if (this.stoppedSince(lifetime)) return;
+        if (this.pairingHold?.link !== link) return;
+        if (taken) return;
+        this.takePairingHold();
+      }
+      await this.refuse(link, 'the pairing listener carries first pairings only');
+      return;
+    }
+
     if (this.pairingArmed() && this.rankOf(link) === RANK_BLE) {
       this.holdForPairing(link);
       const taken = await this.opts.pairing.offerLink(link);

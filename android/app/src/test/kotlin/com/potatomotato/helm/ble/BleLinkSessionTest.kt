@@ -69,6 +69,18 @@ class BleLinkSessionTest {
     }
 
     @Test
+    fun `pairing mode drops the linked desktop and advertises for a new one`() {
+        link()
+        val startsBefore = peripheral.advertiseStarts
+
+        session.forcePairingMode()
+
+        assertEquals(listOf(helm), peripheral.disconnected)
+        assertEquals(null, session.centralAddress)
+        assertEquals(startsBefore + 1, peripheral.advertiseStarts)
+    }
+
+    @Test
     fun `writes from an address that does not hold the link are ignored`() {
         link()
         val message = Random(1).nextBytes(8)

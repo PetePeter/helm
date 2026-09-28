@@ -31,6 +31,12 @@ and one set of vectors.
 > is **reserved but unused**. An earlier design carried pairing on it. Do not
 > remove the UUID — churning the characteristic map is itself a wire break.
 
+## Over LAN
+
+When the desktop's radio cannot hear the phone, the same handshake runs over a
+dedicated LAN pairing port instead — see
+[mobile-lan-transport.md](mobile-lan-transport.md#pairing-over-lan-has-its-own-port).
+
 ## Role flip
 
 Helm is the BLE **central**; the phone is the **peripheral**. Pairing mode is

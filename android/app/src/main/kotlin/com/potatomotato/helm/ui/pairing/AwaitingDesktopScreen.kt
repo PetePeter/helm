@@ -2,6 +2,20 @@ package com.potatomotato.helm.ui.pairing
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import com.potatomotato.helm.ui.theme.HelmRadius
+import com.potatomotato.helm.ui.theme.HelmSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +64,7 @@ import kotlinx.coroutines.delay
 fun AwaitingDesktopScreen(
     linkState: LinkState,
     onReadvertise: () -> Unit,
+    onPairAt: (address: String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -59,7 +74,7 @@ fun AwaitingDesktopScreen(
             modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
             contentAlignment = Alignment.Center,
         ) {
-            AwaitingDesktopBody(linkState = linkState, onReadvertise = onReadvertise, onCancel = onBack)
+            AwaitingDesktopBody(linkState = linkState, onReadvertise = onReadvertise, onPairAt = onPairAt, onCancel = onBack)
         }
     }
 }
@@ -68,6 +83,7 @@ fun AwaitingDesktopScreen(
 private fun AwaitingDesktopBody(
     linkState: LinkState,
     onReadvertise: () -> Unit,
+    onPairAt: (address: String) -> Unit,
     onCancel: () -> Unit,
 ) {
     var elapsedSeconds by remember { mutableIntStateOf(0) }
@@ -147,6 +163,42 @@ private fun AwaitingDesktopBody(
             )
             GhostButton(text = stringResource(R.string.pairing_cancel), onClick = onCancel)
         }
+
+        PairByAddress(onPairAt = onPairAt)
+    }
+}
+
+/**
+ * The way in when the desktop's radio cannot hear this phone: dial the desktop
+ * over Wi-Fi instead. Same handshake, same six digits — only the pipe differs.
+ */
+@Composable
+private fun PairByAddress(onPairAt: (address: String) -> Unit) {
+    var address by remember { mutableStateOf("") }
+    val label = stringResource(R.string.pairing_by_address_label)
+    val submit = { if (address.isNotBlank()) onPairAt(address.trim()) }
+    Column(verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm)) {
+        Text(text = label, color = HelmColors.Dim, style = MaterialTheme.typography.bodySmall)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(HelmRadius.Md))
+                .background(HelmColors.Surface2)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+                .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+        ) {
+            BasicTextField(
+                value = address,
+                onValueChange = { address = it },
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = HelmColors.Txt),
+                cursorBrush = SolidColor(HelmColors.Accent),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { submit() }),
+                modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
+            )
+        }
+        GhostButton(text = stringResource(R.string.pairing_by_address_button), onClick = submit)
     }
 }
 

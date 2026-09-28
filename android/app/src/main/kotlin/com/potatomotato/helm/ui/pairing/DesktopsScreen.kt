@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
+import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.PairedDesktop
 import com.potatomotato.helm.ui.components.DialogAction
@@ -66,6 +67,7 @@ fun DesktopsScreen(
     onForget: (machineId: String) -> Unit,
     onUse: (machineId: String) -> Unit,
     onRestart: (resume: Boolean) -> Unit,
+    onPairDesktop: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -81,6 +83,15 @@ fun DesktopsScreen(
                 title = stringResource(R.string.desktops_title),
                 linkState = linkState,
                 onBack = onBack,
+            )
+
+            // Always offered here, linked or not: pairing drops whichever desktop
+            // holds the phone's single Bluetooth link, so a second desktop can
+            // never be locked out by the first one to connect.
+            GhostButton(
+                text = stringResource(R.string.pairing_pair_desktop),
+                onClick = onPairDesktop,
+                modifier = Modifier.padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
             )
 
             if (desktops.isEmpty()) {

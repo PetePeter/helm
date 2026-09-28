@@ -96,7 +96,7 @@ import { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import { MobilePairing } from '../../mobile/mobile-pairing.js';
 import { MobileLinkManager } from '../../mobile/mobile-link-manager.js';
 import { BleLinkClient } from '../../mobile/ble/ble-link-client.js';
-import { SocketLinkTransport } from '../../mobile/lan/socket-link-transport.js';
+import { SocketLinkTransport, mobilePairingPort } from '../../mobile/lan/socket-link-transport.js';
 import { loadNoble } from '../../mobile/ble/noble-adapter.js';
 import { MobileGate, createDefaultMobileRateLimiter } from '../../mobile/mobile-gate.js';
 import { MobileChatBridge } from '../../mobile/mobile-chat-bridge.js';
@@ -986,12 +986,24 @@ export function registerIPCHandlers(
     logger: (message, error) =>
       error ? logger.warn(`[mobile-lan] ${message}: ${error}`) : logger.info(`[mobile-lan] ${message}`),
   });
+  // First pairings over LAN, for a desktop whose radio cannot hear the phone.
+  // Bound by the manager only while pairing is armed.
+  const pairingLanConfig = () => {
+    const lan = configLoader.getMobileLanConfig();
+    return { ...lan, port: mobilePairingPort(lan.port) };
+  };
+  const mobilePairingTransport = new SocketLinkTransport({
+    ...pairingLanConfig(),
+    pairingOnly: true,
+    logger: (message, error) =>
+      error ? logger.warn(`[mobile-lan-pairing] ${message}: ${error}`) : logger.info(`[mobile-lan-pairing] ${message}`),
+  });
   const mobileLinkManager = new MobileLinkManager({
     createTransports: () => [new BleLinkClient({
       noble: loadNoble(),
       logger: (message, error) =>
         error ? logger.warn(`${message}: ${error}`) : logger.info(message),
-    }), mobileLanTransport],
+    }), mobileLanTransport, mobilePairingTransport],
     deviceStore: mobileDeviceStore,
     secretStore: mobileSecretStore,
     pairing: mobilePairing,
@@ -1030,6 +1042,7 @@ export function registerIPCHandlers(
       set: async (config) => {
         configLoader.setMobileLanConfig(config);
         await mobileLanTransport.configure(configLoader.getMobileLanConfig());
+        await mobilePairingTransport.configure(pairingLanConfig());
         // The new port — or the fact that LAN is now off — has to reach a phone
         // that is connected RIGHT NOW, not at its next reconnect.
         mobileAddressAdvertiser.advertiseAll();

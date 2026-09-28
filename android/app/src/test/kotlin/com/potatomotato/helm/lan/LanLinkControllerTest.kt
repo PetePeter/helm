@@ -79,6 +79,42 @@ class LanLinkControllerTest {
     }
 
     @Test
+    fun `pairing by address dials that address with no stored desktop and carries the link`() {
+        val dialer = FakeDialer(mapOf("10.98.1.140:47476" to FakeConnection()))
+        val controller = LanLinkController(MemoryAddresses(mutableMapOf()), dialer, DeferredPump(), schedule = never)
+
+        assertTrue(controller.pairAt("10.98.1.140:47476"))
+
+        assertEquals(listOf("10.98.1.140:47476"), dialer.attempts)
+        assertEquals(RANK_LAN, HelmLink.holderRank)
+    }
+
+    @Test
+    fun `pairing by address replaces a live LAN link to another desktop`() {
+        val mac = FakeConnection()
+        val dialer = FakeDialer(mapOf("10.98.1.21:47475" to mac, "10.98.1.140:47476" to FakeConnection()))
+        val controller = LanLinkController(
+            MemoryAddresses(mutableMapOf("mac" to listOf("10.98.1.21:47475"))), dialer, DeferredPump(), schedule = never,
+        )
+        controller.tryConnect("mac")
+
+        assertTrue(controller.pairAt("10.98.1.140:47476"))
+
+        assertTrue(mac.closed)
+        assertEquals("10.98.1.140:47476", dialer.attempts.last())
+    }
+
+    @Test
+    fun `pairing by an unreachable address fails without scheduling a redial`() {
+        val schedule = ManualSchedule()
+        val controller = LanLinkController(MemoryAddresses(mutableMapOf()), FakeDialer(emptyMap()), DeferredPump(), schedule = schedule)
+
+        assertFalse(controller.pairAt("10.98.1.140:47476"))
+
+        assertTrue(schedule.delays.isEmpty())
+    }
+
+    @Test
     fun `does not dial when no address has ever been pushed`() {
         val dialer = FakeDialer(emptyMap())
         LanLinkController(MemoryAddresses(mutableMapOf()), dialer, DeferredPump(), schedule = never).tryConnect("desk")

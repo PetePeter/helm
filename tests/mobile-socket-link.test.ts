@@ -23,10 +23,10 @@ afterEach(async () => {
 });
 
 /** A transport on an ephemeral port, so tests never collide on a fixed one. */
-async function startTransport(options: { logger?: (m: string) => void } = {}) {
+async function startTransport(options: { logger?: (m: string) => void; pairingOnly?: boolean } = {}) {
   const links: MobileLink[] = [];
   const disconnected: string[] = [];
-  const transport = new SocketLinkTransport({ port: 0, logger: options.logger });
+  const transport = new SocketLinkTransport({ port: 0, logger: options.logger, pairingOnly: options.pairingOnly });
   transport.on('link', (link: MobileLink) => links.push(link));
   transport.on('disconnected', (deviceId: string) => disconnected.push(deviceId));
   await transport.start();
@@ -64,6 +64,22 @@ function phonePipe(socket: Socket) {
     close: () => { socket.destroy(); },
   };
 }
+
+describe('SocketLinkTransport pairing listener', () => {
+  it('stops listening without cutting the phone it just paired', async () => {
+    // Pairing ends by closing the listener; the adopted link must survive it.
+    const { transport, links, port } = await startTransport({ pairingOnly: true });
+    const socket = await dial(port, links);
+    let closed = false;
+    socket.on('close', () => { closed = true; });
+
+    await transport.stop();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(transport.boundPort).toBeNull();
+    expect(closed).toBe(false);
+  });
+});
 
 describe('SocketLinkTransport', () => {
   it('declares the LAN rank, so the manager displaces BLE with it', () => {

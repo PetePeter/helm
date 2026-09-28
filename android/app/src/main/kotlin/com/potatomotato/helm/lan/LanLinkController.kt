@@ -144,17 +144,44 @@ class LanLinkController(
     }
 
     private fun dial(machineId: String): LanLinkSession? {
+        val known = addresses.load(machineId)
+        if (known.isEmpty()) return null
+        return open(known) {
+            // Recorded only for a desktop actually dialled: a trigger that
+            // short-circuits above must not steal the redial target from the
+            // desktop the live link belongs to.
+            lastMachineId = machineId
+        }
+    }
+
+    /**
+     * Pair with a desktop at [address] — for when Bluetooth cannot reach it.
+     * Replaces any live LAN link: pairing is the user choosing THIS desktop now.
+     * The handshake finds no stored PSK for it and falls through to the six-digit
+     * SAS, exactly as over Bluetooth. Never redials: an unreachable address is an
+     * answer the user needs to see, not something to retry in the background.
+     */
+    fun pairAt(address: String): Boolean {
+        if (stopped) return false
+        closeSession()
+        val lan = open(listOf(address)) { lastMachineId = null } ?: return false
+        runBlocking {
+            try {
+                lan.pump()
+            } finally {
+                endIfCurrent(lan)
+            }
+        }
+        return true
+    }
+
+    private fun open(known: List<String>, onDialled: () -> Unit): LanLinkSession? {
         synchronized(lock) {
             if (dialing || session?.connected == true) return null
             dialing = true
         }
         try {
-            val known = addresses.load(machineId)
-            if (known.isEmpty()) return null
-            // Recorded only for a desktop actually dialled: a trigger that
-            // short-circuits above must not steal the redial target from the
-            // desktop the live link belongs to.
-            lastMachineId = machineId
+            onDialled()
 
             val lan = LanLinkSession(
                 dialer = dialer,

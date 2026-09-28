@@ -95,6 +95,9 @@ export class FakeTransport extends EventEmitter implements MobileLinkTransport {
   /** A radio remembers its address; a socket transport sets this false. */
   persistsAddressHint = true;
 
+  /** True for the LAN pairing listener: carries first pairings and nothing else. */
+  pairingOnly = false;
+
   /** Defaults to the BLE rank, so every existing test reads as a radio. */
   constructor(readonly rank: number = RANK_BLE) {
     super();

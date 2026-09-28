@@ -49,24 +49,44 @@ port and the phone holds the address.
 frames on both ends, so a TCP stream needs no chunker. `SocketLink` is a genuinely
 thin wrapper; if it ever stops being one, the abstraction has leaked.
 
-## Pairing is Bluetooth-only, always
+## Pairing over LAN has its own port
 
-**Physical proximity is the trust anchor: you must be in the room to bootstrap a
-PSK.** A socket may only ever carry a handshake against a PSK that Bluetooth
-already established. This is a real security property, not a convenience.
+The normal phone port (47475) **never** carries a pairing: it only ever runs a
+handshake against a PSK that already exists. First pairings over Wi-Fi use a
+**second listener one port up (47476)**, a `SocketLinkTransport` built with
+`pairingOnly`. It exists for a desktop whose radio cannot hear the phone.
 
-`SocketLinkTransport` does not know what a PSK is, which is how it stays unable
-to violate the rule. `MobileLinkManager.identify()` offers a link to the pairing
-coordinator only while pairing is armed **and only when the link is BLE rank** —
-that rank test is where the rule is actually enforced.
+```mermaid
+sequenceDiagram
+    participant P as Phone
+    participant L as Pairing listener :47476
+    participant M as MobileLinkManager
+    participant C as MobilePairing
+    Note over L: bound only while pairing is armed
+    P->>L: dial (user typed the desktop address)
+    L->>M: link (pairingOnly transport)
+    M->>C: offerLink — never identified against a stored PSK
+    C-->>P: same handshake, same six-digit SAS
+    Note over P,C: user confirms on both sides → PSK stored
+    Note over L: pairing ends → stop LISTENING; the adopted link stays
+```
 
-It used to be enforced nowhere. This paragraph claimed the property while the
-code offered the coordinator whatever link arrived next, and the bill came due on
-a home network: an ALREADY PAIRED phone dialling in over LAN was pulled into the
-pairing flow, failed the confirm-MAC check against a coordinator that holds no
-PSK, and `fail()` destroyed the whole attempt. Arming pairing therefore killed
-itself within seconds of the next LAN dial, over and over. A documented invariant
-with no line of code behind it is a comment, not an invariant.
+- **Bound only while pairing is armed.** `MobileLinkManager.syncPairingTransports`
+  opens it on arm and closes it on pair, cancel or expiry.
+- **Stopping it stops listening, nothing more.** The phone just paired is still on
+  that socket, now owned by the manager; tearing sockets down would cut it.
+- **A link it produces is paired or refused, never identified.** This is the
+  fix for the bug that made pairing Bluetooth-only: an already-paired phone
+  dialling the shared port was pulled into the pairing flow, failed the
+  confirm-MAC against a coordinator with no PSK, and `fail()` killed the attempt.
+  Separate ports make that impossible by construction.
+- **The SAS is the security.** Proximity is no longer the trust anchor for a
+  LAN pairing; the six-digit comparison is what stops a stranger on the network.
+  Bluetooth pairing is unchanged, and still preferred when the radio works.
+
+On the phone: pairing screen → "Or pair over Wi-Fi" → desktop address. A bare
+host means port 47476 (`HelmPairing.PAIRING_PORT`); `LanLinkController.pairAt`
+replaces any live LAN link and never redials.
 
 The PSK is transport-independent, so the same device is the same device over
 either pipe. **Identity comes from the PSK-bound handshake, never from an IP
