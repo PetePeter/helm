@@ -1933,7 +1933,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'peer_list',
     title: 'List Fleet Peers',
     description:
-      'List the remote Helm peers this instance can reach, with each peer\'s id, alias, direction, and current online status. Start here for any cross-machine work: call peer_list to find a peer, then peer_tools(peer) to see what it will let you run, then peer_call(peer, tool, args) to invoke one of its tools. Returns an empty list — and peer_* tools report "Fleet is not enabled" — when fleet is turned off.',
+      'List the remote Helm peers this instance can reach, with each peer\'s id, alias, online status, and both access halves: mayCallMe (I let it call me) and mayCallThem (it lets me call it — needed for peer_call, peer_attach and peer_spawn). Start here for any cross-machine work: call peer_list to find a peer, then peer_tools(peer) to see what it will let you run, then peer_call(peer, tool, args) to invoke one of its tools. Returns an empty list — and peer_* tools report "Fleet is not enabled" — when fleet is turned off.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -1974,7 +1974,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'peer_attach',
     title: 'Attach A Peer Session Here',
     description:
-      'Attach to a session running on a fleet peer and show it here as a normal session row: its terminal streams from the peer and keystrokes go back to it, so the user can drive the peer CLI directly (Fleet peer_call delegates; Remote lets the user talk to it). Find the session with peer_call(peer, "session_list", {}) first. The peer must allow `remote.attach` for this machine. Returns the LOCAL session (its `remote` field names the peer session). Idempotent per peer session. Closing the local row only detaches — the CLI keeps running on the peer. Local only — fleet peers can never invoke this.',
+      'Attach to a session running on a fleet peer and show it here as a normal session row: its terminal streams from the peer and keystrokes go back to it, so the user can drive the peer CLI directly (Fleet peer_call delegates; Remote lets the user talk to it). Find the session with peer_call(peer, "session_list", {}) first. The peer must let this machine call it (peer_list mayCallThem). Returns the LOCAL session (its `remote` field names the peer session). Idempotent per peer session. Closing the local row only detaches — the CLI keeps running on the peer. Fleet peers can never invoke this (no chains); a paired phone may.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1982,6 +1982,24 @@ export const MCP_TOOLS: McpTool[] = [
         sessionId: { type: 'string', description: 'The session id ON THE PEER (from its session_list).' },
       },
       required: ['peer', 'sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'peer_spawn',
+    title: 'Start A Session On A Peer',
+    description:
+      'Start a CLI on a fleet peer and attach it here as a normal session row (see peer_attach): the CLI runs on the peer, its terminal streams here. Pick dirPath from peer_call(peer, "directory_list", {}) — it is a path ON THE PEER. The peer must let this machine call it. Returns the LOCAL session (its `remote` field names the peer session). Closing the row only detaches. Fleet peers can never invoke this (no chains).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        peer: { type: 'string', description: 'The peer id (or alias) from peer_list.' },
+        cliType: { type: 'string' },
+        dirPath: { type: 'string', description: 'A working directory ON THE PEER.' },
+        name: { type: 'string' },
+        initialPrompt: { type: 'string' },
+      },
+      required: ['peer', 'cliType', 'dirPath'],
       additionalProperties: false,
     },
   },

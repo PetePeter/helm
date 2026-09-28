@@ -6,8 +6,9 @@
  * secret store, not the pre-shared key itself. Transport, handshake, and key
  * resolution are introduced by later plans.
  *
- * A peer's authority is scoped by `allow`: an allow-list of tool-name glob
- * patterns. An empty list denies everything (deny-by-default).
+ * Access is one flag per side: `inbound` says whether THIS machine lets the peer
+ * call it. Each machine owns only its own flag; `peerAllowsMe` mirrors the
+ * peer's flag as reported over the link, for display only.
  */
 export interface PeerConfig {
   /** Unique peer identifier (UUID v4). */
@@ -22,10 +23,15 @@ export interface PeerConfig {
    */
   pskRef: string;
   /**
-   * Tool-name glob patterns this peer is permitted to invoke, e.g.
-   * ["session_*", "artifact_get"]. `*` is the only wildcard. Empty = deny all.
+   * Whether this peer may call me. True = every tool except the gate's
+   * hard-deny list; false (default) = nothing. Deny-by-default.
    */
-  allow: string[];
+  inbound: boolean;
+  /**
+   * The peer's own `inbound` flag for me, as last reported over the link.
+   * Display only — it never grants anything here. Undefined until first report.
+   */
+  peerAllowsMe?: boolean;
   /** Which way control traffic is allowed to flow for this peer. */
   direction: 'inbound' | 'outbound' | 'bidirectional';
   /** Epoch ms the peer was registered. */

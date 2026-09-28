@@ -32,7 +32,7 @@ describe('PeerConfigManager', () => {
     expect(peer.alias).toBe('the Mac');
     expect(peer.address).toBe('192.168.1.5:9443');
     expect(peer.pskRef).toBe('secret-store://peer/mac');
-    expect(peer.allow).toEqual([]);          // default
+    expect(peer.inbound).toBe(false);          // default
     expect(peer.direction).toBe('bidirectional'); // default
 
     const list = mgr.list();
@@ -56,17 +56,13 @@ describe('PeerConfigManager', () => {
     const peer = mgr.add(baseInput());
     expect(persist).toHaveBeenCalledTimes(1);
 
-    const updated = mgr.update(peer.id, { alias: 'renamed', allow: ['session_*'] });
+    const updated = mgr.update(peer.id, { alias: 'renamed', inbound: true });
     expect(persist).toHaveBeenCalledTimes(2);
     expect(updated!.alias).toBe('renamed');
-    expect(updated!.allow).toEqual(['session_*']);
+    expect(updated!.inbound).toBe(true);
     // id/createdAt untouched
     expect(updated!.id).toBe(peer.id);
     expect(updated!.createdAt).toBe(peer.createdAt);
-
-    // Returned copy is independent of internal state.
-    updated!.allow.push('leak');
-    expect(mgr.get(peer.id)!.allow).toEqual(['session_*']);
 
     expect(mgr.update('nope', { alias: 'x' })).toBeUndefined();
   });
@@ -118,62 +114,57 @@ describe('PeerConfigManager', () => {
     expect(peer.createdAt).toBe(4242);
   });
 
-  it('P7 persist snapshot independence: mutating exports does not touch state', () => {
-    let last: PeerConfig[] | null = null;
-    const persist = vi.fn((peers: PeerConfig[]) => { last = peers; });
-    const mgr = new PeerConfigManager(persist);
-    const peer = mgr.add({ ...baseInput(), allow: ['session_*'] });
+  describe('isInboundAllowed', () => {
+    it('A1 inbound:true lets the peer call me', () => {
+      const mgr = new PeerConfigManager();
+      const p = mgr.add({ ...baseInput(), inbound: true });
+      expect(mgr.isInboundAllowed(p.id)).toBe(true);
+    });
 
-    last!.find(p => p.id === peer.id)!.allow.push('leak');
-    last!.push({} as PeerConfig);
-    expect(mgr.get(peer.id)!.allow).toEqual(['session_*']);
-    expect(mgr.list()).toHaveLength(1);
+    it('A2 inbound:false (the default) blocks the peer', () => {
+      const mgr = new PeerConfigManager();
+      const p = mgr.add(baseInput());
+      expect(mgr.isInboundAllowed(p.id)).toBe(false);
+    });
+
+    it('A3 unknown peer → false', () => {
+      const mgr = new PeerConfigManager();
+      expect(mgr.isInboundAllowed('nope')).toBe(false);
+    });
   });
 
-  it('P8 list returns independent copies', () => {
-    const mgr = new PeerConfigManager();
-    const peer = mgr.add({ ...baseInput(), allow: ['a'] });
-    const list = mgr.list();
-    list[0].allow.push('leak');
-    expect(mgr.get(peer.id)!.allow).toEqual(['a']);
-  });
-
-  describe('isToolAllowed', () => {
-    it('A1 exact match allows', () => {
-      const mgr = new PeerConfigManager();
-      const p = mgr.add({ ...baseInput(), allow: ['artifact_get'] });
-      expect(mgr.isToolAllowed(p.id, 'artifact_get')).toBe(true);
-      expect(mgr.isToolAllowed(p.id, 'artifact_set')).toBe(false);
+  describe('peerAllowsMe (the peer-reported half)', () => {
+    it('R1 setPeerAllowsMe records the peer report and persists it', () => {
+      const persist = vi.fn();
+      const mgr = new PeerConfigManager(persist);
+      const p = mgr.add(baseInput());
+      persist.mockClear();
+      mgr.setPeerAllowsMe(p.id, true);
+      expect(mgr.get(p.id)!.peerAllowsMe).toBe(true);
+      expect(persist).toHaveBeenCalledTimes(1);
     });
 
-    it('A2 glob session_* matches session_send_text', () => {
-      const mgr = new PeerConfigManager();
-      const p = mgr.add({ ...baseInput(), allow: ['session_*'] });
-      expect(mgr.isToolAllowed(p.id, 'session_send_text')).toBe(true);
-      expect(mgr.isToolAllowed(p.id, 'artifact_get')).toBe(false);
+    it('R2 an unchanged report does not re-persist', () => {
+      const persist = vi.fn();
+      const mgr = new PeerConfigManager(persist);
+      const p = mgr.add(baseInput());
+      mgr.setPeerAllowsMe(p.id, true);
+      persist.mockClear();
+      mgr.setPeerAllowsMe(p.id, true);
+      expect(persist).not.toHaveBeenCalled();
     });
 
-    it('A3 empty allow-list denies all', () => {
+    it('R3 a report never changes my own inbound grant', () => {
       const mgr = new PeerConfigManager();
-      const p = mgr.add({ ...baseInput(), allow: [] });
-      expect(mgr.isToolAllowed(p.id, 'session_send_text')).toBe(false);
-    });
-
-    it('A4 ["*"] allows all', () => {
-      const mgr = new PeerConfigManager();
-      const p = mgr.add({ ...baseInput(), allow: ['*'] });
-      expect(mgr.isToolAllowed(p.id, 'anything')).toBe(true);
-    });
-
-    it('A5 unknown peer → false', () => {
-      const mgr = new PeerConfigManager();
-      expect(mgr.isToolAllowed('nope', 'session_send_text')).toBe(false);
+      const p = mgr.add(baseInput());
+      mgr.setPeerAllowsMe(p.id, true);
+      expect(mgr.isInboundAllowed(p.id)).toBe(false);
     });
   });
 
   it('P9 importAll(exportAll()) round-trips and sanitizes garbage', () => {
     const mgr = new PeerConfigManager();
-    mgr.add({ ...baseInput(), allow: ['session_*'] });
+    mgr.add({ ...baseInput(), inbound: true });
     const snapshot = mgr.exportAll();
 
     const mgr2 = new PeerConfigManager();
@@ -186,15 +177,33 @@ describe('PeerConfigManager', () => {
     const list = mgr2.list();
     expect(list).toHaveLength(1);
     expect(list[0].alias).toBe('the Mac');
-    expect(list[0].allow).toEqual(['session_*']);
+    expect(list[0].inbound).toBe(true);
   });
 
-  it('P10 importAll defaults a missing allow-list to []', () => {
-    const mgr = new PeerConfigManager();
-    mgr.importAll([
-      { id: 'g1', alias: 'a', address: 'h:1', pskRef: 'r', direction: 'inbound' } as unknown as PeerConfig,
-    ]);
-    expect(mgr.list()[0].allow).toEqual([]);
+  describe('migration from the per-tool allow-list', () => {
+    const legacy = (allow: unknown) => ({
+      id: 'g1', alias: 'a', address: 'h:1', pskRef: 'r', direction: 'bidirectional', allow,
+    }) as unknown as PeerConfig;
+
+    it('G1 a non-empty legacy allow-list becomes inbound:true', () => {
+      expect(sanitizePeers([legacy(['session_list'])])[0].inbound).toBe(true);
+    });
+
+    it('G2 an empty or missing legacy allow-list becomes inbound:false', () => {
+      expect(sanitizePeers([legacy([])])[0].inbound).toBe(false);
+      expect(sanitizePeers([legacy(undefined)])[0].inbound).toBe(false);
+    });
+
+    it('G3 an explicit inbound wins over a stale allow-list and the legacy field is dropped', () => {
+      const [peer] = sanitizePeers([{ ...legacy(['*']), inbound: false }]);
+      expect(peer.inbound).toBe(false);
+      expect('allow' in peer).toBe(false);
+    });
+
+    it('G4 migrating twice is stable', () => {
+      const once = sanitizePeers([legacy(['*'])]);
+      expect(sanitizePeers(once)).toEqual(once);
+    });
   });
 
   describe('machineId lookup + upsert (pairing idempotency)', () => {
@@ -209,20 +218,20 @@ describe('PeerConfigManager', () => {
     it('M2 upsertByMachineId inserts when the machineId is new', () => {
       const mgr = new PeerConfigManager();
       const peer = mgr.upsertByMachineId({
-        machineId: 'mac-123', alias: 'a', address: 'h:1', pskRef: 'r', allow: ['session_*'],
+        machineId: 'mac-123', alias: 'a', address: 'h:1', pskRef: 'r', inbound: true,
       });
       expect(mgr.list()).toHaveLength(1);
       expect(peer.machineId).toBe('mac-123');
-      expect(peer.allow).toEqual(['session_*']);
+      expect(peer.inbound).toBe(true);
     });
 
     it('M3 upsertByMachineId UPDATES the existing peer (no duplicate)', () => {
       const mgr = new PeerConfigManager();
       const first = mgr.upsertByMachineId({
-        machineId: 'mac-123', alias: 'old', address: 'h:1', pskRef: 'r1', allow: [],
+        machineId: 'mac-123', alias: 'old', address: 'h:1', pskRef: 'r1', inbound: false,
       });
       const second = mgr.upsertByMachineId({
-        machineId: 'mac-123', alias: 'new', address: 'h:2', pskRef: 'r2', allow: ['session_*'],
+        machineId: 'mac-123', alias: 'new', address: 'h:2', pskRef: 'r2', inbound: true,
       });
 
       expect(mgr.list()).toHaveLength(1);        // no duplicate
@@ -230,7 +239,7 @@ describe('PeerConfigManager', () => {
       expect(second.alias).toBe('new');
       expect(second.address).toBe('h:2');
       expect(second.pskRef).toBe('r2');
-      expect(second.allow).toEqual(['session_*']);
+      expect(second.inbound).toBe(true);
     });
 
     it('M4 upsertByMachineId preserves createdAt on update', () => {
@@ -247,7 +256,7 @@ describe('PeerConfigManager', () => {
       const mgr = new PeerConfigManager();
       mgr.importAll([{
         id: 'p1', alias: 'a', address: 'h:1', pskRef: 'r',
-        allow: [], direction: 'bidirectional', createdAt: 1, machineId: 'mac-9',
+        inbound: false, direction: 'bidirectional', createdAt: 1, machineId: 'mac-9',
       }]);
       expect(mgr.getByMachineId('mac-9')!.id).toBe('p1');
     });
@@ -285,7 +294,7 @@ describe('PeerConfigManager', () => {
       const mgr = new PeerConfigManager();
       mgr.importAll([{
         id: 'p1', alias: 'a', address: 'h:1', pskRef: 'r',
-        allow: [], direction: 'bidirectional', createdAt: 1, enabled: false,
+        inbound: false, direction: 'bidirectional', createdAt: 1, enabled: false,
       }]);
       expect(mgr.get('p1')!.enabled).toBe(false);
     });
@@ -294,7 +303,7 @@ describe('PeerConfigManager', () => {
       const mgr = new PeerConfigManager();
       mgr.importAll([{
         id: 'p1', alias: 'a', address: 'h:1', pskRef: 'r',
-        allow: [], direction: 'bidirectional', createdAt: 1,
+        inbound: false, direction: 'bidirectional', createdAt: 1,
         enabled: 'yes' as unknown as boolean,
       }]);
       expect(mgr.get('p1')!.enabled).toBeUndefined();
@@ -309,7 +318,7 @@ describe('peer-config-persistence (real temp-file round trip)', () => {
     try {
       const peers: PeerConfig[] = [{
         id: 'p1', alias: 'the Mac', address: 'h:1', pskRef: 'ref',
-        allow: ['session_*'], direction: 'bidirectional', createdAt: 100,
+        inbound: true, direction: 'bidirectional', createdAt: 100,
         machineId: 'MID-REMOTE', enabled: false,
       }];
       // Write the exact YAML shape savePeers uses, then read it back through the

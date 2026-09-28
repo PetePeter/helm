@@ -12,7 +12,7 @@ import com.potatomotato.helm.data.HelmSession
  */
 sealed interface RowEntry {
 
-    /** A project group heading. [count] is the group's size, collapsed or not. */
+    /** A project (or, for Remote rows, machine) group heading. [count] is the group's size, collapsed or not. */
     data class Header(val label: String, val collapsed: Boolean, val count: Int) : RowEntry
 
     /** One session row. */
@@ -22,24 +22,24 @@ sealed interface RowEntry {
 object SessionRows {
 
     /**
-     * Group [HelmSession.projectLabel]-sorted sessions into headers and rows.
+     * Group [HelmSession.groupLabel]-sorted sessions into headers and rows.
      * A collapsed group contributes its header only — the header keeps the
      * group's existence and size on screen.
      */
     fun build(sessions: List<HelmSession>, collapsed: Set<String>): List<RowEntry> {
-        val counts = sessions.groupingBy { it.projectLabel }.eachCount()
+        val counts = sessions.groupingBy { it.groupLabel }.eachCount()
         val rows = mutableListOf<RowEntry>()
         var lastLabel: String? = null
         for (session in sessions) {
-            if (session.projectLabel != lastLabel) {
-                lastLabel = session.projectLabel
+            if (session.groupLabel != lastLabel) {
+                lastLabel = session.groupLabel
                 rows += RowEntry.Header(
-                    label = session.projectLabel,
-                    collapsed = session.projectLabel in collapsed,
-                    count = counts[session.projectLabel] ?: 0,
+                    label = session.groupLabel,
+                    collapsed = session.groupLabel in collapsed,
+                    count = counts[session.groupLabel] ?: 0,
                 )
             }
-            if (session.projectLabel !in collapsed) rows += RowEntry.Session(session)
+            if (session.groupLabel !in collapsed) rows += RowEntry.Session(session)
         }
         return rows
     }

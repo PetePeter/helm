@@ -3,14 +3,14 @@
  *
  * It is the concrete `onCall(peerId, method, params)` sink handed to the
  * RemoteLink (P-0646). For every inbound call it, IN ORDER:
- *   1. rejects hard-denied tools (never proxyable, even under a `*` allow-list),
- *   2. rejects tools outside the peer's allow-list,
+ *   1. rejects hard-denied tools (never proxyable, even for an allowed peer),
+ *   2. rejects everything from a peer this host does not let call it,
  *   3. rejects calls exceeding the per-peer rate limit,
  *   4. otherwise dispatches through the EXISTING MCP dispatcher UNCHANGED, under
  *      a synthesized PROXY identity (never a real local session),
  * and audits the outcome of every one of those paths.
  *
- * Deny messages are UNIFORM and non-leaky: a hard-deny and an allow-list-deny
+ * Deny messages are UNIFORM and non-leaky: a hard-deny and a not-allowed deny
  * are indistinguishable, so a remote peer cannot probe which tools exist.
  */
 
@@ -25,8 +25,8 @@ import { MCP_TOOLS } from '../tools/definitions.js';
 /**
  * A reserved, non-dispatchable meta-method a remote peer uses to discover the
  * tool surface THIS host will actually let it invoke. It is answered in-gate by
- * intersecting MCP_TOOLS with the caller's allow-list (minus hard-denied tools)
- * — the allow-list authority lives on the REMOTE, so a peer learns exactly what
+ * MCP_TOOLS minus hard-denied tools (or nothing, for a peer not allowed in)
+ * — the access authority lives on the REMOTE, so a peer learns exactly what
  * it may call, and nothing about tools it may not. Never routed through the MCP
  * dispatcher. Named with sentinel underscores so it can never collide with a
  * real tool name.
@@ -34,14 +34,14 @@ import { MCP_TOOLS } from '../tools/definitions.js';
 export const RESERVED_PEER_TOOLS_METHOD = '__peer_tools__';
 
 /**
- * Tools that must NEVER be invocable by a remote peer, regardless of that peer's
- * allow-list — the belt-and-suspenders host/app-lifecycle deny list.
+ * Tools that must NEVER be invocable by a remote peer, even one allowed to call
+ * this host — the host/app-lifecycle deny list.
  *
- * The primary gate is the per-peer allow-list (PeerConfigManager.isToolAllowed);
- * this set is the last-resort guard for tools so dangerous they must be blocked
- * even if a peer is configured with a wildcard `*`. Defined HERE (not in the MCP
- * dispatcher, which stays untouched). Extend this set — do not weaken the
- * allow-list — when adding new host/lifecycle tools that must stay local-only.
+ * The primary gate is the per-peer `inbound` flag
+ * (PeerConfigManager.isInboundAllowed), which grants the whole tool surface; this
+ * set carves out the tools so dangerous they stay local-only regardless. Defined
+ * HERE (not in the MCP dispatcher, which stays untouched). Extend it when adding
+ * new host/lifecycle tools that must stay local-only.
  */
 export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Host relaunch — gated by an owned handover artifact even locally, and a
@@ -50,22 +50,35 @@ export const HARD_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
   // Mobile pairing + grant administration: LOCAL AI ONLY. A phone that could
   // reach these would pair further devices or widen its own allow-list — the
   // gate would be handing out the keys to itself. A peer has no business
-  // administering this host's phones either. Deny regardless of allow-list.
+  // administering this host's phones either. Deny regardless of access.
   'mobile_pair_start',
   'mobile_pair_status',
   'mobile_pair_confirm',
   'mobile_pair_cancel',
   'mobile_device_list',
   'mobile_device_allow',
-  // Running-session group killer: destructive to host/app lifecycle. A peer with a
-  // wildcard `*` allow-list could otherwise batch-kill a whole group.
+  // Running-session group killer: destructive to host/app lifecycle. An allowed
+  // peer could otherwise batch-kill a whole group.
   'session_group_close',
-  // Remote viewer entry point: a peer driving it would make THIS host attach to
-  // a third machine on the peer's behalf — Remote attaches are never chained.
-  'peer_attach',
   // NOTE: session_close is NOT here — it is handled by the ownership gate below,
   // allowing peers to close only sessions they created via session_create.
 ]);
+
+/**
+ * Remote entry points: denied to fleet peers ONLY. A peer driving them would make
+ * THIS host attach to (or spawn on) a third machine on its behalf, and Remote is
+ * never chained. A paired phone may use them — the phone is the user asking this
+ * host to open a peer's session, which is the whole point.
+ */
+export const FLEET_ONLY_DENY_TOOLS: ReadonlySet<string> = new Set<string>([
+  'peer_attach',
+  'peer_spawn',
+]);
+
+/** Whether a fleet peer may never invoke `tool`, whatever its access. */
+function isFleetDenied(tool: string): boolean {
+  return HARD_DENY_TOOLS.has(tool) || FLEET_ONLY_DENY_TOOLS.has(tool);
+}
 
 /**
  * Argument keys a caller must NEVER be able to set RAW — they would override the
@@ -148,7 +161,7 @@ export class GateError extends Error {
 }
 
 const JSONRPC_SERVER_ERROR = -32000;
-/** Uniform, non-leaky deny message shared by hard-deny and allow-list-deny. */
+/** Uniform, non-leaky deny message shared by hard-deny and not-allowed deny. */
 const DENY_MESSAGE = 'Tool not permitted';
 const RATE_LIMIT_MESSAGE = 'Rate limit exceeded';
 /** Cap the audit summary so a huge arg-object can't bloat the log. */
@@ -156,13 +169,13 @@ const ARG_SUMMARY_MAX = 200;
 
 export interface InboundCallGateDeps {
   /**
-   * Per-peer allow-list matcher + enablement lookup (PeerConfigManager). `get`
+   * Per-peer access flag + enablement lookup (PeerConfigManager). `get`
    * returns the peer's config (or undefined). Only an explicit `enabled === false`
    * disables a peer; undefined/true = enabled (default-true), so legacy peers
    * without the field stay active.
    */
   peerConfig: {
-    isToolAllowed(peerId: string, toolName: string): boolean;
+    isInboundAllowed(peerId: string): boolean;
     get?(peerId: string): { enabled?: boolean } | undefined;
   };
   /**
@@ -207,38 +220,39 @@ export class InboundCallGate {
 
     // 0a. Disabled-peer gate — an explicitly disabled peer is off in BOTH
     // directions. It cannot invoke tools NOR enumerate the reserved tool surface.
-    // Deny with the SAME uniform message as an allow-list-deny (no existence
+    // Deny with the SAME uniform message as a not-allowed deny (no existence
     // leak) so "Off" can't be probed apart from "not permitted". A peer with NO
-    // config (undefined) is NOT blocked here — it falls through to the existing
-    // allow-list deny, which already denies deny-by-default.
+    // config (undefined) is NOT blocked here — it falls through to the access
+    // check, which denies by default.
     if (this.isPeerDisabled(peerId)) {
       return this.denied(peerId, method, argSummary);
     }
 
     // 0. Reserved tool-discovery meta-method. Answered IN-GATE (never dispatched)
-    // by intersecting the tool catalogue with this peer's allow-list, minus the
-    // hard-deny set. Still rate-limited + audited so a peer cannot probe it for
+    // as the tool catalogue minus the hard-deny set (nothing for a peer not
+    // allowed in). Still rate-limited + audited so a peer cannot probe it for
     // free. This is how a remote returns the CALLER's permitted surface.
     if (method === RESERVED_PEER_TOOLS_METHOD) {
       if (!this.rateLimiter.tryConsume(peerId)) {
         this.record(peerId, method, argSummary, 'rate-limited');
         throw new GateError(JSONRPC_SERVER_ERROR, RATE_LIMIT_MESSAGE);
       }
+      const allowed = this.peerConfig.isInboundAllowed(peerId);
       const tools = MCP_TOOLS
-        .filter((t) => !HARD_DENY_TOOLS.has(t.name) && this.peerConfig.isToolAllowed(peerId, t.name))
+        .filter((t) => allowed && !isFleetDenied(t.name))
         .map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema }));
       this.record(peerId, method, argSummary, 'ok');
       return { tools };
     }
 
-    // 1. Hard-deny — never proxyable, even under a wildcard allow-list.
-    if (HARD_DENY_TOOLS.has(method)) {
+    // 1. Hard-deny — never proxyable, even for an allowed peer.
+    if (isFleetDenied(method)) {
       return this.denied(peerId, method, argSummary);
     }
 
     // 1b. Ownership-gated tools — peer may only invoke these on sessions it
     // created via session_create (tracked by createdByPeerId). Falls through
-    // to the allow-list check when ownership is confirmed. Uniform deny for
+    // to the access check when ownership is confirmed. Uniform deny for
     // all other outcomes (not-owned, not-found, missing ref) — no information
     // leak about whether the session exists or who owns it.
     if (method === 'session_close') {
@@ -248,8 +262,8 @@ export class InboundCallGate {
       }
     }
 
-    // 2. Per-peer allow-list — same uniform message (no existence leak).
-    if (!this.peerConfig.isToolAllowed(peerId, method)) {
+    // 2. Per-peer access — same uniform message (no existence leak).
+    if (!this.peerConfig.isInboundAllowed(peerId)) {
       return this.denied(peerId, method, argSummary);
     }
 

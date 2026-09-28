@@ -37,7 +37,7 @@ class FakeLink extends EventEmitter {
 
 /** A fake config source listing the peers the manager should dial. */
 const peerList = [
-  { id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional' as const, createdAt: 0 },
+  { id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', inbound: true, direction: 'bidirectional' as const, createdAt: 0 },
 ];
 
 function makeManager(overrides: Partial<ConstructorParameters<typeof PeerLinkManager>[0]> = {}) {
@@ -166,12 +166,12 @@ describe('PeerLinkManager', () => {
     await mgr.start();
     // No link yet → offline.
     expect(mgr.list()).toEqual([
-      { id: 'peerA', alias: 'A', direction: 'bidirectional', online: false },
+      { id: 'peerA', alias: 'A', direction: 'bidirectional', online: false, mayCallMe: true, mayCallThem: false },
     ]);
     // Bring a link up → online flips true.
     created.clients[0].emitLink(new FakeLink(), 'peerA');
     expect(mgr.list()).toEqual([
-      { id: 'peerA', alias: 'A', direction: 'bidirectional', online: true },
+      { id: 'peerA', alias: 'A', direction: 'bidirectional', online: true, mayCallMe: true, mayCallThem: false },
     ]);
     await mgr.stop();
   });
@@ -180,7 +180,7 @@ describe('PeerLinkManager', () => {
     it('start() does NOT dial a peer with enabled:false', async () => {
       const { mgr, created } = makeManager({
         listPeers: () => [
-          { id: 'off', alias: 'Off', address: '10.0.0.9:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional', createdAt: 0, enabled: false },
+          { id: 'off', alias: 'Off', address: '10.0.0.9:47474', pskRef: 'r', inbound: true, direction: 'bidirectional', createdAt: 0, enabled: false },
         ],
       });
       await mgr.start();
@@ -191,7 +191,7 @@ describe('PeerLinkManager', () => {
     it('start() DOES dial a peer with enabled undefined (default-true)', async () => {
       const { mgr, created } = makeManager({
         listPeers: () => [
-          { id: 'dflt', alias: 'Dflt', address: '10.0.0.8:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional', createdAt: 0 },
+          { id: 'dflt', alias: 'Dflt', address: '10.0.0.8:47474', pskRef: 'r', inbound: true, direction: 'bidirectional', createdAt: 0 },
         ],
       });
       await mgr.start();
@@ -203,7 +203,7 @@ describe('PeerLinkManager', () => {
       const { mgr, created } = makeManager({ listPeers: () => [] });
       await mgr.start();
       expect(created.clients).toHaveLength(0);
-      mgr.addPeer({ id: 'off', alias: 'Off', address: '10.0.0.7:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional', createdAt: 0, enabled: false });
+      mgr.addPeer({ id: 'off', alias: 'Off', address: '10.0.0.7:47474', pskRef: 'r', inbound: true, direction: 'bidirectional', createdAt: 0, enabled: false });
       expect(created.clients).toHaveLength(0);
       await mgr.stop();
     });
@@ -309,7 +309,7 @@ describe('PeerLinkManager', () => {
       expect(created.clients[0].disposed).toBe(true);
 
       // Re-enable path: addPeer creates a fresh client (no-op guard cleared).
-      mgr.addPeer({ id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional', createdAt: 0 });
+      mgr.addPeer({ id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', inbound: true, direction: 'bidirectional', createdAt: 0 });
       expect(created.clients).toHaveLength(2);
       expect(created.clients[1].connected).toBe(true);
       await mgr.stop();
@@ -380,7 +380,7 @@ describe('PeerLinkManager syncPeers', () => {
     return { mgr, created };
   }
 
-  const peerA = { id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional' as const, createdAt: 0 };
+  const peerA = { id: 'peerA', alias: 'A', address: '10.0.0.2:47474', pskRef: 'r', inbound: true, direction: 'bidirectional' as const, createdAt: 0 };
 
   it('dials a peer that appeared in the registry after start (the just-paired case)', async () => {
     const peers: any[] = [];
@@ -427,8 +427,8 @@ describe('PeerLinkManager peer reference resolution (id or alias)', () => {
    * peer_list) reaches for, so both must work.
    */
   const twoPeers = [
-    { id: 'id-box', alias: 'box', address: '10.0.0.2:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional' as const, createdAt: 0 },
-    { id: 'id-desk', alias: 'desk', address: '10.0.0.3:47474', pskRef: 'r', allow: ['*'], direction: 'bidirectional' as const, createdAt: 0 },
+    { id: 'id-box', alias: 'box', address: '10.0.0.2:47474', pskRef: 'r', inbound: true, direction: 'bidirectional' as const, createdAt: 0 },
+    { id: 'id-desk', alias: 'desk', address: '10.0.0.3:47474', pskRef: 'r', inbound: true, direction: 'bidirectional' as const, createdAt: 0 },
   ];
 
   it('routes a call addressed by alias to the same live link as the id', async () => {

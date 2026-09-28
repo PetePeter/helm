@@ -1422,14 +1422,15 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     alias: string;
     address: string;
     direction: 'inbound' | 'outbound' | 'bidirectional';
-    allow: string[];
+    inbound: boolean;
+    peerAllowsMe?: boolean;
     enabled: boolean;
     online: boolean;
   }>> => ipcRenderer.invoke('peer:list'),
 
-  /** Replace a peer's tool-name allow-list (glob patterns). Persists + re-authorizes. */
-  peerSetAllowList: (peerId: string, allow: string[]): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke('peer:setAllowList', peerId, allow),
+  /** Set whether a peer may call this machine. Persists + re-authorizes + reports to the peer. */
+  peerSetInbound: (peerId: string, inbound: boolean): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('peer:setInbound', peerId, inbound),
 
   /** Toggle whether a peer is dialled by the fleet transport. */
   peerSetEnabled: (peerId: string, enabled: boolean): Promise<{ ok: boolean }> =>
@@ -1446,6 +1447,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Remote: open a peer's session here as a local row you can drive directly. */
   peerAttach: (peerId: string, sessionId: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> =>
     ipcRenderer.invoke('peer:attach', peerId, sessionId),
+
+  /** Remote spawn: a peer's spawnable directories (its directory_list). */
+  peerDirs: (peerId: string): Promise<Array<{ name: string; path: string; projectId?: string; projectName?: string }>> =>
+    ipcRenderer.invoke('peer:dirs', peerId),
+
+  /** Remote spawn: start `cliType` in `dirPath` on the peer and open it here. */
+  peerSpawn: (peerId: string, cliType: string, dirPath: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> =>
+    ipcRenderer.invoke('peer:spawn', peerId, cliType, dirPath),
 
   /** Recent proxied-call audit entries (last 7 days, newest first). */
   peerGetAudit: (): Promise<Array<{

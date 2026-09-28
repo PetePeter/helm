@@ -344,6 +344,8 @@
 
     <string name="spawn_title">New session</string>
     <string name="spawn_where">Where</string>
+    <string name="spawn_runs_on">Runs on</string>
+    <string name="spawn_this_desktop">This desktop</string>
     <string name="spawn_which_cli">Which CLI</string>
     <string name="spawn_name">Name (optional — blank lets Helm name the session)</string>
     <string name="spawn_no_directories">Waiting for the directory list from Helm.</string>

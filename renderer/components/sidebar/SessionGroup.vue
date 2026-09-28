@@ -15,8 +15,8 @@ export interface SessionGroupData {
   sessionCount: number;
   /** Member activity used to render one dot per session in the header. */
   sessions?: Array<{ id: string; name: string; activityLevel: string }>;
-  /** 'runtime' groups render the extra controls + drop rules. */
-  kind?: 'directory' | 'runtime';
+  /** 'runtime' groups render the extra controls + drop rules; 'machine' holds a peer's Remote rows. */
+  kind?: 'directory' | 'runtime' | 'machine';
   /** Runtime group id (kind === 'runtime'). Equals dirPath for runtime groups. */
   groupId?: string;
 }
@@ -129,6 +129,7 @@ function onDrop(e: DragEvent): void {
   >
     <span class="group-chevron">{{ group.collapsed ? '▲' : '▼' }}</span>
     <span v-if="isRuntime" class="group-icon" aria-hidden="true">🗂️</span>
+    <span v-else-if="group.kind === 'machine'" class="group-icon" aria-hidden="true" title="Running on this peer">🖥️</span>
 
     <span
       class="group-name"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * PeersTab.vue — Settings → 🔗 Peers. The steady-state fleet surface:
- * paired peers (online dot, direction, enable toggle, allow-list editor, unpair),
+ * paired peers (online dot, access direction, enable toggle, "may call me", unpair),
  * a "Discover nearby" mDNS section with Pair buttons, and an Audit button that
  * opens the read-only PeerAuditModal. The SAS confirm dialog is mounted by the
  * app host and driven by the usePeers pairing state.
@@ -25,7 +25,7 @@ const {
   ensureSubscribed,
   startPairing,
   startPairingByAddress,
-  setAllowList,
+  setInbound,
   setEnabled,
   unpair,
   listPeerSessions,
@@ -35,14 +35,6 @@ const {
 function onFleetUpdate(updates: Partial<FleetConfig>): void {
   void setFleetConfig(updates);
 }
-
-/** Allow-list presets: a friendly name → the glob patterns it applies. */
-const ALLOW_PRESETS: Array<{ label: string; globs: string[] }> = [
-  { label: 'Read-only', globs: ['session_list', 'plan_*', 'directory_list', 'project_list'] },
-  { label: 'Sessions', globs: ['session_*'] },
-  { label: 'Remote', globs: ['session_list', 'session_artifact_list', 'session_artifact_get', 'remote.*'] },
-  { label: 'All', globs: ['*'] },
-];
 
 // Remote attach picker — one peer at a time.
 const attachPeerId = ref<string | null>(null);
@@ -67,7 +59,6 @@ async function onAttach(peer: ConfiguredPeer, session: PeerSession): Promise<voi
   else attachError.value = result.error ?? 'Attach failed';
 }
 
-const expandedPeerId = ref<string | null>(null);
 const auditVisible = ref(false);
 const manualAddress = ref('');
 
@@ -90,10 +81,6 @@ function onPairManual(): void {
   manualAddress.value = '';
 }
 
-// Per-peer pending allow-list edits (draft glob being typed) + debounce timers.
-const newPattern = ref<Record<string, string>>({});
-const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
-
 onMounted(() => {
   ensureSubscribed();
 });
@@ -112,14 +99,20 @@ function dotColor(peer: ConfiguredPeer): string {
   return getPeerStatusColor(statusFor(peer));
 }
 
-function directionLabel(direction: ConfiguredPeer['direction']): string {
-  if (direction === 'inbound') return '← inbound';
-  if (direction === 'outbound') return 'outbound →';
-  return '↔ bidirectional';
+/**
+ * The combined direction: my grant (`inbound`, them → me) plus the peer's
+ * reported grant (`peerAllowsMe`, me → them). Each machine sets only its own half.
+ */
+function accessLabel(peer: ConfiguredPeer): string {
+  const meToThem = peer.peerAllowsMe === true;
+  if (peer.inbound && meToThem) return '↔ both';
+  if (peer.inbound) return '← them → me';
+  if (meToThem) return '→ me → them';
+  return peer.peerAllowsMe === undefined ? 'off (peer not heard yet)' : 'off';
 }
 
-function toggleExpanded(peerId: string): void {
-  expandedPeerId.value = expandedPeerId.value === peerId ? null : peerId;
+function onToggleInbound(peer: ConfiguredPeer, event: Event): void {
+  void setInbound(peer.id, (event.target as HTMLInputElement).checked);
 }
 
 function onToggleEnabled(peer: ConfiguredPeer, event: Event): void {
@@ -135,33 +128,6 @@ function onPair(peer: DiscoveredPeer): void {
   void startPairing(peer);
 }
 
-/** Debounced allow-list save (500ms). */
-function scheduleAllowSave(peerId: string, allow: string[]): void {
-  const existing = saveTimers.get(peerId);
-  if (existing) clearTimeout(existing);
-  saveTimers.set(peerId, setTimeout(() => {
-    void setAllowList(peerId, allow);
-    saveTimers.delete(peerId);
-  }, 500));
-}
-
-function addPattern(peer: ConfiguredPeer): void {
-  const pattern = (newPattern.value[peer.id] ?? '').trim();
-  if (!pattern) return;
-  if (peer.allow.includes(pattern)) { newPattern.value[peer.id] = ''; return; }
-  const next = [...peer.allow, pattern];
-  newPattern.value[peer.id] = '';
-  scheduleAllowSave(peer.id, next);
-}
-
-function removePattern(peer: ConfiguredPeer, pattern: string): void {
-  const next = peer.allow.filter((p) => p !== pattern);
-  scheduleAllowSave(peer.id, next);
-}
-
-function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
-  scheduleAllowSave(peer.id, [...globs]);
-}
 </script>
 
 <template>
@@ -189,8 +155,18 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
             :title="statusFor(peer)"
           ></span>
           <span class="peer-alias">{{ peer.alias }}</span>
-          <span class="peer-direction">{{ directionLabel(peer.direction) }}</span>
+          <span class="peer-direction peer-access">{{ accessLabel(peer) }}</span>
           <span class="peer-spacer"></span>
+
+          <label class="peer-toggle" title="Let this peer call my tools and open my sessions">
+            <input
+              type="checkbox"
+              class="peer-inbound-input"
+              :checked="peer.inbound"
+              @change="onToggleInbound(peer, $event)"
+            />
+            <span class="peer-toggle-label">May call me</span>
+          </label>
 
           <label class="peer-toggle" :title="peer.enabled ? 'Enabled' : 'Disabled'">
             <input
@@ -209,9 +185,6 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
             title="Drive one of this peer's sessions from here (Remote)"
             @click="toggleAttach(peer)"
           >Attach…</button>
-          <button class="btn btn--secondary btn--sm peer-allow-toggle" type="button" @click="toggleExpanded(peer.id)">
-            Allow-list ({{ peer.allow.length }})
-          </button>
           <button class="btn btn--danger btn--sm peer-unpair" type="button" @click="onUnpair(peer)">Unpair</button>
         </div>
 
@@ -226,39 +199,6 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
           </div>
         </div>
 
-        <div v-if="expandedPeerId === peer.id" class="peer-allow-editor">
-          <div class="peer-presets">
-            <span class="peer-presets-label">Presets:</span>
-            <button
-              v-for="preset in ALLOW_PRESETS"
-              :key="preset.label"
-              class="btn btn--secondary btn--sm peer-preset-btn"
-              type="button"
-              @click="applyPreset(peer, preset.globs)"
-            >{{ preset.label }}</button>
-          </div>
-
-          <div class="peer-globs">
-            <span v-if="peer.allow.length === 0" class="peer-globs-empty">Deny-all (no patterns).</span>
-            <span v-for="pattern in peer.allow" :key="pattern" class="peer-glob-chip">
-              <code class="peer-glob-code">{{ pattern }}</code>
-              <button class="peer-glob-remove" type="button" aria-label="Remove pattern" @click="removePattern(peer, pattern)">✕</button>
-            </span>
-          </div>
-
-          <div class="peer-add-row">
-            <input
-              type="text"
-              class="peer-add-input"
-              placeholder="e.g. session_* or artifact_get"
-              :value="newPattern[peer.id] ?? ''"
-              @input="newPattern[peer.id] = ($event.target as HTMLInputElement).value"
-              @keydown.enter.prevent="addPattern(peer)"
-              @blur="addPattern(peer)"
-            />
-            <button class="btn btn--secondary btn--sm peer-add-btn" type="button" @click="addPattern(peer)">Add</button>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -345,10 +285,10 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
 .peer-spacer { margin-left: auto; }
 
 .peer-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.peer-enable-input { width: 16px; height: 16px; cursor: pointer; }
+.peer-enable-input,
+.peer-inbound-input { width: 16px; height: 16px; cursor: pointer; }
 .peer-toggle-label { font-size: 0.78rem; color: var(--text-secondary); }
 
-.peer-allow-editor,
 .peer-attach-picker {
   border-top: 1px solid var(--border);
   padding-top: 8px;
@@ -356,22 +296,6 @@ function applyPreset(peer: ConfiguredPeer, globs: string[]): void {
   flex-direction: column;
   gap: 8px;
 }
-.peer-presets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.peer-presets-label { font-size: 0.78rem; color: var(--text-secondary); }
-.peer-globs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.peer-globs-empty { font-size: 0.8rem; color: var(--text-secondary); }
-.peer-glob-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--bg-tertiary); border-radius: 4px; padding: 2px 4px 2px 8px;
-}
-.peer-glob-code { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.78rem; color: var(--text-primary); }
-.peer-glob-remove {
-  background: none; border: none; color: var(--text-secondary);
-  cursor: pointer; font-size: 0.8rem; line-height: 1; padding: 0 2px;
-}
-.peer-glob-remove:hover { color: #ff6666; }
-
-.peer-add-row { display: flex; gap: 8px; }
 .peer-add-input {
   flex: 1; min-width: 160px; padding: 6px 8px;
   border: 1px solid var(--border); border-radius: 4px;

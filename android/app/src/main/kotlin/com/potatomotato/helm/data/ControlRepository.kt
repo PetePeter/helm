@@ -134,6 +134,17 @@ class ControlRepository {
     val directories: StateFlow<List<HelmDirectory>> = _directories.asStateFlow()
 
     /**
+     * Fleet peers a session can be spawned on besides the linked desktop: online
+     * and letting it call them. Empty when fleet is off or the phone may not ask.
+     */
+    private val _spawnMachines = MutableStateFlow<List<SpawnMachine>>(emptyList())
+    val spawnMachines: StateFlow<List<SpawnMachine>> = _spawnMachines.asStateFlow()
+
+    /** The machine the directory list was last asked for; null is the linked desktop. */
+    @Volatile
+    private var directoriesMachine: String? = null
+
+    /**
      * Why the directory list is missing, when Helm was asked and could not
      * answer. Null while an ask is in flight or a list has landed — the eternal
      * "waiting for the directory list" hint must not outlive a failure the user
@@ -241,9 +252,41 @@ class ControlRepository {
         return true
     }
 
-    /** A new ask supersedes whatever the last one failed with. */
-    fun directoriesRequested() {
+    /**
+     * A new ask supersedes whatever the last one failed with. Switching machine
+     * empties the list at once: another machine's folders must never be offered
+     * as this one's while its answer is on the way.
+     */
+    fun directoriesRequested(machineId: String? = null) {
         _directoriesError.value = null
+        if (machineId != directoriesMachine) _directories.value = emptyList()
+        directoriesMachine = machineId
+    }
+
+    /** Whether an answer for [machineId]'s directories is still the one wanted. */
+    fun wantsDirectoriesOf(machineId: String?): Boolean = machineId == directoriesMachine
+
+    /**
+     * Take a `peer_list` result: keep the peers that are online and let the
+     * desktop call them. False when the payload is not a peer list.
+     */
+    fun machinesArrived(result: Any?): Boolean {
+        val array = result as? JSONArray ?: run {
+            WireShape.undecodable<Unit>("a peer_list result", "a JSON array", result)
+            return false
+        }
+        _spawnMachines.value = (0 until array.length()).mapNotNull { index ->
+            val entry = array.opt(index) as? JSONObject ?: return@mapNotNull null
+            val id = entry.opt("id") as? String ?: return@mapNotNull null
+            if (entry.opt("online") != true || entry.opt("mayCallThem") != true) return@mapNotNull null
+            SpawnMachine(id = id, name = entry.opt("alias") as? String ?: id)
+        }.sortedBy { it.name.lowercase() }
+        return true
+    }
+
+    /** No peers to offer — refused, failed or fleet off. The form just shows this desktop. */
+    fun machinesUnavailable() {
+        _spawnMachines.value = emptyList()
     }
 
     /** Record why the directory list is missing. The message is what the user reads. */
@@ -314,6 +357,9 @@ class ControlRepository {
         const val FIRST_SEQ = 1L
     }
 }
+
+/** A fleet peer the linked desktop can spawn on (`peer_spawn`). [id] is the peer id. */
+data class SpawnMachine(val id: String, val name: String)
 
 /**
  * One CLI Helm can spawn, from the `tool_list` catalogue. [cliType] is the wire

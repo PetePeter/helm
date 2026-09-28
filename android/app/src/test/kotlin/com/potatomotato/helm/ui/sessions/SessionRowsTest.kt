@@ -29,6 +29,24 @@ class SessionRowsTest {
     }
 
     @Test
+    fun `Remote rows from several projects share one machine header`() {
+        val rows = SessionRows.build(
+            listOf(
+                s("a1", "/repo/alpha"),
+                s("r1", "/there/one").copy(machineName = "Box"),
+                s("r2", "/there/two").copy(machineName = "Box"),
+            ),
+            collapsed = emptySet(),
+        )
+
+        assertEquals(
+            listOf("alpha", "🖥 Box"),
+            rows.mapNotNull { (it as? RowEntry.Header)?.label },
+        )
+        assertEquals(2, rows.filterIsInstance<RowEntry.Header>().last().count)
+    }
+
+    @Test
     fun `a collapsed group shows its header with the count, and no rows`() {
         val rows = SessionRows.build(
             listOf(s("a1", "/repo/alpha"), s("a2", "/repo/alpha"), s("b1", "/repo/beta")),

@@ -174,6 +174,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val clis by client.control.clis.collectAsState()
     val createdSessionId by client.control.createdSessionId.collectAsState()
     val spawnInFlight by client.control.spawnInFlight.collectAsState()
+    val spawnMachines by client.control.spawnMachines.collectAsState()
     val artifactList by client.artifacts.list.collectAsState()
     val artifactRead by client.artifacts.read.collectAsState()
     val artifactSave by client.artifacts.save.collectAsState()
@@ -395,8 +396,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     LaunchedEffect(where, tab, openSessionId) {
         when {
             where == Destination.Spawn -> {
-                if (directories.isEmpty()) client.refreshDirectories()
+                // The form opens on this desktop: a list left over from another
+                // machine is not its folders.
+                if (directories.isEmpty() || !client.control.wantsDirectoriesOf(null)) client.refreshDirectories()
                 if (clis.isEmpty()) client.refreshClis()
+                client.refreshMachines()
             }
             // The artifacts screens pull on arrival, like a snapshot pull: a
             // fresh ask every visit, never a stream and never a stale cache.
@@ -861,14 +865,16 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         sessions = sessions,
                         linkState = linkState,
                         spawnInFlight = spawnInFlight,
-                        onSpawn = { dirPath, cliType, name ->
+                        machines = spawnMachines,
+                        onMachine = { machineId -> client.refreshDirectories(machineId) },
+                        onSpawn = { dirPath, cliType, name, machineId ->
                             // Navigation is decided by the OUTCOME, not by the
                             // tap: success arrives as createdSessionId above,
                             // failure as the notice bar's to say — so the form
                             // keeps its choices instead of leaving on faith.
-                            client.spawn(dirPath, cliType, name, planSpawn?.prompt)
+                            client.spawn(dirPath, cliType, name, planSpawn?.prompt, machineId)
                         },
-                        onRetryDirectories = { client.refreshDirectories() },
+                        onRetryDirectories = { machineId -> client.refreshDirectories(machineId) },
                         onBack = toThread,
                         plan = planSpawn,
                     )

@@ -170,6 +170,14 @@ removes.
   (`ControlRepository.spawnInFlight`): two taps are two sessions, and the flag
   settles on every outcome, refusal and dead link included, so it never greys
   forever.
+  With fleet peers online that let the desktop in (`peer_list` →
+  `mayCallThem`), a **Runs on** row picks the machine: its folders come from
+  `peer_call(peer, "directory_list")`, the spawn is `peer_spawn`, and the
+  desktop opens the result as a Remote row whose local id the phone opens —
+  see [remote.md](remote.md). A refused `peer_list` just hides the row.
+- **Session list by machine** — a Remote row (`remote.machineName` on
+  `session_list`) groups under 🖥 its machine, after the desktop's own
+  project groups (`HelmSession.groupLabel`).
 - **Session sheet** — the per-session actions. Forbidden ones are greyed with
   "not permitted", read from the reserved `__mobile_tools__` meta-method and
   never a hardcoded list. Actions that are *reachable but meaningless* to a

@@ -43,6 +43,11 @@ data class HelmSession(
     val mission: String? = null,
     /** The desktop's session role — `operator` marks the one "Helm" session. Null for every other. */
     val role: String? = null,
+    /**
+     * Set on a Remote row: the name of the machine the CLI really runs on (the
+     * desktop only views it). Null for the desktop's own sessions.
+     */
+    val machineName: String? = null,
 ) {
     /**
      * What the group header shows. The full path is the identity — two projects
@@ -50,6 +55,14 @@ data class HelmSession(
      */
     val projectLabel: String
         get() = lastPathSegment(projectPath)
+
+    /**
+     * The list header this row sits under: its project for the desktop's own
+     * sessions, its machine for a Remote row — a peer's path means nothing next
+     * to this desktop's project folders.
+     */
+    val groupLabel: String
+        get() = machineName?.let { "🖥 $it" } ?: projectLabel
 }
 
 /**
@@ -92,6 +105,8 @@ object SessionWire {
             mission = ((summary.opt("mission") as? JSONObject)?.opt("text") as? String)
                 ?.takeIf { it.isNotBlank() },
             role = (summary.opt("role") as? String)?.takeIf { it.isNotBlank() },
+            machineName = ((summary.opt("remote") as? JSONObject)?.opt("machineName") as? String)
+                ?.takeIf { it.isNotBlank() },
         )
     }
 

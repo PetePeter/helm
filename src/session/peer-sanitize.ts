@@ -33,12 +33,22 @@ export function sanitizePeers(peers: unknown, now: () => number = Date.now): Pee
       alias: p.alias as string,
       address: p.address as string,
       pskRef: typeof p.pskRef === 'string' ? p.pskRef : '',
-      allow: Array.isArray(p.allow) ? p.allow.filter((a): a is string => typeof a === 'string') : [],
+      inbound: migrateInbound(p),
       direction: p.direction as PeerConfig['direction'],
       createdAt: typeof p.createdAt === 'number' ? p.createdAt : now(),
       ...(isNonEmptyString(p.machineId) ? { machineId: p.machineId } : {}),
       ...(typeof p.enabled === 'boolean' ? { enabled: p.enabled } : {}),
+      ...(typeof p.peerAllowsMe === 'boolean' ? { peerAllowsMe: p.peerAllowsMe } : {}),
     }));
+}
+
+/**
+ * `inbound` replaced the per-tool `allow` glob list. A legacy peer that was
+ * granted anything keeps working (→ allowed); one granted nothing stays off.
+ */
+function migrateInbound(p: Record<string, unknown>): boolean {
+  if (typeof p.inbound === 'boolean') return p.inbound;
+  return Array.isArray(p.allow) && p.allow.some((a) => typeof a === 'string');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

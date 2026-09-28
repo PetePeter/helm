@@ -2,6 +2,10 @@
 /**
  * Directory picker modal — select a working directory to spawn a CLI in.
  *
+ * With fleet peers reachable it also shows machine tabs (LB/RB or left/right):
+ * the modal only emits the chosen machine; the host loads that machine's dirs
+ * into `items` and spawns there.
+ *
  * Gamepad D-pad up/down navigates (clamped), A selects, B cancels.
  * Keyboard routed via App.vue bridge → useModalStack → handleButton.
  */
@@ -26,11 +30,17 @@ const props = defineProps<{
   cliType: string;
   items: DirItem[];
   preselectedPath?: string;
+  /** Spawnable machines; '' is this PC. Tabs show only when there is more than one. */
+  machines?: Array<{ id: string; label: string }>;
+  machineId?: string;
+  loading?: boolean;
+  error?: string;
 }>();
 
 const emit = defineEmits<{
   (e: 'select', path: string): void;
   (e: 'cancel'): void;
+  (e: 'machine', id: string): void;
   (e: 'update:visible', value: boolean): void;
 }>();
 
@@ -82,8 +92,19 @@ watch(() => props.visible, (v) => {
   }
 }, { immediate: true });
 
+const showMachines = computed(() => (props.machines?.length ?? 0) > 1);
+
+function cycleMachine(step: number): void {
+  const list = props.machines ?? [];
+  if (list.length < 2) return;
+  const at = Math.max(0, list.findIndex((m) => m.id === (props.machineId ?? '')));
+  emit('machine', list[(at + step + list.length) % list.length].id);
+}
+
 function handleButton(button: string): boolean {
   const dir = toDirection(button);
+  if (dir === 'left' || button === 'LeftBumper') { cycleMachine(-1); return true; }
+  if (dir === 'right' || button === 'RightBumper') { cycleMachine(1); return true; }
   if (dir === 'up' || button === 'ShiftTab') {
     selectedIndex.value = Math.max(0, selectedIndex.value - 1);
     void focusCurrentItem();
@@ -142,7 +163,23 @@ defineExpose({ handleButton });
         <div class="modal-header">
           <h3 class="modal-title">{{ getCliDisplayName(cliType) }} — Select Directory</h3>
         </div>
+        <div v-if="showMachines" class="dir-picker-machines" role="tablist" aria-label="Machine">
+          <button
+            v-for="m in machines"
+            :key="m.id || 'local'"
+            class="btn btn--sm dir-picker-machine"
+            :class="{ 'dir-picker-machine--active': m.id === (machineId ?? '') }"
+            type="button"
+            role="tab"
+            tabindex="-1"
+            :aria-selected="m.id === (machineId ?? '')"
+            @click="emit('machine', m.id)"
+          >{{ m.label }}</button>
+        </div>
+        <div v-if="loading" class="dir-picker-status">Loading directories…</div>
+        <div v-else-if="error" class="dir-picker-status dir-picker-status--error">{{ error }}</div>
         <div
+          v-else
           class="dir-picker-list"
           id="dirPickerList"
           role="listbox"
@@ -191,6 +228,28 @@ defineExpose({ handleButton });
   font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
+}
+
+.dir-picker-machines {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px 0;
+  flex-wrap: wrap;
+}
+
+.dir-picker-machine--active {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.dir-picker-status {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.dir-picker-status--error {
+  color: var(--danger);
 }
 
 .dir-picker-item__badge {

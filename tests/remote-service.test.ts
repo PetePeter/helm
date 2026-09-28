@@ -38,10 +38,13 @@ class LoopLinks extends EventEmitter implements RemoteLinks {
   online = true;
   /** When set, the next outbound notification whose method matches is dropped. */
   dropNext?: string;
+  /** Non-remote tools the far side answers (e.g. session_create). */
+  tools: Record<string, (params: any) => unknown> = {};
   constructor(readonly selfId: string, readonly peerId: string, private readonly callee: () => RemoteService) { super(); }
   peerIdFor(ref: string): string | undefined { return ref === this.peerId || ref === 'Host-PC' ? this.peerId : undefined; }
   async call(_ref: string, method: string, params: unknown): Promise<unknown> {
     if (!this.online) throw new Error('No live link');
+    if (this.tools[method]) return this.tools[method](params);
     return this.callee().handleCall(this.selfId, method, params);
   }
   notify(_ref: string, method: string, params: unknown): boolean {
@@ -69,6 +72,8 @@ describe('Remote (host ⇄ viewer loopback)', () => {
   let hostLinks: LoopLinks;
   let viewerLinks: LoopLinks;
   let screen: string;
+  let created: Array<Record<string, any>>;
+  let spawnOnHost: (args: Record<string, any>) => unknown;
 
   const flush = () => vi.advanceTimersByTime(COALESCE_MS);
 
@@ -80,6 +85,13 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     hostPty.writes = [];
     const hostSessions = new SessionManager();
     hostSessions.addSession({ id: 'h1', name: 'builder', cliType: 'claude-code', processId: 42, workingDir: 'C:\\work' });
+    created = [];
+    spawnOnHost = (args) => {
+      created.push(args);
+      hostPtys.spawn({ sessionId: 'h2', cols: 80, rows: 24 });
+      hostSessions.addSession({ id: 'h2', name: String(args.name ?? 'Claude'), cliType: args.cliType, processId: 43, workingDir: args.dirPath });
+      return { id: 'h2' };
+    };
 
     viewerPtys = new PtyManager({ spawn: () => { throw new Error('viewer never spawns'); } });
     viewerSessions = new SessionManager();
@@ -88,6 +100,7 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     viewer = new RemoteService({ pty: viewerPtys, sessions: viewerSessions, coalesceMs: COALESCE_MS });
     hostLinks = new LoopLinks('HOST', 'VIEWER', () => viewer);
     viewerLinks = new LoopLinks('VIEWER', 'HOST', () => host);
+    viewerLinks.tools.session_create = (args) => spawnOnHost(args);
     hostLinks.other = viewerLinks;
     viewerLinks.other = hostLinks;
     host.setLinks(hostLinks);
@@ -200,5 +213,32 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     const second = await viewer.open('HOST', 'h1');
     expect(second.id).toBe(first.id);
     expect(viewerSessions.getAllSessions()).toHaveLength(1);
+  });
+
+  describe('spawn() — create on the peer, then attach here', () => {
+    it('creates the session on the host and opens it as a local Remote row', async () => {
+      const session = await viewer.spawn('Host-PC', { cliType: 'claude-code', dirPath: 'C:\proj', name: 'fix' });
+
+      expect(created).toEqual([{ cliType: 'claude-code', dirPath: 'C:\proj', name: 'fix' }]);
+      expect(session).toMatchObject({ name: 'fix', remote: { peerId: 'HOST', sessionId: 'h2' }, workingDir: 'C:\proj' });
+      expect(viewerSessions.getSession(session.id)).toBeTruthy();
+    });
+
+    it('a create that returns no id is reported, and nothing is attached', async () => {
+      spawnOnHost = () => ({});
+      await expect(viewer.spawn('HOST', { cliType: 'claude-code', dirPath: 'C:\proj' })).rejects.toThrow(/no session id/i);
+      expect(viewerSessions.getAllSessions()).toHaveLength(0);
+    });
+
+    it('an attach failure after a successful create names the orphaned remote session', async () => {
+      spawnOnHost = () => ({ id: 'ghost' }); // created, but the host has no such PTY
+      await expect(viewer.spawn('HOST', { cliType: 'claude-code', dirPath: 'C:\proj' })).rejects.toThrow(/ghost/);
+      expect(viewerSessions.getAllSessions()).toHaveLength(0);
+    });
+
+    it('an unknown peer is rejected before anything is created', async () => {
+      await expect(viewer.spawn('nobody', { cliType: 'claude-code', dirPath: 'C:\proj' })).rejects.toThrow(/Unknown or unreachable peer/);
+      expect(created).toEqual([]);
+    });
   });
 });

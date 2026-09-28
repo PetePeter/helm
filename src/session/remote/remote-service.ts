@@ -37,6 +37,14 @@ export interface RemoteServiceDeps {
   coalesceMs?: number;
 }
 
+/** What the peer's `session_create` takes. */
+export interface RemoteSpawnArgs {
+  cliType: string;
+  dirPath: string;
+  name?: string;
+  initialPrompt?: string;
+}
+
 interface PeerNotification { peerId: string; method: string; params: unknown }
 
 interface ViewedSession { localId: string; process: RemotePtyProcess }
@@ -145,6 +153,27 @@ export class RemoteService {
     this.deps.sessions.addSession(session);
     logger.info(`[Remote] Opened ${peerId}/${remoteSessionId} as ${localId}`);
     return session;
+  }
+
+  /**
+   * VIEWER: start a CLI on `peerRef` (its own `session_create`, through its gate)
+   * and open it here. The session lives on the peer; closing this row detaches.
+   * If the attach fails the peer's session keeps running, so the error names it
+   * for a later Attach… rather than killing work the user just started.
+   */
+  async spawn(peerRef: string, args: RemoteSpawnArgs): Promise<SessionInfo> {
+    const links = this.links;
+    const peerId = links?.peerIdFor(peerRef);
+    if (!links || !peerId) throw new Error(`Unknown or unreachable peer: ${peerRef}`);
+    const created = await links.call(peerId, 'session_create', { ...args }) as { id?: unknown } | null;
+    const remoteId = created?.id;
+    if (typeof remoteId !== 'string' || !remoteId) throw new Error(`Peer ${peerRef} returned no session id`);
+    try {
+      return await this.open(peerId, remoteId);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new Error(`Started ${remoteId} on ${peerRef} but could not attach: ${reason}`);
+    }
   }
 
   dispose(): void {

@@ -186,6 +186,26 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `a Remote row carries its owner machine and groups under it, after this desktop's own rows`() {
+        val repository = SessionRepository()
+        repository.applySnapshot(
+            SessionWire.parseList(
+                listOf(
+                    summary("r1", projectPath = "/repo/alpha", machineName = "Box"),
+                    summary("l1", projectPath = "/repo/zeta"),
+                ).toJsonArray(),
+            )!!,
+        )
+
+        val sessions = repository.sessions.value
+        assertEquals(listOf("l1", "r1"), sessions.map { it.id })
+        assertNull(sessions[0].machineName)
+        assertEquals("Box", sessions[1].machineName)
+        assertEquals("🖥 Box", sessions[1].groupLabel)
+        assertEquals("zeta", sessions[0].groupLabel)
+    }
+
+    @Test
     fun `the group label is the last path segment whichever separator the desktop used`() {
         val parsed = SessionWire.parseList(
             listOf(
@@ -269,8 +289,12 @@ class SessionRepositoryTest {
         name: String = id,
         projectPath: String = "/repo/main",
         activityLevel: Any? = "idle",
+        machineName: String? = null,
     ): JSONObject = JSONObject(
         buildMap {
+            if (machineName != null) {
+                put("remote", JSONObject(mapOf("peerId" to "p-$machineName", "sessionId" to "there", "machineName" to machineName)))
+            }
             put("id", id)
             put("name", name)
             put("projectPath", projectPath)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fleet lets **one Helm instance invoke another Helm's MCP tools** over the same LAN. A local AI reaches into a remote peer's *native* tool vocabulary through three meta-tools — `peer_list`, `peer_tools`, `peer_call` — instead of mirroring every remote tool into the local catalogue. The remote's **full tool surface** is reachable, gated behind a **per-peer allow-list** (deny-by-default).
+Fleet lets **one Helm instance invoke another Helm's MCP tools** over the same LAN. A local AI reaches into a remote peer's *native* tool vocabulary through three meta-tools — `peer_list`, `peer_tools`, `peer_call` — instead of mirroring every remote tool into the local catalogue. The remote's **full tool surface** is reachable, gated behind **one per-peer access flag** (deny-by-default): a peer this machine lets in may call every tool except the hard-deny list.
 
 Key properties:
 
@@ -17,7 +17,7 @@ Key properties:
 ```mermaid
 graph TB
     subgraph Config
-        PCM["PeerConfigManager<br/>registry + allow-list"]
+        PCM["PeerConfigManager<br/>registry + access flag"]
         SS["SecretStore<br/>PSK bytes (base64)"]
         PCS["PinnedCertStore<br/>TOFU cert pins"]
     end
@@ -33,7 +33,7 @@ graph TB
         PL["PeerLink<br/>JSON-RPC 2.0 mux"]
     end
     subgraph Gate
-        ICG["InboundCallGate<br/>allow-list · hard-deny · rate-limit"]
+        ICG["InboundCallGate<br/>access · hard-deny · rate-limit"]
         PI["proxy-identity<br/>peer:&lt;id&gt;"]
         RL["PeerRateLimiter<br/>token bucket / peer"]
         AL["PeerAuditLog<br/>7-day, no arg values"]
@@ -129,7 +129,7 @@ sequenceDiagram
     AI->>HPS: peer_call(B, session_send_text, {sessionId, text})
     HPS->>PLM: call(B, method, args) [verbatim]
     PLM->>ICG: JSON-RPC request over link
-    ICG->>ICG: allow-list ✓ · hard-deny ✗ · rate-limit ✓
+    ICG->>ICG: access ✓ · hard-deny ✗ · rate-limit ✓
     ICG->>ICG: strip caller-identity args → proxy peer:<id>
     ICG->>CMT: dispatch(method, safeArgs, proxyCtx)
     CMT-->>ICG: result
@@ -249,9 +249,21 @@ with an orphaned pin and PSK.
 - **PSK handshake, channel-bound.** After TLS, a PSK-keyed HMAC handshake runs, bound to the TLS session via RFC-5705 `exportKeyingMaterial` (hard-fail if unavailable — no insecure fallback). Distinct per-role MAC labels stop either side replaying the other's proof; the responder nonce defeats replay.
 - **SAS numeric-comparison pairing.** The 6-digit code is a **KDF output** derived from the ECDH shared secret that the user compares on both screens — never an input to any MAC/KDF, so there is no offline verifier to grind. **Commit-then-reveal** (each side commits `SHA256(pub, nonce)` before revealing) blocks an active MITM from grinding a matching SAS. On accept, a confirm-MAC keyed from the ECDH secret (not the SAS) is exchanged; only then are pin + PSK + `PeerConfig` persisted atomically (all-or-nothing rollback).
 - **Proxy identity — no impersonation.** Every inbound call dispatches under `peer:<peerId>` (`proxy-identity.ts`); session-scoped tools only ever see the proxy's own data. Caller-identity-override keys are neutralized before dispatch: all are stripped except `senderSessionId`, which is **wrapped** as a fleet address (below) — a wrapped id can never equal a local UUID, so impersonation stays impossible either way.
-- **Per-peer allow-list, default-deny.** `PeerConfigManager.isToolAllowed` — an empty/absent allow-list denies everything; only glob-matched tool names pass.
-- **Hard-deny list.** `helm_restart`, `session_group_close` are NEVER remotely invocable, even under a wildcard `*` allow-list (`HARD_DENY_TOOLS`). `session_close` is **ownership-gated**: a peer may close only sessions it created via `session_create` (tracked by `createdByPeerId`). Attempts to close sessions owned by another peer or created locally are denied with the same uniform message. Deny messages are **uniform** ("Tool not permitted") so a peer cannot probe which tools or sessions exist.
+- **Access is direction only, default-deny.** Each machine owns ONE flag per peer — `inbound`, "may this peer call me" (`PeerConfigManager.isInboundAllowed`). Allowed means every tool except the hard-deny list; off means nothing. There is no per-tool list: the user cares which way calls may go, not which tools. A peer paired before this change migrates on load: any allow pattern → allowed, none → off.
+- **Each side sets only its own half.** `FleetAccessSync` reports my flag to the peer (`fleet.access` notification, on link-up and on change); the peer records it as `peerAllowsMe` for display only — a report never grants anything, so a paired peer cannot open its own way in. The Peers tab shows the combined direction (↔ both / ← them → me / → me → them / off) and a "May call me" tick for my half.
+- **Hard-deny list.** `helm_restart`, `session_group_close` and phone administration are NEVER remotely invocable, even by an allowed peer (`HARD_DENY_TOOLS`). `peer_attach` and `peer_spawn` are denied to fleet peers only (`FLEET_ONLY_DENY_TOOLS` — no Remote chains); a paired phone may use them. `session_close` is **ownership-gated**: a peer may close only sessions it created via `session_create` (tracked by `createdByPeerId`). Attempts to close sessions owned by another peer or created locally are denied with the same uniform message. Deny messages are **uniform** ("Tool not permitted") so a peer cannot probe which tools or sessions exist.
 - **Rate-limit + 7-day audit.** A per-peer token bucket throttles inbound calls; every decision (`ok`/`denied`/`rate-limited`/`error`) is recorded to `PeerAuditLog` — a rolling 7-day trail storing **argument KEY NAMES only, never values or secrets**.
+```mermaid
+sequenceDiagram
+    participant A as Helm A
+    participant B as Helm B
+    Note over A: user ticks "May call me" for B
+    A->>A: peers.yaml inbound(B)=true → gate lets B in
+    A-->>B: fleet.access {allowsYou: true}
+    B->>B: peerAllowsMe(A)=true (display only)
+    Note over B: Peers tab: → me → them · A in spawn picker
+```
+
 - **Enable toggle blocks both directions.** An explicitly disabled peer drops its live link and is denied inbound with the same uniform message. Fleet is **OFF by default**: no `:47474` listener is bound and no manager is constructed until enabled.
 
 ## Cross-machine replies (`fleet:` session addresses)
@@ -317,7 +329,7 @@ All under `%APPDATA%/Helm/config`:
 
 | File | Contents |
 |------|----------|
-| `peers.yaml` | Peer registry: id, alias, address, `pskRef`, `allow` glob list, direction, machineId, enabled. **No secrets.** |
+| `peers.yaml` | Peer registry: id, alias, address, `pskRef`, `inbound` (may call me), `peerAllowsMe` (reported, display only), direction (dialling), machineId, enabled. **No secrets.** |
 | `peer-secrets.yaml` | PSK bytes, base64-encoded, keyed by `pskRef`. The ONLY home for secret material. |
 | `peer-pins.yaml` | TOFU cert fingerprints, keyed by peerId. |
 | `machine-identity.yaml` | This machine's stable identity (machineId + RSA keypair). |

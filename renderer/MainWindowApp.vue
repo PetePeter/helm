@@ -492,10 +492,10 @@ watch(() => activeView.value, (view) => {
     if (sessionsState.overviewIsGlobal) {
       overviewGroupLabel.value = 'All Sessions';
     } else if (sessionsState.overviewGroup) {
-      // Runtime groups carry their own display name (their id is a UUID, not a
-      // directory path), so prefer the group's own name when present.
+      // Runtime and machine groups carry their own display name (their key is
+      // not a directory path), so prefer the group's own name when present.
       const grp = sessionsState.groups.find(g => g.dirPath === sessionsState.overviewGroup);
-      overviewGroupLabel.value = grp?.kind === 'runtime'
+      overviewGroupLabel.value = grp?.kind === 'runtime' || grp?.kind === 'machine'
         ? grp.displayName
         : resolveGroupDisplayName(sessionsState.overviewGroup, sessionsState.directories, settingsProjects.value);
     } else {

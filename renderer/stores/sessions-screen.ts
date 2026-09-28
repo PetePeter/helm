@@ -12,6 +12,7 @@ import type { NavItem, SessionGroup, SessionGroupPrefs } from '../session-groups
 import { isSessionHiddenFromOverview, buildSessionGroups, buildFlatNavList } from '../session-groups.js';
 import { buildSessionShortcutMap } from '../utils/session-shortcut-map.js';
 import { state } from '../state.js';
+import { usePeers } from '../composables/usePeers.js';
 import { useRuntimeGroups } from '../composables/useRuntimeGroups.js';
 import type { ProjectDirectoryItem } from '../screens/planner-directories.js';
 
@@ -68,6 +69,7 @@ const derivedGroups = computed<SessionGroup[]>(() => buildSessionGroups(
   sessionId => resolveSessionCwd(sessionId),
   sessionsState.groupPrefs,
   useRuntimeGroups().groups.value,
+  peerId => usePeers().configuredPeers.value.find(p => p.id === peerId)?.alias ?? peerId,
 ));
 
 const derivedNavList = computed<NavItem[]>(() => buildFlatNavList(

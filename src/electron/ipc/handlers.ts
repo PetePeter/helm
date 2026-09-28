@@ -83,6 +83,7 @@ import { HelmControlService } from '../../mcp/helm-control-service.js';
 import { LocalhostMcpServer } from '../../mcp/localhost-mcp-server.js';
 import { InboundCallGate } from '../../mcp/peer/inbound-call-gate.js';
 import { peerIdFromProxySessionId } from '../../mcp/peer/proxy-identity.js';
+import { FleetAccessSync } from '../../mcp/peer/fleet-access-sync.js';
 import { RemoteService } from '../../session/remote/remote-service.js';
 import { isRemoteMethod } from '../../session/remote/remote-protocol.js';
 import { createDefaultPeerRateLimiter } from '../../mcp/peer/rate-limiter.js';
@@ -904,10 +905,12 @@ export function registerIPCHandlers(
   // the peer-management handlers (reads for the Audit sub-view).
   const peerAuditLog = new PeerAuditLog();
   // Remote (talk to a peer's sessions): owner + viewer over the fleet link. Its
-  // `remote.*` requests pass the SAME gate (allow-list, rate limit, audit) and are
+  // `remote.*` requests pass the SAME gate (access, rate limit, audit) and are
   // routed here instead of the MCP dispatcher; the proxy identity names the peer.
   const remoteService = new RemoteService({ pty: ptyManager, sessions: sessionManager });
   helmControlService.setRemoteService(remoteService);
+  // Reports this machine's per-peer grant so each peer can show the direction.
+  const fleetAccessSync = new FleetAccessSync(peerConfigManager);
   const inboundGate = new InboundCallGate({
     peerConfig: peerConfigManager,
     dispatch: async (method, params, ctx) => {
@@ -940,6 +943,7 @@ export function registerIPCHandlers(
     setLinkManager: (mgr) => {
       helmControlService.setPeerLinkManager(mgr);
       remoteService.setLinks(mgr);
+      fleetAccessSync.setLinks(mgr);
     },
     // The machine's own hostname — two Helms both advertising "Helm" is useless
     // in a pick-your-peer list.
@@ -961,6 +965,7 @@ export function registerIPCHandlers(
     audit: peerAuditLog,
     getLinkManager: () => fleetController!.currentLinkManager(),
     attach: (peerId, sessionId) => remoteService.open(peerId, sessionId),
+    spawn: (peerId, args) => remoteService.spawn(peerId, args),
   });
   // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
   // own secret store, kept separate from the fleet's: a revoked phone must never

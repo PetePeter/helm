@@ -24,6 +24,7 @@ import type { PeerLinkManager } from '../../mcp/peer/peer-link-manager.js';
 import type { PeerAuditLog } from '../../mcp/peer/peer-audit-log.js';
 import type { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
 import type { SecretStore } from '../../mcp/peer/secret-store.js';
+import type { RemoteSpawnArgs } from '../../session/remote/remote-service.js';
 
 export interface PeerManagementDeps {
   /** Live fleet-enabled state, read per call (P-0658 in-app toggle). */
@@ -36,6 +37,16 @@ export interface PeerManagementDeps {
   getLinkManager: () => PeerLinkManager | null;
   /** Remote: open a peer's session here as a local row (RemoteService.open). */
   attach: (peerId: string, sessionId: string) => Promise<{ id: string }>;
+  /** Remote: start a CLI on the peer and open it here (RemoteService.spawn). */
+  spawn: (peerId: string, args: RemoteSpawnArgs) => Promise<{ id: string }>;
+}
+
+/** A spawnable directory on a peer, shaped like the local dir picker's items. */
+export interface PeerDirItem {
+  name: string;
+  path: string;
+  projectId?: string;
+  projectName?: string;
 }
 
 /** A session on a peer, as offered in the Peers tab's Attach picker. */
@@ -51,7 +62,10 @@ export interface PeerListItem {
   alias: string;
   address: string;
   direction: 'inbound' | 'outbound' | 'bidirectional';
-  allow: string[];
+  /** Whether this peer may call me. */
+  inbound: boolean;
+  /** Whether the peer says I may call it (undefined until it reports). */
+  peerAllowsMe?: boolean;
   enabled: boolean;
   online: boolean;
 }
@@ -72,17 +86,17 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
       alias: peer.alias,
       address: peer.address,
       direction: peer.direction,
-      allow: peer.allow,
+      inbound: peer.inbound,
+      ...(peer.peerAllowsMe !== undefined ? { peerAllowsMe: peer.peerAllowsMe } : {}),
       // Default-true: an undefined enabled flag is treated as enabled.
       enabled: peer.enabled !== false,
       online: link ? link.status(peer.id) === 'online' : false,
     }));
   });
 
-  ipcMain.handle('peer:setAllowList', (_e, peerId: string, allow: string[]) => {
+  ipcMain.handle('peer:setInbound', (_e, peerId: string, inbound: boolean) => {
     if (!deps.isEnabled()) return { ok: false };
-    const cleaned = Array.isArray(allow) ? allow.filter((a) => typeof a === 'string' && a.length > 0) : [];
-    const updated = deps.peerConfigManager.update(peerId, { allow: cleaned });
+    const updated = deps.peerConfigManager.update(peerId, { inbound: inbound === true });
     return { ok: Boolean(updated) };
   });
 
@@ -117,7 +131,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   });
 
   // Remote — discovery rides Fleet (the peer's own session_list, gated by its
-  // allow-list); attach adopts the chosen session as a local row.
+  // access flag); attach adopts the chosen session as a local row.
   ipcMain.handle('peer:sessions', async (_e, peerId: string): Promise<PeerSessionItem[]> => {
     const link = deps.getLinkManager();
     if (!deps.isEnabled() || !link) return [];
@@ -133,6 +147,32 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
     try {
       const session = await deps.attach(peerId, sessionId);
+      return { ok: true, sessionId: session.id };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  // Remote spawn — the peer's own directory_list feeds the dir picker, and the
+  // spawn is its session_create followed by an attach here.
+  ipcMain.handle('peer:dirs', async (_e, peerId: string): Promise<PeerDirItem[]> => {
+    const link = deps.getLinkManager();
+    if (!deps.isEnabled() || !link) return [];
+    const listed = await link.call(peerId, 'directory_list', {});
+    return (Array.isArray(listed) ? listed as Array<Record<string, unknown>> : [])
+      .filter((d) => typeof d.dirPath === 'string')
+      .map((d) => ({
+        name: String(d.name ?? d.dirPath),
+        path: d.dirPath as string,
+        ...(typeof d.projectId === 'string' ? { projectId: d.projectId } : {}),
+        ...(typeof d.projectName === 'string' ? { projectName: d.projectName } : {}),
+      }));
+  });
+
+  ipcMain.handle('peer:spawn', async (_e, peerId: string, cliType: string, dirPath: string) => {
+    if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
+    try {
+      const session = await deps.spawn(peerId, { cliType, dirPath });
       return { ok: true, sessionId: session.id };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -179,12 +219,14 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
   return () => {
     ipcMain.removeHandler('peer:fleetEnabled');
     ipcMain.removeHandler('peer:list');
-    ipcMain.removeHandler('peer:setAllowList');
+    ipcMain.removeHandler('peer:setInbound');
     ipcMain.removeHandler('peer:setEnabled');
     ipcMain.removeHandler('peer:unpair');
     ipcMain.removeHandler('peer:getAudit');
     ipcMain.removeHandler('peer:sessions');
     ipcMain.removeHandler('peer:attach');
+    ipcMain.removeHandler('peer:dirs');
+    ipcMain.removeHandler('peer:spawn');
     deps.peerConfigManager.off('peer-config:changed', onConfigChanged);
     deps.audit.off('peer-audit:changed', onAuditChanged);
     if (linkAttached) {

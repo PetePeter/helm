@@ -25,16 +25,15 @@ vi.mock('../src/utils/logger.js', () => ({
 }));
 
 /**
- * A peerConfig fake exposing isToolAllowed + get (the surface the gate needs).
+ * A peerConfig fake exposing isInboundAllowed + get (the surface the gate needs).
  * `enabledMap[peerId] === false` marks that peer explicitly disabled; a peerId
  * absent from the map returns undefined from get() (unknown/legacy peer), and any
  * other value is treated as enabled (default-true) by the gate.
  */
-function fakePeerConfig(rules: Record<string, string[]>, enabledMap: Record<string, boolean> = {}) {
+function fakePeerConfig(rules: Record<string, boolean>, enabledMap: Record<string, boolean> = {}) {
   return {
-    isToolAllowed(peerId: string, tool: string): boolean {
-      const allow = rules[peerId] ?? [];
-      return allow.some(p => p === '*' || p === tool);
+    isInboundAllowed(peerId: string): boolean {
+      return rules[peerId] === true;
     },
     get(peerId: string): { enabled?: boolean } | undefined {
       if (!(peerId in enabledMap)) return undefined;
@@ -50,7 +49,7 @@ interface Built {
 }
 
 function build(
-  rules: Record<string, string[]>,
+  rules: Record<string, boolean>,
   opts: {
     now?: () => number;
     dispatchImpl?: (method: string, params: unknown, ctx: AuthContext) => Promise<unknown>;
@@ -89,7 +88,7 @@ function build(
 
 describe('InboundCallGate', () => {
   it('dispatches an allowed tool once with a PROXY identity and returns the result', async () => {
-    const { gate, audit, calls } = build({ mac: ['artifact_get'] });
+    const { gate, audit, calls } = build({ mac: true });
     const result = await gate.handle('mac', 'artifact_get', { id: 'x' });
 
     expect(result).toEqual({ ok: true });
@@ -104,8 +103,8 @@ describe('InboundCallGate', () => {
     expect(log[0].method).toBe('artifact_get');
   });
 
-  it('denies a disallowed tool: uniform error, no dispatch, audit denied', async () => {
-    const { gate, audit, calls } = build({ mac: ['artifact_get'] });
+  it('denies every tool for a peer not allowed in: uniform error, no dispatch, audit denied', async () => {
+    const { gate, audit, calls } = build({ mac: false });
     await expect(gate.handle('mac', 'scheduler_list', {})).rejects.toMatchObject({
       code: -32000,
       message: 'Tool not permitted',
@@ -114,8 +113,8 @@ describe('InboundCallGate', () => {
     expect(audit.list()[0].outcome).toBe('denied');
   });
 
-  it('hard-denies helm_restart even with a wildcard allow-list', async () => {
-    const { gate, audit, calls } = build({ mac: ['*'] });
+  it('hard-denies helm_restart even for an allowed peer', async () => {
+    const { gate, audit, calls } = build({ mac: true });
     await expect(gate.handle('mac', 'helm_restart', {})).rejects.toMatchObject({
       code: -32000,
       message: 'Tool not permitted',
@@ -125,13 +124,13 @@ describe('InboundCallGate', () => {
     expect(HARD_DENY_TOOLS.has('helm_restart')).toBe(true);
   });
 
-  it('hard-deny and allow-list-deny are indistinguishable (no existence leak)', async () => {
-    const { gate } = build({ mac: ['*'] });
+  it('hard-deny and not-allowed deny are indistinguishable (no existence leak)', async () => {
+    const { gate } = build({ mac: true });
     let hardMsg = '';
     let allowMsg = '';
     await gate.handle('mac', 'helm_restart', {}).catch(e => { hardMsg = e.message; });
-    // deny a tool the wildcard would allow by using a peer with an empty list
-    const { gate: gate2 } = build({ mac: [] });
+    // deny via a peer that is not allowed in
+    const { gate: gate2 } = build({ mac: false });
     await gate2.handle('mac', 'artifact_get', {}).catch(e => { allowMsg = e.message; });
     expect(hardMsg).toBe(allowMsg);
     expect(hardMsg).toBe('Tool not permitted');
@@ -140,12 +139,12 @@ describe('InboundCallGate', () => {
   describe('disabled-peer gate (Off means off in both directions)', () => {
     it('denies a call from an explicitly-disabled peer: uniform message, no dispatch, audit denied', async () => {
       const { gate, audit, calls } = build(
-        { mac: ['*'] },                       // allow-list would otherwise permit it
+        { mac: true },                       // peer is allowed in
         { enabledMap: { mac: false } },       // …but the peer is disabled
       );
       await expect(gate.handle('mac', 'artifact_get', { id: 'x' })).rejects.toMatchObject({
         code: -32000,
-        message: 'Tool not permitted',        // identical to allow-list-deny (no leak)
+        message: 'Tool not permitted',        // identical to not-allowed deny (no leak)
       });
       expect(calls).toHaveLength(0);
       expect(audit.list()[0].outcome).toBe('denied');
@@ -153,7 +152,7 @@ describe('InboundCallGate', () => {
 
     it('denies the reserved __peer_tools__ enumeration for a disabled peer', async () => {
       const { gate, audit, calls } = build(
-        { mac: ['*'] },
+        { mac: true },
         { enabledMap: { mac: false } },
       );
       await expect(gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {})).rejects.toMatchObject({
@@ -166,7 +165,7 @@ describe('InboundCallGate', () => {
 
     it('an enabled peer (enabled:true) still works normally', async () => {
       const { gate, calls } = build(
-        { mac: ['artifact_get'] },
+        { mac: true },
         { enabledMap: { mac: true } },
       );
       expect(await gate.handle('mac', 'artifact_get', {})).toEqual({ ok: true });
@@ -175,7 +174,7 @@ describe('InboundCallGate', () => {
 
     it('a peer with no config-provided enabled flag (undefined) is treated as enabled', async () => {
       // enabledMap omits 'mac' → get() returns undefined → default-true.
-      const { gate, calls } = build({ mac: ['artifact_get'] }, {});
+      const { gate, calls } = build({ mac: true }, {});
       expect(await gate.handle('mac', 'artifact_get', {})).toEqual({ ok: true });
       expect(calls).toHaveLength(1);
     });
@@ -184,7 +183,7 @@ describe('InboundCallGate', () => {
   it('rate-limits past capacity: burst passes, next rejected, refill re-allows', async () => {
     let t = 0;
     const { gate, audit } = build(
-      { mac: ['*'] },
+      { mac: true },
       { now: () => t, capacity: 2 },
     );
     expect(await gate.handle('mac', 'artifact_get', {})).toEqual({ ok: true });
@@ -201,7 +200,7 @@ describe('InboundCallGate', () => {
   });
 
   it('records only arg KEY NAMES in the audit — never values/secrets', async () => {
-    const { gate, audit } = build({ mac: ['*'] });
+    const { gate, audit } = build({ mac: true });
     await gate.handle('mac', 'session_create', {
       workingDir: 'C:/x',
       psk: 'hunter2-super-secret',
@@ -216,7 +215,7 @@ describe('InboundCallGate', () => {
 
   it('rethrows a dispatch error as -32000 with the full message on the wire', async () => {
     const { gate } = build(
-      { mac: ['*'] },
+      { mac: true },
       { dispatchImpl: async () => { throw new Error('boom internal detail'); } },
     );
     await expect(gate.handle('mac', 'artifact_get', {})).rejects.toMatchObject({
@@ -229,7 +228,7 @@ describe('InboundCallGate', () => {
     class SessionNotFoundError extends Error {}
     const secret = 'Session not found: 11111111-1111-1111-1111-111111111111';
     const { gate, audit } = build(
-      { mac: ['*'] },
+      { mac: true },
       { dispatchImpl: async () => { throw new SessionNotFoundError(secret); } },
     );
     await expect(gate.handle('mac', 'session_send_text', { sessionId: 'dest', text: 'hi' }))
@@ -246,7 +245,7 @@ describe('InboundCallGate', () => {
   it('proxy identity is stable per peer, distinct across peers, never a real uuid', async () => {
     const seen: string[] = [];
     const { gate } = build(
-      { a: ['*'], b: ['*'] },
+      { a: true, b: true },
       { dispatchImpl: async (_m, _p, ctx) => { seen.push(ctx.sessionId!); return 1; } },
     );
     await gate.handle('a', 'artifact_get', {});
@@ -270,7 +269,7 @@ describe('InboundCallGate', () => {
     let received: Record<string, unknown> | undefined;
     let ctxSeen: AuthContext | undefined;
     const { gate } = build(
-      { peer1: ['session_send_text'] },
+      { peer1: true },
       {
         dispatchImpl: async (_m, params, ctx) => {
           received = params as Record<string, unknown>;
@@ -293,52 +292,44 @@ describe('InboundCallGate', () => {
   });
 
   it('I-1: denies session_close without sessionLookup (safe fallback — no ownership data)', async () => {
-    const { gate, calls } = build({ mac: ['*'] });
+    const { gate, calls } = build({ mac: true });
     await expect(gate.handle('mac', 'session_close', { sessionId: 'x' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
     expect(HARD_DENY_TOOLS.has('session_close')).toBe(false); // no longer hard-denied
   });
 
-  it('I-1: hard-denies session_group_close even with a wildcard allow-list', async () => {
-    const { gate, calls } = build({ mac: ['*'] });
+  it('I-1: hard-denies session_group_close even for an allowed peer', async () => {
+    const { gate, calls } = build({ mac: true });
     await expect(gate.handle('mac', 'session_group_close', { groupId: 'g' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
     expect(HARD_DENY_TOOLS.has('session_group_close')).toBe(true);
   });
 
-  it('hard-denies peer_attach — a peer must not chain Remote attaches through this host', async () => {
-    const { gate, calls } = build({ mac: ['*'] });
-    await expect(gate.handle('mac', 'peer_attach', { peer: 'third', sessionId: 's' }))
+  it.each(['peer_attach', 'peer_spawn'])('denies %s — a peer must not chain Remote through this host', async (tool) => {
+    const { gate, calls } = build({ mac: true });
+    await expect(gate.handle('mac', tool, { peer: 'third', sessionId: 's', cliType: 'c', dirPath: 'd' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
+    const { tools } = await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {}) as { tools: Array<{ name: string }> };
+    expect(tools.map(t => t.name)).not.toContain(tool);
   });
 });
 
 describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {
-  it('returns MCP_TOOLS filtered by allow-list ∩ not-hard-denied; never dispatches', async () => {
-    // Allow-list grants a set of session_* tools plus the hard-denied
-    // helm_restart: those must STILL be excluded (hard-deny),
-    // a non-allowed tool (artifact_get) must be absent.
-    // session_close is NOT hard-denied (ownership-gated), so it appears.
-    const { gate, calls } = build({
-      mac: ['session_list', 'session_create', 'helm_restart', 'session_close'],
-    });
+  it('returns MCP_TOOLS minus hard-denied for an allowed peer; never dispatches', async () => {
+    const { gate, calls } = build({ mac: true });
 
     const result = (await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {})) as {
       tools: Array<{ name: string; title: string; description: string; inputSchema: unknown }>;
     };
     const names = result.tools.map(t => t.name);
 
-    // allow-listed, catalogued, not hard-denied → present
     expect(names).toContain('session_list');
-    expect(names).toContain('session_create');
+    expect(names).toContain('skill_get');
     expect(names).toContain('session_close'); // ownership-gated, NOT hard-denied
-    // hard-denied tool EXCLUDED even though allow-listed
-    expect(names).not.toContain('helm_restart');
-    // non-allowed tool absent
-    expect(names).not.toContain('artifact_get');
+    for (const denied of HARD_DENY_TOOLS) expect(names).not.toContain(denied);
 
     // every returned tool carries the exposed shape
     for (const t of result.tools) {
@@ -354,7 +345,7 @@ describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {
 
   it('is audited as ok and counts against the rate-limit bucket', async () => {
     let t = 0;
-    const { gate, audit } = build({ mac: ['session_list'] }, { now: () => t, capacity: 1 });
+    const { gate, audit } = build({ mac: true }, { now: () => t, capacity: 1 });
 
     const first = (await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {})) as { tools: unknown[] };
     expect(Array.isArray(first.tools)).toBe(true);
@@ -370,7 +361,7 @@ describe('InboundCallGate — reserved __peer_tools__ meta-method', () => {
   });
 
   it('exposes exactly the intersection with MCP_TOOLS (no invented tools)', async () => {
-    const { gate } = build({ mac: ['*'] });
+    const { gate } = build({ mac: true });
     const result = (await gate.handle('mac', RESERVED_PEER_TOOLS_METHOD, {})) as {
       tools: Array<{ name: string }>;
     };
@@ -428,7 +419,7 @@ describe('wrapCallerIdentityOverrides', () => {
 
 describe('InboundCallGate — fleet sender wrapping', () => {
   it('hands the dispatcher a WRAPPED senderSessionId, not a stripped one', async () => {
-    const { gate, calls } = build({ mac: ['session_send_text'] });
+    const { gate, calls } = build({ mac: true });
     await gate.handle('mac', 'session_send_text', {
       sessionId: 'dest',
       text: 'hi',
@@ -443,7 +434,7 @@ describe('InboundCallGate — fleet sender wrapping', () => {
   });
 
   it('keeps the PROXY authContext — the security model is unchanged by wrapping', async () => {
-    const { gate, calls } = build({ mac: ['session_send_text'] });
+    const { gate, calls } = build({ mac: true });
     await gate.handle('mac', 'session_send_text', { senderSessionId: 'sender-uuid' });
 
     expect(calls[0].ctx.sessionId).toBe('peer:mac');
@@ -470,7 +461,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    const { gate, calls, audit } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls, audit } = build({ mac: true }, { sessionLookup: lookup });
     expect(await gate.handle('mac', 'session_close', { sessionId: 's1' })).toEqual({ ok: true });
     expect(calls).toHaveLength(1);
     expect(audit.list()[0].outcome).toBe('ok');
@@ -480,7 +471,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     expect(await gate.handle('mac', 'session_close', { name: 'Worker' })).toEqual({ ok: true });
     expect(calls).toHaveLength(1);
   });
@@ -489,7 +480,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'other-peer' },
     ]);
-    const { gate, calls, audit } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls, audit } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { sessionId: 's1' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -500,7 +491,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Local', createdByPeerId: undefined },
     ]);
-    const { gate, calls, audit } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls, audit } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { sessionId: 's1' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -511,7 +502,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { sessionId: 'nonexistent' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -522,18 +513,17 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { foo: 'bar' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
   });
 
-  it('denies even with ownership if session_close is not in allow-list', async () => {
+  it('denies even with ownership when the peer is not allowed in', async () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    // Peer has session_create but NOT session_close in allow-list
-    const { gate, calls, audit } = build({ mac: ['session_create'] }, { sessionLookup: lookup });
+    const { gate, calls, audit } = build({ mac: false }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { sessionId: 's1' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -541,7 +531,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
   });
 
   it('falls back to deny when sessionLookup is not provided', async () => {
-    const { gate, calls } = build({ mac: ['*'] });
+    const { gate, calls } = build({ mac: true });
     await expect(gate.handle('mac', 'session_close', { sessionId: 's1' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -552,7 +542,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
       { id: 's2', name: 'Worker', createdByPeerId: 'mac' }, // duplicate name
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', { name: 'Worker' }))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);
@@ -563,22 +553,22 @@ describe('InboundCallGate — session_close ownership gate', () => {
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
       { id: 's2', name: 'Other', createdByPeerId: 'other' },
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     // sessionId matches peer, name would NOT match — sessionId wins
     expect(await gate.handle('mac', 'session_close', { sessionId: 's1', name: 'Other' }))
       .toEqual({ ok: true });
     expect(calls).toHaveLength(1);
   });
 
-  it('ownership denial is indistinguishable from allow-list denial (no information leak)', async () => {
+  it('ownership denial is indistinguishable from not-allowed denial (no information leak)', async () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'other' },
     ]);
-    const { gate } = build({ mac: ['session_close'] }, { sessionLookup: lookup });
+    const { gate } = build({ mac: true }, { sessionLookup: lookup });
     let ownershipMsg = '';
     await gate.handle('mac', 'session_close', { sessionId: 's1' }).catch(e => { ownershipMsg = e.message; });
-    // allow-list deny (different peer with empty list)
-    const { gate: gate2 } = build({ mac: [] });
+    // not-allowed deny (different peer, off)
+    const { gate: gate2 } = build({ mac: false });
     let allowMsg = '';
     await gate2.handle('mac', 'session_close', {}).catch(e => { allowMsg = e.message; });
     expect(ownershipMsg).toBe(allowMsg);
@@ -589,7 +579,7 @@ describe('InboundCallGate — session_close ownership gate', () => {
     const lookup = fakeLookup([
       { id: 's1', name: 'Worker', createdByPeerId: 'mac' },
     ]);
-    const { gate, calls } = build({ mac: ['*'] }, { sessionLookup: lookup });
+    const { gate, calls } = build({ mac: true }, { sessionLookup: lookup });
     await expect(gate.handle('mac', 'session_close', 'not-an-object'))
       .rejects.toMatchObject({ code: -32000, message: 'Tool not permitted' });
     expect(calls).toHaveLength(0);

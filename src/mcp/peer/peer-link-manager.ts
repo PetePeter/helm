@@ -68,6 +68,18 @@ export interface PeerLinkManagerOptions {
   createClient?: (opts: RemoteLinkClientOptions) => ManagedClient;
 }
 
+/** One peer as `peer_list` shows it: identity, link state and both access halves. */
+export interface PeerSummary {
+  id: string;
+  alias: string;
+  direction: PeerConfig['direction'];
+  online: boolean;
+  /** My grant: this peer may call me. */
+  mayCallMe: boolean;
+  /** The peer's grant as it last reported: I may call it (spawn/attach there). */
+  mayCallThem: boolean;
+}
+
 type Origin = 'inbound' | 'outbound';
 
 interface LinkEntry {
@@ -244,13 +256,20 @@ export class PeerLinkManager extends EventEmitter {
    * the injected config source (identity/direction) with the live per-peer
    * `status()`. Latency is intentionally omitted — no link tracks pong RTT yet.
    */
-  list(): Array<{ id: string; alias: string; direction: PeerConfig['direction']; online: boolean }> {
+  list(): PeerSummary[] {
     return this.opts.listPeers().map((peer) => ({
       id: peer.id,
       alias: peer.alias,
       direction: peer.direction,
       online: this.status(peer.id) === 'online',
+      mayCallMe: peer.inbound,
+      mayCallThem: peer.peerAllowsMe === true,
     }));
+  }
+
+  /** Ids of every peer with a live authenticated link. */
+  onlinePeerIds(): string[] {
+    return [...this.links].filter(([, e]) => e.link.isOnline()).map(([id]) => id);
   }
 
   /**

@@ -70,3 +70,23 @@ describe('usePeers — fleet config', () => {
     expect(peerListDiscovered).toHaveBeenCalled();
   });
 });
+
+describe('usePeers — spawnTargets (machines I may spawn on)', () => {
+  const peer = (over: Record<string, unknown>) => ({
+    id: 'p', alias: 'P', address: 'h:1', direction: 'bidirectional', inbound: false,
+    enabled: true, online: true, peerAllowsMe: true, ...over,
+  });
+
+  it('lists only enabled, online peers that let me call them', async () => {
+    state.peers = [
+      peer({ id: 'ok', alias: 'Box' }),
+      peer({ id: 'offline', online: false }),
+      peer({ id: 'disabled', enabled: false }),
+      peer({ id: 'denies', peerAllowsMe: false }),
+      peer({ id: 'unheard', peerAllowsMe: undefined }),
+    ];
+    const { refresh, spawnTargets } = usePeers();
+    await refresh();
+    expect(spawnTargets.value).toEqual([{ id: 'ok', alias: 'Box' }]);
+  });
+});

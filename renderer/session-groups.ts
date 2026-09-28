@@ -25,8 +25,9 @@ export interface SessionGroup {
    * Group kind. 'directory' groups bucket sessions by working directory (the
    * legacy default). 'runtime' groups are ad-hoc, user-created groups that cut
    * across directories and persist as visible headers even when empty.
+   * 'machine' groups hold Remote rows, one per peer that runs them.
    */
-  kind?: 'directory' | 'runtime';
+  kind?: 'directory' | 'runtime' | 'machine';
   /** Runtime group id (only set when kind === 'runtime'). */
   groupId?: string;
 }
@@ -192,6 +193,10 @@ export function groupSessionsByDirectory(
  * @param prefs          Directory group order/collapse/bookmark prefs.
  * @param runtimeGroups  Runtime groups in display order (array order preserved).
  *
+ * Remote rows (views of a peer's session) not claimed by a runtime group go in
+ * one 'machine' group per peer, after the local groups: a peer's path means
+ * nothing next to this PC's project folders.
+ *
  * The operator is never grouped: it has its own pinned sidebar section.
  */
 export function buildSessionGroups(
@@ -199,6 +204,7 @@ export function buildSessionGroups(
   getDir: (id: string) => string,
   prefs: SessionGroupPrefs,
   runtimeGroups: RuntimeGroup[],
+  machineName: (peerId: string) => string = (peerId) => peerId,
 ): SessionGroup[] {
   const sessions = withoutOperator(allSessions);
   // Every session id owned by any runtime group — excluded from directory grouping.
@@ -227,14 +233,31 @@ export function buildSessionGroups(
     };
   });
 
-  // Directory groups exclude any claimed session.
-  const directoryGroups = groupSessionsByDirectory(
-    sessions.filter(s => !claimed.has(s.id)),
-    getDir,
-    prefs,
-  );
+  const unclaimed = sessions.filter(s => !claimed.has(s.id));
+  const directoryGroups = groupSessionsByDirectory(unclaimed.filter(s => !s.remote), getDir, prefs);
 
-  return [...runtimeSessionGroups, ...directoryGroups];
+  const byMachine = new Map<string, Session[]>();
+  for (const session of unclaimed) {
+    if (!session.remote) continue;
+    const list = byMachine.get(session.remote.peerId) ?? [];
+    list.push(session);
+    byMachine.set(session.remote.peerId, list);
+  }
+  const collapsedSet = new Set(prefs.collapsed);
+  const machineGroups: SessionGroup[] = [...byMachine].map(([peerId, members]) => ({
+    dirPath: machineGroupKey(peerId),
+    displayName: machineName(peerId),
+    sessions: members,
+    collapsed: collapsedSet.has(machineGroupKey(peerId)),
+    kind: 'machine' as const,
+  }));
+
+  return [...runtimeSessionGroups, ...directoryGroups, ...machineGroups];
+}
+
+/** Header / prefs key of a peer's machine group. */
+export function machineGroupKey(peerId: string): string {
+  return `machine:${peerId}`;
 }
 
 // ============================================================================

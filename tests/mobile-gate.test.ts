@@ -405,3 +405,11 @@ describe('GateError', () => {
     expect(err.code).toBe(-32000);
   });
 });
+
+describe('MobileGate — Remote entry points', () => {
+  it.each(['peer_attach', 'peer_spawn'])('lets an allowed phone call %s (only fleet peers are kept out)', async (tool) => {
+    const { gate, deviceId, calls } = build(['*']);
+    await expect(gate.handle(deviceId, tool, { peer: 'Box' })).resolves.toEqual({ ok: true });
+    expect(calls.map(c => c.method)).toEqual([tool]);
+  });
+});

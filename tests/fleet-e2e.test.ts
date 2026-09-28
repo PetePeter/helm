@@ -9,7 +9,7 @@
  *   • real PinnedCertStore / SecretStore / PeerConfigManager per machine,
  *   • real PeerLinkManager wiring the real RemoteLinkServer + RemoteLinkClient
  *     + real PeerLink over a real Node TLS WebSocket on 127.0.0.1,
- *   • real InboundCallGate on B (allow-list + hard-deny + rate-limit + audit),
+ *   • real InboundCallGate on B (access flag + hard-deny + rate-limit + audit),
  *   • the REAL MCP dispatcher (callMcpTool) on B, over a tiny FAKE
  *     HelmControlService (the ONLY faked seam besides mDNS — see below),
  *   • A's caller side enters at the REAL HelmPeerService.call() (skipping
@@ -190,7 +190,7 @@ describe('Cross-Machine Fleet E2E (A↔B over loopback TLS)', () => {
     b.partial.cert = await getOrCreateSelfSignedCert(join(tmp, 'B-cert.yaml'));
 
     // ---- Bring up B's server FIRST to learn its ephemeral port. -----------
-    // B's gate: allow-list permits only the two tools under test.
+    // B's gate: A is allowed in; hard-denied tools stay blocked.
     const bGate = new InboundCallGate({
       peerConfig: b.config,
       dispatch: realDispatch(b.partial.fake),
@@ -219,20 +219,20 @@ describe('Cross-Machine Fleet E2E (A↔B over loopback TLS)', () => {
       alias: 'machine-B',
       address: `127.0.0.1:${B.port}`,
       pskRef: PSK_REF,
-      allow: ['*'],
+      inbound: true,
       direction: 'bidirectional',
       machineId: b.partial.machineId,
     });
 
-    // B must KNOW A (config + allow-list) BEFORE A dials, so B's server can
+    // B must KNOW A (config + access) BEFORE A dials, so B's server can
     // resolve A's cert fp → the config id it tracks the inbound link under, and
-    // apply A's allow-list. The address is a placeholder until A's port is known
+    // apply A's access flag. The address is a placeholder until A's port is known
     // (only B's OUTBOUND dial to A needs the real address).
     const bPeerForA = b.config.add({
       alias: 'machine-A',
       address: '127.0.0.1:0',
       pskRef: PSK_REF,
-      allow: ['session_list', 'session_send_text'],
+      inbound: true,
       direction: 'bidirectional',
       machineId: a.partial.machineId,
     });
@@ -414,10 +414,10 @@ describe('Cross-Machine Fleet E2E (A↔B over loopback TLS)', () => {
     expect(A.fake.writes[0].senderSessionId).toBe(`fleet:${peerIdOnA()}:${target}`);
   });
 
-  it('DENY: a tool NOT in B\'s allow-list is rejected uniformly; B never dispatches it', async () => {
+  it('DENY: once B stops letting A call in, A is rejected uniformly; B never dispatches', async () => {
     const pid = peerIdOnA();
-    // session_get is a real tool but NOT in B's allow-list.
-    await expect(A.peerService.call(pid, 'session_get', { sessionId: B_SESSIONS[0].id }))
+    B.config.update(peerIdOnB(), { inbound: false });
+    await expect(A.peerService.call(pid, 'session_send_text', { sessionId: B_SESSIONS[0].id, text: 'x' }))
       .rejects.toThrow(/Tool not permitted/);
     // No PTY write, no session dispatch happened on B.
     expect(B.fake.writes).toHaveLength(0);
@@ -427,6 +427,7 @@ describe('Cross-Machine Fleet E2E (A↔B over loopback TLS)', () => {
     const pid = peerIdOnA();
     await A.peerService.call(pid, 'session_list', {});
     await A.peerService.call(pid, 'session_send_text', { sessionId: B_SESSIONS[0].id, text: 'secret-body-xyz' });
+    B.config.update(peerIdOnB(), { inbound: false });
     await expect(A.peerService.call(pid, 'session_get', { sessionId: 'zzz' })).rejects.toThrow();
 
     const bPeerId = peerIdOnB();

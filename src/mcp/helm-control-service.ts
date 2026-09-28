@@ -130,7 +130,7 @@ export interface SessionSummary {
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
   /** Set on a Remote row (`peer_attach`): the peer and ITS session id this row views. */
-  remote?: { peerId: string; sessionId: string };
+  remote?: { peerId: string; sessionId: string; machineName?: string };
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
@@ -488,6 +488,11 @@ export class HelmControlService extends EventEmitter {
   peerAttach(peer: string, sessionId: string) {
     if (!this.remoteService) throw new Error('Remote is not available');
     return this.remoteService.open(peer, sessionId);
+  }
+
+  peerSpawn(peer: string, args: import('../session/remote/remote-service.js').RemoteSpawnArgs) {
+    if (!this.remoteService) throw new Error('Remote is not available');
+    return this.remoteService.spawn(peer, args);
   }
 
   // ---------------------------------------------------------------------------
@@ -1264,7 +1269,19 @@ export class HelmControlService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   listSessions(dirPath?: string, projectId?: string) {
-    return this.sessionService.listSessions(dirPath, projectId);
+    return this.nameRemoteMachines(this.sessionService.listSessions(dirPath, projectId));
+  }
+
+  /**
+   * Stamp each Remote row with its owner machine's name, so remote surfaces
+   * (the phone) can group rows by machine without their own peer registry.
+   */
+  private nameRemoteMachines(sessions: SessionSummary[]): SessionSummary[] {
+    if (!sessions.some((s) => s.remote)) return sessions;
+    const aliases = new Map((this.peerLinkManager?.list() ?? []).map((p) => [p.id, p.alias]));
+    return sessions.map((s) => s.remote
+      ? { ...s, remote: { ...s.remote, machineName: aliases.get(s.remote.peerId) ?? s.remote.peerId } }
+      : s);
   }
 
   getSession(sessionRef: string) {

@@ -2,7 +2,7 @@
  * PeerConfigManager — in-memory owner of the peer registry.
  *
  * A peer records who this hub may exchange control traffic with and, crucially,
- * WHICH tools that peer may invoke (the `allow` glob list — deny-by-default).
+ * whether that peer may call this hub at all (`inbound` — deny-by-default).
  * This manager is pure model + authorisation: no networking, no crypto, and it
  * never holds secret material (only `pskRef` references).
  *
@@ -16,7 +16,6 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 import type { PeerConfig } from '../types/peer.js';
-import { toolGlobMatch } from '../utils/glob-matcher.js';
 import { sanitizePeers } from './peer-sanitize.js';
 
 const DIRECTIONS = new Set(['inbound', 'outbound', 'bidirectional']);
@@ -25,7 +24,7 @@ interface AddPeerInput {
   alias: string;
   address: string;
   pskRef: string;
-  allow?: string[];
+  inbound?: boolean;
   direction?: PeerConfig['direction'];
   machineId?: string;
   enabled?: boolean;
@@ -52,7 +51,7 @@ export class PeerConfigManager extends EventEmitter {
       alias: input.alias,
       address: input.address,
       pskRef: input.pskRef,
-      allow: [...(input.allow ?? [])],
+      inbound: input.inbound ?? false,
       direction: input.direction ?? 'bidirectional',
       createdAt: this.now(),
       ...(input.machineId !== undefined ? { machineId: input.machineId } : {}),
@@ -81,7 +80,7 @@ export class PeerConfigManager extends EventEmitter {
       existing.alias = input.alias;
       existing.address = input.address;
       existing.pskRef = input.pskRef;
-      if (input.allow !== undefined) existing.allow = [...input.allow];
+      if (input.inbound !== undefined) existing.inbound = input.inbound;
       if (input.direction !== undefined && DIRECTIONS.has(input.direction)) existing.direction = input.direction;
       if (input.enabled !== undefined) existing.enabled = input.enabled;
       this.markChanged();
@@ -118,7 +117,7 @@ export class PeerConfigManager extends EventEmitter {
     if (patch.alias !== undefined) peer.alias = patch.alias;
     if (patch.address !== undefined) peer.address = patch.address;
     if (patch.pskRef !== undefined) peer.pskRef = patch.pskRef;
-    if (patch.allow !== undefined) peer.allow = [...patch.allow];
+    if (patch.inbound !== undefined) peer.inbound = patch.inbound;
     if (patch.direction !== undefined && DIRECTIONS.has(patch.direction)) peer.direction = patch.direction;
     if (patch.enabled !== undefined) peer.enabled = patch.enabled;
     this.markChanged();
@@ -134,15 +133,21 @@ export class PeerConfigManager extends EventEmitter {
     return removed;
   }
 
+  /** Whether `peerId` may call this hub. Unknown peer → false. */
+  isInboundAllowed(peerId: string): boolean {
+    return this.peers.find(p => p.id === peerId)?.inbound === true;
+  }
+
   /**
-   * Whether `peerId` is authorised to invoke `toolName`. Deny-by-default: an
-   * empty or absent allow-list denies everything; an unknown peer is denied.
-   * Otherwise allowed iff ANY pattern in the allow-list glob-matches.
+   * Record the peer's own grant for me, as it reported over the link. Display
+   * only — never touches `inbound`. Persists only on change (reports repeat on
+   * every reconnect).
    */
-  isToolAllowed(peerId: string, toolName: string): boolean {
+  setPeerAllowsMe(peerId: string, allowed: boolean): void {
     const peer = this.peers.find(p => p.id === peerId);
-    if (!peer || peer.allow.length === 0) return false;
-    return peer.allow.some(pattern => toolGlobMatch(pattern, toolName));
+    if (!peer || peer.peerAllowsMe === allowed) return;
+    peer.peerAllowsMe = allowed;
+    this.markChanged();
   }
 
   /** Snapshot of all peers for persistence (independent copies). */
@@ -153,7 +158,7 @@ export class PeerConfigManager extends EventEmitter {
   /**
    * Replace internal state from persisted data, sanitising each entry: only
    * objects with a string id/alias/address and a valid direction are accepted;
-   * `allow` coerces to a string array (defaulting to []).
+   * a legacy `allow` list migrates to `inbound` (see peer-sanitize).
    */
   importAll(peers: PeerConfig[]): void {
     this.peers = sanitizePeers(peers, this.now);
@@ -161,7 +166,7 @@ export class PeerConfigManager extends EventEmitter {
   }
 
   private copy(peer: PeerConfig): PeerConfig {
-    return { ...peer, allow: [...peer.allow] };
+    return { ...peer };
   }
 
   private markChanged(): void {

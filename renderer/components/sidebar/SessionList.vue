@@ -208,7 +208,7 @@ function onNewGroupDrop(e: DragEvent): void {
           <SessionGroup
             :group="{
               dirPath: group.dirPath,
-              displayName: group.kind === 'runtime'
+              displayName: group.kind === 'runtime' || group.kind === 'machine'
                 ? group.displayName
                 : resolveGroupDisplayName(group.dirPath, directories, projects),
               collapsed: group.collapsed,

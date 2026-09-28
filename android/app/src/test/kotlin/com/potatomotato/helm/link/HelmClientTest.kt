@@ -30,6 +30,7 @@ import com.potatomotato.helm.data.SequenceDetail
 import com.potatomotato.helm.data.SequenceList
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.Snapshot
+import com.potatomotato.helm.data.SpawnMachine
 import com.potatomotato.helm.crypto.Cancellable
 import com.potatomotato.helm.crypto.ChannelScheduler
 import com.potatomotato.helm.notify.AlertKind
@@ -179,6 +180,61 @@ class HelmClientTest {
         // The reconcile rides the refresh path, so it carries the cursor too.
         assertEquals(3, sent.size)
         assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+    }
+
+    @Test
+    fun `a spawn on another machine is peer_spawn with the peer, and records the local row it opened`() {
+        client.spawn(dirPath = "/there", cliType = "claudecode", name = "fix", machineId = "p1")
+
+        val record = JSONObject(String(sent.last(), Charsets.UTF_8))
+        assertEquals("peer_spawn", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("p1", params.getString("peer"))
+        assertEquals("/there", params.getString("dirPath"))
+        assertEquals("claudecode", params.getString("cliType"))
+        assertEquals("fix", params.getString("name"))
+
+        client.onInbound(resultFor(lastCallId(), """{"id":"remote-9"}"""))
+        assertEquals("remote-9", client.control.createdSessionId.value)
+    }
+
+    @Test
+    fun `another machine's directories come from its own directory_list through peer_call`() {
+        client.refreshDirectories(machineId = "p1")
+
+        val record = JSONObject(String(sent.last(), Charsets.UTF_8))
+        assertEquals("peer_call", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("p1", params.getString("peer"))
+        assertEquals("directory_list", params.getString("tool"))
+
+        client.onInbound(resultFor(lastCallId(), """[{"dirPath":"/there/app","name":"app"}]"""))
+        assertEquals(listOf("/there/app"), client.control.directories.value.map { it.path })
+    }
+
+    @Test
+    fun `spawn machines are the online peers that let this desktop call them`() {
+        client.refreshMachines()
+        assertEquals("peer_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+
+        client.onInbound(
+            resultFor(
+                lastCallId(),
+                """[
+                  {"id":"p1","alias":"Box","online":true,"mayCallThem":true},
+                  {"id":"p2","alias":"Off","online":false,"mayCallThem":true},
+                  {"id":"p3","alias":"Shut","online":true,"mayCallThem":false}
+                ]""",
+            ),
+        )
+        assertEquals(listOf(SpawnMachine("p1", "Box")), client.control.spawnMachines.value)
+    }
+
+    @Test
+    fun `a refused peer_list leaves no machines rather than an error`() {
+        client.refreshMachines()
+        client.onInbound(errorFor(lastCallId(), "Tool not permitted"))
+        assertTrue(client.control.spawnMachines.value.isEmpty())
     }
 
     @Test

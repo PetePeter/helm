@@ -82,9 +82,11 @@ class SessionRepository {
 
     private companion object {
         /**
-         * Grouped by project, alphabetical within it, with the id breaking ties
-         * so two identically named sessions never swap places between polls.
+         * This desktop's own sessions by project, then Remote rows by machine;
+         * alphabetical within a group, with the id breaking ties so two
+         * identically named sessions never swap places between polls.
          */
-        val ORDER: Comparator<HelmSession> = compareBy({ it.projectLabel }, { it.name }, { it.id })
+        val ORDER: Comparator<HelmSession> =
+            compareBy({ it.machineName != null }, { it.groupLabel }, { it.name }, { it.id })
     }
 }

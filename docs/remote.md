@@ -4,7 +4,7 @@
 
 Fleet lets you **delegate**: your AI calls another Helm's tools with `peer_call`. Remote lets you **talk**: a session running on another PC appears here as an ordinary row. Its terminal streams from the peer, and your controller, keyboard, phone and voice drive it directly, with no AI in the middle.
 
-Remote is an option of Fleet, not a separate system. It uses Fleet's TLS-WS link, SAS pairing, per-peer allow-list, rate limit and audit log. It adds no new port, crypto or pairing.
+Remote is an option of Fleet, not a separate system. It uses Fleet's TLS-WS link, SAS pairing, per-peer access flag, rate limit and audit log. It adds no new port, crypto or pairing.
 
 ## Shape
 
@@ -17,7 +17,7 @@ graph LR
   end
   RPP <-->|PeerLink<br/>attach = request<br/>data/write/resize/exit = notifications| PL[(Fleet link)]
   subgraph "Owner (peer PC)"
-    PL --> G[InboundCallGate<br/>allow-list · rate limit · audit]
+    PL --> G[InboundCallGate<br/>access · rate limit · audit]
     G --> RH[RemotePtyHost]
     PL -->|notifications| RH
     RH <--> PM2[PtyManager<br/>real node-pty]
@@ -42,25 +42,31 @@ graph LR
 ## Rules
 
 - **Remote rows are views, never local sessions.** They are not persisted, not recycle-binned and have no `cliSessionName`, so a restart can never resume-spawn the peer's CLI locally. To get one back after a restart, re-attach.
-- **No chains.** A Remote row is never re-exported: attaching to it answers "not found", the Peers-tab picker hides it, and `peer_attach` is hard-denied to inbound peers.
+- **No chains.** A Remote row is never re-exported: attaching to it answers "not found", the Peers-tab picker hides it, and `peer_attach` / `peer_spawn` are denied to inbound fleet peers (a paired phone may use them).
 - **Artifacts follow the CLI.** The CLI's MCP calls go to the owner's Helm, so its artifacts live there. `session_artifact_list` and `session_artifact_get` for a Remote row are forwarded to the owner using the owner's session id. That covers the phone, the renderer and local AIs. Downloads, uploads and missions stay local-only for now.
 
 ## Access
 
-On the **owner**, allow the viewer peer these patterns. The **Remote** preset in the Peers tab sets all four:
-
-| Pattern | For |
-|---|---|
-| `session_list` | Finding what to attach to |
-| `remote.*` | Attaching |
-| `session_artifact_list`, `session_artifact_get` | Artifacts of attached rows |
-
-A `*` allow-list includes Remote. That's consistent with `session_send_text`, which also writes into a PTY.
+The owner must let the viewer call it: tick **May call me** for that peer in the owner's Peers tab. That grants every tool except the hard-deny list, `remote.*` included; the viewer sees it as "me → them" and can then attach and spawn. There is no per-tool allow-list.
 
 ## Entry points
 
 - **Peers tab:** the **Attach…** button on an online peer lists its sessions, and **Attach** opens the chosen one here.
+- **New session (Ctrl+Shift+N, desktop):** the folder picker shows machine tabs — This PC plus every online peer that lets this machine in (LB/RB or ←/→). A peer's tab lists ITS folders (`peer_call(peer, "directory_list")`); picking one runs `peer_spawn`: the peer's `session_create`, then an attach here.
+- **Phone New session:** a "Runs on" row with the same machines (`peer_list` → `mayCallThem`); the desktop does the spawn and attach, and the phone opens the resulting row.
 - **MCP:** `peer_attach(peer, sessionId)`. This is how the phone's operator opens a remote session: find it with `peer_call(peer, "session_list", {})`, then attach. Once attached, nothing else is needed; all input and output routes automatically.
+
+## Lists grouped by machine
+
+A Remote row sits under its owner machine, never under a project folder: its path is the peer's, and means nothing next to this PC's folders. The desktop list adds one 🖥 group per peer after the local groups (`buildSessionGroups`, key `machine:<peerId>`); `session_list` stamps each Remote row with `remote.machineName`, and the phone groups by it the same way. A remote session is attached at most once per peer (`RemoteService.open` is idempotent), and one peer registry entry exists per machineId, so no row shows twice.
+
+```mermaid
+graph TD
+  L[Session list] --> P1[📁 gamepad-cli-hub — local]
+  L --> P2[📁 helm — local]
+  L --> M1[🖥 Box — Remote rows]
+  L --> M2[🖥 Laptop — Remote rows]
+```
 
 ## Modules
 
@@ -69,11 +75,13 @@ A `*` allow-list includes Remote. That's consistent with `session_send_text`, wh
 | `src/session/remote/remote-protocol.ts` | Wire vocabulary shared by both sides |
 | `src/session/remote/remote-pty-host.ts` | Owner: streams, applies writes, authorizes by attach |
 | `src/session/remote/remote-pty-process.ts` | Viewer: adopted `PtyProcess`, seq ordering, repair |
-| `src/session/remote/remote-service.ts` | Both roles over the live Fleet link manager; `open()` |
+| `src/session/remote/remote-service.ts` | Both roles over the live Fleet link manager; `open()`, `spawn()` |
+| `src/mcp/peer/fleet-access-sync.ts` | Reports my access flag to each peer (`fleet.access`) |
 | `src/mcp/peer/peer-link.ts` | `notify()` plus the `notification` event |
 
 ## Known limitations
 
-- Removing `remote.*` from a peer's allow-list stops **new** attaches but doesn't cut a stream that's already attached. To cut it, disable the peer; that drops the link.
+- Unticking **May call me** stops **new** attaches but doesn't cut a stream that's already attached. To cut it, disable the peer; that drops the link.
+- A spawn whose attach fails leaves the CLI running on the peer; the error names it so it can be attached from the Peers tab.
 - Attaching is manual (Peers tab or `peer_attach`). Remote rows aren't restored after a restart.
 - Artifact downloads and uploads, missions and hooks for a Remote row stay with the owner.

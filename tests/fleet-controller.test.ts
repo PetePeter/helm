@@ -296,7 +296,7 @@ describe('FleetController peer reconciliation', () => {
     // What PeerPairing.tryFinalize() does on a successful SAS.
     peerConfigManager.upsertByMachineId({
       machineId: 'MID-REMOTE', alias: 'the Mac', address: '10.0.0.2:47474',
-      pskRef: 'peer-MID-REMOTE', allow: [], direction: 'bidirectional',
+      pskRef: 'peer-MID-REMOTE', inbound: false, direction: 'bidirectional',
     });
 
     expect(syncPeers).toHaveBeenCalledTimes(1);

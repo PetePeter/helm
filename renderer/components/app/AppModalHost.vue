@@ -8,7 +8,7 @@ import {
   bulkCleanup, getBulkCleanupCallback,
   promptTree, getPromptTreeCallback, hidePromptTree,
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
-  dirPicker, closeDirPicker,
+  dirPicker, closeDirPicker, switchDirPickerMachine,
   draftSubmenu,
   formModal, getFormModalResolve,
   toolEditor, getToolEditorCallback,
@@ -18,6 +18,7 @@ import {
   runtimeGroupMove, closeRuntimeGroupMoveSubmenu,
 } from '../../stores/modal-bridge.js';
 import { useRuntimeGroupActions } from '../../composables/useRuntimeGroupActions.js';
+import { usePeers } from '../../composables/usePeers.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../../src/types/scheduled-task.js';
 import CloseConfirmModal from '../modals/CloseConfirmModal.vue';
 import PlanDeleteConfirmModal from '../modals/PlanDeleteConfirmModal.vue';
@@ -62,7 +63,7 @@ const emit = defineEmits<{
   'draft-apply': [draft: { id: string; text: string }];
   'draft-edit': [draft: { id: string; label: string; text: string }];
   'draft-delete': [draft: { id: string }];
-  'dir-select': [path: string, cliType: string];
+  'dir-select': [path: string, cliType: string, machineId: string];
   'update:bindingEditorVisible': [visible: boolean];
   'binding-save': [binding: any];
   'update:schedulerPopupVisible': [visible: boolean];
@@ -128,9 +129,14 @@ function onQuickSpawnSelect(cliType: string): void {
 }
 
 function onDirPickerSelect(path: string): void {
-  const cliType = dirPicker.cliType;
+  const { cliType, machineId } = dirPicker;
   closeDirPicker();
-  emit('dir-select', path, cliType);
+  emit('dir-select', path, cliType, machineId);
+}
+
+const { listPeerDirs } = usePeers();
+function onDirPickerMachine(id: string): void {
+  void switchDirPickerMachine(id, listPeerDirs);
 }
 
 function onFormModalSave(values: Record<string, string>): void {
@@ -260,7 +266,12 @@ function onRuntimeGroupMoveCancel(): void {
     :cli-type="dirPicker.cliType"
     :items="dirPicker.items"
     :preselected-path="dirPicker.preselectedPath"
+    :machines="dirPicker.machines"
+    :machine-id="dirPicker.machineId"
+    :loading="dirPicker.loading"
+    :error="dirPicker.error"
     @select="onDirPickerSelect"
+    @machine="onDirPickerMachine"
     @cancel="closeDirPicker()"
   />
 

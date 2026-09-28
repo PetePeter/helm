@@ -7,7 +7,7 @@
  * and defensively re-refresh so the UI stays consistent even if an event is
  * missed.
  */
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { peersClient, configClient, eventsClient } from '../ipc/clients.js';
 
 export interface FleetConfig {
@@ -22,7 +22,10 @@ export interface ConfiguredPeer {
   alias: string;
   address: string;
   direction: 'inbound' | 'outbound' | 'bidirectional';
-  allow: string[];
+  /** Whether this peer may call me. */
+  inbound: boolean;
+  /** Whether the peer lets me call it, as it last reported (undefined = not yet). */
+  peerAllowsMe?: boolean;
   enabled: boolean;
   online: boolean;
 }
@@ -275,8 +278,8 @@ async function setFleetConfig(updates: Partial<FleetConfig>): Promise<void> {
   await refresh();
 }
 
-async function setAllowList(peerId: string, allow: string[]): Promise<void> {
-  await peersClient.peerSetAllowList(peerId, allow);
+async function setInbound(peerId: string, inbound: boolean): Promise<void> {
+  await peersClient.peerSetInbound(peerId, inbound);
   await refresh();
 }
 
@@ -293,6 +296,24 @@ async function unpair(peerId: string): Promise<void> {
 /** Remote: the sessions running on a peer, offered for attach. */
 async function listPeerSessions(peerId: string): Promise<PeerSession[]> {
   return (await peersClient.peerSessions(peerId)) ?? [];
+}
+
+/**
+ * Machines a session can be spawned on besides this one: enabled, online, and
+ * reporting that they let me call them (their own `inbound` for me).
+ */
+const spawnTargets = computed(() => configuredPeers.value
+  .filter((p) => p.enabled && p.online && p.peerAllowsMe === true)
+  .map((p) => ({ id: p.id, alias: p.alias })));
+
+/** Remote spawn: a peer's spawnable directories, shaped like the local dir picker's. */
+async function listPeerDirs(peerId: string): Promise<Array<{ name: string; path: string; projectId?: string; projectName?: string }>> {
+  return (await peersClient.peerDirs(peerId)) ?? [];
+}
+
+/** Remote spawn: start a CLI on the peer and open it here. */
+async function spawnOnPeer(peerId: string, cliType: string, dirPath: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
+  return peersClient.peerSpawn(peerId, cliType, dirPath);
 }
 
 /** Remote: open a peer's session here as a local row. */
@@ -341,10 +362,13 @@ export function usePeers() {
     confirmPairing,
     cancelPairing,
     closePairing,
-    setAllowList,
+    setInbound,
     setEnabled,
     unpair,
     listPeerSessions,
     attachPeerSession,
+    spawnTargets,
+    listPeerDirs,
+    spawnOnPeer,
   };
 }

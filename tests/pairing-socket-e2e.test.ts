@@ -198,7 +198,7 @@ describe('SAS pairing over a real pairing socket', () => {
     expect(aPsk!.equals(bPsk!)).toBe(true);
 
     // A fresh peer is deny-all until the user grants tools.
-    expect(aPeer!.allow).toEqual([]);
+    expect(aPeer!.inbound).toBe(false);
   });
 
   it('produces different codes when the identity announcement is tampered with', async () => {

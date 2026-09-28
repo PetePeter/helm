@@ -2,8 +2,8 @@
  * PeersTab component tests — real component + real usePeers composable, with the
  * IPC clients mocked at the module boundary (fakes, not mocks-with-verify where
  * avoidable). Covers rendering paired peers (dot colour + direction + enable
- * toggle), the discover section (excluding already-paired), the allow-list editor
- * (add / preset / remove → peerSetAllowList), enable toggle, and unpair.
+ * toggle), the discover section (excluding already-paired), the "may call me"
+ * access toggle + combined direction label, enable toggle, and unpair.
  *
  * @vitest-environment jsdom
  */
@@ -23,7 +23,7 @@ const peerFleetEnabled = vi.fn(async () => state.fleetEnabled);
 const peerList = vi.fn(async () => state.peers);
 const peerListDiscovered = vi.fn(async () => state.discovered);
 const peerGetAudit = vi.fn(async () => state.audit);
-const peerSetAllowList = vi.fn(async () => ({ ok: true }));
+const peerSetInbound = vi.fn(async () => ({ ok: true }));
 const peerSetEnabled = vi.fn(async () => ({ ok: true }));
 const peerUnpair = vi.fn(async () => ({ ok: true }));
 const peerSessions = vi.fn(async () => [{ id: 'h1', name: 'builder', cliType: 'Claude Code' }]);
@@ -46,7 +46,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     peerList: (...a: any[]) => peerList(...a),
     peerListDiscovered: (...a: any[]) => peerListDiscovered(...a),
     peerGetAudit: (...a: any[]) => peerGetAudit(...a),
-    peerSetAllowList: (...a: any[]) => peerSetAllowList(...a),
+    peerSetInbound: (...a: any[]) => peerSetInbound(...a),
     peerSetEnabled: (...a: any[]) => peerSetEnabled(...a),
     peerUnpair: (...a: any[]) => peerUnpair(...a),
     peerSessions: (...a: any[]) => peerSessions(...a),
@@ -84,7 +84,7 @@ function hexToRgb(hex: string): string {
 function onlinePeer(over: Partial<any> = {}) {
   return {
     id: 'p1', machineId: 'mac-1', alias: 'the Mac', address: '10.0.0.5:47474',
-    direction: 'bidirectional', allow: ['session_*'], enabled: true, online: true, ...over,
+    direction: 'bidirectional', inbound: true, enabled: true, online: true, ...over,
   };
 }
 
@@ -103,15 +103,15 @@ afterEach(() => {
 });
 
 describe('PeersTab', () => {
-  it('renders a paired peer with the online dot colour and direction', async () => {
-    state.peers = [onlinePeer()];
+  it('renders a paired peer with the online dot colour and access direction', async () => {
+    state.peers = [onlinePeer({ peerAllowsMe: true })];
     const w = mount(PeersTab);
     await flushPromises();
 
     const row = w.find('.peer-row');
     expect(row.exists()).toBe(true);
     expect(row.text()).toContain('the Mac');
-    expect(row.text()).toContain('bidirectional');
+    expect(row.find('.peer-access').text()).toBe('↔ both');
 
     const dot = row.find('.peer-dot');
     // Explicit colour (dark-mode legibility): online green, not a default.
@@ -149,50 +149,29 @@ describe('PeersTab', () => {
     expect(peerStartPairing).toHaveBeenCalledWith('mac-2');
   });
 
-  it('allow-list editor: adding a pattern saves the new array (debounced)', async () => {
-    vi.useFakeTimers();
-    state.peers = [onlinePeer({ allow: ['session_*'] })];
+  it.each([
+    [true, true, '↔ both'],
+    [true, false, '← them → me'],
+    [false, true, '→ me → them'],
+    [false, false, 'off'],
+    [false, undefined, 'off (peer not heard yet)'],
+  ])('access label: inbound=%s peerAllowsMe=%s → %s', async (inbound, peerAllowsMe, label) => {
+    state.peers = [onlinePeer({ inbound, peerAllowsMe })];
     const w = mount(PeersTab);
     await flushPromises();
-
-    await w.find('.peer-allow-toggle').trigger('click');
-    const input = w.find('.peer-add-input');
-    await input.setValue('artifact_get');
-    await w.find('.peer-add-btn').trigger('click');
-
-    vi.runAllTimers();
-    await flushPromises();
-    expect(peerSetAllowList).toHaveBeenCalledWith('p1', ['session_*', 'artifact_get']);
+    expect(w.find('.peer-access').text()).toBe(label);
   });
 
-  it('allow-list editor: a preset button sets the expected globs', async () => {
-    vi.useFakeTimers();
-    state.peers = [onlinePeer({ allow: [] })];
+  it('"May call me" toggle saves my own grant only', async () => {
+    state.peers = [onlinePeer({ inbound: false })];
     const w = mount(PeersTab);
     await flushPromises();
 
-    await w.find('.peer-allow-toggle').trigger('click');
-    const presetBtn = w.findAll('.peer-preset-btn').find(b => b.text() === 'Read-only')!;
-    await presetBtn.trigger('click');
-
-    vi.runAllTimers();
+    const toggle = w.find('.peer-inbound-input');
+    (toggle.element as HTMLInputElement).checked = true;
+    await toggle.trigger('change');
     await flushPromises();
-    expect(peerSetAllowList).toHaveBeenCalledWith('p1', ['session_list', 'plan_*', 'directory_list', 'project_list']);
-  });
-
-  it('allow-list editor: removing a pattern persists the smaller array', async () => {
-    vi.useFakeTimers();
-    state.peers = [onlinePeer({ allow: ['session_*', 'artifact_get'] })];
-    const w = mount(PeersTab);
-    await flushPromises();
-
-    await w.find('.peer-allow-toggle').trigger('click');
-    const removeBtn = w.findAll('.peer-glob-remove')[0];
-    await removeBtn.trigger('click');
-
-    vi.runAllTimers();
-    await flushPromises();
-    expect(peerSetAllowList).toHaveBeenCalledWith('p1', ['artifact_get']);
+    expect(peerSetInbound).toHaveBeenCalledWith('p1', true);
   });
 
   it('enable toggle calls peerSetEnabled with the new value', async () => {

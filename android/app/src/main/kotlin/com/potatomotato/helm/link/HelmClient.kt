@@ -321,15 +321,34 @@ class HelmClient(
      * for the directory list" forever, which reads as patience when the truth is
      * the call already died.
      */
-    fun refreshDirectories(): Boolean {
-        control.directoriesRequested()
-        return call(METHOD_DIRECTORY_LIST) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> if (!control.directoriesArrived(outcome.result)) {
-                    control.directoriesFailed(UNREADABLE_LIST)
+    fun refreshDirectories(machineId: String? = null): Boolean {
+        control.directoriesRequested(machineId)
+        val answer: (Outcome) -> Unit = { outcome ->
+            // A late answer for a machine the user already left is not this list.
+            if (control.wantsDirectoriesOf(machineId)) {
+                when (outcome) {
+                    is Outcome.Ok -> if (!control.directoriesArrived(outcome.result)) {
+                        control.directoriesFailed(UNREADABLE_LIST)
+                    }
+                    is Outcome.Failed -> control.directoriesFailed(outcome.message)
                 }
-                is Outcome.Failed -> control.directoriesFailed(outcome.message)
             }
+        }
+        if (machineId == null) return call(METHOD_DIRECTORY_LIST, onOutcome = answer)
+        // Another machine's folders: its own directory_list, relayed by the desktop.
+        // No `args`: directory_list takes none, and the desktop defaults a missing one to {}.
+        val params = linkedMapOf<String, Any>("peer" to machineId, "tool" to METHOD_DIRECTORY_LIST)
+        return call(METHOD_PEER_CALL, params, onOutcome = answer)
+    }
+
+    /**
+     * The fleet peers a session can be spawned on, for the spawn form's machine
+     * row. A refusal is not an error: it just means this desktop is the only choice.
+     */
+    fun refreshMachines(): Boolean = call(METHOD_PEER_LIST) { outcome ->
+        when (outcome) {
+            is Outcome.Ok -> if (!control.machinesArrived(outcome.result)) control.machinesUnavailable()
+            is Outcome.Failed -> control.machinesUnavailable()
         }
     }
 
@@ -1157,12 +1176,22 @@ class HelmClient(
      * [initialPrompt] is the plan spawner's first instruction; the desktop
      * delivers it once the CLI has started, so the phone never times it.
      */
-    fun spawn(dirPath: String, cliType: String, name: String, initialPrompt: String? = null): Boolean {
+    fun spawn(
+        dirPath: String,
+        cliType: String,
+        name: String,
+        initialPrompt: String? = null,
+        machineId: String? = null,
+    ): Boolean {
         val params = linkedMapOf<String, Any>("dirPath" to dirPath, "cliType" to cliType)
         if (name.isNotBlank()) params["name"] = name.trim()
         if (!initialPrompt.isNullOrBlank()) params["initialPrompt"] = initialPrompt
+        // On another machine: the desktop starts it there and opens it as its own
+        // Remote row, whose LOCAL id comes back — so the thread opens the same way.
+        val method = if (machineId == null) METHOD_SESSION_CREATE else METHOD_PEER_SPAWN
+        if (machineId != null) params["peer"] = machineId
         control.spawnStarted()
-        return act(SessionAction.Spawn, METHOD_SESSION_CREATE, params) { outcome ->
+        return act(SessionAction.Spawn, method, params) { outcome ->
             // Every outcome path settles — act() delivers the verdict whatever it
             // was, including the no-link failure that answers before anything was
             // sent — so the flag cannot outlive the tap that raised it.
@@ -1790,6 +1819,9 @@ class HelmClient(
         private const val METHOD_RING_ANSWERED = "__ring_answered__"
         private const val RING_KIND = "ring"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
+        private const val METHOD_PEER_LIST = "peer_list"
+        private const val METHOD_PEER_CALL = "peer_call"
+        private const val METHOD_PEER_SPAWN = "peer_spawn"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"
         private const val METHOD_SESSION_CLOSE = "session_close"

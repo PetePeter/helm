@@ -113,3 +113,33 @@ describe('buildSessionGroups', () => {
     expect(runtimeGroup!.sessions.map(s => s.id)).toEqual(['s1', 's2']);
   });
 });
+
+describe('buildSessionGroups — Remote rows grouped by machine', () => {
+  const remote = (id: string, peerId: string, dir = '/w/proj'): Session =>
+    ({ ...makeSession(id, dir), remote: { peerId, sessionId: `${id}-there` } });
+  const names: Record<string, string> = { p1: 'Box', p2: 'Laptop' };
+  const machineName = (peerId: string) => names[peerId] ?? peerId;
+
+  it('M1: Remote rows leave directory groups and sit under their owner machine, after local groups', () => {
+    const sessions = [makeSession('s1', '/w/proj'), remote('r1', 'p1'), remote('r2', 'p2'), remote('r3', 'p1', '/w/other')];
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, [], machineName);
+
+    expect(groups.map(g => [g.kind, g.displayName, g.sessions.map(s => s.id)])).toEqual([
+      ['directory', 'proj', ['s1']],
+      ['machine', 'Box', ['r1', 'r3']],
+      ['machine', 'Laptop', ['r2']],
+    ]);
+  });
+
+  it('M2: machine groups have their own header key and honour collapse prefs', () => {
+    const sessions = [remote('r1', 'p1')];
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), { order: [], collapsed: ['machine:p1'] }, [], machineName);
+    expect(groups[0]).toMatchObject({ dirPath: 'machine:p1', collapsed: true });
+  });
+
+  it('M3: a runtime group still claims a Remote row', () => {
+    const sessions = [remote('r1', 'p1')];
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, [makeRuntimeGroup('g1', 'G', ['r1'])], machineName);
+    expect(groups.map(g => g.kind)).toEqual(['runtime']);
+  });
+});

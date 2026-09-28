@@ -21,7 +21,7 @@ import type { PeerConfig } from '../src/types/peer.js';
 function peer(over: Partial<PeerConfig> = {}): PeerConfig {
   return {
     id: 'p1', alias: 'the Mac', address: '10.0.0.2:47474', pskRef: 'r',
-    allow: [], direction: 'bidirectional', createdAt: 0, machineId: 'MID-REMOTE',
+    inbound: false, direction: 'bidirectional', createdAt: 0, machineId: 'MID-REMOTE',
     ...over,
   };
 }

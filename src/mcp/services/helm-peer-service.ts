@@ -19,10 +19,13 @@
  */
 
 import { HARD_DENY_TOOLS, RESERVED_PEER_TOOLS_METHOD } from '../peer/inbound-call-gate.js';
+import type { PeerSummary } from '../peer/peer-link-manager.js';
+
+export type { PeerSummary };
 
 /** The minimal PeerLinkManager surface this service depends on. */
 interface PeerLinkManagerLike {
-  list(): Array<{ id: string; alias: string; direction: 'inbound' | 'outbound' | 'bidirectional'; online: boolean }>;
+  list(): PeerSummary[];
   call(peerId: string, method: string, params: unknown): Promise<unknown>;
 }
 
@@ -31,13 +34,6 @@ export interface PeerToolSummary {
   title: string;
   description: string;
   inputSchema: unknown;
-}
-
-export interface PeerSummary {
-  id: string;
-  alias: string;
-  direction: 'inbound' | 'outbound' | 'bidirectional';
-  online: boolean;
 }
 
 export class HelmPeerService {

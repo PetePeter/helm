@@ -132,7 +132,7 @@ describe('PeerPairing happy path', () => {
     initiator.pairing.accept();
     responder.pairing.accept();
     await flush();
-    expect(initiator.peers.list()[0].allow).toEqual([]);
+    expect(initiator.peers.list()[0].inbound).toBe(false);
   });
 
   it('zeroes the raw DH shared secret on success (terminal state holds no secret)', async () => {
@@ -370,7 +370,7 @@ describe('PeerPairing idempotency', () => {
     const { initiator, responder } = pair(clock);
     // Pre-seed the initiator with an existing peer for R's machineId.
     initiator.peers.upsertByMachineId({
-      machineId: R.machineId, alias: 'old-alias', address: 'old:1', pskRef: 'old-ref', allow: ['session_*'],
+      machineId: R.machineId, alias: 'old-alias', address: 'old:1', pskRef: 'old-ref', inbound: true,
     });
     expect(initiator.peers.list()).toHaveLength(1);
 
@@ -430,7 +430,7 @@ describe('PeerPairing rollback on partial persist failure', () => {
     const { initiator, responder } = pair();
     // Pre-existing peer for R with its own alias/pskRef/allow.
     initiator.peers.upsertByMachineId({
-      machineId: R.machineId, alias: 'original', address: 'orig:1', pskRef: 'orig-ref', allow: ['session_*'],
+      machineId: R.machineId, alias: 'original', address: 'orig:1', pskRef: 'orig-ref', inbound: true,
     });
     initiator.secrets.set('orig-ref', Buffer.alloc(32, 0xaa));
 
@@ -450,7 +450,7 @@ describe('PeerPairing rollback on partial persist failure', () => {
     expect(initiator.peers.list()).toHaveLength(1);
     expect(peer.alias).toBe('original');
     expect(peer.pskRef).toBe('orig-ref');
-    expect(peer.allow).toEqual(['session_*']);
+    expect(peer.inbound).toBe(true);
     expect(initiator.paired).toHaveLength(0);
   });
 });

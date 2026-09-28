@@ -331,7 +331,7 @@ export class PeerPairing extends EventEmitter {
         alias: this.opts.peer.alias,
         address: this.opts.peer.address,
         pskRef,
-        allow: existing?.allow ?? [], // deny-by-default for a fresh peer; preserve on re-pair
+        inbound: existing?.inbound ?? false, // deny-by-default for a fresh peer; preserve on re-pair
         direction: 'bidirectional',
       });
       peerId = peer.id;
@@ -366,7 +366,7 @@ export class PeerPairing extends EventEmitter {
             alias: existing.alias,
             address: existing.address,
             pskRef: existing.pskRef,
-            allow: existing.allow,
+            inbound: existing.inbound,
             direction: existing.direction,
           });
         }

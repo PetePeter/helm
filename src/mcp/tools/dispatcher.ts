@@ -1136,6 +1136,13 @@ export async function callMcpTool(
           asString(args.peer, 'peer is required'),
           asString(args.sessionId, 'sessionId is required'),
         );
+      case 'peer_spawn':
+        return service.peerSpawn(asString(args.peer, 'peer is required'), {
+          cliType: asString(args.cliType, 'cliType is required'),
+          dirPath: asString(args.dirPath, 'dirPath is required'),
+          ...(typeof args.name === 'string' ? { name: args.name } : {}),
+          ...(typeof args.initialPrompt === 'string' ? { initialPrompt: args.initialPrompt } : {}),
+        });
       case 'mobile_pair_start':
         return service.mobilePairStart();
       case 'mobile_pair_status':

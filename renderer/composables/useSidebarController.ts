@@ -5,6 +5,8 @@ import { sessionsState } from '../screens/sessions-state.js';
 import { patternsClient, schedulerClient, sessionsClient } from '../ipc/clients.js';
 import { setDirPickerBridge } from '../screens/sessions-spawn.js';
 import { openDirPicker, dirPicker, closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
+import { usePeers } from './usePeers.js';
+import { logEvent } from '../utils.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
 import { toggleSessionOverviewVisibility, setSessionLocked, setSessionState, toggleGroupCollapse } from '../screens/sessions.js';
@@ -30,6 +32,7 @@ export interface SidebarControllerDeps {
 
 
 export function useSidebarController(deps: SidebarControllerDeps) {
+  const { spawnTargets, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
   const overviewCollapsedIds = ref<Set<string>>(new Set());
   const overviewGroupLabel = ref('');
   const schedulerPopupVisible = ref(false);
@@ -158,8 +161,13 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     }
   }
 
-  function onDirPickerSelect(path: string, selectedCliType = dirPicker.cliType): void {
-    deps.doSpawn(selectedCliType, path);
+  /** `machineId` '' spawns here; a peer id spawns there and opens it here. */
+  async function onDirPickerSelect(path: string, selectedCliType = dirPicker.cliType, machineId = ''): Promise<void> {
+    if (!machineId) { await deps.doSpawn(selectedCliType, path); return; }
+    const result = await spawnOnPeer(machineId, selectedCliType, path);
+    if (!result.ok || !result.sessionId) { logEvent(`Remote spawn failed: ${result.error ?? 'unknown error'}`); return; }
+    await refreshSessions();
+    await deps.navStore.navigateToSession(result.sessionId);
   }
 
   function onSortChange(field: string, direction: 'asc' | 'desc'): void {
@@ -169,8 +177,11 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   }
 
   function installDirPickerBridge(): void {
+    // The machine tabs read peer state, so keep it live from startup.
+    ensurePeersSubscribed();
     setDirPickerBridge((cliType, dirs, preselectedPath) => {
-      openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath);
+      openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath,
+        spawnTargets.value.map((p) => ({ id: p.id, label: p.alias })));
     });
   }
 

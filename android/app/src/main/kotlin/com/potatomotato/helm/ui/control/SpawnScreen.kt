@@ -31,6 +31,7 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.HelmDirectory
 import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.data.SpawnMachine
 import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -58,6 +59,10 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * There is no confirmation. Creating is cheap and reversible; the confirmation
  * budget is spent on closing.
  *
+ * With fleet peers online that let the desktop in, a "Runs on" row picks the
+ * machine: its folders come from that machine and the desktop opens the result
+ * as a Remote row (`peer_spawn`). A plan's spawn always runs on this desktop.
+ *
  * [plan] turns the same form into a plan's spawner: its directory is shown but
  * not choosable, its name is suggested but editable, and its read prompt rides
  * the spawn. Null is the ordinary New session form, unchanged.
@@ -71,8 +76,12 @@ fun SpawnScreen(
     linkState: LinkState,
     /** A spawn is already crossing the wire; a second cannot be asked for. */
     spawnInFlight: Boolean,
-    onSpawn: (dirPath: String, cliType: String, name: String) -> Unit,
-    onRetryDirectories: () -> Unit,
+    /** Fleet peers the desktop may spawn on; empty hides the machine row. */
+    machines: List<SpawnMachine>,
+    /** The machine changed (null = this desktop): load its folders. */
+    onMachine: (machineId: String?) -> Unit,
+    onSpawn: (dirPath: String, cliType: String, name: String, machineId: String?) -> Unit,
+    onRetryDirectories: (machineId: String?) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     plan: PlanSpawn? = null,
@@ -92,6 +101,7 @@ fun SpawnScreen(
     var dirPath by rememberSaveable(plan) { mutableStateOf(plan?.dirPath) }
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable(plan) { mutableStateOf(plan?.name.orEmpty()) }
+    var machineId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
@@ -132,6 +142,32 @@ fun SpawnScreen(
                 }
             }
 
+            // The machine before its folders: they are that machine's paths.
+            if (plan == null && machines.isNotEmpty()) {
+                FieldLabel(stringResource(R.string.spawn_runs_on))
+                val choose = { id: String? ->
+                    if (id != machineId) {
+                        machineId = id
+                        dirPath = null
+                        onMachine(id)
+                    }
+                }
+                Choice(
+                    label = stringResource(R.string.spawn_this_desktop),
+                    detail = null,
+                    selected = machineId == null,
+                    onClick = { choose(null) },
+                )
+                for (machine in machines) {
+                    Choice(
+                        label = "🖥 ${machine.name}",
+                        detail = null,
+                        selected = machine.id == machineId,
+                        onClick = { choose(machine.id) },
+                    )
+                }
+            }
+
             FieldLabel(stringResource(R.string.spawn_where))
             when {
                 // A plan's directory is fixed: shown, selected, and not a choice.
@@ -150,7 +186,7 @@ fun SpawnScreen(
                 // hint is only for a fetch that has not answered yet.
                 directoriesError != null -> {
                     Hint(directoriesError)
-                    GhostButton(text = stringResource(R.string.spawn_retry), onClick = onRetryDirectories)
+                    GhostButton(text = stringResource(R.string.spawn_retry), onClick = { onRetryDirectories(machineId) })
                 }
                 directories.isEmpty() -> Hint(stringResource(R.string.spawn_no_directories))
                 else -> {
@@ -186,7 +222,7 @@ fun SpawnScreen(
                 // The name is optional on the wire: a blank one is omitted and
                 // the desktop names the session after the CLI type.
                 enabled = chosenDir != null && chosenCli != null && !spawnInFlight,
-                onClick = { onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName) },
+                onClick = { onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName, machineId) },
             )
             GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
         }
