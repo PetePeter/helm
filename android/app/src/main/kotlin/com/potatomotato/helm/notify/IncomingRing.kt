@@ -13,6 +13,7 @@ import android.util.Log
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.telecom.HelmTelecom
+import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.wire.MobileRecord
 
 /**
@@ -49,11 +50,17 @@ class IncomingRing(private val context: Context) {
      * A ring goes to Android's call system first (a real incoming call the car
      * and headset can answer); only when Telecom refuses does this notification
      * ring on its own.
+     *
+     * NEVER over a live call: a second call took the first one's audio and left
+     * it running with no screen and no hang-up. False hands the ring back to
+     * the caller, which shows it as an ordinary alert instead.
      */
-    fun ring(record: MobileRecord.Chat) {
-        if (record.sessionId.isBlank()) return
-        if (HelmTelecom.offer(context, record.sessionId, record.sessionName, record.text)) return
+    fun ring(record: MobileRecord.Chat): Boolean {
+        if (record.sessionId.isBlank()) return true
+        if (VoiceCallService.call.value != null) return false
+        if (HelmTelecom.offer(context, record.sessionId, record.sessionName, record.text)) return true
         show(record.sessionId, record.sessionName, record.text)
+        return true
     }
 
     /** The incoming-call UI: Telecom asks for it (self-managed calls draw their own), or the fallback uses it. */

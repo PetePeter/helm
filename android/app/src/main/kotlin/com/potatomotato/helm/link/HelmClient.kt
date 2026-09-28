@@ -298,9 +298,11 @@ class HelmClient(
     /**
      * Where an incoming RING goes (the operator calling). Set by the Android
      * shell; null — tests, or before wiring — degrades to an ordinary alert.
+     * Returns false when it will not ring (a call is already live), and the
+     * ring degrades to an ordinary alert the same way.
      */
     @Volatile
-    var ringer: ((MobileRecord.Chat) -> Unit)? = null
+    var ringer: ((MobileRecord.Chat) -> Boolean)? = null
 
     /**
      * Restart Helm on the linked desktop — the user's restart, answered in-gate
@@ -1549,7 +1551,7 @@ class HelmClient(
                         chats.receive(linkedDesktop(), record)
                         alerts.onMessage(record)
                     }
-                    RING_KIND -> ringer?.invoke(record) ?: alerts.onAlert(record)
+                    RING_KIND -> if (ringer?.invoke(record) != true) alerts.onAlert(record)
                     else -> alerts.onAlert(record)
                 }
 

@@ -321,11 +321,22 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a ring the ringer declines (a call is already live) becomes an ordinary alert`() {
+        val port = FakeNotificationPort()
+        client.alerts.port = port
+        client.ringer = { false }
+
+        client.onInbound(chatBytes(sessionId = "op", text = "P-0850 finished", at = 7, kind = "ring"))
+
+        assertTrue(port.showing("op") != null)
+    }
+
+    @Test
     fun `a ring goes to the ringer, not the shade or the thread`() {
         val port = FakeNotificationPort()
         client.alerts.port = port
         val rings = mutableListOf<MobileRecord.Chat>()
-        client.ringer = { rings += it }
+        client.ringer = { rings += it; true }
 
         client.onInbound(chatBytes(sessionId = "op", text = "P-0850 finished", at = 7, kind = "ring"))
 
