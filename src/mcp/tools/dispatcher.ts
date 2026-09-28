@@ -152,6 +152,17 @@ export interface McpToolDispatcherDeps {
   onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
 }
 
+/** Where a `session_send_text` target lives when it is not on this machine; null when it is local. */
+function resolvePeerSendTarget(service: HelmControlService, ref: unknown): { peerId: string; sessionId: string } | null {
+  if (typeof ref !== 'string') return null;
+  if (isFleetSessionId(ref)) {
+    const fleetTarget = parseFleetSessionId(ref);
+    if (!fleetTarget) throw new Error(`Malformed fleet session id: "${ref}". Expected fleet:<peerId>:<sessionId>.`);
+    return { peerId: fleetTarget.peerId, sessionId: fleetTarget.realSessionId };
+  }
+  return service.getSession(ref)?.remote ?? null;
+}
+
 export async function callMcpTool(
   deps: McpToolDispatcherDeps,
   name: string,
@@ -534,25 +545,22 @@ export async function callMcpTool(
           `Session not found: ${asString(args.sessionId ?? args.name, 'sessionId or name is required')}`,
         );
       case 'session_send_text': {
-        // A fleet-addressed TARGET names a session on another machine — typically
-        // the reply address this host handed a remote peer. Forward the call over
-        // the fleet verbatim, with the id unwrapped to what that peer calls it;
-        // the peer then delivers it locally. Checked BEFORE any local lookup,
-        // since a remote id resolves to nothing here.
+        // A target on another machine is delivered BY that machine: forward the
+        // call with the id it knows, and its gate hands the recipient a reply
+        // address that routes back here. Two shapes name one:
+        //  - `fleet:<peerId>:<id>` — typically the reply address a peer handed us;
+        //    checked BEFORE any local lookup, since it resolves to nothing here.
+        //  - a Remote row — only a pipe into the peer's PTY; an envelope typed
+        //    into it here would carry a sender id the peer cannot answer.
         const { senderSessionId, senderSessionName } = resolveSenderIdentity(
           () => service.listSessions(),
           args,
           authContext,
         );
-        if (isFleetSessionId(args.sessionId as string | undefined)) {
-          const fleetTarget = parseFleetSessionId(args.sessionId as string);
-          if (!fleetTarget) {
-            throw new Error(
-              `Malformed fleet session id: "${args.sessionId}". Expected fleet:<peerId>:<sessionId>.`,
-            );
-          }
-          return service.peerCall(fleetTarget.peerId, 'session_send_text', {
-            sessionId: fleetTarget.realSessionId,
+        const peerTarget = resolvePeerSendTarget(service, args.sessionId);
+        if (peerTarget) {
+          return service.peerCall(peerTarget.peerId, 'session_send_text', {
+            sessionId: peerTarget.sessionId,
             text: asString(args.text, 'text is required'),
             senderSessionId,
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),

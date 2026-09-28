@@ -151,14 +151,18 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     await schedulerClient.scheduledTaskDelete(task.id);
   }
 
+  /** Every spawn picker offers the fleet peers that let me spawn on them as machine tabs. */
+  function openSpawnPicker(cliType: string, dirs: Parameters<typeof buildDirPickerItems>[0], preselectedPath?: string): void {
+    openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath,
+      spawnTargets.value.map((p) => ({ id: p.id, label: p.alias })));
+  }
+
   async function onSpawn(cliType: string): Promise<void> {
     await deps.refreshProjects();
-    const dirs = sessionsState.directories;
-    if (dirs && dirs.length > 0) {
-      openDirPicker(cliType, buildDirPickerItems(dirs));
-    } else {
-      await deps.doSpawn(cliType);
-    }
+    const dirs = sessionsState.directories ?? [];
+    // No local folders and no peer to spawn on: nothing to choose, spawn here.
+    if (dirs.length === 0 && spawnTargets.value.length === 0) { await deps.doSpawn(cliType); return; }
+    openSpawnPicker(cliType, dirs);
   }
 
   /** `machineId` '' spawns here; a peer id spawns there and opens it here. */
@@ -179,10 +183,7 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   function installDirPickerBridge(): void {
     // The machine tabs read peer state, so keep it live from startup.
     ensurePeersSubscribed();
-    setDirPickerBridge((cliType, dirs, preselectedPath) => {
-      openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath,
-        spawnTargets.value.map((p) => ({ id: p.id, label: p.alias })));
-    });
+    setDirPickerBridge(openSpawnPicker);
   }
 
   return {

@@ -13,11 +13,12 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-function makeSession(overrides?: Partial<{ id: string; name: string; cliType: string }>) {
+function makeSession(overrides?: Partial<{ id: string; name: string; cliType: string; activityLevel: 'active' | 'inactive' | 'idle' }>) {
   return {
     id: overrides?.id ?? 'recv-session',
     name: overrides?.name ?? 'RecvSession',
     cliType: overrides?.cliType ?? 'claude-code',
+    ...(overrides?.activityLevel ? { activityLevel: overrides.activityLevel } : {}),
   };
 }
 
@@ -70,6 +71,28 @@ function getSentText(ptyManager: ReturnType<typeof makeDeps>['ptyManager']): str
 }
 
 describe('HelmSessionDeliveryService', () => {
+  describe('target busy report', () => {
+    const from = { senderSessionId: 'sender-session', senderSessionName: 'SenderSession' };
+
+    it('tells the sender a busy target will queue the message, and what CLI it is', async () => {
+      const { service, receiver } = makeDeps({ receiverSession: makeSession({ cliType: 'codex', activityLevel: 'active' }) });
+
+      const result = await service.sendTextToSession(receiver.id, 'hi', from);
+
+      expect(result).toMatchObject({ targetBusy: true, cliType: 'codex' });
+      expect(result.busyHint).toMatch(/queued/i);
+    });
+
+    it('reports an idle target as not busy, with no hint', async () => {
+      const { service, receiver } = makeDeps({ receiverSession: makeSession({ activityLevel: 'idle' }) });
+
+      const result = await service.sendTextToSession(receiver.id, 'hi', from);
+
+      expect(result).toMatchObject({ targetBusy: false, cliType: 'claude-code' });
+      expect(result.busyHint).toBeUndefined();
+    });
+  });
+
   it('delivers system reminders without a sender envelope and with system intent', async () => {
     const { service, ptyManager, receiver } = makeDeps({ helmPreambleForInterSession: true });
 

@@ -60,7 +60,7 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
  * budget is spent on closing.
  *
  * With fleet peers online that let the desktop in, a "Runs on" row picks the
- * machine: its folders come from that machine and the desktop opens the result
+ * machine: its CLIs and folders come from that machine and the desktop opens the result
  * as a Remote row (`peer_spawn`). A plan's spawn always runs on this desktop.
  *
  * [plan] turns the same form into a plan's spawner: its directory is shown but
@@ -78,7 +78,7 @@ fun SpawnScreen(
     spawnInFlight: Boolean,
     /** Fleet peers the desktop may spawn on; empty hides the machine row. */
     machines: List<SpawnMachine>,
-    /** The machine changed (null = this desktop): load its folders. */
+    /** The machine changed (null = this desktop): load its CLIs and folders. */
     onMachine: (machineId: String?) -> Unit,
     onSpawn: (dirPath: String, cliType: String, name: String, machineId: String?) -> Unit,
     onRetryDirectories: (machineId: String?) -> Unit,
@@ -86,10 +86,13 @@ fun SpawnScreen(
     modifier: Modifier = Modifier,
     plan: PlanSpawn? = null,
 ) {
-    // The catalogue when the desktop answered it; the distinct CLIs already
-    // running when it did not. Each row labelled the way the desktop labels it.
-    val cliChoices = remember(clis, sessions) {
-        if (clis.isNotEmpty()) {
+    var machineId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // The catalogue when the chosen machine answered it; for this desktop only,
+    // the distinct CLIs already running when it did not — those ids are this
+    // desktop's and mean nothing on another machine. Labelled as the desktop does.
+    val cliChoices = remember(clis, sessions, machineId) {
+        if (clis.isNotEmpty() || machineId != null) {
             clis.map { it.cliType to it.name }
         } else {
             sessions.filter { it.cliType.isNotEmpty() }
@@ -101,7 +104,6 @@ fun SpawnScreen(
     var dirPath by rememberSaveable(plan) { mutableStateOf(plan?.dirPath) }
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable(plan) { mutableStateOf(plan?.name.orEmpty()) }
-    var machineId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
@@ -125,29 +127,13 @@ fun SpawnScreen(
             FieldLabel(stringResource(R.string.spawn_name))
             NameField(name = name, onName = { name = it })
 
-            // Then the CLI. What you are launching is the decision you actually
-            // make; where it runs is usually already settled. The short list
-            // also means the long directory list never buries it off-screen.
-            FieldLabel(stringResource(R.string.spawn_which_cli))
-            if (cliChoices.isEmpty()) {
-                Hint(stringResource(R.string.spawn_no_clis))
-            } else {
-                for ((type, label) in cliChoices) {
-                    Choice(
-                        label = label,
-                        detail = null,
-                        selected = type == cliType,
-                        onClick = { cliType = type },
-                    )
-                }
-            }
-
-            // The machine before its folders: they are that machine's paths.
+            // Then the machine, ahead of its folders: they are that machine's paths.
             if (plan == null && machines.isNotEmpty()) {
                 FieldLabel(stringResource(R.string.spawn_runs_on))
                 val choose = { id: String? ->
                     if (id != machineId) {
                         machineId = id
+                        cliType = null
                         dirPath = null
                         onMachine(id)
                     }
@@ -164,6 +150,22 @@ fun SpawnScreen(
                         detail = null,
                         selected = machine.id == machineId,
                         onClick = { choose(machine.id) },
+                    )
+                }
+            }
+
+            // Then the CLI. The short list sits above the long directory list
+            // so the folders never bury it off-screen.
+            FieldLabel(stringResource(R.string.spawn_which_cli))
+            if (cliChoices.isEmpty()) {
+                Hint(stringResource(R.string.spawn_no_clis))
+            } else {
+                for ((type, label) in cliChoices) {
+                    Choice(
+                        label = label,
+                        detail = null,
+                        selected = type == cliType,
+                        onClick = { cliType = type },
                     )
                 }
             }

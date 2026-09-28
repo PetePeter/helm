@@ -213,6 +213,34 @@ class HelmClientTest {
     }
 
     @Test
+    fun `another machine's CLIs come from its own tool_list, and replace this desktop's at once`() {
+        client.refreshClis()
+        client.onInbound(resultFor(lastCallId(), """[{"cliType":"win-uuid","name":"Claude"}]"""))
+
+        client.refreshClis(machineId = "p1")
+        // Never offer this desktop's CLI ids for another machine, even while waiting.
+        assertTrue(client.control.clis.value.isEmpty())
+        val record = JSONObject(String(sent.last(), Charsets.UTF_8))
+        assertEquals("peer_call", record.getString("method"))
+        assertEquals("p1", record.getJSONObject("params").getString("peer"))
+        assertEquals("tool_list", record.getJSONObject("params").getString("tool"))
+
+        client.onInbound(resultFor(lastCallId(), """[{"cliType":"mac-uuid","name":"Claude"}]"""))
+        assertEquals(listOf("mac-uuid"), client.control.clis.value.map { it.cliType })
+    }
+
+    @Test
+    fun `a late CLI list for a machine the user already left is dropped`() {
+        client.refreshClis(machineId = "p1")
+        val stale = lastCallId()
+        client.refreshClis()
+
+        client.onInbound(resultFor(stale, """[{"cliType":"mac-uuid","name":"Claude"}]"""))
+
+        assertTrue(client.control.clis.value.isEmpty())
+    }
+
+    @Test
     fun `spawn machines are the online peers that let this desktop call them`() {
         client.refreshMachines()
         assertEquals("peer_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
@@ -220,11 +248,12 @@ class HelmClientTest {
         client.onInbound(
             resultFor(
                 lastCallId(),
-                """[
+                // The desktop's real shape: the list is wrapped in `peers`.
+                """{"peers":[
                   {"id":"p1","alias":"Box","online":true,"mayCallThem":true},
                   {"id":"p2","alias":"Off","online":false,"mayCallThem":true},
                   {"id":"p3","alias":"Shut","online":true,"mayCallThem":false}
-                ]""",
+                ]}""",
             ),
         )
         assertEquals(listOf(SpawnMachine("p1", "Box")), client.control.spawnMachines.value)
@@ -246,6 +275,17 @@ class HelmClientTest {
         client.onInbound(resultFor(lastCallId(), """{"id":"s2"}"""))
 
         assertFalse(client.control.spawnInFlight.value)
+    }
+
+    @Test
+    fun `a second tap while a spawn is in flight sends nothing`() {
+        client.spawn(dirPath = "/work", cliType = "claudecode", name = "")
+        val before = sent.size
+
+        assertFalse(client.spawn(dirPath = "/work", cliType = "claudecode", name = ""))
+
+        // Two taps are two sessions: the repeat must never reach the desktop.
+        assertEquals(before, sent.size)
     }
 
     @Test

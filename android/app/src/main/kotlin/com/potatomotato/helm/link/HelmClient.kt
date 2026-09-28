@@ -359,8 +359,16 @@ class HelmClient(
      * left to the form's fallback (harvesting the running sessions) rather than
      * an error state: the fallback is a real feature, not a degraded one.
      */
-    fun refreshClis(): Boolean = call(METHOD_TOOL_LIST) { outcome ->
-        if (outcome is Outcome.Ok) control.clisArrived(outcome.result)
+    fun refreshClis(machineId: String? = null): Boolean {
+        control.clisRequested(machineId)
+        val answer: (Outcome) -> Unit = { outcome ->
+            // A late answer for a machine the user already left is not this list.
+            if (outcome is Outcome.Ok && control.wantsClisOf(machineId)) control.clisArrived(outcome.result)
+        }
+        if (machineId == null) return call(METHOD_TOOL_LIST, onOutcome = answer)
+        // Another machine's CLIs: its own catalogue, relayed like its folders.
+        val params = linkedMapOf<String, Any>("peer" to machineId, "tool" to METHOD_TOOL_LIST)
+        return call(METHOD_PEER_CALL, params, onOutcome = answer)
     }
 
     /**
@@ -1185,6 +1193,9 @@ class HelmClient(
         initialPrompt: String? = null,
         machineId: String? = null,
     ): Boolean {
+        // Two taps are two sessions: the flag rises on the first, so a repeat
+        // that beat the button's recomposition is refused here.
+        if (control.spawnInFlight.value) return false
         val params = linkedMapOf<String, Any>("dirPath" to dirPath, "cliType" to cliType)
         if (name.isNotBlank()) params["name"] = name.trim()
         if (!initialPrompt.isNullOrBlank()) params["initialPrompt"] = initialPrompt

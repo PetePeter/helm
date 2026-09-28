@@ -40,13 +40,17 @@ class FakeService {
   readonly sends: SendCall[] = [];
   readonly peerCalls: PeerCall[] = [];
   constructor(
-    private readonly sessions: Array<{ id: string; name: string }> = [LOCAL_SESSION],
+    private readonly sessions: Array<{ id: string; name: string; remote?: { peerId: string; sessionId: string } }> = [LOCAL_SESSION],
     private readonly peerCallImpl: (peer: string, tool: string, args: Record<string, unknown>) => unknown =
       () => ({ delivered: true }),
   ) {}
 
   listSessions() {
     return this.sessions.map((s) => ({ id: s.id, name: s.name }));
+  }
+
+  getSession(ref: string) {
+    return this.sessions.find((s) => s.id === ref || s.name === ref) ?? null;
   }
 
   sendTextToSession(sessionRef: string, text: string, options: SendCall['options']) {
@@ -238,5 +242,34 @@ describe('session_artifact_* — Remote rows forward to the owning peer', () => 
     await callMcpTool(deps(service), 'session_artifact_list', { sessionId: 'local' }, {});
     expect(service.peerCalls).toEqual([]);
     expect(service.localReads).toEqual(['local']);
+  });
+});
+
+describe('session_send_text — a Remote row as TARGET', () => {
+  // A Remote row is a pipe into the peer's PTY: an envelope typed into it here
+  // carries a reply address that means nothing on the peer. The owner must build
+  // it, so the call goes to the owner, where its gate wraps the sender routable.
+  const REMOTE_ROW = { id: 'remote-row', name: 'mac-worker', remote: { peerId: 'mac', sessionId: REMOTE_SESSION_ID } };
+
+  it('forwards to the owning peer with its own session id, and types nothing here', async () => {
+    const service = new FakeService([LOCAL_SESSION, REMOTE_ROW]);
+
+    await send(service, { sessionId: REMOTE_ROW.id, text: 'hi', senderSessionId: LOCAL_SESSION.id, expectsResponse: true });
+
+    expect(service.sends).toEqual([]);
+    expect(service.peerCalls).toEqual([{
+      peer: 'mac',
+      tool: 'session_send_text',
+      args: { sessionId: REMOTE_SESSION_ID, text: 'hi', senderSessionId: LOCAL_SESSION.id, expectsResponse: true },
+    }]);
+  });
+
+  it('a phone sender is forwarded too, so the reply can find its way back', async () => {
+    const service = new FakeService([LOCAL_SESSION, REMOTE_ROW]);
+
+    await callMcpTool(deps(service), 'session_send_text', { sessionId: REMOTE_ROW.id, text: 'hi' },
+      { sessionId: 'mobile:phone-1', sessionName: 'mobile:phone-1' });
+
+    expect(service.peerCalls[0]?.args).toMatchObject({ sessionId: REMOTE_SESSION_ID, senderSessionId: 'mobile:phone-1' });
   });
 });

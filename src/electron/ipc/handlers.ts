@@ -907,7 +907,14 @@ export function registerIPCHandlers(
   // Remote (talk to a peer's sessions): owner + viewer over the fleet link. Its
   // `remote.*` requests pass the SAME gate (access, rate limit, audit) and are
   // routed here instead of the MCP dispatcher; the proxy identity names the peer.
-  const remoteService = new RemoteService({ pty: ptyManager, sessions: sessionManager });
+  const remoteService = new RemoteService({
+    pty: ptyManager,
+    sessions: sessionManager,
+    cliTypeName: (ref) => {
+      // Ambiguous or unknown here: not unambiguously mine, so the peer gets it as-is.
+      try { return configLoader.resolveCliType(ref)?.config.displayName || undefined; } catch { return undefined; }
+    },
+  });
   helmControlService.setRemoteService(remoteService);
   // Reports this machine's per-peer grant so each peer can show the direction.
   const fleetAccessSync = new FleetAccessSync(peerConfigManager);

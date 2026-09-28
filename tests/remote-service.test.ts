@@ -215,6 +215,19 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     expect(viewerSessions.getAllSessions()).toHaveLength(1);
   });
 
+  describe('rename of a Remote row', () => {
+    it('renames the session on the peer, which owns the name', async () => {
+      const renames: unknown[] = [];
+      viewerLinks.tools.session_rename = (args) => { renames.push(args); return {}; };
+      const session = await viewer.open('HOST', 'h1');
+
+      viewerSessions.renameSession(session.id, 'mac-builder');
+      viewerSessions.renameSession(session.id, 'mac-builder'); // no change: nothing to forward
+
+      await vi.waitFor(() => expect(renames).toEqual([{ sessionId: 'h1', newName: 'mac-builder' }]));
+    });
+  });
+
   describe('spawn() — create on the peer, then attach here', () => {
     it('creates the session on the host and opens it as a local Remote row', async () => {
       const session = await viewer.spawn('Host-PC', { cliType: 'claude-code', dirPath: 'C:\proj', name: 'fix' });
@@ -234,6 +247,23 @@ describe('Remote (host ⇄ viewer loopback)', () => {
       spawnOnHost = () => ({ id: 'ghost' }); // created, but the host has no such PTY
       await expect(viewer.spawn('HOST', { cliType: 'claude-code', dirPath: 'C:\proj' })).rejects.toThrow(/ghost/);
       expect(viewerSessions.getAllSessions()).toHaveLength(0);
+    });
+
+    it('a CLI type of THIS machine goes to the peer by display name — its ids are local', async () => {
+      viewer.dispose();
+      viewer = new RemoteService({
+        pty: viewerPtys, sessions: viewerSessions, coalesceMs: COALESCE_MS,
+        cliTypeName: (ref) => (ref === 'local-uuid' ? 'Claude Code' : undefined),
+      });
+      viewer.setLinks(viewerLinks);
+      // Only what reached the peer matters here, not the attach that follows.
+      spawnOnHost = (args) => { created.push(args); return {}; };
+
+      await viewer.spawn('HOST', { cliType: 'local-uuid', dirPath: 'C:\proj' }).catch(() => {});
+      // Not one of mine (e.g. the peer's own id, picked from its catalogue): sent as-is.
+      await viewer.spawn('HOST', { cliType: 'peer-uuid', dirPath: 'C:\proj' }).catch(() => {});
+
+      expect(created.map((args) => args.cliType)).toEqual(['Claude Code', 'peer-uuid']);
     });
 
     it('an unknown peer is rejected before anything is created', async () => {

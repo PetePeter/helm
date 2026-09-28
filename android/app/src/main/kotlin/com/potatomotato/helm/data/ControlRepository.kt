@@ -267,12 +267,12 @@ class ControlRepository {
     fun wantsDirectoriesOf(machineId: String?): Boolean = machineId == directoriesMachine
 
     /**
-     * Take a `peer_list` result: keep the peers that are online and let the
-     * desktop call them. False when the payload is not a peer list.
+     * Take a `peer_list` result — `{"peers":[…]}` — and keep the peers that are
+     * online and let the desktop call them. False when the payload is not a peer list.
      */
     fun machinesArrived(result: Any?): Boolean {
-        val array = result as? JSONArray ?: run {
-            WireShape.undecodable<Unit>("a peer_list result", "a JSON array", result)
+        val array = (result as? JSONObject)?.opt("peers") as? JSONArray ?: run {
+            WireShape.undecodable<Unit>("a peer_list result", "an object with a peers array", result)
             return false
         }
         _spawnMachines.value = (0 until array.length()).mapNotNull { index ->
@@ -302,6 +302,21 @@ class ControlRepository {
      * Sorted by display name — the wire arrives in the desktop's config order,
      * and the phone is where the list is read, not authored.
      */
+    /** The machine the CLI list was last asked for; null is the linked desktop. */
+    private var clisMachine: String? = null
+
+    /**
+     * Switching machine empties the list at once: CLI ids are per machine, and
+     * one machine's must never be offered — or sent — for another.
+     */
+    fun clisRequested(machineId: String? = null) {
+        if (machineId != clisMachine) _clis.value = emptyList()
+        clisMachine = machineId
+    }
+
+    /** Whether an answer for [machineId]'s CLIs is still the one wanted. */
+    fun wantsClisOf(machineId: String?): Boolean = machineId == clisMachine
+
     fun clisArrived(result: Any?): Boolean {
         val array = result as? JSONArray ?: run {
             WireShape.undecodable<Unit>("a tool_list result", "a JSON array", result)

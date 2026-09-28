@@ -33,8 +33,13 @@ export interface RemoteLinks {
 
 export interface RemoteServiceDeps {
   pty: PtyManager;
-  sessions: Pick<SessionManager, 'addSession' | 'getSession'>;
+  sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'on' | 'off'>;
   coalesceMs?: number;
+  /**
+   * Display name of one of THIS machine's CLI types, undefined for any other
+   * ref. CLI type ids are per machine; the peer resolves display names too.
+   */
+  cliTypeName?: (ref: string) => string | undefined;
 }
 
 /** What the peer's `session_create` takes. */
@@ -47,7 +52,8 @@ export interface RemoteSpawnArgs {
 
 interface PeerNotification { peerId: string; method: string; params: unknown }
 
-interface ViewedSession { localId: string; process: RemotePtyProcess }
+/** `name` is the last one the peer knows, so only a real rename is forwarded. */
+interface ViewedSession { localId: string; process: RemotePtyProcess; name: string }
 
 export class RemoteService {
   private links: RemoteLinks | null = null;
@@ -69,7 +75,23 @@ export class RemoteService {
     for (const view of this.viewsOf(peerId)) void view.process.repair();
   };
 
+  /**
+   * A Remote row's name is the PEER's session name: renaming the row here (UI,
+   * MCP or phone — they all land in SessionManager) renames it there too, or
+   * the two machines disagree about what the session is called.
+   */
+  private readonly onSessionUpdated = (session: SessionInfo): void => {
+    if (!session.remote) return;
+    const view = this.viewed.get(viewKey(session.remote.peerId, session.remote.sessionId));
+    if (!view || view.name === session.name) return;
+    view.name = session.name;
+    const { peerId, sessionId } = session.remote;
+    Promise.resolve(this.links?.call(peerId, 'session_rename', { sessionId, newName: session.name }))
+      .catch((err) => logger.warn(`[Remote] Rename of ${peerId}/${sessionId} not applied on the peer: ${err instanceof Error ? err.message : String(err)}`));
+  };
+
   constructor(private readonly deps: RemoteServiceDeps) {
+    deps.sessions.on('session:updated', this.onSessionUpdated);
     this.host = new RemotePtyHost({
       pty: deps.pty,
       send: (peerId, method, params) => this.links?.notify(peerId, method, params) ?? false,
@@ -138,7 +160,7 @@ export class RemoteService {
     }, attached);
     this.deps.pty.adopt(localId, process, { cols: attached.cols, rows: attached.rows });
     process.onExit(() => this.viewed.delete(key));
-    this.viewed.set(key, { localId, process });
+    this.viewed.set(key, { localId, process, name: attached.session.name });
     process.paint(attached);
 
     const session: SessionInfo = {
@@ -165,7 +187,8 @@ export class RemoteService {
     const links = this.links;
     const peerId = links?.peerIdFor(peerRef);
     if (!links || !peerId) throw new Error(`Unknown or unreachable peer: ${peerRef}`);
-    const created = await links.call(peerId, 'session_create', { ...args }) as { id?: unknown } | null;
+    const cliType = this.deps.cliTypeName?.(args.cliType) ?? args.cliType;
+    const created = await links.call(peerId, 'session_create', { ...args, cliType }) as { id?: unknown } | null;
     const remoteId = created?.id;
     if (typeof remoteId !== 'string' || !remoteId) throw new Error(`Peer ${peerRef} returned no session id`);
     try {
@@ -177,6 +200,7 @@ export class RemoteService {
   }
 
   dispose(): void {
+    this.deps.sessions.off('session:updated', this.onSessionUpdated);
     this.setLinks(null);
     this.host.dispose();
   }

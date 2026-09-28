@@ -406,7 +406,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 // The form opens on this desktop: a list left over from another
                 // machine is not its folders.
                 if (directories.isEmpty() || !client.control.wantsDirectoriesOf(null)) client.refreshDirectories()
-                if (clis.isEmpty()) client.refreshClis()
+                if (clis.isEmpty() || !client.control.wantsClisOf(null)) client.refreshClis()
                 client.refreshMachines()
             }
             // The artifacts screens pull on arrival, like a snapshot pull: a
@@ -873,7 +873,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         linkState = linkState,
                         spawnInFlight = spawnInFlight,
                         machines = spawnMachines,
-                        onMachine = { machineId -> client.refreshDirectories(machineId) },
+                        onMachine = { machineId ->
+                            client.refreshClis(machineId)
+                            client.refreshDirectories(machineId)
+                        },
                         onSpawn = { dirPath, cliType, name, machineId ->
                             // Navigation is decided by the OUTCOME, not by the
                             // tap: success arrives as createdSessionId above,

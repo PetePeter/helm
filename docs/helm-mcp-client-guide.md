@@ -18,6 +18,12 @@ When a Claude Code session receives a `[HELM_MSG]` message, it should:
 > `[HELM_MSG_RULES]` block appended to every enveloped message — see
 > [helm-mcp-protocol.md](helm-mcp-protocol.md).
 
+> **Was the target busy?** `session_send_text` returns `targetBusy` and `cliType`,
+> read just before delivery (busy = activity dot green, hook-driven when hooks
+> are installed). When busy, `busyHint` says the message is queued behind the
+> current turn — do not resend; if it still sits unsubmitted once the target
+> idles (e.g. a Codex composer), send `session_send_input "{Enter}"`.
+
 ## Detecting and Parsing the Envelope
 
 Your Claude Code session receives text in chunks via PTY. Watch for the `[HELM_MSG]` prefix:

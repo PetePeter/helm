@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   refreshSessions: vi.fn(),
   setSortField: vi.fn(),
   setSortDirection: vi.fn(),
+  spawnTargets: { value: [] as Array<{ id: string; alias: string }> },
 }));
 
 vi.mock('../../renderer/state.js', () => ({ state: mocks.state }));
@@ -44,6 +45,9 @@ vi.mock('../../renderer/stores/modal-bridge.js', () => ({
   dirPicker: { cliType: 'codex' },
   closeConfirm: { visible: false, sessionId: '', sessionName: '', draftCount: 0 },
   setCloseConfirmCallback: vi.fn(),
+}));
+vi.mock('../../renderer/composables/usePeers.js', () => ({
+  usePeers: () => ({ spawnTargets: mocks.spawnTargets, spawnOnPeer: vi.fn(), ensureSubscribed: vi.fn() }),
 }));
 vi.mock('../../renderer/composables/useAppBootstrap.js', () => ({
   refreshSessions: mocks.refreshSessions,
@@ -89,6 +93,7 @@ describe('useSidebarController', () => {
     mocks.state.draftCounts = new Map();
     mocks.state.projects = [];
     mocks.sessionsState.directories = [];
+    mocks.spawnTargets.value = [];
   });
 
   it('opens the directory picker when spawn directories exist', async () => {
@@ -105,7 +110,28 @@ describe('useSidebarController', () => {
       projectId: 'p1',
       projectName: 'Hub',
       isCanonical: true,
-    }]);
+    }], undefined, []);
+    expect(deps.doSpawn).not.toHaveBeenCalled();
+  });
+
+  it('offers fleet peers as machine tabs from the Spawn button', async () => {
+    mocks.sessionsState.directories = [{ name: 'Hub', path: 'X:\coding\hub' }];
+    mocks.spawnTargets.value = [{ id: 'mac', alias: 'MacBook' }];
+    const { controller } = createController();
+
+    await controller.onSpawn('codex');
+
+    expect(mocks.openDirPicker).toHaveBeenCalledWith('codex', mocks.sessionsState.directories, undefined,
+      [{ id: 'mac', label: 'MacBook' }]);
+  });
+
+  it('opens the picker for a fleet peer even with no local directories', async () => {
+    mocks.spawnTargets.value = [{ id: 'mac', alias: 'MacBook' }];
+    const { controller, deps } = createController();
+
+    await controller.onSpawn('codex');
+
+    expect(mocks.openDirPicker).toHaveBeenCalledWith('codex', [], undefined, [{ id: 'mac', label: 'MacBook' }]);
     expect(deps.doSpawn).not.toHaveBeenCalled();
   });
 

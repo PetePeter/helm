@@ -52,8 +52,10 @@ The owner must let the viewer call it: tick **May call me** for that peer in the
 ## Entry points
 
 - **Peers tab:** the **Attach…** button on an online peer lists its sessions, and **Attach** opens the chosen one here.
-- **New session (Ctrl+Shift+N, desktop):** the folder picker shows machine tabs — This PC plus every online peer that lets this machine in (LB/RB or ←/→). A peer's tab lists ITS folders (`peer_call(peer, "directory_list")`); picking one runs `peer_spawn`: the peer's `session_create`, then an attach here.
-- **Phone New session:** a "Runs on" row with the same machines (`peer_list` → `mayCallThem`); the desktop does the spawn and attach, and the phone opens the resulting row.
+- **New session (Spawn button or Ctrl+Shift+N, desktop):** the folder picker shows machine tabs — This PC plus every online peer that lets this machine in (LB/RB or ←/→). A peer's tab lists ITS folders (`peer_call(peer, "directory_list")`); picking one runs `peer_spawn`: the peer's `session_create`, then an attach here.
+- **Phone New session:** a "Runs on" row with the same machines (`peer_list` → `mayCallThem`); the desktop does the spawn and attach, and the phone opens the resulting row. Order is name → Runs on → CLI → folder, each loaded for the chosen machine: its CLIs come from `peer_call(peer, "tool_list")`, and switching machine clears the CLI and folder.
+- **Messages and renames go to the owner.** A Remote row is only a pipe into the peer's PTY, so `session_send_text` to it is forwarded as the peer's own `session_send_text` (like a `fleet:` target). The peer builds the envelope and its gate hands the recipient a `fleet:` reply address that routes back here. An envelope typed into the pipe here would carry a sender id the peer can't answer. Renaming the row (UI, MCP or phone) renames the peer's session too.
+- **CLI type ids are per machine.** `spawn()` sends one of THIS machine's CLI types to the peer by display name (the peer resolves names); any other ref — e.g. the peer's own id from its catalogue — goes as-is.
 - **MCP:** `peer_attach(peer, sessionId)`. This is how the phone's operator opens a remote session: find it with `peer_call(peer, "session_list", {})`, then attach. Once attached, nothing else is needed; all input and output routes automatically.
 
 ## Lists grouped by machine
