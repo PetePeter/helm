@@ -222,9 +222,9 @@ describe('operator guide', () => {
     expect(guide).toContain('do not add your own retry');
   });
 
-  it('tracks every in-flight ask as a task plan with a linked self-timer until it is done', () => {
+  it('tracks every hand-off as a task Helm keeps a check timer on, until it is done', () => {
     expect(guide).toContain('TASKS');
-    for (const term of ['never yourself', 'REPEATING check timer', 'never \\"once\\"', 'FIRST plan_summary', 'instead of making a duplicate', 'plan_create', 'task', 'waitingOn', 'planIds', 'scheduler_cancel', 'plan_complete']) {
+    for (const term of ['REQUIRE task', 'P-id of your open task', 'never open a duplicate', 'repeating check timer', 'waitingOn', 'plan_complete', 'Helm then cancels its timer']) {
       expect(guide).toContain(term);
     }
   });

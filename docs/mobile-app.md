@@ -190,7 +190,9 @@ removes.
 ### Back, and what it costs
 
 Every screen above owns a `BackHandler` for its own in-app step. At the **true
-root** — the session list with nothing open over it — back asks instead of
+root** — a root tab with nothing open over it — back first retraces the tabs
+picked in the selector (Sessions → Helm, back → Sessions; each tab once, via
+`HomeTabHistory`). Only when that trail is empty does back ask instead of
 acting, offering *leave it running* or *quit*.
 
 This is not a way to enable background running; background running is already

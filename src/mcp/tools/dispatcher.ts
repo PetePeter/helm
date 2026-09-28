@@ -4,6 +4,7 @@ import type { AuthContext } from './types.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { parsePlanTask } from '../../session/operator-tasks.js';
+import { requireOperatorTask, trackOperatorTask } from '../../session/operator-delegation.js';
 import {
   asAiagentState,
   asArtifactKind,
@@ -477,8 +478,17 @@ export async function callMcpTool(
           asString(args.projectId, 'projectId is required'),
           asString(args.dirPath, 'dirPath is required'),
         );
-      case 'session_create':
-        return service.spawnCli(
+      case 'session_create': {
+        // The operator delegates in one call: the work rides initialPrompt and
+        // becomes a tracked task. Both are checked before anything spawns.
+        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task, 'session_create');
+        if (operatorTask && !(typeof args.initialPrompt === 'string' && args.initialPrompt.trim())) {
+          throw new Error(
+            'session_create from the operator needs initialPrompt: the work for the new session. ' +
+              'A session opened without it sits idle with nothing to do.',
+          );
+        }
+        const created = service.spawnCli(
           asString(args.cliType, 'cliType is required'),
           asString(args.dirPath, 'dirPath is required'),
           // Optional: the phone's spawn form leaves it blank, and an unnamed
@@ -491,6 +501,8 @@ export async function callMcpTool(
             ...(typeof args.initialPrompt === 'string' ? { initialPrompt: args.initialPrompt } : {}),
           },
         );
+        return operatorTask ? { ...created, ...trackOperatorTask(service, operatorTask, created.id) } : created;
+      }
       case 'session_group_list':
         return service.listSessionGroups();
       case 'session_group_create':
@@ -546,8 +558,10 @@ export async function callMcpTool(
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
           });
         }
-        return service.sendTextToSession(
-          asString(args.sessionId, 'sessionId is required'),
+        const targetRef = asString(args.sessionId, 'sessionId is required');
+        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task, 'session_send_text');
+        const sent = await service.sendTextToSession(
+          targetRef,
           asString(args.text, 'text is required'),
           {
             senderSessionId,
@@ -555,6 +569,8 @@ export async function callMcpTool(
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
           },
         );
+        const builderId = operatorTask ? service.getSession(targetRef)?.id : undefined;
+        return operatorTask && builderId ? { ...sent, ...trackOperatorTask(service, operatorTask, builderId) } : sent;
       }
       case 'session_send_input': {
         const { senderSessionId, senderSessionName } = resolveSenderIdentity(

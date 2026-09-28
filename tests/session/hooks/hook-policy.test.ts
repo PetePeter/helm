@@ -270,3 +270,40 @@ describe('decideHookPolicy — purity', () => {
     expect(second).toEqual(first);
   });
 });
+
+describe('decideHookPolicy — the operator never works code itself', () => {
+  const operator = session({ role: 'operator' });
+
+  it.each(['Read', 'Grep', 'Bash', 'Edit', 'Write', 'shell', 'view'])('denies %s for the operator, naming session_create', (toolName) => {
+    const decision = decideHookPolicy(preToolUse({ toolName }), operator, []);
+
+    expect(decision.decision).toBe('deny');
+    expect(decision.reason).toContain('session_create');
+  });
+
+  it.each(['Glob', 'WebSearch', 'WebFetch', 'mcp__helm__plan_list'])('allows %s for the operator', (toolName) => {
+    expect(decideHookPolicy(preToolUse({ toolName }), operator, []).decision).toBe('allow');
+  });
+
+  it.each([
+    [{ pattern: 'x', path: 'C:/notes/todo.md' }],
+    [{ pattern: 'x', path: 'C:/ha', glob: '*.yaml' }],
+    [{ pattern: 'x', path: 'C:/logs', glob: '**/*.{log,txt}' }],
+  ])('allows Grep over non-code files for the operator: %o', (toolInput) => {
+    expect(decideHookPolicy(preToolUse({ toolName: 'Grep', toolInput }), operator, []).decision).toBe('allow');
+  });
+
+  it.each([
+    [{ pattern: 'x', path: 'C:/repo' }],
+    [{ pattern: 'x', path: 'C:/repo', glob: '*.ts' }],
+    [{ pattern: 'x', path: 'C:/repo', glob: '*.{md,py}' }],
+  ])('denies Grep that can reach code for the operator: %o', (toolInput) => {
+    const decision = decideHookPolicy(preToolUse({ toolName: 'Grep', toolInput }), operator, []);
+    expect(decision.decision).toBe('deny');
+    expect(decision.reason).toContain('non-code');
+  });
+
+  it('allows Read for a work session', () => {
+    expect(decideHookPolicy(preToolUse({ toolName: 'Read' }), session(), []).decision).toBe('allow');
+  });
+});

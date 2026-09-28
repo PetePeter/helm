@@ -120,10 +120,17 @@ class FakePtyManager extends EventEmitter {
   kill = vi.fn();
 }
 
-class FakePlanManager {
-  private plans = new Map<string, { id: string; title: string }>();
+class FakePlanManager extends EventEmitter {
+  plans = new Map<string, { id: string; title: string; status?: string }>();
 
   getItem(id: string) { return this.plans.get(id); }
+
+  /** Mirrors PlanManager.completeItem's event. */
+  complete(id: string) {
+    const item = this.plans.get(id)!;
+    item.status = 'done';
+    this.emit('plan:completed', item);
+  }
 }
 
 class FakeConfigLoader {
@@ -205,6 +212,33 @@ describe('ScheduledTaskManager', () => {
     vi.useRealTimers();
     manager.stop();
     saveScheduledTasks([]);
+  });
+
+  describe('when a linked plan completes', () => {
+    const timer = (planIds: string[]): CreateScheduledTaskParams => ({
+      title: 'Check', planIds, initialPrompt: 'check task', cliType: 'claude-code',
+      scheduledTime: new Date(Date.now() + 60_000), scheduleKind: 'interval', intervalMs: 60_000,
+      dirPath: 'X:\\coding\\test',
+    });
+
+    it('cancels a timer once every plan it watches is done', () => {
+      planManager.plans.set('p1', { id: 'p1', title: 'task' });
+      const { id } = manager.createTask(timer(['p1']));
+
+      planManager.complete('p1');
+
+      expect(manager.getTask(id)?.status).toBe('cancelled');
+    });
+
+    it('keeps a timer that still watches an open plan', () => {
+      planManager.plans.set('p1', { id: 'p1', title: 'a' });
+      planManager.plans.set('p2', { id: 'p2', title: 'b' });
+      const { id } = manager.createTask(timer(['p1', 'p2']));
+
+      planManager.complete('p1');
+
+      expect(manager.getTask(id)?.status).toBe('pending');
+    });
   });
 
   describe('createTask()', () => {

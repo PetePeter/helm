@@ -464,6 +464,24 @@ operator's own project carrying a `task` block — `builderSessionId`,
 persist, render on both boards and complete with notes; a task differs only in
 being a follow-up in flight, which its project and block say.
 
+**Helm opens the task, not the model.** The operator's prompt asked it to open a
+task and timer on every hand-off, and it forgot, above all after compaction.
+So for the operator only, `session_create` and `session_send_text` REQUIRE
+`task`: a short title (Helm opens the plan) or the P-id of an open task (Helm
+reuses it). Helm records `builderSessionId` and starts a 30-minute repeating
+check timer unless one already runs (`src/session/operator-delegation.ts`).
+When every plan a timer watches is completed, the scheduler cancels it
+(`plan:completed` in `ScheduledTaskManager`), so no timer outlives its task.
+The result echoes `taskId`. `session_create` from the operator also requires
+`initialPrompt`, because a session opened without its work sits idle. Both are
+checked before anything spawns or sends, and each refusal names what is missing.
+
+Three more guards back this up. A built-in PreToolUse deny stops the operator
+reading, running or changing code; Glob and the web stay open (see
+[cli-hooks.md](cli-hooks.md#enforcement-g2--pretooluse-denies)). And every
+SessionStart re-injects `OPERATOR_MANTRA` first, because the full guide arrives
+only at spawn.
+
 The check timer is an ordinary scheduler row (`targetSession:"caller"`) whose
 `planIds` include the task, so "next check" is derived (`nextCheckAt` in
 `src/session/operator-tasks.ts`) and never stored twice. `plan_summary` rows
@@ -490,14 +508,13 @@ sequenceDiagram
     participant O as Operator
     participant S as Builder session
     U->>O: build G
-    O->>O: plan_create + plan_update task
-    O->>O: scheduler_create interval, planIds [task]
-    O->>S: session_send_text
+    O->>S: session_send_text (task) or session_create (task, initialPrompt)
+    Note over O: Helm opens the task plan + interval timer
     loop every check
         O->>S: check progress, update waitingOn
     end
     S-->>O: done
-    O->>O: scheduler_cancel, plan_complete
+    O->>O: plan_complete (Helm cancels the timer)
     O->>U: ring_user (if asked)
 ```
 

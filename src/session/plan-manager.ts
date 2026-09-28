@@ -578,6 +578,7 @@ export class PlanManager extends EventEmitter {
     this.recomputeStartable(item.dirPath);
     this.saveDir(item.dirPath, { skipSequences: true });
     this.emit('plan:changed', item.dirPath);
+    this.emit('plan:completed', item);
     logger.info(`[PlanManager] Completed plan "${item.title}" (${id}) [${item.dirPath}] — was ${prevStatus}`);
     return item;
   }

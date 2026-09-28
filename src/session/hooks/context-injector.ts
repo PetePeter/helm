@@ -36,6 +36,7 @@ import {
   type ReminderId,
 } from '../reminder-delivery.js';
 import type { LoopDriver } from './loop-driver.js';
+import { OPERATOR_MANTRA } from '../../mcp/guides/operator-guide.js';
 import { logger } from '../../utils/logger.js';
 
 /** A claimed plan reduced to what a nudge names. */
@@ -161,7 +162,8 @@ export class ContextInjector {
   // -- A. SessionStart: plan + drafts + handover ---------------------------
 
   private respondSessionStart(event: HookEvent, session: SessionInfo): InjectorResponse {
-    const parts: string[] = [];
+    // The mantra leads for the operator: the cap drops trailing sources first.
+    const parts: string[] = session.role === 'operator' ? [OPERATOR_MANTRA] : [];
     const plan = this.deps.getClaimedPlan(session.id);
     if (plan) {
       parts.push(
@@ -178,7 +180,7 @@ export class ContextInjector {
     if (tasks.length > 0) {
       parts.push(truncate(
         `Your open tasks: ${tasks.join('; ')}. ` +
-          'Keep following each until done; when one is, scheduler_cancel its timer and plan_complete it.',
+          'Keep following each until done; when one is, plan_complete it (Helm cancels its timer).',
         SOURCE_CAP_CHARS,
       ));
     }

@@ -76,6 +76,7 @@ import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
 import com.potatomotato.helm.ui.components.HomeTab
+import com.potatomotato.helm.ui.components.HomeTabHistory
 import com.potatomotato.helm.ui.components.glyphRes
 import com.potatomotato.helm.ui.components.labelRes
 import com.potatomotato.helm.ui.components.LoadNote
@@ -223,6 +224,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // rotation must not drop a user reading the plan board back onto the list,
     // nor silently re-point it at a different project than the one they chose.
     var homeTab by rememberSaveable { mutableStateOf(HomeTab.Sessions) }
+    // Back on the root retraces the picked tabs before it asks to exit.
+    var tabTrail by rememberSaveable { mutableStateOf(emptyList<HomeTab>()) }
+    val pickHomeTab = { to: HomeTab ->
+        tabTrail = HomeTabHistory(tabTrail).pick(homeTab, to).trail
+        homeTab = to
+    }
     var chosenProjectId by rememberSaveable { mutableStateOf<String?>(null) }
     var openPlanId by rememberSaveable { mutableStateOf<String?>(null) }
     // The plan a spawn form is aimed at; null is the ordinary New session form.
@@ -980,7 +987,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         contextMenuItems = HomeTab.entries.map {
                             ContextMenuItem(stringResource(it.labelRes), it.glyphRes)
                         },
-                        onSelectContextItem = { homeTab = HomeTab.entries[it] },
+                        onSelectContextItem = { pickHomeTab(HomeTab.entries[it]) },
                         onLinkClick = { where = Destination.Desktops },
                         onExportLogs = exportLogs,
                         notificationsEnabled = notificationsEnabled,
@@ -1375,9 +1382,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // surfaces used to bounce to Sessions instead, which gave three
             // tabs at the same depth three different exit stories and no way
             // out of them at all. The dialog is the one exit affordance,
-            // wherever in the root the user is standing.
+            // wherever in the root the user is standing — once back has
+            // retraced the tabs picked to get there (HomeTabHistory).
             val atRoot = openSessionId == null && where == Destination.Thread
-            BackHandler(enabled = atRoot) { leaving = !leaving }
+            BackHandler(enabled = atRoot) {
+                val previous = HomeTabHistory(tabTrail).back()
+                if (previous == null || leaving) {
+                    leaving = !leaving
+                } else {
+                    homeTab = previous.first
+                    tabTrail = previous.second.trail
+                }
+            }
             // A notification tap can navigate out from under an open dialog.
             // Drop the question with the screen it was asked on, so returning
             // to the list later does not find it still waiting.

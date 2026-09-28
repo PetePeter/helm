@@ -58,6 +58,10 @@ export class ScheduledTaskManager extends EventEmitter {
     private readonly projectStore?: ProjectStore,
   ) {
     super();
+    // A timer watching plans exists to follow them up; once every one is done
+    // there is nothing left to check. Helm cancels it rather than trusting the
+    // agent that set it to remember to.
+    this.planManager.on?.('plan:completed', () => this.cancelFinishedWatchers());
     this.projectStore?.onChanged((projects) => {
       // ProjectStore can resolve an implicit project during application
       // construction. Do not reconcile until persisted tasks have been loaded.
@@ -378,6 +382,13 @@ export class ScheduledTaskManager extends EventEmitter {
       this.scheduleTask(task);
     }
     return true;
+  }
+
+  private cancelFinishedWatchers(): void {
+    for (const task of this.tasks.values()) {
+      if (task.status !== 'pending' || task.systemKind || task.planIds.length === 0) continue;
+      if (task.planIds.every((id) => this.planManager.getItem(id)?.status === 'done')) this.cancelTask(task.id);
+    }
   }
 
   /** Cancel a pending task. Returns false if task already executing. */

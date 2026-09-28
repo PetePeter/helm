@@ -25,7 +25,7 @@
  *
  * FAKED SEAMS (and why):
  *   • SessionManager / HelmControlService — replaced by FakeControlService, a
- *     minimal in-memory stand-in exposing only listSessions() +
+ *     minimal in-memory stand-in exposing only listSessions(), getSession() +
  *     sendTextToSession() (all session_list / session_send_text touch). This is
  *     the SessionManager boundary the plan permits faking; the dispatcher that
  *     calls it is the REAL callMcpTool.
@@ -81,6 +81,10 @@ class FakeControlService {
 
   listSessions() {
     return this.sessions.map((s) => ({ id: s.id, name: s.name }));
+  }
+
+  getSession(ref: string) {
+    return this.sessions.find((s) => s.id === ref || s.name === ref) ?? null;
   }
 
   sendTextToSession(sessionRef: string, text: string, options: { senderSessionId?: string }) {

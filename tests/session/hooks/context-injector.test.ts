@@ -89,7 +89,15 @@ describe('SessionStart injection', () => {
 
   it('says nothing about ring-me when the operator has none pending', async () => {
     const { injector } = makeInjector({ getRingRequests: () => [] }, { role: 'operator' });
-    expect(await injector.respond(hookEvent())).toBeNull();
+    expect(contextOf((await injector.respond(hookEvent()))!.body)).not.toContain('ring-me');
+  });
+
+  it('repeats the OPERATOR its mantra after every compaction, first in line', async () => {
+    const { injector } = makeInjector({ getOpenTasks: () => ['P-0901 "build G"'] }, { role: 'operator' });
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context.startsWith('You are Helm, the operator')).toBe(true);
+    expect(context).toContain('initialPrompt');
+    expect(context).toContain('task');
   });
 
   it('re-lists the OPERATOR its open tasks so a compaction never drops one', async () => {

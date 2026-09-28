@@ -135,6 +135,12 @@ flowchart LR
   blocked ordinary working behaviour, not just the mistakes it was aimed at. The
   rule remains available for anyone who wants it; it is a user choice, not a
   default. Same reasoning as `git push`.
+- **Built-in operator deny** — not yaml. A session whose `role` is `operator`
+  is denied every read, shell and edit tool of the three CLIs (`OPERATOR_DENY`
+  in `hook-policy.ts`). The reason says to delegate with `session_create` or
+  `session_send_text`. Glob, web search and web fetch stay allowed. Why built in:
+  the operator's prompt already forbade it and the model still read code, and
+  a yaml rule could be edited away.
 - **Rule shape** — `tools` (case-insensitive match) plus any of `onlyWhenAway`,
   `commandPattern` (regex over the shell command; uncompilable = never
   matches), `outsideSessionDir`, and the required `reason`. First matching

@@ -156,3 +156,17 @@ private fun Tab(
         )
     }
 }
+
+/**
+ * The root picker's back trail: back retraces the tabs the user picked, and
+ * only an empty trail offers to exit. Each tab appears once — hopping between
+ * two tabs must not make back bounce between them just as many times.
+ */
+data class HomeTabHistory(val trail: List<HomeTab> = emptyList()) {
+    fun pick(from: HomeTab, to: HomeTab): HomeTabHistory =
+        if (from == to) this else HomeTabHistory(trail - from - to + from)
+
+    /** The tab back returns to and the trail left after it, or null at the start. */
+    fun back(): Pair<HomeTab, HomeTabHistory>? =
+        trail.lastOrNull()?.let { it to HomeTabHistory(trail.dropLast(1)) }
+}

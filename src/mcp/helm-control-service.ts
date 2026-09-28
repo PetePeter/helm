@@ -1292,7 +1292,7 @@ export class HelmControlService extends EventEmitter {
     cliType: string,
     dirPath: string,
     name: string | undefined,
-    opts: { creatorSessionId?: string; runtimeGroupId?: string } = {},
+    opts: { creatorSessionId?: string; runtimeGroupId?: string; initialPrompt?: string } = {},
   ) {
     return this.sessionService.spawnCli(cliType, dirPath, name, opts);
   }

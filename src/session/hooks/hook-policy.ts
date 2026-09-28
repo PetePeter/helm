@@ -41,6 +41,49 @@ export interface HookPolicyDecision {
 
 const ALLOW: HookPolicyDecision = { decision: 'allow' };
 
+/**
+ * Built in, not yaml: the operator's prompt forbids reading or changing code,
+ * yet a model forgets that (above all after compaction). The tool names cover
+ * every hooked CLI (claude, codex, copilot). Finding files (Glob) and the web
+ * stay allowed, and so does a search confined to non-code files.
+ */
+const OPERATOR_DELEGATE = 'Delegate it — session_create (with initialPrompt and task) or session_send_text (with task) to a work session.';
+const OPERATOR_DENY: HookDenyRule = {
+  tools: [
+    'Read', 'Bash', 'PowerShell', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit',
+    'shell', 'apply_patch', 'view', 'create', 'edit', 'powershell',
+  ],
+  reason: `You are the operator: you never read, run or change code. ${OPERATOR_DELEGATE}`,
+};
+const OPERATOR_SEARCH_TOOLS = ['grep'];
+/** Extensions an operator may search: notes, config, data and logs. */
+const NON_CODE_EXTENSIONS = new Set(['md', 'txt', 'log', 'yaml', 'yml', 'json', 'csv', 'ini', 'toml', 'xml', 'conf', 'cfg']);
+
+function decideOperator(event: HookEvent): HookPolicyDecision | null {
+  const tool = event.toolName?.toLowerCase();
+  if (!tool) return null;
+  if (OPERATOR_SEARCH_TOOLS.includes(tool)) {
+    return searchesOnlyNonCode(event) ? ALLOW : {
+      decision: 'deny',
+      reason: `You are the operator: search only non-code files (name them with path or glob, e.g. *.md, *.yaml, *.log). ${OPERATOR_DELEGATE}`,
+    };
+  }
+  return matchesTool(OPERATOR_DENY, tool) ? { decision: 'deny', reason: OPERATOR_DENY.reason } : null;
+}
+
+/**
+ * True only when the search is pinned to non-code files: a glob, or else the
+ * path, whose every extension is on the non-code list. A bare directory can
+ * reach code, so it is not.
+ */
+function searchesOnlyNonCode(event: HookEvent): boolean {
+  const target = toolString(event, ['glob']) ?? toolString(event, FILE_PATH_KEYS);
+  const extensions = target?.match(/\.\{([^}]+)\}$|\.([A-Za-z0-9]+)$/);
+  if (!extensions) return false;
+  const list = (extensions[1] ?? extensions[2]).split(',').map((ext) => ext.trim().toLowerCase());
+  return list.every((ext) => NON_CODE_EXTENSIONS.has(ext));
+}
+
 /** Tool-input keys holding a shell command, in preference order. */
 const COMMAND_KEYS = ['command', 'cmd', 'script'];
 /** Tool-input keys holding a written file path, in preference order. */
@@ -57,6 +100,10 @@ export function decideHookPolicy(
   rules: readonly unknown[],
 ): HookPolicyDecision {
   if (event.event !== 'PreToolUse') return ALLOW;
+  if (session?.role === 'operator') {
+    const operatorDecision = decideOperator(event);
+    if (operatorDecision) return operatorDecision;
+  }
   for (const candidate of rules) {
     const rule = asDenyRule(candidate);
     if (!rule) continue;
