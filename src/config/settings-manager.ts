@@ -53,6 +53,7 @@ export const DEFAULT_OPERATOR_CONFIG: OperatorConfig = {
   cliType: '',
   compactEveryMinutes: 60,
   rules: '',
+  pttKey: 'f9',
 };
 
 export class SettingsManager {

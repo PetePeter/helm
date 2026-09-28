@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
- * ToolsTab.vue — CLI type management (list, add, edit, delete).
+ * ToolsTab.vue — CLI type management (list, add, edit, delete) plus the
+ * Session List display settings.
  */
+import SessionListSettings from './SessionListSettings.vue';
 
 export interface ToolItem {
   key: string;
@@ -68,5 +70,7 @@ const emit = defineEmits<{
         + Add CLI Type
       </button>
     </div>
+
+    <SessionListSettings />
   </div>
 </template>

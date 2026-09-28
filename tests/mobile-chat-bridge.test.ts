@@ -110,15 +110,11 @@ beforeEach(() => {
 });
 
 describe('MobileChatBridge as a chat surface', () => {
-  it('is unavailable until a paired phone is actually linked', async () => {
-    expect(bridge.isAvailable()).toBe(false);
-    links.online.add('phone-machine');
+  it('stays available with no phone linked, so the journal still takes the message', async () => {
     expect(bridge.isAvailable()).toBe(true);
-  });
-
-  it('reports not-sent rather than throwing when no phone is online', async () => {
     await expect(bridge.sendToSession({ sessionId: 's1', text: 'hello' }))
       .resolves.toEqual({ sent: false, reason: 'No phone is linked' });
+    expect(journal.since(0).map(entry => entry.record.text)).toEqual(['hello']);
   });
 
   it('encodes an agent message as a chat record and sends it to every linked phone', async () => {

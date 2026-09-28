@@ -31,6 +31,12 @@ describe('withoutOperator', () => {
     const groups = buildSessionGroups([worker, operator], () => 'X:/a', { order: [], collapsed: [] }, []);
     expect(groups.flatMap(g => g.sessions).map(s => s.id)).toEqual(['w1']);
   });
+
+  it('stays out even when a custom group still lists its id', () => {
+    const runtime = [{ id: 'rg', name: 'Mine', sessionIds: ['op', 'w1'], collapsed: false }] as any;
+    const groups = buildSessionGroups([worker, operator], () => 'X:/a', { order: [], collapsed: [] }, runtime);
+    expect(groups.flatMap(g => g.sessions).map(s => s.id)).toEqual(['w1']);
+  });
 });
 
 describe('operator as a gamepad nav target', () => {

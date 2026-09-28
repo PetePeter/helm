@@ -46,6 +46,8 @@ export interface ChatJournalState {
 export interface MobileChatJournalOptions {
   /** Called on every mutation. Failures are the sink's problem, never fatal. */
   persist?: (state: ChatJournalState) => void;
+  /** Called once per appended entry — the desktop operator chat's live feed. */
+  onAppend?: (entry: ChatJournalEntry) => void;
   /** Oldest-dropped safety ceiling. See the class comment for why it exists. */
   maxEntries?: number;
 }
@@ -56,10 +58,12 @@ export class MobileChatJournal {
   private entries: ChatJournalEntry[] = [];
   private nextSeq = 0;
   private readonly persist: ((state: ChatJournalState) => void) | undefined;
+  private readonly onAppend: ((entry: ChatJournalEntry) => void) | undefined;
   private readonly maxEntries: number;
 
   constructor(options: MobileChatJournalOptions = {}) {
     this.persist = options.persist;
+    this.onAppend = options.onAppend;
     this.maxEntries = Math.max(1, options.maxEntries ?? DEFAULT_CHAT_JOURNAL_MAX_ENTRIES);
   }
 
@@ -87,15 +91,22 @@ export class MobileChatJournal {
    */
   append(record: ChatRecordInput): ChatJournalEntry {
     this.nextSeq += 1;
-    this.entries.push({ seq: this.nextSeq, record });
+    const entry = { seq: this.nextSeq, record };
+    this.entries.push(entry);
     this.prune();
     this.save();
-    return this.entries[this.entries.length - 1];
+    this.onAppend?.(entry);
+    return entry;
   }
 
   /** Every entry after `seq`, oldest first. The whole journal for a cursor of 0. */
   since(seq: number): ChatJournalEntry[] {
     return this.entries.filter(entry => entry.seq > seq);
+  }
+
+  /** One session's conversation (messages both ways plus notices), oldest first. */
+  sessionEntries(sessionId: string): ChatJournalEntry[] {
+    return this.entries.filter(entry => entry.record.sessionId === sessionId);
   }
 
   /**

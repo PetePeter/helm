@@ -98,7 +98,7 @@ import ProjectsTab from './components/sidebar/ProjectsTab.vue';
 import ChipbarActionsTab from './components/sidebar/ChipbarActionsTab.vue';
 import McpTab from './components/sidebar/McpTab.vue';
 import PeersTab from './components/sidebar/PeersTab.vue';
-import SessionListTab from './components/sidebar/SessionListTab.vue';
+import VoiceTab from './components/sidebar/VoiceTab.vue';
 import UpdatesTab from './components/sidebar/UpdatesTab.vue';
 import OperatorTab from './components/sidebar/OperatorTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
@@ -1133,9 +1133,6 @@ onUnmounted(() => {
               @delete="onToolDelete"
               @move="onToolReorder"
             />
-            <SessionListTab
-              v-else-if="activeTab === 'session-list'"
-            />
             <ProjectsTab
               v-else-if="activeTab === 'projects'"
               @changed="refreshSessions"
@@ -1155,6 +1152,11 @@ onUnmounted(() => {
               @update-field="onTelegramUpdateField"
               @start-bot="onTelegramStartBot"
               @stop-bot="onTelegramStopBot"
+            />
+            <VoiceTab
+              v-else-if="activeTab === 'voice'"
+              :config="settingsTelegramConfig"
+              @update-field="onTelegramUpdateField"
             />
             <McpTab
               v-else-if="activeTab === 'mcp'"

@@ -32,7 +32,7 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
   const pendingHandovers = new Set<string>();
   const sessionManager = new SessionManager();
   for (const s of existing) sessionManager.addSession({ ...s });
-  const spawns: Array<{ cliType: string; cwd?: string; sessionName: string; contextText: string }> = [];
+  const spawns: Array<{ cliType: string; cwd?: string; sessionName: string; contextText: string; role: 'operator'; locked: true }> = [];
   let next = 0;
   const operator = new OperatorSessionManager({
     sessionManager,
@@ -40,7 +40,7 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
     spawn: (params) => {
       spawns.push(params);
       const id = `op-${++next}`;
-      sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}`, workingDir: params.cwd });
+      sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}`, workingDir: params.cwd, role: params.role, locked: params.locked });
       return { sessionId: id };
     },
     compact: compact ?? (async (sessionId, handover) => { compacts.push({ sessionId, handover }); }),
@@ -62,7 +62,8 @@ describe('OperatorSessionManager.ensure', () => {
     const id = operator.ensure();
 
     expect(spawns).toHaveLength(1);
-    expect(spawns[0]).toMatchObject({ cliType: 'cli-uuid-1', cwd: HOME, sessionName: OPERATOR_SESSION_NAME });
+    // Born as the operator: a spawn-then-claim gap flashed it as a plain Session List row.
+    expect(spawns[0]).toMatchObject({ cliType: 'cli-uuid-1', cwd: HOME, sessionName: OPERATOR_SESSION_NAME, role: 'operator', locked: true });
     expect(spawns[0].contextText).toBe(buildOperatorGuide());
     const session = sessionManager.getSession(id!)!;
     expect(session).toMatchObject({ role: 'operator', locked: true, name: 'Helm' });

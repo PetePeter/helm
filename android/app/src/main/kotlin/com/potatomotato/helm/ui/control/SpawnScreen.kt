@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.control
 
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import kotlinx.coroutines.delay
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.HelmCli
@@ -104,6 +107,16 @@ fun SpawnScreen(
     var dirPath by rememberSaveable(plan) { mutableStateOf(plan?.dirPath) }
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable(plan) { mutableStateOf(plan?.name.orEmpty()) }
+
+    // Raised on the tap itself (see SpawnTapLatch); released by the spawn's
+    // answer plus the minimum hold. A success navigates away first.
+    var tappedAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(tappedAt, spawnInFlight) {
+        val at = tappedAt ?: return@LaunchedEffect
+        val wait = SpawnTapLatch.releaseInMs(at, spawnInFlight, SystemClock.uptimeMillis()) ?: return@LaunchedEffect
+        delay(wait)
+        tappedAt = null
+    }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
@@ -223,8 +236,13 @@ fun SpawnScreen(
                 // last spawn's answer came back: two taps are two sessions.
                 // The name is optional on the wire: a blank one is omitted and
                 // the desktop names the session after the CLI type.
-                enabled = chosenDir != null && chosenCli != null && !spawnInFlight,
-                onClick = { onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName, machineId) },
+                enabled = chosenDir != null && chosenCli != null && !spawnInFlight && tappedAt == null,
+                onClick = {
+                    if (tappedAt == null) {
+                        tappedAt = SystemClock.uptimeMillis()
+                        onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName, machineId)
+                    }
+                },
             )
             GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
         }

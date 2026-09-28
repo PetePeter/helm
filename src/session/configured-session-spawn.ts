@@ -3,6 +3,7 @@ import { resolveEnvWithMode, type ConfigLoader, type ResolvedCliType, type Seque
 import { mintSessionAuthToken } from '../mcp/session-auth.js';
 import { parseSubmitSuffix } from '../mcp/submit-suffix.js';
 import type { SessionManager } from './manager.js';
+import type { SessionInfo } from '../types/session.js';
 import { scheduleInitialPrompt } from './initial-prompt.js';
 import type { PtyManager, PtyProcess } from './pty-manager.js';
 import { deliverPromptSequenceToSession } from './sequence-delivery.js';
@@ -41,6 +42,9 @@ export interface ConfiguredSessionSpawnParams {
   createdByPeerId?: string;
   /** Paired phone that requested this spawn, when it came in over the mobile proxy. */
   createdByMobileDeviceId?: string;
+  /** Born with its role/lock so no listener ever sees it as a plain session (the operator). */
+  role?: SessionInfo['role'];
+  locked?: boolean;
 }
 
 export interface ConfiguredSessionSpawnResult {
@@ -115,6 +119,8 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     lastOutputAt: now,
     ...(params.createdByPeerId ? { createdByPeerId: params.createdByPeerId } : {}),
     ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
+    ...(params.role ? { role: params.role } : {}),
+    ...(params.locked ? { locked: true } : {}),
   };
 
   if (isResume && params.sessionManager.hasSession(sessionId)) {

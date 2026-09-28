@@ -26,7 +26,7 @@ graph LR
 - **Late manager:** dock panes mount before `useAppBootstrap` builds the
   `TerminalManager`, so the composable subscribes to `onTerminalManagerChanged`
   instead of reading the buffer once at setup.
-- **Setting:** Settings → Session List → *Output preview*: `on` (default),
+- **Setting:** Settings → Tools → *Output preview*: `on` (default),
   `selected-only` (one preview, for gamepad density) or `off` (compact rows).
   Persisted as `sessionPreviewMode` with the session-group prefs.
 

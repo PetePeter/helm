@@ -156,7 +156,8 @@ renderer/
 │   │   ├── index.ts
 │   │   ├── SessionCard.vue     # Session card (activity dot, badges, timer, rename, close, 5-line PTY preview)
 │   │   ├── SessionList.vue     # Grouped session list; hosts the message-flight envelopes
-│   │   ├── SessionListTab.vue  # Settings tab: PTY preview mode (on / selected-only / off)
+│   │   ├── SessionListSettings.vue  # Tools-tab section: PTY preview mode (on / selected-only / off)
+│   │   ├── VoiceTab.vue  # Settings tab: OpenWhispr / Piper / ffmpeg paths
 │   │   ├── SessionGroup.vue    # Collapsible directory group header
 │   │   ├── SpawnGrid.vue       # 2-column CLI spawn button grid
 │   │   ├── SortBar.vue         # Sort field dropdown + direction toggle

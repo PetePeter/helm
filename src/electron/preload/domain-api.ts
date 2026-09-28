@@ -10,6 +10,7 @@ import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
+import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
 import {
   createPreloadDomains,
   type HelmPreloadApi,
@@ -180,11 +181,11 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('config:setMcpConfig', updates),
 
   /** Voice operator singleton settings (docs/voice-operator.md). */
-  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }> =>
+  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string; pttKey: string }> =>
     ipcRenderer.invoke('config:getOperatorConfig'),
 
   /** Persist operator settings; main re-ensures the operator session at once. */
-  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; compactEveryMinutes?: number; rules?: string }): Promise<{ success: boolean; error?: string }> =>
+  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; compactEveryMinutes?: number; rules?: string; pttKey?: string }): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('config:setOperatorConfig', updates),
 
   /**
@@ -1653,9 +1654,20 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   voiceSpeak: (text: string): Promise<{ ok: true; audio: Uint8Array; mimeType: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('voice:speak', text),
 
-  /** Deliver the user's words to the operator (and echo them to the phone). */
-  voiceAsk: (text: string): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('voice:ask', text),
+  /** Deliver the user's words — and optionally a local file — to the operator (and echo them to the phone). */
+  voiceAsk: (text: string, filePath?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text, filePath),
+
+  /** The operator's journaled conversation, oldest first — the desktop chat view's backlog. */
+  voiceOperatorHistory: (): Promise<OperatorChatEntry[]> =>
+    ipcRenderer.invoke('voice:operatorHistory'),
+
+  /** Each new journal entry of the operator's conversation, either direction. Returns an unsubscribe. */
+  onVoiceOperatorChat: (callback: (entry: OperatorChatEntry) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, entry: OperatorChatEntry) => callback(entry);
+    ipcRenderer.on('voice:operatorChat', listener);
+    return () => ipcRenderer.removeListener('voice:operatorChat', listener);
+  },
 
   /** The operator's newest persisted chat_send, or null. */
   voiceLastOperatorReply: (): Promise<string | null> =>

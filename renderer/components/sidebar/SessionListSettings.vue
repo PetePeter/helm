@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * SessionListTab.vue: Session List display settings (PTY preview density).
+ * SessionListSettings.vue: Session List display settings (PTY preview density).
  */
 import { computed } from 'vue';
 import { sessionsState } from '../../screens/sessions-state.js';

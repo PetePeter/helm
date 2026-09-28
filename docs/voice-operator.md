@@ -325,7 +325,8 @@ sequenceDiagram
 - **Shared modules.** `openwhispr-transcriber.ts`, `piper-tts.ts` and `ffmpeg.ts`
   moved from `src/telegram/` to `src/voice/`; Telegram imports them from there
   unchanged. Piper keeps its OGG/Opus output — Chromium plays it natively.
-- **Configuration.** The tool paths are the ones in Settings → Telegram.
+- **Configuration.** The tool paths live in Settings → Voice (shared with
+  Telegram voice notes; still stored under the `telegram` config block).
   `CapabilityDetector.getVoiceTools()` checks them without requiring the bot to
   be enabled; a missing tool is a clear error, and nothing is spawned.
 - **Config boundary.** The recorded clip, its transcript and the synthesized
@@ -349,7 +350,7 @@ The desktop twin of the phone's first tab (`OperatorSummary.kt`):
 dot (`state-colors.ts`), its last reply (seeded at startup from the chat
 journal via `voice:lastOperatorReply`, so it survives a restart), **Call / Hang up**, and while a call is
 open the live phase and transcript (it replaced the floating call panel — one
-UI). Clicking the title opens the operator's terminal. With no operator it
+UI). Clicking the title opens the operator's pane. With no operator it
 reads "Enable in Settings > Operator". `buildSessionGroups` drops the operator
 (`withoutOperator`), so it is never listed twice — the same rule as the phone.
 Instead it is the pinned first gamepad nav item (`buildFlatNavList` →
@@ -357,6 +358,35 @@ Instead it is the pinned first gamepad nav item (`buildFlatNavList` →
 (Invariant 1: the gamepad reaches everything). Starting a call from any binding
 restores/activates/reveals the Sessions pane, so the Hang up button is always
 on screen.
+
+### The operator chat view
+
+Opening the operator shows `OperatorChat.vue` over its terminal (the xterm
+stays mounted underneath; **Terminal** / **Chat** flip between them). It is the
+phone's operator thread on the PC: the conversation IS the chat journal.
+
+```mermaid
+flowchart LR
+    C[OperatorChat.vue] -- voice:operatorHistory --> J[(chat journal)]
+    J -- onAppend → voice:operatorChat --> C
+    C -- voice:ask text + filePath --> M[main: deliver to operator PTY<br/>+ recordDesktopTurn]
+    M --> J
+    O[operator chat_send] --> B[ChatBroker] --> MB[MobileChatBridge] --> J
+```
+
+- **Bubbles.** User turns (desktop or phone, `originId` set) on the right in
+  the accent green; the operator's messages on the left. Alerts are skipped.
+- **Composer.** Enter sends, Shift/Ctrl+Enter is a newline. 📎 attaches a local
+  file: the path is appended to the prompt — the operator is a local CLI and can
+  read it.
+- **Push-to-talk dictates** — hold 🎤 or the PTT key (Settings → Operator,
+  default `f9`, captured as a canonical combo) and the transcript lands in the
+  composer to edit and send. No spoken replies; **Call** in the header is the
+  same hands-free call as the sidebar's. The key press goes through the one key
+  router (`operator-chat-ptt`, global, allowed in fields); release is its keyup.
+- **Born as the operator.** `spawnConfiguredSession` takes `role`/`locked`, so
+  the operator is added with its role in the same `addSession` — no list ever
+  sees it as a plain row, even for a frame.
 
 ### Hands-free call
 

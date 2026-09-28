@@ -41,6 +41,9 @@ export interface OperatorSpawnParams {
   sessionName: string;
   /** The operator guide, delivered as the initial prompt. */
   contextText: string;
+  /** Always 'operator': the session is born with its role so no list ever shows it as a plain row. */
+  role: 'operator';
+  locked: true;
 }
 
 export interface OperatorSessionManagerDeps {
@@ -210,6 +213,8 @@ export class OperatorSessionManager extends EventEmitter {
       cwd: this.deps.homeDir(),
       sessionName: OPERATOR_SESSION_NAME,
       contextText: buildOperatorGuide(config.rules),
+      role: 'operator',
+      locked: true,
     });
     logger.info(`[Operator] Spawned operator session ${sessionId}`);
     return sessionId;

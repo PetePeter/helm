@@ -9,13 +9,16 @@
 import { ipcMain } from 'electron';
 import { logger } from '../../utils/logger.js';
 import type { VoiceResult, VoiceService } from '../../voice/voice-service.js';
+import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
 
 export interface VoiceHandlerDeps {
   voiceService: Pick<VoiceService, 'transcribe' | 'speak'>;
-  /** Deliver the user's words to the operator; resolves to a result value. */
-  ask: (text: string) => Promise<VoiceResult>;
+  /** Deliver the user's words (and optionally a local file) to the operator. */
+  ask: (text: string, filePath?: string) => Promise<VoiceResult>;
   /** The operator's newest persisted reply, so the sidebar survives a restart. */
   lastReply: () => string | null;
+  /** The operator's whole journaled conversation, for the desktop chat view. */
+  history: () => ChatJournalEntry[];
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
@@ -33,10 +36,13 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
 
   ipcMain.handle('voice:lastOperatorReply', () => deps.lastReply());
 
-  ipcMain.handle('voice:ask', async (_event, text: unknown) => {
+  ipcMain.handle('voice:operatorHistory', () => deps.history());
+
+  ipcMain.handle('voice:ask', async (_event, text: unknown, filePath?: unknown) => {
     if (typeof text !== 'string' || text.trim() === '') return { ok: false, error: 'Nothing to send' };
+    if (filePath !== undefined && typeof filePath !== 'string') return { ok: false, error: 'Invalid attachment' };
     try {
-      return await deps.ask(text.trim());
+      return await deps.ask(text.trim(), filePath || undefined);
     } catch (error) {
       logger.error(`[IPC] voice:ask failed: ${error}`);
       return { ok: false, error: String(error) };

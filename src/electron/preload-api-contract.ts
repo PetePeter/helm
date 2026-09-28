@@ -340,6 +340,8 @@ export const PRELOAD_API_DOMAINS = {
     'voiceAsk',
     'voiceLastOperatorReply',
     'onVoiceOperatorReply',
+    'voiceOperatorHistory',
+    'onVoiceOperatorChat',
   ],
   update: [
     'updateCheck',

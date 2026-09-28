@@ -3,7 +3,6 @@
  * TelegramTab.vue — Telegram bot configuration (connection, security, notifications).
  */
 import { ref, watch } from 'vue';
-import { dialogClient } from '../../ipc/clients.js';
 
 export interface TelegramConfig {
   botToken: string;
@@ -11,10 +10,6 @@ export interface TelegramConfig {
   allowedUsers: string;
   notificationsEnabled: boolean;
   autoStart: boolean;
-  openWhisprPath: string;
-  piperPath: string;
-  piperVoicePath: string;
-  ffmpegPath: string;
 }
 
 const props = defineProps<{
@@ -32,20 +27,12 @@ const emit = defineEmits<{
 const botToken = ref(props.config.botToken);
 const chatId = ref(props.config.chatId);
 const allowedUsers = ref(props.config.allowedUsers);
-const openWhisprPath = ref(props.config.openWhisprPath);
-const piperPath = ref(props.config.piperPath);
-const piperVoicePath = ref(props.config.piperVoicePath);
-const ffmpegPath = ref(props.config.ffmpegPath);
 
 // Sync from props when they change externally
 watch(() => props.config, (c) => {
   botToken.value = c.botToken;
   chatId.value = c.chatId;
   allowedUsers.value = c.allowedUsers;
-  openWhisprPath.value = c.openWhisprPath;
-  piperPath.value = c.piperPath;
-  piperVoicePath.value = c.piperVoicePath;
-  ffmpegPath.value = c.ffmpegPath;
 });
 
 // Debounced save
@@ -60,30 +47,8 @@ function immediateEmit(field: string, value: string): void {
   if (saveTimer) clearTimeout(saveTimer);
   emit('updateField', field, value);
 }
-
-async function browseOpenWhisprPath(): Promise<void> {
-  const selected = await dialogClient.dialogOpenFolder();
-  if (selected) {
-    if (saveTimer) clearTimeout(saveTimer);
-    saveTimer = null;
-    openWhisprPath.value = selected;
-    emit('updateField', 'openWhisprPath', selected);
-  }
-}
-
-async function browseFilePath(
-  field: 'piperPath' | 'piperVoicePath' | 'ffmpegPath',
-  target: typeof piperPath,
-  filters: { name: string; extensions: string[] }[],
-): Promise<void> {
-  const selected = await dialogClient.dialogShowOpenFile?.(filters);
-  if (!selected) return;
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = null;
-  target.value = selected;
-  emit('updateField', field, selected);
-}
 </script>
+
 
 <template>
   <div class="settings-telegram-panel">
@@ -160,74 +125,6 @@ async function browseFilePath(
           @change="emit('updateField', 'autoStart', ($event.target as HTMLInputElement).checked)"
         />
         Auto-start bot 60 seconds after launch
-      </label>
-    </section>
-
-    <section class="telegram-section">
-      <h4>Audio</h4>
-      <label class="telegram-field">
-        OpenWhispr Path
-        <div class="telegram-path-row">
-          <input
-            v-model="openWhisprPath"
-            type="text"
-            placeholder="C:\\Program Files\\OpenWhispr"
-            @input="debouncedEmit('openWhisprPath', openWhisprPath)"
-            @blur="immediateEmit('openWhisprPath', openWhisprPath)"
-          />
-          <button class="telegram-browse-btn" type="button" @click="browseOpenWhisprPath">📂</button>
-        </div>
-      </label>
-      <label class="telegram-field">
-        Piper Path
-        <div class="telegram-path-row">
-          <input
-            v-model="piperPath"
-            type="text"
-            placeholder="C:\\Users\\you\\AppData\\Local\\Programs\\piper\\piper\\piper.exe"
-            @input="debouncedEmit('piperPath', piperPath)"
-            @blur="immediateEmit('piperPath', piperPath)"
-          />
-          <button
-            class="telegram-browse-btn"
-            type="button"
-            @click="browseFilePath('piperPath', piperPath, [{ name: 'Executables', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }])"
-          >📂</button>
-        </div>
-      </label>
-      <label class="telegram-field">
-        Piper Voice Path
-        <div class="telegram-path-row">
-          <input
-            v-model="piperVoicePath"
-            type="text"
-            placeholder="C:\\Users\\you\\AppData\\Local\\Programs\\piper\\voices\\voice.onnx"
-            @input="debouncedEmit('piperVoicePath', piperVoicePath)"
-            @blur="immediateEmit('piperVoicePath', piperVoicePath)"
-          />
-          <button
-            class="telegram-browse-btn"
-            type="button"
-            @click="browseFilePath('piperVoicePath', piperVoicePath, [{ name: 'Piper Voices', extensions: ['onnx'] }, { name: 'All Files', extensions: ['*'] }])"
-          >📂</button>
-        </div>
-      </label>
-      <label class="telegram-field">
-        ffmpeg Path
-        <div class="telegram-path-row">
-          <input
-            v-model="ffmpegPath"
-            type="text"
-            placeholder="C:\\Users\\you\\AppData\\Local\\Microsoft\\WinGet\\Packages\\...\\ffmpeg.exe"
-            @input="debouncedEmit('ffmpegPath', ffmpegPath)"
-            @blur="immediateEmit('ffmpegPath', ffmpegPath)"
-          />
-          <button
-            class="telegram-browse-btn"
-            type="button"
-            @click="browseFilePath('ffmpegPath', ffmpegPath, [{ name: 'Executables', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }])"
-          >📂</button>
-        </div>
       </label>
     </section>
 
@@ -349,30 +246,4 @@ async function browseFilePath(
   font-size: inherit;
 }
 
-.telegram-path-row {
-  display: flex;
-  gap: var(--spacing-xs);
-  align-items: center;
-}
-
-.telegram-path-row input {
-  flex: 1;
-  min-width: 0;
-}
-
-.telegram-browse-btn {
-  flex-shrink: 0;
-  padding: 0 var(--spacing-xs);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-  line-height: 1;
-  height: 100%;
-}
-
-.telegram-browse-btn:hover {
-  background: var(--bg-hover);
-}
 </style>

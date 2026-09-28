@@ -76,4 +76,18 @@ describe('spawnConfiguredSession', () => {
     }));
     expect(updateSession).not.toHaveBeenCalled();
   });
+
+  it('registers role and lock in the same add, so the operator never appears as a plain row', () => {
+    const addSession = vi.fn();
+    spawnConfiguredSession({
+      ptyManager: { spawn: vi.fn().mockReturnValue({ pid: 1 }), write: vi.fn() } as any,
+      sessionManager: { addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined } as any,
+      sessionId: 'op',
+      command: 'claude',
+      role: 'operator',
+      locked: true,
+    });
+    expect(addSession).toHaveBeenCalledTimes(1);
+    expect(addSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'op', role: 'operator', locked: true }));
+  });
 });

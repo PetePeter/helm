@@ -132,8 +132,15 @@ export class MobileChatBridge implements ChatBridge {
     this.deps.links.off?.('message', this.onMessage);
   }
 
+  /**
+   * Always: the journal is this surface's first job and it takes every message
+   * whether or not a phone is linked right now — gating on a live link let the
+   * broker skip the append, so an offline phone had nothing to catch up from and
+   * the desktop operator chat lost every reply sent while no phone was around.
+   * The live push still reports not-sent honestly when no phone took it.
+   */
   isAvailable(): boolean {
-    return this.linkedMachines().length > 0;
+    return true;
   }
 
   async sendToSession(message: ChatOutboundMessage): Promise<ChatSendResult> {

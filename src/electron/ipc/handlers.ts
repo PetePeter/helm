@@ -493,7 +493,7 @@ export function registerIPCHandlers(
   const operatorSessionManager = new OperatorSessionManager({
     sessionManager,
     getConfig: () => configLoader.getOperatorConfig(),
-    spawn: ({ cliType, cwd, sessionName, contextText }) => spawnConfiguredSession({
+    spawn: ({ cliType, cwd, sessionName, contextText, role, locked }) => spawnConfiguredSession({
       ptyManager,
       sessionManager,
       configLoader,
@@ -502,6 +502,8 @@ export function registerIPCHandlers(
       sessionName,
       contextText,
       contextDeliveryContext: 'background',
+      role,
+      locked,
     }),
     compact: (sessionId, handover) => helmControlService.compactSession(sessionId, { handover }),
     isHandoverPending: (sessionId) => isHandoverPending(sessionId),
@@ -525,7 +527,15 @@ export function registerIPCHandlers(
   // Created here (not in the mobile block far below) so the recycle bin's
   // purge paths can prune it — the journal's retention is the session's
   // lifetime, and a purged session's replay dies with it.
-  const mobileChatJournal = new MobileChatJournal({ persist: saveMobileChatJournal });
+  const mobileChatJournal = new MobileChatJournal({
+    persist: saveMobileChatJournal,
+    // The desktop operator chat renders the same conversation the phone does.
+    onAppend: (entry) => {
+      if (entry.record.sessionId !== operatorSessionManager.getOperatorId()) return;
+      const win = windowManager.getMainWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('voice:operatorChat', entry);
+    },
+  });
   mobileChatJournal.hydrate(loadMobileChatJournal());
   setupRecycleBinHandlers(
     recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
@@ -1147,11 +1157,19 @@ export function registerIPCHandlers(
       const operatorId = operatorSessionManager.getOperatorId();
       return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
     },
-    ask: async (text) => {
+    history: () => {
+      const operatorId = operatorSessionManager.getOperatorId();
+      return operatorId ? mobileChatJournal.sessionEntries(operatorId) : [];
+    },
+    ask: async (text, filePath) => {
       const operatorId = operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
-      await deliverPromptSequenceToSession({ sessionId: operatorId, text, ptyManager, sessionManager, configLoader });
-      mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
+      // The operator is a local CLI: a desktop path is directly readable by it.
+      const withFile = filePath ? `${text}
+
+[Attached file: ${filePath}]` : text;
+      await deliverPromptSequenceToSession({ sessionId: operatorId, text: withFile, ptyManager, sessionManager, configLoader });
+      mobileChatBridge.recordDesktopTurn(operatorId, withFile, randomUUID());
       return { ok: true };
     },
   });

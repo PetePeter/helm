@@ -148,3 +148,15 @@ describe('MobileChatJournal lastSessionMessage', () => {
     expect(reloaded.lastSessionMessage('s1')).toBe('before restart');
   });
 });
+
+describe('MobileChatJournal: the desktop operator chat feed', () => {
+  it('announces each append once and serves one session’s backlog in order', () => {
+    const seen: number[] = [];
+    const journal = new MobileChatJournal({ onAppend: entry => seen.push(entry.seq) });
+    journal.append({ sessionId: 'op', sessionName: 'Helm', text: 'hi', at: 1, originId: 'desktop:1' });
+    journal.append({ sessionId: 'other', sessionName: 'w', text: 'x', at: 2 });
+    journal.append({ sessionId: 'op', sessionName: 'Helm', text: 'hello', at: 3 });
+    expect(seen).toEqual([1, 2, 3]);
+    expect(journal.sessionEntries('op').map(entry => entry.record.text)).toEqual(['hi', 'hello']);
+  });
+});

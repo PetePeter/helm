@@ -352,6 +352,12 @@ export interface OperatorConfig {
   compactEveryMinutes: number;
   /** User rules appended to the operator guide, one per line; built-in rules still apply. */
   rules: string;
+  /** Hold-to-talk key in the operator chat, as a canonical combo (`f9`, `ctrl+space`). */
+  pttKey: string;
+}
+
+function normalizePttKey(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : DEFAULT_OPERATOR_CONFIG.pttKey;
 }
 
 function normalizeCompactMinutes(value: unknown): number {
@@ -1239,6 +1245,7 @@ export class ConfigLoader {
       cliType: typeof o?.cliType === 'string' ? o.cliType : DEFAULT_OPERATOR_CONFIG.cliType,
       compactEveryMinutes: normalizeCompactMinutes(o?.compactEveryMinutes),
       rules: typeof o?.rules === 'string' ? o.rules : DEFAULT_OPERATOR_CONFIG.rules,
+      pttKey: normalizePttKey(o?.pttKey),
     };
   }
 
@@ -1251,6 +1258,7 @@ export class ConfigLoader {
       cliType: typeof next.cliType === 'string' ? next.cliType.trim() : '',
       compactEveryMinutes: normalizeCompactMinutes(next.compactEveryMinutes),
       rules: typeof next.rules === 'string' ? next.rules.trim() : '',
+      pttKey: normalizePttKey(next.pttKey),
     };
     this.saveSettings();
   }

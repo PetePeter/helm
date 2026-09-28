@@ -140,7 +140,11 @@ told?*, which is a heavier job than the duplicate buzz it was ratified for.
 
 So every **message** the mobile bridge fans out is appended to ONE global
 journal (`mobile-chat-journal.json`, under the user config dir) before anyone is
-told, and the wire record gains its `seq`. The journal keeps **delivered**
+told, and the wire record gains its `seq`. The mobile bridge is therefore
+**always available** to the broker — whether or not a phone is linked right
+now — so a message sent while every phone is offline is still journaled (the
+live push reports not-sent honestly). The desktop operator chat reads the same
+journal. The journal keeps **delivered**
 entries too, because a fresh APK install is *designed* to refetch its history.
 Retention is the session's lifetime, not an age: entries survive until their
 session is permanently gone — purged from the recycle bin (expiry, Forget,

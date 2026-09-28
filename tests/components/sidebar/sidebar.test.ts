@@ -1060,6 +1060,11 @@ describe('ToolsTab', () => {
     expect(w.findAll('.settings-list-item').length).toBe(2);
   });
 
+  it('hosts the Session List output-preview setting (folded in from its own tab)', () => {
+    const w = mount(ToolsTab, { props: { tools } });
+    expect(w.find('.session-list-setting select').exists()).toBe(true);
+  });
+
   it('shows tool name and command', () => {
     const w = mount(ToolsTab, { props: { tools } });
     expect(w.find('.tool-name').text()).toBe('Claude Code');
@@ -1276,5 +1281,37 @@ describe('TelegramTab', () => {
     await checkboxes[1].setValue(false);
 
     expect(w.emitted('updateField')).toContainEqual(['autoStart', false]);
+  });
+});
+
+// ============================================================================
+// VoiceTab
+// ============================================================================
+
+import VoiceTab from '../../../renderer/components/sidebar/VoiceTab.vue';
+
+describe('VoiceTab', () => {
+  const config = { openWhisprPath: 'C:\ow', piperPath: 'piper.exe', piperVoicePath: 'v.onnx', ffmpegPath: 'ffmpeg.exe' };
+
+  it('owns every speech tool path, prefilled from config', () => {
+    const w = mount(VoiceTab, { props: { config } });
+    for (const [key, value] of Object.entries(config)) {
+      expect((w.find(`[data-field="${key}"] input`).element as HTMLInputElement).value).toBe(value);
+    }
+  });
+
+  it('saves a field immediately on blur', async () => {
+    const w = mount(VoiceTab, { props: { config } });
+    const input = w.find('[data-field="piperPath"] input');
+    await input.setValue('D:\piper.exe');
+    await input.trigger('blur');
+    expect(w.emitted('updateField')).toContainEqual(['piperPath', 'D:\piper.exe']);
+  });
+
+  it('is no longer duplicated on the Telegram tab', () => {
+    const w = mount(TelegramTab, {
+      props: { config: { botToken: '', chatId: '', allowedUsers: '', notificationsEnabled: false, autoStart: false }, botRunning: false },
+    });
+    expect(w.text()).not.toMatch(/OpenWhispr|Piper|ffmpeg/);
   });
 });

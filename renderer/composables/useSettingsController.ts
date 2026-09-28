@@ -103,7 +103,7 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const SETTINGS_TABS = new Set(['bindings', 'tools', 'session-list', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator']);
+const SETTINGS_TABS = new Set(['bindings', 'tools', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator', 'voice']);
 
 function emptySkillDraft(): SettingsSkillDraft {
   return {
@@ -212,7 +212,6 @@ export function useSettingsController(options: {
     return [
       { id: 'tools', label: '🔧 Tools' },
       { id: 'bindings', label: '🎮 Bindings' },
-      { id: 'session-list', label: '🗂 Session List' },
       { id: 'chipbar-actions', label: '⚡ Quick Actions' },
       { id: 'projects', label: '📁 Projects' },
       { id: 'skills', label: '🧠 Skills' },
@@ -221,6 +220,7 @@ export function useSettingsController(options: {
       { id: 'peers', label: '🔗 Fleet' },
       { id: 'mobile', label: '📱 Mobile' },
       { id: 'operator', label: '🎙 Operator' },
+      { id: 'voice', label: '🔊 Voice' },
       { id: 'cli-integrations', label: '🪝 CLI Integrations' },
       { id: 'updates', label: '⬆ Updates' },
     ];
