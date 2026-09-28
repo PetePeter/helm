@@ -17,7 +17,7 @@ vi.mock('../renderer/ipc/clients', () => ({
   eventsClient: { onUpdateProgress: () => () => {} },
 }));
 
-import { checkForAppUpdate, checkForAppUpdateNow } from '../renderer/composables/useUpdateCheck';
+import { checkForAppUpdate, checkForAppUpdateNow, installStatus, installUpdate, updateOffer } from '../renderer/composables/useUpdateCheck';
 import { useToast } from '../renderer/composables/useToast';
 
 const NEWER = {
@@ -63,10 +63,22 @@ describe('Check now', () => {
     expect(await checkForAppUpdateNow()).toBe('Helm v3.11.1 is up to date');
   });
 
-  it('checks and offers even when the launch check is manual', async () => {
+  it('offers in place (the Updates tab button), never as a toast, even when the launch check is manual', async () => {
     update.updateGetMode.mockResolvedValue('manual');
     update.updateCheck.mockResolvedValue(NEWER);
     expect(await checkForAppUpdateNow()).toBe('Helm v3.12.0 is available');
-    expect(offerToast()).toBeDefined();
+    expect(updateOffer.value?.version).toBe('3.12.0');
+    expect(offerToast()).toBeUndefined();
+  });
+
+  it('accepting installs the offered release and reports progress in place', async () => {
+    update.updateCheck.mockResolvedValue(NEWER);
+    update.updateInstall.mockResolvedValue({ success: true });
+    await checkForAppUpdateNow();
+    installUpdate();
+    await vi.runAllTimersAsync();
+    expect(update.updateInstall).toHaveBeenCalledWith(NEWER.update.installerUrl);
+    expect(installStatus.value).toBe('Installing & restarting Helm…');
+    expect(offerToast()).toBeUndefined();
   });
 });

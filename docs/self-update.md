@@ -35,7 +35,10 @@ sequenceDiagram
   `settings.yaml` (missing/unknown = `auto`). `manual` skips the launch check
   entirely — no GitHub request at all. **Check now** works in either mode and
   always answers (up to date / available / could not check), because a
-  user-initiated check that stays silent reads as broken.
+  user-initiated check that stays silent reads as broken. A release it finds
+  is offered **in place** — an *Update to vX* button beside Check now, with
+  progress in the status line — not as a toast; only the launch check toasts
+  (the user may be anywhere). Check now retires a launch toast for the same offer.
 - `parseLatestRelease` (`src/session/update-checker.ts`) compares the tag
   against `app.getVersion()` and picks the one asset matching
   `Helm-Setup-X.Y.Z.exe` — APK, blockmap, checksums and Mac builds are ignored.
@@ -91,5 +94,5 @@ Domain `update` in the preload contract; renderer client
 |--------|------|
 | `src/session/update-checker.ts` | Pure decisions: version compare, asset pick, release parse, update script text |
 | `src/electron/ipc/update-handlers.ts` | `update:check` / `update:install` handlers, streamed download, detached spawn |
-| `renderer/composables/useUpdateCheck.ts` | Mode-gated launch check, Check now, toast offer, install click-through with progress |
-| `renderer/components/sidebar/UpdatesTab.vue` | Settings tab: mode select + Check now + running version |
+| `renderer/composables/useUpdateCheck.ts` | Mode-gated launch check (toast offer), Check now (in-place `updateOffer`), install with progress |
+| `renderer/components/sidebar/UpdatesTab.vue` | Settings tab: mode select + Check now + Update button + running version |

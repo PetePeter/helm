@@ -4,7 +4,7 @@
  */
 import { onMounted, ref } from 'vue';
 import { appClient, updateClient } from '../../ipc/clients.js';
-import { checkForAppUpdateNow } from '../../composables/useUpdateCheck.js';
+import { checkForAppUpdateNow, installStatus, installUpdate, updateOffer } from '../../composables/useUpdateCheck.js';
 
 type UpdateCheckMode = 'auto' | 'manual';
 
@@ -55,8 +55,14 @@ async function onCheckNow(): Promise<void> {
     </label>
 
     <div class="updates-setting">
-      <button class="btn btn--primary btn--sm focusable" :disabled="checking" @click="onCheckNow">Check now</button>
-      <span v-if="status" class="updates-status">{{ status }}</span>
+      <button class="btn btn--secondary btn--sm focusable" :disabled="checking" @click="onCheckNow">Check now</button>
+      <button
+        v-if="updateOffer"
+        class="btn btn--primary btn--sm focusable updates-install"
+        :disabled="installStatus !== '' && !installStatus.startsWith('Update failed')"
+        @click="installUpdate"
+      >Update to v{{ updateOffer.version }}</button>
+      <span v-if="installStatus || status" class="updates-status">{{ installStatus || status }}</span>
     </div>
   </div>
 </template>
