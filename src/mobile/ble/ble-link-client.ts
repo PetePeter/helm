@@ -87,6 +87,14 @@ const DEFAULT_RECONNECT_MAX_MS = 30_000;
  * ceiling directly delays every OTHER phone's discovery too.
  */
 const DEFAULT_STEP_TIMEOUT_MS = 5_000;
+/**
+ * GATT discovery gets its own, longer ceiling. It was 2.7-3.9s on real
+ * hardware and then exceeded 5s after a Windows cumulative update. Worse, a
+ * discover that times out leaves Windows holding the half-open link: the phone
+ * believes it is connected, stops advertising, and stays invisible until the
+ * PC reboots. Waiting longer once is far cheaper than failing.
+ */
+const DEFAULT_DISCOVER_TIMEOUT_MS = 20_000;
 /** Windows can report the first uncached GATT query as unreachable while the
  * connection is still settling. A bounded retry lets the stack converge. */
 const DISCOVERY_ATTEMPTS = 2;
@@ -168,6 +176,8 @@ export interface BleLinkClientOptions {
   serviceUuid?: string;
   reconnectBaseMs?: number;
   reconnectMaxMs?: number;
+  /** Ceiling on GATT discovery; see DEFAULT_DISCOVER_TIMEOUT_MS. */
+  discoverTimeoutMs?: number;
   /** Per-step ceiling on the connect sequence; see DEFAULT_STEP_TIMEOUT_MS. */
   stepTimeoutMs?: number;
   /** Ceiling on one unsettled chunk write or disconnect; see DEFAULT_WRITE_TIMEOUT_MS. */
@@ -195,6 +205,7 @@ export class BleLinkClient extends EventEmitter {
   private readonly reconnectBaseMs: number;
   private readonly reconnectMaxMs: number;
   private readonly stepTimeoutMs: number;
+  private readonly discoverTimeoutMs: number;
   private readonly writeTimeoutMs: number;
   private readonly rejectIgnoreMs: number;
   private readonly now: () => number;
@@ -234,6 +245,7 @@ export class BleLinkClient extends EventEmitter {
     this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
     this.stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+    this.discoverTimeoutMs = options.discoverTimeoutMs ?? DEFAULT_DISCOVER_TIMEOUT_MS;
     this.writeTimeoutMs = options.writeTimeoutMs ?? DEFAULT_WRITE_TIMEOUT_MS;
     this.rejectIgnoreMs = options.rejectIgnoreMs ?? DEFAULT_REJECT_IGNORE_MS;
     this.now = options.now ?? Date.now;
@@ -500,11 +512,14 @@ export class BleLinkClient extends EventEmitter {
     let lastError: unknown;
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt += 1) {
       try {
-        return await this.bounded('discover', () =>
-          peripheral.discoverSomeServicesAndCharacteristicsAsync(
-            [this.serviceUuid],
-            [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
-          ),
+        return await this.bounded(
+          'discover',
+          () =>
+            peripheral.discoverSomeServicesAndCharacteristicsAsync(
+              [this.serviceUuid],
+              [HELM_RX_UUID_SHORT, HELM_TX_UUID_SHORT],
+            ),
+          this.discoverTimeoutMs,
         );
       } catch (error) {
         lastError = error;
@@ -529,11 +544,11 @@ export class BleLinkClient extends EventEmitter {
    * in-flight GATT operation — so its eventual rejection is swallowed rather
    * than surfacing as an unhandled rejection long after we stopped caring.
    */
-  private bounded<T>(step: string, run: () => Promise<T>): Promise<T> {
+  private bounded<T>(step: string, run: () => Promise<T>, timeoutMs = this.stepTimeoutMs): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
-        reject(new Error(`${step} timed out after ${this.stepTimeoutMs}ms`));
-      }, this.stepTimeoutMs);
+        reject(new Error(`${step} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       run().then(
         (value) => {
@@ -560,8 +575,11 @@ export class BleLinkClient extends EventEmitter {
    * never got that far" is not something this layer can know.
    */
   private async abandon(peripheral: NoblePeripheral): Promise<void> {
+    // Bounded: a wedged stack never settles the disconnect, and an unbounded
+    // await here would skip the rescan and leave Helm deaf until restart.
     try {
-      await peripheral.disconnectAsync();
+      await this.bounded('cleanup disconnect', () => peripheral.disconnectAsync());
+      this.log(`BLE cleanup disconnect of ${peripheral.id} completed`);
     } catch (error) {
       this.log(`BLE cleanup disconnect of ${peripheral.id} failed`, error);
     }

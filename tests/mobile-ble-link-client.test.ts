@@ -16,7 +16,7 @@ import { SecureChannel } from '../src/mobile/secure-channel';
 import { FakeNoble, FakePeripheral } from './helpers/fake-noble';
 
 /** Build a client wired to a fake adapter, with logging captured. */
-function build(options: { stepTimeoutMs?: number } = {}) {
+function build(options: { stepTimeoutMs?: number; discoverTimeoutMs?: number } = {}) {
   const noble = new FakeNoble();
   const logs: string[] = [];
   const client = new BleLinkClient({
@@ -145,7 +145,7 @@ describe('BleLinkClient scan start failures', () => {
 describe('BleLinkClient connect sequence failures', () => {
   /** Drive a client to the point of discovering one peripheral. */
   async function attempt(phone: FakePeripheral, stepTimeoutMs = 10_000) {
-    const { noble, client, logs } = build({ stepTimeoutMs });
+    const { noble, client, logs } = build({ stepTimeoutMs, discoverTimeoutMs: stepTimeoutMs });
     const errors: Error[] = [];
     client.on('error', (error: Error) => errors.push(error));
     await client.start();
@@ -170,6 +170,37 @@ describe('BleLinkClient connect sequence failures', () => {
     expect(failure).toContain('discover');
     expect(failure).toContain(phone.id);
     expect(failure).toMatch(/failed after \d+ms/);
+  });
+
+  it('waits out a slow first discovery under the default timeouts', async () => {
+    // Regression: after a Windows update the uncached GATT query took >5s; the
+    // failed attempt left the OS holding the link and the phone went invisible.
+    const phone = new FakePeripheral();
+    phone.discoverDelayMs = 8_000;
+    const { noble, client } = build();
+    const errors: Error[] = [];
+    client.on('error', (error: Error) => errors.push(error));
+    await client.start();
+    noble.powerOn();
+    await vi.advanceTimersByTimeAsync(0);
+    noble.discover(phone);
+
+    await vi.advanceTimersByTimeAsync(8_000);
+
+    expect(errors).toEqual([]);
+    expect(phone.tx.subscribed).toBe(true);
+  });
+
+  it('rescans after a failed attempt even when the cleanup disconnect hangs', async () => {
+    const phone = new FakePeripheral();
+    phone.hangDiscover = true;
+    phone.hangDisconnect = true;
+    const { logs } = await attempt(phone, 1_000);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(logs.some((line) => line.includes('cleanup disconnect') && line.includes('failed'))).toBe(true);
+    expect(logs.some((line) => line.startsWith('BLE rescan in'))).toBe(true);
   });
 
   it('retries a transient Windows unreachable discovery and then accepts the link', async () => {

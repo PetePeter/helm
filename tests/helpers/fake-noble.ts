@@ -82,6 +82,8 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
    * await simply never comes back.
    */
   hangDiscover = false;
+  /** Resolve discovery only after this long: Windows' uncached GATT query is slow. */
+  discoverDelayMs = 0;
   /** Never resolve a connect, so the connect step can be timed out too. */
   hangConnect = false;
   /**
@@ -130,6 +132,7 @@ export class FakePeripheral extends EventEmitter implements NoblePeripheral {
     if (this.hangDiscover) {
       return new Promise<{ characteristics: NobleCharacteristic[] }>(() => {});
     }
+    if (this.discoverDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.discoverDelayMs));
     return { characteristics: [this.rx, this.tx, this.ctl] };
   }
 

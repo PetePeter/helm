@@ -225,8 +225,14 @@ Per invariant 7's spirit, a misbehaving radio must not take a session with it:
 
 ### The connect sequence is bounded, and never leaks a connection
 
-`connect → discover → subscribe` each run under a 5s ceiling, and any failure
-disconnects the peripheral before rescanning. Both rules were paid for:
+`connect → discover → subscribe` each run under a ceiling (5s; discovery 20s),
+and any failure disconnects the peripheral, under the same deadline, before
+rescanning. Both rules were paid for:
+
+- **Discovery gets longer.** It took 2.7–3.9s on real hardware, then over 5s
+  after a Windows cumulative update. A discover that times out leaves Windows
+  holding the half-open link: the phone thinks it is connected, stops
+  advertising, and stays invisible until the PC reboots. Waiting once is cheap.
 
 - **A step with no ceiling cannot be blamed.** Discovery was observed never
   returning — noble said `Device is unreachable while discovering services`
