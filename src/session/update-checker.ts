@@ -18,8 +18,8 @@ export function isRepoDownloadUrl(url: string): boolean {
   return typeof url === 'string' && url.startsWith(`https://github.com/${APK_REPO}/releases/download/`);
 }
 
-/** What electron-builder names the NSIS installer: `Helm Setup 3.12.0.exe`. */
-const INSTALLER_ASSET_RE = /^Helm Setup [\d.]+\.exe$/i;
+/** The NSIS installer name (package.json nsis.artifactName). No spaces: GitHub rewrites them to dots on upload. */
+const INSTALLER_ASSET_RE = /^Helm-Setup-[\d.]+\.exe$/i;
 
 export interface ReleaseAsset {
   name: string;

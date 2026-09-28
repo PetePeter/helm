@@ -80,6 +80,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "Helm-Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,

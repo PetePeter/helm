@@ -4,6 +4,7 @@
  * mocking, no Electron.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   compareVersions,
@@ -35,13 +36,22 @@ describe('compareVersions', () => {
 describe('pickInstallerAsset', () => {
   const assets = [
     { name: 'helm-3.12.0.apk', browser_download_url: 'https://github.com/x/helm-3.12.0.apk', size: 1 },
-    { name: 'Helm Setup 3.12.0.exe', browser_download_url: 'https://github.com/x/Helm Setup 3.12.0.exe', size: 2 },
-    { name: 'Helm Setup 3.12.0.exe.blockmap', browser_download_url: 'https://github.com/x/bm', size: 3 },
+    { name: 'Helm-Setup-3.12.0.exe', browser_download_url: 'https://github.com/x/Helm-Setup-3.12.0.exe', size: 2 },
+    { name: 'Helm-Setup-3.12.0.exe.blockmap', browser_download_url: 'https://github.com/x/bm', size: 3 },
     { name: 'latest.yml', browser_download_url: 'https://github.com/x/latest.yml', size: 4 },
   ];
 
   it('picks the NSIS installer and nothing else', () => {
-    expect(pickInstallerAsset(assets)?.name).toBe('Helm Setup 3.12.0.exe');
+    expect(pickInstallerAsset(assets)?.name).toBe('Helm-Setup-3.12.0.exe');
+  });
+
+  // Regression: v4.2.4 shipped "Helm Setup 4.2.4.exe"; GitHub renamed it to
+  // "Helm.Setup.4.2.4.exe" on upload, so every client reported "up to date".
+  it('matches the name package.json builds, which must survive GitHub upload unchanged', () => {
+    const artifactName: string = JSON.parse(readFileSync('package.json', 'utf8')).build.nsis.artifactName;
+    const built = artifactName.replace('${version}', '4.2.5').replace('${ext}', 'exe');
+    expect(built).not.toMatch(/\s/);
+    expect(pickInstallerAsset([{ name: built, browser_download_url: 'u' }])?.name).toBe(built);
   });
 
   it('returns undefined when the release carries no installer', () => {
@@ -55,7 +65,7 @@ describe('parseLatestRelease', () => {
     html_url: `https://github.com/PetePeter/helm/releases/tag/${tag}`,
     assets,
   });
-  const installer = { name: 'Helm Setup 3.12.0.exe', browser_download_url: 'https://github.com/PetePeter/helm/releases/download/v3.12.0/Helm%20Setup%203.12.0.exe', size: 150 };
+  const installer = { name: 'Helm-Setup-3.12.0.exe', browser_download_url: 'https://github.com/PetePeter/helm/releases/download/v3.12.0/Helm-Setup-3.12.0.exe', size: 150 };
 
   it('returns update info when the release is newer', () => {
     const info = parseLatestRelease(release('v3.12.0', [installer]), '3.11.1');

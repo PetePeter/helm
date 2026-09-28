@@ -38,7 +38,7 @@ sequenceDiagram
   user-initiated check that stays silent reads as broken.
 - `parseLatestRelease` (`src/session/update-checker.ts`) compares the tag
   against `app.getVersion()` and picks the one asset matching
-  `Helm Setup X.Y.Z.exe` — APK, blockmap, checksums and Mac builds are ignored.
+  `Helm-Setup-X.Y.Z.exe` — APK, blockmap, checksums and Mac builds are ignored.
 - Every failure (offline, rate limit, DNS, malformed payload) answers
   `{ update: null }` — a failed check must never look like an update, or a
   phantom one.
@@ -49,7 +49,7 @@ sequenceDiagram
    `github.com/PetePeter/helm/releases/download/…` URL. A tampered renderer can
    at worst re-trigger downloading our own release.
 2. **Download** — streamed to disk into the Helm temp dir (app-data, never
-   the repo tree) as `helm-update-Helm Setup X.exe` — never buffered in
+   the repo tree) as `helm-update-Helm-Setup-X.exe` — never buffered in
    memory, the installer is ~150 MB and the main process hosts every PTY.
    Size checked against `Content-Length`. Progress broadcasts on
    `update:progress` to every live window.

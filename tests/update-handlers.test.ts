@@ -37,7 +37,7 @@ vi.mock('../src/utils/logger.js', () => ({
 import { setupUpdateHandlers } from '../src/electron/ipc/update-handlers.js';
 import { buildUpdateScript } from '../src/session/update-checker.js';
 
-const INSTALLER_URL = 'https://github.com/PetePeter/helm/releases/download/v3.12.0/Helm%20Setup%203.12.0.exe';
+const INSTALLER_URL = 'https://github.com/PetePeter/helm/releases/download/v3.12.0/Helm-Setup-3.12.0.exe';
 const INSTALLER_BYTES = Buffer.from('fake-nsis-installer');
 
 function jsonResponse(body: unknown): Response {
@@ -82,7 +82,7 @@ beforeEach(() => {
         html_url: 'https://github.com/PetePeter/helm/releases/tag/v3.12.0',
         assets: [
           { name: 'helm-3.12.0.apk', browser_download_url: 'https://github.com/PetePeter/helm/releases/download/v3.12.0/helm-3.12.0.apk', size: 10 },
-          { name: 'Helm Setup 3.12.0.exe', browser_download_url: INSTALLER_URL, size: INSTALLER_BYTES.length },
+          { name: 'Helm-Setup-3.12.0.exe', browser_download_url: INSTALLER_URL, size: INSTALLER_BYTES.length },
         ],
       });
     }
@@ -155,7 +155,7 @@ describe('update:install', () => {
     expect(result).toEqual({ success: true });
 
     // Installer bytes landed on disk under the temp dir
-    const installerPath = join(testDir, 'helm-update-Helm Setup 3.12.0.exe');
+    const installerPath = join(testDir, 'helm-update-Helm-Setup-3.12.0.exe');
     expect(readFileSync(installerPath)).toEqual(INSTALLER_BYTES);
 
     // The script matches buildUpdateScript for these exact paths
@@ -201,7 +201,7 @@ describe('update:install', () => {
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('truncated') });
     expect(spawnCalls).toEqual([]);
     expect(progress[progress.length - 1]).toMatchObject({ stage: 'failed' });
-    expect(!existsSync(join(testDir, 'helm-update-Helm Setup 3.12.0.exe'))).toBe(true);
+    expect(!existsSync(join(testDir, 'helm-update-Helm-Setup-3.12.0.exe'))).toBe(true);
   });
 
   it('ignores a second install click while one is in flight', async () => {
