@@ -92,6 +92,12 @@ describe('session_compact', () => {
     expect(deliverSpy).not.toHaveBeenCalled();
   });
 
+  it('an API tool compacts through Helm\'s own /compact without any configured action', async () => {
+    const { service } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: [] } });
+    await service.compactSession('s1', { instruction: 'keep ids' });
+    expect(deliveredText()).toBe('/compact keep ids{Enter}');
+  });
+
   it('preserves {Wait N} in the sequence (delivery awaits it to hold the MCP return)', async () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instruction{Enter}{Wait 60000}' } });
     await service.compactSession('s1', { instruction: 'x' });

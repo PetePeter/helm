@@ -278,6 +278,7 @@ export function useSettingsController(options: {
       initialPrompt: Array.isArray(value?.initialPrompt)
         ? value.initialPrompt.map((i: any) => ({ label: i.label || '', sequence: i.sequence || '' }))
         : [],
+      api: value?.api ?? null,
     };
   }
 
@@ -424,6 +425,7 @@ export function useSettingsController(options: {
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
       initialPrompt: [],
+      api: null,
     };
     setToolEditorCallback(async (values) => {
       const name = values.name?.trim();

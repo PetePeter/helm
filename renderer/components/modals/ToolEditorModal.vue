@@ -8,6 +8,8 @@ import { ref, watch, computed } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useFocusTrap } from '../../composables/useFocusTrap.js';
 import PromptTextarea from '../common/PromptTextarea.vue';
+import { toolsClient } from '../../ipc/clients.js';
+import type { ToolEditorApiConfig } from '../../stores/modal-bridge.js';
 
 const MODAL_ID = 'tool-editor-modal';
 const HELM_AUTOFILLED_ENV_ITEMS = [
@@ -16,6 +18,9 @@ const HELM_AUTOFILLED_ENV_ITEMS = [
   { name: 'HELM_SESSION_NAME', value: '<autofilled by helm>' },
 ] as const;
 const HELM_AUTOFILLED_ENV_NAMES = new Set(HELM_AUTOFILLED_ENV_ITEMS.map((item) => item.name));
+const DEFAULT_API_BASE_URL = 'http://127.0.0.1:8080/v1';
+const DEFAULT_MAX_TOOL_ROUNDS = 25;
+type ApiToolCatalogItem = { name: string; description: string; source: 'native' | 'helm' };
 const SUBMIT_SUFFIX_OPTIONS = [
   { label: 'Carriage Return (CR / \\r)', value: '\\r' },
   { label: 'Line Feed (LF / \\n)', value: '\\n' },
@@ -30,6 +35,7 @@ function normalizeSubmitSuffix(value?: string): SubmitSuffixOption {
 }
 
 export interface ToolEditorData {
+  api?: ToolEditorApiConfig | null;
   name: string;
   env: Array<{ name: string; value: string; mode?: 'replace' | 'append' | 'prepend' }>;
   initialPromptDelay: number;
@@ -75,6 +81,7 @@ const emit = defineEmits<{
     submitSuffix: string;
     helmActions: { clear: string; compact: string; export: string };
     _promptItems: Array<{ label: string; sequence: string }>;
+    api: ToolEditorApiConfig | null;
   }): void;
   (e: 'cancel'): void;
   (e: 'update:visible', value: boolean): void;
@@ -99,6 +106,45 @@ const helmActionClear = ref('');
 const helmActionCompact = ref('');
 const helmActionExport = ref('');
 
+// API tool: Helm runs the agent loop itself; no spawn/resume commands apply.
+const toolKind = ref<'cli' | 'api'>('cli');
+const apiBaseUrl = ref(DEFAULT_API_BASE_URL);
+const apiModel = ref('');
+const apiKeyEnv = ref('');
+const apiMaxToolRounds = ref(DEFAULT_MAX_TOOL_ROUNDS);
+const apiSlots = ref(1);
+const apiSystemPrompt = ref('');
+const apiAllowed = ref<Set<string>>(new Set());
+const apiCatalog = ref<ApiToolCatalogItem[]>([]);
+const apiCatalogGroups = computed(() => ([
+  { source: 'native' as const, label: 'Native', tools: apiCatalog.value.filter(t => t.source === 'native') },
+  { source: 'helm' as const, label: 'Helm', tools: apiCatalog.value.filter(t => t.source === 'helm') },
+]));
+
+async function loadApiCatalog(): Promise<void> {
+  try {
+    apiCatalog.value = await toolsClient.toolsApiToolCatalog();
+  } catch (error) {
+    console.error('Failed to load API tool catalog:', error);
+    apiCatalog.value = [];
+  }
+}
+
+function toggleApiTool(toolName: string, on: boolean): void {
+  const next = new Set(apiAllowed.value);
+  if (on) next.add(toolName); else next.delete(toolName);
+  apiAllowed.value = next;
+}
+
+function setApiGroup(source: 'native' | 'helm', on: boolean): void {
+  const next = new Set(apiAllowed.value);
+  for (const tool of apiCatalog.value) {
+    if (tool.source !== source) continue;
+    if (on) next.add(tool.name); else next.delete(tool.name);
+  }
+  apiAllowed.value = next;
+}
+
 interface SeqItem { label: string; sequence: string }
 const promptItems = ref<SeqItem[]>([]);
 
@@ -118,6 +164,7 @@ const modalStack = useModalStack();
 watch(() => props.visible, (v) => {
   if (v) {
     initForm();
+    void loadApiCatalog();
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: FORM_KEYS });
   } else {
     modalStack.pop(MODAL_ID);
@@ -160,6 +207,14 @@ function initForm(): void {
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
   helmActionExport.value = d.helmActions?.export ?? '';
+  toolKind.value = d.api ? 'api' : 'cli';
+  apiBaseUrl.value = d.api?.baseUrl || DEFAULT_API_BASE_URL;
+  apiModel.value = d.api?.model ?? '';
+  apiKeyEnv.value = d.api?.apiKeyEnv ?? '';
+  apiMaxToolRounds.value = d.api?.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+  apiSlots.value = d.api?.slots ?? 1;
+  apiSystemPrompt.value = d.api?.systemPrompt ?? '';
+  apiAllowed.value = new Set(d.api?.allowedTools ?? []);
   promptItems.value = Array.isArray(d.initialPrompt)
     ? d.initialPrompt.map(item => ({
         label: typeof item?.label === 'string' ? item.label : '',
@@ -223,6 +278,21 @@ function onSave(): void {
       export: helmActionExport.value.trim(),
     },
     _promptItems: promptItems.value.map(i => ({ label: i.label, sequence: i.sequence })),
+    api: toolKind.value === 'api'
+      ? {
+          baseUrl: apiBaseUrl.value,
+          model: apiModel.value,
+          apiKeyEnv: apiKeyEnv.value,
+          // Catalog order keeps the saved list stable however the ticks were clicked.
+          allowedTools: [
+            ...apiCatalog.value.map(t => t.name).filter(n => apiAllowed.value.has(n)),
+            ...[...apiAllowed.value].filter(n => !apiCatalog.value.some(t => t.name === n)),
+          ],
+          systemPrompt: apiSystemPrompt.value,
+          maxToolRounds: apiMaxToolRounds.value,
+          slots: apiSlots.value,
+        }
+      : null,
   });
   emit('update:visible', false);
 }
@@ -260,6 +330,49 @@ defineExpose({ handleButton });
             </div>
             <p v-if="nameError" class="te-error">{{ nameError }}</p>
             <p v-if="mode !== 'add' && editKey" class="te-identity">id: {{ editKey }}</p>
+            <div class="te-field">
+              <label for="te-kind">Type</label>
+              <select id="te-kind" v-model="toolKind" class="te-select focusable">
+                <option value="cli">CLI (spawned in a terminal)</option>
+                <option value="api">API tool (Helm runs the model)</option>
+              </select>
+              <p class="te-section__hint">An API tool talks to an OpenAI-compatible endpoint directly. Helm runs the agent loop, the ticked tools and the chat reply itself.</p>
+            </div>
+          </fieldset>
+
+          <fieldset v-if="toolKind === 'api'" class="te-section">
+            <legend class="te-section__legend">API</legend>
+            <div class="te-grid-2col">
+              <div class="te-field"><label for="te-api-url">Base URL</label><input id="te-api-url" v-model="apiBaseUrl" type="text" :placeholder="DEFAULT_API_BASE_URL" class="te-input te-input--mono focusable" /></div>
+              <div class="te-field"><label for="te-api-model">Model</label><input id="te-api-model" v-model="apiModel" type="text" placeholder="e.g. minicpm" class="te-input te-input--mono focusable" /></div>
+              <div class="te-field"><label for="te-api-key">API key env var</label><input id="te-api-key" v-model="apiKeyEnv" type="text" placeholder="e.g. OPENROUTER_API_KEY" class="te-input te-input--mono focusable" /></div>
+              <div class="te-field"><label for="te-api-rounds">Max tool rounds</label><input id="te-api-rounds" v-model.number="apiMaxToolRounds" type="number" min="1" step="1" class="te-input focusable" /></div>
+              <div class="te-field"><label for="te-api-slots">Slots</label><input id="te-api-slots" v-model.number="apiSlots" type="number" min="1" step="1" class="te-input focusable" /></div>
+            </div>
+            <p class="te-section__hint">Slots: model requests in flight at once (match the server's parallel slots). Subagents queue for a free slot.</p>
+            <p class="te-section__hint">Only the variable name is stored; Helm reads the key from the environment at spawn.</p>
+            <div class="te-field">
+              <label for="te-api-system">Extra system prompt</label>
+              <textarea id="te-api-system" v-model="apiSystemPrompt" rows="3" class="te-input focusable" placeholder="Appended to Helm's built-in instructions"></textarea>
+            </div>
+            <div v-for="group in apiCatalogGroups" :key="group.source" class="te-api-group">
+              <div class="te-api-group__header">
+                <span class="te-api-group__title">{{ group.label }} tools</span>
+                <button type="button" class="btn btn--sm btn--secondary focusable" @click="setApiGroup(group.source, true)">All</button>
+                <button type="button" class="btn btn--sm btn--secondary focusable" @click="setApiGroup(group.source, false)">None</button>
+              </div>
+              <label v-for="tool in group.tools" :key="tool.name" class="te-api-tool">
+                <input
+                  type="checkbox"
+                  class="focusable"
+                  :checked="apiAllowed.has(tool.name)"
+                  @change="toggleApiTool(tool.name, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="te-api-tool__name">{{ tool.name }}</span>
+                <span class="te-api-tool__desc">{{ tool.description }}</span>
+              </label>
+              <p v-if="group.tools.length === 0" class="te-section__hint">No tools available.</p>
+            </div>
           </fieldset>
 
           <fieldset class="te-section">
@@ -294,7 +407,7 @@ defineExpose({ handleButton });
             <button type="button" class="btn btn--secondary" @click="addEnvItem">+ Add Variable</button>
           </fieldset>
 
-          <fieldset class="te-section">
+          <fieldset v-if="toolKind === 'cli'" class="te-section">
             <legend class="te-section__legend">Launch</legend>
             <div class="te-field"><label for="te-spawn">Spawn Command</label><input id="te-spawn" v-model="spawnCommand" type="text" placeholder="e.g. codex --dangerously-bypass-approvals-and-sandbox" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-resume">Resume Command</label><input id="te-resume" v-model="resumeCommand" type="text" placeholder="Template for resuming sessions" class="te-input te-input--mono" /></div>
@@ -424,4 +537,11 @@ defineExpose({ handleButton });
 .te-prompt-item__header { display: flex; align-items: center; gap: 6px; }
 .te-prompt-item__header .te-input--sm { flex: 1; }
 .sequence-list-add { width: 100%; margin-top: 4px; }
+.te-api-group { display: flex; flex-direction: column; gap: 2px; }
+.te-api-group__header { display: flex; align-items: center; gap: var(--spacing-xs); margin: var(--spacing-xs) 0; }
+.te-api-group__title { flex: 1; font-size: var(--font-size-sm); font-weight: 600; color: var(--text-secondary); }
+.te-api-tool { display: grid; grid-template-columns: 16px 160px 1fr; align-items: baseline; gap: var(--spacing-sm); padding: 2px 0; font-size: var(--font-size-sm); color: var(--text-primary); cursor: pointer; }
+.te-api-tool input { width: 16px; height: 16px; align-self: center; }
+.te-api-tool__name { font-family: 'Consolas', 'Courier New', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-api-tool__desc { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

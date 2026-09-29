@@ -91,3 +91,45 @@ describe('spawnConfiguredSession', () => {
     expect(addSession).toHaveBeenCalledWith(expect.objectContaining({ id: 'op', role: 'operator', locked: true }));
   });
 });
+
+describe('spawnConfiguredSession — API tools', () => {
+  it('adopts a Helm-hosted API session instead of spawning a CLI, and flags the row', async () => {
+    const { ApiSessionHost, registerApiSessionHost } = await import('../src/session/api/api-session-host.js');
+    registerApiSessionHost(new ApiSessionHost({
+      dispatchTool: async () => ({}),
+      postChat: async () => ({}),
+      createMemory: () => ({ id: 'm' }),
+      linkMemory: () => {},
+      mcpTools: () => [],
+      listSkills: () => [],
+      getMission: () => undefined,
+      recordToolRequest: () => {},
+      emitHook: () => {},
+      historyDir: 'unused-no-turns-run',
+    }));
+    try {
+      const ptyManager = { spawn: vi.fn(), adopt: vi.fn(), write: vi.fn() };
+      const addSession = vi.fn();
+      const api = { baseUrl: 'http://127.0.0.1:8080/v1', model: 'minicpm', allowedTools: ['Read'] };
+      const configLoader = {
+        resolveCliType: () => ({ id: 'api-type', config: { name: 'Mini', displayName: 'Mini', api } }),
+        getCliTypeEntry: () => ({ name: 'Mini', api }),
+      };
+
+      const result = spawnConfiguredSession({
+        ptyManager: ptyManager as any,
+        sessionManager: { addSession, updateSession: vi.fn(), hasSession: () => false, getSession: () => undefined } as any,
+        configLoader: configLoader as any,
+        cliType: 'api-type',
+        cwd: 'X:\coding\gamepad-cli-hub',
+      });
+
+      // No spawnCommand exists on an API type — resolving one would throw.
+      expect(ptyManager.spawn).not.toHaveBeenCalled();
+      expect(ptyManager.adopt).toHaveBeenCalledWith(result.sessionId, result.pty, expect.any(Object));
+      expect(addSession).toHaveBeenCalledWith(expect.objectContaining({ apiTool: true, processId: 0, name: 'Mini' }));
+    } finally {
+      registerApiSessionHost(null);
+    }
+  });
+});

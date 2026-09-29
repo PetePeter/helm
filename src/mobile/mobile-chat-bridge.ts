@@ -32,7 +32,8 @@
  */
 
 import { logger } from '../utils/logger.js';
-import { GateError, MOBILE_DENY_MESSAGE, RESERVED_CHAT_CURSOR_METHOD } from './mobile-gate.js';
+import { GateError, MOBILE_DENY_MESSAGE, RESERVED_CHAT_CURSOR_METHOD, RESERVED_CHAT_DELETE_METHOD } from './mobile-gate.js';
+import type { ChatJournalEntry } from './mobile-chat-journal.js';
 import {
   BLOB_UPLOAD_MIN_PROTOCOL,
 } from './protocol-version.js';
@@ -98,8 +99,13 @@ export interface MobileChatBridgeDeps {
    * protocol from pushing bytes at a reassembler its handshake never agreed to.
    */
   negotiatedProtocol?: (machineId: string) => number;
+  /** Told which journaled messages a user deleted — an API tool drops them from its history. */
+  onMessagesDeleted?: (sessionId: string, removed: ChatJournalEntry[]) => void;
   now?: () => number;
 }
+
+/** One bubble the user deleted: a journaled message by seq, or a phone's own send by originId. */
+export type ChatDeleteItem = { seq: number } | { originId: string };
 
 export class MobileChatBridge implements ChatBridge {
   readonly provider = MOBILE_CHAT_PROVIDER;
@@ -165,6 +171,7 @@ export class MobileChatBridge implements ChatBridge {
             sizeBytes: message.attachment.sizeBytes,
           }
         : {}),
+      ...(message.usage ? { contextTokens: message.usage.contextTokens, toolCalls: message.usage.toolCalls } : {}),
     };
 
     // Journaled BEFORE anyone is told, with its seq: the seq is what a phone
@@ -192,6 +199,34 @@ export class MobileChatBridge implements ChatBridge {
       at: this.now(),
       originId: `desktop:${turnId}`,
     });
+  }
+
+  /**
+   * Delete journaled messages of one session: each is removed from the journal
+   * and replaced by a `kind: 'deleted'` tombstone pushed to every surface (and
+   * journaled, so offline phones catch up). Unknown items are skipped — the
+   * phone already removed its bubble, and a lost message is not an error.
+   */
+  deleteMessages(sessionId: string, items: readonly ChatDeleteItem[]): number {
+    const session = this.deps.sessions.getSession(sessionId);
+    const removed: ChatJournalEntry[] = [];
+    for (const item of items) {
+      const target = 'seq' in item
+        ? this.deps.journal.since(item.seq - 1).find(entry => entry.seq === item.seq && entry.record.sessionId === sessionId) ?? null
+        : this.deps.journal.findByOriginId(sessionId, item.originId);
+      if (!target || !this.deps.journal.remove(target.seq)) continue;
+      removed.push(target);
+      this.journalAndPush({
+        sessionId,
+        sessionName: session?.name ?? target.record.sessionName,
+        text: '',
+        at: this.now(),
+        kind: 'deleted',
+        deletes: target.seq,
+      });
+    }
+    if (removed.length) this.deps.onMessagesDeleted?.(sessionId, removed);
+    return removed.length;
   }
 
   private journalAndPush(input: ChatRecordInput): ChatSendResult {
@@ -344,6 +379,10 @@ export class MobileChatBridge implements ChatBridge {
       if (record.method === RESERVED_CHAT_CURSOR_METHOD) {
         this.replayAfter(machineId, cursorIn(record.params));
       }
+      if (record.method === RESERVED_CHAT_DELETE_METHOD) {
+        const request = chatDeleteIn(record.params);
+        if (request) this.deleteMessages(request.sessionId, request.items);
+      }
       // An ACCEPTED reply from a phone is part of the conversation the journal
       // exists to preserve — without this, a refetch after an app restart would
       // restore only the agent's half of every thread. Journaled ONLY: nothing
@@ -492,4 +531,19 @@ function cursorIn(params: unknown): number {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error);
+}
+
+/** The `__chat_delete__` params, validated; null when there is nothing usable. */
+function chatDeleteIn(params: unknown): { sessionId: string; items: ChatDeleteItem[] } | null {
+  if (!params || typeof params !== 'object') return null;
+  const { sessionId, items } = params as { sessionId?: unknown; items?: unknown };
+  if (typeof sessionId !== 'string' || !Array.isArray(items)) return null;
+  const valid = items.flatMap((item): ChatDeleteItem[] => {
+    if (!item || typeof item !== 'object') return [];
+    const { seq, originId } = item as { seq?: unknown; originId?: unknown };
+    if (typeof seq === 'number' && Number.isInteger(seq)) return [{ seq }];
+    if (typeof originId === 'string' && originId) return [{ originId }];
+    return [];
+  });
+  return valid.length ? { sessionId, items: valid } : null;
 }

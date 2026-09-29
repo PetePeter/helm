@@ -292,6 +292,9 @@ export class HelmSessionService {
       ...(session.locked ? { locked: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.role ? { role: session.role } : {}),
+      ...(session.apiTool ? { apiTool: true } : {}),
+      ...(session.subagentOf ? { subagentOf: session.subagentOf } : {}),
+      ...(session.pendingSubagents ? { pendingSubagents: session.pendingSubagents } : {}),
     };
   }
 

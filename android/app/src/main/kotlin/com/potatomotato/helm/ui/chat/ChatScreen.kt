@@ -17,6 +17,11 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,7 +44,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +83,8 @@ import com.potatomotato.helm.data.Draft
 import com.potatomotato.helm.data.PrefsDraftStore
 import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.data.rangeSelection
+import com.potatomotato.helm.data.replyStats
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.LinkedText
@@ -104,7 +110,8 @@ fun ChatScreen(
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
     onRetry: (key: String, text: String) -> Unit,
-    onDelete: (key: String) -> Unit,
+    /** Delete rows by key: one (a failed send's cross) or a whole selection. */
+    onDelete: (keys: Set<String>) -> Unit,
     onTerminal: () -> Unit,
     modifier: Modifier = Modifier,
     /** Per-message attachment fetch state, keyed like the thread. */
@@ -138,6 +145,19 @@ fun ChatScreen(
         )
     }
     val listState = rememberLazyListState()
+
+    // Selection mode: long-press a bubble to start, tap to toggle. Keyed on the
+    // session like the draft: a selection never follows the user into another
+    // thread. Rows that vanish (deleted elsewhere, capped out) drop out of it.
+    var selectedKeys by rememberSaveable(sessionId) { mutableStateOf(listOf<String>()) }
+    val liveKeys = messages.map { it.key }
+    val selected = selectedKeys.filter { it in liveKeys }.toSet()
+    val selecting = selected.isNotEmpty()
+    fun toggle(key: String) {
+        selectedKeys = if (key in selected) (selected - key).toList() else (selected + key).toList()
+    }
+    val clipboard = LocalClipboardManager.current
+    BackHandler(enabled = selecting) { selectedKeys = emptyList() }
 
     // Every entry into a thread starts at the newest bubble. Seeding the list
     // state is not enough: history often lands AFTER first composition (empty →
@@ -177,6 +197,24 @@ fun ChatScreen(
     // tab row) is owned by the session scaffold, so it does not flicker or
     // re-lay-out when the user moves between a session's tabs.
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
+        if (selecting) {
+            SelectionBar(
+                count = selected.size,
+                onCopy = {
+                    // Thread order, not tap order: a copied exchange reads as it happened.
+                    val text = messages.filter { it.key in selected }.joinToString("\n\n") { it.text }
+                    clipboard.setText(AnnotatedString(text))
+                    selectedKeys = emptyList()
+                },
+                onRange = { selectedKeys = rangeSelection(liveKeys, selected).toList() },
+                onDelete = {
+                    onDelete(selected)
+                    selectedKeys = emptyList()
+                },
+                onCancel = { selectedKeys = emptyList() },
+            )
+            Hairline()
+        }
         if (messages.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(HelmSpacing.Xl),
@@ -199,6 +237,9 @@ fun ChatScreen(
                 items(messages, key = { it.key }) {
                     Bubble(
                         message = it,
+                        selected = it.key in selected,
+                        onTap = if (selecting) ({ toggle(it.key) }) else null,
+                        onLongPress = { toggle(it.key) },
                         onRetry = onRetry,
                         onDelete = onDelete,
                         pulls = pulls,
@@ -248,11 +289,51 @@ fun ChatScreen(
     }
 }
 
+/**
+ * Sits above the thread while rows are selected: how many, and what can be
+ * done to them. Copy lives here rather than on a per-bubble text selection
+ * because long-press now means "select this message"; a selection of one
+ * copies exactly what the old gesture did.
+ */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    onCopy: () -> Unit,
+    onRange: () -> Unit,
+    onDelete: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(HelmColors.Surface)
+            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Xs),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+    ) {
+        Text(
+            text = stringResource(R.string.chat_selected, count),
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.weight(1f),
+        )
+        BubbleAction(R.string.chat_copy_glyph, R.string.chat_copy, HelmColors.Dim, onCopy)
+        BubbleAction(R.string.chat_range_glyph, R.string.chat_range, HelmColors.Dim, onRange)
+        BubbleAction(R.string.chat_delete_glyph, R.string.chat_delete_selected, HelmColors.Danger, onDelete)
+        BubbleAction(R.string.chat_cancel_glyph, R.string.chat_cancel_selection, HelmColors.Dim, onCancel)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Bubble(
     message: ChatMessage,
+    selected: Boolean,
+    /** Non-null while selecting: a tap toggles this row. */
+    onTap: (() -> Unit)?,
+    onLongPress: () -> Unit,
     onRetry: (key: String, text: String) -> Unit,
-    onDelete: (key: String) -> Unit,
+    onDelete: (keys: Set<String>) -> Unit,
     pulls: Map<String, PullState>,
     onPull: (key: String, attachment: ChatAttachment) -> Unit,
     onCancelPull: (key: String) -> Unit,
@@ -271,7 +352,14 @@ private fun Bubble(
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(HelmRadius.Md))
+            .then(if (selected) Modifier.background(HelmColors.Accent.copy(alpha = SELECTED_TINT)) else Modifier)
+            .combinedClickable(
+                onClick = { onTap?.invoke() },
+                onLongClick = onLongPress,
+            ),
         horizontalArrangement = if (fromPhone) Arrangement.End else Arrangement.Start,
     ) {
         Column(
@@ -295,10 +383,10 @@ private fun Bubble(
                     .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
             ) {
                 Column {
-                    // Selection lives on the message text alone, not the bubble:
-                    // the least the user needs — long-press to copy what arrived —
-                    // and the timestamp and delivery note stay outside it.
-                    SelectionContainer {
+                    // Long-press selects the MESSAGE (copy and delete live on the
+                    // selection bar), so the text is no longer a text selection of
+                    // its own: the two gestures would fight over one press.
+                    run {
                         // Linked, not markdown: a chat message is prose, and the
                         // one thing in it worth a tap is a URL. LinkedText keeps
                         // every other marker literal.
@@ -322,6 +410,15 @@ private fun Bubble(
                             onCancel = { onCancelPull(message.key) },
                             onDelete = { onDeleteAttachment(message.key, attachment) },
                             onOpen = onOpenAttachment,
+                        )
+                    }
+                    // API-tool replies carry the turn's cost: context size and tool calls.
+                    replyStats(message.contextTokens, message.toolCalls)?.let { stats ->
+                        Text(
+                            text = stats,
+                            color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(top = HelmSpacing.Xs),
                         )
                     }
                     Text(
@@ -356,7 +453,7 @@ private fun Bubble(
                             onRetry(message.key, message.text)
                         }
                         BubbleAction(R.string.chat_delete_glyph, R.string.chat_delete, HelmColors.Dim) {
-                            onDelete(message.key)
+                            onDelete(setOf(message.key))
                         }
                     }
                 }
@@ -943,6 +1040,9 @@ private val HOLD_ARROW_RISE = 18.dp
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private const val BUBBLE_WIDTH_FRACTION = 0.75f
+
+/** Accent wash behind a selected row: visible on true black, text still readable. */
+private const val SELECTED_TINT = 0.16f
 
 /**
  * The three circles stacked with their gaps — the composer field's minimum

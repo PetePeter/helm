@@ -27,7 +27,35 @@ export interface HelmActionMap {
   export?: string;
 }
 
+/**
+ * An API tool: Helm runs the agent loop itself against an OpenAI-compatible
+ * chat-completions endpoint instead of spawning a CLI. Its presence on a CLI
+ * type is what makes the type an API tool — spawn/resume commands are ignored.
+ */
+export interface ApiToolConfig {
+  /** Base URL up to and including `/v1`, e.g. http://127.0.0.1:8080/v1. */
+  baseUrl: string;
+  /** Model name sent in each request (a llama router section, an OpenRouter slug, ...). */
+  model: string;
+  /** Name of an environment variable holding the bearer key. The key itself is never stored. */
+  apiKeyEnv?: string;
+  /** Ticked tools — native tool names and Helm MCP tool names. Anything unticked is never offered. */
+  allowedTools: string[];
+  /** Extra instructions appended to Helm's constant system prompt. */
+  systemPrompt?: string;
+  /** Upper bound on model→tool round trips in one turn. Default 25. */
+  maxToolRounds?: number;
+  /**
+   * Model requests this API tool may have in flight at once, across all its
+   * sessions and their subagents — match the server's parallel slots. Default 1.
+   * Extra requests (e.g. many subagents) queue for a free slot.
+   */
+  slots?: number;
+}
+
 export type CliTypeOptions = {
+  /** API tool block; null clears it on update. */
+  api?: ApiToolConfig | null;
   env?: EnvVarEntry[];
   renameCommand?: string;
   spawnCommand?: string;

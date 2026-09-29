@@ -10,6 +10,7 @@ import {
   normalizeFleetPort,
   normalizeMobileLanPort,
   parseCommandTemplate,
+  type ApiToolConfig,
   type CliTypeOptions,
   type EnvVarEntry,
   type HelmActionMap,
@@ -40,7 +41,7 @@ import {
 import { DEFAULT_MAX_AUTO_CONTINUES, type LoopConfig } from '../session/hooks/loop-driver.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
-export type { CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
+export type { ApiToolConfig, CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
 export { AmbiguousCliTypeError } from './cli-type-store.js';
 export type { ResolvedCliType } from './cli-type-store.js';
 
@@ -228,6 +229,8 @@ export interface CliTypeConfig {
   provider?: 'claude' | 'codex' | 'copilot' | null;
   /** Legacy carrier of provider + denyRules for this type. Install/uninstall no longer read it; denyRules remain user-editable here. */
   hooks?: CliHooksIntegration;
+  /** Present = an API tool: Helm hosts the agent loop in-process, no CLI is spawned. */
+  api?: ApiToolConfig;
 }
 
 export interface ButtonBindings {
@@ -1325,6 +1328,7 @@ export class ConfigLoader {
     if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
     const helmActions = this.cleanHelmActions(options?.helmActions);
     if (helmActions) tool.helmActions = helmActions;
+    if (options?.api) tool.api = options.api;
     this.cliTypeStore.add(id, tool);
     return id;
   }
@@ -1409,6 +1413,10 @@ export class ConfigLoader {
         } else {
           existing.mouseTracking = true;
         }
+      }
+      if (options.api !== undefined) {
+        if (options.api) existing.api = options.api;
+        else delete existing.api;
       }
       if (options.helmActions !== undefined) {
         // undefined = preserve; provided = replace with the cleaned map (empty fields drop, empty map clears).

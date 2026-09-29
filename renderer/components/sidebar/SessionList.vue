@@ -39,6 +39,8 @@ interface SessionListGroupSession {
   cliSessionName?: string;
   /** G8: active auto-continue count — drives the loop badge on the card. */
   loopContinues?: number;
+  /** Subagents this session is waiting on — the 🔥 badge. */
+  pendingSubagents?: number;
 }
 
 type SessionListFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -257,6 +259,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :draft-count="draftCounts.get(session.id) ?? 0"
               :artifact-count="artifactCounts.get(session.id) ?? 0"
               :loop-continues="session.loopContinues ?? 0"
+              :pending-subagents="session.pendingSubagents ?? 0"
               :elapsed-text="sessionElapsedText(session.id)"
               :working-plan-label="workingPlanLabels.get(session.id) || ''"
               :working-plan-tooltip="workingPlanTooltips.get(session.id) || ''"

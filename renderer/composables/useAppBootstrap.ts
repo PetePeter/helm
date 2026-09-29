@@ -168,6 +168,8 @@ export async function refreshSessions(): Promise<void> {
   }
 
   for (const managed of managedSessions) {
+    // Subagents are the parent's business: they show as its 🔥 count, not as rows.
+    if (managed.subagentOf) continue;
     const terminalSession = tm?.getSession(managed.id);
     const workingDir = terminalSession?.cwd || managed.workingDir || '';
     const resolvedProject = managed.projectPath ? undefined : findProjectForPath(workingDir);
@@ -199,6 +201,11 @@ export async function refreshSessions(): Promise<void> {
       missionBarHeight: managed.missionBarHeight,
       // Allow-list again: without it the operator badge blanks on refresh.
       role: managed.role,
+      // And the API-tool flag, or its pane falls back to a bare terminal.
+      apiTool: managed.apiTool,
+      pendingSubagents: managed.pendingSubagents,
+      // And the loop badge's count, which this allow-list had been dropping.
+      loopContinues: managed.loopContinues,
     } as Session);
 
     const displayState = managed.aiagentState ?? managed.state;

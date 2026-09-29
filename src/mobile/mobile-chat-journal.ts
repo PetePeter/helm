@@ -99,6 +99,20 @@ export class MobileChatJournal {
     return entry;
   }
 
+  /** Remove one entry by seq (a user deleting a chat bubble). Returns it, or null when absent. */
+  remove(seq: number): ChatJournalEntry | null {
+    const index = this.entries.findIndex(entry => entry.seq === seq);
+    if (index < 0) return null;
+    const [removed] = this.entries.splice(index, 1);
+    this.save();
+    return removed;
+  }
+
+  /** A phone's own message, located by the originId it was journaled with. */
+  findByOriginId(sessionId: string, originId: string): ChatJournalEntry | null {
+    return this.entries.find(entry => entry.record.sessionId === sessionId && entry.record.originId === originId) ?? null;
+  }
+
   /** Every entry after `seq`, oldest first. The whole journal for a cursor of 0. */
   since(seq: number): ChatJournalEntry[] {
     return this.entries.filter(entry => entry.seq > seq);

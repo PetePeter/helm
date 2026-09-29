@@ -415,3 +415,17 @@ describe('deliverPromptSequenceToSession', () => {
     });
   });
 });
+
+describe('deliverPromptSequenceToSession — API tools', () => {
+  it('skips terminal-activity verification: an API session takes the line synchronously', async () => {
+    const mocks = makeMocks();
+    mocks.configLoader.getCliTypeEntry.mockReturnValue({ submitSuffix: '\r', api: { baseUrl: 'x', model: 'm', allowedTools: [] } } as any);
+    // Verification would read the terminal tail; an API session must never reach it.
+    mocks.ptyManager.getTerminalTail = vi.fn(() => { throw new Error('verification must not run'); });
+
+    const result = await deliver('hi', mocks, { verifyDelivery: { label: 'test', delayMs: 0 } });
+
+    expect(result).toBeUndefined();
+    expect(mocks.ptyManager.deliverText).toHaveBeenCalledWith('s1', 'hi');
+  });
+});

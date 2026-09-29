@@ -30,6 +30,14 @@ export interface ChatOutboundMessage {
   attachment?: ChatAttachmentRef;
   /** Send an audio attachment as a native voice message where supported. */
   asVoice?: boolean;
+  /** An API-tool reply's cost, shown as a badge where the surface can (the phone, the desktop pane). */
+  usage?: ChatTurnUsage;
+}
+
+/** What one API-tool turn cost: the model context size after it, and the tool calls it made. */
+export interface ChatTurnUsage {
+  contextTokens: number;
+  toolCalls: number;
 }
 
 /** Where a chat file lives once Helm owns a copy of it. */

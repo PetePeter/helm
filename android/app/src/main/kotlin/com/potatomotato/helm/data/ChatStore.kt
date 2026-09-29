@@ -124,6 +124,9 @@ internal object ChatSnapshotJson {
         message.filePath?.let { put("filePath", it) }
         if (message.voice) put("voice", true)
         message.seq?.let { put("seq", it) }
+        message.originId?.let { put("originId", it) }
+        message.contextTokens?.let { put("contextTokens", it) }
+        message.toolCalls?.let { put("toolCalls", it) }
         message.attachment?.let {
             put("attachment", JSONObject().apply {
                 put("artifactId", it.artifactId)
@@ -172,5 +175,8 @@ internal object ChatSnapshotJson {
             )
         },
         seq = if (row.has("seq")) row.getLong("seq") else null,
+        originId = if (row.has("originId")) row.getString("originId") else null,
+        contextTokens = if (row.has("contextTokens")) row.getLong("contextTokens") else null,
+        toolCalls = if (row.has("toolCalls")) row.getInt("toolCalls") else null,
     )
 }

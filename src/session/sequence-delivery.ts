@@ -168,7 +168,11 @@ export async function deliverPromptSequenceToSession(input: {
 
   await runTransaction();
 
-  if (!verifyDelivery) return undefined;
+  // Verification infers "the CLI took it" from terminal activity, which fits a
+  // TUI that repaints constantly. An API tool is an in-process line editor: once
+  // the write returns, the line is submitted or queued — nothing to verify, and
+  // waiting for its first model output would outlast every caller's deadline.
+  if (!verifyDelivery || cliEntry?.api) return undefined;
 
   const verifyRequest = {
     sessionId,

@@ -695,3 +695,53 @@ describe('MobileChatBridge echoing a desktop voice turn', () => {
     expect(journal.since(0)).toEqual([]);
   });
 });
+
+describe('deleting chat messages', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('a phone __chat_delete__ removes the journaled messages and pushes a tombstone for each', async () => {
+    links.online.add('phone-machine');
+    await bridge.sendToSession({ sessionId: 's1', text: 'agent says hi' });
+    journal.append({ sessionId: 's1', sessionName: 'work', text: 'my question', at: NOW, originId: 'phone-machine:c7' });
+    const agentSeq = journal.since(0)[0].seq;
+    links.sent.length = 0;
+
+    links.receive('phone-machine', encodeCall('d1', '__chat_delete__', {
+      sessionId: 's1',
+      items: [{ seq: agentSeq }, { originId: 'phone-machine:c7' }, { seq: 999 }],
+    }));
+    await flush();
+
+    // Only the two tombstones remain; the unknown seq is skipped, not an error.
+    expect(journal.since(0).map((e) => e.record.kind)).toEqual(['deleted', 'deleted']);
+    const tombstones = links.records().filter((r: any) => r.t === 'chat');
+    expect(tombstones.map((r: any) => r.deletes)).toEqual([agentSeq, agentSeq + 1]);
+    expect(links.records().find((r: any) => r.t === 'result')).toMatchObject({ id: 'd1' });
+  });
+
+  it('never deletes another session\'s message by seq', () => {
+    SESSIONS.set('s2', { id: 's2', name: 'other', interactionChannel: 'desktop' });
+    const { seq } = journal.append({ sessionId: 's2', sessionName: 'other', text: 'keep me', at: NOW });
+    expect(bridge.deleteMessages('s1', [{ seq }])).toBe(0);
+    expect(journal.since(0).map((e) => e.record.text)).toEqual(['keep me']);
+    SESSIONS.delete('s2');
+  });
+
+  it('reports the removed entries so an API session can drop them from its history', () => {
+    const removed: string[] = [];
+    const quiet = new MobileChatBridge({
+      links, deviceStore, gate: () => gate, journal, now: () => NOW,
+      sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null, updateSession: () => {} },
+      onMessagesDeleted: (_sessionId, entries) => removed.push(...entries.map((e) => e.record.text)),
+    });
+    const { seq } = journal.append({ sessionId: 's1', sessionName: 'work', text: 'forget this', at: NOW });
+    quiet.deleteMessages('s1', [{ seq }]);
+    expect(removed).toEqual(['forget this']);
+  });
+
+  it('carries an API reply\'s usage onto the chat record for the bubble badge', async () => {
+    links.online.add('phone-machine');
+    await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 12345, toolCalls: 3 } });
+    expect(links.records()[0]).toMatchObject({ text: 'done', contextTokens: 12345, toolCalls: 3 });
+  });
+});

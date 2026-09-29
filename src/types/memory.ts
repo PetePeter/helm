@@ -49,6 +49,16 @@ export interface MemoryRecord {
   dormantSince?: number;
   /** Project epoch at birth, so the grace period counts recall opportunities. */
   createdAtEpoch?: number;
+  /**
+   * Written by an API-tool subagent run, not authored as project knowledge.
+   * Lets recall and the dreamer treat run results apart from curated memory.
+   */
+  agentRun?: boolean;
+  /**
+   * A summary node: its tldr/content describe, and its links point at the
+   * detail and at child summaries — a struct with a description and pointers.
+   */
+  summary?: boolean;
   attachments: MemoryAttachment[];
 }
 
@@ -62,6 +72,8 @@ export interface MemorySummary {
   projectId?: string;
   recallSessionCount?: number;
   dormantSince?: number;
+  agentRun?: boolean;
+  summary?: boolean;
   attachmentCount: number;
 }
 
@@ -213,6 +225,8 @@ export function toMemorySummary(record: MemoryRecord): MemorySummary {
     ...(record.projectId !== undefined ? { projectId: record.projectId } : {}),
     ...(record.recallSessionCount !== undefined ? { recallSessionCount: record.recallSessionCount } : {}),
     ...(record.dormantSince !== undefined ? { dormantSince: record.dormantSince } : {}),
+    ...(record.agentRun ? { agentRun: true } : {}),
+    ...(record.summary ? { summary: true } : {}),
     attachmentCount: record.attachments.length,
   };
 }

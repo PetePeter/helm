@@ -47,6 +47,24 @@ class MobileEnvelopeParamsTest {
         }
     }
 
+    @Test
+    fun `a list of ordered maps is emitted as a JSON array of objects - the chat delete shape`() {
+        val json = MobileEnvelope.encodeCall(
+            "p2",
+            "__chat_delete__",
+            linkedMapOf<String, Any>(
+                "sessionId" to "s1",
+                "items" to listOf(linkedMapOf<String, Any>("seq" to 3L), linkedMapOf<String, Any>("originId" to "d:c9")),
+            ),
+        ).toString(Charsets.UTF_8)
+
+        assertEquals(
+            """{"v":1,"t":"call","id":"p2","method":"__chat_delete__",""" +
+                """"params":{"sessionId":"s1","items":[{"seq":3},{"originId":"d:c9"}]}}""",
+            json,
+        )
+    }
+
     private fun encode(params: Map<String, Any>): String =
         MobileEnvelope.encodeCall("p1", "session_read_terminal", params).toString(Charsets.UTF_8)
 }

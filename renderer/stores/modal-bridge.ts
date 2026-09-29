@@ -328,7 +328,21 @@ export interface ToolEditorEnvEntry {
   mode?: 'replace' | 'append' | 'prepend';
 }
 
+/** An API tool block as the editor round-trips it (mirrors ApiToolConfig in the main process). */
+export interface ToolEditorApiConfig {
+  baseUrl: string;
+  model: string;
+  apiKeyEnv?: string;
+  allowedTools: string[];
+  systemPrompt?: string;
+  maxToolRounds?: number;
+  /** Concurrent model requests (server slots) for this API tool; subagents queue for them. */
+  slots?: number;
+}
+
 export interface ToolEditorBridgeData {
+  /** Present = API tool; null/absent = a CLI spawned in a PTY. */
+  api?: ToolEditorApiConfig | null;
   name: string;
   env: Array<ToolEditorEnvEntry>;
   initialPromptDelay: number;
@@ -352,6 +366,7 @@ const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   renameCommand: '', helmPreambleForInterSession: true,
   largeTextAsTempFile: false, messReminders: true, mouseTracking: false,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
+  api: null,
 };
 
 export const toolEditor = reactive({
@@ -374,7 +389,33 @@ export function resetToolEditorData(): ToolEditorBridgeData {
   return { ...EMPTY_TOOL_DATA, env: [], initialPrompt: [], helmActions: { clear: '', compact: '', export: '' } };
 }
 
+/**
+ * Normalise the editor's API block for saving: trimmed strings, blank optionals
+ * dropped, ticks de-duplicated, a non-positive round cap omitted (loader default).
+ * null means "this is a CLI type" and clears any stored block.
+ */
+export function buildApiToolPayload(api: unknown): ToolEditorApiConfig | null {
+  if (!api || typeof api !== 'object') return null;
+  const raw = api as Record<string, unknown>;
+  const text = (key: string) => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : '');
+  const allowed = Array.isArray(raw.allowedTools)
+    ? [...new Set(raw.allowedTools.filter((name): name is string => typeof name === 'string' && name.trim() !== ''))]
+    : [];
+  const rounds = Math.floor(Number(raw.maxToolRounds));
+  const slots = Math.floor(Number(raw.slots));
+  return {
+    baseUrl: text('baseUrl'),
+    model: text('model'),
+    ...(text('apiKeyEnv') ? { apiKeyEnv: text('apiKeyEnv') } : {}),
+    allowedTools: allowed,
+    ...(text('systemPrompt') ? { systemPrompt: text('systemPrompt') } : {}),
+    ...(rounds > 0 ? { maxToolRounds: rounds } : {}),
+    ...(slots > 0 ? { slots } : {}),
+  };
+}
+
 export function buildToolEditorOptions(values: Record<string, any>): {
+  api?: ToolEditorApiConfig | null;
   env?: ToolEditorEnvEntry[];
   renameCommand?: string;
   spawnCommand?: string;
@@ -418,6 +459,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,
+    api: buildApiToolPayload(values.api),
   };
 }
 

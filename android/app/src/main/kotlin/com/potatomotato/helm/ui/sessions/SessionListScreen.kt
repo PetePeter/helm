@@ -292,6 +292,20 @@ private fun SessionRow(
                         .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
                 )
             }
+            // Subagents never get rows of their own; their parent carries the count.
+            SessionRows.subagentBadgeLabel(session.pendingSubagents)?.let { badge ->
+                Text(
+                    text = badge,
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(HelmRadius.Pill))
+                        .background(HelmColors.Surface2)
+                        .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Pill))
+                        .padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
+                )
+            }
             // A claimed plan is a pill, not a sub-line word: the desktop's plan
             // title and human id never reach the phone, so the row says THAT a
             // plan is claimed — never which one.

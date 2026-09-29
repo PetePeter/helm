@@ -754,10 +754,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             messages = threads[sessionId].orEmpty(),
             onSend = { text -> client.sendChat(sessionId, text) },
             // Retry re-issues over the wire (the repository swaps the dead
-            // row); delete is a purely local take-back, so it goes straight
-            // to the store.
+            // row). Delete removes the rows here and tells the desktop which of
+            // them it holds, so its journal (and an API session's history) drop
+            // them too.
             onRetry = { key, text -> client.resendChat(sessionId, key, text) },
-            onDelete = { key -> client.chats.remove(sessionId, key) },
+            onDelete = { keys -> client.deleteChats(sessionId, keys) },
             onTerminal = {
                 openSessionId = sessionId
                 where = Destination.Snapshot

@@ -59,6 +59,9 @@ export interface MemoryManagerOptions {
 export interface CreateMemoryInput {
   tldr: string;
   content: string;
+  /** First-party flags (see MemoryRecord). */
+  agentRun?: boolean;
+  summary?: boolean;
 }
 
 export interface UpdateMemoryInput {
@@ -306,6 +309,8 @@ export class MemoryManager extends EventEmitter {
       // would be born already a full epoch into its own grace period.
       ...(projectId ? { projectId, createdAtEpoch: this.epochAfterTouch(projectId, sessionId!) } : {}),
       ...(planId ? { planId } : {}),
+      ...(input.agentRun ? { agentRun: true } : {}),
+      ...(input.summary ? { summary: true } : {}),
       attachments: [],
     };
     this.mutate((candidate) => {

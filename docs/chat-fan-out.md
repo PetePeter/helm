@@ -359,3 +359,26 @@ npx tsx scripts/generate-mobile-envelope-vectors.ts
 ```
 
 Regenerating is a wire break.
+
+## Deleting messages
+
+Deleting a bubble on the phone is no longer only local. The phone calls the
+reserved `__chat_delete__` method with `{ sessionId, items: [{ seq } | { originId }] }`.
+A phone's own sends carry no seq, so they are named by the originId they were
+journaled with. The gate licenses the call like `__chat_cursor__`; the bridge
+does the work:
+
+```mermaid
+graph LR
+    P[Phone: multi / range select → Delete] -->|__chat_delete__| G[MobileGate<br/>reserved, rate-limited]
+    G --> B[MobileChatBridge.deleteMessages]
+    B -->|remove| J[(Journal)]
+    B -->|"kind: deleted, deletes: seq<br/>(journaled → offline phones catch up)"| S[Every phone + desktop chat pane]
+    B -->|onMessagesDeleted| H[ApiSessionHost → drop turns from model history]
+```
+
+Each removed entry becomes a `kind: 'deleted'` tombstone carrying `deletes: <seq>`.
+It is journaled, so it takes its own seq and a phone that was offline applies it
+on catch-up. Unknown items are skipped: the phone has already removed its
+bubble, so a lost message is not an error. Items are resolved only within the
+named session, so one session can never delete another's message.

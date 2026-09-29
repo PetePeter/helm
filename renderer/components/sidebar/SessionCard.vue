@@ -43,6 +43,8 @@ export interface SessionCardProps {
   artifactCount: number;
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
+  /** Subagents this session is waiting on. 0 = none. */
+  pendingSubagents: number;
   elapsedText: string;
   workingPlanLabel: string;
   workingPlanTooltip: string;
@@ -292,6 +294,13 @@ function onCardClick(e: MouseEvent): void {
         class="loop-badge"
         title="Loop driving: consecutive Stop-hook auto-continues in flight. A user prompt or the kill switch ends it."
       >🔁{{ loopContinues }}</span>
+
+      <!-- Subagent badge — the subagents themselves are hidden from the list -->
+      <span
+        v-if="pendingSubagents > 0"
+        class="loop-badge"
+        :title="`${pendingSubagents} subagent${pendingSubagents === 1 ? '' : 's'} working for this session`"
+      >🔥{{ pendingSubagents }}</span>
 
       <!-- Artifact badge — click to show this session's artifact panel -->
       <button

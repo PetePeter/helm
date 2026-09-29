@@ -1,3 +1,4 @@
+import type { ChatTurnUsage } from '../session/chat/chat-bridge.js';
 import { EventEmitter } from 'node:events';
 import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
 import type { ConfigLoader } from '../config/loader.js';
@@ -138,6 +139,12 @@ export interface SessionSummary {
   /** 'operator' marks the router-only "Helm" session. Voice clients (the
    *  phone's CallTarget) find the operator by this exact string. */
   role?: 'operator';
+  /** An API-tool session (Helm-hosted agent loop). */
+  apiTool?: boolean;
+  /** A subagent: the session whose Agent call spawned it. Clients hide these rows. */
+  subagentOf?: string;
+  /** Subagents this session is waiting on — clients show a 🔥 count. */
+  pendingSubagents?: number;
 }
 
 export interface CliSummary {
@@ -866,7 +873,7 @@ export class HelmControlService extends EventEmitter {
     return this.requireMemoryService().getMemory(sessionId, id, graphDepth);
   }
 
-  createMemory(sessionId: string, input: { tldr: string; content: string }): MemoryRecord {
+  createMemory(sessionId: string, input: { tldr: string; content: string; agentRun?: boolean; summary?: boolean }): MemoryRecord {
     return this.requireMemoryService().createMemory(sessionId, input);
   }
 
@@ -1225,8 +1232,11 @@ export class HelmControlService extends EventEmitter {
       return {
         cliType,
         name: entry.name,
+        // 'api' = Helm hosts the agent loop (no CLI); its history file makes it resumable.
+        kind: entry.api ? 'api' as const : 'cli' as const,
+        ...(entry.api ? { model: entry.api.model } : {}),
         command: entry.spawnCommand ?? '',
-        supportsResume: Boolean(entry.spawnCommand || entry.resumeCommand || entry.continueCommand),
+        supportsResume: Boolean(entry.api || entry.spawnCommand || entry.resumeCommand || entry.continueCommand),
         supportedDirPaths,
       };
     });
@@ -1605,8 +1615,9 @@ export class HelmControlService extends EventEmitter {
     sessionRef: string,
     message: string,
     filePath?: string,
+    usage?: ChatTurnUsage,
   ): Promise<{ sent: boolean; reason?: string }> {
-    return this.telegramService.sendTelegramChat(sessionRef, message, filePath);
+    return this.telegramService.sendTelegramChat(sessionRef, message, filePath, usage);
   }
 
   async sendTelegramVoice(

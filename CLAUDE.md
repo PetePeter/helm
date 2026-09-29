@@ -60,7 +60,7 @@ Full button/key maps, modal-blocking rules, and stick behaviour: [docs/controls.
 These hold repo-wide. Breaking one is a design change, not a refactor.
 
 1. **Browser Gamepad API is the only input source** — a single input path via Chromium, covering Xbox (standard mapping) and generic/DirectInput (axes-based) pads. The XInput/PowerShell path was removed deliberately; do not reintroduce a second source.
-2. **CLIs run in embedded PTYs, never external windows** — node-pty + xterm.js. All keyboard, paste, and sequence input reaches a CLI through PTY stdin.
+2. **CLIs run in embedded PTYs, never external windows** — node-pty + xterm.js. All keyboard, paste, and sequence input reaches a CLI through PTY stdin. API tools (Helm-hosted agent loops, no CLI) are adopted into PtyManager as a `PtyProcess`, so input still takes the same path — see [docs/api-tools.md](docs/api-tools.md).
 3. **Context isolation is enforced** — the renderer never touches Node APIs. New capability = a typed channel in `preload.ts` via `contextBridge` plus a handler in the matching `src/electron/ipc/` domain file. See [docs/preload-api-boundary.md](docs/preload-api-boundary.md).
 4. **Config boundary: the repo ships defaults only** — all writable config, logs, and temp files resolve to the per-user app-data dir in BOTH dev and packaged mode. Never write to the repo working tree. See [docs/config-boundary.md](docs/config-boundary.md).
 5. **Input is expressed as sequence syntax** — `{Enter}`, `{Ctrl+C}`, `{Wait 500}`, plain text — parsed to PTY escape codes rather than simulating keys. One parser serves bindings, initial prompts, prompt templates, and plan delivery.
@@ -144,6 +144,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/gamepad-input-model.md](docs/gamepad-input-model.md) | **Proposal, not shipped** — pane-addressed gamepad model, shared input contract, command registry + radial wheel |
 | [docs/keyboard-routing.md](docs/keyboard-routing.md) | Keyboard router — one listener, declared precedence, per-screen handlers, focused-vs-visible ownership |
 | [docs/terminal-architecture.md](docs/terminal-architecture.md) | PTY stack, input/output routing, activity dots, key modules |
+| [docs/api-tools.md](docs/api-tools.md) | API tools — Helm-hosted agent loop over an OpenAI-compatible endpoint, ticked tools, cache-first prompt, auto chat reply |
 | [docs/pattern-matcher.md](docs/pattern-matcher.md) | Per-CLI regex rules over PTY output — send-text and wait-until schedules |
 
 **Session features**

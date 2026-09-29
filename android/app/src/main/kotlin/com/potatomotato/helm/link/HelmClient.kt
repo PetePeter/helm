@@ -277,11 +277,30 @@ class HelmClient(
             // Only a call the link actually carried is registered: the desktop
             // journals only what it accepted, so claiming an echo for an unsent
             // call would drop somebody else's history.
-            chats.sent("$machineId:$id")
+            chats.sent("$machineId:$id", sessionId, key)
         } else {
             chats.settle(sessionId, key, delivered = false)
         }
         return issued
+    }
+
+    /**
+     * Delete chat rows — one (the bubble's ✕) or a selection. They go from the
+     * thread at once; the desktop is then told which of them it holds, so its
+     * journal, the other phones and — for an API-tool session — the model's
+     * history drop them too. Fire-and-forget: a failed call leaves the desktop's
+     * copy, which is what an unsent delete has always meant.
+     */
+    fun deleteChats(sessionId: String, keys: Set<String>) {
+        val items = chats.removeMany(sessionId, keys)
+        if (items.isEmpty()) return
+        val wire = items.map { item ->
+            if (item.seq != null) linkedMapOf<String, Any>("seq" to item.seq)
+            else linkedMapOf<String, Any>("originId" to item.originId!!)
+        }
+        call(METHOD_CHAT_DELETE, linkedMapOf<String, Any>("sessionId" to sessionId, "items" to wire)) { outcome ->
+            if (outcome is Outcome.Failed) HelmLog.w(HelmLog.CLIENT, "chat delete not applied on the desktop: ${outcome.message}")
+        }
     }
 
     /**
@@ -1562,6 +1581,8 @@ class HelmClient(
                         chats.receive(linkedDesktop(), record)
                         alerts.onMessage(record)
                     }
+                    // A delete made elsewhere: the thread's business only, never a buzz.
+                    ChatRepository.DELETED_KIND -> chats.receive(linkedDesktop(), record)
                     RING_KIND -> if (ringer?.invoke(record) != true) alerts.onAlert(record)
                     else -> alerts.onAlert(record)
                 }
@@ -1816,6 +1837,9 @@ class HelmClient(
          * which is also why it needs no allow-list entry.
          */
         private const val METHOD_CHAT_CURSOR = "__chat_cursor__"
+
+        /** Reserved meta-method: delete journal messages by seq / originId (desktop `RESERVED_CHAT_DELETE_METHOD`). */
+        private const val METHOD_CHAT_DELETE = "__chat_delete__"
 
         /**
          * How long a reported chat cursor stays believed before the next poll

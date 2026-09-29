@@ -48,6 +48,12 @@ data class HelmSession(
      * desktop only views it). Null for the desktop's own sessions.
      */
     val machineName: String? = null,
+    /** An API-tool session: Helm hosts the agent loop itself (no CLI). */
+    val apiTool: Boolean = false,
+    /** Set on a subagent: the session whose Agent call spawned it. Such rows are never listed. */
+    val subagentOf: String? = null,
+    /** Subagents this session is waiting on right now — drawn as a 🔥 count. */
+    val pendingSubagents: Int = 0,
 ) {
     /**
      * What the group header shows. The full path is the identity — two projects
@@ -83,8 +89,15 @@ object SessionWire {
     fun parseList(result: Any?): List<HelmSession>? {
         val array = result as? JSONArray
             ?: return WireShape.undecodable("a session_list result", "a JSON array", result)
-        return (0 until array.length()).mapNotNull { parse(array.optJSONObject(it)) }
+        return visible((0 until array.length()).mapNotNull { parse(array.optJSONObject(it)) })
     }
+
+    /**
+     * Subagents are their parent's business: the parent shows a 🔥 count, the
+     * subagent sessions themselves appear in no list or picker. Filtered once,
+     * here, so every screen that lists sessions agrees.
+     */
+    fun visible(sessions: List<HelmSession>): List<HelmSession> = sessions.filter { it.subagentOf == null }
 
     private fun parse(summary: JSONObject?): HelmSession? {
         val id = summary?.opt("id") as? String ?: return null
@@ -107,6 +120,9 @@ object SessionWire {
             role = (summary.opt("role") as? String)?.takeIf { it.isNotBlank() },
             machineName = ((summary.opt("remote") as? JSONObject)?.opt("machineName") as? String)
                 ?.takeIf { it.isNotBlank() },
+            apiTool = summary.opt("apiTool") == true,
+            subagentOf = (summary.opt("subagentOf") as? String)?.takeIf { it.isNotBlank() },
+            pendingSubagents = ((summary.opt("pendingSubagents") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
         )
     }
 

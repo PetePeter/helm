@@ -152,4 +152,31 @@ class MobileEnvelopeChatFieldsTest {
         ("""{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"Perf report","at":1700000000000,""" +
             """"artifactId":"a9f1","title":"Perf report","kind":"artifact"}""")
             .toByteArray(Charsets.UTF_8)
+
+    @Test
+    fun `a deleted tombstone decodes its target seq, and reply stats decode after it`() {
+        val record = MobileEnvelope.decode(
+            (
+                """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"","at":5,"kind":"deleted",""" +
+                    """"seq":12,"deletes":7,"contextTokens":12345,"toolCalls":4}"""
+                ).toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertEquals("deleted", record.kind)
+        assertEquals(12L, record.seq)
+        assertEquals(7L, record.deletes)
+        assertEquals(12345L, record.contextTokens)
+        assertEquals(4, record.toolCalls)
+    }
+
+    @Test
+    fun `a non-numeric deletes is dropped, not coerced`() {
+        val record = MobileEnvelope.decode(
+            """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"","at":5,"deletes":"7"}"""
+                .toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertNull(record.deletes)
+        assertNull(record.contextTokens)
+    }
 }

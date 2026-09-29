@@ -303,5 +303,24 @@ class SessionRepositoryTest {
         },
     )
 
+    @Test
+    fun `api-tool fields parse, and subagent sessions never reach any list`() {
+        val parsed = SessionWire.parseList(
+            listOf(
+                JSONObject().put("id", "p1").put("apiTool", true).put("pendingSubagents", 2),
+                JSONObject().put("id", "c1").put("apiTool", true).put("subagentOf", "p1"),
+                // Wrong types degrade to defaults instead of dropping the row.
+                JSONObject().put("id", "x1").put("apiTool", "yes").put("pendingSubagents", "many").put("subagentOf", 3),
+            ).toJsonArray(),
+        )!!
+
+        assertEquals(listOf("p1", "x1"), parsed.map { it.id })
+        assertTrue(parsed[0].apiTool)
+        assertEquals(2, parsed[0].pendingSubagents)
+        assertEquals(false, parsed[1].apiTool)
+        assertEquals(0, parsed[1].pendingSubagents)
+        assertNull(parsed[1].subagentOf)
+    }
+
     private fun List<JSONObject>.toJsonArray(): JSONArray = JSONArray().also { array -> forEach(array::put) }
 }

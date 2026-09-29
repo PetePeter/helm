@@ -158,6 +158,24 @@ sealed interface MobileRecord {
          * and the unread count either way.
          */
         val replay: Boolean = false,
+
+        /**
+         * On a `kind: "deleted"` TOMBSTONE only: the seq of the journal message
+         * the user deleted. The tombstone is journaled under its own [seq], so a
+         * phone that was offline learns of the delete on catch-up like any other
+         * message; it is never shown, it only takes the named row away. The
+         * desktop emits it last, after `replay`.
+         */
+        val deletes: Long? = null,
+
+        /**
+         * On an API-tool session's reply only: how many tokens the model's
+         * context held after that turn, and how many tool calls the turn made.
+         * Display only — a small badge under the bubble. Emitted after
+         * `deletes`, in this order.
+         */
+        val contextTokens: Long? = null,
+        val toolCalls: Int? = null,
     ) : MobileRecord
 
     /**

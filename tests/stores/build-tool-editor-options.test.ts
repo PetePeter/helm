@@ -124,6 +124,7 @@ describe('buildToolEditorOptions', () => {
       bindingProfileId: '',
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
+      api: null,
     });
   });
 
@@ -137,6 +138,42 @@ describe('buildToolEditorOptions', () => {
       clear: '/clear{Enter}',
       compact: '/compact $instruction{Enter}',
       export: '', // non-string coerced to empty
+    });
+  });
+});
+
+describe('buildToolEditorOptions — API tool block', () => {
+  it('sends api: null for a CLI type so a stored block is cleared', () => {
+    expect(buildToolEditorOptions({ env: [] }).api).toBeNull();
+  });
+
+  it('trims, drops blank optionals, de-duplicates ticks and omits a non-positive round cap', () => {
+    const result = buildToolEditorOptions({
+      env: [],
+      api: {
+        baseUrl: ' http://127.0.0.1:8080/v1 ',
+        model: ' minicpm ',
+        apiKeyEnv: '  ',
+        allowedTools: ['Read', 'Read', '', 'chat_send'],
+        systemPrompt: '',
+        maxToolRounds: 0,
+        slots: 0,
+      },
+    });
+    expect(result.api).toEqual({
+      baseUrl: 'http://127.0.0.1:8080/v1',
+      model: 'minicpm',
+      allowedTools: ['Read', 'chat_send'],
+    });
+  });
+
+  it('keeps a set key env var, extra prompt and a positive integer round cap', () => {
+    const result = buildToolEditorOptions({
+      env: [],
+      api: { baseUrl: 'u', model: 'm', apiKeyEnv: 'OPENROUTER_API_KEY', allowedTools: [], systemPrompt: ' be brief ', maxToolRounds: 7.9, slots: 2 },
+    });
+    expect(result.api).toEqual({
+      baseUrl: 'u', model: 'm', apiKeyEnv: 'OPENROUTER_API_KEY', allowedTools: [], systemPrompt: 'be brief', maxToolRounds: 7, slots: 2,
     });
   });
 });

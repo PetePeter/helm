@@ -7,6 +7,14 @@
 import { ipcMain } from 'electron';
 import type { CliTypeOptions, ConfigLoader, PatternRule, SequenceListItem } from '../../config/loader.js';
 import { logger } from '../../utils/logger.js';
+import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
+import { listAvailableApiTools } from '../../session/api/api-prompt.js';
+
+/** First sentence, capped — the tick list shows a hint, not the full tool manual. */
+function shortDescription(text: string): string {
+  const sentence = text.split(/(?<=[.!?])\s/)[0] ?? text;
+  return sentence.length > 160 ? `${sentence.slice(0, 157)}…` : sentence;
+}
 
 export function setupToolsHandlers(configLoader: ConfigLoader): void {
   ipcMain.handle('tools:getAll', () => {
@@ -21,6 +29,10 @@ export function setupToolsHandlers(configLoader: ConfigLoader): void {
       return { cliTypes: {} };
     }
   });
+
+  /** Every tool an API tool can be ticked for (native + Helm MCP), for the tool editor's tick list. */
+  ipcMain.handle('tools:apiToolCatalog', () => listAvailableApiTools(MCP_TOOLS)
+    .map(({ name, description, source }) => ({ name, description: shortDescription(description), source })));
 
   ipcMain.handle('tools:addCliType', (
     _event, key: string, name: string,

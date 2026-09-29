@@ -202,6 +202,14 @@
     <string name="chat_retry_glyph">↻</string>
     <string name="chat_delete">Delete message</string>
     <string name="chat_delete_glyph">✕</string>
+    <string name="chat_selected">%1$d selected</string>
+    <string name="chat_copy">Copy</string>
+    <string name="chat_copy_glyph">⧉</string>
+    <string name="chat_range">Range</string>
+    <string name="chat_range_glyph">↕</string>
+    <string name="chat_delete_selected">Delete</string>
+    <string name="chat_cancel_selection">Cancel</string>
+    <string name="chat_cancel_glyph">←</string>
 
     <string name="voice_mic_glyph">🎙</string>
     <string name="voice_mic_hold">Hold to speak</string>

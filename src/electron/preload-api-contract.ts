@@ -101,6 +101,7 @@ export const PRELOAD_API_DOMAINS = {
   ],
   tools: [
     'toolsGetAll',
+    'toolsApiToolCatalog',
     'toolsAddCliType',
     'toolsUpdateCliType',
     'toolsRemoveCliType',

@@ -13,7 +13,15 @@ import { composerKeyAction } from '../../operator/operator-chat.js';
 import { configClient, dialogClient } from '../../ipc/clients.js';
 import { registerKeyHandler } from '../../keyboard/router.js';
 
-const chat = useOperatorChat();
+const props = defineProps<{
+  sessionId: string;
+  /** Header label; the operator keeps its name, an API tool shows its session name. */
+  title: string;
+  /** Only the operator takes calls. */
+  isOperator: boolean;
+}>();
+
+const chat = useOperatorChat(props.sessionId);
 const { bubbles, draft, attachment, sending, recording, transcribing, error } = chat;
 const { inCall, handsFree, toggleCall, hangUp } = useVoiceCall();
 
@@ -91,18 +99,19 @@ onBeforeUnmount(() => {
 <template>
   <div class="operator-chat">
     <div class="operator-chat__header">
-      <span class="operator-chat__title">Helm operator</span>
+      <span class="operator-chat__title">{{ title }}</span>
       <button
+        v-if="isOperator"
         class="btn btn--sm focusable"
         :class="inCall ? 'btn--danger' : 'btn--secondary'"
         type="button"
         @click="onCallClick"
       >{{ inCall ? 'Hang up' : 'Call' }}</button>
-      <button class="btn btn--sm btn--secondary focusable" type="button" title="Show the operator's terminal" @click="operatorView = 'terminal'">Terminal</button>
+      <button class="btn btn--sm btn--secondary focusable" type="button" title="Show the terminal" @click="operatorView = 'terminal'">Terminal</button>
     </div>
 
     <div ref="thread" class="operator-chat__thread">
-      <div v-if="bubbles.length === 0" class="operator-chat__empty">No messages yet. Ask Helm anything.</div>
+      <div v-if="bubbles.length === 0" class="operator-chat__empty">No messages yet. Ask anything.</div>
       <div
         v-for="bubble in bubbles"
         :key="bubble.seq"
@@ -110,6 +119,7 @@ onBeforeUnmount(() => {
         :class="`operator-chat__bubble--${bubble.from}`"
       >
         <div class="operator-chat__text">{{ bubble.text }}</div>
+        <div v-if="bubble.badge" class="operator-chat__badge">{{ bubble.badge }}</div>
         <div class="operator-chat__time">{{ time(bubble.at) }}</div>
       </div>
     </div>
@@ -214,7 +224,8 @@ onBeforeUnmount(() => {
   border-bottom-left-radius: 3px;
 }
 
-.operator-chat__time {
+.operator-chat__time,
+.operator-chat__badge {
   margin-top: 2px;
   font-size: var(--font-size-xs);
   opacity: 0.65;

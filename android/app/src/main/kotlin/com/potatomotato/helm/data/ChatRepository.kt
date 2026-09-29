@@ -41,7 +41,42 @@ data class ChatMessage(
      * gap-fill dedupes against (see [receive]).
      */
     val seq: Long? = null,
+    /**
+     * This phone's OWN sent message: the originId the desktop journaled it
+     * under ("machineId:callId"). Its optimistic row never learns a seq — the
+     * journal echo is dropped as this phone's own words — so this is the only
+     * name the desktop knows the row by when the user deletes it.
+     */
+    val originId: String? = null,
+    /** API-tool reply stats (see [MobileRecord.Chat.contextTokens]); null elsewhere. */
+    val contextTokens: Long? = null,
+    val toolCalls: Int? = null,
 )
+
+/**
+ * The muted badge under an API-tool reply: "ctx 12.3k · 4 tools". Null when
+ * the row carries no stats. Thousands get one decimal; zero tools are omitted.
+ */
+fun replyStats(contextTokens: Long?, toolCalls: Int?): String? {
+    if (contextTokens == null && toolCalls == null) return null
+    val parts = mutableListOf<String>()
+    if (contextTokens != null) {
+        parts += if (contextTokens >= 1000) {
+            "ctx " + String.format(java.util.Locale.ROOT, "%.1fk", contextTokens / 1000.0)
+        } else {
+            "ctx $contextTokens"
+        }
+    }
+    if (toolCalls != null && toolCalls > 0) parts += if (toolCalls == 1) "1 tool" else "$toolCalls tools"
+    return parts.joinToString(" · ").ifEmpty { null }
+}
+
+/**
+ * One deleted row as the desktop can find it: by journal [seq] when the row
+ * came from the desktop, by [originId] when it is this phone's own send.
+ * Exactly one of the two is set.
+ */
+data class ChatDeleteItem(val seq: Long? = null, val originId: String? = null)
 
 /**
  * ChatRepository — the per-session threads behind mockup screen 2.
@@ -168,10 +203,16 @@ class ChatRepository(
      * the cursor would replay anyway.
      */
     @Synchronized
-    fun sent(originId: String) {
+    fun sent(originId: String, sessionId: String? = null, key: String? = null) {
         sentIds[originId] = Unit
         while (sentIds.size > MAX_SENT_IDS) sentIds.remove(sentIds.keys.first())
-        persist()
+        // Tag the optimistic row too: it is how a later delete names it.
+        val thread = sessionId?.let { _threads.value[it] }
+        if (thread != null && key != null) {
+            setThreads(_threads.value + (sessionId to thread.map { if (it.key == key) it.copy(originId = originId) else it }))
+        } else {
+            persist()
+        }
     }
 
     private val sentIds = linkedMapOf<String, Unit>()
@@ -207,6 +248,7 @@ class ChatRepository(
      */
     @Synchronized
     fun receive(desktopId: String, record: MobileRecord.Chat) {
+        if (record.kind == DELETED_KIND) return receiveTombstone(desktopId, record)
         val seq = record.seq
         if (seq != null && seq <= lastSeq(desktopId)) {
             // A LIVE record at or below the cursor can only be a duplicate of
@@ -242,6 +284,25 @@ class ChatRepository(
         }
         append(record.sessionId, message(record))
         countUnread(record)
+    }
+
+    /**
+     * A delete made elsewhere (another phone, the desktop). The tombstone is a
+     * journaled message in its own right, so it moves the cursor like one — a
+     * live duplicate at or below it is dropped, a flagged replay still applies
+     * (the delete is idempotent). It is never shown and never counts as unread.
+     */
+    private fun receiveTombstone(desktopId: String, record: MobileRecord.Chat) {
+        val seq = record.seq
+        if (seq != null && seq <= lastSeq(desktopId) && !record.replay) return
+        if (seq != null && seq > lastSeq(desktopId)) cursors = cursors + (desktopId to seq)
+        val target = record.deletes
+        val thread = _threads.value[record.sessionId]
+        if (target == null || thread == null || thread.none { it.seq == target }) {
+            persist()
+            return
+        }
+        setThreads(_threads.value + (record.sessionId to thread.filterNot { it.seq == target }))
     }
 
     /** Whether the thread already holds a row under this journal number. */
@@ -282,6 +343,8 @@ class ChatRepository(
         voice = record.voice,
         attachment = attachmentIn(record),
         seq = record.seq,
+        contextTokens = record.contextTokens,
+        toolCalls = record.toolCalls,
     )
 
     /**
@@ -333,6 +396,28 @@ class ChatRepository(
     fun remove(sessionId: String, key: String) {
         val thread = _threads.value[sessionId] ?: return
         setThreads(_threads.value + (sessionId to thread.filterNot { it.key == key }))
+    }
+
+    /**
+     * Delete several rows at once — the selection bar's Delete. Returns how the
+     * desktop can name each removed row so it can delete its copy too (and, for
+     * an API-tool session, the turn from the model's history). A row with
+     * neither a seq nor an originId never reached the desktop's journal — a
+     * send that failed — so it is removed here and named to nobody.
+     */
+    @Synchronized
+    fun removeMany(sessionId: String, keys: Set<String>): List<ChatDeleteItem> {
+        val thread = _threads.value[sessionId] ?: return emptyList()
+        val (gone, kept) = thread.partition { it.key in keys }
+        if (gone.isEmpty()) return emptyList()
+        setThreads(_threads.value + (sessionId to kept))
+        return gone.mapNotNull { row ->
+            when {
+                row.seq != null -> ChatDeleteItem(seq = row.seq)
+                row.originId != null -> ChatDeleteItem(originId = row.originId)
+                else -> null
+            }
+        }
     }
 
     /**
@@ -428,17 +513,20 @@ class ChatRepository(
     /** Monotonic, so two identical messages in the same millisecond stay distinct. */
     private fun nextKey(): String = "m${sequence++}"
 
-    private companion object {
+    companion object {
         /**
          * A phone left running for a week must not accumulate an unbounded thread.
          * Oldest goes first; scrollback beyond this is the desktop's job.
          */
-        const val MAX_THREAD = 200
+        private const val MAX_THREAD = 200
 
         /** How far back the desktop journal replays; older history cannot come back. */
-        const val JOURNAL_WINDOW_MS = 24L * 60 * 60 * 1000
+        private const val JOURNAL_WINDOW_MS = 24L * 60 * 60 * 1000
 
         /** How many of this phone's own recently sent ids stay recognisable. */
         private const val MAX_SENT_IDS = 256
+
+        /** A chat record that deletes an earlier one (see [MobileRecord.Chat.deletes]). */
+        const val DELETED_KIND = "deleted"
     }
 }

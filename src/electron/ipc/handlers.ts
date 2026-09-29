@@ -43,6 +43,11 @@ import { setupPowerMonitor } from '../../session/power-monitor.js';
 import { ConfigLoader } from '../../config/loader.js';
 import { keyboard } from '../../output/keyboard.js';
 import { logger } from '../../utils/logger.js';
+import { ApiSessionHost, registerApiSessionHost } from '../../session/api/api-session-host.js';
+/** Skill type whose reviews collect request_tool wishes from API-tool sessions. */
+const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
+import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
+import { filterToolsByCapabilities } from '../../mcp/tools/capability-gating.js';
 
 import { TelegramBotCore } from '../../telegram/bot.js';
 import { TopicManager } from '../../telegram/topic-manager.js';
@@ -445,6 +450,42 @@ export function registerIPCHandlers(
     onItemFetched: (sessionId, type, id) => suggestionUsage.recordFetch(sessionId, `${type}/${id}`),
   }, ptyManager, hookReceiver);
 
+  // API tools: Helm hosts the agent loop for CLI types with an `api` block.
+  // Tools dispatch through the MCP server's own path under the session's identity.
+  const apiSessionHost = new ApiSessionHost({
+    dispatchTool: (name, args, auth) => localhostMcpServer.dispatchForPeer(name, args, auth),
+    postChat: (sessionId, message, usage) => helmControlService.sendTelegramChat(sessionId, message, undefined, usage),
+    createMemory: (sessionId, input) => helmControlService.createMemory(sessionId, input),
+    linkMemory: (sessionId, fromId, toId) => { helmControlService.linkMemory(sessionId, fromId, toId); },
+    onPendingSubagents: (sessionId, count) => {
+      if (sessionManager.hasSession(sessionId)) sessionManager.updateSession(sessionId, { pendingSubagents: count || undefined });
+    },
+    mcpTools: () => filterToolsByCapabilities(MCP_TOOLS, helmControlService.getTelegramStatus().capabilities),
+    listSkills: (cwd) => helmControlService.listSkills(cwd ? { dirPath: cwd } : undefined),
+    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
+    // Wishes land as reviews on one all-projects skill, where skill feedback is already read.
+    recordToolRequest: ({ name, purpose, example }, auth) => {
+      const skillId = helmControlService.resolveSkill(API_TOOL_REQUESTS_SKILL_TYPE)?.id
+        ?? helmControlService.createSkill({
+          name: 'API tool requests',
+          type: API_TOOL_REQUESTS_SKILL_TYPE,
+          description: 'Tools that API-tool sessions asked for but do not exist yet. Each request is a review; build the popular ones.',
+          body: 'Read this skill\'s feedback (skill_get_feedback) for requested tools: summary = name + purpose, improvement = example usage.',
+          allProjects: true,
+        }).id;
+      helmControlService.submitSkillFeedback(skillId, 1, `${name}: ${purpose}`, example, auth);
+    },
+    emitHook: (event) => hookReceiver.emit('hook', event),
+    // Bound lazily: the injector is built further down, after the managers it reads.
+    promptContext: (sessionId, prompt) => contextInjector.promptContext(sessionId, prompt),
+    // A record with an originId came in from the user; the rest are the session's own replies.
+    chatHistory: (sessionId) => mobileChatJournal.sessionEntries(sessionId).map(({ seq, record }) => ({
+      seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,
+    })),
+    historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
+  });
+  registerApiSessionHost(apiSessionHost);
+
   // Pattern matcher uses raw deliverText for send-text rule actions.
   const patternMatcher = new PatternMatcher(
     (sessionId, data) => ptyManager.deliverText(sessionId, data),
@@ -527,11 +568,14 @@ export function registerIPCHandlers(
   // Created here (not in the mobile block far below) so the recycle bin's
   // purge paths can prune it — the journal's retention is the session's
   // lifetime, and a purged session's replay dies with it.
+  /** Sessions whose pane is a chat thread over the journal: the operator and API tools. */
+  const isChatPaneSession = (sessionId: string): boolean =>
+    sessionId === operatorSessionManager.getOperatorId() || sessionManager.getSession(sessionId)?.apiTool === true;
   const mobileChatJournal = new MobileChatJournal({
     persist: saveMobileChatJournal,
-    // The desktop operator chat renders the same conversation the phone does.
+    // The desktop chat pane (operator + API tools) renders the same conversation the phone does.
     onAppend: (entry) => {
-      if (entry.record.sessionId !== operatorSessionManager.getOperatorId()) return;
+      if (!isChatPaneSession(entry.record.sessionId)) return;
       const win = windowManager.getMainWindow();
       if (win && !win.isDestroyed()) win.webContents.send('voice:operatorChat', entry);
     },
@@ -596,7 +640,10 @@ export function registerIPCHandlers(
       sessionId => {
         // An unresolved CLI type is not an opt-out: only an explicit false silences.
         const cliType = sessionManager.getSession(sessionId)?.cliType;
-        return configLoader.getCliTypeEntry(cliType ?? '')?.messReminders !== false;
+        const entry = configLoader.getCliTypeEntry(cliType ?? '');
+        if (entry?.messReminders === false) return false;
+        // An API tool can only act on a Mess nudge if mess_check is one of its ticked tools.
+        return !entry?.api || entry.api.allowedTools.includes('mess_check');
       },
     )
     : null;
@@ -1098,6 +1145,11 @@ export function registerIPCHandlers(
   // there is a single instance and no way for a second one to appear.
   const mobileChatBridge = new MobileChatBridge({
     links: mobileLinkManager,
+    // A deleted bubble of an API session also leaves the model's history.
+    onMessagesDeleted: (sessionId, removed) => apiSessionHost.forgetMessages(
+      sessionId,
+      removed.map((entry) => ({ text: entry.record.text, fromUser: entry.record.originId !== undefined })),
+    ),
     deviceStore: mobileDeviceStore,
     gate: () => getMobileGate(),
     uploads: artifactUploadService,
@@ -1157,12 +1209,13 @@ export function registerIPCHandlers(
       const operatorId = operatorSessionManager.getOperatorId();
       return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
     },
-    history: () => {
-      const operatorId = operatorSessionManager.getOperatorId();
-      return operatorId ? mobileChatJournal.sessionEntries(operatorId) : [];
+    history: (sessionId) => {
+      const target = sessionId ?? operatorSessionManager.getOperatorId();
+      return target && isChatPaneSession(target) ? mobileChatJournal.sessionEntries(target) : [];
     },
-    ask: async (text, filePath) => {
-      const operatorId = operatorSessionManager.getOperatorId();
+    ask: async (text, filePath, sessionId) => {
+      if (sessionId && !isChatPaneSession(sessionId)) return { ok: false, error: 'That session has no chat view' };
+      const operatorId = sessionId ?? operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
       // The operator is a local CLI: a desktop path is directly readable by it.
       const withFile = filePath ? `${text}

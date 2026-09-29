@@ -4,24 +4,26 @@
  * Fakes stand in for IPC and the microphone only.
  */
 import { describe, it, expect } from 'vitest';
-import { composerKeyAction, createOperatorChat, type OperatorChatEntry } from '../renderer/operator/operator-chat';
+import { composerKeyAction, createOperatorChat, usageBadge, type OperatorChatEntry } from '../renderer/operator/operator-chat';
 
 function fakes(history: OperatorChatEntry[] = []) {
   let push: ((entry: OperatorChatEntry) => void) | null = null;
-  const asked: Array<{ text: string; filePath?: string }> = [];
+  const asked: Array<{ text: string; filePath?: string; sessionId?: string }> = [];
+  const historyFor: Array<string | undefined> = [];
   let askResult: { ok: true } | { ok: false; error: string } = { ok: true };
   let heard: { ok: true; text: string } | { ok: false; error: string } = { ok: true, text: 'dictated words' };
   let clip = { bytes: new Uint8Array([1, 2]), mimeType: 'audio/webm' };
   const client = {
-    voiceOperatorHistory: async () => history,
+    voiceOperatorHistory: async (sessionId?: string) => { historyFor.push(sessionId); return history; },
     onVoiceOperatorChat: (cb: (entry: OperatorChatEntry) => void) => { push = cb; return () => { push = null; }; },
-    voiceAsk: async (text: string, filePath?: string) => { asked.push({ text, filePath }); return askResult; },
+    voiceAsk: async (text: string, filePath?: string, sessionId?: string) => { asked.push({ text, filePath, sessionId }); return askResult; },
     voiceTranscribe: async () => heard,
   };
   const recorder = { start: async () => {}, stop: async () => clip };
   return {
-    chat: createOperatorChat({ client, recorder }),
+    chat: createOperatorChat({ client, recorder, sessionId: 'op' }),
     asked,
+    historyFor,
     push: (entry: OperatorChatEntry) => push?.(entry),
     subscribed: () => push !== null,
     failAsk: (error: string) => { askResult = { ok: false, error }; },
@@ -62,12 +64,21 @@ describe('createOperatorChat', () => {
     expect(f.subscribed()).toBe(false);
   });
 
+  it('shows only its own session from the shared live feed, and scopes history to it', async () => {
+    const f = fakes();
+    await f.chat.open();
+    f.push({ seq: 5, record: { sessionId: 'api-1', text: 'another session', at: 5 } });
+    f.push({ seq: 6, record: { sessionId: 'op', text: 'mine', at: 6 } });
+    expect(f.chat.bubbles.value.map(b => b.text)).toEqual(['mine']);
+    expect(f.historyFor).toEqual(['op']);
+  });
+
   it('sends the trimmed draft with its attachment, then clears both', async () => {
     const f = fakes();
     f.chat.draft.value = '  send this log  ';
     f.chat.attachment.value = 'C:\\logs\\crash.log';
     await f.chat.send();
-    expect(f.asked).toEqual([{ text: 'send this log', filePath: 'C:\\logs\\crash.log' }]);
+    expect(f.asked).toEqual([{ text: 'send this log', filePath: 'C:\\logs\\crash.log', sessionId: 'op' }]);
     expect(f.chat.draft.value).toBe('');
     expect(f.chat.attachment.value).toBeNull();
   });
@@ -108,5 +119,22 @@ describe('createOperatorChat', () => {
     await g.chat.pttStart();
     await g.chat.pttStop();
     expect(g.chat.error.value).toBe('OpenWhispr not configured');
+  });
+});
+
+describe('API-tool chat extras', () => {
+  it('a deleted tombstone removes its bubble and shows nothing itself', async () => {
+    const f = fakes([helm(1, 'keep'), helm(2, 'drop me')]);
+    await f.chat.open();
+    f.push({ seq: 3, record: { sessionId: 'op', text: '', at: 3, kind: 'deleted', deletes: 2 } });
+    expect(f.chat.bubbles.value.map(b => b.text)).toEqual(['keep']);
+  });
+
+  it('an API reply shows its context and tool-call badge', async () => {
+    const f = fakes([{ seq: 1, record: { text: 'answer', at: 1, contextTokens: 12345, toolCalls: 3 } }]);
+    await f.chat.open();
+    expect(f.chat.bubbles.value[0].badge).toBe('ctx 12.3k · 3 tools');
+    expect(usageBadge({ contextTokens: 800, toolCalls: 0 })).toBe('ctx 800');
+    expect(usageBadge({})).toBeUndefined();
   });
 });

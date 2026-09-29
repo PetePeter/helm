@@ -8,7 +8,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
-import type { WorkspaceLayoutProfile } from '../../config/loader.js';
+import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
 import {
@@ -610,6 +610,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   // ========================================================================
 
   toolsGetAll: () => ipcRenderer.invoke('tools:getAll'),
+  /** Native + Helm tools an API tool can be ticked for. */
+  toolsApiToolCatalog: (): Promise<Array<{ name: string; description: string; source: 'native' | 'helm' }>> =>
+    ipcRenderer.invoke('tools:apiToolCatalog'),
   toolsAddCliType: (
     key: string, name: string,
     initialPrompt: Array<{label: string; sequence: string}>, initialPromptDelay: number,
@@ -625,6 +628,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
+      api?: ApiToolOptions | null;
     },
   ) => ipcRenderer.invoke('tools:addCliType', key, name, initialPrompt, initialPromptDelay, options),
   toolsUpdateCliType: (
@@ -642,6 +646,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
+      api?: ApiToolOptions | null;
     },
   ) => ipcRenderer.invoke('tools:updateCliType', key, name, initialPrompt, initialPromptDelay, options),
   toolsRemoveCliType: (key: string) => ipcRenderer.invoke('tools:removeCliType', key),
@@ -1654,15 +1659,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   voiceSpeak: (text: string): Promise<{ ok: true; audio: Uint8Array; mimeType: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('voice:speak', text),
 
-  /** Deliver the user's words — and optionally a local file — to the operator (and echo them to the phone). */
-  voiceAsk: (text: string, filePath?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('voice:ask', text, filePath),
+  /** Deliver the user's words — and optionally a local file — to the operator, or to a chat-pane
+   *  session (an API tool) when `sessionId` is given (and echo them to the phone). */
+  voiceAsk: (text: string, filePath?: string, sessionId?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text, filePath, sessionId),
 
-  /** The operator's journaled conversation, oldest first — the desktop chat view's backlog. */
-  voiceOperatorHistory: (): Promise<OperatorChatEntry[]> =>
-    ipcRenderer.invoke('voice:operatorHistory'),
+  /** A chat-pane session's journaled conversation (default: the operator's), oldest first. */
+  voiceOperatorHistory: (sessionId?: string): Promise<OperatorChatEntry[]> =>
+    ipcRenderer.invoke('voice:operatorHistory', sessionId),
 
-  /** Each new journal entry of the operator's conversation, either direction. Returns an unsubscribe. */
+  /** Each new journal entry of any chat-pane session (operator, API tools), either direction. Returns an unsubscribe. */
   onVoiceOperatorChat: (callback: (entry: OperatorChatEntry) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, entry: OperatorChatEntry) => callback(entry);
     ipcRenderer.on('voice:operatorChat', listener);

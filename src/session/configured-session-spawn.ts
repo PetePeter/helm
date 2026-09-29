@@ -11,9 +11,12 @@ import type { DeliveryContext } from './delivery-context.js';
 import { logger } from '../utils/logger.js';
 import { toHeaderSafeName } from '../utils/header-safe-name.js';
 import { normalizeProjectPath } from './project-identity.js';
+import { getApiSessionHost } from './api/api-session-host.js';
 
 /** Pause before writing the submit suffix so bracketed/paste-aware CLIs can settle. */
 const SUBMIT_DELAY_MS = 200;
+/** Nominal size for an adopted API session; it renders line output, so size is cosmetic. */
+const API_SESSION_SIZE = { cols: 120, rows: 30 };
 
 export interface ConfiguredSessionSpawnParams {
   ptyManager: PtyManager;
@@ -76,37 +79,24 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   const cliThreadId = isResume
     ? params.resumeThreadId ?? params.sessionManager.getSession(sessionId)?.cliThreadId
     : undefined;
-  let { rawCommand, command, args } = resolveSpawnCommand({
-    cfg,
-    cliType: params.cliType ?? 'unknown',
-    cliSessionName,
-    cliThreadId,
-    isResume,
-    fallbackCommand: params.command,
-    fallbackArgs: params.args,
-  });
-  // Appended after template resolution so extra args land at the end of the
-  // command line regardless of which branch produced it.
-  const extraArgs = params.extraArgs?.trim();
-  if (extraArgs) {
-    if (rawCommand) rawCommand = `${rawCommand} ${extraArgs}`;
-    else args = [...(args ?? []), ...extraArgs.split(/\s+/)];
-  }
-  const env = resolveConfiguredSpawnEnv(params.configLoader, params.cliType, {
-    sessionId,
-    sessionName,
-  });
-
   const normalizedCwd = params.cwd ? normalizeProjectPath(params.cwd) : undefined;
 
-  const pty = params.ptyManager.spawn({
-    sessionId,
-    command,
-    args,
-    rawCommand,
-    cwd: normalizedCwd,
-    ...(env ? { env } : {}),
-  });
+  // An API tool has no CLI: Helm hosts the agent loop and adopts it like a Remote row.
+  const apiProcess = cfg?.api
+    ? getApiSessionHost().create({
+      sessionId, sessionName, cliSessionName, cliType, cwd: normalizedCwd, api: cfg.api,
+      // The type's own env entries (with ${VAR} substitution) are where its API key lives.
+      env: resolveConfiguredSpawnEnv(params.configLoader, params.cliType),
+    })
+    : null;
+  let launched: { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] };
+  if (apiProcess) {
+    params.ptyManager.adopt(sessionId, apiProcess, API_SESSION_SIZE);
+    launched = { pty: apiProcess };
+  } else {
+    launched = spawnCliProcess(params, { cfg, sessionId, sessionName, cliSessionName, cliThreadId, isResume, cwd: normalizedCwd });
+  }
+  const { pty, rawCommand, command, args } = launched;
 
   const sessionInfo = {
     id: sessionId,
@@ -121,6 +111,8 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     ...(params.createdByMobileDeviceId ? { createdByMobileDeviceId: params.createdByMobileDeviceId } : {}),
     ...(params.role ? { role: params.role } : {}),
     ...(params.locked ? { locked: true } : {}),
+    ...(apiProcess ? { apiTool: true } : {}),
+    ...(apiProcess && getApiSessionHost().parentOf(sessionId) ? { subagentOf: getApiSessionHost().parentOf(sessionId) } : {}),
   };
 
   if (isResume && params.sessionManager.hasSession(sessionId)) {
@@ -128,6 +120,8 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   } else {
     params.sessionManager.addSession(sessionInfo);
   }
+  // Painted only once the row exists, so the first frame has a session to land on.
+  apiProcess?.start();
 
   scheduleConfiguredInitialPrompt({
     ...params,
@@ -244,6 +238,50 @@ function buildPromptCompleteHandler(
   return () => {
     for (const callback of callbacks) callback();
   };
+}
+
+/** Resolve the CLI command line and env, then spawn it in a real PTY. */
+function spawnCliProcess(
+  params: ConfiguredSessionSpawnParams,
+  ctx: {
+    cfg: ReturnType<ConfigLoader['getCliTypeEntry']> | undefined;
+    sessionId: string;
+    sessionName: string;
+    cliSessionName: string;
+    cliThreadId?: string;
+    isResume: boolean;
+    cwd?: string;
+  },
+): { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] } {
+  let { rawCommand, command, args } = resolveSpawnCommand({
+    cfg: ctx.cfg,
+    cliType: params.cliType ?? 'unknown',
+    cliSessionName: ctx.cliSessionName,
+    cliThreadId: ctx.cliThreadId,
+    isResume: ctx.isResume,
+    fallbackCommand: params.command,
+    fallbackArgs: params.args,
+  });
+  // Appended after template resolution so extra args land at the end of the
+  // command line regardless of which branch produced it.
+  const extraArgs = params.extraArgs?.trim();
+  if (extraArgs) {
+    if (rawCommand) rawCommand = `${rawCommand} ${extraArgs}`;
+    else args = [...(args ?? []), ...extraArgs.split(/\s+/)];
+  }
+  const env = resolveConfiguredSpawnEnv(params.configLoader, params.cliType, {
+    sessionId: ctx.sessionId,
+    sessionName: ctx.sessionName,
+  });
+  const pty = params.ptyManager.spawn({
+    sessionId: ctx.sessionId,
+    command,
+    args,
+    rawCommand,
+    cwd: ctx.cwd,
+    ...(env ? { env } : {}),
+  });
+  return { pty, rawCommand, command, args };
 }
 
 function resolveSpawnCommand(options: {

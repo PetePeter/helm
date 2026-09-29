@@ -104,6 +104,16 @@ export interface SessionInfo {
    *  clients talk to (docs/voice-operator.md). Persists; clients match the
    *  literal string, so it is a wire contract. */
   role?: SessionRole;
+  /** An API-tool session: Helm hosts its agent loop (no CLI) and its pane
+   *  defaults to the chat view. Ephemeral — re-derived from the CLI type at
+   *  every (resume) spawn, so never persisted. */
+  apiTool?: boolean;
+  /** Set on a subagent session: the session whose Agent call spawned it. Such rows
+   *  are hidden from session pickers — the parent shows a 🔥 count instead.
+   *  Ephemeral: subagents close when they answer, and are never resumed. */
+  subagentOf?: string;
+  /** Subagents this session is waiting on right now (the 🔥 badge). Ephemeral. */
+  pendingSubagents?: number;
 }
 
 /** Known system roles. Only one today; unknown values drop on load. */

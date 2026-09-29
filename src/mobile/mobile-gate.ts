@@ -77,6 +77,13 @@ export const RESERVED_RESTART_HELM_METHOD = '__restart_helm__';
  */
 export const RESERVED_RING_ANSWERED_METHOD = '__ring_answered__';
 
+/**
+ * The user deleted chat bubbles on their phone. Like the cursor, the gate only
+ * decides WHETHER a trusted device may; the bridge does the deleting (journal,
+ * tombstones to every surface, and an API tool's history) once this says yes.
+ */
+export const RESERVED_CHAT_DELETE_METHOD = '__chat_delete__';
+
 /** The allow-list name a phone's restart is granted under. */
 const RESTART_GRANT = 'helm_restart';
 
@@ -282,6 +289,13 @@ export class MobileGate {
     // denial here as any tool would, so the journal is reachable only by a
     // device the registry currently trusts.
     if (method === RESERVED_CHAT_CURSOR_METHOD) {
+      this.consumeOrThrow(deviceId, method);
+      this.logOutcome(deviceId, method, 'ok');
+      return { ok: true };
+    }
+
+    // 2b''. Chat deletion: licensed here, performed by the bridge.
+    if (method === RESERVED_CHAT_DELETE_METHOD) {
       this.consumeOrThrow(deviceId, method);
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };

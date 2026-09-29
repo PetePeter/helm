@@ -41,6 +41,12 @@ export interface Session {
   missionBarHeight?: number;
   /** 'operator' marks the router-only "Helm" session (docs/voice-operator.md). */
   role?: 'operator';
+  /** An API-tool session (Helm-hosted agent loop); its pane defaults to chat. */
+  apiTool?: boolean;
+  /** A subagent session: hidden from the lists; its parent shows a 🔥 count. */
+  subagentOf?: string;
+  /** Subagents this session is waiting on (the 🔥 badge). */
+  pendingSubagents?: number;
 }
 
 export interface ProjectSummary {

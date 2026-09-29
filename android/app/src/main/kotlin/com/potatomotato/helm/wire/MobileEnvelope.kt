@@ -277,6 +277,9 @@ object MobileEnvelope {
             // absent default rather than as a plausible lie.
             originId = record.string("originId"),
             replay = record.opt("replay") == true,
+            deletes = (record.opt("deletes") as? Number)?.toLong(),
+            contextTokens = (record.opt("contextTokens") as? Number)?.toLong(),
+            toolCalls = (record.opt("toolCalls") as? Number)?.toInt(),
         )
     }
 
@@ -297,8 +300,28 @@ object MobileEnvelope {
         is Int, is Long -> append(value.toString())
         is Boolean -> append(if (value) "true" else "false")
         JsonNull -> append("null")
+        // Nested values keep the same typing: a list's elements and a map's
+        // values go through this same function, and a map's iteration order is
+        // its wire order (pass a LinkedHashMap).
+        is List<*> -> {
+            append('[')
+            value.forEachIndexed { index, item ->
+                if (index > 0) append(',')
+                appendJsonValue(item ?: JsonNull)
+            }
+            append(']')
+        }
+        is Map<*, *> -> {
+            append('{')
+            value.entries.forEachIndexed { index, (key, item) ->
+                if (index > 0) append(',')
+                appendJsonString(key as? String ?: throw IllegalArgumentException("map keys must be strings"))
+                append(':').appendJsonValue(item ?: JsonNull)
+            }
+            append('}')
+        }
         else -> throw IllegalArgumentException(
-            "unsupported param type ${value.javaClass.simpleName}; use String, Int, Long, Boolean or JsonNull",
+            "unsupported param type ${value.javaClass.simpleName}; use String, Int, Long, Boolean, JsonNull, List or Map",
         )
     }
 

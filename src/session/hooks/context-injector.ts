@@ -217,8 +217,22 @@ export class ContextInjector {
     // Copilot drops command-hook output for this event entirely — anything we
     // return is written into the void. Its sessions keep the prepended rules.
     if (!PROMPT_INJECTION_PROVIDERS.has(event.cli)) return null;
+    const context = await this.userPromptContext(session, event.prompt ?? '');
+    return context ? { statusCode: 200, body: encodeAdditionalContext(event, context) } : null;
+  }
 
-    const prompt = event.prompt ?? '';
+  /**
+   * The per-prompt context as plain text — the CLI hook reply encodes it, an
+   * API-tool session appends it to its user message. Null = nothing to say.
+   */
+  async promptContext(sessionId: string, prompt: string): Promise<string | null> {
+    const session = this.deps.getSession(sessionId);
+    if (!session) return null;
+    if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
+    return this.userPromptContext(session, prompt);
+  }
+
+  private async userPromptContext(session: SessionInfo, prompt: string): Promise<string | null> {
     const parts: string[] = [];
 
     // The rules ride along with the message they govern — a prompt that is
@@ -258,13 +272,12 @@ export class ContextInjector {
     const nudge = this.oneShotNudges(session);
     if (nudge) parts.push(nudge);
 
-
     if (parts.length === 0) return null;
     const context = capJoined(parts, TOTAL_CAP_CHARS);
     logger.debug(
       `[HookInject] UserPromptSubmit session=${session.id}: ${parts.length} part(s), ${context.length} chars`,
     );
-    return { statusCode: 200, body: encodeAdditionalContext(event, context) };
+    return context;
   }
 
   /**

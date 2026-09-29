@@ -8,6 +8,7 @@ import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.
 import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
+import { formatSenderTag } from '../../session/api/api-prompt.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
   MESSAGE_FLIGHT_REPLY_WINDOW_MS,
@@ -23,6 +24,7 @@ import {
 const DEFAULT_DELIVERY_VERIFY_DELAY_MS = 4000;
 const DEFAULT_CLEAR_SETTLE_DELAY_MS = 1500;
 const DEFAULT_CLEAR_COMMAND = '/clear';
+const API_COMPACT_COMMAND = '/compact $instruction{Enter}';
 
 /** Advisory returned by worker-control actions — CLIs process clear/compact/export asynchronously. */
 const ACTION_WAIT_NOTE =
@@ -234,9 +236,22 @@ export class HelmSessionDeliveryService {
 
     // Determine if recipient wants the Helm preamble
     const recipientEntry = this.configLoader.getCliTypeEntry(session.cliType);
-    const usePreamble = recipientEntry?.helmPreambleForInterSession ?? true;
-    let deliveryText = text;
-    if (shouldSendLargeTextAsTempFile(recipientEntry?.largeTextAsTempFile, text)) {
+    // An API tool is not a CLI agent: the envelope and its reply rules are noise
+    // to it (Helm posts its answer to chat itself). It gets the text, plus the
+    // sender's name when that is another session rather than the user's phone.
+    const isApiTool = Boolean(recipientEntry?.api);
+    const usePreamble = !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
+    let deliveryText = isApiTool && !isMobileSessionId(options.senderSessionId)
+      ? formatSenderTag({
+        sessionId: options.senderSessionId,
+        sessionName: options.senderSessionName,
+        awaitingReply: options.expectsResponse ?? false,
+      }) + text
+      : text;
+    // The temp-file redirect exists because big PTY pastes break TUIs. An API tool
+    // has no paste limit (the text goes straight into its message), so it always
+    // gets the text inline — no file for the model to fetch, none to clean up.
+    if (!isApiTool && shouldSendLargeTextAsTempFile(recipientEntry?.largeTextAsTempFile, text)) {
       const tempFilePath = writeLargeTextTempFile(text, 'session-send-text');
       deliveryText = buildLargeTextTempFileNotice(tempFilePath, 'session_send_text payload');
       logger.info(`[HelmSessionDelivery] Wrote large session_send_text payload to temp file for ${session.id}: ${tempFilePath}`);
@@ -551,7 +566,10 @@ export class HelmSessionDeliveryService {
 
   /** Resolve the configured helmActions template for an action, or throw if unconfigured. */
   private requireActionTemplate(cliType: string, action: 'clear' | 'compact' | 'export'): string {
-    const template = this.configLoader.getCliTypeEntry(cliType)?.helmActions?.[action]?.trim();
+    const entry = this.configLoader.getCliTypeEntry(cliType);
+    // An API tool's "CLI" is Helm's own loop, which always understands /compact.
+    const builtIn = entry?.api && action === 'compact' ? API_COMPACT_COMMAND : undefined;
+    const template = entry?.helmActions?.[action]?.trim() || builtIn;
     if (!template) {
       throw new Error(
         `CLI type "${this.configLoader.getCliTypeLabel(cliType)}" has no "${action}" action configured. Set helmActions.${action} in its CLI config to enable session_${action}.`,

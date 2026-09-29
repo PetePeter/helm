@@ -213,6 +213,18 @@ describe('UserPromptSubmit', () => {
     expect(context).toContain('possibly related: memory/x');
   });
 
+  it('promptContext returns the injection as plain text (the API-tool path)', async () => {
+    const { injector } = makeInjector({ suggest: async () => 'possibly related: memory/x' });
+    const text = await injector.promptContext('s1', '[HELM_MSG]{"type":"inter_llm_message"}hi');
+    expect(text).toContain('[HELM_MSG_RULES]');
+    expect(text).toContain('possibly related: memory/x');
+  });
+
+  it('promptContext is silent for an unknown session', async () => {
+    const { injector } = makeInjector({ getSession: () => null });
+    expect(await injector.promptContext('nope', 'hi')).toBeNull();
+  });
+
   it('never answers a Copilot UserPromptSubmit — its CLI drops the output', async () => {
     const { injector } = makeInjector(
       { suggest: async () => 'possibly related: skill/graphify' },

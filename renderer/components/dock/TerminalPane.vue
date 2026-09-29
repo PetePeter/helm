@@ -30,6 +30,8 @@ const pane = useHelmPaneContext();
 /** The mission bar follows the session at the prompt, like the chips below. */
 const appStore = useAppStore();
 const isOperator = computed(() => appStore.activeSession?.role === 'operator');
+/** Chat-pane sessions: the operator and API tools render their journal as a chat thread. */
+const isChatPane = computed(() => isOperator.value || appStore.activeSession?.apiTool === true);
 
 function setContainer(el: unknown): void {
   pane.terminalContainerRef.value = (el as HTMLElement | null) ?? null;
@@ -42,13 +44,19 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
 </script>
 
 <template>
-  <div class="terminal-view" :class="{ 'terminal-view--operator': isOperator }">
-    <OperatorChat v-if="isOperator && operatorView === 'chat'" />
+  <div class="terminal-view" :class="{ 'terminal-view--operator': isChatPane }">
+    <OperatorChat
+      v-if="isChatPane && operatorView === 'chat' && appStore.activeSession"
+      :key="appStore.activeSession.id"
+      :session-id="appStore.activeSession.id"
+      :title="isOperator ? 'Helm operator' : appStore.activeSession.name"
+      :is-operator="isOperator"
+    />
     <button
-      v-else-if="isOperator"
+      v-else-if="isChatPane"
       class="btn btn--sm btn--secondary focusable terminal-view__chat-toggle"
       type="button"
-      title="Back to the operator chat"
+      title="Back to the chat"
       @click="operatorView = 'chat'"
     >Chat</button>
     <MissionBar

@@ -46,7 +46,7 @@ import type { SessionAlertKind } from '../session/session-alert.js';
  * that predates a new value must degrade to an ordinary notification, never
  * drop the record.
  */
-export type MobileChatKind = SessionAlertKind | 'artifact' | 'ring';
+export type MobileChatKind = SessionAlertKind | 'artifact' | 'ring' | 'deleted';
 
 /** Bumped only for a breaking change to these records. */
 export const MOBILE_ENVELOPE_VERSION = 1;
@@ -159,6 +159,19 @@ export interface MobileChatRecord {
    * (the default) means live.
    */
   replay?: boolean;
+  /**
+   * On a `kind: 'deleted'` tombstone only: the seq of the journaled message the
+   * user deleted. Every phone and the desktop chat pane drop that bubble; the
+   * tombstone itself is journaled (it takes a seq) so a phone that was offline
+   * learns of the deletion on catch-up. Emitted LAST — key order is the format.
+   */
+  deletes?: number;
+  /**
+   * On an API-tool reply only: the model context size after that turn and the
+   * tool calls it made — shown as a badge under the bubble. After `deletes`.
+   */
+  contextTokens?: number;
+  toolCalls?: number;
 }
 
 /**
@@ -202,6 +215,9 @@ export interface ChatRecordInput {
   seq?: number;
   originId?: string;
   replay?: boolean;
+  deletes?: number;
+  contextTokens?: number;
+  toolCalls?: number;
 }
 
 /**
@@ -247,6 +263,9 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.seq !== undefined) record.seq = input.seq;
   if (input.originId !== undefined) record.originId = input.originId;
   if (input.replay !== undefined) record.replay = input.replay;
+  if (input.deletes !== undefined) record.deletes = input.deletes;
+  if (input.contextTokens !== undefined) record.contextTokens = input.contextTokens;
+  if (input.toolCalls !== undefined) record.toolCalls = input.toolCalls;
   return encode(record);
 }
 

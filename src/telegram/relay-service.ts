@@ -282,15 +282,19 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     // the envelope's trailing instruction line and the first-contact Telegram
     // mode block. pty prepends them as today; hook hands them to the injector;
     // off suppresses them. Unset resolver = today's dual-path defaults.
+    // An API tool gets the bare text: Helm posts its answer to chat itself, so
+    // the envelope and the Telegram-mode instructions are only noise to it.
+    const isApiTool = Boolean(this.configLoader.getCliTypeEntry(session.cliType)?.api);
+    const payload = this.resolveTelegramTextPayload(session, msg.text);
     const instruction = this.reminderDelivery
       ? (await this.reminderDelivery(session, 'telegramInstruction')).channel
       : 'pty';
-    const wrapped = wrapTelegramEnvelope(this.resolveTelegramTextPayload(session, msg.text), from, chatId, instruction !== 'pty');
+    const wrapped = isApiTool ? payload : wrapTelegramEnvelope(payload, from, chatId, instruction !== 'pty');
     // Channel affinity is state, not text — it flips on entry regardless.
     let text = wrapped;
     if (session.interactionChannel !== 'telegram') {
       this.sessionManager.updateSession(session.id, { interactionChannel: 'telegram' });
-      const mode = this.reminderDelivery
+      const mode = isApiTool ? 'off' : this.reminderDelivery
         ? (await this.reminderDelivery(session, 'telegramModeInstructions')).channel
         : 'pty';
       if (mode === 'pty') text = HELM_TELEGRAM_MODE_INSTRUCTIONS + '\n\n' + wrapped;

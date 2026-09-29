@@ -42,11 +42,14 @@ const STORE_VERSION = 2;
 /** Every field that is absent on a fresh record and must survive a round trip. */
 const OPTIONAL_NUMBERS = ['lastAccessedAt', 'recallSessionCount', 'dormantSince', 'createdAtEpoch'] as const;
 const OPTIONAL_STRINGS = ['projectId', 'planId', 'lastRecallSessionId'] as const;
+/** First-party flags; only `true` is stored, absent means false. */
+const OPTIONAL_FLAGS = ['agentRun', 'summary'] as const;
 
 function optionalFields(record: MemoryRecord): Partial<MemoryRecord> {
   const out: Record<string, unknown> = {};
   for (const field of OPTIONAL_NUMBERS) if (record[field] !== undefined) out[field] = record[field];
   for (const field of OPTIONAL_STRINGS) if (record[field] !== undefined) out[field] = record[field];
+  for (const field of OPTIONAL_FLAGS) if (record[field] === true) out[field] = true;
   return out as Partial<MemoryRecord>;
 }
 
@@ -188,6 +191,11 @@ function normalizeRecord(value: unknown): MemoryRecord | null {
     if (value[field] === undefined) continue;
     if (typeof value[field] !== 'string' || value[field].trim() === '') return null;
     optional[field] = value[field];
+  }
+  for (const field of OPTIONAL_FLAGS) {
+    if (value[field] === undefined) continue;
+    if (typeof value[field] !== 'boolean') return null;
+    if (value[field]) optional[field] = true;
   }
   return {
     id: value.id,

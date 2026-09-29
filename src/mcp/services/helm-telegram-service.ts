@@ -11,7 +11,7 @@ import type {
   TelegramStatus,
 } from '../../types/telegram-channel.js';
 import type { ChatBroker } from '../../session/chat/chat-broker.js';
-import type { ChatOutboundMessage } from '../../session/chat/chat-bridge.js';
+import type { ChatOutboundMessage, ChatTurnUsage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
@@ -129,6 +129,7 @@ export class HelmTelegramService {
     sessionRef: string,
     message: string,
     filePath?: string,
+    usage?: ChatTurnUsage,
   ): Promise<{ sent: boolean; reason?: string }> {
     const unreachable = this.noChatSurface();
     if (unreachable) return unreachable;
@@ -159,7 +160,7 @@ export class HelmTelegramService {
     // name-resolution fallback that could mis-route a reply to the wrong topic.
     const session = this.sessionManager.getSession(sessionRef);
     if (!session) return { sent: false, reason: `Session not found by ID: ${sessionRef}` };
-    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}) });
+    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}), ...(usage ? { usage } : {}) });
   }
 
   /**
