@@ -582,9 +582,11 @@ describe('ApiSessionHost', () => {
 
   it('appends the hook prompt context after the mutable context, given the real prompt', async () => {
     const asked: Array<[string, string]> = [];
+    let offeredTools: ReadonlySet<string> = new Set();
     const { host, client, hooks } = makeHost([{ content: 'ok' }], {
-      promptContext: async (sessionId, prompt) => {
+      promptContext: async (sessionId, prompt, tools) => {
         asked.push([sessionId, prompt]);
+        offeredTools = tools;
         return 'possibly related: memory/m1 (Thing)';
       },
     });
@@ -592,6 +594,7 @@ describe('ApiSessionHost', () => {
     proc.write('find x\r');
     await vi.waitFor(() => expect(hooks).toContain('Stop'));
     expect(asked).toEqual([['s1', 'find x']]);
+    expect([...offeredTools].sort()).toEqual(['Read', 'chat_history', 'checkpoint', 'forget_turns', 'memory_search', 'request_tool', 'rollback']);
     expect(client.calls[0].messages[1].content).toMatch(/<\/helm_context>\n\npossibly related: memory\/m1 \(Thing\)$/);
   });
 

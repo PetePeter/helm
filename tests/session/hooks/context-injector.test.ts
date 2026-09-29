@@ -220,6 +220,32 @@ describe('UserPromptSubmit', () => {
     expect(text).toContain('possibly related: memory/x');
   });
 
+  // Regression: a local model spent ~100 s of tool calls hunting for
+  // session_mission_set / session_set_aiagent_state before answering "hi".
+  it('promptContext drops hints whose tool the session cannot call', async () => {
+    const { injector } = makeInjector(
+      {
+        suggest: async () => 'possibly related: memory/x',
+        getMission: () => undefined,
+        getStartablePlans: () => [{ humanId: 'P-1', title: 'plan', status: 'planned' }],
+      },
+      { aiagentState: undefined },
+    );
+    expect(await injector.promptContext('s1', 'hi', new Set(['Read']))).toBeNull();
+    const withTools = await injector.promptContext('s1', 'hi', new Set(['memory_get', 'session_mission_set', 'session_set_aiagent_state', 'session_plan_claim']));
+    expect(withTools).toContain('possibly related: memory/x');
+    expect(withTools).toContain('No mission set');
+    expect(withTools).toContain('session_set_aiagent_state');
+    expect(withTools).toContain('P-1');
+  });
+
+  it('promptContext keeps a set mission as a plain fact when the session cannot change it', async () => {
+    const { injector } = makeInjector({ getMission: () => ({ text: 'ship it', setBy: 'ai', setAt: 1 }) as never });
+    const text = await injector.promptContext('s1', 'hi', new Set());
+    expect(text).toContain('ship it');
+    expect(text).not.toContain('session_mission_set');
+  });
+
   it('promptContext is silent for an unknown session', async () => {
     const { injector } = makeInjector({ getSession: () => null });
     expect(await injector.promptContext('nope', 'hi')).toBeNull();

@@ -224,15 +224,17 @@ export class ContextInjector {
   /**
    * The per-prompt context as plain text — the CLI hook reply encodes it, an
    * API-tool session appends it to its user message. Null = nothing to say.
+   * `tools` = what the session can actually call: a hint whose tool it lacks
+   * is dropped, because a small model will burn turns hunting for that tool.
    */
-  async promptContext(sessionId: string, prompt: string): Promise<string | null> {
+  async promptContext(sessionId: string, prompt: string, tools?: ReadonlySet<string>): Promise<string | null> {
     const session = this.deps.getSession(sessionId);
     if (!session) return null;
     if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
-    return this.userPromptContext(session, prompt);
+    return this.userPromptContext(session, prompt, tools ? (tool) => tools.has(tool) : () => true);
   }
 
-  private async userPromptContext(session: SessionInfo, prompt: string): Promise<string | null> {
+  private async userPromptContext(session: SessionInfo, prompt: string, can: (tool: string) => boolean = () => true): Promise<string | null> {
     const parts: string[] = [];
 
     // The rules ride along with the message they govern — a prompt that is
@@ -241,7 +243,7 @@ export class ContextInjector {
     // 'off' suppresses them, so one message never carries both forms.
     const mode = (reminder: ReminderId) => this.deps.getReminderMode?.(reminder);
     if (prompt.includes('[HELM_MSG')) {
-      if (resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), true).channel === 'hook') {
+      if (can('chat_send') && resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), true).channel === 'hook') {
         parts.push(HELM_MSG_HOOK_RULES);
       }
     } else if (prompt.includes('[HELM_TELEGRAM')) {
@@ -263,13 +265,18 @@ export class ContextInjector {
     // Mission rides on every prompt, right after the rules so the payload cap
     // (which drops trailing parts first) never cuts it. Hook-only by design: it
     // has no prepend twin, so it is not a G9 ReminderId (docs/mission-statement.md).
-    if (this.deps.getMission) parts.push(missionReminder(this.deps.getMission(session.id)));
+    // Without session_mission_set the mission is a fact to read, not an instruction.
+    if (this.deps.getMission) {
+      const mission = this.deps.getMission(session.id);
+      if (can('session_mission_set')) parts.push(missionReminder(mission));
+      else if (mission) parts.push(missionLine(mission));
+    }
 
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);
-    if (pointer) parts.push(pointer);
+    if (pointer && (can('memory_get') || can('skill_get'))) parts.push(pointer);
 
-    const nudge = this.oneShotNudges(session);
+    const nudge = this.oneShotNudges(session, can);
     if (nudge) parts.push(nudge);
 
     if (parts.length === 0) return null;
@@ -284,16 +291,16 @@ export class ContextInjector {
    * Conditional nudges — only when something is actually outstanding, once
    * per thing per session. Nagging every turn is the failure mode.
    */
-  private oneShotNudges(session: SessionInfo): string | null {
+  private oneShotNudges(session: SessionInfo, can: (tool: string) => boolean): string | null {
     const lines: string[] = [];
-    if (session.aiagentState === undefined) {
+    if (session.aiagentState === undefined && can('session_set_aiagent_state')) {
       if (this.markNudged(session.id, 'aiagent-state')) {
         lines.push(
           'Your AIAGENT state is unset — call session_set_aiagent_state so your row shows what you are doing.',
         );
       }
     }
-    if (!this.deps.getClaimedPlan(session.id)) {
+    if (can('session_plan_claim') && !this.deps.getClaimedPlan(session.id)) {
       const dirPath = session.workingDir ?? '';
       for (const plan of this.deps.getStartablePlans(dirPath)) {
         const key = `startable:${plan.humanId ?? plan.title}`;

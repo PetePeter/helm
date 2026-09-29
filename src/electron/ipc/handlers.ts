@@ -477,7 +477,7 @@ export function registerIPCHandlers(
     },
     emitHook: (event) => hookReceiver.emit('hook', event),
     // Bound lazily: the injector is built further down, after the managers it reads.
-    promptContext: (sessionId, prompt) => contextInjector.promptContext(sessionId, prompt),
+    promptContext: (sessionId, prompt, tools) => contextInjector.promptContext(sessionId, prompt, tools),
     // A record with an originId came in from the user; the rest are the session's own replies.
     chatHistory: (sessionId) => mobileChatJournal.sessionEntries(sessionId).map(({ seq, record }) => ({
       seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,

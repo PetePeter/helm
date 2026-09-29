@@ -54,8 +54,12 @@ export interface ApiSessionHostDeps {
   postChat: (sessionId: string, message: string, usage: ChatTurnUsage) => Promise<unknown>;
   /** Feed a synthetic hook event to the tracker, so dots/flash/plan settlement match a hooked CLI. */
   emitHook: (event: HookEvent) => void;
-  /** The per-prompt hook context (suggestions, mission, rules, nudges) a hooked CLI would be injected with. */
-  promptContext?: (sessionId: string, prompt: string) => Promise<string | null>;
+  /**
+   * The per-prompt hook context (suggestions, mission, rules, nudges) a hooked
+   * CLI would be injected with. `tools` = every tool the session is offered;
+   * hints naming any other tool are dropped.
+   */
+  promptContext?: (sessionId: string, prompt: string, tools: ReadonlySet<string>) => Promise<string | null>;
   /** The session's chat messages (both sides), oldest first — backs chat_history. */
   chatHistory?: (sessionId: string) => ChatHistoryEntry[];
   /** Folder holding one history JSON per cliSessionName. */
@@ -151,6 +155,7 @@ export class ApiSessionHost {
       this.lineage.set(sessionId, pending);
     }
     const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
+    const offered = new Set([...toolNames, ...builtins.map((tool) => tool.name)]);
     const system = buildSystemPrompt({
       toolNames,
       skills: toolNames.includes('skill_get') ? this.safeSkills(cwd) : [],
@@ -197,7 +202,7 @@ export class ApiSessionHost {
       onTurnStart: (input) => {
         this.repliedThisTurn.set(sessionId, new Set());
         this.hook(sessionId, 'UserPromptSubmit', cwd);
-        return this.promptContext(sessionId, input);
+        return this.promptContext(sessionId, input, offered);
       },
       onTurnEnd: (outcome) => this.onTurnEnd(sessionId, auth, cwd, outcome),
       stashSummary: (summary) => {
@@ -475,9 +480,9 @@ export class ApiSessionHost {
   }
 
   /** Fail-open: a broken injector costs the turn its hints, never the turn. */
-  private async promptContext(sessionId: string, input: string): Promise<string | null> {
+  private async promptContext(sessionId: string, input: string, tools: ReadonlySet<string>): Promise<string | null> {
     try {
-      return (await this.deps.promptContext?.(sessionId, input)) ?? null;
+      return (await this.deps.promptContext?.(sessionId, input, tools)) ?? null;
     } catch (err) {
       logger.warn(`[ApiSession] Prompt context failed for ${sessionId}: ${String(err)}`);
       return null;
