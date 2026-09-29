@@ -51,6 +51,11 @@ export interface ApiToolConfig {
    * Extra requests (e.g. many subagents) queue for a free slot.
    */
   slots?: number;
+  /**
+   * First turn of a fresh conversation runs without tools: the model restates
+   * the task, and the user's next message unlocks tools. Default true.
+   */
+  handshake?: boolean;
 }
 
 export type CliTypeOptions = {

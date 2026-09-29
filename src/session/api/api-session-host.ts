@@ -16,7 +16,7 @@ import type { AuthContext, McpTool } from '../../mcp/tools/types.js';
 import { getToolReminder } from '../../mcp/tools/reminders.js';
 import type { HookEvent } from '../hooks/hook-normaliser.js';
 import { logger } from '../../utils/logger.js';
-import { CHECKPOINT_TOOL, createOpenAiChatClient, FORGET_TOOL, ROLLBACK_TOOL, type ChatClient, type ChatMessage } from './api-agent-loop.js';
+import { CHECKPOINT_TOOL, createOpenAiChatClient, FORGET_TOOL, ROLLBACK_TOOL, type ChatClient, type ChatMessage, type ToolSpec } from './api-agent-loop.js';
 import { getNativeTool, truncateOutput } from './api-native-tools.js';
 import {
   buildMutableContext,
@@ -156,8 +156,16 @@ export class ApiSessionHost {
     }
     const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
     const offered = new Set([...toolNames, ...builtins.map((tool) => tool.name)]);
+    // Helm MCP tools carry long schemas: only their names ride in the constant
+    // prefix; load_tools discloses the rest on demand. Native tools stay loaded.
+    const spec = ({ name, description, parameters }: ToolSpec) => ({ name, description, parameters });
+    // skill_get stays loaded: the skills directory points at it, so a load hop would be pure cost.
+    const isCore = (tool: { source: string; name: string }) => tool.source === 'native' || tool.name === 'skill_get';
+    const core = tools.filter(isCore).map(spec);
+    const deferred = tools.filter((tool) => !isCore(tool)).map(spec);
     const system = buildSystemPrompt({
       toolNames,
+      deferredToolNames: deferred.map((tool) => tool.name),
       skills: toolNames.includes('skill_get') ? this.safeSkills(cwd) : [],
       extra: api.systemPrompt,
     });
@@ -186,7 +194,10 @@ export class ApiSessionHost {
     const proc = new ApiSessionProcess({
       client,
       system,
-      tools: [...tools.map(({ name, description, parameters }) => ({ name, description, parameters })), ...builtins],
+      tools: [...core, ...builtins],
+      deferredTools: deferred,
+      // A subagent's first turn IS its task; everyone else confirms intent first.
+      handshake: !pending && api.handshake !== false,
       maxToolRounds: api.maxToolRounds,
       history: this.loadHistory(historyFile),
       saveHistory: (history) => this.saveHistory(historyFile, history),

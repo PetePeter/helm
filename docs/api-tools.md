@@ -86,6 +86,19 @@ graph LR
   handover summary in one tool-less turn. The summary is saved as a memory, so
   it survives a crash mid-swap, and then becomes the whole history. After that
   the memory is deleted.
+- **Deferred Helm tools (progressive disclosure).** Only native tools and the
+  built-ins are offered with full schemas. Ticked Helm MCP tools are named in
+  the system prompt and offered once the model calls `load_tools(names)`, which
+  returns their descriptions. Which tools are loaded is read back from the
+  history, so loads survive a resume and vanish with a forgotten or compacted
+  turn. The trade-off: each load changes the tool block and costs one
+  prefix-cache miss, in exchange for a much smaller fixed prefix.
+- **Handshake.** A fresh conversation's first turn runs with no tools, and a
+  note asks the model to restate the task and its plan. The user's next
+  message is the confirmation, and tools are offered from then on. Subagents
+  skip the gate, because their first turn is the task. Set
+  `api.handshake: false` to turn it off. `skill_get` stays loaded, and the
+  skills directory lists only id and name; the rest is one `skill_get` away.
 - **`chat_history`.** An always-offered tool that reads the session's own chat
   journal, both sides, newest page last. It can grep (`query`, a regex, falling
   back to plain text) and page back (`before`). What was said survives
@@ -161,6 +174,7 @@ everything above the new message. Two rules follow from that:
     model: minicpm              # router section / provider model slug
     apiKeyEnv: OPENROUTER_API_KEY  # optional; the key itself is never stored
     maxToolRounds: 25           # optional; the final round offers no tools
+    handshake: true             # optional; first turn without tools until the user confirms
     systemPrompt: ...           # optional; appended to the constant prompt
     allowedTools: [Read, Glob, Grep, memory_search, skill_get]
 ```

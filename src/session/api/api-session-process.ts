@@ -37,6 +37,8 @@ const COMPACT_COMMAND = '/compact';
 /** The one tool-less turn a compaction asks for; its answer becomes the whole new history. */
 const COMPACT_REQUEST = 'Compact your context: write a handover summary of this conversation for yourself — '
   + 'the goal, decisions made, facts and ids you still need, open work and next steps. Plain text only.';
+const HANDSHAKE_NOTE = 'This is the first message of the conversation: tools are off for this reply. '
+  + 'Reply briefly with what you understood and what you plan to do; tools unlock once the user confirms.';
 const HANDOVER_PREFIX = '[Handover — your summary of the conversation before compaction]';
 
 export interface ApiTurnOutcome {
@@ -57,6 +59,13 @@ export interface ApiSessionDeps {
   client: ChatClient;
   system: string;
   tools: ToolSpec[];
+  /** Named in the system prompt, offered once loaded with load_tools (see runAgentTurn). */
+  deferredTools?: ToolSpec[];
+  /**
+   * No tools on a fresh conversation's first turn: the model restates what it
+   * understood, and the user's next message (the confirmation) unlocks tools.
+   */
+  handshake?: boolean;
   executeTool: (name: string, args: Record<string, unknown>, signal: AbortSignal) => Promise<string>;
   maxToolRounds?: number;
   history: ChatMessage[];
@@ -356,13 +365,16 @@ export class ApiSessionProcess implements PtyProcess {
     const controller = new AbortController();
     this.running = controller;
     const hints = await this.deps.onTurnStart?.(input);
-    const context = [this.deps.mutableContext(), hints, forgetNudge(this.history)].filter(Boolean).join('\n\n');
+    const gated = Boolean(this.deps.handshake) && this.history.length === 0;
+    const context = [this.deps.mutableContext(), hints, forgetNudge(this.history), gated ? HANDSHAKE_NOTE : null]
+      .filter(Boolean).join('\n\n');
     const outcome: ApiTurnOutcome = { input, finalText: '', toolsUsed: [] };
     try {
       const result = await runAgentTurn({
         client: this.deps.client,
         system: this.deps.system,
-        tools: this.deps.tools,
+        tools: gated ? [] : this.deps.tools,
+        deferredTools: gated ? undefined : this.deps.deferredTools,
         history: this.history,
         userContent: context ? `${input}\n\n${context}` : input,
         executeTool: (name, args) => this.deps.executeTool(name, args, controller.signal),

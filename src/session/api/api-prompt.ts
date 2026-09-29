@@ -43,6 +43,8 @@ export interface SkillSummary {
 
 export function buildSystemPrompt(params: {
   toolNames: readonly string[];
+  /** Tools offered only after load_tools; listed by name so the model knows they exist. */
+  deferredToolNames?: readonly string[];
   skills: readonly SkillSummary[];
   extra?: string;
   platform?: string;
@@ -57,11 +59,15 @@ export function buildSystemPrompt(params: {
     'A message starting with [from <session> (<id>)] comes from another Helm session; when it says "awaiting reply",',
     'your final answer is sent back to that session automatically.',
   ];
+  if (params.deferredToolNames?.length) {
+    parts.push('', `More tools — call load_tools with their names before using them: ${params.deferredToolNames.join(', ')}.`);
+  }
   if (params.skills.length && has('skill_get')) {
     parts.push(
       '',
       'Skills (reusable instructions). When one applies, call skill_get with its id and follow it:',
-      ...params.skills.map((skill) => `- ${skill.id}: ${skill.name}${skill.triggerCondition ? ` — ${skill.triggerCondition}` : ''}`),
+      // Names only: the body (and when to apply it) is one skill_get away.
+      ...params.skills.map((skill) => `- ${skill.id}: ${skill.name}`),
     );
   }
   if (params.extra?.trim()) parts.push('', params.extra.trim());

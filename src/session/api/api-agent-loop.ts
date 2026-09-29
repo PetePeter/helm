@@ -76,6 +76,12 @@ export interface AgentTurnParams {
    * turn; the loop reads and writes it for the checkpoint/rollback tools.
    */
   checkpoints?: Map<string, number>;
+  /**
+   * Tools named in the system prompt but not offered until the model loads
+   * them with load_tools. What is loaded is read back from the history, so it
+   * survives a resume and vanishes with a forgotten or compacted load.
+   */
+  deferredTools?: ToolSpec[];
 }
 
 export interface AgentTurnResult {
@@ -154,6 +160,50 @@ export const FORGET_TOOL: ToolSpec = {
   },
 };
 
+/**
+ * Progressive disclosure: the system prompt names the deferred tools, this
+ * returns their descriptions, and from the next step on their full schemas are
+ * offered. Loading changes the tool block, so it costs one prefix-cache miss.
+ */
+export const LOAD_TOOLS_TOOL: ToolSpec = {
+  name: 'load_tools',
+  description: 'Load tools listed in the system prompt as "load before use" so you can call them. Returns what each does.',
+  parameters: {
+    type: 'object',
+    properties: { names: { type: 'array', items: { type: 'string' }, description: 'Tool names to load' } },
+    required: ['names'],
+  },
+};
+
+/** Tool names loaded so far: every name a load_tools call in this history asked for. */
+export function loadedToolNames(history: readonly ChatMessage[]): Set<string> {
+  const loaded = new Set<string>();
+  for (const message of history) {
+    for (const call of message.tool_calls ?? []) {
+      if (call.function.name !== LOAD_TOOLS_TOOL.name) continue;
+      const names = parseToolArguments(call.function.arguments)?.names;
+      if (Array.isArray(names)) for (const name of names) if (typeof name === 'string') loaded.add(name);
+    }
+  }
+  return loaded;
+}
+
+/** The tools offered this step: the always-on set, load_tools, and whatever has been loaded. */
+function offeredTools(params: AgentTurnParams, history: readonly ChatMessage[]): ToolSpec[] {
+  const deferred = params.deferredTools ?? [];
+  if (!deferred.length) return params.tools;
+  const loaded = loadedToolNames(history);
+  return [...params.tools, LOAD_TOOLS_TOOL, ...deferred.filter((tool) => loaded.has(tool.name))];
+}
+
+function describeLoaded(deferred: readonly ToolSpec[], names: unknown): string {
+  if (!Array.isArray(names) || !names.length) return 'Error: names must be a non-empty array of tool names';
+  return names.map((name) => {
+    const tool = deferred.find((t) => t.name === name);
+    return tool ? `${tool.name} — loaded. ${tool.description}` : `${String(name)} — not available`;
+  }).join('\n');
+}
+
 /** Tools whose calls in one step may run concurrently (each subagent is its own session). */
 const PARALLEL_TOOLS = new Set(['Agent']);
 
@@ -216,7 +266,7 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
 
   for (let round = 0; ; round++) {
     // On the last allowed round, offer no tools: the model must answer in text.
-    const offerTools = round < maxRounds ? params.tools : [];
+    const offerTools = round < maxRounds ? offeredTools(params, history) : [];
     const { message, usage } = await params.client.complete(
       [{ role: 'system', content: params.system }, ...history],
       offerTools,
@@ -256,6 +306,7 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
       toolsUsed.push(name);
       params.onEvent?.({ type: 'tool_call', name, args: args ?? {} });
       if (!args) return `Error: arguments were not valid JSON: ${call.function.arguments.slice(0, 200)}`;
+      if (name === LOAD_TOOLS_TOOL.name) return describeLoaded(params.deferredTools ?? [], args.names);
       if (name === CHECKPOINT_TOOL.name && params.checkpoints) {
         const label = typeof args.label === 'string' ? args.label.trim() : '';
         if (!label) return 'Error: label is required';

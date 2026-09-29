@@ -143,6 +143,27 @@ describe('runAgentTurn', () => {
     ]);
   });
 
+  it('deferred tools: offered only after load_tools, which returns their descriptions; loads survive in history', async () => {
+    const memory = { name: 'memory_search', description: 'Search memories', parameters: { type: 'object' } };
+    const client = scriptedClient([
+      { content: '', tool_calls: [toolCall('l', 'load_tools', '{"names":["memory_search","nope"]}')] },
+      { content: 'loaded' },
+    ]);
+    const result = await runAgentTurn({
+      client, system: '', tools: [{ name: 'Read', description: '', parameters: {} }], deferredTools: [memory],
+      history: [], userContent: 'x', executeTool: async () => '',
+    });
+    expect(client.calls[0].toolNames).toEqual(['Read', 'load_tools']);
+    expect(last(client.calls[1].messages).content).toBe('memory_search — loaded. Search memories\nnope — not available');
+    expect(client.calls[1].toolNames).toEqual(['Read', 'load_tools', 'memory_search']);
+    // A later turn over the same history still offers it — nothing to re-load.
+    const next = scriptedClient([{ content: 'ok' }]);
+    await runAgentTurn({
+      client: next, system: '', tools: [], deferredTools: [memory], history: result.history, userContent: 'y', executeTool: async () => '',
+    });
+    expect(next.calls[0].toolNames).toEqual(['load_tools', 'memory_search']);
+  });
+
   it('rollback to an unknown checkpoint is an error the model can read, not a rewind', async () => {
     const client = scriptedClient([
       { content: '', tool_calls: [toolCall('rb', 'rollback', '{"label":"nope","note":"n"}')] },
@@ -195,9 +216,11 @@ describe('api prompt helpers', () => {
     expect(selectApiTools(catalog, ['nope'])).toEqual([]);
   });
 
-  it('lists skills in the system prompt only when skill_get is ticked', () => {
+  it('lists skills by id and name only, and only when skill_get is ticked', () => {
     const skills = [{ id: 's1', name: 'Coding', triggerCondition: 'when coding' }];
-    expect(buildSystemPrompt({ toolNames: ['skill_get'], skills })).toContain('s1: Coding — when coding');
+    const prompt = buildSystemPrompt({ toolNames: ['skill_get'], skills });
+    expect(prompt).toContain('- s1: Coding');
+    expect(prompt).not.toContain('when coding');
     expect(buildSystemPrompt({ toolNames: ['Read'], skills })).not.toContain('s1');
   });
 });
@@ -471,7 +494,7 @@ describe('ApiSessionHost', () => {
     });
     return { host, client, dispatched, hooks, requests, usages };
   }
-  const api = { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['memory_search', 'Read'] };
+  const api = { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['memory_search', 'Read'], handshake: false };
   const mobileMsg = '[HELM_MSG]{"fromSessionId":"mobile:dev1"}how are you';
 
   it('auto-replies to chat with the final answer when the model did not call chat_send', async () => {
@@ -502,7 +525,9 @@ describe('ApiSessionHost', () => {
     const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'abc-2', cwd: dir, api });
     proc.write('find x\r');
     await vi.waitFor(() => expect(hooks).toContain('Stop'));
-    expect(client.calls[0].toolNames).toEqual(['Read', 'memory_search', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns']);
+    expect(client.calls[0].toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'load_tools']);
+    // Helm MCP tools are named in the system prompt, their schemas held back until loaded.
+    expect(client.calls[0].messages[0].content).toContain('call load_tools with their names before using them: memory_search.');
     expect(dispatched).toEqual([
       { name: 'memory_search', args: { query: 'x' }, sessionId: 's1' },
       { name: 'chat_send', args: { message: 'done' }, sessionId: 's1' },
@@ -558,6 +583,19 @@ describe('ApiSessionHost', () => {
     await vi.waitFor(() => expect(dispatched.map((d) => d.args.message)).toContain('(deleted from context)'));
     expect(last(usages).contextTokens).toBeLessThan(800);
     expect(last(usages).contextTokens).toBeGreaterThan(0);
+  });
+
+  it('handshake: a fresh conversation\'s first turn has no tools; the confirming next turn does', async () => {
+    const { host, client, hooks } = makeHost([{ content: 'I will search for x' }, { content: 'done' }]);
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'abc-h', api: { ...api, handshake: true } });
+    proc.write('find x\r');
+    await vi.waitFor(() => expect(hooks.filter((h) => h === 'Stop')).toHaveLength(1));
+    expect(client.calls[0].toolNames).toEqual([]);
+    expect(client.calls[0].messages[1].content).toMatch(/tools are off for this reply/);
+    proc.write('yes go\r');
+    await vi.waitFor(() => expect(hooks.filter((h) => h === 'Stop')).toHaveLength(2));
+    expect(client.calls[1].toolNames).toContain('Read');
+    expect(last(client.calls[1].messages).content).not.toMatch(/tools are off/);
   });
 
   it('forget_turns drops the quoted past turn after the current one', async () => {
@@ -682,7 +720,7 @@ describe('ApiSessionHost — subagents and slots', () => {
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-sub-')); });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  const api = { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['Read'] };
+  const api = { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['Read'], handshake: false };
 
   function makeHost(client: { complete: (...a: any[]) => Promise<any> }) {
     const chat: string[] = [];
@@ -734,7 +772,7 @@ describe('ApiSessionHost — subagents and slots', () => {
     // Same system prompt and tool block as the parent, so the prefix cache is shared.
     expect(childFirst.messages[0]).toEqual(parentFirst.messages[0]);
     expect(childFirst.toolNames).toEqual(parentFirst.toolNames);
-    expect(parentFirst.toolNames).toEqual(['Read', 'memory_get', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'Agent']);
+    expect(parentFirst.toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'Agent', 'load_tools']);
     expect(childFirst.messages[1].content).toMatch(/^Handover from boss — subagent task: count docs\nParent mission: ship it\n\nHow many md files in docs\?/);
     // The subagent writes its own summary in one more turn.
     expect(last(childSummary.messages).content).toMatch(/^Summarise your result/);
