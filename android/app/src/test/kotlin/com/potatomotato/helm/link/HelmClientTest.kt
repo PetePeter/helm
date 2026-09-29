@@ -714,6 +714,18 @@ class HelmClientTest {
     }
 
     @Test
+    fun `clear asks Helm to clear the session's context`() {
+        client.clear("s1")
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_clear", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+
+        client.onInbound(resultFor(lastCallId(), "{}"))
+        assertNotice(SessionAction.Clear, ActionOutcome.Done)
+    }
+
+    @Test
     fun `spawn sends the arguments session_create needs and carries the created id back`() {
         client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 

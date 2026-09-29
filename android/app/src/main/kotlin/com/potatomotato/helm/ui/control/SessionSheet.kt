@@ -174,6 +174,7 @@ private val SHEET_ACTIONS = listOf(
     SessionAction.Snapshot,
     SessionAction.Rename,
     SessionAction.Compact,
+    SessionAction.Clear,
     SessionAction.Spawn,
     SessionAction.Close,
 )
@@ -276,7 +277,7 @@ private fun ConfirmAction(
 
 /** The actions a tap does not spend straight away — the ones that are hard to undo. */
 internal fun requiresConfirmation(action: SessionAction): Boolean =
-    action == SessionAction.Close || action == SessionAction.Compact
+    action == SessionAction.Close || action == SessionAction.Compact || action == SessionAction.Clear
 
 /** The prompt copy of a confirming action, and the colour its confirm earns. */
 private data class ConfirmCopy(val messageRes: Int, val yesRes: Int, val noRes: Int, val confirmColor: Color)
@@ -293,6 +294,13 @@ private fun confirmCopy(action: SessionAction): ConfirmCopy = when (action) {
         yesRes = R.string.control_confirm_compact_yes,
         noRes = R.string.control_confirm_compact_no,
         confirmColor = HelmColors.Accent,
+    )
+    // Danger, not Accent: unlike a compact, nothing of the conversation survives.
+    SessionAction.Clear -> ConfirmCopy(
+        messageRes = R.string.control_confirm_clear,
+        yesRes = R.string.control_confirm_clear_yes,
+        noRes = R.string.control_confirm_clear_no,
+        confirmColor = HelmColors.Danger,
     )
     else -> throw IllegalArgumentException("$action never confirms")
 }
@@ -428,6 +436,7 @@ internal val SessionAction.labelRes: Int
         SessionAction.Artifacts -> R.string.control_action_artifacts
         SessionAction.Rename -> R.string.control_action_rename
         SessionAction.Compact -> R.string.control_action_compact
+        SessionAction.Clear -> R.string.control_action_clear
         SessionAction.Stop -> R.string.control_action_stop
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
@@ -444,6 +453,7 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Artifacts -> R.string.control_glyph_artifacts
         SessionAction.Rename -> R.string.control_glyph_rename
         SessionAction.Compact -> R.string.control_glyph_compact
+        SessionAction.Clear -> R.string.control_glyph_clear
         SessionAction.Stop -> R.string.control_glyph_stop
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close

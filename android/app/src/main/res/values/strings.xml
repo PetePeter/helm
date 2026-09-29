@@ -230,6 +230,7 @@
     <string name="control_action_snapshot">Terminal snapshot</string>
     <string name="control_action_rename">Rename session</string>
     <string name="control_action_compact">Compact</string>
+    <string name="control_action_clear">Clear context</string>
     <string name="control_action_stop">Stop</string>
     <string name="control_action_spawn">Spawn session</string>
     <string name="control_action_close">Close session</string>
@@ -237,6 +238,7 @@
     <string name="control_glyph_snapshot">📄</string>
     <string name="control_glyph_rename">✎</string>
     <string name="control_glyph_compact">🛠</string>
+    <string name="control_glyph_clear">🧹</string>
     <string name="control_glyph_stop">⏹</string>
     <string name="control_glyph_spawn">✦</string>
     <string name="control_glyph_close">✕</string>
@@ -255,10 +257,14 @@
     <string name="control_confirm_compact">Compact “%1$s”? Its context is rewritten.</string>
     <string name="control_confirm_compact_yes">Compact it</string>
     <string name="control_confirm_compact_no">Not now</string>
+    <string name="control_confirm_clear">Clear “%1$s”? Its conversation is wiped.</string>
+    <string name="control_confirm_clear_yes">Clear it</string>
+    <string name="control_confirm_clear_no">Not now</string>
 
     <string name="control_notice_refused">Helm did not allow that. It is a rule on this device, not a fault — change what this phone may do in Helm\'s Mobile settings.</string>
     <string name="control_notice_done_rename">Session renamed.</string>
     <string name="control_notice_done_compact">Compacting.</string>
+    <string name="control_notice_done_clear">Clearing.</string>
     <string name="control_notice_done_stop">Stop sent.</string>
     <string name="control_notice_done_close">Session closed.</string>
     <string name="control_notice_done_spawn">Session started.</string>

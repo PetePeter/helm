@@ -84,6 +84,7 @@ private val SessionAction.doneRes: Int
     get() = when (this) {
         SessionAction.Rename -> R.string.control_notice_done_rename
         SessionAction.Compact -> R.string.control_notice_done_compact
+        SessionAction.Clear -> R.string.control_notice_done_clear
         SessionAction.Stop -> R.string.control_notice_done_stop
         SessionAction.Close -> R.string.control_notice_done_close
         SessionAction.Spawn -> R.string.control_notice_done_spawn

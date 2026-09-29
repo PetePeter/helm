@@ -427,6 +427,9 @@ class HelmClient(
     fun compact(sessionId: String): Boolean =
         act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
 
+    fun clear(sessionId: String): Boolean =
+        act(SessionAction.Clear, METHOD_SESSION_CLEAR, linkedMapOf("sessionId" to sessionId))
+
     fun stop(sessionId: String): Boolean =
         act(SessionAction.Stop, METHOD_SESSION_SEND_INPUT, linkedMapOf("sessionId" to sessionId, "sequence" to "{Esc}"))
 
@@ -1864,6 +1867,7 @@ class HelmClient(
         private const val METHOD_PEER_SPAWN = "peer_spawn"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"
+        private const val METHOD_SESSION_CLEAR = "session_clear"
         private const val METHOD_SESSION_SEND_INPUT = "session_send_input"
         private const val METHOD_SESSION_CLOSE = "session_close"
         private const val METHOD_SESSION_RENAME = "session_rename"

@@ -14,6 +14,9 @@ enum class SessionAction(val tool: String) {
     Rename("session_rename"),
     Compact("session_compact"),
 
+    /** Wipes the conversation — the CLI's configured clear command, `/clear` for an API tool. */
+    Clear("session_clear"),
+
     /** Interrupts the running turn — an Esc keypress, which stops a CLI and an API tool alike. */
     Stop("session_send_input"),
     Spawn("session_create"),

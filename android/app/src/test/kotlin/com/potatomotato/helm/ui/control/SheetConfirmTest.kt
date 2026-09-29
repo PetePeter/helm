@@ -23,8 +23,13 @@ class SheetConfirmTest {
     }
 
     @Test
+    fun `clear confirms — it wipes the conversation the session carries`() {
+        assertTrue(requiresConfirmation(SessionAction.Clear))
+    }
+
+    @Test
     fun `everything else fires at once`() {
-        for (action in SessionAction.entries - SessionAction.Close - SessionAction.Compact) {
+        for (action in SessionAction.entries - SessionAction.Close - SessionAction.Compact - SessionAction.Clear) {
             assertFalse(requiresConfirmation(action))
         }
     }
