@@ -15,7 +15,8 @@
  *
  * The Helm operator's pane shows its chat over the terminal by default
  * (OperatorChat); the xterm stays mounted underneath so flipping back to the
- * raw terminal never re-adopts the container.
+ * raw terminal never re-adopts the container. It carries no chip bar: quick
+ * actions don't apply to the operator and the bar occluded the chat.
  */
 import { computed, onBeforeUnmount } from 'vue';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
@@ -59,7 +60,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     <div class="terminal-container" id="terminalContainer" :ref="setContainer">
       <!-- xterm.js terminals rendered by TerminalManager -->
     </div>
-    <TerminalChips />
+    <TerminalChips v-if="!isOperator" />
   </div>
 </template>
 

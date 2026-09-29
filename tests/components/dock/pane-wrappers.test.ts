@@ -148,6 +148,15 @@ describe('pane wrappers render their view', () => {
     expect(wrapper.findComponent(TerminalChips).exists()).toBe(true);
   });
 
+  // The chip bar occluded the operator chat's composer; the operator has no use
+  // for quick actions in either view.
+  it('TerminalPane omits the chip bar for the operator', () => {
+    appState.sessions = [{ id: 'op', name: 'Helm', role: 'operator' } as any];
+    appState.activeSessionId = 'op';
+    const wrapper = mountPane(TerminalPane, fake.context);
+    expect(wrapper.findComponent(TerminalChips).exists()).toBe(false);
+  });
+
   it('SessionsPane renders the sort bar and the session list', () => {
     const wrapper = mountPane(SessionsPane, fake.context);
     expect(wrapper.findComponent(SortBar).exists()).toBe(true);
