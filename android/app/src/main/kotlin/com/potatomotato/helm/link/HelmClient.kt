@@ -427,6 +427,9 @@ class HelmClient(
     fun compact(sessionId: String): Boolean =
         act(SessionAction.Compact, METHOD_SESSION_COMPACT, linkedMapOf("sessionId" to sessionId))
 
+    fun stop(sessionId: String): Boolean =
+        act(SessionAction.Stop, METHOD_SESSION_SEND_INPUT, linkedMapOf("sessionId" to sessionId, "sequence" to "{Esc}"))
+
     /**
      * The artifacts of one session, for the artifacts screen. Like the terminal
      * tail, this is PULLED when the screen asks for it, never streamed: the list
@@ -1861,6 +1864,7 @@ class HelmClient(
         private const val METHOD_PEER_SPAWN = "peer_spawn"
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"
+        private const val METHOD_SESSION_SEND_INPUT = "session_send_input"
         private const val METHOD_SESSION_CLOSE = "session_close"
         private const val METHOD_SESSION_RENAME = "session_rename"
         private const val METHOD_SESSION_CREATE = "session_create"

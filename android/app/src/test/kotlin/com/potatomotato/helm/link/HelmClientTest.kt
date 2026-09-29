@@ -701,6 +701,19 @@ class HelmClientTest {
     }
 
     @Test
+    fun `stop sends Esc to the session as terminal input`() {
+        client.stop("s1")
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_send_input", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+        assertEquals("{Esc}", call.getJSONObject("params").getString("sequence"))
+
+        client.onInbound(resultFor(lastCallId(), "{}"))
+        assertNotice(SessionAction.Stop, ActionOutcome.Done)
+    }
+
+    @Test
     fun `spawn sends the arguments session_create needs and carries the created id back`() {
         client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 

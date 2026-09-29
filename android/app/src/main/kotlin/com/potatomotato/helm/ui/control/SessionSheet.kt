@@ -170,6 +170,7 @@ fun SessionSheet(
  */
 private val SHEET_ACTIONS = listOf(
     SessionAction.Call,
+    SessionAction.Stop,
     SessionAction.Snapshot,
     SessionAction.Rename,
     SessionAction.Compact,
@@ -427,6 +428,7 @@ internal val SessionAction.labelRes: Int
         SessionAction.Artifacts -> R.string.control_action_artifacts
         SessionAction.Rename -> R.string.control_action_rename
         SessionAction.Compact -> R.string.control_action_compact
+        SessionAction.Stop -> R.string.control_action_stop
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
         SessionAction.Call -> R.string.control_action_call
@@ -442,6 +444,7 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Artifacts -> R.string.control_glyph_artifacts
         SessionAction.Rename -> R.string.control_glyph_rename
         SessionAction.Compact -> R.string.control_glyph_compact
+        SessionAction.Stop -> R.string.control_glyph_stop
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
         SessionAction.Call -> R.string.control_glyph_call
