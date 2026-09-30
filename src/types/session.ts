@@ -87,6 +87,10 @@ export interface SessionInfo {
    *  so it reports progress, results and questions back to the operator rather
    *  than the user. Cleared once the user messages it directly. Persists. */
   reportsTo?: string;
+  /** When the session last received a prompt (epoch ms) — the session row's
+   *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
+   *  on the desktop. Persists. */
+  lastPromptAt?: number;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
   /** Hook-reported turn failure (G3, Claude StopFailure — e.g. a usage limit or

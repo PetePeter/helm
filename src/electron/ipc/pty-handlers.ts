@@ -138,6 +138,8 @@ export function setupPtyHandlers(
         }
         // The user typing into an operator-started session takes it over.
         if (session?.reportsTo) sessionManager.updateSession(sessionId, { reportsTo: undefined });
+        // Enter submits a prompt: the session timer restarts (CLIs without hooks included).
+        if (session && data.includes('\r')) sessionManager.updateSession(sessionId, { lastPromptAt: Date.now() });
         onPtyInput?.(sessionId, data);
       }
     } catch (error) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseScheduledTime, formatElapsed } from '../src/utils/time-parser.js';
+import { parseScheduledTime, formatElapsed, formatClock } from '../src/utils/time-parser.js';
 
 describe('parseScheduledTime', () => {
   const NOW = new Date('2024-01-15T14:00:00.000Z').getTime(); // 14:00 UTC
@@ -152,5 +152,22 @@ describe('formatElapsed', () => {
 
   it('formats whole days without trailing hours', () => {
     expect(formatElapsed(3 * 24 * 60 * 60_000)).toBe('3d');
+  });
+});
+
+describe('formatClock — the session timer, d:hh:mm:ss', () => {
+  it('always shows every field, zero-padded', () => {
+    expect(formatClock(5_000)).toBe('0:00:00:05');
+    expect(formatClock(((1 * 24 + 2) * 3600 + 3 * 60 + 4) * 1000)).toBe('1:02:03:04');
+  });
+
+  it('floors partial seconds and grows days past 9', () => {
+    expect(formatClock(59_999)).toBe('0:00:00:59');
+    expect(formatClock(12 * 86_400_000)).toBe('12:00:00:00');
+  });
+
+  it('is blank for nonsense input', () => {
+    expect(formatClock(-1)).toBe('');
+    expect(formatClock(Number.NaN)).toBe('');
   });
 });

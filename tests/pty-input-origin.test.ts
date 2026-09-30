@@ -109,6 +109,19 @@ describe('pty:write input origin', () => {
     expect(onPtyInput).toHaveBeenCalledWith('s1', 'typed');
   });
 
+  it('Enter typed by the user restarts the session timer; plain typing and programmatic writes do not', async () => {
+    const { sessionManager } = setup();
+    const stamped = () => sessionManager.updateSession.mock.calls.filter(([, patch]) => 'lastPromptAt' in patch);
+
+    await handlers.get('pty:write')?.({}, 's1', 'typing');
+    await handlers.get('pty:write')?.({}, 's1', 'pasted\r', { inputOrigin: 'programmatic' });
+    expect(stamped()).toHaveLength(0);
+
+    await handlers.get('pty:write')?.({}, 's1', '\r');
+    expect(stamped()).toHaveLength(1);
+    expect(typeof stamped()[0][1].lastPromptAt).toBe('number');
+  });
+
   it('rejects input from a renderer that does not own the session', async () => {
     const { ptyManager, windowManager } = setup();
     windowManager.isSessionOwnedByWebContents.mockReturnValue(false);

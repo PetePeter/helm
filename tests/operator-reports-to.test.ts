@@ -112,3 +112,16 @@ describe('ContextInjector and reportsTo', () => {
     expect(cleared).toEqual(['worker', 'worker']);
   });
 });
+
+describe('lastPromptAt persistence', () => {
+  it('survives a restart — the timer keeps counting from the last prompt', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-last-prompt-'));
+    try {
+      const file = join(dir, 'sessions.yaml');
+      saveSessions([row({ id: 'worker', lastPromptAt: 1234 })], file);
+      expect(loadSessions(file)[0].lastPromptAt).toBe(1234);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

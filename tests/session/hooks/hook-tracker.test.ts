@@ -217,6 +217,19 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('stamps lastPromptAt on every prompt — the session timer counts from it', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop', {}));
+      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBeUndefined();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: 'go' }));
+      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(NOW);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('PreToolUse makes the dot green through the same activity-change contract as PTY output', () => {
     const s = setup();
     try {

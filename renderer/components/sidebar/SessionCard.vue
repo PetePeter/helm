@@ -106,7 +106,8 @@ const timerTooltip = computed(() => {
   const lastActive = props.activityLevel === 'active'
     ? 'now (active)'
     : formatClockTime(props.session.lastActiveAt);
-  return `Time since last output\nCreated: ${created}\nLast active: ${lastActive}`;
+  const lastPrompt = formatClockTime(props.session.lastPromptAt);
+  return `Time since last prompt\nLast prompt: ${lastPrompt}\nCreated: ${created}\nLast active: ${lastActive}`;
 });
 
 // --- Local state ---

@@ -43,6 +43,15 @@ export function formatElapsed(ms: number): string {
   return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 }
 
+/** Format elapsed milliseconds as a ticking clock, `d:hh:mm:ss` — the session row timer. */
+export function formatClock(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const total = Math.floor(ms / 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const days = Math.floor(total / 86_400);
+  return `${days}:${pad(Math.floor(total / 3600) % 24)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`;
+}
+
 // ---------- Relative ---------------------------------------------------------
 
 function parseRelative(text: string): Date | null {

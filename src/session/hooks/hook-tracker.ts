@@ -160,6 +160,7 @@ export class HookTracker {
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
+        this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
         break;

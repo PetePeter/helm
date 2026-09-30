@@ -19,7 +19,7 @@ import { useFlashAttention } from '../../composables/useFlashAttention.js';
 import { useRecycleBin } from '../../composables/useRecycleBin.js';
 import { isSessionHiddenFromOverview, resolveGroupDisplayName } from '../../session-groups.js';
 import { getCliDisplayName } from '../../utils.js';
-import { formatElapsed } from '../../../src/utils/time-parser.js';
+import { formatClock } from '../../../src/utils/time-parser.js';
 import { useHelmMainPaneContext } from '../../dock-pane-context.js';
 
 const SORT_OPTIONS = [
@@ -46,12 +46,14 @@ const navIndexMap = computed(() => {
   return map;
 });
 
+/** Time since the session's last prompt (or its start), as a ticking d:hh:mm:ss clock. */
 function sessionElapsedText(sessionId: string): string {
   // Touch the __tick__ sentinel to re-evaluate reactively
   state.lastOutputTimes.get('__tick__');
-  const ts = state.lastOutputTimes.get(sessionId);
-  if (ts === undefined) return '';
-  return formatElapsed(Date.now() - ts);
+  const session = state.sessions.find((s) => s.id === sessionId);
+  const since = session?.lastPromptAt ?? session?.createdAt;
+  if (since === undefined) return '';
+  return formatClock(Date.now() - since);
 }
 </script>
 
