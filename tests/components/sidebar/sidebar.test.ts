@@ -375,6 +375,25 @@ function makeGroupProps(overrides: Record<string, any> = {}) {
 }
 
 describe('SessionGroup', () => {
+  it('accepts a session dropped on a row inside the box, not only on its title', async () => {
+    const { state } = await import('../../../renderer/state.js');
+    const { useSessionDrag } = await import('../../../renderer/composables/useSessionDrag.js');
+    state.sessions.push({ id: 'dragged', name: 'dragged', cliType: 'claude-code', processId: 1, workingDir: '/other' } as any);
+    const w = mount(SessionGroup, {
+      props: makeGroupProps({ group: { dirPath: 'g1', displayName: 'G', collapsed: false, sessionCount: 1, kind: 'runtime', groupId: 'g1' } }),
+      slots: { default: '<div class="member-row">member</div>' },
+    });
+    const drag = useSessionDrag();
+    drag.beginDrag('dragged');
+    try {
+      await w.find('.member-row').trigger('drop');
+      expect(w.emitted('addSession')).toEqual([['g1', 'dragged']]);
+    } finally {
+      drag.endDrag();
+      state.sessions.splice(state.sessions.findIndex((s) => s.id === 'dragged'), 1);
+    }
+  });
+
   it('renders group name with session count', () => {
     const w = mount(SessionGroup, { props: makeGroupProps() });
     expect(w.find('.group-name').text()).toBe('project (3)');

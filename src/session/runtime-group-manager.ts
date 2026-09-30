@@ -21,7 +21,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
-import type { RuntimeGroup } from '../types/runtime-group.js';
+import { isRuntimeGroupColor, type RuntimeGroup } from '../types/runtime-group.js';
 
 export class RuntimeGroupManager extends EventEmitter {
   private groups: RuntimeGroup[] = [];
@@ -55,6 +55,17 @@ export class RuntimeGroupManager extends EventEmitter {
     const group = this.find(id);
     if (!group) return null;
     group.name = name;
+    group.updatedAt = this.now();
+    this.markChanged();
+    return group;
+  }
+
+  /** Set the group's colour. Returns the updated group, or null if not found. */
+  setColor(id: string, color: string): RuntimeGroup | null {
+    if (!isRuntimeGroupColor(color)) throw new Error(`Not a group colour: ${color}`);
+    const group = this.find(id);
+    if (!group) return null;
+    group.color = color;
     group.updatedAt = this.now();
     this.markChanged();
     return group;

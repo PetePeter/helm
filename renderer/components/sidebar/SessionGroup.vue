@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * SessionGroup.vue — collapsible group header for both directory and runtime groups.
+ * SessionGroup.vue — a group's box: its header plus its session rows (the default
+ * slot), bordered and tinted in the group colour. The whole box is the drop
+ * target, so a session can be dropped anywhere on the group, not just its title.
  *
  * Directory groups keep the legacy header (chevron + name + overview drill-in).
- * Runtime groups add always-visible controls (rename ✎ / close ✕ / overview ▸)
+ * Runtime groups add always-visible controls (rename ✎ / close ✕; the name opens the overview)
  * and render as a drop target: dropping a session onto a runtime header moves it
  * in; dropping onto its own directory header removes it from its runtime group.
  */
@@ -19,6 +21,8 @@ export interface SessionGroupData {
   kind?: 'directory' | 'runtime' | 'machine';
   /** Runtime group id (kind === 'runtime'). Equals dirPath for runtime groups. */
   groupId?: string;
+  /** Box colour; absent = the neutral grey. */
+  color?: string;
 }
 
 import { computed, ref } from 'vue';
@@ -93,7 +97,10 @@ function onDragOver(e: DragEvent): void {
   dropState.value = v.ok ? 'ok' : 'bad';
 }
 
-function onDragLeave(): void {
+/** Moving between rows inside the box fires dragleave too; only leaving the box counts. */
+function onDragLeave(e: DragEvent): void {
+  const into = e.relatedTarget as Node | null;
+  if (into && (e.currentTarget as HTMLElement).contains(into)) return;
   dropState.value = null;
 }
 
@@ -114,18 +121,19 @@ function onDrop(e: DragEvent): void {
 
 <template>
   <div
-    class="group-header"
-    :class="[
-      { focused: isFocused, runtime: isRuntime },
-      flashClass,
-      dropState === 'ok' ? 'drop-ok' : dropState === 'bad' ? 'drop-bad' : '',
-    ]"
-    :data-dir-path="group.dirPath"
-    :data-nav-index="navIndex"
-    @click="emit('toggleCollapse', group.dirPath)"
+    class="session-group-box"
+    :class="dropState === 'ok' ? 'drop-ok' : dropState === 'bad' ? 'drop-bad' : ''"
+    :style="group.color ? { '--group-color': group.color } : undefined"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
+  >
+  <div
+    class="group-header"
+    :class="[{ focused: isFocused, runtime: isRuntime }, flashClass]"
+    :data-dir-path="group.dirPath"
+    :data-nav-index="navIndex"
+    @click="emit('toggleCollapse', group.dirPath)"
   >
     <span class="group-chevron">{{ group.collapsed ? '▲' : '▼' }}</span>
     <span v-if="isRuntime" class="group-icon" aria-hidden="true">🗂️</span>
@@ -159,11 +167,6 @@ function onDrop(e: DragEvent): void {
 
       <div v-if="isRuntime" class="group-header-actions">
         <button
-          class="group-header-action overview"
-          title="Overview of this group"
-          @click.stop="emit('showOverview', group.dirPath)"
-        >▸</button>
-        <button
           class="group-header-action"
           title="Rename group"
           @click.stop="emit('rename', group.groupId ?? group.dirPath)"
@@ -182,5 +185,7 @@ function onDrop(e: DragEvent): void {
         >✕</button>
       </div>
     </div>
+  </div>
+  <slot />
   </div>
 </template>

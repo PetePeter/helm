@@ -494,20 +494,26 @@ export const runtimeGroupName = reactive({
   mode: 'create' as 'create' | 'rename',
   /** Prefilled name (rename mode). */
   initialName: '',
+  /** Current colour; set ⇒ the rename box shows the colour picker. */
+  initialColor: undefined as string | undefined,
 });
 
-/** Called with the entered name when the user confirms. */
-let _runtimeGroupNameOnSubmit: ((name: string) => void) | null = null;
-export function getRuntimeGroupNameCallback(): ((name: string) => void) | null { return _runtimeGroupNameOnSubmit; }
+type RuntimeGroupNameSubmit = (name: string, color?: string) => void;
+
+/** Called with the entered name (and picked colour, in rename mode) when the user confirms. */
+let _runtimeGroupNameOnSubmit: RuntimeGroupNameSubmit | null = null;
+export function getRuntimeGroupNameCallback(): RuntimeGroupNameSubmit | null { return _runtimeGroupNameOnSubmit; }
 
 export function openRuntimeGroupNameModal(
   mode: 'create' | 'rename',
-  onSubmit: (name: string) => void,
+  onSubmit: RuntimeGroupNameSubmit,
   initialName = '',
+  initialColor?: string,
 ): void {
   runtimeGroupName.visible = true;
   runtimeGroupName.mode = mode;
   runtimeGroupName.initialName = initialName;
+  runtimeGroupName.initialColor = initialColor;
   _runtimeGroupNameOnSubmit = onSubmit;
 }
 

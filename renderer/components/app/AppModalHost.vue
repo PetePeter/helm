@@ -154,10 +154,10 @@ function onToolEditorSave(values: any): void {
   getToolEditorCallback()?.(values);
 }
 
-function onRuntimeGroupNameSubmit(name: string): void {
+function onRuntimeGroupNameSubmit(name: string, color?: string): void {
   const cb = getRuntimeGroupNameCallback();
   closeRuntimeGroupNameModal();
-  cb?.(name);
+  cb?.(name, color);
 }
 
 function onRuntimeGroupNameCancel(): void {
@@ -318,6 +318,7 @@ function onRuntimeGroupMoveCancel(): void {
     :visible="runtimeGroupName.visible"
     :mode="runtimeGroupName.mode"
     :initial-name="runtimeGroupName.initialName"
+    :initial-color="runtimeGroupName.initialColor"
     @submit="onRuntimeGroupNameSubmit"
     @cancel="onRuntimeGroupNameCancel"
     @update:visible="runtimeGroupName.visible = $event"

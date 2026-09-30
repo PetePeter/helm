@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { RuntimeGroupManager } from '../src/session/runtime-group-manager.js';
-import type { RuntimeGroup } from '../src/types/runtime-group.js';
+import { RUNTIME_GROUP_COLORS, type RuntimeGroup } from '../src/types/runtime-group.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -149,5 +149,16 @@ describe('RuntimeGroupManager', () => {
     t = 2000;
     mgr.addSession(a.id, 's1');
     expect(mgr.get(a.id)!.updatedAt).toBe(2000);
+  });
+
+  it('sets a palette colour and rejects one outside the palette', () => {
+    const persist = vi.fn();
+    const mgr = new RuntimeGroupManager(persist);
+    const a = mgr.create('A');
+
+    expect(mgr.setColor(a.id, RUNTIME_GROUP_COLORS[2])!.color).toBe(RUNTIME_GROUP_COLORS[2]);
+    expect(() => mgr.setColor(a.id, '#123456')).toThrow(/colour/i);
+    expect(mgr.get(a.id)!.color).toBe(RUNTIME_GROUP_COLORS[2]);
+    expect(mgr.setColor('missing', RUNTIME_GROUP_COLORS[0])).toBeNull();
   });
 });

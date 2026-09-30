@@ -237,6 +237,7 @@ export const PRELOAD_API_DOMAINS = {
     'runtimeGroupList',
     'runtimeGroupCreate',
     'runtimeGroupRename',
+    'runtimeGroupSetColor',
     'runtimeGroupSetCollapsed',
     'runtimeGroupAddSession',
     'runtimeGroupRemoveSession',

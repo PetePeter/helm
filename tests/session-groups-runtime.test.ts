@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import type { Session } from '../renderer/state';
 import { buildSessionGroups, buildFlatNavList } from '../renderer/session-groups';
 import type { SessionGroupPrefs } from '../renderer/session-groups';
-import type { RuntimeGroup } from '../src/types/runtime-group';
+import { RUNTIME_GROUP_COLORS, type RuntimeGroup } from '../src/types/runtime-group';
 
 // ============================================================================
 // Helpers
@@ -49,6 +49,22 @@ describe('buildSessionGroups', () => {
     const dirGroup = groups.find(g => g.kind === 'directory' && g.dirPath === 'X:\\dirA');
     expect(dirGroup).toBeDefined();
     expect(dirGroup!.sessions.map(s => s.id)).toEqual(['s2']);
+  });
+
+  it('gives a runtime group its picked colour, the default when unset, and folders none', () => {
+    const s1 = makeSession('s1', 'X:\dirA');
+    const s2 = makeSession('s2', 'X:\dirA');
+    const s3 = makeSession('s3', 'X:\dirA');
+    const sessions = [s1, s2, s3];
+    const rgs = [{ ...makeRuntimeGroup('g1', 'G', ['s1']), color: RUNTIME_GROUP_COLORS[3] }, makeRuntimeGroup('g2', 'H', ['s2'])];
+
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, rgs);
+
+    expect(groups.map(g => [g.kind, g.color])).toEqual([
+      ['runtime', RUNTIME_GROUP_COLORS[3]],
+      ['runtime', RUNTIME_GROUP_COLORS[0]],
+      ['directory', undefined],
+    ]);
   });
 
   it('G2: runtime groups come before directory groups in nav order', () => {

@@ -19,4 +19,18 @@ export interface RuntimeGroup {
   createdAt: number;
   /** Epoch ms of the last mutation to this group. */
   updatedAt: number;
+  /** User-picked colour from RUNTIME_GROUP_COLORS. Absent = the default (first). */
+  color?: string;
+}
+
+/**
+ * The colours a custom group may take. A fixed palette rather than any hex:
+ * each one is checked to read against the dark sidebar, tinted and as a border.
+ */
+export const RUNTIME_GROUP_COLORS = [
+  '#a07aff', '#4488ff', '#2ec4b6', '#44cc44', '#e6c229', '#ff9f43', '#ff6b6b', '#ff6bcb',
+] as const;
+
+export function isRuntimeGroupColor(value: unknown): value is string {
+  return typeof value === 'string' && (RUNTIME_GROUP_COLORS as readonly string[]).includes(value);
 }

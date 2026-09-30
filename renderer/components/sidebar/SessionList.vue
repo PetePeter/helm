@@ -52,6 +52,7 @@ interface SessionListGroup {
   sessions: SessionListGroupSession[];
   kind?: 'directory' | 'runtime';
   groupId?: string;
+  color?: string;
 }
 
 const props = defineProps<{
@@ -222,6 +223,7 @@ function onNewGroupDrop(e: DragEvent): void {
               })),
               kind: group.kind,
               groupId: group.groupId,
+              color: group.color,
             }"
             :nav-index="navIndexMap.get(group.dirPath) ?? -1"
             :is-focused="isNavItemFocused(activeFocus, focusedNavItem, 'group-header', group.dirPath)"
@@ -232,7 +234,7 @@ function onNewGroupDrop(e: DragEvent): void {
             @close-group="emit('groupClose', $event)"
             @add-session="(gid, sid) => emit('groupAddSession', gid, sid)"
             @remove-session="emit('groupRemoveSession', $event)"
-          />
+          >
 
           <template v-if="!group.collapsed">
             <!-- Empty runtime group placeholder -->
@@ -289,6 +291,7 @@ function onNewGroupDrop(e: DragEvent): void {
               @dismiss-session-notifications="emit('dismissSessionNotifications', $event)"
             />
           </template>
+          </SessionGroup>
         </template>
       </template>
 

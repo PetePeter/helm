@@ -41,6 +41,11 @@ async function rename(id: string, name: string): Promise<void> {
   await refresh();
 }
 
+async function setColor(id: string, color: string): Promise<void> {
+  await runtimeGroupClient.runtimeGroupSetColor(id, color);
+  await refresh();
+}
+
 async function setCollapsed(id: string, collapsed: boolean): Promise<void> {
   await runtimeGroupClient.runtimeGroupSetCollapsed(id, collapsed);
   await refresh();
@@ -62,5 +67,5 @@ async function closeGroup(id: string): Promise<void> {
 }
 
 export function useRuntimeGroups() {
-  return { groups, ensureSubscribed, refresh, create, rename, setCollapsed, addSession, removeSession, closeGroup };
+  return { groups, ensureSubscribed, refresh, create, rename, setColor, setCollapsed, addSession, removeSession, closeGroup };
 }

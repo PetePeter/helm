@@ -4,7 +4,7 @@
  */
 
 import type { Session } from './state.js';
-import type { RuntimeGroup } from '../src/types/runtime-group.js';
+import { RUNTIME_GROUP_COLORS, type RuntimeGroup } from '../src/types/runtime-group.js';
 import { hasCaseInsensitivePaths } from './utils/platform.js';
 import { withoutOperator } from './operator-summary.js';
 
@@ -30,6 +30,8 @@ export interface SessionGroup {
   kind?: 'directory' | 'runtime' | 'machine';
   /** Runtime group id (only set when kind === 'runtime'). */
   groupId?: string;
+  /** Box colour. Runtime groups only; folder and machine groups use the neutral grey. */
+  color?: string;
 }
 
 /** 'operator' is the pinned Helm section — first in the list, outside every group. */
@@ -230,6 +232,7 @@ export function buildSessionGroups(
       collapsed: rg.collapsed,
       kind: 'runtime' as const,
       groupId: rg.id,
+      color: rg.color ?? RUNTIME_GROUP_COLORS[0],
     };
   });
 

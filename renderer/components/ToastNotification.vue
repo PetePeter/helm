@@ -56,7 +56,7 @@ function handleToastClick(toast: { id: number; onClick?: () => void }): void {
         <div
           v-for="toast in toasts"
           :key="toast.id"
-          :class="['toast', `toast--${toast.type}`, { 'toast--persistent': toast.persistent }]"
+          :class="['toast', `toast--${toast.type}`]"
           @click="handleToastClick(toast)"
         >
           <span class="toast-message">{{ toast.message }}</span>
@@ -116,7 +116,6 @@ function handleToastClick(toast: { id: number; onClick?: () => void }): void {
 }
 .toast-close:hover { opacity: 1; }
 
-.toast--persistent { border-left: 3px solid #ff6b6b; }
 
 .toast--success { background: #2a6f2a; }
 .toast--error   { background: #7a2020; }

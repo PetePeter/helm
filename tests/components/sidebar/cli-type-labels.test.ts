@@ -85,7 +85,7 @@ describe('SessionList labels', () => {
         sessionElapsedText: () => '',
         sessionShortcutMap: new Map<string, number>(),
       },
-      global: { stubs: { SessionGroup: true, SessionCard: CardStub } },
+      global: { stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
   }
 

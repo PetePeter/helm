@@ -51,6 +51,15 @@ export function setupRuntimeGroupHandlers(
     }
   });
 
+  ipcMain.handle('runtimeGroup:setColor', (_event, id: string, color: string) => {
+    try {
+      return manager.setColor(id, color);
+    } catch (err) {
+      logger.error(`[runtimeGroup:setColor] Failed: ${err}`);
+      return null;
+    }
+  });
+
   ipcMain.handle('runtimeGroup:setCollapsed', (_event, id: string, collapsed: boolean) => {
     try {
       manager.setCollapsed(id, collapsed);

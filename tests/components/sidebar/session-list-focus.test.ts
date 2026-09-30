@@ -88,7 +88,7 @@ function mountList(overrides: Record<string, unknown> = {}) {
   };
   return mount(SessionList, {
     props,
-    global: { stubs: { SessionGroup: true, SessionCard: CardStub } },
+    global: { stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
   });
 }
 

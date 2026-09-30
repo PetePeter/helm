@@ -5,10 +5,13 @@
  *
  * Keyboard: typing goes to the input naturally; Enter submits, Escape cancels
  * (handled both by the input keydown and the modal-stack gamepad bridge so the
- * gamepad A/B buttons work too).
+ * gamepad A/B buttons work too). Renaming also picks the group's colour: click
+ * a tile, or D-pad left/right.
  */
 import { nextTick, ref, watch, computed } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
+import { toDirection } from '../../utils.js';
+import { RUNTIME_GROUP_COLORS } from '../../../src/types/runtime-group.js';
 
 const MODAL_ID = 'runtime-group-name';
 
@@ -16,15 +19,18 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'rename';
   initialName?: string;
+  initialColor?: string;
 }>();
 
 const emit = defineEmits<{
-  (e: 'submit', name: string): void;
+  (e: 'submit', name: string, color?: string): void;
   (e: 'cancel'): void;
   (e: 'update:visible', value: boolean): void;
 }>();
 
 const name = ref('');
+const color = ref<string>(RUNTIME_GROUP_COLORS[0]);
+const picksColor = computed(() => props.mode === 'rename');
 const inputRef = ref<HTMLInputElement | null>(null);
 const modalStack = useModalStack();
 
@@ -34,6 +40,7 @@ const okLabel = computed(() => (props.mode === 'rename' ? 'Save' : 'Create'));
 watch(() => props.visible, async (v) => {
   if (v) {
     name.value = props.initialName ?? '';
+    color.value = props.initialColor ?? RUNTIME_GROUP_COLORS[0];
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: new Set([...FORM_KEYS, 'enter']) });
     await nextTick();
     inputRef.value?.focus();
@@ -52,13 +59,20 @@ function handleButton(button: string): boolean {
     onSubmit();
     return true;
   }
+  const dir = toDirection(button);
+  if (picksColor.value && (dir === 'left' || dir === 'right')) {
+    const at = RUNTIME_GROUP_COLORS.indexOf(color.value as typeof RUNTIME_GROUP_COLORS[number]);
+    const step = dir === 'left' ? -1 : 1;
+    color.value = RUNTIME_GROUP_COLORS[(at + step + RUNTIME_GROUP_COLORS.length) % RUNTIME_GROUP_COLORS.length]!;
+    return true;
+  }
   return true; // swallow other input while open
 }
 
 function onSubmit(): void {
   const trimmed = name.value.trim();
   if (!trimmed) return;
-  emit('submit', trimmed);
+  emit('submit', trimmed, picksColor.value ? color.value : undefined);
   emit('update:visible', false);
 }
 
@@ -104,6 +118,20 @@ defineExpose({ handleButton });
             placeholder="e.g. Auth refactor sweep"
             @keydown="onKeydown"
           />
+          <div v-if="picksColor" class="group-color-picker" role="radiogroup" aria-label="Group colour">
+            <button
+              v-for="swatch in RUNTIME_GROUP_COLORS"
+              :key="swatch"
+              type="button"
+              class="group-color-tile"
+              :class="{ selected: swatch === color }"
+              role="radio"
+              :aria-checked="swatch === color"
+              :aria-label="swatch"
+              :style="{ background: swatch }"
+              @click="color = swatch"
+            />
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="onCancel">Cancel</button>
@@ -121,5 +149,22 @@ defineExpose({ handleButton });
 }
 .runtime-group-name-modal .form-input {
   width: 100%;
+}
+.group-color-picker {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  margin-top: var(--spacing-md, 12px);
+}
+.group-color-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm, 6px);
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.group-color-tile.selected {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary, #111);
 }
 </style>

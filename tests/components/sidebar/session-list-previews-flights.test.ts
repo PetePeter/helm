@@ -23,7 +23,7 @@ const CardStub = {
 };
 const GroupStub = {
   props: ['group'],
-  template: '<div class="group-header" :data-dir-path="group.dirPath"></div>',
+  template: '<div><div class="group-header" :data-dir-path="group.dirPath"></div><slot /></div>',
 };
 
 type FlightCallback = (flight: SessionMessageFlight) => void;

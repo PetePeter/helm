@@ -1325,6 +1325,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   runtimeGroupRename: (id: string, name: string): Promise<RuntimeGroup | null> =>
     ipcRenderer.invoke('runtimeGroup:rename', id, name),
 
+  /** Set a runtime group's colour (one of RUNTIME_GROUP_COLORS) */
+  runtimeGroupSetColor: (id: string, color: string): Promise<RuntimeGroup | null> =>
+    ipcRenderer.invoke('runtimeGroup:setColor', id, color),
+
   /** Set a runtime group's collapsed state */
   runtimeGroupSetCollapsed: (id: string, collapsed: boolean): Promise<boolean> =>
     ipcRenderer.invoke('runtimeGroup:setCollapsed', id, collapsed),

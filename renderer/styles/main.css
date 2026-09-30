@@ -833,7 +833,25 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   justify-content: center;
 }
 
-/* ── Group header (folder divider) ────────────────────────── */
+/* ── Group box: header + its session rows ──────────────────── */
+
+/* Folder and machine groups are neutral grey; a custom group sets
+   --group-color inline from its picked palette colour. */
+.session-group-box {
+  --group-color: #5a606b;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 2px;
+  margin-top: 8px;
+  border: 3px solid color-mix(in srgb, var(--group-color) 60%, transparent);
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--group-color) 10%, transparent);
+}
+.session-group-box:first-child { margin-top: 0; }
+
+/* ── Group header ─────────────────────────────────────────── */
 
 .group-header {
   display: flex;
@@ -845,14 +863,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   cursor: pointer;
   border-radius: var(--radius-md, 8px);
   border: 1px solid transparent;
-  border-top: 3px solid #444;
-  margin-top: 10px;
-  background: #1a1a1a;
+  background: transparent;
   user-select: none;
-}
-.group-header:first-child {
-  margin-top: 0;
-  border-top-color: transparent;
 }
 .group-header:hover { background: var(--bg-tertiary); }
 .group-header.focused {
@@ -944,11 +956,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* ── Runtime (custom) groups ──────────────────────────────── */
 
-.group-header.runtime {
-  border-top-color: #a07aff;
-  background: linear-gradient(90deg, rgba(160, 122, 255, 0.12), #1a1a1a 70%);
-}
-.group-header.runtime:hover { background: linear-gradient(90deg, rgba(160, 122, 255, 0.18), var(--bg-tertiary) 70%); }
 
 /* Runtime group actions. Overview is a dock pane, not a sidebar button. */
 .runtime-list-actions {
@@ -1000,17 +1007,15 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   background: rgba(120, 130, 150, 0.2);
   color: var(--text-primary);
 }
-.group-header-action.overview { color: var(--accent); }
 
 /* Drop-target highlighting */
-.group-header.drop-ok {
+.session-group-box.drop-ok {
   outline: 2px solid var(--activity-active, #44cc44);
-  outline-offset: -1px;
-  background: #1d2a1d;
+  outline-offset: 1px;
 }
-.group-header.drop-bad {
+.session-group-box.drop-bad {
   outline: 2px dashed #6a3a3a;
-  outline-offset: -1px;
+  outline-offset: 1px;
   opacity: 0.6;
 }
 
@@ -1057,6 +1062,14 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-card:hover,
 .session-card.focused { background: var(--bg-tertiary); }
 .session-card.active { border-color: var(--accent); background: var(--bg-secondary); }
+/* Inside a group box the selection takes the group's colour, lifted toward
+   white so the neutral grey of folder groups still stands out. */
+.session-group-box .session-card.active {
+  /* 1px border + 1px inset ring reads as 2px without shifting the row. */
+  border-color: color-mix(in srgb, var(--group-color) 70%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--group-color) 70%, white);
+  background: color-mix(in srgb, var(--group-color) 28%, var(--bg-secondary));
+}
 .session-card.snapped-out {
   opacity: 0.6;
   filter: grayscale(0.5);

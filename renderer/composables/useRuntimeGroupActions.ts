@@ -42,10 +42,11 @@ export function useRuntimeGroupActions() {
   }
 
   /** Open the name modal prefilled to rename an existing group. */
-  function promptRename(group: { id: string; name: string }): void {
-    openRuntimeGroupNameModal('rename', async (name) => {
+  function promptRename(group: { id: string; name: string; color?: string }): void {
+    openRuntimeGroupNameModal('rename', async (name, color) => {
       await rg.rename(group.id, name);
-    }, group.name);
+      if (color && color !== group.color) await rg.setColor(group.id, color);
+    }, group.name, group.color);
   }
 
   /** Add a session to a group (auto-evicts from any prior group in main). */
