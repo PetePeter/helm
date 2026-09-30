@@ -242,4 +242,61 @@ class MarkdownRulesTest {
             blocks,
         )
     }
+
+    // ---- GFM tables --------------------------------------------------------
+
+    private fun cell(text: String) = listOf(MdSpan.Text(text))
+
+    @Test
+    fun `a header, separator and rows become one table`() {
+        assertEquals(
+            listOf(
+                MdBlock.Table(
+                    header = listOf(cell("Model"), cell("Ctx")),
+                    align = listOf(MdAlign.Start, MdAlign.Start),
+                    rows = listOf(listOf(cell("minicpm"), cell("131k"))),
+                ),
+            ),
+            MarkdownRules.blocks("| Model | Ctx |\n|---|---|\n| minicpm | 131k |"),
+        )
+    }
+
+    @Test
+    fun `separator colons set column alignment`() {
+        val table = MarkdownRules.blocks("a | b | c\n:-- | :-: | --:\n1 | 2 | 3").single() as MdBlock.Table
+        assertEquals(listOf(MdAlign.Start, MdAlign.Center, MdAlign.End), table.align)
+    }
+
+    @Test
+    fun `pipe lines without a separator stay a paragraph`() {
+        assertEquals(
+            listOf(MdBlock.Paragraph(listOf(MdSpan.Text("| a | b | | c | d |")))),
+            MarkdownRules.blocks("| a | b |\n| c | d |"),
+        )
+    }
+
+    @Test
+    fun `short rows are padded and long rows trimmed to the header width`() {
+        val table = MarkdownRules.blocks("| a | b |\n|---|---|\n| 1 |\n| 1 | 2 | 3 |").single() as MdBlock.Table
+        assertEquals(listOf(listOf(cell("1"), emptyList()), listOf(cell("1"), cell("2"))), table.rows)
+    }
+
+    @Test
+    fun `an escaped pipe stays inside its cell`() {
+        val table = MarkdownRules.blocks("| expr |\n|---|\n| a \\| b |").single() as MdBlock.Table
+        assertEquals(listOf(listOf(cell("a | b"))), table.rows)
+    }
+
+    @Test
+    fun `cells carry inline spans`() {
+        val table = MarkdownRules.blocks("| k | v |\n|---|---|\n| **bold** | `code` |").single() as MdBlock.Table
+        assertEquals(listOf(listOf(listOf(MdSpan.Bold("bold")), listOf(MdSpan.CodeSpan("code")))), table.rows)
+    }
+
+    @Test
+    fun `a table ends at the first line without a pipe`() {
+        val blocks = MarkdownRules.blocks("| a |\n|---|\n| 1 |\nafter")
+        assertEquals(2, blocks.size)
+        assertEquals(MdBlock.Paragraph(listOf(MdSpan.Text("after"))), blocks.last())
+    }
 }

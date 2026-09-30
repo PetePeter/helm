@@ -6,7 +6,7 @@ package com.potatomotato.helm.ui.artifacts
  *
  * The phone renders a DELIBERATE SUBSET — the structure an artifact author uses
  * when writing for a reader: headings, emphasis, inline code, fenced code, lists,
- * quotes, rules and links — and deliberately nothing else. The desktop renders
+ * quotes, rules, links and pipe tables — and deliberately nothing else. The desktop renders
  * artifacts in full fidelity; this is the phone-width read-back, and a second
  * complete markdown engine here could only drift from the first. Anything the
  * subset does not recognise stays literal text, which is why the parser can be
@@ -53,6 +53,21 @@ object MarkdownRules {
                 }
 
                 line.isBlank() -> flushParagraph()
+
+                isTableStart(line, lines.getOrNull(index + 1)) -> {
+                    flushParagraph()
+                    val header = cells(line)
+                    val align = cells(lines[index + 1]).map(::alignment)
+                    val rows = mutableListOf<List<List<MdSpan>>>()
+                    index += 2
+                    while (index < lines.size && lines[index].contains('|') && lines[index].isNotBlank()) {
+                        // Ragged rows fit the header: GFM pads short ones and drops the excess.
+                        rows += List(header.size) { col -> cells(lines[index]).getOrNull(col)?.let(::spans).orEmpty() }
+                        index++
+                    }
+                    index--
+                    blocks += MdBlock.Table(header.map(::spans), align, rows)
+                }
 
                 isRule(line) -> {
                     flushParagraph()
@@ -217,6 +232,26 @@ object MarkdownRules {
 
     private fun isQuote(line: String): Boolean = line.startsWith("> ")
 
+    /** A GFM table needs a pipe row followed by a `---` separator of the same width. */
+    private fun isTableStart(line: String, next: String?): Boolean {
+        if (next == null || !line.contains('|') || !next.contains('|')) return false
+        val separator = cells(next)
+        return separator.all { TABLE_SEPARATOR.matches(it) } && separator.size == cells(line).size
+    }
+
+    /** A row's cells: outer pipes optional, `\|` is a literal pipe, whitespace trimmed. */
+    private fun cells(line: String): List<String> {
+        var row = line.trim().removePrefix("|")
+        if (row.endsWith("|") && !row.endsWith("\\|")) row = row.dropLast(1)
+        return row.split(UNESCAPED_PIPE).map { it.replace("\\|", "|").trim() }
+    }
+
+    private fun alignment(separator: String): MdAlign = when {
+        separator.startsWith(':') && separator.endsWith(':') -> MdAlign.Center
+        separator.endsWith(':') -> MdAlign.End
+        else -> MdAlign.Start
+    }
+
     /** `#hashtag` is a paragraph; `# hash` is a heading. The space decides. */
     private fun isSpaceAfter(line: String, hashes: Int): Boolean =
         line.length == hashes || line[hashes] == ' '
@@ -225,7 +260,9 @@ object MarkdownRules {
     private const val BOLD_DELIM = "**"
     private const val ITALIC_DELIM = "*"
     private const val MERMAID_INFO = "mermaid"
-    private val IMAGE = Regex("!\\[([^]]*)]\\((.+)\\)")
+    private val TABLE_SEPARATOR = Regex(":?-+:?")
+    private val UNESCAPED_PIPE = Regex("(?<!\\\\)\\|")
+    private val IMAGE =Regex("!\\[([^]]*)]\\((.+)\\)")
     private val SAFE_DATA_IMAGE = Regex("data:image/(png|jpe?g|gif|webp|bmp|avif);base64,[A-Za-z0-9+/=]+", RegexOption.IGNORE_CASE)
 }
 
@@ -257,7 +294,17 @@ sealed interface MdBlock {
 
     /** A `---` / `***` / `___` rule. */
     data object Rule : MdBlock
+
+    /** A GFM pipe table; every row has exactly as many cells as [header]. */
+    data class Table(
+        val header: List<List<MdSpan>>,
+        val align: List<MdAlign>,
+        val rows: List<List<List<MdSpan>>>,
+    ) : MdBlock
 }
+
+/** A table column's alignment, from the separator's colons. */
+enum class MdAlign { Start, Center, End }
 
 /** One stretch of inline text within a block. */
 sealed interface MdSpan {

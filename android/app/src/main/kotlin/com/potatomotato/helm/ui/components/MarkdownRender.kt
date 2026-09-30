@@ -5,6 +5,11 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +34,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
@@ -37,10 +43,12 @@ import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.artifacts.LinkRules
 import com.potatomotato.helm.ui.artifacts.MermaidDiagram
 import com.potatomotato.helm.ui.artifacts.MarkdownRules
+import com.potatomotato.helm.ui.artifacts.MdAlign
 import com.potatomotato.helm.ui.artifacts.MdBlock
 import com.potatomotato.helm.ui.artifacts.MdSpan
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
+import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
 
@@ -132,7 +140,53 @@ fun MarkdownBlock(block: MdBlock) {
         is MdBlock.Diagram -> MermaidDiagram(block.source)
 
         MdBlock.Rule -> Hairline()
+
+        is MdBlock.Table -> MarkdownTable(block)
     }
+}
+
+/**
+ * A pipe table, laid out column by column so each column is as wide as its
+ * widest cell. Wider than the phone scrolls sideways rather than squashing
+ * cells into unreadable slivers.
+ */
+@Composable
+private fun MarkdownTable(table: MdBlock.Table) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Sm))
+            .clip(RoundedCornerShape(HelmRadius.Sm)),
+    ) {
+        table.header.indices.forEach { col ->
+            val textAlign = when (table.align[col]) {
+                MdAlign.Start -> TextAlign.Start
+                MdAlign.Center -> TextAlign.Center
+                MdAlign.End -> TextAlign.End
+            }
+            Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+                TableCell(table.header[col], textAlign, header = true)
+                table.rows.forEach { row -> TableCell(row[col], textAlign, header = false) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TableCell(spans: List<MdSpan>, textAlign: TextAlign, header: Boolean) {
+    Text(
+        text = annotate(spans),
+        color = HelmColors.Txt,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = if (header) FontWeight.Bold else null,
+        textAlign = textAlign,
+        softWrap = false,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (header) Modifier.background(HelmColors.Surface2) else Modifier)
+            .border(HelmSize.Hairline / 2, HelmColors.Line)
+            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+    )
 }
 
 @Composable
