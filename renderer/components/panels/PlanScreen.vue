@@ -14,6 +14,9 @@ import SequencePanel from './SequencePanel.vue';
 import { isEditableElement } from '../../input/input-ownership.js';
 import { getPlanStatusColor } from '../../state-colors.js';
 import { taskCardLines } from '../../plans/task-card.js';
+import {
+  fitViewBox, resizeViewBox, savedFromViewBox, viewBoxFromSaved, type PaneSize, type SavedPlanView,
+} from '../../plans/plan-viewport.js';
 import { taskCardOf as taskCardSourceOf } from '../../../src/session/operator-tasks.js';
 
 const NODE_W = 200;
@@ -125,38 +128,39 @@ const viewBox = ref({ x: 0, y: 0, w: 800, h: 600 });
 const isPanning = ref(false);
 const panStart = ref({ x: 0, y: 0, vbx: 0, vby: 0 });
 
-// ── Viewport persistence (zoom/pan per directory) ────────────────────────────
+// ── Viewport: fixed zoom, persisted per directory (renderer/plans/plan-viewport.ts) ──
 
-interface SavedViewport {
-  zoomScale: number;
-  panFracX: number;
-  panFracY: number;
-}
+/** The svg's on-screen size, tracked so a pane resize reveals canvas instead of rescaling it. */
+// Without ResizeObserver (jsdom) the pane is taken as a fixed 800x600.
+const paneObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(([entry]) => {
+  const next = { w: entry.contentRect.width, h: entry.contentRect.height };
+  viewBox.value = resizeViewBox(viewBox.value, paneSize.value, next);
+  paneSize.value = next;
+});
+const paneSize = ref<PaneSize>(paneObserver ? { w: 0, h: 0 } : { w: 800, h: 600 });
+watch(svgRef, (svg, old) => {
+  if (old) paneObserver?.unobserve(old);
+  if (svg) paneObserver?.observe(svg);
+});
 
 function viewportKey(dirPath: string): string {
-  return `plan-viewport:${btoa(dirPath)}`;
+  // v2: zoom + absolute position; v1 stored fractions of the content size.
+  return `plan-viewport-v2:${btoa(dirPath)}`;
 }
 
 function savePlanViewport(dirPath: string): void {
-  if (!dirPath || !canvasBounds.value.width) return;
-  const cw = canvasBounds.value.width;
-  const ch = canvasBounds.value.height;
-  const vb = viewBox.value;
+  if (!dirPath || !paneSize.value.w) return;
   try {
-    const entry: SavedViewport = {
-      zoomScale: cw / (vb.w || cw),
-      panFracX: vb.x / cw,
-      panFracY: vb.y / ch,
-    };
-    localStorage.setItem(viewportKey(dirPath), JSON.stringify(entry));
+    localStorage.setItem(viewportKey(dirPath), JSON.stringify(savedFromViewBox(viewBox.value, paneSize.value)));
   } catch { /* quota exceeded — ignore */ }
 }
 
-function loadPlanViewport(dirPath: string): SavedViewport | null {
+function loadPlanViewport(dirPath: string): SavedPlanView | null {
   if (!dirPath) return null;
   try {
     const raw = localStorage.getItem(viewportKey(dirPath));
-    return raw ? JSON.parse(raw) : null;
+    const saved = raw ? JSON.parse(raw) as SavedPlanView : null;
+    return saved && saved.zoom > 0 ? saved : null;
   } catch { return null; }
 }
 
@@ -318,24 +322,19 @@ const contextLinkPath = computed(() => {
   return `M ${x1} ${y1} L ${contextLinkState.value.x} ${contextLinkState.value.y}`;
 });
 
-watch(() => [props.visible, canvasBounds.value.width, canvasBounds.value.height], () => {
-  if (!props.visible) return;
-  const cw = canvasBounds.value.width;
-  const ch = canvasBounds.value.height;
-  const saved = loadPlanViewport(props.dirPath);
-  if (saved && saved.zoomScale > 0) {
-    const restoredW = cw / saved.zoomScale;
-    const restoredH = ch / saved.zoomScale;
-    const restoredX = saved.panFracX * cw;
-    const restoredY = saved.panFracY * ch;
-    // Fall back to content-fit if restored viewport is entirely outside content
-    if (restoredX + restoredW > 0 && restoredY + restoredH > 0 &&
-        restoredX < cw && restoredY < ch) {
-      viewBox.value = { x: restoredX, y: restoredY, w: restoredW, h: restoredH };
-      return;
-    }
-  }
-  viewBox.value = { x: 0, y: 0, w: cw, h: ch };
+// Set the view on open / directory change only — never on content or pane
+// size changes, which would rescale the plan under the user.
+let viewSetFor: string | null = null;
+watch(() => [props.visible, props.dirPath, paneSize.value.w > 0] as const, ([visible, dirPath, sized]) => {
+  if (!visible || !sized || viewSetFor === dirPath) return;
+  viewSetFor = dirPath;
+  const saved = loadPlanViewport(dirPath);
+  const restored = saved ? viewBoxFromSaved(saved, paneSize.value) : null;
+  const bounds = canvasBounds.value;
+  // A saved view entirely off the content (plans moved) falls back to fitting it.
+  const onContent = restored && restored.x + restored.w > 0 && restored.y + restored.h > 0
+    && restored.x < bounds.width && restored.y < bounds.height;
+  viewBox.value = onContent ? restored : fitViewBox(bounds, paneSize.value);
 }, { immediate: true });
 
 watch([() => viewBox.value.x, () => viewBox.value.y, () => viewBox.value.w, () => viewBox.value.h], () => {
@@ -673,6 +672,7 @@ function onPlanKeydown(event: KeyboardEvent): void {
 
 onUnmounted(() => {
   if (viewportSaveTimer) clearTimeout(viewportSaveTimer);
+  paneObserver?.disconnect();
 });
 
 /** An operator task's card lines, in place of its description. */
