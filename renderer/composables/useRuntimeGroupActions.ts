@@ -31,13 +31,13 @@ export function useRuntimeGroupActions() {
 
   /** Open the name modal to create a group; optionally move a session into it. */
   function promptCreate(moveSessionId?: string): void {
-    openRuntimeGroupNameModal('create', async (name) => {
+    openRuntimeGroupNameModal('create', async (name, color) => {
       await rg.create(name);
-      if (moveSessionId) {
-        // create() has refreshed the list; the newest group is the one we made.
-        const created = [...rg.groups.value].sort((a, b) => b.createdAt - a.createdAt)[0];
-        if (created) await rg.addSession(created.id, moveSessionId);
-      }
+      // create() has refreshed the list; the newest group is the one we made.
+      const created = [...rg.groups.value].sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (!created) return;
+      if (color) await rg.setColor(created.id, color);
+      if (moveSessionId) await rg.addSession(created.id, moveSessionId);
     });
   }
 

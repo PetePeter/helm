@@ -5,8 +5,8 @@
  *
  * Keyboard: typing goes to the input naturally; Enter submits, Escape cancels
  * (handled both by the input keydown and the modal-stack gamepad bridge so the
- * gamepad A/B buttons work too). Renaming also picks the group's colour: click
- * a tile, or D-pad left/right.
+ * gamepad A/B buttons work too). Both creating and renaming pick the group's
+ * colour: click a tile, or D-pad left/right.
  */
 import { nextTick, ref, watch, computed } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
@@ -30,7 +30,6 @@ const emit = defineEmits<{
 
 const name = ref('');
 const color = ref<string>(RUNTIME_GROUP_COLORS[0]);
-const picksColor = computed(() => props.mode === 'rename');
 const inputRef = ref<HTMLInputElement | null>(null);
 const modalStack = useModalStack();
 
@@ -60,7 +59,7 @@ function handleButton(button: string): boolean {
     return true;
   }
   const dir = toDirection(button);
-  if (picksColor.value && (dir === 'left' || dir === 'right')) {
+  if (dir === 'left' || dir === 'right') {
     const at = RUNTIME_GROUP_COLORS.indexOf(color.value as typeof RUNTIME_GROUP_COLORS[number]);
     const step = dir === 'left' ? -1 : 1;
     color.value = RUNTIME_GROUP_COLORS[(at + step + RUNTIME_GROUP_COLORS.length) % RUNTIME_GROUP_COLORS.length]!;
@@ -72,7 +71,7 @@ function handleButton(button: string): boolean {
 function onSubmit(): void {
   const trimmed = name.value.trim();
   if (!trimmed) return;
-  emit('submit', trimmed, picksColor.value ? color.value : undefined);
+  emit('submit', trimmed, color.value);
   emit('update:visible', false);
 }
 
@@ -118,7 +117,7 @@ defineExpose({ handleButton });
             placeholder="e.g. Auth refactor sweep"
             @keydown="onKeydown"
           />
-          <div v-if="picksColor" class="group-color-picker" role="radiogroup" aria-label="Group colour">
+          <div class="group-color-picker" role="radiogroup" aria-label="Group colour">
             <button
               v-for="swatch in RUNTIME_GROUP_COLORS"
               :key="swatch"
