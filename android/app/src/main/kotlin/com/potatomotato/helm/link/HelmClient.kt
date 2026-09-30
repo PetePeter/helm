@@ -433,6 +433,9 @@ class HelmClient(
     fun quickCompact(sessionId: String): Boolean =
         act(SessionAction.HelmCompact, METHOD_SESSION_QUICK_COMPACT, linkedMapOf("sessionId" to sessionId))
 
+    fun cloneSession(sessionId: String): Boolean =
+        act(SessionAction.Clone, METHOD_SESSION_CLONE, linkedMapOf("sessionId" to sessionId))
+
     fun switchCli(sessionId: String, cliType: String): Boolean =
         act(SessionAction.SwitchCli, METHOD_SESSION_SWITCH_CLI, linkedMapOf("sessionId" to sessionId, "cliType" to cliType))
 
@@ -1876,6 +1879,7 @@ class HelmClient(
         private const val METHOD_SESSION_CLEAR = "session_clear"
         private const val METHOD_SESSION_QUICK_COMPACT = "session_quick_compact"
         private const val METHOD_SESSION_SWITCH_CLI = "session_switch_cli"
+        private const val METHOD_SESSION_CLONE = "session_clone"
         private const val METHOD_SESSION_SEND_INPUT = "session_send_input"
         private const val METHOD_SESSION_CLOSE = "session_close"
         private const val METHOD_SESSION_RENAME = "session_rename"

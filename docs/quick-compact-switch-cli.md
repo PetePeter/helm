@@ -1,10 +1,11 @@
-# Helm Compact & Switch CLI
+# Helm Compact, Switch CLI & Clone
 
-Two actions share one engine: Helm strips a session's own transcript to markdown and has a fresh context read it back.
+Three actions share one engine: Helm strips a session's own transcript to markdown and has a fresh context read it back.
 
 - **Helm Compact** (`session_quick_compact`, context menu "🗜️ Helm Compact"): strip → clear the session → paste a prompt pointing at the file.
-- On the phone, both sit on the session sheet: "Helm compact" (confirms first) and "Switch CLI" (opens a picker of the desktop's CLIs). Rows grey out unless the device's mobile allow-list permits the tool.
+- On the phone, all three sit on the session sheet: "Helm compact" (confirms first), "Switch CLI" (opens a picker of the desktop's CLIs) and "Clone". Rows grey out unless the device's mobile allow-list permits the tool.
 - **Switch CLI** (`session_switch_cli`, context menu "🔀 Switch CLI…" → CLI picker): strip → spawn the picked CLI in the same directory, name and runtime group, with the prompt as its initial paste → close the source (recycle bin, restorable; `closeSource: false` keeps it; locked sessions are never closed).
+- **Clone** (`session_clone`, context menu "🧬 Clone"): Switch CLI to the source's own CLI type, named "<name> (clone)", never closing the source — a fork that diverges from the same history. Plans, mission and ownership are not copied.
 
 ```mermaid
 graph LR
@@ -13,6 +14,7 @@ graph LR
     X --> F[Helm tmp .md]
     F --> C[Helm Compact:<br/>clear + resume prompt]
     F --> W[Switch CLI:<br/>spawn picked CLI + resume prompt,<br/>close source]
+    F --> K[Clone:<br/>spawn same CLI as name clone,<br/>keep source]
 ```
 
 ## Why strip instead of `/compact`

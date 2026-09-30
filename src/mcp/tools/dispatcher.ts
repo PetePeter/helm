@@ -618,6 +618,11 @@ export async function callMcpTool(
           ...(authContext.sessionName ? { senderSessionName: authContext.sessionName } : {}),
           ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
         });
+      case 'session_clone':
+        return service.cloneSession(asString(args.sessionId, 'sessionId is required'), {
+          ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
+          ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
+        });
       case 'session_switch_cli':
         return service.switchSessionCli(
           asString(args.sessionId, 'sessionId is required'),

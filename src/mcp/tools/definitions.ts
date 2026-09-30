@@ -1049,6 +1049,26 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_clone',
+    title: 'Clone Session',
+    description:
+      'Fork a session: Helm strips its transcript to markdown and spawns the same CLI as "<name> (clone)" in the same ' +
+      'working directory and runtime group, with a prompt to read it. The source keeps running; the two diverge from ' +
+      'the same history. Needs CLI hooks on the source session. Returns the new session id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[SOURCE] Session to clone (required).' },
+        handover: {
+          type: 'string',
+          description: 'Optional note to the clone, e.g. which branch of the work it should take. Appended to its first prompt.',
+        },
+      },
+      required: ['sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_export',
     title: 'Export Session To File',
     description:

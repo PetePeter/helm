@@ -1346,6 +1346,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
                             SessionAction.Clear -> Destination.Thread.also { client.clear(open.id) }
                             SessionAction.HelmCompact -> Destination.Thread.also { client.quickCompact(open.id) }
+                            SessionAction.Clone -> Destination.Thread.also { client.cloneSession(open.id) }
                             SessionAction.Stop -> Destination.Thread.also { client.stop(open.id) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
                             // Rename never reaches here — it is answered by

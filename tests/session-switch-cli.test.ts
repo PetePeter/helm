@@ -96,3 +96,27 @@ describe('HelmSessionService.switchCli', () => {
     expect(spawnCalls).toHaveLength(0);
   });
 });
+
+describe('HelmSessionService.cloneSession', () => {
+  beforeEach(() => {
+    spawnCalls.length = 0;
+    dir = mkdtempSync(join(tmpdir(), 'helm-clone-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('spawns the same CLI as "<name> (clone)" in the same dir and group, reading the transcript, and keeps the source', () => {
+    const { service, sessions, killed, groups } = setup({ cliType: 'codex' });
+    const group = groups.create('Parser work');
+    groups.addSession(group.id, 'old-sid');
+
+    const result = service.cloneSession('old-sid');
+
+    expect(spawnCalls[0]).toMatchObject({ cliType: 'codex', cwd: '/repo/main', sessionName: 'parser (clone)' });
+    expect(String(spawnCalls[0].contextText)).toContain(result.transcriptFile);
+    expect(groups.groupForSession('new-sid')?.id).toBe(group.id);
+    expect(result).toMatchObject({ oldSessionId: 'old-sid', newSessionId: 'new-sid', sourceClosed: false });
+    expect(killed).toEqual([]);
+    expect(sessions.has('old-sid')).toBe(true);
+    rmSync(result.transcriptFile, { force: true });
+  });
+});

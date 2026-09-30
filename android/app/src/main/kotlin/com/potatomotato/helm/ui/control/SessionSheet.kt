@@ -193,6 +193,7 @@ private val SHEET_ACTIONS = listOf(
     SessionAction.Compact,
     SessionAction.HelmCompact,
     SessionAction.SwitchCli,
+    SessionAction.Clone,
     SessionAction.Clear,
     SessionAction.Spawn,
     SessionAction.Close,
@@ -519,6 +520,7 @@ internal val SessionAction.labelRes: Int
         SessionAction.Clear -> R.string.control_action_clear
         SessionAction.HelmCompact -> R.string.control_action_helm_compact
         SessionAction.SwitchCli -> R.string.control_action_switch_cli
+        SessionAction.Clone -> R.string.control_action_clone
         SessionAction.Stop -> R.string.control_action_stop
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
@@ -538,6 +540,7 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Clear -> R.string.control_glyph_clear
         SessionAction.HelmCompact -> R.string.control_glyph_helm_compact
         SessionAction.SwitchCli -> R.string.control_glyph_switch_cli
+        SessionAction.Clone -> R.string.control_glyph_clone
         SessionAction.Stop -> R.string.control_glyph_stop
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close

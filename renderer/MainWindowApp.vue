@@ -657,6 +657,11 @@ function onContextMenuAction(action: string): void {
       if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Helm compact');
       break;
     }
+    case 'clone-session': {
+      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+      if (sessionId) void runTranscriptAction(sessionsClient.sessionClone(sessionId), 'Clone');
+      break;
+    }
     case 'switch-cli': {
       const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) {

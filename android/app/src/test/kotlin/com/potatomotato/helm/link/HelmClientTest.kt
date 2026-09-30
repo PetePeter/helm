@@ -752,6 +752,18 @@ class HelmClientTest {
     }
 
     @Test
+    fun `clone asks Helm to fork the session`() {
+        client.cloneSession("s1")
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_clone", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+
+        client.onInbound(resultFor(lastCallId(), "{}"))
+        assertNotice(SessionAction.Clone, ActionOutcome.Done)
+    }
+
+    @Test
     fun `spawn sends the arguments session_create needs and carries the created id back`() {
         client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 

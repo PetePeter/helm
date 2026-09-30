@@ -1594,6 +1594,10 @@ export class HelmControlService extends EventEmitter {
     return this.sessionDelivery.quickCompactSession(sessionRef, options);
   }
 
+  cloneSession(sessionRef: string, opts: { handover?: string; creatorSessionId?: string } = {}) {
+    return this.sessionService.cloneSession(sessionRef, opts);
+  }
+
   switchSessionCli(
     sessionRef: string,
     cliType: string,

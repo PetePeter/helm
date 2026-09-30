@@ -23,6 +23,7 @@ export const PRELOAD_API_DOMAINS = {
     'sessionSetLocked',
     'sessionQuickCompact',
     'sessionSwitchCli',
+    'sessionClone',
     'sessionSetMission',
     'sessionSetMissionBarHeight',
     'sessionSetState',

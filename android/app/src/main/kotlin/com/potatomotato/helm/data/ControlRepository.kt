@@ -23,6 +23,9 @@ enum class SessionAction(val tool: String) {
     /** Continue the session under another CLI type, picked on the sheet. */
     SwitchCli("session_switch_cli"),
 
+    /** Fork the session from its stripped transcript; the original keeps running. */
+    Clone("session_clone"),
+
     /** Interrupts the running turn — an Esc keypress, which stops a CLI and an API tool alike. */
     Stop("session_send_input"),
     Spawn("session_create"),

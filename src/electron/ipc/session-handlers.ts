@@ -19,6 +19,7 @@ import { logger } from '../../utils/logger.js';
 export interface TranscriptActions {
   quickCompact(sessionId: string): Promise<unknown>;
   switchCli(sessionId: string, cliType: string): unknown;
+  clone(sessionId: string): unknown;
 }
 
 // ============================================================================
@@ -343,6 +344,18 @@ export function setupSessionHandlers(
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Quick compact failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /** Context menu "Clone": fork the session from its stripped transcript; the source keeps running. */
+  ipcMain.handle('session:clone', (_event, id: string) => {
+    try {
+      if (!transcriptActions) throw new Error('Clone is not available');
+      transcriptActions.clone(id);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[Session] Clone failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });

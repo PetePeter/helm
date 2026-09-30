@@ -233,6 +233,7 @@
     <string name="control_action_clear">Clear context</string>
     <string name="control_action_helm_compact">Helm compact</string>
     <string name="control_action_switch_cli">Switch CLI</string>
+    <string name="control_action_clone">Clone</string>
     <string name="control_action_stop">Stop</string>
     <string name="control_action_spawn">Spawn session</string>
     <string name="control_action_close">Close session</string>
@@ -243,6 +244,7 @@
     <string name="control_glyph_clear">🧹</string>
     <string name="control_glyph_helm_compact">🗜</string>
     <string name="control_glyph_switch_cli">🔀</string>
+    <string name="control_glyph_clone">🧬</string>
     <string name="control_glyph_stop">⏹</string>
     <string name="control_glyph_spawn">✦</string>
     <string name="control_glyph_close">✕</string>
@@ -275,6 +277,7 @@
     <string name="control_notice_done_clear">Clearing.</string>
     <string name="control_notice_done_helm_compact">Helm compacting.</string>
     <string name="control_notice_done_switch_cli">Switching CLI.</string>
+    <string name="control_notice_done_clone">Cloning.</string>
     <string name="control_notice_done_stop">Stop sent.</string>
     <string name="control_notice_done_close">Session closed.</string>
     <string name="control_notice_done_spawn">Session started.</string>

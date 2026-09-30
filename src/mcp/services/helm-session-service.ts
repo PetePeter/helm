@@ -183,7 +183,7 @@ export class HelmSessionService {
   switchCli(
     sessionRef: string,
     cliType: string,
-    opts: { handover?: string; closeSource?: boolean; creatorSessionId?: string } = {},
+    opts: { handover?: string; closeSource?: boolean; creatorSessionId?: string; name?: string } = {},
   ): { ok: true; oldSessionId: string; newSessionId: string; transcriptFile: string; sourceClosed: boolean } {
     const source = this.findSession(sessionRef);
     if (!source) throw new Error(`Session not found: ${sessionRef}`);
@@ -192,7 +192,7 @@ export class HelmSessionService {
 
     const transcriptFile = writeStrippedTranscript(source);
     const group = this.runtimeGroupManager?.groupForSession(source.id);
-    const created = this.spawnCli(cliType, source.workingDir, source.name, {
+    const created = this.spawnCli(cliType, source.workingDir, opts.name ?? source.name, {
       ...(opts.creatorSessionId ? { creatorSessionId: opts.creatorSessionId } : {}),
       runtimeGroupId: group?.id ?? 'none',
       initialPrompt: buildTranscriptResumePrompt(transcriptFile, opts.handover),
@@ -202,6 +202,16 @@ export class HelmSessionService {
     if (closeSource) this.closeSession(source.id);
     logger.info(`[HelmControlService] session_switch_cli "${source.name}" ${source.cliType} → ${cliType} (${created.id})`);
     return { ok: true, oldSessionId: source.id, newSessionId: created.id, transcriptFile, sourceClosed: closeSource };
+  }
+
+  /**
+   * Fork a session: the same CLI reads back a stripped copy of the transcript
+   * in a new session alongside it, so the two can diverge from the same history.
+   */
+  cloneSession(sessionRef: string, opts: { handover?: string; creatorSessionId?: string } = {}) {
+    const source = this.findSession(sessionRef);
+    if (!source) throw new Error(`Session not found: ${sessionRef}`);
+    return this.switchCli(source.id, source.cliType, { ...opts, closeSource: false, name: `${source.name} (clone)` });
   }
 
   closeSession(sessionRef: string): { ok: true } {
