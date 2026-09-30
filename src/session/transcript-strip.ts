@@ -10,7 +10,8 @@
  * What stays: every prompt, every reply, one line per tool call, and errors.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
 import { logger } from '../utils/logger.js';
@@ -48,9 +49,30 @@ function resultText(content: unknown): string {
   return content.map(b => (typeof (b as Block)?.text === 'string' ? (b as Block).text : '')).join(' ');
 }
 
-function parse(jsonl: string): Line[] {
+const READ_CHUNK_BYTES = 16 * 1024 * 1024;
+
+/** Yield a file's lines chunk by chunk — logs can exceed V8's ~512 MB string cap. */
+function* readLines(path: string): Generator<string> {
+  const fd = openSync(path, 'r');
+  try {
+    const buffer = Buffer.alloc(READ_CHUNK_BYTES);
+    const decoder = new StringDecoder('utf8');
+    let tail = '';
+    let read: number;
+    while ((read = readSync(fd, buffer, 0, READ_CHUNK_BYTES, null)) > 0) {
+      const parts = (tail + decoder.write(buffer.subarray(0, read))).split(/\r?\n/);
+      tail = parts.pop() ?? '';
+      yield* parts;
+    }
+    yield tail + decoder.end();
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function parse(rawLines: Iterable<string>): Line[] {
   const lines: Line[] = [];
-  for (const raw of jsonl.split(/\r?\n/)) {
+  for (const raw of rawLines) {
     if (!raw.trim()) continue;
     try {
       const value = JSON.parse(raw);
@@ -184,7 +206,7 @@ const STRIPPERS: Record<TranscriptFormat, (lines: Line[]) => string> = {
 
 /** Strip a Claude Code, Codex or Copilot CLI JSONL transcript to markdown. Format is auto-detected. */
 export function stripTranscript(jsonl: string): string {
-  const lines = parse(jsonl);
+  const lines = parse(jsonl.split(/\r?\n/));
   return STRIPPERS[detectFormat(lines)](lines);
 }
 
@@ -204,22 +226,22 @@ export function writeStrippedTranscript(session: Pick<SessionInfo, 'name' | 'cli
   }
   // Logged in detail: a bad strip only shows up later, as a successor that forgot things.
   const started = Date.now();
-  let raw: string;
+  let lines: Line[];
+  let bytes: number;
   try {
-    raw = readFileSync(source, 'utf8');
+    bytes = statSync(source).size;
+    lines = parse(readLines(source));
   } catch (err) {
     logger.error(`[TranscriptStrip] "${session.name}": reading ${source} failed: ${(err as Error).message}`);
     throw new Error(`Could not read the transcript for "${session.name}": ${(err as Error).message}`);
   }
-  const lines = parse(raw);
   const format = detectFormat(lines);
   const md = STRIPPERS[format](lines);
   const file = writeLargeTextTempFile(md, 'transcript');
-  const sections = (role: string) => md.split(`## ${role}
-`).length - 1;
+  const sections = (role: string) => md.split(`## ${role}\n`).length - 1;
   logger.info(
     `[TranscriptStrip] "${session.name}": ${format} ${source} ` +
-      `${raw.length} chars / ${lines.length} records → ${md.length} chars ` +
+      `${bytes} bytes / ${lines.length} records → ${md.length} chars ` +
       `(compactions ${countCompactions(lines)}, user ${sections('User')}, assistant ${sections('Assistant')}, summary ${sections('Earlier summary')}) ` +
       `in ${Date.now() - started}ms → ${file}`,
   );
