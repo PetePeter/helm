@@ -13,6 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
+import { logger } from '../utils/logger.js';
 
 const TOOL_ARGS_MAX = 200;
 const ERROR_MAX = 300;
@@ -117,6 +118,8 @@ function stripClaude(lines: Line[]): string {
 }
 
 function stripCodex(lines: Line[]): string {
+  // Codex's `compacted` summary is encrypted, so unlike Claude and Copilot the
+  // whole history is kept — the pre-compaction turns are the only readable record.
   const out = new MarkdownOut();
   // response_item is the canonical record; event_msg repeats it for the TUI.
   for (const l of lines) {
@@ -133,11 +136,56 @@ function stripCodex(lines: Line[]): string {
   return out.toString();
 }
 
-/** Strip a Claude Code or Codex JSONL transcript to markdown. Format is auto-detected. */
+function stripCopilot(lines: Line[]): string {
+  // Only what the model sees: everything after the last compaction, which carries its summary.
+  let start = 0;
+  let summary = '';
+  lines.forEach((l, i) => {
+    const d = (l.data ?? {}) as Block;
+    if (l.type === 'session.compaction_complete' && d.success !== false) {
+      start = i + 1;
+      summary = typeof d.summaryContent === 'string' ? d.summaryContent.trim() : '';
+    }
+  });
+
+  const out = new MarkdownOut();
+  out.add('Earlier summary', summary);
+  for (const l of lines.slice(start)) {
+    const d = (l.data ?? {}) as Block;
+    if (d.parentToolCallId) continue; // sub-agent chatter; the parent already logs the call
+    if (l.type === 'user.message') {
+      // content is what the user typed; transformedContent adds Copilot's injected context.
+      out.add('User', cleanText(String(d.content ?? '')));
+    } else if (l.type === 'assistant.message') {
+      out.add('Assistant', cleanText(String(d.content ?? '')));
+      for (const req of (Array.isArray(d.toolRequests) ? d.toolRequests : []) as Block[]) {
+        out.add('Assistant', toolLine(req.name, req.arguments));
+      }
+    } else if (l.type === 'tool.execution_complete' && d.success === false) {
+      out.add('Assistant', `- error: ${clip(String((d.error as Block | undefined)?.message ?? ''), ERROR_MAX)}`);
+    }
+  }
+  return out.toString();
+}
+
+type TranscriptFormat = 'claude' | 'codex' | 'copilot';
+
+function detectFormat(lines: Line[]): TranscriptFormat {
+  if (lines.some(l => l.type === 'response_item' || l.type === 'session_meta')) return 'codex';
+  if (lines.some(l => typeof l.type === 'string' && l.type.startsWith('session.'))) return 'copilot';
+  return 'claude';
+}
+
+const STRIPPERS: Record<TranscriptFormat, (lines: Line[]) => string> = {
+  claude: stripClaude,
+  codex: stripCodex,
+  copilot: stripCopilot,
+};
+
+/** Strip a Claude Code, Codex or Copilot CLI JSONL transcript to markdown. Format is auto-detected. */
 export function stripTranscript(jsonl: string): string {
   const lines = parse(jsonl);
-  const isCodex = lines.some(l => l.type === 'response_item' || l.type === 'session_meta');
-  return isCodex ? stripCodex(lines) : stripClaude(lines);
+  return STRIPPERS[detectFormat(lines)](lines);
 }
 
 /**
@@ -148,12 +196,53 @@ export function stripTranscript(jsonl: string): string {
 export function writeStrippedTranscript(session: Pick<SessionInfo, 'name' | 'cliTranscriptPath'>): string {
   const source = session.cliTranscriptPath;
   if (!source || !existsSync(source)) {
+    logger.warn(`[TranscriptStrip] "${session.name}": no transcript (path=${source ?? 'unset'}, exists=${!!source && existsSync(source)})`);
     throw new Error(
       `No transcript known for "${session.name}". It comes from CLI hooks — install them ` +
         '(docs/cli-hooks.md) and let the session finish one turn, then retry.',
     );
   }
-  return writeLargeTextTempFile(stripTranscript(readFileSync(source, 'utf8')), 'transcript');
+  // Logged in detail: a bad strip only shows up later, as a successor that forgot things.
+  const started = Date.now();
+  let raw: string;
+  try {
+    raw = readFileSync(source, 'utf8');
+  } catch (err) {
+    logger.error(`[TranscriptStrip] "${session.name}": reading ${source} failed: ${(err as Error).message}`);
+    throw new Error(`Could not read the transcript for "${session.name}": ${(err as Error).message}`);
+  }
+  const lines = parse(raw);
+  const format = detectFormat(lines);
+  const md = STRIPPERS[format](lines);
+  const file = writeLargeTextTempFile(md, 'transcript');
+  const sections = (role: string) => md.split(`## ${role}
+`).length - 1;
+  logger.info(
+    `[TranscriptStrip] "${session.name}": ${format} ${source} ` +
+      `${raw.length} chars / ${lines.length} records → ${md.length} chars ` +
+      `(compactions ${countCompactions(lines)}, user ${sections('User')}, assistant ${sections('Assistant')}, summary ${sections('Earlier summary')}) ` +
+      `in ${Date.now() - started}ms → ${file}`,
+  );
+  if (md.trim().length === 0) {
+    logger.warn(`[TranscriptStrip] "${session.name}": strip is EMPTY — unrecognised ${format} log shape? Record types: ` +
+      JSON.stringify(countTypes(lines)));
+  }
+  return file;
+}
+
+function countCompactions(lines: Line[]): number {
+  return lines.filter(
+    l => l.type === 'compacted' || l.type === 'session.compaction_complete' || l.subtype === 'compact_boundary',
+  ).length;
+}
+
+function countTypes(lines: Line[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const l of lines) {
+    const key = String(l.type ?? '?');
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
 }
 
 /** The first prompt a cleared or freshly spawned session receives. */

@@ -1,7 +1,7 @@
 /**
  * stripTranscript — a CLI's JSONL conversation log reduced to the markdown a
  * fresh session reads back on quick compact / CLI switch. Real fixtures in the
- * on-disk shapes Claude Code and Codex write.
+ * on-disk shapes Claude Code, Codex and Copilot CLI write.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -94,5 +94,61 @@ describe('stripTranscript — Codex', () => {
     expect(md).not.toContain('huge listing');
     expect(md).not.toContain('environment_context');
     expect(md).not.toContain('dev rules');
+  });
+});
+
+const cp = (type: string, data: Record<string, unknown>) => ({ type, data });
+
+describe('stripTranscript — Copilot CLI', () => {
+  it('keeps prompts, replies, one line per tool call and failures; drops tool output and injected context', () => {
+    const md = stripTranscript(jsonl(
+      cp('session.start', { sessionId: 's1', producer: 'copilot-agent' }),
+      cp('system.message', { role: 'system', content: 'You are the GitHub Copilot CLI' }),
+      cp('user.message', { content: 'Fix the login bug', transformedContent: '<current_datetime>x</current_datetime> injected' }),
+      cp('assistant.message', {
+        content: 'Looking at auth.ts',
+        reasoningOpaque: 'opaque-thinking',
+        toolRequests: [{ toolCallId: 't1', name: 'view', arguments: { path: 'src/auth.ts' } }],
+      }),
+      cp('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'x'.repeat(5000) } }),
+      cp('tool.execution_complete', { toolCallId: 't2', success: false, error: { message: 'rg: unrecognized file type' } }),
+      cp('assistant.message', { content: 'Fixed.', toolRequests: [] }),
+    ));
+
+    expect(md).toContain('Fix the login bug');
+    expect(md).toContain('Looking at auth.ts');
+    expect(md).toContain('- tool: view {"path":"src/auth.ts"}');
+    expect(md).toContain('- error: rg: unrecognized file type');
+    expect(md).toContain('Fixed.');
+    expect(md).not.toContain('xxxxxxxxxx');
+    expect(md).not.toContain('opaque-thinking');
+    expect(md).not.toContain('current_datetime');
+    expect(md).not.toContain('GitHub Copilot CLI');
+  });
+
+  it('starts from the last compaction, keeping its summary', () => {
+    const md = stripTranscript(jsonl(
+      cp('session.start', { sessionId: 's1' }),
+      cp('user.message', { content: 'ancient prompt' }),
+      cp('session.compaction_complete', { success: true, summaryContent: 'the story so far' }),
+      cp('user.message', { content: 'fresh prompt' }),
+    ));
+
+    expect(md).toContain('the story so far');
+    expect(md).toContain('fresh prompt');
+    expect(md).not.toContain('ancient prompt');
+  });
+
+  it('drops sub-agent chatter, keeping only the parent conversation', () => {
+    const md = stripTranscript(jsonl(
+      cp('session.start', { sessionId: 's1' }),
+      cp('assistant.message', { content: 'inner reply', parentToolCallId: 'task-1', toolRequests: [] }),
+      cp('tool.execution_complete', { parentToolCallId: 'task-1', toolCallId: 'x', success: false, error: { message: 'inner failure' } }),
+      cp('assistant.message', { content: 'outer reply', toolRequests: [] }),
+    ));
+
+    expect(md).toContain('outer reply');
+    expect(md).not.toContain('inner reply');
+    expect(md).not.toContain('inner failure');
   });
 });

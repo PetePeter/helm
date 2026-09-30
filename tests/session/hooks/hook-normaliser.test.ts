@@ -7,6 +7,8 @@
  * extraction and event aliasing, never name guessing.
  */
 
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   encodeDenyResponse,
@@ -164,7 +166,7 @@ describe('normaliseHookEvent', () => {
     expect(normalise({ cli: 'claude', event: 'PreCompact', payload: {} })?.trigger).toBeUndefined();
   });
 
-  it('extracts transcript_path — Claude and Codex carry it, Copilot does not', () => {
+  it('extracts transcript_path — Claude and Codex carry it, Copilot derives it from its session id', () => {
     expect(
       normalise({
         cli: 'claude',
@@ -179,7 +181,10 @@ describe('normaliseHookEvent', () => {
         payload: { transcriptPath: '/home/u/.codex/x/transcript.jsonl' },
       })?.transcriptPath,
     ).toBe('/home/u/.codex/x/transcript.jsonl');
-    // Copilot sends no transcript; the snapshot falls back to the summary alone.
+    // Copilot sends no path, but its log lives at a fixed spot keyed by its session id.
+    expect(
+      normalise({ cli: 'copilot', event: 'agentStop', payload: { sessionId: 'cp-1' } })?.transcriptPath,
+    ).toBe(join(homedir(), '.copilot', 'session-state', 'cp-1', 'events.jsonl'));
     expect(normalise({ cli: 'copilot', event: 'PreCompact', payload: {} })?.transcriptPath).toBeUndefined();
   });
 });

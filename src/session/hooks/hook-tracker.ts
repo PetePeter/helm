@@ -212,6 +212,7 @@ export class HookTracker {
   private recordTranscriptPath(sessionId: string, transcriptPath: string | undefined): void {
     if (!transcriptPath) return;
     if (this.deps.sessionManager.getSession(sessionId)?.cliTranscriptPath === transcriptPath) return;
+    logger.info(`[HookTracker] Transcript for ${sessionId} → ${transcriptPath} (exists=${existsSync(transcriptPath)})`);
     this.deps.sessionManager.updateSession(sessionId, { cliTranscriptPath: transcriptPath });
   }
 

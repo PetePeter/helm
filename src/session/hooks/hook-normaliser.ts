@@ -11,6 +11,9 @@
  * here. Anything else is G1 noise: the receiver logs and ignores it.
  */
 
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 /** The CLI families Helm can receive hooks from. */
 export type HookProvider = 'claude' | 'codex' | 'copilot';
 
@@ -55,8 +58,9 @@ export interface HookEvent {
   prompt?: string;
   /** PreCompact only: "auto" (context filled) or "manual" (/compact command). */
   trigger?: string;
-  /** Path to the CLI's raw transcript (Claude and Codex; Copilot sends none).
-   *  The PreCompact snapshot attaches this file rather than inlining it. */
+  /** Path to the CLI's raw transcript. Claude and Codex send it; Copilot does
+   *  not, so it is derived from Copilot's session id. The PreCompact snapshot
+   *  attaches this file rather than inlining it. */
   transcriptPath?: string;
   receivedAt: number;
   /** The raw payload, kept for logging and future groups. */
@@ -101,6 +105,11 @@ function obj(payload: Record<string, unknown>, keys: string[]): Record<string, u
   return undefined;
 }
 
+/** Copilot CLI keeps each session's event log at a fixed spot keyed by its session id. */
+function copilotTranscriptPath(cliSessionId: string | undefined): string | undefined {
+  return cliSessionId ? join(homedir(), '.copilot', 'session-state', cliSessionId, 'events.jsonl') : undefined;
+}
+
 /**
  * Normalise one shim envelope into a HookEvent, or return null when the CLI
  * or event is not one Helm knows. Never throws: a malformed payload yields a
@@ -116,17 +125,20 @@ export function normaliseHookEvent(
   // StopFailure is Claude's alone — the others never send it, and Helm only
   // registers it in Claude's config, so a stray one elsewhere is noise.
   if (event === 'StopFailure' && input.cli !== 'claude') return null;
+  const cliSessionId = str(input.payload, ['session_id', 'sessionId']);
   return {
     cli: input.cli,
     event,
     helmSessionId: null,
-    cliSessionId: str(input.payload, ['session_id', 'sessionId']),
+    cliSessionId,
     cwd: str(input.payload, ['cwd']),
     toolName: str(input.payload, ['tool_name', 'toolName']),
     toolInput: obj(input.payload, ['tool_input', 'toolInput']),
     prompt: str(input.payload, ['prompt']),
     trigger: str(input.payload, ['trigger']),
-    transcriptPath: str(input.payload, ['transcript_path', 'transcriptPath']),
+    transcriptPath:
+      str(input.payload, ['transcript_path', 'transcriptPath']) ??
+      (input.cli === 'copilot' ? copilotTranscriptPath(cliSessionId) : undefined),
     receivedAt: now(),
     raw: input.payload,
   };
