@@ -43,7 +43,7 @@ function buildExpectsResponseTag(senderSessionId: string): string {
   if (isMobileSessionId(senderSessionId)) {
     return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It reaches the user on the phone they sent this from; keep lines short.]';
   }
-  return `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${senderSessionId}", senderSessionId=<your env $HELM_SESSION_ID>, text="<your reply>". Your HELM_SESSION_ID is injected by Helm at startup.]`;
+  return `[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="${senderSessionId}", text="<your reply>".]`;
 }
 
 /**

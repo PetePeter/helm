@@ -860,7 +860,7 @@ export const MCP_TOOLS: McpTool[] = [
     description:
       'Send text to a running session PTY. ' +
       'DESTINATION: Provide sessionId (the target session that will receive the text). ' +
-      'SENDER: Provide senderSessionId (your own session ID from the HELM_SESSION_ID env var). ' +
+      'SENDER: Helm identifies you automatically — you never pass your own session ID. ' +
       'IMPORTANT: Destination and sender MUST be different sessions — self-messages are rejected. ' +
       'Text is always submitted atomically (Enter is appended automatically). ' +
       'After every inter-LLM send, call session_read_terminal on the recipient and verify the terminal tail shows the first words of the sent text, a new prompt, or a response starting; warn the user if no receipt evidence is visible. ' +
@@ -871,20 +871,13 @@ export const MCP_TOOLS: McpTool[] = [
       properties: {
         sessionId: {
           type: 'string',
-          description: '[DESTINATION] Target session ID — MUST be different from senderSessionId.',
+          description: '[DESTINATION] Target session ID — must not be your own session.',
         },
         text: { type: 'string' },
-        senderSessionId: {
-          type: 'string',
-          description:
-            '[SENDER] Your session ID — MUST equal the HELM_SESSION_ID environment variable injected by Helm at startup. ' +
-            'Retrieve it with `echo $HELM_SESSION_ID` (bash) or read process.env.HELM_SESSION_ID (Node.js). ' +
-            'IMPORTANT: must be DIFFERENT from the destination sessionId.',
-        },
         expectsResponse: { type: 'boolean', default: false },
         task: { type: 'string', description: 'OPERATOR ONLY, when the hand-off needs following up: a short title for a new follow-up task, or the P-id of your open task for this work. Helm records the builder and prompts a check when it finishes (a slow repeating timer is the safety net); the result echoes taskId. Omit for a one-off note.' },
       },
-      required: ['text', 'sessionId', 'senderSessionId'],
+      required: ['text', 'sessionId'],
       additionalProperties: false,
     },
   },
@@ -895,7 +888,7 @@ export const MCP_TOOLS: McpTool[] = [
       'Send sequence-style terminal input to a running session PTY without HELM_MSG preamble. ' +
       'Use this for TUI/terminal automation: navigating menus, pressing keys, typing text. ' +
       'DESTINATION: Provide sessionId (the target session that will receive the input). ' +
-      'SENDER: Provide senderSessionId (your own session ID from the HELM_SESSION_ID env var). ' +
+      'SENDER: Helm identifies you automatically — you never pass your own session ID. ' +
       'IMPORTANT: Destination and sender MUST be different sessions — self-send is rejected. ' +
       'Supports sequence syntax: {Esc}, {Tab}, {Enter}, {ArrowDown}, {Ctrl+C}, {Wait 200}, literal text. ' +
       'No implicit Enter is appended unless impliedSubmit=true or the sequence includes {Enter}/{Send}. ' +
@@ -905,12 +898,7 @@ export const MCP_TOOLS: McpTool[] = [
       properties: {
         sessionId: {
           type: 'string',
-          description: '[DESTINATION] Target session ID — MUST be different from senderSessionId.',
-        },
-        senderSessionId: {
-          type: 'string',
-          description:
-            '[SENDER] Your session ID — MUST equal the HELM_SESSION_ID environment variable injected by Helm at startup.',
+          description: '[DESTINATION] Target session ID — must not be your own session.',
         },
         sequence: {
           type: 'string',
@@ -919,7 +907,7 @@ export const MCP_TOOLS: McpTool[] = [
         impliedSubmit: { type: 'boolean', default: false },
         verify: { type: 'boolean', default: true },
       },
-      required: ['sessionId', 'senderSessionId', 'sequence'],
+      required: ['sessionId', 'sequence'],
       additionalProperties: false,
     },
   },
@@ -946,11 +934,6 @@ export const MCP_TOOLS: McpTool[] = [
           description:
             'Optional note relayed to the freshly-cleared session — outstanding work, decisions, file paths, next steps. ' +
             'Omit to clear with no follow-up.',
-        },
-        senderSessionId: {
-          type: 'string',
-          description:
-            '[OPTIONAL] Your session ID for audit — defaults to the HELM_SESSION_ID identity injected by Helm.',
         },
       },
       required: ['sessionId'],

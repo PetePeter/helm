@@ -203,6 +203,22 @@ describe('session_send_text — local behaviour is unaffected', () => {
       send(service, { sessionId: LOCAL_SESSION.id, text: 'x', senderSessionId: randomUUID() }),
     ).rejects.toThrow(/Unknown sender session/);
   });
+
+  it('sends as the authenticated caller, ignoring a stale or guessed senderSessionId', async () => {
+    // Regression: after Switch CLI a codex session kept its OLD id and every
+    // reply failed "Session not found". Identity comes from the call, not the model.
+    const service = new FakeService([LOCAL_SESSION, { id: 'op', name: 'Helm' }]);
+    await callMcpTool(deps(service), 'session_send_text',
+      { sessionId: LOCAL_SESSION.id, text: 'hi', senderSessionId: 'stale-old-id' },
+      { sessionId: 'op', sessionName: 'Helm' });
+    expect(service.sends[0].options).toMatchObject({ senderSessionId: 'op', senderSessionName: 'Helm' });
+  });
+
+  it('needs no senderSessionId at all from an identified caller', async () => {
+    const service = new FakeService([LOCAL_SESSION, { id: 'op', name: 'Helm' }]);
+    await callMcpTool(deps(service), 'session_send_text', { sessionId: LOCAL_SESSION.id, text: 'hi' }, { sessionId: 'op' });
+    expect(service.sends[0].options).toMatchObject({ senderSessionId: 'op', senderSessionName: 'Helm' });
+  });
 });
 
 /**

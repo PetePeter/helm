@@ -75,7 +75,7 @@ function buildReplyInstruction(senderSessionId: string): string {
   }
   return (
     'send the question back to your caller with session_send_text ' +
-    `sessionId="${senderSessionId}", senderSessionId=<your HELM_SESSION_ID>, expectsResponse=true`
+    `sessionId="${senderSessionId}", expectsResponse=true`
   );
 }
 
@@ -90,7 +90,7 @@ export const HELM_MSG_HOOK_RULES =
   'Nobody can see or answer an interactive prompt here.\n' +
   'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
   'If you need a decision, send it back over the same wire: for a session sender, session_send_text with ' +
-  'sessionId="<the fromSessionId in the envelope>", senderSessionId=<your HELM_SESSION_ID>, expectsResponse=true; ' +
+  'sessionId="<the fromSessionId in the envelope>", expectsResponse=true; ' +
   'for a phone sender (address starts with mobile:), chat_send instead — the user reads ONLY chat_send, ' +
   'so reply to EVERY phone message with it, and keep lines short because they are read on a phone.\n' +
   'Then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +

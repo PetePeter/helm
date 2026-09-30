@@ -1624,7 +1624,7 @@ describe('LocalhostMcpServer', () => {
       },
     });
     const json = await response.json();
-    expect(json.error.message).toContain('senderSessionId is required');
+    expect(json.error.message).toContain('could not identify the sending session');
   });
 
   it('rejects session_send_text when senderSessionId does not match a known session', async () => {
@@ -1645,7 +1645,7 @@ describe('LocalhostMcpServer', () => {
     });
     const json = await response.json();
     expect(json.error.message).toContain('Unknown sender session');
-    expect(json.error.message).toContain('HELM_SESSION_ID');
+    expect(json.error.message).toContain('does not match any active Helm session');
   });
 
   it('rejects session_send_text when neither sessionId nor name is provided', async () => {

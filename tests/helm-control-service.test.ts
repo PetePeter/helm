@@ -111,7 +111,7 @@ describe('HelmControlService.sendTextToSession', () => {
 
     const callArg = (ptyManager.deliverText as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
     expect(callArg).toMatch(/^\[HELM_MSG: expectsResponse=true\. To reply, call MCP tool mcp__helm__session_send_text with: sessionId="sender1"/);
-    expect(callArg).toContain('senderSessionId=<your env $HELM_SESSION_ID>');
+    expect(callArg).not.toContain('senderSessionId');
 
     const envelopeMatch = callArg.match(/^\[HELM_MSG[^\]]*\](\{[^\n}]*\})/);
     expect(envelopeMatch).toBeTruthy();
