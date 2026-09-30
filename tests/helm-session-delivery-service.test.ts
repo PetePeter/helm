@@ -22,7 +22,7 @@ function makeSession(overrides?: Partial<{ id: string; name: string; cliType: st
   };
 }
 
-function makeDeps(opts?: { helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; clearCommand?: string; receiverSession?: ReturnType<typeof makeSession>; ptyRunning?: boolean }) {
+function makeDeps(opts?: { api?: boolean; helmPreambleForInterSession?: boolean; largeTextAsTempFile?: boolean; clearCommand?: string; receiverSession?: ReturnType<typeof makeSession>; ptyRunning?: boolean }) {
   const receiver = opts?.receiverSession ?? makeSession();
   const sender = makeSession({ id: 'sender-session', name: 'SenderSession' });
 
@@ -51,6 +51,7 @@ function makeDeps(opts?: { helmPreambleForInterSession?: boolean; largeTextAsTem
       largeTextAsTempFile: opts?.largeTextAsTempFile,
       clearCommand: opts?.clearCommand,
       submitSuffix: '\\r',
+      ...(opts?.api ? { api: { baseUrl: 'http://x', model: 'm' } } : {}),
     })),
   };
 
@@ -569,6 +570,26 @@ describe('HelmSessionDeliveryService', () => {
         if (oldAppData === undefined) delete process.env.APPDATA; else process.env.APPDATA = oldAppData;
         if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
         rmSync(tempHome, { recursive: true, force: true });
+      }
+    });
+
+    it('gives an API tool its note inline — it has no tool to fetch or delete a temp file', async () => {
+      const oldThreshold = process.env.HELM_LARGE_TEXT_TEMP_FILE_THRESHOLD;
+      process.env.HELM_LARGE_TEXT_TEMP_FILE_THRESHOLD = '10';
+      try {
+        const { service, ptyManager, receiver } = makeDeps({ api: true, largeTextAsTempFile: true });
+        const result = await service.clearSession(receiver.id, {
+          senderSessionId: receiver.id,
+          senderSessionName: receiver.name,
+          context: 'this is a large note to my future self',
+        });
+        expect(result.usedTempFile).toBe(false);
+        const texts = ptyManager.deliverText.mock.calls.map((c: any[]) => String(c[1])).join(' ');
+        expect(texts).toContain('this is a large note to my future self');
+        expect(texts).not.toContain('Read the full file at:');
+      } finally {
+        if (oldThreshold === undefined) delete process.env.HELM_LARGE_TEXT_TEMP_FILE_THRESHOLD;
+        else process.env.HELM_LARGE_TEXT_TEMP_FILE_THRESHOLD = oldThreshold;
       }
     });
 

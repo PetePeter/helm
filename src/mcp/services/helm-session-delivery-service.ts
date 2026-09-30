@@ -535,8 +535,10 @@ export class HelmSessionDeliveryService {
    * always lands, and the CLI reads the file itself.
    */
   private offloadIfLarge(cliType: string, text: string, filePrefix: string, label: string): string {
-    const enabled = this.configLoader.getCliTypeEntry(cliType)?.largeTextAsTempFile;
-    if (!shouldSendLargeTextAsTempFile(enabled, text)) {
+    const entry = this.configLoader.getCliTypeEntry(cliType);
+    // An API tool has no paste limit and no tool to delete a file, so it always
+    // gets the text inline — same rule as session_send_text.
+    if (entry?.api || !shouldSendLargeTextAsTempFile(entry?.largeTextAsTempFile, text)) {
       return text;
     }
     const tempFilePath = writeLargeTextTempFile(text, filePrefix);
