@@ -116,9 +116,15 @@ const BUSY_HINT = 'Target was mid-turn: your message is queued and runs after it
   + 'Do not resend. If it is still unsubmitted once the target goes idle (e.g. a Codex composer), '
   + 'send session_send_input "{Enter}".';
 
-function reportTargetBusy(session: SessionInfo): TargetBusyReport {
+/** `isApiTool`: Helm's own loop queues input and never leaves it unsent, so no {Enter} advice. */
+function reportTargetBusy(session: SessionInfo, isApiTool: boolean): TargetBusyReport {
   const targetBusy = session.activityLevel === 'active';
-  return { targetBusy, cliType: session.cliType, ...(targetBusy ? { busyHint: BUSY_HINT } : {}) };
+  return { targetBusy, cliType: session.cliType, ...(targetBusy && !isApiTool ? { busyHint: BUSY_HINT } : {}) };
+}
+
+/** Text that would arrive as nothing: blank, or only key tokens like {Enter}. */
+function isEmptyMessage(text: string): boolean {
+  return !text.replace(/\{[A-Za-z+ ]+(?: \d+)?\}/g, '').trim();
 }
 
 export class HelmSessionDeliveryService {
@@ -231,9 +237,9 @@ export class HelmSessionDeliveryService {
     if (session.id === options.senderSessionId) {
       throw new Error('Cannot send a message from a session to itself — sender and receiver must be different sessions');
     }
-
-    // Read before delivery: the paste itself turns the dot green.
-    const busyReport = reportTargetBusy(session);
+    if (isEmptyMessage(text)) {
+      throw new Error('text is empty — session_send_text delivers a message; use session_send_input for bare keys like {Enter}');
+    }
 
     // Determine if recipient wants the Helm preamble
     const recipientEntry = this.configLoader.getCliTypeEntry(session.cliType);
@@ -241,6 +247,8 @@ export class HelmSessionDeliveryService {
     // to it (Helm posts its answer to chat itself). It gets the text, plus the
     // sender's name when that is another session rather than the user's phone.
     const isApiTool = Boolean(recipientEntry?.api);
+    // Read before delivery: the paste itself turns the dot green.
+    const busyReport = reportTargetBusy(session, isApiTool);
     const usePreamble = !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
     let deliveryText = isApiTool && !isMobileSessionId(options.senderSessionId)
       ? formatSenderTag({

@@ -92,6 +92,24 @@ describe('HelmSessionDeliveryService', () => {
       expect(result).toMatchObject({ targetBusy: false, cliType: 'claude-code' });
       expect(result.busyHint).toBeUndefined();
     });
+
+    it('gives no {Enter} advice for a busy API tool — its loop queues input, nothing sits unsent', async () => {
+      // Regression: a 2B operator read the hint and sent "{Enter}" via session_send_text in a loop.
+      const { service, receiver } = makeDeps({ api: true, receiverSession: makeSession({ activityLevel: 'active' }) });
+
+      const result = await service.sendTextToSession(receiver.id, 'hi', from);
+
+      expect(result.targetBusy).toBe(true);
+      expect(result.busyHint).toBeUndefined();
+    });
+
+    it('rejects a message that is empty or only key tokens, pointing at session_send_input', async () => {
+      const { service, receiver, ptyManager } = makeDeps();
+
+      await expect(service.sendTextToSession(receiver.id, '{Enter}', from)).rejects.toThrow(/empty.*session_send_input/);
+      await expect(service.sendTextToSession(receiver.id, '   ', from)).rejects.toThrow(/empty/);
+      expect(ptyManager.deliverText).not.toHaveBeenCalled();
+    });
   });
 
   it('delivers system reminders without a sender envelope and with system intent', async () => {

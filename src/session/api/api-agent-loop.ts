@@ -175,14 +175,28 @@ export const LOAD_TOOLS_TOOL: ToolSpec = {
   },
 };
 
-/** Tool names loaded so far: every name a load_tools call in this history asked for. */
+/** The builtin a model reaches for when it thinks a tool is missing. */
+const REQUEST_TOOL_NAME = 'request_tool';
+
+/**
+ * Tool names loaded so far. load_tools is a convenience, not a gate: a tool
+ * also counts as loaded once it was asked for with request_tool or simply
+ * called by name — small models skip the load step, and should not be punished.
+ */
 export function loadedToolNames(history: readonly ChatMessage[]): Set<string> {
   const loaded = new Set<string>();
   for (const message of history) {
     for (const call of message.tool_calls ?? []) {
-      if (call.function.name !== LOAD_TOOLS_TOOL.name) continue;
-      const names = parseToolArguments(call.function.arguments)?.names;
-      if (Array.isArray(names)) for (const name of names) if (typeof name === 'string') loaded.add(name);
+      const name = call.function.name;
+      const args = parseToolArguments(call.function.arguments);
+      if (name === LOAD_TOOLS_TOOL.name) {
+        const names = args?.names;
+        if (Array.isArray(names)) for (const n of names) if (typeof n === 'string') loaded.add(n);
+      } else if (name === REQUEST_TOOL_NAME) {
+        if (typeof args?.name === 'string') loaded.add(args.name.trim());
+      } else {
+        loaded.add(name);
+      }
     }
   }
   return loaded;
@@ -307,6 +321,11 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
       params.onEvent?.({ type: 'tool_call', name, args: args ?? {} });
       if (!args) return `Error: arguments were not valid JSON: ${call.function.arguments.slice(0, 200)}`;
       if (name === LOAD_TOOLS_TOOL.name) return describeLoaded(params.deferredTools ?? [], args.names);
+      // Asking for a tool it already has: hand it over instead of filing a request with the user.
+      const requested = name === REQUEST_TOOL_NAME && typeof args.name === 'string' ? args.name.trim() : '';
+      if (requested && params.deferredTools?.some((tool) => tool.name === requested)) {
+        return `You already have it. ${describeLoaded(params.deferredTools, [requested])} Call it now.`;
+      }
       if (name === CHECKPOINT_TOOL.name && params.checkpoints) {
         const label = typeof args.label === 'string' ? args.label.trim() : '';
         if (!label) return 'Error: label is required';

@@ -164,6 +164,37 @@ describe('runAgentTurn', () => {
     expect(next.calls[0].toolNames).toEqual(['load_tools', 'memory_search']);
   });
 
+  it('a deferred tool called by name without load_tools just runs, and is offered from then on', async () => {
+    const memory = { name: 'memory_search', description: 'Search memories', parameters: { type: 'object' } };
+    const ran: string[] = [];
+    const client = scriptedClient([
+      { content: '', tool_calls: [toolCall('m', 'memory_search', '{"query":"x"}')] },
+      { content: 'found' },
+    ]);
+    await runAgentTurn({
+      client, system: '', tools: [], deferredTools: [memory], history: [], userContent: 'x',
+      executeTool: async (name) => { ran.push(name); return 'hit'; },
+    });
+    expect(ran).toEqual(['memory_search']);
+    expect(client.calls[1].toolNames).toContain('memory_search');
+  });
+
+  it('request_tool for a tool the model already has hands it over instead of asking the user', async () => {
+    const send = { name: 'session_send_text', description: 'Send text', parameters: { type: 'object' } };
+    const ran: string[] = [];
+    const client = scriptedClient([
+      { content: '', tool_calls: [toolCall('r', 'request_tool', '{"name":"session_send_text","purpose":"message a session"}')] },
+      { content: 'ok' },
+    ]);
+    await runAgentTurn({
+      client, system: '', tools: [], deferredTools: [send], history: [], userContent: 'x',
+      executeTool: async (name) => { ran.push(name); return ''; },
+    });
+    expect(ran).toEqual([]); // never filed with the user
+    expect(last(client.calls[1].messages).content).toMatch(/^You already have it\. session_send_text — loaded/);
+    expect(client.calls[1].toolNames).toContain('session_send_text');
+  });
+
   it('rollback to an unknown checkpoint is an error the model can read, not a rewind', async () => {
     const client = scriptedClient([
       { content: '', tool_calls: [toolCall('rb', 'rollback', '{"label":"nope","note":"n"}')] },
@@ -601,7 +632,7 @@ describe('ApiSessionHost', () => {
     await vi.waitFor(() => expect(hooks).toContain('Stop'));
     expect(client.calls[0].toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'load_tools']);
     // Helm MCP tools are named in the system prompt, their schemas held back until loaded.
-    expect(client.calls[0].messages[0].content).toContain('call load_tools with their names before using them: memory_search.');
+    expect(client.calls[0].messages[0].content).toContain('call them directly (load_tools shows their arguments if you need them): memory_search.');
     expect(dispatched).toEqual([
       { name: 'memory_search', args: { query: 'x' }, sessionId: 's1' },
       { name: 'chat_send', args: { message: 'done' }, sessionId: 's1' },

@@ -60,7 +60,7 @@ export function buildSystemPrompt(params: {
     'your final answer is sent back to that session automatically.',
   ];
   if (params.deferredToolNames?.length) {
-    parts.push('', `More tools — call load_tools with their names before using them: ${params.deferredToolNames.join(', ')}.`);
+    parts.push('', `More tools you have — call them directly (load_tools shows their arguments if you need them): ${params.deferredToolNames.join(', ')}.`);
   }
   if (params.skills.length && has('skill_get')) {
     parts.push(

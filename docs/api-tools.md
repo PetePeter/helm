@@ -98,6 +98,14 @@ graph LR
   history, so loads survive a resume and vanish with a forgotten or compacted
   turn. The trade-off: each load changes the tool block and costs one
   prefix-cache miss, in exchange for a much smaller fixed prefix.
+  **Loading is never a gate.** Small models skip the step, so a deferred tool
+  called straight by name just runs and counts as loaded, and `request_tool`
+  for a tool the model already has hands it over ("You already have it…")
+  instead of filing a request with the user.
+- **Guidance fit for a small model.** Sends to an API tool carry no "send
+  `{Enter}` if it sits unsent" hint (its loop queues input), and
+  `session_send_text` rejects text that is empty or only key tokens — a 2B
+  operator once read that hint literally and sent `{Enter}` in a loop.
 - **Handshake.** A fresh conversation's first turn runs with no tools, and a
   note asks the model to restate the task and its plan. The user's next
   message is the confirmation, and tools are offered from then on. Subagents
