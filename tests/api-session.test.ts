@@ -10,7 +10,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 const { runAgentTurn, parseToolArguments, cleanModelText } = await import('../src/session/api/api-agent-loop.js');
 const { chunkForChat, selectApiTools, listAvailableApiTools, buildSystemPrompt, formatSenderTag, parseSenderTag, formatChatHistory } = await import('../src/session/api/api-prompt.js');
-const { ApiSessionProcess, dropTurns, forgetNudge, rescaleTokens } = await import('../src/session/api/api-session-process.js');
+const { ApiSessionProcess, dropTurns, forgetNudge, rescaleTokens, trimForOverflow, isContextOverflow } = await import('../src/session/api/api-session-process.js');
 const { ApiSessionHost } = await import('../src/session/api/api-session-host.js');
 const { NATIVE_TOOLS, globToRegExp } = await import('../src/session/api/api-native-tools.js');
 
@@ -456,6 +456,80 @@ describe('ApiSessionProcess (terminal adapter)', () => {
     resumed.proc.write('q2\r');
     await vi.waitFor(() => expect(resumed.outcomes).toHaveLength(1));
     expect(resumed.client.calls[0].messages.map((m) => m.content)).toEqual(['SYS', 'q1\n\n<ctx/>', 'a1', 'q2\n\n<ctx/>']);
+  });
+});
+
+describe('compact on context full', () => {
+  const turn = (n: number): Msg[] => [
+    { role: 'user', content: `q${n}` },
+    { role: 'assistant', content: null, tool_calls: [toolCall(`c${n}`, 'Read', '{}')] },
+    { role: 'tool', tool_call_id: `c${n}`, content: `tool output ${n}` },
+    { role: 'assistant', content: `a${n}` },
+  ];
+  const sixTurns = [1, 2, 3, 4, 5, 6].flatMap(turn);
+  const overflow = () => new Error('400: request (70000 tokens) exceeds the available context size (65536 tokens)');
+
+  it('recognises a context-full error and nothing else', () => {
+    expect(isContextOverflow(overflow())).toBe(true);
+    expect(isContextOverflow(new Error("This model's maximum context length is 8192 tokens"))).toBe(true);
+    expect(isContextOverflow(new Error('ECONNREFUSED'))).toBe(false);
+  });
+
+  it('forgets every tool call and result, then the oldest third of turns', () => {
+    const trimmed = trimForOverflow(sixTurns);
+    expect(trimmed.some((m) => m.role === 'tool' || m.tool_calls)).toBe(false);
+    expect(trimmed.map((m) => m.content)).toEqual(['q3', 'a3', 'q4', 'a4', 'q5', 'a5', 'q6', 'a6']);
+  });
+
+  it('retries the turn after trimming, and the model answers', async () => {
+    let failures = 1;
+    const sent: Msg[][] = [];
+    const outcomes: Array<{ finalText: string; error?: string }> = [];
+    const proc = new ApiSessionProcess({
+      client: { complete: async (messages: Msg[]) => {
+        sent.push(structuredClone(messages));
+        if (failures-- > 0) throw overflow();
+        return { message: { content: 'fits now' } };
+      } },
+      system: 'SYS', tools: [], history: structuredClone(sixTurns),
+      executeTool: async () => '', saveHistory: () => {}, mutableContext: () => '',
+      onTurnEnd: (o) => outcomes.push(o),
+    });
+    let screen = '';
+    proc.onData((d) => { screen += d; });
+    proc.write('next\r');
+    await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0]).toMatchObject({ finalText: 'fits now' });
+    expect(outcomes[0].error).toBeUndefined();
+    expect(sent[1].some((m) => m.content === 'q1' || m.role === 'tool')).toBe(false);
+    expect(screen).toContain('context full');
+  });
+
+  it('gives up with the error after three trims', async () => {
+    const outcomes: Array<{ error?: string }> = [];
+    const proc = new ApiSessionProcess({
+      client: { complete: async () => { throw overflow(); } },
+      system: 'SYS', tools: [], history: structuredClone(sixTurns),
+      executeTool: async () => '', saveHistory: () => {}, mutableContext: () => '',
+      onTurnEnd: (o) => outcomes.push(o),
+    });
+    proc.write('next\r');
+    await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(outcomes[0].error).toMatch(/context size/);
+  });
+
+  it('does not trim on other errors', async () => {
+    const saved: Msg[][] = [];
+    const outcomes: unknown[] = [];
+    const proc = new ApiSessionProcess({
+      client: { complete: async () => { throw new Error('ECONNREFUSED'); } },
+      system: 'SYS', tools: [], history: structuredClone(sixTurns),
+      executeTool: async () => '', saveHistory: (h) => saved.push(h), mutableContext: () => '',
+      onTurnEnd: (o) => outcomes.push(o),
+    });
+    proc.write('next\r');
+    await vi.waitFor(() => expect(outcomes).toHaveLength(1));
+    expect(saved).toEqual([]);
   });
 });
 

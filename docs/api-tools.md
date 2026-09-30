@@ -86,6 +86,11 @@ graph LR
   handover summary in one tool-less turn. The summary is saved as a memory, so
   it survives a crash mid-swap, and then becomes the whole history. After that
   the memory is deleted.
+- **Compact on full.** When the server refuses a request because the context
+  is full, the loop cannot ask the model to summarise (that request would not
+  fit either). Instead it forgets every tool call and its result, then the
+  oldest third of turns (`trimForOverflow`), and retries the same turn — up to
+  three trims, then the error stands. No config: it keys off the error text.
 - **Deferred Helm tools (progressive disclosure).** Only native tools and the
   built-ins are offered with full schemas. Ticked Helm MCP tools are named in
   the system prompt and offered once the model calls `load_tools(names)`, which

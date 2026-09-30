@@ -120,6 +120,30 @@ export function dropTurns(history: readonly ChatMessage[], messages: readonly Fo
   return history.filter((_, i) => !doomed.has(i));
 }
 
+/** Trims tried on one turn before a context-full error is reported. */
+const MAX_OVERFLOW_TRIMS = 3;
+
+/** The server refused the request because the history no longer fits its context. */
+export function isContextOverflow(err: unknown): boolean {
+  const text = err instanceof Error ? err.message : String(err);
+  return /exceeds? the (available )?context|context (length|size|window)|maximum context|too many tokens/i.test(text);
+}
+
+/**
+ * Compaction for a full context, with no model call (a full context cannot
+ * summarise itself): forget every tool call and its result — the bulk, and
+ * re-doable — then the oldest third of turns. The prose of the rest survives.
+ */
+export function trimForOverflow(history: readonly ChatMessage[]): ChatMessage[] {
+  const prose = history
+    .filter((m) => m.role !== 'tool')
+    .map((m) => (m.tool_calls ? { role: m.role, content: m.content } : m))
+    .filter((m) => m.role === 'user' || (m.content ?? '').trim());
+  const starts = prose.flatMap((m, i) => (m.role === 'user' ? [i] : []));
+  const cut = starts[Math.ceil(starts.length / 3)] ?? prose.length;
+  return prose.slice(cut);
+}
+
 /** Past turns before the first forget nudge, then the gap between nudges — a reminder, not a nag. */
 export const FORGET_NUDGE_AFTER = 20;
 export const FORGET_NUDGE_EVERY = 10;
@@ -361,6 +385,29 @@ export class ApiSessionProcess implements PtyProcess {
     }
   }
 
+  /**
+   * Run a request; when the server says the context is full, compact the
+   * history (trimForOverflow) and retry the same turn — the history is ours,
+   * so the retry simply continues from the smaller one.
+   */
+  private async withOverflowTrim<T>(controller: AbortController, request: () => Promise<T>): Promise<T> {
+    for (let trims = 0; ; trims++) {
+      try {
+        return await request();
+      } catch (err) {
+        if (controller.signal.aborted || trims >= MAX_OVERFLOW_TRIMS || !isContextOverflow(err)) throw err;
+        const before = this.contextTokens;
+        const next = trimForOverflow(this.history);
+        this.contextTokens = rescaleTokens(before, this.history, next);
+        this.history = next;
+        this.checkpoints.clear();
+        this.deps.saveHistory(this.history);
+        this.emit(`${DIM}(context full — forgot tool calls and the oldest third of the conversation)${RESET}\r\n`);
+        this.deps.onContextShrunk?.('compacted', before, this.contextTokens);
+      }
+    }
+  }
+
   private async runTurn(input: string): Promise<void> {
     const controller = new AbortController();
     this.running = controller;
@@ -370,7 +417,7 @@ export class ApiSessionProcess implements PtyProcess {
       .filter(Boolean).join('\n\n');
     const outcome: ApiTurnOutcome = { input, finalText: '', toolsUsed: [] };
     try {
-      const result = await runAgentTurn({
+      const result = await this.withOverflowTrim(controller, () => runAgentTurn({
         client: this.deps.client,
         system: this.deps.system,
         tools: gated ? [] : this.deps.tools,
@@ -383,7 +430,7 @@ export class ApiSessionProcess implements PtyProcess {
         signal: controller.signal,
         takeInjected: () => (this.injected.length ? this.injected.splice(0).join('\n\n') : null),
         checkpoints: this.checkpoints,
-      });
+      }));
       this.history = result.history;
       this.deps.saveHistory(this.history);
       outcome.finalText = result.finalText;
