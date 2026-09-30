@@ -83,6 +83,10 @@ export interface SessionInfo {
    *  Drives the MobileGate ownership rule — a phone may only close its own
    *  sessions. Persists across restarts. */
   createdByMobileDeviceId?: string;
+  /** The operator session this one works for: set when the operator creates it,
+   *  so it reports progress, results and questions back to the operator rather
+   *  than the user. Cleared once the user messages it directly. Persists. */
+  reportsTo?: string;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
   /** Hook-reported turn failure (G3, Claude StopFailure — e.g. a usage limit or

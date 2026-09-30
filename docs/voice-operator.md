@@ -485,6 +485,15 @@ sequenceDiagram
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 
+## Sessions the operator starts report back to it
+
+A session created by the operator gets `reportsTo = <operator id>` (persisted).
+Every SessionStart — so also after each compaction — tells it that it works for
+the operator and must send progress, results and questions there with
+`session_send_text`, not to the user. The user taking it over clears the field:
+a phone or Telegram message to it (seen by the prompt hook), or typing into its
+terminal. From then on it is an ordinary session and answers the user.
+
 ## Call transfer — `call_transfer`
 
 A live call can be handed from the session holding it to another, so the user

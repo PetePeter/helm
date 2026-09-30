@@ -73,6 +73,8 @@ export interface ContextInjectorDeps {
    * survives the context it was made in.
    */
   getRingRequests?(sessionId: string): string[];
+  /** The user spoke to an operator-started session directly: it now answers the user. */
+  clearReportsTo?(sessionId: string): void;
   /** The operator's open task plans, one line each. Asked for the operator only. */
   getOpenTasks?(sessionId: string): string[];
   /** The hint-only suggester: tuple payload or null. Promise = the worker seam. */
@@ -184,6 +186,16 @@ export class ContextInjector {
         SOURCE_CAP_CHARS,
       ));
     }
+    // Leads the non-operator sources: without it the session answers a user
+    // who is not watching instead of the operator that is waiting.
+    if (session.reportsTo) {
+      parts.push(
+        `You were started by the Helm operator (session "${session.reportsTo}") and work for it. ` +
+          'Report progress, results and ANY questions to it with session_send_text ' +
+          `(sessionId "${session.reportsTo}"; expectsResponse=true for questions) — not to the user — ` +
+          'until the user messages you directly.',
+      );
+    }
     for (const draft of this.deps.getDrafts(session.id)) {
       parts.push(truncate(`Draft memo "${draft.label}": ${draft.text}`, SOURCE_CAP_CHARS));
     }
@@ -236,6 +248,12 @@ export class ContextInjector {
 
   private async userPromptContext(session: SessionInfo, prompt: string, can: (tool: string) => boolean = () => true): Promise<string | null> {
     const parts: string[] = [];
+
+    // The user reaching an operator-started session themselves (phone or
+    // Telegram) takes it over: from now on it answers them, not the operator.
+    if (session.reportsTo && (prompt.includes('"fromSessionId":"mobile:') || prompt.includes('[HELM_TELEGRAM'))) {
+      this.deps.clearReportsTo?.(session.id);
+    }
 
     // The rules ride along with the message they govern — a prompt that is
     // not an inter-session envelope gets no rules block. G9: only when the

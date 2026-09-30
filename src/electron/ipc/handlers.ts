@@ -764,6 +764,7 @@ export function registerIPCHandlers(
     getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
+    clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),
     getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records
       .map((record) => record.tldr)
       .filter((tldr) => tldr.startsWith(RING_ME_PREFIX)),

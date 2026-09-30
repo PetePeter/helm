@@ -136,6 +136,8 @@ export function setupPtyHandlers(
         if (session?.interactionChannel === 'telegram') {
           sessionManager.updateSession(sessionId, { interactionChannel: 'desktop' });
         }
+        // The user typing into an operator-started session takes it over.
+        if (session?.reportsTo) sessionManager.updateSession(sessionId, { reportsTo: undefined });
         onPtyInput?.(sessionId, data);
       }
     } catch (error) {

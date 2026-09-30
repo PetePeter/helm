@@ -110,6 +110,10 @@ export class HelmSessionService {
       ...(createdByMobileDeviceId ? { createdByMobileDeviceId } : {}),
       ...(initialPrompt ? { contextText: initialPrompt } : {}),
     });
+    // Work the operator hands out is the operator's to follow up: the new
+    // session reports back to it until the user talks to it directly.
+    const creator = opts.creatorSessionId ? this.sessionManager.getSession(opts.creatorSessionId) : null;
+    if (creator?.role === 'operator') this.sessionManager.updateSession(sessionId, { reportsTo: creator.id });
 
     // A session is always made for its project; the runtime group is an optional
     // overlay. Placement is skipped entirely when no group manager is wired.

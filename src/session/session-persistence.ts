@@ -37,6 +37,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.lastActiveAt != null ? { lastActiveAt: s.lastActiveAt } : {}),
     ...(s.createdByPeerId ? { createdByPeerId: s.createdByPeerId } : {}),
     ...(s.createdByMobileDeviceId ? { createdByMobileDeviceId: s.createdByMobileDeviceId } : {}),
+    ...(isString(s.reportsTo) ? { reportsTo: s.reportsTo } : {}),
     // Durable hook-derived stall (G3). Absent = not stalled; omitted key means
     // the same as no stall, so a cleared stall simply drops off disk.
     ...(isHookStall(s.hookStall) ? { hookStall: s.hookStall } : {}),
