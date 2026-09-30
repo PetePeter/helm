@@ -522,12 +522,27 @@ being a follow-up in flight, which its project and block say.
 
 **Helm opens the task, not the model.** The operator's prompt asked it to open a
 task and timer on every hand-off, and it forgot, above all after compaction.
-So for the operator only, `session_create` and `session_send_text` REQUIRE
-`task`: a short title (Helm opens the plan) or the P-id of an open task (Helm
-reuses it). Helm records `builderSessionId` and starts a 30-minute repeating
-check timer unless one already runs (`src/session/operator-delegation.ts`).
-When every plan a timer watches is completed, the scheduler cancels it
-(`plan:completed` in `ScheduledTaskManager`), so no timer outlives its task.
+So for the operator only, `session_create` and `session_send_text` take
+`task` when the hand-off needs following up: a short title (Helm opens the plan)
+or the P-id of an open task (Helm reuses it). A one-off note takes no task and
+is not tracked. Helm records `builderSessionId` and starts a 2-hour safety-net
+check timer unless one already runs (`src/session/operator-delegation.ts`); its
+prompt names the session to probe. When every plan a timer watches is completed,
+the scheduler cancels it (`plan:completed` in `ScheduledTaskManager`), so no
+timer outlives its task.
+
+**Checks follow the builder's news, not a clock** (`OperatorTaskWatcher`).
+Polling woke the operator every 30 minutes with nothing to do. Now:
+
+```mermaid
+graph LR
+    B[builder sets AIAGENT<br/>completed / idle] -->|run check now| O[operator:<br/>check task P-x: probe session]
+    R[builder session removed<br/>or gone at startup] -->|delete timer,<br/>waitingOn: gone| X[no prompt]
+    C[user cancels the timer] -->|task.checks = off| N[never re-armed]
+```
+
+A cancelled check stays cancelled: `trackOperatorTask` skips a task whose
+`checks` is `"off"`, so a later hand-off for it cannot quietly bring the timer back.
 The result echoes `taskId`. `session_create` from the operator also requires
 `initialPrompt`, because a session opened without its work sits idle. Both are
 checked before anything spawns or sends, and each refusal names what is missing.

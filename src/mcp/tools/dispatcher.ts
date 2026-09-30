@@ -492,7 +492,7 @@ export async function callMcpTool(
       case 'session_create': {
         // The operator delegates in one call: the work rides initialPrompt and
         // becomes a tracked task. Both are checked before anything spawns.
-        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task, 'session_create');
+        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task);
         if (operatorTask && !(typeof args.initialPrompt === 'string' && args.initialPrompt.trim())) {
           throw new Error(
             'session_create from the operator needs initialPrompt: the work for the new session. ' +
@@ -567,7 +567,7 @@ export async function callMcpTool(
           });
         }
         const targetRef = asString(args.sessionId, 'sessionId is required');
-        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task, 'session_send_text');
+        const operatorTask = requireOperatorTask(service, authContext.sessionId, args.task);
         const sent = await service.sendTextToSession(
           targetRef,
           asString(args.text, 'text is required'),

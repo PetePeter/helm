@@ -49,19 +49,18 @@ class FakePort implements OperatorDelegationPort {
 
 describe('requireOperatorTask', () => {
   it('asks nothing of a work session', () => {
-    expect(requireOperatorTask(new FakePort(), 'worker', undefined, 'session_send_text')).toBeNull();
+    expect(requireOperatorTask(new FakePort(), 'worker', undefined)).toBeNull();
   });
 
-  it('rejects an operator call with no task, saying what task is', () => {
-    expect(() => requireOperatorTask(new FakePort(), 'op', undefined, 'session_send_text'))
-      .toThrow(/session_send_text from the operator needs task: a short title .* or the P-id/);
+  it('lets the operator send a one-off with no task — nothing to follow up, nothing tracked', () => {
+    expect(requireOperatorTask(new FakePort(), 'op', undefined)).toBeNull();
   });
 
   it('rejects a P-id that is not one of the operator\'s open tasks', () => {
     const port = new FakePort();
     const { id } = port.createPlan('C:/op', 'done thing', '');
     port.plans.get(id)!.status = 'done';
-    expect(() => requireOperatorTask(port, 'op', 'P-901', 'session_send_text'))
+    expect(() => requireOperatorTask(port, 'op', 'P-901'))
       .toThrow(/P-901 is done/);
   });
 });
@@ -69,7 +68,7 @@ describe('requireOperatorTask', () => {
 describe('trackOperatorTask', () => {
   it('turns a title into a task plan naming the builder, with a repeating check timer', () => {
     const port = new FakePort();
-    const task = requireOperatorTask(port, 'op', 'Fix the HA dashboard', 'session_send_text')!;
+    const task = requireOperatorTask(port, 'op', 'Fix the HA dashboard')!;
 
     const result = trackOperatorTask(port, task, 'worker');
 
@@ -86,12 +85,29 @@ describe('trackOperatorTask', () => {
 
   it('reuses an open task by P-id and never stacks a second timer', () => {
     const port = new FakePort();
-    trackOperatorTask(port, requireOperatorTask(port, 'op', 'Fix it', 'session_create')!, 'worker');
+    trackOperatorTask(port, requireOperatorTask(port, 'op', 'Fix it')!, 'worker');
 
-    trackOperatorTask(port, requireOperatorTask(port, 'op', 'P-901', 'session_send_text')!, 'worker');
+    trackOperatorTask(port, requireOperatorTask(port, 'op', 'P-901')!, 'worker');
 
     expect(port.plans.size).toBe(1);
     expect(port.timers).toHaveLength(1);
+  });
+
+  it('names the builder session the check should probe', () => {
+    const port = new FakePort();
+    trackOperatorTask(port, requireOperatorTask(port, 'op', 'Fix it')!, 'worker');
+    expect(port.timers[0].initialPrompt).toMatch(/check task P-901: probe session "worker"/);
+  });
+
+  it('never re-arms a check the user turned off', () => {
+    const port = new FakePort();
+    trackOperatorTask(port, requireOperatorTask(port, 'op', 'Fix it')!, 'worker');
+    port.timers = [];
+    port.plans.get('uuid-1')!.task!.checks = 'off';
+
+    trackOperatorTask(port, requireOperatorTask(port, 'op', 'P-901')!, 'worker');
+
+    expect(port.timers).toHaveLength(0);
   });
 });
 

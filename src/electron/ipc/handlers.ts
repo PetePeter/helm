@@ -152,6 +152,7 @@ import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
+import { OperatorTaskWatcher } from '../../session/operator-task-watcher.js';
 import { readHookIntegrationStatus, type HookInstallerDeps } from '../../session/hooks/hook-installer.js';
 import { hostname } from 'node:os';
 
@@ -922,6 +923,18 @@ export function registerIPCHandlers(
 
   // Start scheduled task manager
   scheduledTaskManager.start();
+  // After start(): the watcher's startup sweep reads the loaded timers.
+  new OperatorTaskWatcher({
+    onSessionUpdated: (fn) => { sessionManager.on('session:updated', fn); },
+    onSessionRemoved: (fn) => { sessionManager.on('session:removed', fn); },
+    onTimerChanged: (fn) => { scheduledTaskManager.on('task:changed', fn); },
+    getSession: (id) => sessionManager.getSession(id),
+    getPlan: (id) => planManager.getItem(id),
+    patchPlanTask: (id, patch) => { planManager.updateWithType(id, { task: patch }); },
+    listScheduledTasks: () => scheduledTaskManager.listTasks(),
+    runTaskNow: (id) => scheduledTaskManager.runTaskNow(id),
+    deleteTask: (id) => scheduledTaskManager.deleteTask(id),
+  }).start();
 
   const startMcpServer = () => {
     void localhostMcpServer.start({ attempts: MCP_BIND_ATTEMPTS, delayMs: MCP_BIND_RETRY_DELAY_MS }).catch((error) => {

@@ -21,6 +21,8 @@ export interface PlanTask {
   builderSessionId?: string;
   watchPlanId?: string;
   waitingOn?: string;
+  /** "off" when the user cancelled this task's check timer — Helm never re-arms it. */
+  checks?: string;
 }
 
 /** A single plan item (node in the DAG). */

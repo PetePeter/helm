@@ -225,7 +225,7 @@ describe('operator guide', () => {
 
   it('tracks every hand-off as a task Helm keeps a check timer on, until it is done', () => {
     expect(guide).toContain('TASKS');
-    for (const term of ['REQUIRE task', 'P-id of your open task', 'never open a duplicate', 'repeating check timer', 'waitingOn', 'plan_complete', 'Helm then cancels its timer']) {
+    for (const term of ['takes NO task', 'P-id of your open task', 'never open a duplicate', 'slow repeating check timer', 'waitingOn', 'plan_complete', 'Helm then cancels its timer']) {
       expect(guide).toContain(term);
     }
   });

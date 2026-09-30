@@ -9,7 +9,7 @@
 import type { PlanItem, PlanTask } from '../types/plan.js';
 import type { ScheduledTask } from '../types/scheduled-task.js';
 
-const TASK_FIELDS = ['builderSessionId', 'watchPlanId', 'waitingOn'] as const;
+const TASK_FIELDS = ['builderSessionId', 'watchPlanId', 'waitingOn', 'checks'] as const;
 
 /**
  * Validate an MCP `task` argument. null clears the block; an object is a
