@@ -22,6 +22,7 @@ import { computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useArtifactViewer } from '../../composables/useArtifactViewer.js';
 import { useToast } from '../../composables/useToast.js';
 import { renderArtifact } from '../../artifacts/render-artifact.js';
+import { renderMermaidNodes } from '../../artifacts/render-mermaid.js';
 import { buildArtifactDocument, OPEN_URL_MESSAGE, READY_MESSAGE } from '../../artifacts/build-artifact-document.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { artifactsClient, systemClient } from '../../ipc/clients.js';
@@ -175,34 +176,12 @@ async function renderMermaid(): Promise<void> {
   if (!root) return;
   const nodes = Array.from(root.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])'));
   if (nodes.length === 0) return;
-  try {
-    const mermaid = (await import('mermaid')).default;
-    if (!mermaidReady) {
-      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
-      mermaidReady = true;
-    }
-    await mermaid.run({ nodes });
-  } catch (err) {
-    console.error('[ArtifactViewer] mermaid render failed', err);
-  } finally {
-    markUnrenderedMermaid(nodes);
+  const mermaid = (await import('mermaid')).default;
+  if (!mermaidReady) {
+    mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
+    mermaidReady = true;
   }
-}
-
-/**
- * mermaid.run() suppresses parse errors by default (leaves the raw source and
- * moves on), so a broken diagram looked like styled code with no explanation.
- * Any node that still has no SVG gets a visible one-line failure note instead.
- */
-function markUnrenderedMermaid(nodes: HTMLElement[]): void {
-  for (const node of nodes) {
-    if (node.querySelector('svg') || node.querySelector('.mermaid-fail-note')) continue;
-    node.classList.add('mermaid-failed');
-    const note = document.createElement('div');
-    note.className = 'mermaid-fail-note';
-    note.textContent = '⚠ Diagram could not be rendered — see source above';
-    node.append(note);
-  }
+  await renderMermaidNodes(nodes, (id, source) => mermaid.render(id, source));
 }
 
 watch(renderedHtml, () => { void nextTick(renderMermaid); });

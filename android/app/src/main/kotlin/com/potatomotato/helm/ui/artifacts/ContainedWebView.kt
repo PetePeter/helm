@@ -6,7 +6,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -17,17 +22,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.potatomotato.helm.R
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmRadius
+import com.potatomotato.helm.ui.theme.HelmSpacing
 
 /**
  * The one WebView this app allows, and the shape every untrusted document takes
@@ -56,6 +66,7 @@ fun ContainedWebView(
     html: String,
     modifier: Modifier = Modifier,
     onDiagramHeight: ((cssPixels: Int) -> Unit)? = null,
+    zoomable: Boolean = false,
 ) {
     var loaded: String? by remember { mutableStateOf(null) }
     AndroidView(
@@ -68,6 +79,11 @@ fun ContainedWebView(
                 settings.blockNetworkLoads = true
                 settings.cacheMode = WebSettings.LOAD_NO_CACHE
                 settings.mediaPlaybackRequiresUserGesture = true
+                // Pinch-zoom and pan are the WebView's own; the on-screen +/-
+                // buttons are not, a phone has fingers.
+                settings.setSupportZoom(zoomable)
+                settings.builtInZoomControls = zoomable
+                settings.displayZoomControls = false
                 // The document's own CSS paints nothing behind it, so the view
                 // reads as the app's canvas rather than a browser sheet.
                 setBackgroundColor(HelmColors.Bg.toArgb())
@@ -135,17 +151,46 @@ fun MermaidDiagram(source: String, modifier: Modifier = Modifier) {
     }
 
     var heightDp by remember { mutableIntStateOf(MIN_HEIGHT_DP) }
+    var fullScreen by remember { mutableStateOf(false) }
     val html = remember(source, bundle) { HtmlContainment.diagramDocument(source, bundle) }
-    ContainedWebView(
-        html = html,
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .height(heightDp.dp)
             .clip(RoundedCornerShape(HelmRadius.Sm)),
-        onDiagramHeight = { cssPixels ->
-            heightDp = (cssPixels / density.density).toInt().coerceIn(MIN_HEIGHT_DP, MAX_HEIGHT_DP)
-        },
-    )
+    ) {
+        ContainedWebView(
+            html = html,
+            modifier = Modifier.matchParentSize(),
+            onDiagramHeight = { cssPixels ->
+                heightDp = (cssPixels / density.density).toInt().coerceIn(MIN_HEIGHT_DP, MAX_HEIGHT_DP)
+            },
+        )
+        // Inline, the document owns the scroll gesture, so a pinch here would
+        // fight it. A tap lifts the diagram into its own screen where pinch and
+        // pan belong to the diagram alone.
+        Box(modifier = Modifier.matchParentSize().clickable { fullScreen = true })
+    }
+    if (fullScreen) DiagramViewer(html) { fullScreen = false }
+}
+
+/** A diagram alone on the screen: pinch to zoom, drag to pan, back or ✕ to close. */
+@Composable
+private fun DiagramViewer(html: String, onClose: () -> Unit) {
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(modifier = Modifier.fillMaxSize().background(HelmColors.Bg)) {
+            ContainedWebView(html = html, modifier = Modifier.fillMaxSize(), zoomable = true)
+            Text(
+                text = stringResource(R.string.control_glyph_close),
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .clickable(onClick = onClose)
+                    .padding(HelmSpacing.Lg),
+            )
+        }
+    }
 }
 
 /** Read the mermaid bundle the APK ships, once per process; null if it is gone. */
