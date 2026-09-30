@@ -152,3 +152,85 @@ describe('stripTranscript — Copilot CLI', () => {
     expect(md).not.toContain('inner failure');
   });
 });
+
+/**
+ * Helm plumbing baked into the log (envelopes, reply directives, hook context,
+ * temp-file pointers) names the OLD session's ids. A successor that reads it
+ * back replies to a dead id — so it goes, and only the human text stays.
+ */
+describe('stripTranscript — Helm plumbing', () => {
+  const envelope = (from: string) =>
+    `[HELM_MSG]{"type":"inter_llm_message","fromSessionId":"${from}","fromSessionName":"x","expectsResponse":false,"timestamp":"2026-09-30T09:20:20.025Z"}`;
+  const strip = (...texts: string[]) => stripTranscript(jsonl(...texts.map(t => ccUser(t))));
+
+  it('drops the [HELM_MSG] envelope and keeps the message body', () => {
+    const md = strip(`${envelope('mobile:7a11')}session ids were stuffed`);
+    expect(md).toContain('session ids were stuffed');
+    expect(md).not.toMatch(/HELM_MSG|inter_llm_message|mobile:7a11/);
+  });
+
+  it('drops the expectsResponse reply directive and its old session id', () => {
+    const md = strip(
+      '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__session_send_text with: ' +
+        'sessionId="55e502aa", senderSessionId=<your env $HELM_SESSION_ID>, text="<your reply>". Your HELM_SESSION_ID is injected by Helm at startup.]' +
+        '{"type":"inter_llm_message","fromSessionId":"55e502aa","fromSessionName":"Helm","expectsResponse":true,"timestamp":"t"}check P-0885',
+    );
+    expect(md).toContain('check P-0885');
+    expect(md).not.toMatch(/55e502aa|HELM_SESSION_ID|expectsResponse/);
+  });
+
+  it('drops injected rules and mode blocks whole', () => {
+    const md = strip('[HELM_MSG_RULES]\nDo NOT use AskUserQuestion\n[/HELM_MSG_RULES]\n[HELM_TELEGRAM_MODE]\nuse telegram_chat\n[/HELM_TELEGRAM_MODE]\nreal prompt');
+    expect(md).toContain('real prompt');
+    expect(md).not.toMatch(/AskUserQuestion|telegram_chat|HELM_/);
+  });
+
+  it('unwraps a Telegram envelope to its body', () => {
+    const md = strip('[HELM_TELEGRAM from:oscar chat:-100123]\nship it\n[/HELM_TELEGRAM]');
+    expect(md).toContain('ship it');
+    expect(md).not.toMatch(/HELM_TELEGRAM|-100123/);
+  });
+
+  it('drops hook-injected context lines and Stop-hook feedback, keeping the real prompt', () => {
+    const md = strip(
+      'fix the strip\nUserPromptSubmit hook additional context: DRY, YAGNI\n' +
+        '[HELM_MISSION] No mission set. Call session_mission_set\n' +
+        '[HELM_MESS] joining — 90 earlier messages, optional — call mess_check\n' +
+        'possibly related: memory/abc (Some memory)\n' +
+        'Startable plan here: P-0837 "Voice" — claim it with session_plan_claim if you want the work.',
+      'Stop hook feedback:\nYour AIAGENT state is unset — call session_set_aiagent_state',
+      'Stop hook blocking error from command: "python shim.py claude Stop": Your AIAGENT state is unset',
+    );
+    expect(md).toContain('fix the strip');
+    expect(md).not.toMatch(/hook|HELM_|possibly related|Startable plan|AIAGENT/);
+  });
+
+  it('drops large-text temp-file pointers', () => {
+    const md = strip(
+      `${envelope('mobile:7a11')}A large session_send_text payload was written to a Helm temp file.\n` +
+        'Read the full file at: C:\tmp\helm-large-text-1.md\nDelete the temp file after processing.',
+    );
+    expect(md).not.toMatch(/temp file|helm-large-text/);
+  });
+
+  it('drops a message that was nothing but plumbing, leaving no empty section', () => {
+    const md = strip('[HELM_MSG_RULES]\nrules\n[/HELM_MSG_RULES]');
+    expect(md).not.toContain('## User');
+  });
+
+  it('leaves ordinary bracketed text alone', () => {
+    const md = strip('see [docs] and [HELM docs] and {"type":"x"}');
+    expect(md).toContain('see [docs] and [HELM docs] and {"type":"x"}');
+  });
+
+  it('applies to Codex and Copilot logs too', () => {
+    const codex = stripTranscript(jsonl(
+      { type: 'session_meta', payload: {} },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `${envelope('old-id')}codex body` }] } },
+    ));
+    const copilot = stripTranscript(jsonl(cp('session.start', {}), cp('user.message', { content: `${envelope('old-id')}copilot body` })));
+    expect(codex).toContain('codex body');
+    expect(copilot).toContain('copilot body');
+    expect(codex + copilot).not.toContain('old-id');
+  });
+});

@@ -25,8 +25,28 @@ type Line = Record<string, unknown>;
 /** Injected wrappers a successor should never see as conversation. */
 const NOISE_PREFIXES = ['<local-command', '<command-', '<environment_context', '<user_instructions', '<permissions'];
 
+/**
+ * Helm plumbing baked into the log. It names the OLD session's ids (sender,
+ * reply target, temp files), so a successor that reads it back replies to a
+ * dead session. Wrappers go; the human text they carried stays.
+ */
+const HELM_PLUMBING: RegExp[] = [
+  /\[(HELM_[A-Z_]*(?:RULES|MODE))\][\s\S]*?\[\/\1\]/g, // injected instruction blocks, whole
+  /\{"type":"inter_llm_message"[^{}]*\}/g, // envelope JSON
+  /\[\/?HELM_[A-Z_]*(?:[:\s][^\]\n]*)?\]/g, // any remaining tag, e.g. [HELM_MSG: …reply to "<old id>"…]
+];
+
+/** Whole lines injected by hooks or Helm delivery. */
+const PLUMBING_LINE =
+  /^\s*(?:\[HELM_(?:MISSION|MESS)\]|possibly related: |Startable plan here: |\S+ hook additional context:|Stop hook feedback:|\S+ hook blocking error|A large .+ was written to a Helm temp file\.|Read the full file at: |Delete the temp file after processing\.|Your AIAGENT state is unset)/;
+
 function cleanText(text: string): string {
-  return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim();
+  const dropLines = (s: string) => s.split('\n').filter(line => !PLUMBING_LINE.test(line)).join('\n');
+  // Lines are dropped both before tag removal (some are identified by their
+  // tag) and after (some only start a line once an envelope is stripped off).
+  let out = dropLines(text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ''));
+  for (const re of HELM_PLUMBING) out = out.replace(re, '');
+  return dropLines(out).trim();
 }
 
 function isNoise(text: string): boolean {
