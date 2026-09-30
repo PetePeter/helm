@@ -997,6 +997,58 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_quick_compact',
+    title: 'Quick Compact Session (strip + reload)',
+    description:
+      "Helm's own compaction, an alternative to the CLI's /compact. Helm strips the session's transcript " +
+      '(keeps every prompt, reply and a one-line record of each tool call; drops thinking and tool output) to a markdown file, ' +
+      'clears the session, then asks it to read the file back and continue. Keeps exact details /compact loses, ' +
+      'at a somewhat larger context. Needs CLI hooks (the transcript path comes from them); Claude Code and Codex logs are supported. ' +
+      'DESTINATION: sessionId is REQUIRED — a session may target itself. Asynchronous: wait ~1 min before reading results.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[DESTINATION] Session to compact (required).' },
+        handover: {
+          type: 'string',
+          description:
+            'Optional note to the continuing session: current goal, decisions made, the next concrete step, open questions. ' +
+            'Appended to the prompt that points it at the stripped transcript.',
+        },
+      },
+      required: ['sessionId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_switch_cli',
+    title: 'Switch Session to Another CLI',
+    description:
+      'Continue a session under a different CLI type (e.g. Claude Code → Codex). Helm strips the source transcript to markdown, ' +
+      'spawns the new CLI in the same working directory, name and runtime group with a prompt to read it and carry on, ' +
+      'and closes the source (it goes to the recycle bin and can be restored). Needs CLI hooks on the source session. ' +
+      'Returns the new session id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[SOURCE] Session to continue elsewhere (required).' },
+        cliType: { type: 'string', description: 'Configured CLI type id for the new session (required).' },
+        handover: {
+          type: 'string',
+          description:
+            'Optional note to the continuing session: current goal, decisions made, the next concrete step, open questions. ' +
+            'Appended to the prompt that points it at the stripped transcript.',
+        },
+        closeSource: {
+          type: 'boolean',
+          description: 'Close the source session after the switch (default true). Locked sessions are never closed.',
+        },
+      },
+      required: ['sessionId', 'cliType'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_export',
     title: 'Export Session To File',
     description:

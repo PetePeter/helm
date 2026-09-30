@@ -15,6 +15,12 @@ import { resolveWindowIconPath } from '../window-icon.js';
 import { applyNavigationPolicy } from '../navigation-policy.js';
 import { logger } from '../../utils/logger.js';
 
+/** Helm's strip-and-reload actions, owned by the MCP control service (one implementation for MCP and UI). */
+export interface TranscriptActions {
+  quickCompact(sessionId: string): Promise<unknown>;
+  switchCli(sessionId: string, cliType: string): unknown;
+}
+
 // ============================================================================
 // Setup
 // ============================================================================
@@ -25,6 +31,7 @@ export function setupSessionHandlers(
   draftManager: DraftManager,
   windowManager: WindowManager,
   configLoader?: ConfigLoader,
+  transcriptActions?: TranscriptActions,
 ): () => void {
   const getFolderLabel = (workingDir?: string): string => {
     if (!workingDir) return 'No Folder';
@@ -324,6 +331,30 @@ export function setupSessionHandlers(
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Snap-back failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /** Context menu "Helm compact": strip transcript → clear → read it back. */
+  ipcMain.handle('session:quickCompact', async (_event, id: string) => {
+    try {
+      if (!transcriptActions) throw new Error('Quick compact is not available');
+      await transcriptActions.quickCompact(id);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[Session] Quick compact failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /** Context menu "Switch CLI": continue the session under the picked CLI type. */
+  ipcMain.handle('session:switchCli', (_event, id: string, cliType: string) => {
+    try {
+      if (!transcriptActions) throw new Error('Switch CLI is not available');
+      transcriptActions.switchCli(id, cliType);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[Session] Switch CLI failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });

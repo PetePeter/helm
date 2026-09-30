@@ -1,3 +1,4 @@
+import { buildTranscriptResumePrompt, writeStrippedTranscript } from '../../session/transcript-strip.js';
 import { logger } from '../../utils/logger.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
@@ -172,6 +173,35 @@ export class HelmSessionService {
     const removed = this.requireRuntimeGroupManager().closeGroup(groupId);
     if (!removed) throw new Error(`Runtime group not found: ${groupId}`);
     return { ok: true };
+  }
+
+  /**
+   * Continue a session under another CLI: strip its transcript, spawn the new
+   * CLI in the same directory and runtime group with a prompt to read it, and
+   * (by default) close the source — it lands in the recycle bin, restorable.
+   */
+  switchCli(
+    sessionRef: string,
+    cliType: string,
+    opts: { handover?: string; closeSource?: boolean; creatorSessionId?: string } = {},
+  ): { ok: true; oldSessionId: string; newSessionId: string; transcriptFile: string; sourceClosed: boolean } {
+    const source = this.findSession(sessionRef);
+    if (!source) throw new Error(`Session not found: ${sessionRef}`);
+    if (!source.workingDir) throw new Error(`Session "${source.name}" has no working directory to continue in`);
+    this.requireCliEntry(cliType);
+
+    const transcriptFile = writeStrippedTranscript(source);
+    const group = this.runtimeGroupManager?.groupForSession(source.id);
+    const created = this.spawnCli(cliType, source.workingDir, source.name, {
+      ...(opts.creatorSessionId ? { creatorSessionId: opts.creatorSessionId } : {}),
+      runtimeGroupId: group?.id ?? 'none',
+      initialPrompt: buildTranscriptResumePrompt(transcriptFile, opts.handover),
+    });
+
+    const closeSource = opts.closeSource !== false && !source.locked;
+    if (closeSource) this.closeSession(source.id);
+    logger.info(`[HelmControlService] session_switch_cli "${source.name}" ${source.cliType} → ${cliType} (${created.id})`);
+    return { ok: true, oldSessionId: source.id, newSessionId: created.id, transcriptFile, sourceClosed: closeSource };
   }
 
   closeSession(sessionRef: string): { ok: true } {

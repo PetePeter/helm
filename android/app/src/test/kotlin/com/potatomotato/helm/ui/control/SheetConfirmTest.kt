@@ -28,8 +28,14 @@ class SheetConfirmTest {
     }
 
     @Test
+    fun `helm compact confirms — it clears the live context before reloading it`() {
+        assertTrue(requiresConfirmation(SessionAction.HelmCompact))
+    }
+
+    @Test
     fun `everything else fires at once`() {
-        for (action in SessionAction.entries - SessionAction.Close - SessionAction.Compact - SessionAction.Clear) {
+        val confirming = setOf(SessionAction.Close, SessionAction.Compact, SessionAction.Clear, SessionAction.HelmCompact)
+        for (action in SessionAction.entries - confirming) {
             assertFalse(requiresConfirmation(action))
         }
     }

@@ -430,6 +430,12 @@ class HelmClient(
     fun clear(sessionId: String): Boolean =
         act(SessionAction.Clear, METHOD_SESSION_CLEAR, linkedMapOf("sessionId" to sessionId))
 
+    fun quickCompact(sessionId: String): Boolean =
+        act(SessionAction.HelmCompact, METHOD_SESSION_QUICK_COMPACT, linkedMapOf("sessionId" to sessionId))
+
+    fun switchCli(sessionId: String, cliType: String): Boolean =
+        act(SessionAction.SwitchCli, METHOD_SESSION_SWITCH_CLI, linkedMapOf("sessionId" to sessionId, "cliType" to cliType))
+
     fun stop(sessionId: String): Boolean =
         act(SessionAction.Stop, METHOD_SESSION_SEND_INPUT, linkedMapOf("sessionId" to sessionId, "sequence" to "{Esc}"))
 
@@ -1868,6 +1874,8 @@ class HelmClient(
         private const val METHOD_READ_TERMINAL = "session_read_terminal"
         private const val METHOD_SESSION_COMPACT = "session_compact"
         private const val METHOD_SESSION_CLEAR = "session_clear"
+        private const val METHOD_SESSION_QUICK_COMPACT = "session_quick_compact"
+        private const val METHOD_SESSION_SWITCH_CLI = "session_switch_cli"
         private const val METHOD_SESSION_SEND_INPUT = "session_send_input"
         private const val METHOD_SESSION_CLOSE = "session_close"
         private const val METHOD_SESSION_RENAME = "session_rename"

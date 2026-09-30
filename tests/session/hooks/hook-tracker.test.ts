@@ -203,6 +203,20 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('records the newest transcript path so quick compact / CLI switch can read the log', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'SessionStart', { transcript_path: 'C:/t/a.jsonl' }));
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop', {}));
+      expect(s.sessionManager.getSession('s1')?.cliTranscriptPath).toBe('C:/t/a.jsonl');
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { transcript_path: 'C:/t/b.jsonl' }));
+      expect(s.sessionManager.getSession('s1')?.cliTranscriptPath).toBe('C:/t/b.jsonl');
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('PreToolUse makes the dot green through the same activity-change contract as PTY output', () => {
     const s = setup();
     try {

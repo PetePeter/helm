@@ -46,6 +46,8 @@ const menuItems = computed<MenuItem[]>(() => [
   { id: 'new-session-with-selection', label: '📌 New Session with Selection', enabled: props.hasSelection },
   { id: 'prompts', label: '⚡ Prompts…', enabled: props.hasActiveSession },
   { id: 'drafts', label: '📝 Drafts…', enabled: props.hasActiveSession },
+  { id: 'quick-compact', label: '🗜️ Helm Compact', enabled: props.hasActiveSession },
+  { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: props.hasActiveSession },
   { id: 'move-to-group', label: '🗂️ Move to group…', enabled: props.hasActiveSession },
   {
     id: 'remove-from-group',

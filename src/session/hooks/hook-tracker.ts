@@ -148,6 +148,7 @@ export class HookTracker {
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) return;
 
     this.recordThreadId(sessionId, event.cliSessionId);
+    this.recordTranscriptPath(sessionId, event.transcriptPath);
 
     switch (event.event) {
       case 'SessionStart':
@@ -206,6 +207,12 @@ export class HookTracker {
     if (!cliThreadId) return;
     if (this.deps.sessionManager.getSession(sessionId)?.cliThreadId === cliThreadId) return;
     this.deps.sessionManager.updateSession(sessionId, { cliThreadId });
+  }
+
+  private recordTranscriptPath(sessionId: string, transcriptPath: string | undefined): void {
+    if (!transcriptPath) return;
+    if (this.deps.sessionManager.getSession(sessionId)?.cliTranscriptPath === transcriptPath) return;
+    this.deps.sessionManager.updateSession(sessionId, { cliTranscriptPath: transcriptPath });
   }
 
   private getOrCreateFacts(sessionId: string): SessionFacts {

@@ -612,6 +612,22 @@ export async function callMcpTool(
           ...(typeof args.instruction === 'string' ? { instruction: args.instruction } : {}),
           ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
         });
+      case 'session_quick_compact':
+        return service.quickCompactSession(asString(args.sessionId, 'sessionId is required'), {
+          ...(authContext.sessionId ? { senderSessionId: authContext.sessionId } : {}),
+          ...(authContext.sessionName ? { senderSessionName: authContext.sessionName } : {}),
+          ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
+        });
+      case 'session_switch_cli':
+        return service.switchSessionCli(
+          asString(args.sessionId, 'sessionId is required'),
+          asString(args.cliType, 'cliType is required'),
+          {
+            ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
+            ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
+            ...(typeof args.closeSource === 'boolean' ? { closeSource: args.closeSource } : {}),
+          },
+        );
       case 'session_export':
         return service.exportSession(asString(args.sessionId, 'sessionId is required'), {
           path: asString(args.path, 'path is required'),

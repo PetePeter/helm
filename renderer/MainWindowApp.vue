@@ -600,6 +600,12 @@ function onShowArtifactsForSession(sessionId: string): void {
   })();
 }
 
+/** Surface a strip-and-reload failure (usually: no hooks, so no transcript). */
+async function runTranscriptAction(pending: Promise<{ success: boolean; error?: string }>, label: string): Promise<void> {
+  const result = await pending;
+  if (!result.success) addToast({ message: `${label} failed: ${result.error ?? 'unknown error'}`, type: 'error' });
+}
+
 // Context menu
 function onContextMenuAction(action: string): void {
   contextMenu.visible = false;
@@ -646,6 +652,20 @@ function onContextMenuAction(action: string): void {
         });
       }
       break;
+    case 'quick-compact': {
+      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+      if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Helm compact');
+      break;
+    }
+    case 'switch-cli': {
+      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+      if (sessionId) {
+        openQuickSpawn((cliType) => {
+          void runTranscriptAction(sessionsClient.sessionSwitchCli(sessionId, cliType), 'Switch CLI');
+        });
+      }
+      break;
+    }
     case 'move-to-group': {
       const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) {

@@ -17,6 +17,12 @@ enum class SessionAction(val tool: String) {
     /** Wipes the conversation — the CLI's configured clear command, `/clear` for an API tool. */
     Clear("session_clear"),
 
+    /** Helm's lossless compaction — strip the transcript, clear, read it back. */
+    HelmCompact("session_quick_compact"),
+
+    /** Continue the session under another CLI type, picked on the sheet. */
+    SwitchCli("session_switch_cli"),
+
     /** Interrupts the running turn — an Esc keypress, which stops a CLI and an API tool alike. */
     Stop("session_send_input"),
     Spawn("session_create"),

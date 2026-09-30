@@ -42,6 +42,9 @@ export interface SessionInfo {
    *  Distinct from cliSessionName, which Helm mints. Resolves `{cliThreadId}` in
    *  resumeCommand — codex resumes by thread UUID. Newest reported id wins. */
   cliThreadId?: string;
+  /** Absolute path of the CLI's own conversation log, as reported by its hooks
+   *  (`transcript_path`). Source for quick compact and CLI switch. Newest wins. */
+  cliTranscriptPath?: string;
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
   /** Telegram forum topic ID for this session's topic thread. The typed view of

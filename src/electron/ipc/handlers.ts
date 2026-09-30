@@ -503,7 +503,10 @@ export function registerIPCHandlers(
     },
   );
 
-  const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, draftManager, windowManager, configLoader);
+  const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, draftManager, windowManager, configLoader, {
+    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
+    switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
+  });
   // Forward-declared so config:setFleetConfig can hot-apply the live fleet
   // stack (constructed below, ~line 460). The closure is only invoked at runtime on
   // a user config change, long after the controller exists.

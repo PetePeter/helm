@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.HelmCli
 import com.potatomotato.helm.data.SessionAction
 import com.potatomotato.helm.data.answered
 import com.potatomotato.helm.data.permits
@@ -85,12 +86,15 @@ fun SessionSheet(
     onRename: (String) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    clis: List<HelmCli> = emptyList(),
+    onSwitchCli: (String) -> Unit = {},
 ) {
     // Only what is hard to undo confirms, and each prompt names the session,
     // because "are you sure?" answers nothing. Nothing else confirms: a prompt
     // on every action trains people to tap through the one that matters.
     var confirming by remember { mutableStateOf<SessionAction?>(null) }
     var renaming by remember { mutableStateOf(false) }
+    var switching by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(
@@ -143,12 +147,25 @@ fun SessionSheet(
                                 // Rename needs a name before it can act, so it
                                 // opens the dialog instead of firing at once.
                                 action == SessionAction.Rename -> renaming = true
+                                // Switch needs a CLI before it can act: the picker.
+                                action == SessionAction.SwitchCli -> switching = true
                                 else -> onAction(action)
                             }
                         },
                     )
                 }
             }
+        }
+
+        if (switching) {
+            CliPickerDialog(
+                clis = clis,
+                onPick = {
+                    switching = false
+                    onSwitchCli(it)
+                },
+                onCancel = { switching = false },
+            )
         }
 
         if (renaming) {
@@ -174,6 +191,8 @@ private val SHEET_ACTIONS = listOf(
     SessionAction.Snapshot,
     SessionAction.Rename,
     SessionAction.Compact,
+    SessionAction.HelmCompact,
+    SessionAction.SwitchCli,
     SessionAction.Clear,
     SessionAction.Spawn,
     SessionAction.Close,
@@ -277,7 +296,8 @@ private fun ConfirmAction(
 
 /** The actions a tap does not spend straight away — the ones that are hard to undo. */
 internal fun requiresConfirmation(action: SessionAction): Boolean =
-    action == SessionAction.Close || action == SessionAction.Compact || action == SessionAction.Clear
+    action == SessionAction.Close || action == SessionAction.Compact || action == SessionAction.Clear ||
+        action == SessionAction.HelmCompact
 
 /** The prompt copy of a confirming action, and the colour its confirm earns. */
 private data class ConfirmCopy(val messageRes: Int, val yesRes: Int, val noRes: Int, val confirmColor: Color)
@@ -292,6 +312,12 @@ private fun confirmCopy(action: SessionAction): ConfirmCopy = when (action) {
     SessionAction.Compact -> ConfirmCopy(
         messageRes = R.string.control_confirm_compact,
         yesRes = R.string.control_confirm_compact_yes,
+        noRes = R.string.control_confirm_compact_no,
+        confirmColor = HelmColors.Accent,
+    )
+    SessionAction.HelmCompact -> ConfirmCopy(
+        messageRes = R.string.control_confirm_helm_compact,
+        yesRes = R.string.control_confirm_helm_compact_yes,
         noRes = R.string.control_confirm_compact_no,
         confirmColor = HelmColors.Accent,
     )
@@ -404,6 +430,60 @@ private fun RenameDialog(currentName: String, onRename: (String) -> Unit, onCanc
     }
 }
 
+/**
+ * Switch CLI's picker: one row per CLI type this desktop offers. The session
+ * continues in the picked CLI; the old one goes to the desktop's recycle bin.
+ */
+@Composable
+private fun CliPickerDialog(clis: List<HelmCli>, onPick: (String) -> Unit, onCancel: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HelmColors.Bg.copy(alpha = SCRIM_ALPHA))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(HelmSpacing.Gutter)
+                .clip(RoundedCornerShape(HelmRadius.Md))
+                .background(HelmColors.Surface)
+                .border(HelmSize.Hairline, HelmColors.Line, RoundedCornerShape(HelmRadius.Md))
+                // Keeps card taps from falling through to the scrim's cancel.
+                .pointerInput(Unit) {}
+                .padding(HelmSpacing.Lg),
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+        ) {
+            Text(
+                text = stringResource(R.string.control_switch_cli_title),
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (clis.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.control_switch_cli_loading),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            for (cli in clis) {
+                Text(
+                    text = cli.name,
+                    color = HelmColors.Txt,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(HelmRadius.Md))
+                        .clickable { onPick(cli.cliType) }
+                        .padding(vertical = HelmSpacing.Md),
+                )
+            }
+            GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onCancel)
+        }
+    }
+}
+
 /** The drag affordance from the mockup. Decorative — the scrim is what dismisses. */
 @Composable
 private fun GrabHandle() {
@@ -437,6 +517,8 @@ internal val SessionAction.labelRes: Int
         SessionAction.Rename -> R.string.control_action_rename
         SessionAction.Compact -> R.string.control_action_compact
         SessionAction.Clear -> R.string.control_action_clear
+        SessionAction.HelmCompact -> R.string.control_action_helm_compact
+        SessionAction.SwitchCli -> R.string.control_action_switch_cli
         SessionAction.Stop -> R.string.control_action_stop
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
@@ -454,6 +536,8 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Rename -> R.string.control_glyph_rename
         SessionAction.Compact -> R.string.control_glyph_compact
         SessionAction.Clear -> R.string.control_glyph_clear
+        SessionAction.HelmCompact -> R.string.control_glyph_helm_compact
+        SessionAction.SwitchCli -> R.string.control_glyph_switch_cli
         SessionAction.Stop -> R.string.control_glyph_stop
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close

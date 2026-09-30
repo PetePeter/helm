@@ -1587,6 +1587,21 @@ export class HelmControlService extends EventEmitter {
     return this.sessionDelivery.compactSession(sessionRef, options);
   }
 
+  async quickCompactSession(
+    sessionRef: string,
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
+  ) {
+    return this.sessionDelivery.quickCompactSession(sessionRef, options);
+  }
+
+  switchSessionCli(
+    sessionRef: string,
+    cliType: string,
+    opts: { handover?: string; closeSource?: boolean; creatorSessionId?: string } = {},
+  ) {
+    return this.sessionService.switchCli(sessionRef, cliType, opts);
+  }
+
   async exportSession(sessionRef: string, options: { path: string }) {
     return this.sessionDelivery.exportSession(sessionRef, options);
   }

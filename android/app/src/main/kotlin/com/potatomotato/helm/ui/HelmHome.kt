@@ -402,6 +402,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
     LaunchedEffect(where, tab, openSessionId) {
         when {
+            // Switch CLI's picker lists this desktop's CLIs.
+            where == Destination.Sheet -> if (clis.isEmpty() || !client.control.wantsClisOf(null)) client.refreshClis()
             where == Destination.Spawn -> {
                 // The form opens on this desktop: a list left over from another
                 // machine is not its folders.
@@ -1343,6 +1345,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             SessionAction.Spawn -> Destination.Spawn
                             SessionAction.Compact -> Destination.Thread.also { client.compact(open.id) }
                             SessionAction.Clear -> Destination.Thread.also { client.clear(open.id) }
+                            SessionAction.HelmCompact -> Destination.Thread.also { client.quickCompact(open.id) }
                             SessionAction.Stop -> Destination.Thread.also { client.stop(open.id) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
                             // Rename never reaches here — it is answered by
@@ -1368,6 +1371,11 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     // name, which is the same landing every other action gets.
                     onRename = { name ->
                         client.renameSession(open.id, name)
+                        where = Destination.Thread
+                    },
+                    clis = clis,
+                    onSwitchCli = { cliType ->
+                        client.switchCli(open.id, cliType)
                         where = Destination.Thread
                     },
                 )

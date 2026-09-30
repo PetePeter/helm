@@ -726,6 +726,32 @@ class HelmClientTest {
     }
 
     @Test
+    fun `helm compact asks Helm to strip and reload the session's context`() {
+        client.quickCompact("s1")
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_quick_compact", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+
+        client.onInbound(resultFor(lastCallId(), "{}"))
+        assertNotice(SessionAction.HelmCompact, ActionOutcome.Done)
+    }
+
+    @Test
+    fun `switch cli carries the session and the picked cli type`() {
+        client.switchCli("s1", "codex")
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).also {
+            assertEquals("session_switch_cli", it.getString("method"))
+        }.getJSONObject("params")
+        assertEquals("s1", params.getString("sessionId"))
+        assertEquals("codex", params.getString("cliType"))
+
+        client.onInbound(resultFor(lastCallId(), "{}"))
+        assertNotice(SessionAction.SwitchCli, ActionOutcome.Done)
+    }
+
+    @Test
     fun `spawn sends the arguments session_create needs and carries the created id back`() {
         client.spawn(dirPath = "x:\\coding\\gamepad-cli-hub", cliType = "claudecode", name = "kitchen")
 

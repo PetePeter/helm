@@ -85,6 +85,8 @@ private val SessionAction.doneRes: Int
         SessionAction.Rename -> R.string.control_notice_done_rename
         SessionAction.Compact -> R.string.control_notice_done_compact
         SessionAction.Clear -> R.string.control_notice_done_clear
+        SessionAction.HelmCompact -> R.string.control_notice_done_helm_compact
+        SessionAction.SwitchCli -> R.string.control_notice_done_switch_cli
         SessionAction.Stop -> R.string.control_notice_done_stop
         SessionAction.Close -> R.string.control_notice_done_close
         SessionAction.Spawn -> R.string.control_notice_done_spawn

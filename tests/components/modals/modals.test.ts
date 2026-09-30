@@ -822,7 +822,7 @@ describe('ContextMenu.vue', () => {
   it('gamepad A on Cancel emits cancel', () => {
     const w = factory();
     const vm = w.vm as any;
-    vm.selectedIndex = 11; // Cancel item (after move-to-group + remove-from-group)
+    vm.selectedIndex = 13; // Cancel item (after the group, Helm Compact and Switch CLI items)
     vm.handleButton('A');
     expect(w.emitted('cancel')).toHaveLength(1);
     w.unmount();

@@ -15,6 +15,7 @@ import {
   getMessageFlightTimeoutMs,
   type SessionMessageFlight,
 } from '../../session/message-flight.js';
+import { buildTranscriptResumePrompt, writeStrippedTranscript } from '../../session/transcript-strip.js';
 import {
   buildLargeTextTempFileNotice,
   shouldSendLargeTextAsTempFile,
@@ -466,6 +467,26 @@ export class HelmSessionDeliveryService {
     });
 
     return { ok: true, action: 'clear', sessionId: session.id, contextRelayed: true, usedTempFile, note: ACTION_WAIT_NOTE };
+  }
+
+  /**
+   * Helm's own compaction: strip the CLI's transcript to a markdown file, clear
+   * the session, then have it read the file back. Lossless on prompts, replies
+   * and tool calls, where the CLI's /compact summarises and loses detail.
+   */
+  async quickCompactSession(
+    sessionRef: string,
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
+  ): Promise<{ ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }> {
+    const session = this.requireRunningSession(sessionRef);
+    const transcriptFile = writeStrippedTranscript(session);
+    logger.info(`[HelmSessionDelivery] session_quick_compact for "${session.name}" (${session.id}) → ${transcriptFile}`);
+    await this.clearSession(session.id, {
+      ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),
+      ...(options.senderSessionName ? { senderSessionName: options.senderSessionName } : {}),
+      context: buildTranscriptResumePrompt(transcriptFile, options.handover),
+    });
+    return { ok: true, action: 'quick_compact', sessionId: session.id, transcriptFile, note: ACTION_WAIT_NOTE };
   }
 
   /**

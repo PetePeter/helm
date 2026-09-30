@@ -4,7 +4,10 @@
  * The delivery boundary (deliverPromptSequenceToSession) is mocked to capture the
  * resolved sequence string that would be pasted into the target PTY.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const { deliverSpy } = vi.hoisted(() => ({ deliverSpy: vi.fn(async () => undefined) }));
 
@@ -186,6 +189,44 @@ describe('session_clear', () => {
     expect(deliverSpy).toHaveBeenCalledTimes(2);
     expect(deliveredText(1)).toBe('remember the migration');
     expect(result.contextRelayed).toBe(true);
+  });
+});
+
+describe('session_quick_compact', () => {
+  let dir: string;
+  beforeEach(() => {
+    deliverSpy.mockClear();
+    process.env.HELM_CLEAR_SETTLE_DELAY_MS = '0';
+    dir = mkdtempSync(join(tmpdir(), 'helm-quick-compact-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('clears, then points the session at a stripped copy of its own transcript', async () => {
+    const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, [
+      { type: 'user', message: { content: 'build the parser' } },
+      { type: 'assistant', message: { content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text: 'Parser built.' }] } },
+    ].map(r => JSON.stringify(r)).join('\n'));
+    Object.assign(session, { cliTranscriptPath: log });
+
+    const result = await service.quickCompactSession('s1', { handover: 'next: wire the CLI' });
+
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    const prompt = deliveredText(1);
+    expect(prompt).toContain(result.transcriptFile);
+    expect(prompt).toContain('next: wire the CLI');
+    const stripped = readFileSync(result.transcriptFile, 'utf8');
+    expect(stripped).toContain('build the parser');
+    expect(stripped).toContain('Parser built.');
+    expect(stripped).not.toContain('hmm');
+    rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('refuses without a hook-reported transcript and never clears', async () => {
+    const { service } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    await expect(service.quickCompactSession('s1', {})).rejects.toThrow(/No transcript known/);
+    expect(deliverSpy).not.toHaveBeenCalled();
   });
 });
 
