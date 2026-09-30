@@ -39,6 +39,15 @@ export class HelmProjectService {
     return { ok: true };
   }
 
+  setProjectMemoryPrivate(projectId: string, memoryPrivate: boolean): { ok: true } {
+    if (!this.projectStore.getById(projectId)) {
+      throw new Error(`Project not found: ${projectId}`);
+    }
+    this.projectStore.setMemoryPrivate(projectId, memoryPrivate);
+    this.projectStore.save();
+    return { ok: true };
+  }
+
   deleteProject(projectId: string): { ok: true } {
     if (!this.projectStore.getById(projectId)) {
       throw new Error(`Project not found: ${projectId}`);
@@ -58,6 +67,7 @@ export class HelmProjectService {
       name: r.name,
       canonicalPath: r.canonicalPath,
       directories: [r.canonicalPath],
+      memoryPrivate: r.memoryPrivate === true,
     }));
   }
 

@@ -4,6 +4,7 @@ import { MemoryGraph, deleteMemoryAndReroute, validateGraphDepth } from './memor
 import { MemoryPersistence } from './memory-persistence.js';
 import type { MemoryDiagnostic } from './memory-persistence.js';
 import { MemoryAttachmentManager } from './memory-attachment-manager.js';
+import { rankMemories, type RankedMemory } from './memory-search.js';
 import {
   cloneMemoryRecord,
   cloneMemoryState,
@@ -15,6 +16,8 @@ import {
   type MemoryDreamOptions,
   type MemoryDreamPlan,
   type MemoryDreamResult,
+  type MemoryEdgeType,
+  type MemorySearchHit,
   type DreamCandidate,
   type MemoryForest,
   type MemoryListOptions,
@@ -24,6 +27,7 @@ import {
   type MemorySearchResult,
   type MemoryState,
   type MemoryTraversal,
+  isMemoryEdgeType,
   validateMemoryState,
 } from '../types/memory.js';
 
@@ -53,8 +57,17 @@ export interface MemoryManagerOptions {
    * is untouched: `owns` stays project-fenced, so reading is never owning.
    */
   canReadAll?: (sessionId: string) => boolean;
+  /**
+   * Whether a project's memories may be found by sessions in OTHER projects
+   * (search, get, link targets; never list, edit or delete). Absent means no
+   * project is shared, which keeps the original fence.
+   */
+  isProjectShared?: (projectId: string) => boolean;
   graceEpochs?: number;
 }
+
+/** A session's own project outranks another's on an equal match. */
+const OWN_PROJECT_BOOST = 2;
 
 export interface CreateMemoryInput {
   tldr: string;
@@ -79,6 +92,7 @@ export class MemoryManager extends EventEmitter {
   private readonly resolveSessionProject?: (sessionId: string) => string | null;
   private readonly resolveSessionPlan?: (sessionId: string) => string | null;
   private readonly canReadAll?: (sessionId: string) => boolean;
+  private readonly isProjectShared?: (projectId: string) => boolean;
   private readonly graceEpochs: number;
   private persistenceDiagnostic?: MemoryDiagnostic;
 
@@ -87,6 +101,7 @@ export class MemoryManager extends EventEmitter {
     this.resolveSessionProject = options.resolveSessionProject;
     this.resolveSessionPlan = options.resolveSessionPlan;
     this.canReadAll = options.canReadAll;
+    this.isProjectShared = options.isProjectShared;
     this.graceEpochs = options.graceEpochs ?? GRACE_EPOCHS;
     this.persistence = options.persistence;
     this.attachmentManager = options.attachmentManager;
@@ -147,6 +162,27 @@ export class MemoryManager extends EventEmitter {
   private readableRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
     if (!this.canReadAll?.(sessionId)) return this.scopedRecords(sessionId, includeDormant);
     return this.state.records.filter((record) => includeDormant || record.dormantSince === undefined);
+  }
+
+  /**
+   * What a session may FIND: what it may read, plus every memory in another
+   * project that shares. Findable is not ownable: `owns` is untouched.
+   */
+  private findableRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
+    const readable = this.readableRecords(sessionId, includeDormant);
+    const shared = this.isProjectShared;
+    if (!shared) return readable;
+    const readableIds = new Set(readable.map((record) => record.id));
+    return [...readable, ...this.state.records.filter((record) =>
+      !readableIds.has(record.id)
+      && record.projectId !== undefined && shared(record.projectId)
+      && (includeDormant || record.dormantSince === undefined))];
+  }
+
+  /** Whether the caller's project owns neither the record nor its session. */
+  private foreignTo(sessionId: string): (record: MemoryRecord) => boolean {
+    const ownProject = this.resolveSessionProject?.(sessionId) ?? null;
+    return (record) => record.sessionId !== sessionId && (ownProject === null || record.projectId !== ownProject);
   }
 
   /** Whether a session may operate on a record at all — dormancy is no bar. */
@@ -253,6 +289,7 @@ export class MemoryManager extends EventEmitter {
       connectedCount: connectedCounts.get(record.id) ?? 0,
       ageDays: Math.max(0, (this.now() - record.createdAt) / MS_PER_DAY),
       epochsSinceCreation: Math.max(0, epoch - (record.createdAtEpoch ?? 0)),
+      contentChars: record.content.length,
       ...(record.dormantSince !== undefined ? { dormantSince: record.dormantSince } : {}),
       plan: record.planId ? resolvePlan(record.planId) : null,
     };
@@ -350,7 +387,7 @@ export class MemoryManager extends EventEmitter {
 
   getRecordForSession(sessionId: string, id: string, options: MemoryListOptions = {}): MemoryRecord | null {
     assertSessionId(sessionId);
-    const record = this.readableRecords(sessionId, options.includeDormant).find((item) => item.id === id);
+    const record = this.findableRecords(sessionId, options.includeDormant).find((item) => item.id === id);
     if (!record) return null;
     this.stampAccess([record.id], sessionId);
     return cloneMemoryRecord(this.state.records.find((item) => item.id === id)!);
@@ -364,7 +401,7 @@ export class MemoryManager extends EventEmitter {
 
   getForSession(sessionId: string, rootId: string, graphDepth = 0): MemoryTraversal | null {
     assertSessionId(sessionId);
-    const scopedRecords = this.readableRecords(sessionId);
+    const scopedRecords = this.findableRecords(sessionId);
     if (!scopedRecords.some((record) => record.id === rootId)) return null;
     const allowedIds = new Set(scopedRecords.map((record) => record.id));
     return new MemoryGraph({
@@ -397,24 +434,46 @@ export class MemoryManager extends EventEmitter {
 
   searchForSession(sessionId: string, query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     assertSessionId(sessionId);
-    const scopedRecords = this.readableRecords(sessionId, options.includeDormant);
+    const scopedRecords = this.findableRecords(sessionId, options.includeDormant);
     const allowedIds = new Set(scopedRecords.map((record) => record.id));
     const graphDepth = options.graphDepth ?? 0;
     validateGraphDepth(graphDepth);
     const regexMode = options.regex === true;
-    const expression = buildSearchExpression(query, regexMode);
     const graph = new MemoryGraph({
       records: scopedRecords,
       edges: this.state.edges.filter((edge) => allowedIds.has(edge.fromId)),
     });
-    const matches = scopedRecords
-      .filter((record) => expression.test(record.tldr) || expression.test(record.content))
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const isForeign = this.foreignTo(sessionId);
+    const ranked = regexMode
+      ? regexMatches(scopedRecords, compileRegex(query))
+      : rankMemories(scopedRecords, query, { boost: (record) => (isForeign(record) ? 1 : OWN_PROJECT_BOOST) });
+    const byId = new Map(scopedRecords.map((record) => [record.id, record]));
     return {
       query,
       regex: regexMode,
-      results: matches.map((record) => graph.traverse(record.id, graphDepth)),
+      results: ranked.map((hit) => graph.traverse(hit.id, graphDepth)),
+      hits: ranked.map((hit) => toSearchHit(hit, byId.get(hit.id)!, isForeign)),
     };
+  }
+
+  /**
+   * The memories closest to one the session just wrote, so it can link them:
+   * the graph only grows if writing a memory surfaces its neighbours.
+   * Already-linked memories are left out; they need no prompt.
+   */
+  similarForSession(sessionId: string, id: string, limit: number): MemorySearchHit[] {
+    assertSessionId(sessionId);
+    const record = this.state.records.find((item) => item.id === id);
+    if (!record) return [];
+    const linked = new Set(this.state.edges
+      .filter((edge) => edge.fromId === id || edge.toId === id)
+      .flatMap((edge) => [edge.fromId, edge.toId]));
+    const candidates = this.findableRecords(sessionId).filter((item) => item.id !== id && !linked.has(item.id));
+    const byId = new Map(candidates.map((item) => [item.id, item]));
+    const isForeign = this.foreignTo(sessionId);
+    return rankMemories(candidates, `${record.tldr} ${record.content}`, { loose: false })
+      .slice(0, limit)
+      .map((hit) => toSearchHit(hit, byId.get(hit.id)!, isForeign));
   }
 
   delete(id: string): boolean {
@@ -474,15 +533,17 @@ export class MemoryManager extends EventEmitter {
     return true;
   }
 
-  linkForSession(sessionId: string, fromId: string, toId: string): boolean {
+  /** The source must be owned; the target need only be findable. A cross-project link is how projects share. */
+  linkForSession(sessionId: string, fromId: string, toId: string, type?: MemoryEdgeType): boolean {
     assertSessionId(sessionId);
-    if (!this.owns(sessionId, fromId) || !this.owns(sessionId, toId)) return false;
-    return this.link(fromId, toId, sessionId);
+    if (!this.owns(sessionId, fromId)) return false;
+    if (!this.findableRecords(sessionId, true).some((record) => record.id === toId)) return false;
+    return this.link(fromId, toId, sessionId, type);
   }
 
   unlinkForSession(sessionId: string, fromId: string, toId: string): boolean {
     assertSessionId(sessionId);
-    if (!this.owns(sessionId, fromId) || !this.owns(sessionId, toId)) return false;
+    if (!this.owns(sessionId, fromId)) return false;
     return this.unlink(fromId, toId, sessionId);
   }
 
@@ -566,12 +627,16 @@ export class MemoryManager extends EventEmitter {
     return orphanedIds.size;
   }
 
-  link(fromId: string, toId: string, sessionId?: string): boolean {
+  link(fromId: string, toId: string, sessionId?: string, type?: MemoryEdgeType): boolean {
+    if (type !== undefined && !isMemoryEdgeType(type)) throw new Error(`Unknown memory edge type: ${String(type)}`);
     if (!this.state.records.some((record) => record.id === fromId)
       || !this.state.records.some((record) => record.id === toId)) return false;
-    if (this.state.edges.some((edge) => edge.fromId === fromId && edge.toId === toId)) return true;
+    const existing = this.state.edges.find((edge) => edge.fromId === fromId && edge.toId === toId);
+    if (existing && existing.type === type) return true;
     this.mutate((candidate) => {
-      candidate.edges.push({ fromId, toId });
+      // Re-linking retypes: one edge per ordered pair, whatever it says.
+      candidate.edges = candidate.edges.filter((edge) => !(edge.fromId === fromId && edge.toId === toId));
+      candidate.edges.push({ fromId, toId, ...(type ? { type } : {}) });
       return { type: 'link', fromId, toId, ...(sessionId ? { sessionId } : {}) };
     });
     return true;
@@ -631,16 +696,16 @@ export class MemoryManager extends EventEmitter {
 
   search(query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     const regexMode = options.regex === true;
-    const expression = buildSearchExpression(query, regexMode);
     const graphDepth = options.graphDepth ?? 0;
     validateGraphDepth(graphDepth);
-    const roots = this.state.records
-      .filter((record) => expression.test(record.tldr) || expression.test(record.content))
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const ranked = regexMode ? regexMatches(this.state.records, compileRegex(query)) : rankMemories(this.state.records, query);
+    const graph = new MemoryGraph(this.state);
+    const byId = new Map(this.state.records.map((record) => [record.id, record]));
     return {
       query,
       regex: regexMode,
-      results: roots.map((record) => new MemoryGraph(this.state).traverse(record.id, graphDepth)),
+      results: ranked.map((hit) => graph.traverse(hit.id, graphDepth)),
+      hits: ranked.map((hit) => toSearchHit(hit, byId.get(hit.id)!, () => false)),
     };
   }
 
@@ -810,13 +875,21 @@ function sortRecords(records: MemoryRecord[], sortBy: MemorySortField, order: 'a
   });
 }
 
-/**
- * Literal queries fold case: nobody types `prepareDeploy` when looking for
- * "deploy". Regex mode is left alone — the caller asked for a regex, and
- * forcing `i` would remove the only way to express a case-sensitive search.
- */
-function buildSearchExpression(query: string, regexMode: boolean): RegExp {
-  return regexMode ? compileRegex(query) : new RegExp(escapeRegExp(query), 'i');
+/** Regex mode is a filter, not a ranking: matches in id order, all scored 1. */
+function regexMatches(records: readonly MemoryRecord[], expression: RegExp): RankedMemory[] {
+  return records
+    .filter((record) => expression.test(record.tldr) || expression.test(record.content))
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((record) => ({ id: record.id, score: 1 }));
+}
+
+function toSearchHit(hit: RankedMemory, record: MemoryRecord, isForeign: (record: MemoryRecord) => boolean): MemorySearchHit {
+  return {
+    id: hit.id,
+    score: hit.score,
+    ...(record.projectId !== undefined ? { projectId: record.projectId } : {}),
+    foreign: isForeign(record),
+  };
 }
 
 function compileRegex(query: string): RegExp {
@@ -825,10 +898,6 @@ function compileRegex(query: string): RegExp {
   } catch (error) {
     throw new Error(`Invalid regular expression: ${String(error)}`);
   }
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function assertSessionId(sessionId: string): void {

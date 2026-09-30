@@ -150,8 +150,8 @@ export function asFiniteNumber(value: unknown, errorMessage: string): number {
   return value;
 }
 
-export function asGraphDepth(value: unknown): number {
-  if (value === undefined) return 0;
+export function asGraphDepth(value: unknown, fallback = 0): number {
+  if (value === undefined) return fallback;
   validateGraphDepth(value);
   return value;
 }

@@ -13,7 +13,9 @@ import type {
   MemoryDreamResult,
   MemoryExportFormat,
   MemoryForest,
+  MemoryEdgeType,
   MemoryListOptions,
+  MemorySearchHit,
   MemorySearchResult,
   MemoryRecord,
   MemorySummary,
@@ -21,6 +23,16 @@ import type {
 } from '../../types/memory.js';
 
 const MCP_FILE_MAX_BYTES = 10 * 1024 * 1024;
+
+/** A memory should hold one idea; past this it is probably several. Advisory only. */
+export const ATOM_SOFT_LIMIT = 300;
+const SIMILAR_LIMIT = 5;
+
+/**
+ * What writing a memory returns to an AI: the record, the closest memories it
+ * should consider linking, and a nudge when it is too big to be one idea.
+ */
+export type WrittenMemory = MemoryRecord & { similar: MemorySearchHit[]; atomHint?: string };
 
 export interface MemoryExportResult {
   format: MemoryExportFormat;
@@ -61,6 +73,18 @@ export class HelmMemoryService {
 
   createMemory(sessionId: string, input: CreateMemoryInput): MemoryRecord {
     return this.memoryManager.createForSession(sessionId, input);
+  }
+
+  /** The MCP write: the record plus the linking prompt that grows the graph. */
+  createLinkableMemory(sessionId: string, input: CreateMemoryInput): WrittenMemory {
+    const record = this.createMemory(sessionId, input);
+    return {
+      ...record,
+      similar: this.memoryManager.similarForSession(sessionId, record.id, SIMILAR_LIMIT),
+      ...(record.content.length > ATOM_SOFT_LIMIT
+        ? { atomHint: `content is ${record.content.length} chars; one idea is usually under ${ATOM_SOFT_LIMIT}. Consider splitting it into linked memories.` }
+        : {}),
+    };
   }
 
   updateMemory(
@@ -116,8 +140,8 @@ export class HelmMemoryService {
     };
   }
 
-  linkMemory(sessionId: string, fromId: string, toId: string): boolean {
-    return this.memoryManager.linkForSession(sessionId, fromId, toId);
+  linkMemory(sessionId: string, fromId: string, toId: string, type?: MemoryEdgeType): boolean {
+    return this.memoryManager.linkForSession(sessionId, fromId, toId, type);
   }
 
   unlinkMemory(sessionId: string, fromId: string, toId: string): boolean {

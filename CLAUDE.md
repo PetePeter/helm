@@ -168,6 +168,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 
 | Document | Content |
 |----------|---------|
+| [docs/memory.md](docs/memory.md) | Memory as a knowledge graph — atoms, similar-on-write, typed links, MiniSearch ranking, cross-project search + privacy |
 | [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — prompt assembly, `dreaming` system skill, scheduling rules, run-now |
 | [docs/directory-plans.md](docs/directory-plans.md) | Directory Plans — DAG work items, lifecycle, canvas, layout, badges |
 | [docs/plans-file-structure.md](docs/plans-file-structure.md) | On-disk plan file layout |

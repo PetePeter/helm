@@ -166,6 +166,15 @@ export class ProjectStore {
     this.notifyChanged();
   }
 
+  setMemoryPrivate(projectId: string, memoryPrivate: boolean): void {
+    const record = this.requireRecord(projectId);
+    if (memoryPrivate) record.memoryPrivate = true;
+    else delete record.memoryPrivate;
+    record.updatedAt = Date.now();
+    this.dirty = true;
+    this.notifyChanged();
+  }
+
   delete(projectId: string): void {
     const idx = this.records.findIndex((r) => r.id === projectId);
     if (idx < 0) return;

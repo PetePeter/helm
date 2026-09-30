@@ -30,6 +30,23 @@ describe('MemoryPersistence', () => {
     expect(persistence.load().state).toEqual(sample);
   });
 
+  it('keeps an edge type across a save and load, dropping an unknown one', () => {
+    root = mkdtempSync(join(tmpdir(), 'helm-memory-persistence-'));
+    const file = join(root, 'memories.json');
+    const persistence = new MemoryPersistence(file);
+    const typed: MemoryState = {
+      records: [...sample.records, { ...sample.records[0]!, id: 'm2' }, { ...sample.records[0]!, id: 'm3' }],
+      edges: [{ fromId: 'm1', toId: 'm2', type: 'supports' }, { fromId: 'm1', toId: 'm3' }],
+    };
+    persistence.save(typed);
+    expect(persistence.load().state?.edges).toEqual(typed.edges);
+
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as { edges: Array<Record<string, unknown>> };
+    raw.edges[0]!.type = 'from-the-future';
+    writeFileSync(file, JSON.stringify(raw), 'utf8');
+    expect(persistence.load().state?.edges[0]).toEqual({ fromId: 'm1', toId: 'm2' });
+  });
+
   it('preserves corrupt bytes on load and repairs only when explicitly requested', () => {
     root = mkdtempSync(join(tmpdir(), 'helm-memory-persistence-'));
     const file = join(root, 'memories.json');

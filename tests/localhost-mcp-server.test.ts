@@ -1865,6 +1865,8 @@ describe('LocalhostMcpServer', () => {
       ]);
       expect(json.result.structuredContent.autoFollowUpPlans).toBeUndefined();
       expect(json.result.structuredContent.testingInstructions).toBeUndefined();
+      // The moment a plan closes is when its lessons are freshest.
+      expect(json.result.structuredContent.memoryReminder).toMatch(/memory_create/);
     });
 
     it('rejects missing documentation param', async () => {

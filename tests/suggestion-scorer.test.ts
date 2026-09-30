@@ -111,6 +111,12 @@ describe('Bm25SuggestionScorer', () => {
     }
   });
 
+  it('still suggests through a typo in a long word', async () => {
+    const scorer = new Bm25SuggestionScorer();
+    const ranked = await scorer.score('my helm chain stall needs recovrey', ALL);
+    expect(ranked[0]?.id).toBe('helm-chain-stall-recovery');
+  });
+
   it('scores nothing for a prompt with no hint of any candidate', async () => {
     const scorer = new Bm25SuggestionScorer();
     const ranked = await scorer.score('rename the variable and run the linter again', ALL);

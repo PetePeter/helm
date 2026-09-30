@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { MEMORIES_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync } from './persistence-utils.js';
 import {
+  isMemoryEdgeType,
   cloneMemoryState,
   type MemoryAttachment,
   type MemoryEdge,
@@ -243,7 +244,9 @@ function normalizeAttachment(value: unknown, memoryId: string): MemoryAttachment
 function normalizeEdge(value: unknown): MemoryEdge | null {
   if (!isRecord(value) || typeof value.fromId !== 'string' || value.fromId.trim() === '') return null;
   if (typeof value.toId !== 'string' || value.toId.trim() === '') return null;
-  return { fromId: value.fromId, toId: value.toId };
+  // An unknown type (a newer build's) degrades to a plain link rather than
+  // failing the whole store.
+  return { fromId: value.fromId, toId: value.toId, ...(isMemoryEdgeType(value.type) ? { type: value.type } : {}) };
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

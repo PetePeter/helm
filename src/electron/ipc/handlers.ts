@@ -229,6 +229,7 @@ export function registerIPCHandlers(
     attachmentManager: memoryAttachmentManager,
     resolveSessionProject: (id) => sessionManager.getSession(id)?.projectId ?? null,
     canReadAll: (id) => sessionManager.getSession(id)?.role === 'operator',
+    isProjectShared: (projectId) => projectStore.getById(projectId)?.memoryPrivate !== true,
     resolveSessionPlan: (id) => planManager.claimedPlanFor(id)?.id ?? null,
   });
   const contextManager = new ContextManager(planManager);

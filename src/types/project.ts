@@ -14,6 +14,8 @@ export interface ProjectRecord {
   messRetentionDays?: number;
   /** Minimum interval between best-effort Mess idle pokes. Defaults to 15 minutes. */
   messPokeCooldownMinutes?: number;
+  /** Keep this project's memories out of other projects' search. Absent = shared. */
+  memoryPrivate?: boolean;
 }
 
 export interface MessProjectSettings {

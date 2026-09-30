@@ -66,7 +66,7 @@ import {
 } from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
-import { HelmMemoryService, type MemoryExportResult } from './services/helm-memory-service.js';
+import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
 import { MessManager } from '../session/mess-manager.js';
 import type { MemoryAttachmentManager } from '../session/memory-attachment-manager.js';
@@ -79,6 +79,7 @@ import type {
   MemoryExportFormat,
   MemoryListOptions,
   MemoryRecord,
+  MemoryEdgeType,
   MemorySearchResult,
   MemoryTraversal,
 } from '../types/memory.js';
@@ -878,6 +879,10 @@ export class HelmControlService extends EventEmitter {
     return this.requireMemoryService().createMemory(sessionId, input);
   }
 
+  createLinkableMemory(sessionId: string, input: { tldr: string; content: string }): WrittenMemory {
+    return this.requireMemoryService().createLinkableMemory(sessionId, input);
+  }
+
   dreamMemories(sessionId: string, options: MemoryDreamOptions = {}): MemoryDreamResult {
     return this.requireMemoryService().dreamMemories(sessionId, options);
   }
@@ -911,8 +916,8 @@ export class HelmControlService extends EventEmitter {
     return this.requireMemoryService().exportMemories(sessionId, format, rootId, graphDepth);
   }
 
-  linkMemory(sessionId: string, fromId: string, toId: string): boolean {
-    return this.requireMemoryService().linkMemory(sessionId, fromId, toId);
+  linkMemory(sessionId: string, fromId: string, toId: string, type?: MemoryEdgeType): boolean {
+    return this.requireMemoryService().linkMemory(sessionId, fromId, toId, type);
   }
 
   unlinkMemory(sessionId: string, fromId: string, toId: string): boolean {
@@ -1253,6 +1258,10 @@ export class HelmControlService extends EventEmitter {
 
   renameProject(projectId: string, name: string) {
     return this.requireProjectService().renameProject(projectId, name);
+  }
+
+  setProjectMemoryPrivate(projectId: string, memoryPrivate: boolean) {
+    return this.requireProjectService().setProjectMemoryPrivate(projectId, memoryPrivate);
   }
 
   deleteProject(projectId: string) {

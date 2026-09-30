@@ -76,6 +76,15 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * A finished plan is when its lessons are freshest and about to be compacted
+ * away, so completion prompts the model to keep what the next session needs.
+ */
+const PLAN_COMPLETE_MEMORY_REMINDER = 'Plan done. Before moving on: did this work teach anything a future session needs '
+  + '(a gotcha, a decision and its why, a non-obvious fact about the code or setup)? If so, save each as its own small '
+  + 'memory with memory_create (one idea each) and link it to the similar memories returned. Skip what the code, '
+  + 'git history or plan notes already record. Nothing worth keeping is a fine answer.';
+
 export class LocalhostMcpServer {
   private server = createServer((req, res) => {
     void this.handleRequest(req, res);
@@ -446,7 +455,7 @@ export class LocalhostMcpServer {
       }
     }
 
-    return { followUpPlans };
+    return { followUpPlans, memoryReminder: PLAN_COMPLETE_MEMORY_REMINDER };
   }
 
   private getAuthContext(req: IncomingMessage): AuthContext | null {

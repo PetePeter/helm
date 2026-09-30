@@ -655,6 +655,20 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'project_memory_private',
+    title: 'Set Project Memory Privacy',
+    description: 'By default a project\'s memories can be found (searched, read, linked to, never edited) by sessions in other projects. private=true keeps them to this project; false shares them again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string' },
+        private: { type: 'boolean' },
+      },
+      required: ['projectId', 'private'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'project_rename',
     title: 'Rename Project',
     description: 'Change the display name of an existing project by its ID. Changes are persisted immediately.',
@@ -1765,7 +1779,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_get',
     title: 'Get Memory',
-    description: 'Get a project memory resolved from the authenticated caller session and its cycle-safe graph neighborhood. Optional graphDepth adds breadcrumbed record/reference/cycle/depth-limit entries.',
+    description: 'Get a memory by id: your project\'s, or another project\'s found via memory_search. Returns its cycle-safe graph neighbourhood; graphDepth defaults to 1 (the memory plus its direct links), 0 for the memory alone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1779,7 +1793,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_create',
     title: 'Create Memory',
-    description: 'Create a durable memory in the project resolved from the authenticated caller session. Project ownership is derived from authContext.sessionId, never from caller input.',
+    description: 'Create a durable memory in your session\'s project (ownership is derived, never caller input). Write ONE idea per memory, with the tldr stating it; several small linked memories beat one essay. The response lists `similar` memories (possibly from other projects): link each one that relates with memory_link and a type, or leave it. An `atomHint` means the content is probably several ideas; split it.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1820,7 +1834,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_search',
     title: 'Search Memories',
-    description: 'Search tldr and content of project memories resolved from the authenticated caller session. Literal search is default; regex=true enables regular expressions. Optional graphDepth expands each matching root. Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
+    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Covers your project plus other projects that share; `hits` gives each result\'s score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking. graphDepth defaults to 1 (each hit plus its direct links). Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1864,12 +1878,13 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_link',
     title: 'Link Memories',
-    description: 'Create a directed graph edge between two memories in the project resolved from the authenticated caller session.',
+    description: 'Link two memories: fromId must be your project\'s, toId may be any memory you can find (including another project\'s). Optional type says what the link means: fromId supports / contradicts / part-of / example-of / supersedes toId; omit for plain "related". Linking an existing pair again changes its type.',
     inputSchema: {
       type: 'object',
       properties: {
         fromId: { type: 'string', minLength: 1 },
         toId: { type: 'string', minLength: 1 },
+        type: { type: 'string', enum: ['supports', 'contradicts', 'part-of', 'example-of', 'supersedes'] },
       },
       required: ['fromId', 'toId'],
       additionalProperties: false,

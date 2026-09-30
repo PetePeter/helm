@@ -300,8 +300,10 @@ wired and nothing arrives.
 ### The hint-only suggester
 
 `src/session/hooks/suggestion-scorer.ts`. On UserPromptSubmit, skills and
-memories are scored against the prompt — **BM25 over name + description +
-declared triggers**, pure TypeScript, no model, no download, no worker. The
+memories are scored against the prompt — **BM25 (MiniSearch, the same
+engine as `memory_search`) over name + description + declared triggers**,
+with typo/prefix slack on longer words and stop words dropped — no model, no
+download, no worker; the index is built per prompt and discarded. The
 payload is `(type/id (name))` TUPLES ONLY:
 
 ```

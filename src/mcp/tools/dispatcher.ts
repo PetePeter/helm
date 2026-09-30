@@ -32,6 +32,13 @@ import {
   requireBooleanResult,
   requireResult,
 } from './validation.js';
+import { MEMORY_EDGE_TYPES } from '../../types/memory.js';
+
+/**
+ * Reading a memory brings its direct links along: small memories only add up
+ * to something when they arrive with their neighbours.
+ */
+const RECALL_GRAPH_DEPTH = 1;
 
 /**
  * Resolve the caller's own session for session-scoped tools (artifacts). The
@@ -473,6 +480,11 @@ export async function callMcpTool(
         return service.renameProject(
           asString(args.projectId, 'projectId is required'),
           asString(args.name, 'name is required'),
+        );
+      case 'project_memory_private':
+        return service.setProjectMemoryPrivate(
+          asString(args.projectId, 'projectId is required'),
+          asBoolean(args.private, 'private must be a boolean'),
         );
       case 'project_delete':
         return service.deleteProject(asString(args.projectId, 'projectId is required'));
@@ -1024,7 +1036,7 @@ export async function callMcpTool(
         const sessionId = requireCallerSession(authContext, 'memory_get');
         const memoryId = asString(args.id, 'id is required');
         const traversal = requireResult(
-          service.getMemory(sessionId, memoryId, asGraphDepth(args.graphDepth)),
+          service.getMemory(sessionId, memoryId, asGraphDepth(args.graphDepth, RECALL_GRAPH_DEPTH)),
           `Memory not found: ${memoryId}`,
         );
         recordFetched(deps, authContext, 'memory', memoryId);
@@ -1032,7 +1044,7 @@ export async function callMcpTool(
       }
       case 'memory_create': {
         const sessionId = requireCallerSession(authContext, 'memory_create');
-        return service.createMemory(sessionId, {
+        return service.createLinkableMemory(sessionId, {
           tldr: asString(args.tldr, 'tldr is required'),
           content: asStringValue(args.content, 'content is required'),
         });
@@ -1063,7 +1075,7 @@ export async function callMcpTool(
         const regex = args.regex === undefined ? false : asBoolean(args.regex, 'regex must be a boolean');
         return service.searchMemories(sessionId, asStringValue(args.query, 'query is required'), {
           regex,
-          graphDepth: asGraphDepth(args.graphDepth),
+          graphDepth: asGraphDepth(args.graphDepth, RECALL_GRAPH_DEPTH),
         });
       }
       case 'memory_graph': {
@@ -1090,8 +1102,9 @@ export async function callMcpTool(
             sessionId,
             asString(args.fromId, 'fromId is required'),
             asString(args.toId, 'toId is required'),
+            args.type === undefined ? undefined : asEnum(args.type, MEMORY_EDGE_TYPES, 'type'),
           ),
-          'Both memories must belong to the authenticated caller session',
+          'fromId must be your own memory and toId a memory you can find',
         );
       }
       case 'memory_unlink': {

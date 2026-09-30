@@ -9,8 +9,9 @@
  *   The agent fetches what it wants via skill_get / memory_get, or ignores it.
  *   A miss costs nothing; a hit costs ~15 tokens. There is no "inject body"
  *   tier to tune and there never will be one.
- * - NO MODEL. BM25 over name + description + declared triggers, pure
- *   TypeScript, zero dependencies. SemIf / Qwen / WebGPU / a Python sidecar
+ * - NO MODEL. BM25 over name + description + declared triggers, via
+ *   MiniSearch — the engine memory_search uses, so hints and search agree on
+ *   what a word is (typo/prefix slack on long words, stop words dropped). SemIf / Qwen / WebGPU / a Python sidecar
  *   were all considered and rejected.
  * - SCORE ON DEMAND. The candidate list is built when a prompt arrives and
  *   thrown away. No index, no worker, no re-indexing. The interface stays
@@ -29,6 +30,8 @@
  * just below the line would be evidence for a bounded rescue signal.
  */
 
+import MiniSearch from 'minisearch';
+import { processSearchTerm } from '../search-terms.js';
 import { logger } from '../../utils/logger.js';
 import { usageTerms } from './suggestion-usage-store.js';
 
@@ -99,16 +102,14 @@ export function declaredTriggers(text: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// BM25 — over ~40 candidates this is sub-millisecond, deterministic, and
-// explainable. No dependency: this is the whole engine.
+// BM25 via MiniSearch (the same engine memory_search ranks with). Over ~100
+// candidates an index built per prompt is sub-millisecond, deterministic, and
+// explainable; nothing is kept between prompts.
 // ---------------------------------------------------------------------------
 
-const K1 = 1.5;
-const B = 0.75;
-// The NAME field is indexed three times (weight 3): names are intent.
 /** A declared trigger phrase found verbatim in the prompt clears any doubt. */
 const TRIGGER_SCORE = 10;
-/** Minimum BM25 score to surface a candidate at all. */
+/** Minimum score to surface a candidate at all. */
 export const MIN_SCORE = 3.5;
 
 function tokenize(text: string): string[] {
@@ -120,65 +121,48 @@ function triggersOf(candidate: SuggestionCandidate): string[] {
   return candidate.triggers ?? declaredTriggers(candidate.description);
 }
 
-interface Bm25Doc {
-  tokens: string[];
-  length: number;
-}
-
-function buildDoc(candidate: SuggestionCandidate): Bm25Doc {
-  const name = tokenize(candidate.name);
-  const description = tokenize(candidate.description);
-  const triggers = triggersOf(candidate).flatMap(tokenize);
-  const tokens = [
-    ...name, ...name, ...name, // weight 3
-    ...description,
-    ...triggers, ...triggers, // triggers also index as terms
-  ];
-  return { tokens, length: tokens.length };
-}
-
-function termFrequency(tokens: string[], term: string): number {
-  let count = 0;
-  for (const token of tokens) if (token === term) count += 1;
-  return count;
-}
-
 /**
- * Raw BM25 (plus the declared-trigger override) for every candidate, aligned
+ * Raw scores (plus the declared-trigger override) for every candidate, aligned
  * with the input order — no threshold applied. The threshold is applied by
- * the scorer that ranks: bare BM25 here, and the same rule in the boosted
+ * the scorer that ranks: bare scores here, and the same rule in the boosted
  * composition (G5 may reorder passers but never decides a crossing).
+ *
+ * Names are intent (weight 3); declared triggers also index as terms (weight 2).
+ * Only longer words get typo and prefix tolerance: on short ones it matches
+ * unrelated words, and a wrong hint costs a fetch.
  */
 export function bm25RawScores(prompt: string, candidates: readonly SuggestionCandidate[]): number[] {
-  const queryTerms = new Set(tokenize(prompt));
-  if (queryTerms.size === 0 || candidates.length === 0) return candidates.map(() => 0);
+  if (!tokenize(prompt).some((term) => processSearchTerm(term) !== null) || candidates.length === 0) {
+    return candidates.map(() => 0);
+  }
 
-  const docs = candidates.map(buildDoc);
-  const averageLength = docs.reduce((sum, doc) => sum + doc.length, 0) / docs.length;
+  const index = new MiniSearch<{ id: number; name: string; description: string; triggers: string }>({
+    fields: ['name', 'description', 'triggers'],
+    tokenize,
+    processTerm: processSearchTerm,
+  });
+  index.addAll(candidates.map((candidate, i) => ({
+    id: i,
+    name: candidate.name,
+    description: candidate.description,
+    triggers: triggersOf(candidate).join(' '),
+  })));
+  const scores = candidates.map(() => 0);
+  for (const hit of index.search(prompt, {
+    boost: { name: 3, triggers: 2 },
+    combineWith: 'OR',
+    prefix: (term) => term.length > 4,
+    fuzzy: (term) => (term.length > 5 ? 0.2 : false),
+  })) scores[hit.id as number] = hit.score;
+
   const promptLower = prompt.toLowerCase();
-
   return candidates.map((candidate, i) => {
-    const doc = docs[i]!;
-    let score = 0;
-
-    for (const term of queryTerms) {
-      const tf = termFrequency(doc.tokens, term);
-      if (tf === 0) continue;
-      // Document frequency across the candidate set, this query only.
-      let df = 0;
-      for (const other of docs) if (termFrequency(other.tokens, term) > 0) df += 1;
-      const idf = Math.log(1 + (candidates.length - df + 0.5) / (df + 0.5));
-      const denominator = tf + K1 * (1 - B + (B * doc.length) / (averageLength || 1));
-      score += idf * ((tf * (K1 + 1)) / denominator);
-    }
-
     // A declared trigger phrase present verbatim wins outright — the author
     // said "this is when", and the prompt said exactly that.
     const triggerHit = triggersOf(candidate).some(
       (phrase) => phrase.length > 1 && promptLower.includes(phrase.toLowerCase()),
     );
-    if (triggerHit) score = Math.max(score, TRIGGER_SCORE);
-    return score;
+    return triggerHit ? Math.max(scores[i]!, TRIGGER_SCORE) : scores[i]!;
   });
 }
 

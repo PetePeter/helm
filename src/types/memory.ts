@@ -113,6 +113,8 @@ export interface DreamCandidate {
   connectedCount: number;
   ageDays: number;
   epochsSinceCreation: number;
+  /** Content length: a long memory is likely several ideas waiting to be split. */
+  contentChars: number;
   dormantSince?: number;
   plan: MemoryDreamPlan | null;
 }
@@ -134,9 +136,21 @@ export interface MemoryDreamResult {
   };
 }
 
+/**
+ * What a link says about its two memories. Absent means plain "related" —
+ * every edge written before types existed, and any link made without one.
+ */
+export const MEMORY_EDGE_TYPES = ['supports', 'contradicts', 'part-of', 'example-of', 'supersedes'] as const;
+export type MemoryEdgeType = typeof MEMORY_EDGE_TYPES[number];
+
+export function isMemoryEdgeType(value: unknown): value is MemoryEdgeType {
+  return typeof value === 'string' && (MEMORY_EDGE_TYPES as readonly string[]).includes(value);
+}
+
 export interface MemoryEdge {
   fromId: string;
   toId: string;
+  type?: MemoryEdgeType;
 }
 
 /**
@@ -179,10 +193,20 @@ export interface MemorySearchOptions {
   includeDormant?: boolean;
 }
 
+/** One search root, aligned with `results`: how well it matched and whose it is. */
+export interface MemorySearchHit {
+  id: string;
+  score: number;
+  projectId?: string;
+  /** From a project other than the caller's — knowledge to weigh, not to assume. */
+  foreign: boolean;
+}
+
 export interface MemorySearchResult {
   query: string;
   regex: boolean;
   results: MemoryTraversal[];
+  hits: MemorySearchHit[];
 }
 
 export type MemoryExportFormat = 'markdown' | 'json';
@@ -289,6 +313,9 @@ export function validateMemoryState(state: MemoryState): void {
     if (!edge || typeof edge.fromId !== 'string' || edge.fromId.trim() === ''
       || typeof edge.toId !== 'string' || edge.toId.trim() === '') {
       throw new Error('Memory edge endpoints must be non-empty strings');
+    }
+    if (edge.type !== undefined && !isMemoryEdgeType(edge.type)) {
+      throw new Error(`Unknown memory edge type: ${String(edge.type)}`);
     }
     const key = `${edge.fromId}\u0000${edge.toId}`;
     if (edgeKeys.has(key)) throw new Error(`Duplicate memory edge: ${edge.fromId} -> ${edge.toId}`);
