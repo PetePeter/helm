@@ -33,6 +33,8 @@ export interface HandoverDeliveryOptions {
 interface PendingHandover {
   text: string;
   armedAt: number;
+  /** Edges inside this window are ignored (see DEFAULT_HANDOVER_FLOOR_MS). */
+  floorMs: number;
   ceiling: ReturnType<typeof setTimeout>;
 }
 
@@ -70,7 +72,7 @@ export class HandoverDelivery extends EventEmitter {
     if (event.level !== 'inactive') return;
     const entry = this.pending.get(event.sessionId);
     if (!entry) return;
-    if (Date.now() - entry.armedAt < this.floorMs) return;
+    if (Date.now() - entry.armedAt < entry.floorMs) return;
     void this.deliverNow(event.sessionId, 'idle');
   };
 
@@ -98,14 +100,18 @@ export class HandoverDelivery extends EventEmitter {
    * Must be called *before* the compact command is written. The command's own
    * output drives the session back to `active`, which guarantees the edge this
    * waits on is a fresh one rather than a state that predates the compaction.
+   *
+   * `floorMs` overrides the compaction floor: a /clear is quick, so its note
+   * waits only as long as that CLI needs before a new prompt.
    */
-  arm(sessionId: string, text: string): void {
+  arm(sessionId: string, text: string, opts: { floorMs?: number } = {}): void {
     if (this.disposed) return;
     // A second compaction supersedes the first; only the newer text is wanted.
     this.clearTimer(sessionId);
     this.pending.set(sessionId, {
       text,
       armedAt: Date.now(),
+      floorMs: opts.floorMs ?? this.floorMs,
       ceiling: setTimeout(() => void this.deliverNow(sessionId, 'ceiling'), this.ceilingMs),
     });
     logger.info(`[HandoverDelivery] Armed handover for ${sessionId} (${text.length} chars)`);

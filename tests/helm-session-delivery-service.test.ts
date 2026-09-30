@@ -519,6 +519,25 @@ describe('HelmSessionDeliveryService', () => {
       return ptyManager.deliverText.mock.calls.map((c: any[]) => c[1] ?? '').join('|');
     }
 
+    it('with a handover wired, the note waits for the CLI to go idle (floor = its initialPromptDelay) instead of a blind paste', async () => {
+      const { service, ptyManager, receiver, configLoader } = makeDeps();
+      configLoader.getCliTypeEntry.mockReturnValue({ submitSuffix: '\\r', initialPromptDelay: 2500 } as any);
+      const armed: Array<[string, string, unknown]> = [];
+      let clearSentBeforeArm = true;
+      service.setHandoverDelivery({ arm: (id, text, opts) => {
+        clearSentBeforeArm = ptyManager.deliverText.mock.calls.length > 0;
+        armed.push([id, text, opts]);
+      } });
+
+      const result = await service.clearSession(receiver.id, { context: 'read the transcript' });
+
+      expect(armed).toEqual([[receiver.id, 'read the transcript', { floorMs: 2500 }]]);
+      expect(clearSentBeforeArm).toBe(false); // armed first, so the clear's own output is the edge it waits past
+      expect(allDelivered(ptyManager)).toContain('/clear');
+      expect(allDelivered(ptyManager)).not.toContain('read the transcript');
+      expect(result.contextRelayed).toBe(true);
+    });
+
     it('sends the default /clear command to the caller\'s own PTY', async () => {
       const { service, ptyManager, receiver } = makeDeps();
       await service.clearSession(receiver.id, { senderSessionId: receiver.id, senderSessionName: receiver.name });

@@ -183,11 +183,12 @@ describe('session_clear', () => {
     expect(deliveredText()).toBe('/clear');
   });
 
-  it('relays a context note after clearing', async () => {
-    const { service } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+  it('hands the note to the idle-wait, armed before the clear is written', async () => {
+    const { service, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
     const result = await service.clearSession('s1', { context: 'remember the migration' });
-    expect(deliverSpy).toHaveBeenCalledTimes(2);
-    expect(deliveredText(1)).toBe('remember the migration');
+    expect(deliverSpy).toHaveBeenCalledTimes(1);
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(armed).toEqual([{ sessionId: 's1', text: 'remember the migration', deliveriesBefore: 0 }]);
     expect(result.contextRelayed).toBe(true);
   });
 });
@@ -202,7 +203,7 @@ describe('session_quick_compact', () => {
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
   it('clears, then points the session at a stripped copy of its own transcript', async () => {
-    const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
     const log = join(dir, 'log.jsonl');
     writeFileSync(log, [
       { type: 'user', message: { content: 'build the parser' } },
@@ -213,7 +214,9 @@ describe('session_quick_compact', () => {
     const result = await service.quickCompactSession('s1', { handover: 'next: wire the CLI' });
 
     expect(deliveredText(0)).toBe('/clear{Enter}');
-    const prompt = deliveredText(1);
+    // Pasted by the idle-wait once the cleared CLI falls quiet, not inline.
+    expect(armed).toHaveLength(1);
+    const prompt = armed[0].text;
     expect(prompt).toContain(result.transcriptFile);
     expect(prompt).toContain('next: wire the CLI');
     const stripped = readFileSync(result.transcriptFile, 'utf8');

@@ -103,6 +103,24 @@ describe('HandoverDelivery', () => {
     handover.dispose();
   });
 
+  it('a per-arm floor (e.g. after a /clear, the CLI\'s own prompt delay) replaces the compaction floor', async () => {
+    vi.useFakeTimers();
+    const { handover, delivered, goInactive } = setup();
+
+    handover.arm('s1', 'read the transcript', { floorMs: 2000 });
+    vi.advanceTimersByTime(1000);
+    goInactive('s1');
+    await flush();
+    expect(delivered).toEqual([]); // still inside this arm's floor
+
+    vi.advanceTimersByTime(2000);
+    goInactive('s1');
+    await flush();
+    expect(delivered).toEqual([{ sessionId: 's1', text: 'read the transcript' }]);
+
+    handover.dispose();
+  });
+
   it('cancel and session close both suppress delivery and report the loss', async () => {
     vi.useFakeTimers();
     const { handover, sessionManager, delivered, losses, goInactive } = setup();

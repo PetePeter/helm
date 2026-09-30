@@ -102,7 +102,7 @@ function getClearSettleDelayMs(): number {
  * layer only ever hands a handover over, it never waits on or inspects one.
  */
 export interface HandoverArming {
-  arm(sessionId: string, text: string): void;
+  arm(sessionId: string, text: string, opts?: { floorMs?: number }): void;
 }
 
 /** What a sender learns about the recipient's turn at the moment it sent. */
@@ -442,12 +442,27 @@ export class HelmSessionDeliveryService {
 
     const by = options.senderSessionName ? ` by "${options.senderSessionName}"` : '';
     logger.info(`[HelmSessionDelivery] session_clear for "${session.name}" (${session.id})${by} using "${template}"`);
+
+    // With a handover wired, the note is pasted once the cleared CLI goes idle —
+    // never before its own prompt delay — rather than after a blind fixed sleep.
+    // Armed before the clear is written, so the clear's own output is the edge.
+    const context = options.context?.trim();
+    if (context && this.handover) {
+      const rawContext = options.context as string;
+      const deliveryText = this.offloadIfLarge(session.cliType, rawContext, 'session-clear-context', 'session_clear context');
+      this.handover.arm(session.id, deliveryText, { floorMs: entry?.initialPromptDelay ?? 0 });
+      await this.deliverActionSequence(session.id, template);
+      return {
+        ok: true, action: 'clear', sessionId: session.id, contextRelayed: true,
+        usedTempFile: deliveryText !== rawContext, note: ACTION_WAIT_NOTE,
+      };
+    }
+
     await this.deliverActionSequence(session.id, template);
 
     // Give the CLI time to process the clear before relaying the note.
     await new Promise((resolve) => setTimeout(resolve, getClearSettleDelayMs()));
 
-    const context = options.context?.trim();
     if (!context) {
       return { ok: true, action: 'clear', sessionId: session.id, contextRelayed: false, usedTempFile: false, note: ACTION_WAIT_NOTE };
     }
