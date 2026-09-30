@@ -1003,7 +1003,7 @@ export const MCP_TOOLS: McpTool[] = [
       "Helm's own compaction, an alternative to the CLI's /compact. Helm strips the session's transcript " +
       '(keeps every prompt, reply and a one-line record of each tool call; drops thinking and tool output) to a markdown file, ' +
       'clears the session, then asks it to read the file back and continue. Keeps exact details /compact loses, ' +
-      'at a somewhat larger context. Needs CLI hooks (the transcript path comes from them); Claude Code and Codex logs are supported. ' +
+      'at a somewhat larger context. Needs CLI hooks (the transcript path comes from them); Claude Code, Codex and Copilot CLI logs are supported. ' +
       'DESTINATION: sessionId is REQUIRED — a session may target itself. Asynchronous: wait ~1 min before reading results.',
     inputSchema: {
       type: 'object',
@@ -1252,6 +1252,19 @@ export const MCP_TOOLS: McpTool[] = [
         reason: { type: 'string', description: 'Why you are calling, shown on the ring screen. One short line.' },
       },
       required: ['reason'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'call_transfer',
+    title: 'Transfer the Phone Call',
+    description: 'Move the live phone voice call from you to another session: the user hears "Now talking to <name>" and from then on speaks with that session. Only the session holding the call can move it; the phone ignores a transfer from any other. Use when the user asks on a call to talk to another session. Provide sessionId or exact session name. Fails if no phone is linked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Session to take the call. Provide this or name.' },
+        name: { type: 'string', description: 'Exact session name. Alternative to sessionId.' },
+      },
       additionalProperties: false,
     },
   },

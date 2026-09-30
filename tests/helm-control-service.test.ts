@@ -1417,6 +1417,46 @@ describe('HelmControlService.ringUser', () => {
   });
 });
 
+describe('HelmControlService.transferCall', () => {
+  function withSessions() {
+    const { service, sessionManager } = makeService();
+    const known: Record<string, { id: string; name: string; cliType: string }> = {
+      a: { id: 'a', name: 'Builder', cliType: 'claude-code' },
+      b: { id: 'b', name: 'Reviewer', cliType: 'claude-code' },
+    };
+    (sessionManager.getSession as ReturnType<typeof vi.fn>).mockImplementation((id: string) => known[id] ?? null);
+    return service;
+  }
+
+  it('moves the caller\'s call to the target and names it on the line', () => {
+    const service = withSessions();
+    const moves: Array<[string, string, string]> = [];
+    service.setCallTransferrer((from, to, line) => { moves.push([from, to, line]); return true; });
+    expect(service.transferCall('a', 'b')).toEqual({ transferred: true, to: 'b' });
+    expect(moves).toEqual([['a', 'b', 'Now talking to Reviewer.']]);
+  });
+
+  it('refuses a target that does not exist', () => {
+    const service = withSessions();
+    const transferrer = vi.fn(() => true);
+    service.setCallTransferrer(transferrer);
+    expect(() => service.transferCall('a', 'nope')).toThrow(/Session not found/);
+    expect(transferrer).not.toHaveBeenCalled();
+  });
+
+  it('refuses a transfer to the caller itself', () => {
+    const service = withSessions();
+    service.setCallTransferrer(() => true);
+    expect(() => service.transferCall('a', 'a')).toThrow(/already/);
+  });
+
+  it('fails legibly when no phone took the transfer', () => {
+    const service = withSessions();
+    service.setCallTransferrer(() => false);
+    expect(() => service.transferCall('a', 'b')).toThrow(/No linked phone/);
+  });
+});
+
 describe('HelmControlService.restartHelm', () => {
   afterEach(() => {
     vi.restoreAllMocks();

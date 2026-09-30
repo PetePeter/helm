@@ -248,6 +248,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setMessageFlightSink = vi.fn();
     this.setMobileDeps = vi.fn();
     this.setPhoneRinger = vi.fn();
+    this.setCallTransferrer = vi.fn();
     this.setRingRetry = vi.fn();
     this.setRemoteService = vi.fn();
   }),

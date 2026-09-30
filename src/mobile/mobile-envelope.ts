@@ -42,11 +42,12 @@ import type { SessionAlertKind } from '../session/session-alert.js';
 /**
  * Everything a chat record's `kind` can say. The three session-alert classes
  * are mirrored in Kotlin's `AlertKind`; 'artifact' was added when artifacts
- * learned to push, 'ring' when the operator learned to call the user. A phone
+ * learned to push, 'ring' when the operator learned to call the user,
+ * 'transfer' when a session learned to hand a live call to another. A phone
  * that predates a new value must degrade to an ordinary notification, never
  * drop the record.
  */
-export type MobileChatKind = SessionAlertKind | 'artifact' | 'ring' | 'deleted';
+export type MobileChatKind = SessionAlertKind | 'artifact' | 'ring' | 'transfer' | 'deleted';
 
 /** Bumped only for a breaking change to these records. */
 export const MOBILE_ENVELOPE_VERSION = 1;
@@ -172,6 +173,8 @@ export interface MobileChatRecord {
    */
   contextTokens?: number;
   toolCalls?: number;
+  /** On a `kind: 'transfer'` record only: the session the call is leaving. */
+  fromSessionId?: string;
 }
 
 /**
@@ -218,6 +221,8 @@ export interface ChatRecordInput {
   deletes?: number;
   contextTokens?: number;
   toolCalls?: number;
+  /** On a `kind: 'transfer'` record only: the session the call is leaving. */
+  fromSessionId?: string;
 }
 
 /**
@@ -266,6 +271,7 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.deletes !== undefined) record.deletes = input.deletes;
   if (input.contextTokens !== undefined) record.contextTokens = input.contextTokens;
   if (input.toolCalls !== undefined) record.toolCalls = input.toolCalls;
+  if (input.fromSessionId !== undefined) record.fromSessionId = input.fromSessionId;
   return encode(record);
 }
 

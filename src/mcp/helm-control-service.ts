@@ -238,6 +238,7 @@ export class HelmControlService extends EventEmitter {
   private readonly planAttachmentService: HelmPlanAttachmentService;
   private readonly telegramService: HelmTelegramService;
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
+  private callTransferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null = null;
   private ringRetry: RingRetry | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
@@ -1658,6 +1659,26 @@ export class HelmControlService extends EventEmitter {
   /** Wired to the mobile bridge's sendRing; absent = no phones in this build. */
   setPhoneRinger(ringer: ((sessionId: string, reason: string) => boolean) | null): void {
     this.phoneRinger = ringer;
+  }
+
+  /** Wired to the mobile bridge's sendTransfer; absent = no phones in this build. */
+  setCallTransferrer(transferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null): void {
+    this.callTransferrer = transferrer;
+  }
+
+  /**
+   * Hand the phone's live call from the caller to another session
+   * (call_transfer). Any session may move ITS OWN call: the phone ignores a
+   * transfer whose from-session is not the one it is talking to.
+   */
+  transferCall(callerSessionId: string, targetRef: string): { transferred: true; to: string } {
+    const target = this.sessionService.getSession(targetRef);
+    if (!target) throw new Error(`Session not found: ${targetRef}`);
+    if (target.id === callerSessionId) throw new Error('The call is already with you.');
+    if (!this.callTransferrer?.(callerSessionId, target.id, `Now talking to ${target.name}.`)) {
+      throw new Error('No linked phone took the transfer.');
+    }
+    return { transferred: true, to: target.id };
   }
 
   /** Retries a ring nobody answered (src/session/ring-retry.ts); absent = no retry. */

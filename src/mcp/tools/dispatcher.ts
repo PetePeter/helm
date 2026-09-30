@@ -695,6 +695,11 @@ export async function callMcpTool(
           requireCallerSession(authContext, 'ring_user'),
           asString(args.reason, 'reason is required'),
         );
+      case 'call_transfer':
+        return service.transferCall(
+          requireCallerSession(authContext, 'call_transfer'),
+          asString(args.sessionId ?? args.name, 'sessionId or name is required'),
+        );
       case 'flash_attention':
         return service.flashAttention(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
       case 'get_app_visibility':

@@ -170,6 +170,19 @@ class MobileEnvelopeChatFieldsTest {
     }
 
     @Test
+    fun `a transfer decodes the session the call leaves`() {
+        val record = MobileEnvelope.decode(
+            (
+                """{"v":1,"t":"chat","sessionId":"s2","sessionName":"review","text":"Now talking to review.","at":5,""" +
+                    """"kind":"transfer","fromSessionId":"s1"}"""
+                ).toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertEquals("transfer", record.kind)
+        assertEquals("s1", record.fromSessionId)
+    }
+
+    @Test
     fun `a non-numeric deletes is dropped, not coerced`() {
         val record = MobileEnvelope.decode(
             """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"","at":5,"deletes":"7"}"""

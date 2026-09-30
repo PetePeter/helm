@@ -324,6 +324,14 @@ class HelmClient(
     var ringer: ((MobileRecord.Chat) -> Boolean)? = null
 
     /**
+     * Where a TRANSFER goes (a session handing the live call to another). Set
+     * by the Android shell. Never an alert: with no call to move there is
+     * nothing to tell the user.
+     */
+    @Volatile
+    var transferrer: ((MobileRecord.Chat) -> Unit)? = null
+
+    /**
      * Restart Helm on the linked desktop — the user's restart, answered in-gate
      * (`RESERVED_RESTART_HELM_METHOD`), never the AI's handover-gated tool.
      * [onOutcome] gets null on success, else the desktop's reason.
@@ -1599,6 +1607,7 @@ class HelmClient(
                     // A delete made elsewhere: the thread's business only, never a buzz.
                     ChatRepository.DELETED_KIND -> chats.receive(linkedDesktop(), record)
                     RING_KIND -> if (ringer?.invoke(record) != true) alerts.onAlert(record)
+                    TRANSFER_KIND -> transferrer?.invoke(record)
                     else -> alerts.onAlert(record)
                 }
 
@@ -1870,6 +1879,7 @@ class HelmClient(
         private const val METHOD_RESTART_HELM = "__restart_helm__"
         private const val METHOD_RING_ANSWERED = "__ring_answered__"
         private const val RING_KIND = "ring"
+        private const val TRANSFER_KIND = "transfer"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
         private const val METHOD_PEER_LIST = "peer_list"
         private const val METHOD_PEER_CALL = "peer_call"

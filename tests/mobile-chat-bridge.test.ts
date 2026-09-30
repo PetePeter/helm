@@ -176,6 +176,16 @@ describe('MobileChatBridge as a chat surface', () => {
     });
   });
 
+  it('moves a call as a transfer-kind record naming the new session and the one it leaves', () => {
+    links.online.add('phone-machine');
+
+    expect(bridge.sendTransfer('op', 's1', 'Putting you through to work')).toBe(true);
+    expect(links.records()[0]).toEqual({
+      v: 1, t: 'chat', sessionId: 's1', sessionName: 'work', text: 'Putting you through to work',
+      at: 1700000000000, kind: 'transfer', fromSessionId: 'op',
+    });
+  });
+
   it('reports a ring nobody could receive', () => {
     expect(bridge.sendRing('s1', 'x')).toBe(false);
     expect(links.sent).toHaveLength(0);

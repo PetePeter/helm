@@ -372,6 +372,20 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a transfer goes to the transferrer, never the shade or the thread`() {
+        val port = FakeNotificationPort()
+        client.alerts.port = port
+        val moves = mutableListOf<MobileRecord.Chat>()
+        client.transferrer = { moves += it }
+
+        client.onInbound(chatBytes(sessionId = "s2", text = "Now talking to work.", at = 7, kind = "transfer"))
+
+        assertEquals(listOf("s2"), moves.map { it.sessionId })
+        assertTrue(client.chats.thread("s2").isEmpty())
+        assertEquals(null, port.showing("s2"))
+    }
+
+    @Test
     fun `a ring goes to the ringer, not the shade or the thread`() {
         val port = FakeNotificationPort()
         client.alerts.port = port

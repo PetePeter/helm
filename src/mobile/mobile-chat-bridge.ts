@@ -272,7 +272,16 @@ export class MobileChatBridge implements ChatBridge {
     return this.pushKind(sessionId, 'ring', reason);
   }
 
-  private pushKind(sessionId: string, kind: MobileChatKind, text: string): boolean {
+  /**
+   * Move the phone's live call from `fromSessionId` to `toSessionId`, with
+   * `line` spoken as it happens. The phone moves only a call it holds with
+   * `fromSessionId`, so a session can hand over its own call and nobody else's.
+   */
+  sendTransfer(fromSessionId: string, toSessionId: string, line: string): boolean {
+    return this.pushKind(toSessionId, 'transfer', line, { fromSessionId });
+  }
+
+  private pushKind(sessionId: string, kind: MobileChatKind, text: string, extra: Partial<ChatRecordInput> = {}): boolean {
     const session = this.deps.sessions.getSession(sessionId);
     if (!session) return false;
 
@@ -285,6 +294,7 @@ export class MobileChatBridge implements ChatBridge {
       text,
       at: this.now(),
       kind,
+      ...extra,
     });
 
     return machines.map(machineId => this.deps.links.send(machineId, payload)).some(Boolean);

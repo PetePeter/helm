@@ -176,6 +176,12 @@ sealed interface MobileRecord {
          */
         val contextTokens: Long? = null,
         val toolCalls: Int? = null,
+
+        /**
+         * On a `kind: "transfer"` record only: the session the live call is
+         * leaving. [sessionId] is the one taking it. Emitted after `toolCalls`.
+         */
+        val fromSessionId: String? = null,
     ) : MobileRecord
 
     /**

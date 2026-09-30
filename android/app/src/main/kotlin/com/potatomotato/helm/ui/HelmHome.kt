@@ -432,6 +432,26 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // next 2s poll has not shown the session yet) and dump the user back on the
     // list. A session that never appears gives up quietly — the notice bar has
     // already said the spawn succeeded, and the list is one poll away.
+    // A transferred call takes the user along: whoever was looking at the chat
+    // the call left lands on the chat it moved to. Waits for the row like a
+    // fresh spawn does, so the went-away fallback does not fire first.
+    var lastCallTarget by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(liveCall?.targetId) {
+        val to = liveCall?.targetId
+        val from = lastCallTarget
+        lastCallTarget = to
+        if (to == null || from == null || to == from || openSessionId != from) return@LaunchedEffect
+        var polls = 0
+        while (client.sessions.sessions.value.none { it.id == to } && polls < CREATED_SESSION_POLLS) {
+            delay(POLL_INTERVAL_MS)
+            polls++
+        }
+        if (openSessionId == from) {
+            openSessionId = to
+            tab = SessionTab.Chat
+        }
+    }
+
     LaunchedEffect(createdSessionId) {
         val id = createdSessionId ?: return@LaunchedEffect
         var polls = 0

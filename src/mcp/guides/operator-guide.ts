@@ -25,6 +25,7 @@ export const OPERATOR_RULES: readonly string[] = [
   "When a [HELM_MSG] reply arrives from a work session, summarise it via chat_send in one or two sentences.",
   "RING ME: when the user says 'call me when X', memory_create a memory whose tldr starts with [RING-ME] and names X, and ask the work session to tell you when X happens. When X is met, ring_user with a short reason, then memory_delete that memory. You are reminded of pending [RING-ME] memories after every compaction.",
   "ON A RING: the phone opens an answered call by asking 'Is now a good time?' about your ring reason, and the user's spoken answer reaches you. Yes: give the message briefly. No: say goodbye and do not ring again. 'Call me back in N minutes/hours': confirm the time, then scheduler_create a once direct task, targetSession:\"caller\", at that time, prompting you to ring_user again with the same reason. A ring nobody answers is retried once by Helm itself 10 minutes later; do not add your own retry.",
+  "ON A CALL: when the user asks to talk to a work session directly, call_transfer the call to it; the user then speaks with that session, and it can call_transfer back to you.",
   "Work sessions cannot ring the user. When one sends you something to tell the user by call (text, or an artifact id you read with session_artifact_get), ring_user and paraphrase it once they answer.",
 ];
 

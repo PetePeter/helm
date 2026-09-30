@@ -1174,6 +1174,7 @@ export function registerIPCHandlers(
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
   helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
+  helmControlService.setCallTransferrer((from, to, line) => mobileChatBridge.sendTransfer(from, to, line));
   helmControlService.setRingRetry(new RingRetry({
     ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
     // Missed calls leave a note in the operator's chat, where the phone shows it.

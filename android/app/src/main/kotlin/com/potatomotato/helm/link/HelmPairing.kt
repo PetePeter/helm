@@ -20,6 +20,7 @@ import com.potatomotato.helm.data.pairedDesktops
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.IncomingRing
+import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.save.AndroidArtifactFiles
 import com.potatomotato.helm.save.AndroidAttachmentStaging
 import com.potatomotato.helm.notify.FileNotificationSettings
@@ -106,6 +107,7 @@ object HelmPairing {
         client.alerts.port = AndroidNotifications(context)
         val ring = IncomingRing(context)
         client.ringer = ring::ring
+        client.transferrer = { VoiceCallService.transfer(context, it.fromSessionId, it.sessionId, it.text) }
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.
         client.chats.useUnreadStore(PrefsUnreadStore(context))

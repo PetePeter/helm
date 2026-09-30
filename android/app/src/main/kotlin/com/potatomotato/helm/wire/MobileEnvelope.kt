@@ -280,6 +280,7 @@ object MobileEnvelope {
             deletes = (record.opt("deletes") as? Number)?.toLong(),
             contextTokens = (record.opt("contextTokens") as? Number)?.toLong(),
             toolCalls = (record.opt("toolCalls") as? Number)?.toInt(),
+            fromSessionId = record.string("fromSessionId"),
         )
     }
 

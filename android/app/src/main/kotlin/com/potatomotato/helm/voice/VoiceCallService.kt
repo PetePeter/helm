@@ -66,9 +66,11 @@ class VoiceCallService : Service() {
         private const val ACTION_HANG_UP = "com.potatomotato.helm.call.HANG_UP"
         private const val ACTION_MUTE = "com.potatomotato.helm.call.MUTE"
         private const val ACTION_ROUTE = "com.potatomotato.helm.call.ROUTE"
+        private const val ACTION_TRANSFER = "com.potatomotato.helm.call.TRANSFER"
         private const val EXTRA_TARGET = "target"
         private const val EXTRA_VALUE = "value"
         private const val EXTRA_OPENING = "opening"
+        private const val EXTRA_FROM = "from"
         private const val CUE_VOLUME = 80
         private const val CUE_MS = 150
         /** A backstop only: the lock is released when the call ends or leaves the earpiece. */
@@ -94,6 +96,23 @@ class VoiceCallService : Service() {
         fun setRoute(context: Context, route: AudioRoute) =
             context.startService(command(context, ACTION_ROUTE).putExtra(EXTRA_VALUE, route.name))
 
+        /**
+         * Hand the live call from [from] to [to], speaking [line]. Only the
+         * session holding the call can move it. Checked here so no service is
+         * started for a call that is not there, and again in the service, which
+         * owns the target.
+         */
+        fun transfer(context: Context, from: String?, to: String, line: String) {
+            if (from == null || _call.value?.targetId != from) {
+                HelmLog.i(HelmLog.UI, "call transfer ignored: not from the live call's session")
+                return
+            }
+            context.startService(
+                command(context, ACTION_TRANSFER)
+                    .putExtra(EXTRA_FROM, from).putExtra(EXTRA_TARGET, to).putExtra(EXTRA_OPENING, line),
+            )
+        }
+
         private fun command(context: Context, action: String) =
             Intent(context, VoiceCallService::class.java).setAction(action)
     }
@@ -109,6 +128,9 @@ class VoiceCallService : Service() {
 
     /** The live controller's collectors; cancelled when it is swapped out. */
     private var job: Job? = null
+
+    /** The target's reply feed; replaced when the call is transferred. */
+    private var feedJob: Job? = null
     private var tone: ToneGenerator? = null
 
     /** takeAudio() ran: the mode, focus and route are ours to restore. */
@@ -181,6 +203,12 @@ class VoiceCallService : Service() {
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
                 ?.let(::applyRoute)
+            ACTION_TRANSFER -> intent.getStringExtra(EXTRA_TARGET)
+                ?.takeIf { intent.getStringExtra(EXTRA_FROM) == targetId }
+                ?.let { to ->
+                    retarget(to)
+                    intent.getStringExtra(EXTRA_OPENING)?.let(call::onReply)
+                }
         }
         // A killed call is not resumed behind the user's back.
         return START_NOT_STICKY
@@ -202,30 +230,18 @@ class VoiceCallService : Service() {
                 // The instant "heard you": the reply is seconds away, silence reads as deaf.
                 cue()
                 HelmLog.d(HelmLog.UI) { "call sending ${text.length} chars" }
-                client.sendChat(target, text)
+                targetId?.let { client.sendChat(it, text) } ?: false
             },
             sendFailedLine = getString(R.string.call_send_failed),
         )
         controller = call
         syncEarSensor()
 
-        val feed = CallFeed(client.chats.thread(target))
+        listen(target)
         job = scope.launch {
-            launch {
-                client.chats.threads.map { it[target].orEmpty() }.distinctUntilChanged().collect { thread ->
-                    val events = feed.next(thread)
-                    if (events.replies.isNotEmpty()) {
-                        HelmLog.i(HelmLog.UI, "call target replied ${events.replies.size} line(s); queued to speak")
-                    }
-                    events.replies.forEach(call::onReply)
-                    repeat(events.failures) { call.onSendFailed() }
-                }
-            }
-            launch {
-                call.state.collect { state ->
-                    publish(state)
-                    if (state.phase == CallPhase.Ended) ended()
-                }
+            call.state.collect { state ->
+                publish(state)
+                if (state.phase == CallPhase.Ended) ended()
             }
         }
         call.start(opening)
@@ -233,6 +249,37 @@ class VoiceCallService : Service() {
         // ring again in 10 minutes. Only here — a call that never started (no
         // mic grant, no audio focus) leaves the retry armed.
         if (opening != null) client.ringAnswered()
+    }
+
+    /**
+     * Speak [target]'s replies on the call. Only lines after this moment: the
+     * feed baselines on the thread as it stands, so a transfer never reads out
+     * the new session's history.
+     */
+    private fun listen(target: String) {
+        val call = controller ?: return
+        val client = HelmPairing.client
+        feedJob?.cancel()
+        val feed = CallFeed(client.chats.thread(target))
+        feedJob = scope.launch {
+            client.chats.threads.map { it[target].orEmpty() }.distinctUntilChanged().collect { thread ->
+                val events = feed.next(thread)
+                if (events.replies.isNotEmpty()) {
+                    HelmLog.i(HelmLog.UI, "call target replied ${events.replies.size} line(s); queued to speak")
+                }
+                events.replies.forEach(call::onReply)
+                repeat(events.failures) { call.onSendFailed() }
+            }
+        }
+    }
+
+    /** The call stays up — mic, audio, route — and only who it talks to changes. */
+    private fun retarget(to: String) {
+        HelmLog.i(HelmLog.UI, "voice call transferred")
+        targetId = to
+        listen(to)
+        startForegroundWith(to)
+        publish()
     }
 
     /** The short beep that says "heard you" before the question goes. */
@@ -256,6 +303,8 @@ class VoiceCallService : Service() {
     private fun endCurrent() {
         job?.cancel()
         job = null
+        feedJob?.cancel()
+        feedJob = null
         val live = controller != null
         controller?.hangUp()
         controller = null

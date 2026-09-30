@@ -485,6 +485,32 @@ sequenceDiagram
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 
+## Call transfer — `call_transfer`
+
+A live call can be handed from the session holding it to another, so the user
+speaks with a work session directly and can be passed on again (or back).
+
+```mermaid
+sequenceDiagram
+  participant U as Phone (call with A)
+  participant A as Session A
+  participant B as Session B
+  A->>U: call_transfer {B} → chat kind:"transfer", fromSessionId A
+  U->>U: live call target == A? retarget to B
+  U->>U: speak "Now talking to B."
+  U->>B: next utterance → sendChat(B)
+```
+
+- **Only the holder moves it.** The desktop cannot see which session the phone
+  is talking to, so the phone checks: a transfer whose `fromSessionId` is not
+  the live call's target is ignored (`VoiceCallService.transfer`).
+- **Nothing drops.** Mic, audio focus and route stay; only the send target and
+  the reply feed change. The new feed baselines on the thread as it stands, so
+  the new session's history is never read out.
+- **Wire:** the alert push with `kind: "transfer"`, `sessionId` = the session
+  taking the call, plus `fromSessionId` (emitted last). A phone that predates it
+  shows an ordinary notification; the call stays where it was.
+
 ## Operator tasks — asks it follows through
 
 "Check ABC and get it done later", "check EF too", "build G": each is an ask the
