@@ -31,7 +31,8 @@ def run(cmd, check=True, capture=False):
     print(f"  $ {cmd}")
     if capture:
         result = subprocess.run(
-            cmd, shell=True, check=check, capture_output=True, text=True
+            # git emits UTF-8 (emoji in subjects); the Windows default codepage can't decode it.
+            cmd, shell=True, check=check, capture_output=True, text=True, encoding="utf-8", errors="replace"
         )
     else:
         result = subprocess.run(cmd, shell=True, check=check)
