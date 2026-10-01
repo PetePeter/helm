@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +21,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.TimeAnswer
 import com.potatomotato.helm.data.TimeAsk
@@ -28,7 +35,6 @@ import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.data.TimeProjectTotal
 import com.potatomotato.helm.data.TimeRow
 import com.potatomotato.helm.data.TimeSheet
-import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -123,51 +129,73 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ProjectTotals(projects: List<TimeProjectTotal>, onOpen: (TimeProjectTotal) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
+        item { TableHeader(stringResource(R.string.time_col_project)) }
         items(projects, key = { it.projectKey }) { project ->
-            HelmRow(
-                title = project.projectName,
-                onClick = { onOpen(project) },
-                subtitle = { Minutes(project.userMinutes, project.aiMinutes) },
-            )
+            TableRow(project.projectName, project.userMinutes, project.aiMinutes, onClick = { onOpen(project) })
         }
+        item { TableRow(stringResource(R.string.time_total), projects.sumOf { it.userMinutes }, projects.sumOf { it.aiMinutes }, bold = true) }
     }
 }
 
 @Composable
 private fun FolderSheet(period: TimePeriod, sheet: TimeSheet) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
         item { Folder(stringResource(R.string.time_total), TimeRow("", sheet.totalUser, sheet.totalAi), sheet.columns, period) }
         items(sheet.rows, key = { it.dir }) { row -> Folder(row.dir, row, sheet.columns, period) }
     }
 }
 
-/** One folder: its total, then only the columns that have time — a phone has no room for empty cells. */
+/** One folder: a table of only the columns that have time — a phone has no room for empty cells — then its total. */
 @Composable
 private fun Folder(title: String, row: TimeRow, columns: List<Long>, period: TimePeriod) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
         Text(text = title, color = HelmColors.Txt, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Minutes(row.user.sum(), row.ai.sum())
+        TableHeader(stringResource(R.string.time_col_when))
         columns.forEachIndexed { i, start ->
             val user = row.user.getOrElse(i) { 0 }
             val ai = row.ai.getOrElse(i) { 0 }
-            if (user == 0 && ai == 0) return@forEachIndexed
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = columnLabel(period, start), color = HelmColors.Dim, style = MaterialTheme.typography.bodySmall)
-                Minutes(user, ai)
-            }
+            if (user != 0 || ai != 0) TableRow(columnLabel(period, start), user, ai)
         }
+        TableRow(stringResource(R.string.time_total), row.user.sum(), row.ai.sum(), bold = true)
     }
 }
 
 @Composable
-private fun Minutes(user: Int, ai: Int) {
-    Text(
-        text = stringResource(R.string.time_you_ai, formatMinutes(user), formatMinutes(ai)),
-        color = HelmColors.Dim,
-        style = MaterialTheme.typography.bodySmall,
+private fun TableHeader(first: String) {
+    Cells(first, stringResource(R.string.time_col_you), stringResource(R.string.time_col_ai), stringResource(R.string.time_total), HelmColors.Dim, MaterialTheme.typography.labelMedium)
+    HorizontalDivider(color = HelmColors.Surface2)
+}
+
+@Composable
+private fun TableRow(label: String, user: Int, ai: Int, bold: Boolean = false, onClick: (() -> Unit)? = null) {
+    val style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it }
+    Cells(
+        label, formatMinutes(user), formatMinutes(ai), formatMinutes(user + ai),
+        color = HelmColors.Txt,
+        style = style.copy(fontFeatureSettings = "tnum"),
+        labelColor = if (onClick != null) HelmColors.Accent else HelmColors.Txt,
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
     )
 }
+
+/** A label column that takes the slack, then three fixed right-aligned number columns. */
+@Composable
+private fun Cells(
+    label: String, you: String, ai: String, total: String,
+    color: Color, style: TextStyle,
+    labelColor: Color = color,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier = modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = labelColor, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        listOf(you, ai, total).forEach {
+            Text(it, color = color, style = style, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(NumberColumn))
+        }
+    }
+}
+
+private val NumberColumn = 56.dp
 
 private val TimePeriod.labelRes: Int
     get() = when (this) {

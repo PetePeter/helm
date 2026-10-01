@@ -142,7 +142,10 @@
     <string name="time_loading">Reading your timesheet…</string>
     <string name="time_empty">No time recorded in this period.</string>
     <string name="time_total">Total</string>
-    <string name="time_you_ai">You %1$s · AI %2$s</string>
+    <string name="time_col_project">Project</string>
+    <string name="time_col_when">When</string>
+    <string name="time_col_you">You</string>
+    <string name="time_col_ai">AI</string>
     <string name="time_period_hour">Hour</string>
     <string name="time_period_day">Day</string>
     <string name="time_period_week">Week</string>
