@@ -48,6 +48,8 @@ import { buildTelegramGuide } from './guides/telegram-guide.js';
 import { buildStartupGuide } from './guides/startup-guide.js';
 import { buildMessGuide } from './guides/mess-guide.js';
 import { buildDreamGuide } from './guides/dream-guide.js';
+import { buildMemoriseGuide } from './guides/memorise-guide.js';
+import { buildRecallGuide } from './guides/recall-guide.js';
 import type { ProjectStore } from '../session/project-store.js';
 import { CapabilityDetector } from '../session/capability-detector.js';
 import { randomUUID } from 'node:crypto';
@@ -358,6 +360,28 @@ export class HelmControlService extends EventEmitter {
       allProjects: true,
       projectIds: [],
       type: 'dreaming',
+      source: 'system',
+    });
+    this.skillManager.registerSystemSkill({
+      id: 'sys-memorise',
+      name: 'Memorising Guide',
+      description: 'How to record durable project memories. Fetch with skill_get(type: "memorising").',
+      body: buildMemoriseGuide(),
+      aiAmendable: false,
+      allProjects: true,
+      projectIds: [],
+      type: 'memorising',
+      source: 'system',
+    });
+    this.skillManager.registerSystemSkill({
+      id: 'sys-recall',
+      name: 'Recalling Guide',
+      description: 'How to retrieve durable project memories before starting work. Fetch with skill_get(type: "recalling").',
+      body: buildRecallGuide(),
+      aiAmendable: false,
+      allProjects: true,
+      projectIds: [],
+      type: 'recalling',
       source: 'system',
     });
 

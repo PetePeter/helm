@@ -72,3 +72,22 @@ flowchart LR
 The dream guide now splits essays into linked atoms (candidates carry
 `contentChars`), merges only true duplicates (`supersedes`), and links related
 memories across projects. See [dreaming.md](dreaming.md).
+
+## Memory skills across the plan lifecycle
+
+Three system skills teach agents to use memory; each is cued by the tool reply
+at the moment it matters, so the procedure lives in one place and can change
+without touching callers.
+
+```mermaid
+graph LR
+    C[session_plan_claim] -->|cues| R[recalling<br/>search before work]
+    P[plan_complete] -->|cues| M[memorising<br/>record what was learned]
+    S[scheduled dream] -->|cues| D[dreaming<br/>prune + consolidate]
+```
+
+- **recalling** (`sys-recall`) — search specific-to-broad, follow links, verify stale facts before acting.
+- **memorising** (`sys-memorise`) — search first and update rather than duplicate, one atom per idea with why/how-to-apply, link it.
+- **dreaming** (`sys-dream`) — see [dreaming.md](dreaming.md).
+
+A user skill of the same type shadows the system one.

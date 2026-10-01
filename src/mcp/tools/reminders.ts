@@ -20,7 +20,10 @@ export function getToolReminder(name: string): string {
     return 'Reminder: to claim work and show the badge on the session row, call session_plan_claim after setting state.';
   }
   if (name === 'plan_complete') {
-    return 'Reminder: tell the user exactly what to test, then inspect followUpPlans and continue with any ready autoFollowUpPlans.';
+    return 'Reminder: fetch skill_get(type: "memorising") and record what you learned as durable memory. Tell the user exactly what to test, then inspect followUpPlans and continue with any ready autoFollowUpPlans.';
+  }
+  if (name === 'session_plan_claim') {
+    return 'Reminder: before starting, fetch skill_get(type: "recalling") and search memory for what this project already knows about the work.';
   }
   if (name === 'notify_user') {
     return 'Reminder: after notifying, update your phase - call session_set_aiagent_state with "completed" if work is done, or "idle" if standing down.';
