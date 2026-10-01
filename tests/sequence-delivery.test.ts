@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deliverPromptSequenceToSession } from '../src/session/sequence-delivery.js';
+import { deliverPromptSequenceToSession, setDeliveryObserver } from '../src/session/sequence-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -24,7 +24,7 @@ function makeMocks(overrides?: { submitSuffix?: string; cliType?: string }) {
   return { ptyManager, sessionManager, configLoader };
 }
 
-function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean } }) {
+function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean } }) {
   return deliverPromptSequenceToSession({
     sessionId: 's1',
     text: input,
@@ -36,6 +36,18 @@ function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { im
 }
 
 describe('deliverPromptSequenceToSession', () => {
+  it('tells the delivery observer each delivery and its origin (time tracking)', async () => {
+    const seen: string[] = [];
+    setDeliveryObserver((id, origin) => seen.push(`${id}:${origin}`));
+    try {
+      await deliver('from the phone', makeMocks(), { origin: 'user' });
+      await deliver('from another agent', makeMocks());
+    } finally {
+      setDeliveryObserver(null);
+    }
+    expect(seen).toEqual(['s1:user', 's1:system']);
+  });
+
   it('plain text delivers via deliverText and submits via deliverText with submitSuffix', async () => {
     const mocks = makeMocks();
 

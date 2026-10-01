@@ -3,6 +3,8 @@ package com.potatomotato.helm.link
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
 import com.potatomotato.helm.data.ArtifactUploads
+import com.potatomotato.helm.data.TimeAsk
+import com.potatomotato.helm.data.TimeRepository
 import com.potatomotato.helm.data.isFrozenRefusal
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.attachmentSliceBytes
@@ -96,6 +98,7 @@ class HelmClient(
     val sequences: SequenceRepository = SequenceRepository(),
     val planWrites: PlanWrites = PlanWrites(),
     val contexts: ContextRepository = ContextRepository(),
+    val time: TimeRepository = TimeRepository(),
     val alerts: AlertRouter = AlertRouter(),
     val uploads: ArtifactUploads = ArtifactUploads(),
     val shares: ShareFlow = ShareFlow(),
@@ -1556,6 +1559,22 @@ class HelmClient(
         }
     }
 
+    /**
+     * The user's own timesheet (docs/time-tracking.md). A phone-only gate method,
+     * not an AI tool: nothing an agent can call reads this data.
+     */
+    fun refreshTime(ask: TimeAsk): Boolean {
+        time.requested(ask)
+        val params = linkedMapOf<String, Any>("period" to ask.period.wire, "anchor" to ask.anchorEpochMs)
+        ask.projectKey?.let { params["projectKey"] = it }
+        return call(METHOD_TIMESHEET, params) { outcome ->
+            when (outcome) {
+                is Outcome.Ok -> if (!time.arrived(ask, outcome.result)) time.failed(ask, UNREADABLE_TIME)
+                is Outcome.Failed -> time.failed(ask, outcome.message)
+            }
+        }
+    }
+
     /** The context nodes of one project, bodies included — the desktop's list carries them. */
     fun refreshContexts(projectId: String): Boolean {
         contexts.listRequested(projectId)
@@ -1893,6 +1912,7 @@ class HelmClient(
         private const val METHOD_MOBILE_TOOLS = "__mobile_tools__"
         private const val METHOD_RESTART_HELM = "__restart_helm__"
         private const val METHOD_RING_ANSWERED = "__ring_answered__"
+        private const val METHOD_TIMESHEET = "__timesheet__"
         private const val RING_KIND = "ring"
         private const val TRANSFER_KIND = "transfer"
         private const val METHOD_DIRECTORY_LIST = "directory_list"
@@ -2027,6 +2047,7 @@ class HelmClient(
             "Helm answered with a plan's context list this app could not read"
         private const val UNREADABLE_SEQUENCES = "Helm answered with a sequence list this app could not read"
         private const val UNREADABLE_SEQUENCE = "Helm answered with a sequence this app could not read"
+        private const val UNREADABLE_TIME = "Helm answered with a timesheet this app could not read"
         private const val UNREADABLE_CONTEXTS = "Helm answered with a context list this app could not read"
         private const val UNREADABLE_CONTEXT = "Helm answered with a context this app could not read"
         private const val UNREADABLE_PROJECTS = "Helm answered with a project list this app could not read"

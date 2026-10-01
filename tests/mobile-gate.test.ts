@@ -14,6 +14,7 @@ import {
   RESERVED_MOBILE_TOOLS_METHOD,
   RESERVED_RESTART_HELM_METHOD,
   RESERVED_RING_ANSWERED_METHOD,
+  RESERVED_TIMESHEET_METHOD,
   stripCallerIdentityOverrides,
   MOBILE_DENY_MESSAGE,
   isMobileUnreachableTool,
@@ -78,6 +79,7 @@ function build(
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
     ringAnswered: () => { answeredRings++; },
+    timesheet: (params: unknown) => ({ asked: params }),
     ...(opts.noRestart ? {} : {
       restartHelm: (resume: boolean) => {
         restarts.push(resume);
@@ -326,6 +328,19 @@ describe('MobileGate — permitted-tool discovery', () => {
     await expect(gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})).rejects.toThrow(
       'Rate limit exceeded',
     );
+  });
+});
+
+describe('MobileGate — timesheet', () => {
+  it('answers in-gate for any trusted device, never through the AI tool dispatcher', async () => {
+    const { gate, deviceId, calls } = build(['session_list']);
+    await expect(gate.handle(deviceId, RESERVED_TIMESHEET_METHOD, { period: 'day' })).resolves.toEqual({ asked: { period: 'day' } });
+    expect(calls).toHaveLength(0);
+  });
+
+  it('denies a disabled device', async () => {
+    const { gate, deviceId } = build(['*'], { enabled: false });
+    await expect(gate.handle(deviceId, RESERVED_TIMESHEET_METHOD, {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
   });
 });
 

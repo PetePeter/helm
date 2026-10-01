@@ -45,6 +45,7 @@ import {
   setPlanScreenPaneMounted,
 } from '../../plans/plan-screen.js';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
+import { useTimeActivity } from '../../composables/useTimeActivity.js';
 
 const planWorkspace = useHelmPaneContext().planWorkspace;
 const navStore = useNavigationStore();
@@ -67,9 +68,13 @@ onUnmounted(() => {
   setPlanScreenPaneMounted(false);
   stopTaskTimers();
 });
+
+// Typing in the planner is the user's time on that folder's project.
+const timeActivity = useTimeActivity(() => (planScreenState.currentDir ? { dirPath: planScreenState.currentDir } : null));
 </script>
 
 <template>
+  <div class="plan-screen-pane-input" @keydown="timeActivity.onKeydown">
   <PlanScreen
     :visible="planScreenState.visible"
     :dir-path="planScreenState.currentDir"
@@ -125,4 +130,10 @@ onUnmounted(() => {
     @toggle-has-attachment-filter="planWorkspace.onToggleHasAttachmentFilter"
     @toggle-auto-filter="planWorkspace.onToggleAutoFilter"
   />
+  </div>
 </template>
+
+<style scoped>
+/* Layout-neutral: only here to observe keystrokes for time tracking. */
+.plan-screen-pane-input { display: contents; }
+</style>

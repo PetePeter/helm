@@ -52,7 +52,7 @@ private val SessionTab.labelRes: Int
  * where you are.
  */
 /** Menu order: the operator first — it is where the user talks to Helm itself. */
-enum class HomeTab { Helm, Sessions, Plans, Contexts }
+enum class HomeTab { Helm, Sessions, Plans, Contexts, Time }
 
 internal val HomeTab.labelRes: Int
     get() = when (this) {
@@ -60,6 +60,7 @@ internal val HomeTab.labelRes: Int
         HomeTab.Sessions -> R.string.home_tab_sessions
         HomeTab.Plans -> R.string.home_tab_plans
         HomeTab.Contexts -> R.string.home_tab_contexts
+        HomeTab.Time -> R.string.home_tab_time
     }
 
 /**
@@ -73,6 +74,7 @@ internal val HomeTab.glyphRes: Int
         HomeTab.Sessions -> R.string.context_glyph_sessions
         HomeTab.Plans -> R.string.context_glyph_plans
         HomeTab.Contexts -> R.string.context_glyph_contexts
+        HomeTab.Time -> R.string.context_glyph_time
     }
 
 /**

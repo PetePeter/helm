@@ -97,6 +97,17 @@ function escapeUnrecognizedBraces(text: string): string {
  * Literal curly braces in the text (e.g. JSON envelopes) are smart-escaped:
  * recognized tokens are preserved, unrecognized brace groups are escaped.
  */
+/** Who a delivery speaks for. Only 'user' deliveries count as the user working (time tracking). */
+export type DeliveryOrigin = 'user' | 'system';
+
+type DeliveryObserver = (sessionId: string, origin: DeliveryOrigin) => void;
+let deliveryObserver: DeliveryObserver | null = null;
+
+/** One process-wide observer, like the delivery lock: told of every completed delivery. */
+export function setDeliveryObserver(observer: DeliveryObserver | null): void {
+  deliveryObserver = observer;
+}
+
 export async function deliverPromptSequenceToSession(input: {
   sessionId: string;
   text: string;
@@ -106,6 +117,8 @@ export async function deliverPromptSequenceToSession(input: {
   impliedSubmit?: boolean;
   deliveryContext?: DeliveryContext;
   writeIntent?: WriteIntent;
+  /** Defaults to 'system'. Set 'user' where the text is a human speaking (phone, Telegram). */
+  origin?: DeliveryOrigin;
   /** Overridable for tests; production uses the process-wide gate. */
   deliveryLock?: DeliveryLock;
   verifyDelivery?: {
@@ -169,6 +182,7 @@ export async function deliverPromptSequenceToSession(input: {
   });
 
   await runTransaction();
+  deliveryObserver?.(sessionId, input.origin ?? 'system');
 
   // Verification infers "the CLI took it" from terminal activity, which fits a
   // TUI that repaints constantly. An API tool is an in-process line editor: once

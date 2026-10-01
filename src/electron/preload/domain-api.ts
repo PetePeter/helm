@@ -8,6 +8,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
+import type { Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
@@ -605,6 +606,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.on('mess:appended', listener);
     return () => ipcRenderer.removeListener('mess:appended', listener);
   },
+
+  // ========================================================================
+  // Time tracking
+  // ========================================================================
+
+  /** One project's timesheet: minutes per directory per day/week/month column. */
+  timeTimesheet: (projectKey: string, period: TimesheetPeriod, anchor: number): Promise<Timesheet> =>
+    ipcRenderer.invoke('time:timesheet', projectKey, period, anchor),
+
+  /** Report user keystrokes in a non-terminal pane (planner, artifacts) to time tracking. */
+  timeActivity: (target: { sessionId?: string; dirPath?: string; submit?: boolean }, keystrokes: number): Promise<void> =>
+    ipcRenderer.invoke('time:activity', target, keystrokes),
+
+  /** The same timesheet as CSV text. */
+  timeCsv: (projectKey: string, period: TimesheetPeriod, anchor: number, projectName: string): Promise<string> =>
+    ipcRenderer.invoke('time:csv', projectKey, period, anchor, projectName),
 
   // ========================================================================
   // Skills

@@ -18,6 +18,7 @@ import QuickSpawnPane from './components/dock/QuickSpawnPane.vue';
 import PlanDirectoriesPane from './components/dock/PlanDirectoriesPane.vue';
 import ArtifactsPane from './components/dock/ArtifactsPane.vue';
 import MessPane from './components/dock/MessPane.vue';
+import TimesheetPane from './components/dock/TimesheetPane.vue';
 import {
   PANE_ARTIFACTS,
   PANE_PLAN_DIRECTORIES,
@@ -28,6 +29,7 @@ import {
   PANE_SESSIONS,
   PANE_TERMINAL,
   PANE_MESS,
+  PANE_TIMESHEET,
   type PaneId,
 } from './dock-types.js';
 
@@ -41,6 +43,7 @@ export const DOCK_PANE_COMPONENTS: Readonly<Record<PaneId, Component>> = Object.
   [PANE_PLAN_DIRECTORIES]: PlanDirectoriesPane,
   [PANE_ARTIFACTS]: ArtifactsPane,
   [PANE_MESS]: MessPane,
+  [PANE_TIMESHEET]: TimesheetPane,
 });
 
 /** Resolve a registered pane's component; undefined for an unknown id. */

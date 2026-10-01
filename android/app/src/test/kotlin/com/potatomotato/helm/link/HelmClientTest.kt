@@ -1501,6 +1501,22 @@ class HelmClientTest {
     }
 
     @Test
+    fun `the timesheet is asked for over the phone-only gate method, never an AI tool`() {
+        val ask = com.potatomotato.helm.data.TimeAsk(com.potatomotato.helm.data.TimePeriod.Week, 42L, "proj1")
+        client.refreshTime(ask)
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("__timesheet__", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("week", params.getString("period"))
+        assertEquals(42L, params.getLong("anchor"))
+        assertEquals("proj1", params.getString("projectKey"))
+
+        client.onInbound(resultFor(lastCallId(), """{"projects":[]}"""))
+        assertTrue(client.time.state.value is com.potatomotato.helm.data.TimeState.Ready)
+    }
+
+    @Test
     fun `context nodes are asked for by projectId`() {
         client.refreshContexts("proj1")
 

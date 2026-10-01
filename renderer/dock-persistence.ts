@@ -15,6 +15,7 @@ import {
 } from './dock-layout';
 import {
   PANE_ARTIFACTS,
+  listProfilePanes,
   type DockDockNode,
   type DockProfileId,
   type DockNode,
@@ -173,6 +174,26 @@ function hasLegacyPreferences(legacy: LegacyDockPreferences): boolean {
   return Object.values(legacy).some(value => value !== undefined);
 }
 
+/**
+ * A layout saved before a pane was registered lacks it, which validation
+ * rejects. Offer such a pane as closed (View menu) instead of discarding the
+ * user's whole arrangement. Only the persisted path does this: IPC payloads
+ * stay strictly validated.
+ */
+function adoptNewPanes(raw: unknown, profile: DockProfileId): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  const layout = raw as { root?: unknown; closed?: unknown };
+  if (!Array.isArray(layout.closed)) return raw;
+  const present = new Set<string>(layout.closed as string[]);
+  try {
+    for (const id of listPanes(layout.root as DockNode)) present.add(id);
+  } catch {
+    return raw;
+  }
+  const added = listProfilePanes(profile).filter(p => p.closable && !present.has(p.id)).map(p => p.id);
+  return added.length ? { ...layout, closed: [...layout.closed, ...added] } : raw;
+}
+
 /** Parse a persisted layout, falling back safely and migrating legacy state only when absent. */
 export function loadDockLayout(
   raw: unknown,
@@ -181,7 +202,7 @@ export function loadDockLayout(
   const profile = options.profile ?? 'main';
   if (raw !== undefined && raw !== null) {
     try {
-      return { layout: validateLayout(raw, profile), source: 'persisted', migrated: false };
+      return { layout: validateLayout(adoptNewPanes(raw, profile), profile), source: 'persisted', migrated: false };
     } catch {
       return { layout: createDefaultLayout(profile), source: 'fallback', migrated: false };
     }

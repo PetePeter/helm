@@ -36,6 +36,8 @@ export const MEMORIES_FILE = join(configDir, 'memories.json');
 export const MEMORY_ATTACHMENTS_DIR = join(configDir, 'memory-attachments');
 /** Mess is stored below per-user app data, never below the repository. */
 export const MESS_DIR = join(configDir, 'mess');
+/** Time tracking: one append-only JSONL file of 5-minute slots per month. */
+export const TIME_TRACKING_DIR = join(configDir, 'time-tracking');
 
 function assertSafeProjectId(projectId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(projectId)) {

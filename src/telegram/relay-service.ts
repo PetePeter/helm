@@ -301,6 +301,7 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
     }
     await deliverPromptSequenceToSession({
       sessionId: session.id,
+      origin: 'user',
       text,
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,
@@ -424,6 +425,7 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
 
       await deliverPromptSequenceToSession({
         sessionId: targetSession.id,
+        origin: 'user',
         text,
         ptyManager: this.ptyManager,
         sessionManager: this.sessionManager,
@@ -474,6 +476,7 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
 
     const verification = await deliverPromptSequenceToSession({
       sessionId: active.id,
+      origin: 'user',
       text: envelope,
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,

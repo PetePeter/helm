@@ -119,6 +119,7 @@ async function forwardToSession(
   const wrapped = `[HELM_TELEGRAM${fromTag} chat:${msg.chat.id}]\n${payload}\n[/HELM_TELEGRAM]${instruction}`;
   await deliverPromptSequenceToSession({
     sessionId,
+    origin: 'user',
     text: wrapped,
     ptyManager,
     sessionManager,

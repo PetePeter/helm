@@ -127,6 +127,11 @@ export const PRELOAD_API_DOMAINS = {
     'messHistory',
     'onMessAppended',
   ],
+  time: [
+    'timeTimesheet',
+    'timeCsv',
+    'timeActivity',
+  ],
   skills: [
     'skillList',
     'skillGet',

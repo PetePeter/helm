@@ -14,6 +14,9 @@ import com.potatomotato.helm.data.PlanList
 import com.potatomotato.helm.data.ProjectList
 import com.potatomotato.helm.data.SequenceDetail
 import com.potatomotato.helm.data.SequenceList
+import com.potatomotato.helm.data.TimeAnswer
+import com.potatomotato.helm.data.TimeAsk
+import com.potatomotato.helm.data.TimeState
 
 /**
  * What a screen needs to know about an answer that is still arriving.
@@ -131,6 +134,15 @@ object LoadViews {
         is ContextDetail.Refreshing -> scoped(state.contextId, contextId) { LoadView.Ready(state.cached, true) }
         is ContextDetail.Ready -> scoped(state.context.id, contextId) { LoadView.Ready(state.context, false) }
         is ContextDetail.Failed -> scoped(state.contextId, contextId) { LoadView.Failed(state.message) }
+    }
+
+    /** The Time tab's answer, keyed on the whole ask (period, anchor, project). */
+    fun time(state: TimeState, ask: TimeAsk): LoadView<TimeAnswer> = when (state) {
+        TimeState.Idle -> LoadView.Loading
+        is TimeState.Loading -> LoadView.Loading
+        is TimeState.Refreshing -> if (state.ask == ask) LoadView.Ready(state.cached, true) else LoadView.Loading
+        is TimeState.Ready -> if (state.ask == ask) LoadView.Ready(state.answer, false) else LoadView.Loading
+        is TimeState.Failed -> if (state.ask == ask) LoadView.Failed(state.message) else LoadView.Loading
     }
 
     /**

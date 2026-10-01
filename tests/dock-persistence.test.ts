@@ -9,7 +9,7 @@ import {
   serializeDockLayout,
 } from '../renderer/dock-persistence';
 import { createDefaultLayout, listPanes } from '../renderer/dock-layout';
-import { PANE_ARTIFACTS } from '../renderer/dock-types';
+import { PANE_ARTIFACTS, PANE_MESS } from '../renderer/dock-types';
 
 function storage(values: Record<string, string>) {
   return {
@@ -48,6 +48,15 @@ describe('dock persistence', () => {
     expect(result.source).toBe('persisted');
     expect(result.layout).toEqual(saved);
     expect(result.layout).not.toBe(saved);
+  });
+
+  it('keeps a saved layout from before a pane existed, offering the new pane as closed', () => {
+    const older = JSON.parse(JSON.stringify(createDefaultLayout(), (key, value) =>
+      key === 'tabs' && Array.isArray(value) ? value.filter((id: string) => id !== PANE_MESS) : value));
+    const result = loadDockLayout(older);
+
+    expect(result.source).toBe('persisted');
+    expect(result.layout.closed).toEqual([PANE_MESS]);
   });
 
   it('falls back to the Classic layout for an unsupported version', () => {

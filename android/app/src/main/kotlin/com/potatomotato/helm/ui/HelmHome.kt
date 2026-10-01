@@ -1,5 +1,8 @@
 package com.potatomotato.helm.ui
 
+import com.potatomotato.helm.data.TimeAsk
+import com.potatomotato.helm.data.TimePeriod
+import com.potatomotato.helm.ui.time.TimeScreen
 import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -199,6 +202,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val projectsState by client.contexts.projects.collectAsState()
     val contextListState by client.contexts.list.collectAsState()
     val contextDetailState by client.contexts.detail.collectAsState()
+    val timeState by client.time.state.collectAsState()
+    // The Time tab's ask. Not saveable (a data class); losing the page on a
+    // rotation only means landing back on this week's totals.
+    var timeAsk by remember { mutableStateOf(TimeAsk(TimePeriod.Day, System.currentTimeMillis(), null)) }
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     // Deliberately NOT saveable: a rotation must not redraw a question the user
     // never asked, and back is one tap away if they still mean it.
@@ -1100,6 +1107,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                     onCreate = createPlan,
                                 )
                             }
+
+                            HomeTab.Time -> TimeScreen(
+                                ask = timeAsk,
+                                view = LoadViews.time(timeState, timeAsk),
+                                onAsk = { timeAsk = it },
+                                onFetch = { client.refreshTime(it) },
+                            )
 
                             HomeTab.Contexts -> ProjectScoped(
                                 projects = LoadViews.projects(projectsState),

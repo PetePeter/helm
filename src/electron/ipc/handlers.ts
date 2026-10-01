@@ -81,6 +81,11 @@ import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
+import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from './time-tracking-handlers.js';
+import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT } from '../../session/time-tracker.js';
+import { TimePersistence } from '../../session/time-persistence.js';
+import { TIME_TRACKING_DIR } from '../../session/persistence-paths.js';
+import { setDeliveryObserver } from '../../session/sequence-delivery.js';
 import { setupProjectHandlers } from './project-handlers.js';
 import { setupSkillHandlers } from './skill-handlers.js';
 import { setupPromptTemplateHandlers } from './prompt-template-handlers.js';
@@ -571,6 +576,31 @@ export function registerIPCHandlers(
   setupSkillHandlers(skillManager, skillAnalyticsManager);
   setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname);
   setupScheduledTaskHandlers(scheduledTaskManager, scheduledTaskHistoryManager, windowManager);
+  // Time tracking: the session's Helm project, else its directory, gets the credit.
+  const whereIsDir = (dir: string, projectId?: string) => {
+    const project = (projectId ? projectStore.getById(projectId) : undefined) ?? projectStore.findByPath(dir);
+    return project
+      ? { projectKey: project.id, projectName: project.name, dir }
+      : { projectKey: dir, projectName: dir, dir };
+  };
+  const timeTracker = new TimeTracker({
+    persistence: new TimePersistence(TIME_TRACKING_DIR),
+    resolve: (sessionId) => {
+      const session = sessionManager.getSession(sessionId);
+      return session?.workingDir ? whereIsDir(session.workingDir, session.projectId) : null;
+    },
+  });
+  // Any prompt arms the session's AI time; only a human's prompt is the user's time.
+  setDeliveryObserver((sessionId, origin) => {
+    if (origin === 'user') timeTracker.recordUser(SUBMIT_WEIGHT, sessionId);
+    else timeTracker.armAi(sessionId);
+  });
+  stateDetector.on('activity-change', ({ sessionId, level }: { sessionId: string; level: string }) => {
+    timeTracker.setAiActive(sessionId, level === 'active');
+  });
+  // Twice per slot, so an active session never skips one.
+  const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
+  const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir);
   // Keep lightweight handler fixtures (and embedders that do not enable
   // project services) compatible with the optional Mess surface.
   const messManager = helmControlService.getMessManager?.() ?? null;
@@ -637,7 +667,7 @@ export function registerIPCHandlers(
       win.webContents.send('artifact:reveal', { sessionId, artifactId });
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, undefined, patternMatcher, recycleBinManager);
+  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordUser(data.includes('\r') ? SUBMIT_WEIGHT : 1, sessionId), patternMatcher, recycleBinManager);
   // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
   const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
   autoFreezer.start();
@@ -1162,12 +1192,19 @@ export function registerIPCHandlers(
   // `mobileGate.handle`, never through callMcpTool directly.
   activeMobileGate = new MobileGate({
     deviceStore: mobileDeviceStore,
-    dispatch: (method, params, ctx) =>
-      localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx),
+    dispatch: async (method, params, ctx) => {
+      const result = await localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx);
+      // A phone action that changed something is the user working (docs/time-tracking.md).
+      const target = phoneActivityTarget(method, params, id => planManager.getItem(id)?.dirPath ?? null, result);
+      if (target && 'sessionId' in target) timeTracker.recordUser(SUBMIT_WEIGHT, target.sessionId);
+      else if (target) timeTracker.recordUserAt(SUBMIT_WEIGHT, whereIsDir(target.dirPath));
+      return result;
+    },
     rateLimiter: createDefaultMobileRateLimiter(),
     sessionLookup: sessionManager,
     restartHelm: (resume) => helmControlService.restartHelm(resume),
     ringAnswered: () => helmControlService.ringAnswered(),
+    timesheet: (params) => timesheetQuery(timeTracker, params),
   });
 
   // The rolling record of chat messages fanned out to phones, so a phone that
@@ -1324,6 +1361,10 @@ export function registerIPCHandlers(
       autoFreezer.dispose();
       keepWarmer.dispose();
       cleanupMess();
+      clearInterval(timeTrackerTimer);
+      setDeliveryObserver(null);
+      timeTracker.flush();
+      cleanupTimeTracking();
       hookTracker.dispose();
       cleanupHandover();
       handoverDelivery.dispose();

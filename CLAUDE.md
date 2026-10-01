@@ -157,6 +157,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day rolling bin, restore-with-resume |
 | [docs/session-freeze.md](docs/session-freeze.md) | Prompt-cache staleness (per-CLI short/long cache), row fade + banners, Mess dormancy, freeze / auto-freeze, `session_set_frozen` |
 | [docs/drafts.md](docs/drafts.md) | Per-session draft prompt memos |
+| [docs/time-tracking.md](docs/time-tracking.md) | Per-project time tracking — 5-min You/AI slots, origin-tagged input, JSONL store, Timesheet pane + CSV |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
 | [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Helm Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |

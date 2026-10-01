@@ -84,6 +84,13 @@ export const RESERVED_RING_ANSWERED_METHOD = '__ring_answered__';
  */
 export const RESERVED_CHAT_DELETE_METHOD = '__chat_delete__';
 
+/**
+ * The phone's Time tab reads the user's own timesheet. Phone-only on purpose:
+ * no AI tool exposes time tracking (docs/time-tracking.md). Read-only, so any
+ * device the registry trusts may ask; answered in-gate, never dispatched.
+ */
+export const RESERVED_TIMESHEET_METHOD = '__timesheet__';
+
 /** The allow-list name a phone's restart is granted under. */
 const RESTART_GRANT = 'helm_restart';
 
@@ -241,6 +248,8 @@ export interface MobileGateDeps {
   restartHelm?: (resume: boolean) => unknown;
   /** A linked phone picked up the operator's ring. */
   ringAnswered?: () => void;
+  /** The phone's Time tab. Absent means the method is denied — the safe default. */
+  timesheet?: (params: unknown) => unknown;
 }
 
 export class MobileGate {
@@ -250,6 +259,7 @@ export class MobileGate {
   private readonly sessionLookup: MobileSessionLookup | undefined;
   private readonly restartHelm: MobileGateDeps['restartHelm'];
   private readonly ringAnswered: MobileGateDeps['ringAnswered'];
+  private readonly timesheet: MobileGateDeps['timesheet'];
 
   constructor(deps: MobileGateDeps) {
     this.deviceStore = deps.deviceStore;
@@ -258,6 +268,7 @@ export class MobileGate {
     this.sessionLookup = deps.sessionLookup;
     this.restartHelm = deps.restartHelm;
     this.ringAnswered = deps.ringAnswered;
+    this.timesheet = deps.timesheet;
   }
 
   /** Gate + dispatch one inbound phone call. */
@@ -307,6 +318,20 @@ export class MobileGate {
       this.ringAnswered?.();
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };
+    }
+
+    // 2b'''. The Time tab: the user's own timesheet, read-only.
+    if (method === RESERVED_TIMESHEET_METHOD) {
+      if (!this.timesheet) return this.denied(deviceId, method);
+      this.consumeOrThrow(deviceId, method);
+      try {
+        const result = this.timesheet(params);
+        this.logOutcome(deviceId, method, 'ok');
+        return result;
+      } catch (err) {
+        this.logOutcome(deviceId, method, 'error', (err as { constructor?: { name?: string } })?.constructor?.name ?? 'Error');
+        throw new GateError(JSONRPC_SERVER_ERROR, err instanceof Error ? err.message : String(err));
+      }
     }
 
     // 2c. The user's restart. Keeping sessions is the default: the destructive

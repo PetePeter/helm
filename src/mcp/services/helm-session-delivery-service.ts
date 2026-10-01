@@ -317,6 +317,7 @@ export class HelmSessionDeliveryService {
         ptyManager: this.ptyManager,
         sessionManager: this.sessionManager,
         configLoader: this.configLoader,
+        origin: isMobileSessionId(options.senderSessionId) ? 'user' : 'system',
         verifyDelivery: {
           label: 'inter-session message',
           delayMs: getDeliveryVerifyDelayMs(),
@@ -331,6 +332,7 @@ export class HelmSessionDeliveryService {
         ptyManager: this.ptyManager,
         sessionManager: this.sessionManager,
         configLoader: this.configLoader,
+        origin: isMobileSessionId(options.senderSessionId) ? 'user' : 'system',
         verifyDelivery: {
           label: 'inter-session message',
           delayMs: getDeliveryVerifyDelayMs(),

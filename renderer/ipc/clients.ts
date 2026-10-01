@@ -26,6 +26,7 @@ export const configClient = domainClient('config');
 export const toolsClient = domainClient('tools');
 export const projectsClient = domainClient('projects');
 export const messClient = domainClient('mess');
+export const timeClient = domainClient('time');
 export const skillsClient = domainClient('skills');
 export const plansClient = domainClient('plans');
 export const contextsClient = domainClient('contexts');
