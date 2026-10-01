@@ -362,7 +362,7 @@ export interface OperatorConfig {
   enabled: boolean;
   /** Id of one of the user's CLI types; empty = not chosen, nothing spawns. */
   cliType: string;
-  /** Idle self-compaction cadence in minutes; 0 = off. */
+  /** Idle self-clear cadence in minutes (key name kept for existing settings); 0 = off. */
   compactEveryMinutes: number;
   /** User rules appended to the operator guide, one per line; built-in rules still apply. */
   rules: string;

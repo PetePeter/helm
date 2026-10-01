@@ -8,10 +8,12 @@
  * the session stays open, so no user conversation is ever lost. Changing the
  * operator's CLI type demotes the old operator and spawns one on the new type.
  *
- * It also self-compacts the operator every `compactEveryMinutes`, but only when
- * something happened since the last compaction AND the operator is idle now;
- * busy → retry every 30 min. The operator guide is the handover, so rule
- * updates apply after every compaction.
+ * It also self-clears the operator every `compactEveryMinutes`, but only when
+ * something happened since the last clear AND the operator is idle now;
+ * busy → retry every 30 min. A clear, not a compaction: a summary would carry
+ * finished goals forward forever, so the operator restarts from its guide alone
+ * (rule updates apply after every clear). Handover summaries are for sessions
+ * whose context fills up, never for this idle tick.
  */
 import { normalizeProjectPath } from './project-identity.js';
 import { EventEmitter } from 'node:events';
@@ -25,13 +27,13 @@ import { logger } from '../utils/logger.js';
 export const OPERATOR_SESSION_NAME = 'Helm';
 
 const MINUTE_MS = 60_000;
-/** Busy-retry cadence (user-specified). Also the settle delay after a compaction. */
+/** Busy-retry cadence (user-specified). Also the settle delay after a clear. */
 export const OPERATOR_COMPACT_RETRY_MS = 30 * MINUTE_MS;
-/** A relay whose reply never came stops blocking compaction after this long. */
+/** A relay whose reply never came stops blocking the self-clear after this long. */
 const OPEN_RELAY_MAX_AGE_MS = 2 * 60 * MINUTE_MS;
 
-export function buildOperatorCompactHandover(rules = ''): string {
-  return 'Your context was just compacted. You are Helm, the operator. Any earlier relays are closed; treat late replies as new requests. '
+export function buildOperatorClearContext(rules = ''): string {
+  return 'Your context was just cleared. You are Helm, the operator. Any earlier relays are closed; treat late replies as new requests. '
     + 'Re-read your rules below and follow them from now on.\n\n' + buildOperatorGuide(rules);
 }
 
@@ -51,8 +53,8 @@ export interface OperatorSessionManagerDeps {
   getConfig: () => OperatorConfig;
   /** Fresh spawn through the shared configured-session path. */
   spawn: (params: OperatorSpawnParams) => { sessionId: string };
-  /** The shared session_compact path (arms the handover, writes the compact sequence). */
-  compact: (sessionId: string, handover: string) => Promise<unknown>;
+  /** The shared session_clear path (arms the context delivery, writes the clear sequence). */
+  clear: (sessionId: string, context: string) => Promise<unknown>;
   isHandoverPending: (sessionId: string) => boolean;
   /**
    * The operator's own home (ensureOperatorHome). It ALWAYS lives there: its
@@ -64,11 +66,11 @@ export interface OperatorSessionManagerDeps {
 export class OperatorSessionManager extends EventEmitter {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private timerIntervalMs = 0;
-  /** Bumped on every clear, so a tick whose compact outlived a dispose/disable/interval change does not reschedule. */
+  /** Bumped on every timer reset, so a tick whose self-clear outlived a dispose/disable/interval change does not reschedule. */
   private timerGeneration = 0;
   /** lastOutputAt already accounted for; in memory, so a restart counts old activity once. */
   private activityBaseline = 0;
-  /** Set by a compaction: the next idle observation rebaselines past its own echo. */
+  /** Set by a self-clear: the next idle observation rebaselines past its own echo. */
   private settling = false;
   /** recipientSessionId → sentAt, for operator sends that expect a reply. */
   private readonly openRelays = new Map<string, number>();
@@ -85,7 +87,7 @@ export class OperatorSessionManager extends EventEmitter {
   ensure(): string | null {
     const config = this.deps.getConfig();
     const operators = this.findOperators();
-    this.syncCompactTimer(config);
+    this.syncClearTimer(config);
     if (!config.enabled) {
       for (const op of operators) this.demote(op, 'operator disabled');
       return null;
@@ -133,7 +135,7 @@ export class OperatorSessionManager extends EventEmitter {
     this.clearTimer();
   }
 
-  private syncCompactTimer(config: OperatorConfig): void {
+  private syncClearTimer(config: OperatorConfig): void {
     const intervalMs = config.enabled ? config.compactEveryMinutes * MINUTE_MS : 0;
     if (intervalMs === this.timerIntervalMs && (this.timer !== null) === (intervalMs > 0)) return;
     this.clearTimer();
@@ -155,13 +157,13 @@ export class OperatorSessionManager extends EventEmitter {
 
   private async tick(): Promise<void> {
     const generation = this.timerGeneration;
-    const delayMs = await this.checkCompaction();
+    const delayMs = await this.checkSelfClear();
     if (generation !== this.timerGeneration || this.timerIntervalMs <= 0 || delayMs <= 0) return;
     this.schedule(delayMs);
   }
 
-  /** One compaction check; returns the delay until the next. */
-  private async checkCompaction(): Promise<number> {
+  /** One self-clear check; returns the delay until the next. */
+  private async checkSelfClear(): Promise<number> {
     const id = this.getOperatorId();
     const session = id ? this.deps.sessionManager.getSession(id) : undefined;
     if (!id || !session) return this.timerIntervalMs;
@@ -174,11 +176,11 @@ export class OperatorSessionManager extends EventEmitter {
     }
     if (lastOutputAt <= this.activityBaseline) return this.timerIntervalMs;
     try {
-      await this.deps.compact(id, buildOperatorCompactHandover(this.deps.getConfig().rules));
+      await this.deps.clear(id, buildOperatorClearContext(this.deps.getConfig().rules));
       this.settling = true;
-      logger.info(`[Operator] Compacted operator ${id}`);
+      logger.info(`[Operator] Cleared operator ${id}`);
     } catch (error) {
-      logger.warn(`[Operator] Compaction of ${id} failed: ${error}`);
+      logger.warn(`[Operator] Self-clear of ${id} failed: ${error}`);
     }
     return OPERATOR_COMPACT_RETRY_MS;
   }

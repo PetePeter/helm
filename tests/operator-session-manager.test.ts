@@ -27,8 +27,8 @@ const { HelmSessionService } = await import('../src/mcp/services/helm-session-se
 
 type Config = { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string };
 
-function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionId: string, handover: string) => Promise<void>) {
-  const compacts: Array<{ sessionId: string; handover: string }> = [];
+function setup(config: Config, existing: SessionInfo[] = [], clear?: (sessionId: string, context: string) => Promise<void>) {
+  const clears: Array<{ sessionId: string; context: string }> = [];
   const pendingHandovers = new Set<string>();
   const sessionManager = new SessionManager();
   for (const s of existing) sessionManager.addSession({ ...s });
@@ -43,11 +43,11 @@ function setup(config: Config, existing: SessionInfo[] = [], compact?: (sessionI
       sessionManager.addSession({ id, name: params.sessionName, cliType: params.cliType, processId: 1, cliSessionName: `cli-${id}`, workingDir: params.cwd, role: params.role, locked: params.locked });
       return { sessionId: id };
     },
-    compact: compact ?? (async (sessionId, handover) => { compacts.push({ sessionId, handover }); }),
+    clear: clear ?? (async (sessionId, context) => { clears.push({ sessionId, context }); }),
     isHandoverPending: (sessionId) => pendingHandovers.has(sessionId),
     homeDir: () => HOME,
   });
-  return { sessionManager, operator, spawns, compacts, pendingHandovers };
+  return { sessionManager, operator, spawns, clears, pendingHandovers };
 }
 
 const HOME = 'C:/cfg/operator';
@@ -261,7 +261,7 @@ describe('operator guide', () => {
   });
 });
 
-describe('hourly self-compaction (fake clock)', () => {
+describe('hourly self-clear (fake clock)', () => {
   const MIN = 60_000;
   const HOURLY: Config = { ...ENABLED, compactEveryMinutes: 60 };
   let ctx: ReturnType<typeof setup>;
@@ -285,40 +285,40 @@ describe('hourly self-compaction (fake clock)', () => {
     ctx.sessionManager.updateSession(opId, { lastOutputAt: Date.now(), activityLevel: 'inactive', ...patch });
   const advance = (minutes: number) => vi.advanceTimersByTimeAsync(minutes * MIN);
 
-  it('compacts an idle operator that had activity, once, with the operator guide as handover', async () => {
+  it('clears an idle operator that had activity, once, re-seeding it with only the operator guide', async () => {
     start();
     touch();
     await advance(60);
-    expect(ctx.compacts).toHaveLength(1);
-    expect(ctx.compacts[0].sessionId).toBe(opId);
-    expect(ctx.compacts[0].handover).toContain('You are Helm, the operator');
-    expect(ctx.compacts[0].handover).toContain(buildOperatorGuide());
+    expect(ctx.clears).toHaveLength(1);
+    expect(ctx.clears[0].sessionId).toBe(opId);
+    expect(ctx.clears[0].context).toMatch(/^Your context was just cleared\. You are Helm, the operator/);
+    expect(ctx.clears[0].context).toContain(buildOperatorGuide());
   });
 
-  it('spawn and compaction handover both carry the rules current at that moment', async () => {
+  it('spawn and self-clear context both carry the rules current at that moment', async () => {
     const config: Config = { ...HOURLY, rules: 'Rule at spawn.' };
     start(config);
     expect(ctx.spawns[0].contextText).toBe(buildOperatorGuide('Rule at spawn.'));
     config.rules = 'Rule after edit.';
     touch();
     await advance(60);
-    expect(ctx.compacts[0].handover).toContain(buildOperatorGuide('Rule after edit.'));
-    expect(ctx.compacts[0].handover).not.toContain('Rule at spawn.');
+    expect(ctx.clears[0].context).toContain(buildOperatorGuide('Rule after edit.'));
+    expect(ctx.clears[0].context).not.toContain('Rule at spawn.');
   });
 
-  it('skips an operator with no activity since the last compaction', async () => {
+  it('skips an operator with no activity since the last self-clear', async () => {
     start();
     touch();
     await advance(60);
-    expect(ctx.compacts).toHaveLength(1);
-    // The compaction's own echo (and the handover reply) is not "activity".
+    expect(ctx.clears).toHaveLength(1);
+    // The clear's own echo (and the guide reply) is not "activity".
     touch();
     await advance(30);
     await advance(60 * 3);
-    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.clears).toHaveLength(1);
   });
 
-  it('compacts again after fresh activity in a later hour', async () => {
+  it('clears again after fresh activity in a later hour', async () => {
     start();
     touch();
     await advance(60);
@@ -326,7 +326,7 @@ describe('hourly self-compaction (fake clock)', () => {
     await advance(10);
     touch();
     await advance(60);
-    expect(ctx.compacts).toHaveLength(2);
+    expect(ctx.clears).toHaveLength(2);
   });
 
   it.each([
@@ -337,10 +337,10 @@ describe('hourly self-compaction (fake clock)', () => {
     touch(busy);
     await advance(60);
     await advance(30);
-    expect(ctx.compacts).toHaveLength(0);
+    expect(ctx.clears).toHaveLength(0);
     ctx.sessionManager.updateSession(opId, { activityLevel: 'inactive', aiagentState: 'idle' });
     await advance(30);
-    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.clears).toHaveLength(1);
   });
 
   it('treats a pending handover as busy', async () => {
@@ -348,10 +348,10 @@ describe('hourly self-compaction (fake clock)', () => {
     touch();
     ctx.pendingHandovers.add(opId);
     await advance(60);
-    expect(ctx.compacts).toHaveLength(0);
+    expect(ctx.clears).toHaveLength(0);
     ctx.pendingHandovers.delete(opId);
     await advance(30);
-    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.clears).toHaveLength(1);
   });
 
   it('treats an open relay (operator sent with expectsResponse, no reply yet) as busy', async () => {
@@ -360,17 +360,17 @@ describe('hourly self-compaction (fake clock)', () => {
     const flight = { flightId: 'f1', senderSessionName: 'Helm', recipientName: 'w', isReply: false };
     ctx.operator.noteFlight({ ...flight, senderSessionId: opId, recipientSessionId: 'worker', expectsResponse: true });
     await advance(60);
-    expect(ctx.compacts).toHaveLength(0);
+    expect(ctx.clears).toHaveLength(0);
     ctx.operator.noteFlight({ ...flight, flightId: 'f2', senderSessionId: 'worker', recipientSessionId: opId, expectsResponse: false });
     await advance(30);
-    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.clears).toHaveLength(1);
   });
 
-  it('never compacts when compactEveryMinutes is 0', async () => {
+  it('never clears when compactEveryMinutes is 0', async () => {
     start({ ...HOURLY, compactEveryMinutes: 0 });
     touch();
     await advance(60 * 5);
-    expect(ctx.compacts).toHaveLength(0);
+    expect(ctx.clears).toHaveLength(0);
   });
 
   it('stops the timer when the operator is disabled', async () => {
@@ -381,14 +381,14 @@ describe('hourly self-compaction (fake clock)', () => {
     config.enabled = false;
     ctx.operator.ensure();
     await advance(60 * 3);
-    expect(ctx.compacts).toHaveLength(0);
+    expect(ctx.clears).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
   });
 
   it.each([
     ['disabled', (config: Config) => { config.enabled = false; ctx.operator.ensure(); }],
     ['disposed', () => ctx.operator.dispose()],
-  ])('does not resurrect the timer when %s while a compact is in flight', async (_label, stop) => {
+  ])('does not resurrect the timer when %s while a clear is in flight', async (_label, stop) => {
     const config = { ...HOURLY };
     let release!: () => void;
     let calls = 0;
@@ -410,7 +410,7 @@ describe('hourly self-compaction (fake clock)', () => {
     ctx.operator.ensure();
     touch();
     await advance(60);
-    expect(ctx.compacts).toHaveLength(1);
+    expect(ctx.clears).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(1);
   });
 });

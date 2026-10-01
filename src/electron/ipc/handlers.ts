@@ -560,7 +560,7 @@ export function registerIPCHandlers(
       role,
       locked,
     }),
-    compact: (sessionId, handover) => helmControlService.compactSession(sessionId, { handover }),
+    clear: (sessionId, context) => helmControlService.clearSession(sessionId, { context }),
     isHandoverPending: (sessionId) => isHandoverPending(sessionId),
     homeDir: () => ensureOperatorHome(getConfigDir(dirname ?? process.cwd()), projectStore),
   });

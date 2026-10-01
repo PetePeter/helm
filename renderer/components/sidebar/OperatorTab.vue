@@ -112,7 +112,7 @@ function capturePttKey(event: KeyboardEvent): void {
     </label>
 
     <label class="operator-setting">
-      <span>Auto-compact when idle</span>
+      <span>Auto-clear when idle</span>
       <select
         class="btn btn--secondary btn--sm focusable"
         :value="config.compactEveryMinutes"
@@ -131,7 +131,7 @@ function capturePttKey(event: KeyboardEvent): void {
 
     <div class="settings-help">
       <p>Built-in rules always apply. Your rules come on top, ranked highest: they can narrow what the operator does or allow more.
-        They take effect from the operator's next start or compaction.</p>
+        They take effect from the operator's next start or clear.</p>
     </div>
 
     <ol class="operator-rules">

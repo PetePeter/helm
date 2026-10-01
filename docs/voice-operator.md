@@ -158,7 +158,7 @@ graph LR
   existing `tool_list`, so no new tool was needed.
   **Rule changes need a fresh prompt:** the guide is the operator's initial
   prompt, so a running operator only picks up edits after it is respawned or
-  compacted. The idle self-compaction below re-sends it every time.
+  cleared. The idle self-clear below re-sends it every time.
 - **User rules (P-0842).** Settings → Operator has a **Rules** section. It
   lists the built-in hard rules read-only and has a "Your rules" box.
 
@@ -169,7 +169,7 @@ graph LR
       TAB -->|Save| CFG[settings.yaml<br/>operator.rules]
       CFG --> G
       G --> SP[spawn: initial prompt]
-      G --> HC[compaction handover]
+      G --> HC[self-clear context]
   ```
 
   - **The built-ins remain.** User rules are appended as a `[user_rules]`
@@ -179,42 +179,46 @@ graph LR
   - **One source.** The tab imports `OPERATOR_RULES` from the guide module, so
     the list shown is exactly the text the operator receives.
   - Both deliveries read the rules from config at that moment, so an edit
-    applies from the next spawn or compaction. Saving goes through the existing
+    applies from the next spawn or clear. Saving goes through the existing
     `config:setOperatorConfig` channel; there is no new IPC.
-- **Idle self-compaction (P-0839).** The operator lives for days, so its context
-  would grow without bound. Every `compactEveryMinutes` (default 60; 0 = off)
+- **Idle self-clear (P-0839).** The operator lives for days, so its context
+  would grow without bound. It is *cleared*, not compacted: a compaction summary
+  must name a goal, so a finished one got re-summarised into every later
+  handover and the operator kept chasing work that was long done. A clear plus
+  the guide carries nothing over; durable facts belong in memories and task
+  plans. Handover summaries stay for sessions whose context actually fills up. Every `compactEveryMinutes` (default 60; 0 = off)
   the manager checks it:
 
   ```mermaid
   flowchart TD
       T[Tick] --> B{Busy?<br/>dot active · implementing ·<br/>handover pending · open relay}
       B -->|yes| R[Retry in 30 min]
-      B -->|no| S{Settling after<br/>a compaction?}
+      B -->|no| S{Settling after<br/>a self-clear?}
       S -->|yes| RB[Baseline = lastOutputAt] --> N[Next tick in interval]
       S -->|no| A{lastOutputAt > baseline?}
       A -->|no| N
-      A -->|yes| C[session_compact path<br/>handover = operator guide] --> R
+      A -->|yes| C[session_clear path<br/>context = operator guide] --> R
   ```
 
-  - It reuses `compactSession` with a handover, so [handover.md](handover.md)'s
-    delivery and terminal lock apply unchanged. The handover says "you are Helm,
+  - It reuses `clearSession` with a context, so [handover.md](handover.md)'s
+    delivery and terminal lock apply unchanged. The context says "you are Helm,
     the operator, no relays are open" and then repeats the full guide.
-  - **Why a settle step.** The compaction's output, and the operator's answer to
-    the handover, move `lastOutputAt` too. The first idle check afterwards
+  - **Why a settle step.** The clear's output, and the operator's answer to
+    the guide, move `lastOutputAt` too. The first idle check afterwards
     rebaselines, so that echo never counts as activity. Otherwise an untouched
-    operator would compact every hour forever. The cost: activity in that same
+    operator would clear every hour forever. The cost: activity in that same
     window is picked up an interval later. Rebaselining on `handover-delivered`
     was rejected: the operator's reply to the handover comes *after* delivery,
     so it would count as activity and bring back the hourly loop.
-  - **In-flight safety.** A tick awaits the compact. A generation counter,
+  - **In-flight safety.** A tick awaits the clear. A generation counter,
     bumped on every timer clear, stops a tick that outlived a
     dispose/disable/interval change from rescheduling.
   - **Open relays.** An operator send with `expectsResponse` (seen on the
     message-flight sink) opens a relay. The recipient's next message to the
-    operator closes it. Compacting mid-relay would lose what the reply is for.
+    operator closes it. Clearing mid-relay would lose what the reply is for.
     A relay stops blocking after 2 h, so a reply that never comes cannot pin the
     context forever.
-  - The baseline is in memory. After a restart, the first idle tick compacts
+  - The baseline is in memory. After a restart, the first idle tick clears
     once if the operator has any output at all.
 - **Launch race.** Main can spawn the operator before the renderer's
   auto-resume runs; `pty:spawn` treats a resume of an already-live PTY as an
