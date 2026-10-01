@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.telecom.TelecomManager
@@ -12,28 +13,34 @@ import com.potatomotato.helm.notify.IncomingRing
 import com.potatomotato.helm.voice.VoiceCallService
 
 /**
- * One ring as a self-managed call. Self-managed calls draw their own incoming
- * UI, so [onShowIncomingCallUi] raises the same ring notification as before;
- * what changes is that the car and headset can now answer it too.
+ * One Helm call as a self-managed call: a ring, or ([outgoing]) a call the user
+ * started. Self-managed calls draw their own incoming UI, so
+ * [onShowIncomingCallUi] raises the ring notification; what Telecom adds is
+ * that the car and headset can answer, hang up and mute it too.
  */
 class HelmConnection(
     private val context: Context,
     private val sessionId: String,
     private val sessionName: String,
     private val reason: String,
+    outgoing: Boolean,
 ) : Connection() {
 
     init {
         connectionProperties = PROPERTY_SELF_MANAGED
         audioModeIsVoip = true
         setCallerDisplayName(sessionName.ifBlank { "Helm" }, TelecomManager.PRESENTATION_ALLOWED)
-        setRinging()
-        // The notification stops after 30 s on its own; the system call must
-        // too, or the car would ring forever. Unanswered = missed, so Helm's
-        // one retry (desktop RingRetry) still applies.
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (state == STATE_RINGING) finish(DisconnectCause(DisconnectCause.MISSED))
-        }, RING_TIMEOUT_MS)
+        if (outgoing) {
+            setDialing()
+        } else {
+            setRinging()
+            // The notification stops after 30 s on its own; the system call must
+            // too, or the car would ring forever. Unanswered = missed, so Helm's
+            // one retry (desktop RingRetry) still applies.
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (state == STATE_RINGING) finish(DisconnectCause(DisconnectCause.MISSED))
+            }, RING_TIMEOUT_MS)
+        }
     }
 
     private companion object {
@@ -71,6 +78,16 @@ class HelmConnection(
     }
 
     override fun onAbort() = onDisconnect()
+
+    /**
+     * Muted or unmuted from the car or the system call UI (also fires on a
+     * route change). Telecom has already flipped the phone's microphone mute;
+     * the live call re-reads it.
+     */
+    @Deprecated("Deprecated in API 34, but the only mute callback down to minSdk 26")
+    override fun onCallAudioStateChanged(state: CallAudioState?) {
+        HelmTelecom.onAudioState?.invoke()
+    }
 
     /** Our call ended first: take the system call down without looping back into hangUp. */
     fun endFromApp() {

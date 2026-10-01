@@ -106,7 +106,7 @@ object HelmPairing {
         client.alerts.useSettings(FileNotificationSettings(File(context.filesDir, NOTIFY_DIRECTORY)))
         client.alerts.port = AndroidNotifications(context)
         val ring = IncomingRing(context)
-        client.ringer = ring::ring
+        client.ringer = { record -> ring.ring(record) { client.alerts.onAlert(record) } }
         client.transferrer = { VoiceCallService.transfer(context, it.fromSessionId, it.sessionId, it.text) }
         // The unread counts, persisted the same late way: the store needs a
         // Context and the client above predates one.

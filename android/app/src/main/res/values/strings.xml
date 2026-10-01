@@ -534,6 +534,8 @@
     <string name="call_route_speaker">Speaker</string>
     <string name="call_route_bluetooth">Bluetooth</string>
     <string name="call_send_failed">That did not send.</string>
+    <string name="call_refused_busy">Another call is in progress.</string>
+    <string name="call_refused_unavailable">The phone could not start the call.</string>
     <string name="call_permission">The microphone is needed for a call.</string>
     <string name="call_channel_name">Voice call</string>
     <string name="call_channel_description">Shown while a voice call with Helm is live.</string>

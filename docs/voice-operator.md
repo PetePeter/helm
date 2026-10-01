@@ -229,7 +229,9 @@ graph LR
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Listening: start (mic opens once)
+    Idle --> Idle: start (user's call): ask Telecom, "Connecting…"
+    Idle --> Listening: Telecom took the call / answered ring (mic opens once)
+    Idle --> Ended: Telecom refused (Busy / Unavailable) / hang up while connecting
     Listening --> Sending: non-empty final (unmuted)
     Sending --> Listening: carried
     Sending --> Speaking: send failed (spoken error)
@@ -256,7 +258,19 @@ Why each rule exists:
   speaking is taken as residual echo and ignored — echo removal itself is the
   recorder's job (below).
 - **Replies queue in order**, including ones that arrive mid-send.
-- **Mute** = heard but not sent, and a muted user never interrupts.
+- **Mute is the phone's own microphone mute** (`MicSwitch` →
+  `AudioManager.isMicrophoneMute`), not an app flag. The Mute button, a car
+  screen and the system call UI all flip that one switch, so they cannot
+  disagree. Telecom reports a change through `onCallAudioStateChanged` and the
+  call re-reads the switch (`syncMute`), which is why a repeated or stale report
+  can never flip it. Nothing is sent while muted, a muted user never interrupts,
+  and the switch is handed back as it was found when the call ends. A headset
+  that mutes inside itself tells the phone nothing: Helm just hears silence.
+- **Every call is a system call** (`CallLine` → `HelmTelecom`). A call the user
+  starts is placed with Telecom first and opens the mic only once Telecom has
+  created it; a refusal (`CallRefusal.Busy` — another call is up — or
+  `Unavailable`) ends it before any audio is taken, with a toast saying why.
+  There is no call outside Telecom, so the car's mute and hang-up always reach it.
 - **Send failures are spoken** ("That did not send.") and the call keeps going.
 - **A mic that cannot run** (no recorder, no model) ends the call with an error.
 
@@ -469,13 +483,15 @@ sequenceDiagram
   exported, Accept carries a one-shot `RingTicket` minted with the ring; an accept
   intent without the live ticket (another app's) only opens the thread. Decline just stops ringing;
   nothing is reported back.
-- **A real incoming call.** The ring is offered to Android Telecom first
+- **A real incoming call.** The ring is an Android Telecom call
   (`telecom/HelmTelecom.kt`, a self-managed PhoneAccount + `HelmConnectionService`),
-  so car Bluetooth call screens, steering-wheel and headset buttons can answer or
-  decline it. Self-managed calls draw their own UI, so the same ring notification
-  is still shown; Answer from anywhere runs the same MainActivity accept path.
-  The system call ends with ours, times out with the notification (30 s, missed),
-  and if Telecom refuses the ring falls back to the notification alone.
+  so car Bluetooth call screens, steering-wheel and headset buttons can answer,
+  decline and mute it. Self-managed calls draw their own UI, so the ring
+  notification is its incoming UI; Answer from anywhere runs the same
+  MainActivity accept path. The system call ends with ours and times out with
+  the notification (30 s, missed). A ring Telecom refuses (a phone call is up,
+  no permission) does not ring: it lands as an ordinary alert, and being
+  unanswered it still gets Helm's one retry.
 - **Opens speaking.** Within a breath of Answer the phone says "Hi, it's Helm.
   I have a message about <reason>. Is now a good time?" (`RingGreeting`, spoken
   via `CallController.start(opening)` with the mic already open). The user's

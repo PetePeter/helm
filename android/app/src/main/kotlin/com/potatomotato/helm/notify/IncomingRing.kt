@@ -20,9 +20,9 @@ import com.potatomotato.helm.wire.MobileRecord
  * A session calling the user: a `kind: "ring"` chat record raised as an
  * incoming call rather than a shade row.
  *
- * The ring is offered to Telecom first ([HelmTelecom]) so the car and headset
- * can answer it; this CALL notification is its incoming UI either way, and the
- * whole ring when Telecom refuses. It stops on its own after [RING_TIMEOUT_MS].
+ * The ring is a Telecom call ([HelmTelecom]) so the car and headset can answer
+ * it; this CALL notification is its incoming UI. A ring Telecom refuses does
+ * not ring. It stops on its own after [RING_TIMEOUT_MS].
  *
  * Accept opens [MainActivity] with [EXTRA_ACCEPT_SESSION]; starting the
  * microphone service from a visible activity is always permitted, from a
@@ -47,23 +47,21 @@ class IncomingRing(private val context: Context) {
     }
 
     /**
-     * A ring goes to Android's call system first (a real incoming call the car
-     * and headset can answer); only when Telecom refuses does this notification
-     * ring on its own.
+     * A ring is a real incoming call (Android's call system, so the car and
+     * headset can answer and mute it) or it does not ring at all.
      *
      * NEVER over a live call: a second call took the first one's audio and left
      * it running with no screen and no hang-up. False hands the ring back to
-     * the caller, which shows it as an ordinary alert instead.
+     * the caller, which shows it as an ordinary alert instead; [refused] does
+     * the same for a ring Telecom takes and then fails to create.
      */
-    fun ring(record: MobileRecord.Chat): Boolean {
+    fun ring(record: MobileRecord.Chat, refused: () -> Unit): Boolean {
         if (record.sessionId.isBlank()) return true
         if (VoiceCallService.call.value != null) return false
-        if (HelmTelecom.offer(context, record.sessionId, record.sessionName, record.text)) return true
-        show(record.sessionId, record.sessionName, record.text)
-        return true
+        return HelmTelecom.offer(context, record.sessionId, record.sessionName, record.text, refused)
     }
 
-    /** The incoming-call UI: Telecom asks for it (self-managed calls draw their own), or the fallback uses it. */
+    /** The incoming-call UI: Telecom asks for it (self-managed calls draw their own). */
     fun show(sessionId: String, sessionName: String, reason: String) {
         val accept = activityIntent(sessionId, REQUEST_ACCEPT)
             .putExtra(EXTRA_ACCEPT_SESSION, sessionId)

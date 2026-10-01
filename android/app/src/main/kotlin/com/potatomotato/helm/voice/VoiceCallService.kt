@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.widget.Toast
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.link.HelmPairing
@@ -202,6 +203,8 @@ class VoiceCallService : Service() {
             ACTION_HANG_UP -> call.hangUp()
             ACTION_MUTE -> call.setMuted(intent.getBooleanExtra(EXTRA_VALUE, false))
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
+                // Not while still connecting: the route is only ours once the audio is.
+                ?.takeIf { active }
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
                 ?.let(::applyRoute)
             ACTION_TRANSFER -> intent.getStringExtra(EXTRA_TARGET)
@@ -218,13 +221,11 @@ class VoiceCallService : Service() {
     private fun begin(target: String, opening: String?) {
         targetId = target
         HelmLog.i(HelmLog.UI, "voice call starting")
-        if (!takeAudio()) {
-            stopSelf()
-            return
-        }
 
         val client = HelmPairing.client
         val call = CallController(
+            line = line(target),
+            micSwitch = micSwitch,
             mic = VoskCallMic(this),
             tts = AndroidTtsEngine(this),
             send = { text ->
@@ -242,14 +243,46 @@ class VoiceCallService : Service() {
         job = scope.launch {
             call.state.collect { state ->
                 publish(state)
-                if (state.phase == CallPhase.Ended) ended()
+                if (state.phase == CallPhase.Ended) ended(state.refused)
             }
+        }
+        HelmTelecom.onAudioState = call::syncMute
+        // An answered ring is a system call already and opens at once, so its
+        // audio is taken here; a call the user starts takes it when the system
+        // has taken the call (see [line]).
+        if (opening != null && !takeAudio()) {
+            call.hangUp()
+            return
         }
         call.start(opening)
         // An answered ring that really became a call: tell Helm, so it does not
         // ring again in 10 minutes. Only here — a call that never started (no
         // mic grant, no audio focus) leaves the retry armed.
         if (opening != null) client.ringAnswered(target)
+    }
+
+    /**
+     * Android's call system for the call to [target]. The audio is taken only
+     * once the system has the call: one it refuses, or one that cannot get the
+     * audio (a phone call holds it), never opens the microphone.
+     */
+    private fun line(target: String) = object : CallLine {
+        override fun place(answer: (ready: Boolean) -> Unit): CallRefusal? {
+            val name = HelmPairing.client.sessions.find(target)?.name.orEmpty()
+            return HelmTelecom.place(this@VoiceCallService, target, name) { created -> answer(created && takeAudio()) }
+        }
+
+        override fun active() = HelmTelecom.active()
+
+        override fun end() = HelmTelecom.end()
+    }
+
+    private val micSwitch = object : MicSwitch {
+        override var muted: Boolean
+            get() = audio.isMicrophoneMute
+            set(value) {
+                audio.isMicrophoneMute = value
+            }
     }
 
     /**
@@ -292,16 +325,16 @@ class VoiceCallService : Service() {
         generator.startTone(ToneGenerator.TONE_PROP_ACK, CUE_MS)
     }
 
-    /** The call ended: free the mic and the audio, and stop. */
-    private fun ended() {
-        // The system call (car screen, headset) ends with ours.
-        HelmTelecom.end()
+    /** The call ended: free the mic and the audio, and stop. [refused]: it never started, and why. */
+    private fun ended(refused: CallRefusal?) {
+        refused?.let { Toast.makeText(this, it.messageRes, Toast.LENGTH_LONG).show() }
         endCurrent()
         releaseAudio()
         stopSelf()
     }
 
     private fun endCurrent() {
+        HelmTelecom.onAudioState = null
         job?.cancel()
         job = null
         feedJob?.cancel()
@@ -434,6 +467,12 @@ class VoiceCallService : Service() {
             null
         }
     }
+
+    private val CallRefusal.messageRes: Int
+        get() = when (this) {
+            CallRefusal.Busy -> R.string.call_refused_busy
+            CallRefusal.Unavailable -> R.string.call_refused_unavailable
+        }
 
     private fun startForegroundWith(target: String?) {
         val name = target?.let { HelmPairing.client.sessions.find(it)?.name ?: it }.orEmpty()

@@ -19,7 +19,11 @@ import kotlinx.coroutines.flow.asStateFlow
  *   partial of [BARGE_IN_WORDS]+ words while speaking stops Helm, drops what was
  *   queued, and what the user says is sent. Fewer words while speaking is taken
  *   as residual echo of Helm's own voice and ignored;
- * - muted means heard-but-not-sent, and a muted user never interrupts.
+ * - muted is the phone's own microphone mute ([MicSwitch]), so the car and the
+ *   Mute button agree; nothing is sent while muted and a muted user never
+ *   interrupts;
+ * - it is always a system call too ([CallLine]): one the system refuses never
+ *   starts, and the two end together.
  */
 class CallController(
     private val mic: CallMic,
@@ -28,6 +32,8 @@ class CallController(
     private val send: (String) -> Boolean,
     /** What is said aloud when a send fails. A resource string in the app. */
     private val sendFailedLine: String,
+    private val line: CallLine,
+    private val micSwitch: MicSwitch,
 ) : CallMic.Listener {
     private val _state = MutableStateFlow(CallState())
     val state: StateFlow<CallState> = _state.asStateFlow()
@@ -37,32 +43,75 @@ class CallController(
     /** Bumped per utterance and per interruption, so a stale onDone resumes nothing. */
     private var utterance = 0
 
+    /** Asked the system for the call; its answer has not come yet. */
+    private var placing = false
+
+    /** The switch as the call found it, to hand back; null while the call is not up. */
+    private var micWasMuted: Boolean? = null
+
     private val phase get() = _state.value.phase
     private val live get() = phase != CallPhase.Idle && phase != CallPhase.Ended
 
     /**
      * [opening]: an answered ring speaks first (RingGreeting) so picking up is
      * never met with silence; the mic is already open, so the user can answer
-     * over it. A call the user started opens listening.
+     * over it. The ring already is a system call, so it opens at once.
+     *
+     * A call the user started asks the system first and opens, listening, only
+     * when it is taken.
      */
     fun start(opening: String? = null) {
-        if (phase != CallPhase.Idle) return
-        _state.value = _state.value.copy(phase = CallPhase.Listening)
+        if (phase != CallPhase.Idle || placing) return
+        if (opening != null) {
+            open(opening)
+            return
+        }
+        placing = true
+        line.place(::onLineAnswer)?.let { end(refused = it) }
+    }
+
+    private fun onLineAnswer(ready: Boolean) {
+        if (!placing) return
+        if (ready) open(opening = null) else end(refused = CallRefusal.Unavailable)
+    }
+
+    private fun open(opening: String?) {
+        placing = false
+        micWasMuted = micSwitch.muted
+        _state.value = _state.value.copy(phase = CallPhase.Listening, muted = micSwitch.muted)
+        line.active()
         mic.start(this)
         opening?.takeIf { it.isNotBlank() }?.let(::say)
     }
 
+    /** The Mute button. */
     fun setMuted(muted: Boolean) {
+        if (!live) return
+        micSwitch.muted = muted
+        syncMute()
+    }
+
+    /** The switch may have been flipped elsewhere (the car, the system call UI): follow it. */
+    fun syncMute() {
+        val muted = micSwitch.muted
+        if (!live || muted == _state.value.muted) return
         _state.value = _state.value.copy(muted = muted, heard = "")
     }
 
-    fun hangUp() {
+    fun hangUp() = end()
+
+    private fun end(error: SpeechError? = null, refused: CallRefusal? = null) {
         if (phase == CallPhase.Ended) return
+        placing = false
         queue.clear()
         utterance++
         tts.release()
         mic.release()
-        _state.value = _state.value.copy(phase = CallPhase.Ended, heard = "")
+        // Never leave the phone's microphone muted behind a call that is over.
+        micWasMuted?.let { micSwitch.muted = it }
+        micWasMuted = null
+        line.end()
+        _state.value = _state.value.copy(phase = CallPhase.Ended, heard = "", error = error, refused = refused)
     }
 
     /** A new line from the target. Spoken now, or queued behind what is being said. */
@@ -98,8 +147,7 @@ class CallController(
     override fun onFailed(reason: String) {
         if (!live) return
         HelmLog.w(HelmLog.UI, "call microphone failed: $reason")
-        hangUp()
-        _state.value = _state.value.copy(error = SpeechError.Audio)
+        end(error = SpeechError.Audio)
     }
 
     /** The user talked over Helm: stop, forget what was queued, listen. */
@@ -150,4 +198,6 @@ data class CallState(
     val spoken: String = "",
     /** Why the call ended on its own, when it did. */
     val error: SpeechError? = null,
+    /** Why the call never started, when the system would not take it. */
+    val refused: CallRefusal? = null,
 )
