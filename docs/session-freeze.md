@@ -13,7 +13,9 @@ wakes one by accident.
 | `cacheExpireMinutes` (long cache) | 60 | Red banner, then `AutoFreezer` freezes the session |
 
 Both are edited in the CLI type editor and stored only when they differ from
-the default. The clock is `lastPromptAt` (`src/session/prompt-staleness.ts`). The hook
+the default. A CLI type with **No prompt cache** (`noPromptCache`, for local models) is
+never stale: no fade, no banner, no Mess dormancy, no keep-warm, no auto-freeze.
+The operator never shows a cache banner either. The clock is `lastPromptAt` (`src/session/prompt-staleness.ts`). The hook
 tracker restarts it on every context mutation: `UserPromptSubmit` (Mess pokes
 included), `PreToolUse`/`PostToolUse` (subagent results arrive here too), `SessionStart` (start/resume/clear/compact) and `PreCompact`.
 

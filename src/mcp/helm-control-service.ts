@@ -142,6 +142,8 @@ export interface SessionSummary {
   /** The CLI type's short / long prompt-cache windows, resolved to minutes. */
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  /** The CLI type has no prompt cache (local model): never stale. */
+  noPromptCache?: boolean;
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
   /** Keep-warm is on until this epoch ms (absent when off or lapsed). */

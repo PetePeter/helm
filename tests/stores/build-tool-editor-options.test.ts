@@ -121,6 +121,7 @@ describe('buildToolEditorOptions', () => {
       // options builder always states it so a CLI type cannot inherit silence.
       messReminders: true,
       mouseTracking: true,
+      noPromptCache: false,
       bindingProfileId: '',
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },

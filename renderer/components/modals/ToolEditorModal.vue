@@ -49,6 +49,7 @@ export interface ToolEditorData {
   messReminders?: boolean;
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  noPromptCache?: boolean;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -81,6 +82,7 @@ const emit = defineEmits<{
     messReminders?: boolean;
     cacheWarnMinutes?: number;
     cacheExpireMinutes?: number;
+    noPromptCache?: boolean;
     mouseTracking?: boolean;
     bindingProfileId: string;
     submitSuffix: string;
@@ -107,6 +109,7 @@ const messReminders = ref(true);
 const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
 const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
+const noPromptCache = ref(false);
 const bindingProfileId = ref('');
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
 const helmActionClear = ref('');
@@ -211,6 +214,7 @@ function initForm(): void {
   cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
   cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
+  noPromptCache.value = Boolean(d.noPromptCache);
   bindingProfileId.value = d.bindingProfileId ?? '';
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
   helmActionClear.value = d.helmActions?.clear ?? '';
@@ -281,6 +285,7 @@ function onSave(): void {
     cacheWarnMinutes: cacheWarnMinutes.value,
     cacheExpireMinutes: cacheExpireMinutes.value,
     mouseTracking: mouseTracking.value,
+    noPromptCache: noPromptCache.value,
     bindingProfileId: bindingProfileId.value,
     submitSuffix: submitSuffix.value,
     helmActions: {
@@ -454,11 +459,12 @@ defineExpose({ handleButton });
             <label class="te-checkbox-row"><input v-model="largeTextAsTempFile" type="checkbox" /><span>Send large Helm MCP messages as temp file paths</span></label>
             <p class="te-section__hint">When enabled, large session_send_text payloads are written to a temp file and the recipient gets the file path plus reading instructions.</p>
             <label class="te-checkbox-row"><input v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
-            <label class="te-checkbox-row"><input v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
             <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
-            <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" type="number" min="1" step="1" class="te-input focusable" /></div>
-            <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" type="number" min="1" step="1" class="te-input focusable" /></div>
-            <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red.</p>
+            <label class="te-checkbox-row"><input v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
+            <label class="te-checkbox-row"><input v-model="noPromptCache" type="checkbox" /><span>No prompt cache (local model)</span></label>
+            <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
+            <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
+            <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</p>
           </fieldset>
 
           <fieldset class="te-section">

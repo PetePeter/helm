@@ -11,6 +11,8 @@ export type PromptStaleness = 'fresh' | 'warn' | 'expired';
 export interface StalenessThresholds {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  /** A local model has no prompt cache to lose: the session never goes stale. */
+  noPromptCache?: boolean;
 }
 
 export function warnAfterMs(t: StalenessThresholds | null | undefined): number {
@@ -21,9 +23,14 @@ export function expireAfterMs(t: StalenessThresholds | null | undefined): number
   return (t?.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES) * 60_000;
 }
 
-/** A session never prompted has nothing cached to lose: it is fresh. */
+/** When a quiet session stops being nudged (Mess) or warmed: never, with no prompt cache to protect. */
+export function dormantAfterMs(t: StalenessThresholds | null | undefined): number {
+  return t?.noPromptCache ? Infinity : warnAfterMs(t);
+}
+
+/** A session never prompted, or on a CLI with no prompt cache, has nothing cached to lose: it is fresh. */
 export function promptStaleness(lastPromptAt: number | undefined, now: number, t: StalenessThresholds | null | undefined): PromptStaleness {
-  if (lastPromptAt === undefined) return 'fresh';
+  if (lastPromptAt === undefined || t?.noPromptCache) return 'fresh';
   const age = now - lastPromptAt;
   if (age > expireAfterMs(t)) return 'expired';
   if (age > warnAfterMs(t)) return 'warn';

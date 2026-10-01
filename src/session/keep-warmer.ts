@@ -1,5 +1,5 @@
 import type { SessionManager } from './manager.js';
-import { warnAfterMs, type StalenessThresholds } from './prompt-staleness.js';
+import { dormantAfterMs, type StalenessThresholds } from './prompt-staleness.js';
 import { logger } from '../utils/logger.js';
 
 const TICK_MS = 10_000;
@@ -7,9 +7,9 @@ const TICK_MS = 10_000;
 /** Ping this long before the CLI's short prompt cache would lapse (5 min → 4:50). */
 export const KEEP_WARM_MARGIN_MS = 10_000;
 
-/** When to ping: the CLI type's short cache window minus the margin. */
+/** When to ping: the CLI type's short cache window minus the margin. Never, with no prompt cache. */
 export function keepWarmAfterMs(t: StalenessThresholds | null | undefined): number {
-  return warnAfterMs(t) - KEEP_WARM_MARGIN_MS;
+  return dormantAfterMs(t) - KEEP_WARM_MARGIN_MS;
 }
 
 /** How long one "Keep warm" switch-on lasts before it turns itself off. */

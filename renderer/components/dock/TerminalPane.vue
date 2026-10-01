@@ -60,7 +60,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
       :height="appStore.activeSession.missionBarHeight"
     />
     <PromptCacheBanner
-      v-if="appStore.activeSession"
+      v-if="appStore.activeSession && !isOperator"
       :frozen="appStore.activeSession.frozen"
       :cli-type="appStore.activeSession.cliType"
       :last-prompt-at="appStore.activeSession.lastPromptAt"
@@ -97,7 +97,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     </div>
     <!-- Repeated under the terminal, where the eyes are while typing. -->
     <PromptCacheBanner
-      v-if="appStore.activeSession"
+      v-if="appStore.activeSession && !isOperator"
       placement="bottom"
       :frozen="appStore.activeSession.frozen"
       :cli-type="appStore.activeSession.cliType"

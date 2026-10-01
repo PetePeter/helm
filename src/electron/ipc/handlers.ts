@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { warnAfterMs } from '../../session/prompt-staleness.js';
+import { dormantAfterMs } from '../../session/prompt-staleness.js';
 import { AutoFreezer } from '../../session/auto-freezer.js';
 import { KeepWarmer } from '../../session/keep-warmer.js';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
@@ -695,7 +695,7 @@ export function registerIPCHandlers(
         return !entry?.api || entry.api.allowedTools.includes('mess_check');
       },
       {
-        dormantAfterMs: sessionId => warnAfterMs(configLoader.getCliTypeEntry(sessionManager.getSession(sessionId)?.cliType ?? '')),
+        dormantAfterMs: sessionId => dormantAfterMs(configLoader.getCliTypeEntry(sessionManager.getSession(sessionId)?.cliType ?? '')),
       },
     )
     : null;

@@ -664,6 +664,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       messReminders?: boolean;
       cacheWarnMinutes?: number;
       cacheExpireMinutes?: number;
+      noPromptCache?: boolean;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
@@ -684,6 +685,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       messReminders?: boolean;
       cacheWarnMinutes?: number;
       cacheExpireMinutes?: number;
+      noPromptCache?: boolean;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };

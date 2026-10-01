@@ -50,6 +50,14 @@ describe('HelmSessionService.listSessions', () => {
     expect(fresh.lastPromptAtEpochMs).toBeUndefined();
   });
 
+  it('flags a CLI type with no prompt cache, so the phone shows no staleness', () => {
+    const sessionManager = makeSessionManager([{ id: 's1', name: 'A', cliType: 'local', workingDir: '/r', lastPromptAt: 1000 } as any]);
+    const config = makeConfigLoader();
+    config.getCliTypeEntry.mockReturnValue({ noPromptCache: true } as any);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, config as any, makePlanManager() as any);
+    expect(service.listSessions()[0]).toMatchObject({ noPromptCache: true });
+  });
+
   it('returns all sessions when no filter is provided', () => {
     const sessionManager = makeSessionManager([
       { id: 's1', name: 'A', cliType: 'claude-code', workingDir: '/repo/main' },

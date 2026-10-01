@@ -46,6 +46,18 @@ class CacheStageTest {
     }
 
     @Test
+    fun `the operator never goes stale - it is never frozen and its cost does not matter`() {
+        val op = parse("lastPromptAtEpochMs" to 0L, "role" to "operator")
+        assertEquals(CacheStage.Fresh, op.cacheStage(10_000 * min))
+    }
+
+    @Test
+    fun `a CLI type with no prompt cache never goes stale`() {
+        val s = parse("lastPromptAtEpochMs" to 0L, "noPromptCache" to true)
+        assertEquals(CacheStage.Fresh, s.cacheStage(10_000 * min))
+    }
+
+    @Test
     fun `status icons mirror the desktop row - every one that applies, in order`() {
         val now = 10_000 * min
         assertEquals("", parse().statusIcons(now))

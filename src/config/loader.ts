@@ -191,6 +191,8 @@ export interface CliTypeConfig {
   cacheWarnMinutes?: number;
   /** Minutes after the last prompt before the long cache counts as expired (red banner). Default 60. */
   cacheExpireMinutes?: number;
+  /** Local model: no prompt cache, so no staleness banner, row fade or auto-freeze. */
+  noPromptCache?: boolean;
   /** What a keep-warm ping types (sequence syntax), sent 10 s before the short
    *  cache lapses. Keep it tiny: it costs a turn. Default "{Esc}heartbeat". */
   keepWarmPrompt?: string;
@@ -1335,6 +1337,7 @@ export class ConfigLoader {
     if (options?.messReminders === false) tool.messReminders = false;
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
+    if (options?.noPromptCache === true) tool.noPromptCache = true;
     if (options?.mouseTracking === true) tool.mouseTracking = true;
     if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
     const helmActions = this.cleanHelmActions(options?.helmActions);
@@ -1424,6 +1427,10 @@ export class ConfigLoader {
         if (val === undefined) continue;
         if (!val || val === fallback) delete existing[field];
         else existing[field] = val;
+      }
+      if (options.noPromptCache !== undefined) {
+        if (options.noPromptCache) existing.noPromptCache = true;
+        else delete existing.noPromptCache;  // omit default from YAML
       }
       if (options.mouseTracking !== undefined) {
         if (options.mouseTracking === false) {

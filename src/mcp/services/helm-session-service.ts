@@ -348,6 +348,7 @@ export class HelmSessionService {
       ...(session.lastPromptAt != null ? { lastPromptAtEpochMs: session.lastPromptAt } : {}),
       cacheWarnMinutes: warnAfterMs(cliEntry) / 60_000,
       cacheExpireMinutes: expireAfterMs(cliEntry) / 60_000,
+      ...(cliEntry?.noPromptCache ? { noPromptCache: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.role ? { role: session.role } : {}),
       ...(session.apiTool ? { apiTool: true } : {}),

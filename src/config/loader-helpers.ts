@@ -71,6 +71,7 @@ export type CliTypeOptions = {
   messReminders?: boolean;
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  noPromptCache?: boolean;
   mouseTracking?: boolean;
   submitSuffix?: string;
   helmActions?: HelmActionMap;

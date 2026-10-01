@@ -65,6 +65,8 @@ data class HelmSession(
     /** The CLI type's short / long prompt-cache windows, in minutes. */
     val cacheWarnMinutes: Int = 5,
     val cacheExpireMinutes: Int = 60,
+    /** A local model: no prompt cache, so the session never goes stale. */
+    val noPromptCache: Boolean = false,
 ) {
     /** Lock / frozen / keep-warm, as the desktop row shows them — every one that applies. */
     fun statusIcons(nowMs: Long): String = listOfNotNull(
@@ -76,10 +78,12 @@ data class HelmSession(
     /**
      * How stale the session's prompt cache is. The desktop clock and the phone
      * clock can disagree, so this is a warning, never a gate — the desktop owns
-     * the actual freeze.
+     * the actual freeze. The operator is never frozen and must always answer,
+     * so a cold cache is not worth warning about; nor is one with no prompt cache.
      */
     fun cacheStage(nowMs: Long): CacheStage {
         if (frozen) return CacheStage.Frozen
+        if (role == "operator" || noPromptCache) return CacheStage.Fresh
         val age = nowMs - (lastPromptAtEpochMs ?: return CacheStage.Fresh)
         return when {
             age > cacheExpireMinutes * 60_000L -> CacheStage.Expired
@@ -164,6 +168,7 @@ object SessionWire {
             lastPromptAtEpochMs = (summary.opt("lastPromptAtEpochMs") as? Number)?.toLong(),
             cacheWarnMinutes = (summary.opt("cacheWarnMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 5,
             cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,
+            noPromptCache = summary.opt("noPromptCache") == true,
         )
     }
 

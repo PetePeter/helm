@@ -367,6 +367,7 @@ export interface ToolEditorBridgeData {
   messReminders?: boolean;
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  noPromptCache?: boolean;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -378,7 +379,7 @@ const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   name: '', env: [], initialPromptDelay: 2000,
   spawnCommand: '', resumeCommand: '', continueCommand: '',
   renameCommand: '', helmPreambleForInterSession: true,
-  largeTextAsTempFile: false, messReminders: true, mouseTracking: false,
+  largeTextAsTempFile: false, messReminders: true, mouseTracking: false, noPromptCache: false,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
   api: null,
 };
@@ -440,6 +441,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   messReminders?: boolean;
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
+  noPromptCache?: boolean;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix?: string;
@@ -474,6 +476,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     ...(Number(values.cacheWarnMinutes) > 0 ? { cacheWarnMinutes: Number(values.cacheWarnMinutes) } : {}),
     ...(Number(values.cacheExpireMinutes) > 0 ? { cacheExpireMinutes: Number(values.cacheExpireMinutes) } : {}),
     mouseTracking: Boolean(values.mouseTracking),
+    noPromptCache: Boolean(values.noPromptCache),
     bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,

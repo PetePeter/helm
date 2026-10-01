@@ -122,7 +122,9 @@ const timerTooltip = computed(() => {
 const fadeStyle = computed(() => {
   const at = props.session.lastPromptAt;
   if (at === undefined) return null;
-  const durationMs = warnAfterMs(resolveCliTypeRecord(props.session.cliType) ?? undefined);
+  const cli = resolveCliTypeRecord(props.session.cliType) ?? undefined;
+  if (cli?.noPromptCache) return null;
+  const durationMs = warnAfterMs(cli);
   return { animationDuration: `${durationMs}ms`, animationDelay: `${-(Date.now() - at)}ms` };
 });
 
