@@ -95,7 +95,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'mess_history', title: 'Read Mess History', description: 'Read the last N project Mess notes grouped by date, without advancing the caller cursor.' },
     { name: 'mess_search', title: 'Search Mess', description: 'Find project Mess notes by literal text, with optional surrounding context.' },
     { name: 'notify_user', title: 'Notify User', description: 'Send an LLM-directed notification to a target session with smart delivery routing when work completes, you are blocked for user input, or an error stops progress.' },
-    { name: 'ring_user', title: 'Ring the User', description: 'Operator only: ring the paired phone with an incoming call; save "call me when X" as a [RING-ME] memory first. Other sessions send the operator what to say instead.' },
+    { name: 'ring_user', title: 'Ring the User', description: 'Ring the paired phone with an incoming call from you; Accept opens a voice call to you. For "call me when X", save a [RING-ME] memory first.' },
     { name: 'call_transfer', title: 'Transfer the Phone Call', description: 'Move the live phone call from you to another session; only the session holding the call can move it.' },
     { name: 'get_app_visibility', title: 'Get App Visibility', description: 'Return app visibility, screen lock state, and activeSessionId for notification routing.' },
     { name: 'telegram_status', title: 'Telegram Status', description: 'Report whether Telegram is enabled, configured, running, and available for urgent mobile-friendly user communication.' },

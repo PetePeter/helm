@@ -8,6 +8,9 @@
  * A spoken "no" on an answered call is the operator's to honour; nothing here
  * retries an answered ring.
  *
+ * Any session may ring, so each session keeps its own chain: one session's
+ * ring or answer never cancels another's retry.
+ *
  * In memory on purpose: a pending retry does not survive a Helm restart.
  */
 
@@ -33,49 +36,54 @@ interface Pending {
 }
 
 export class RingRetry {
-  private pending: Pending | null = null;
+  private readonly pending = new Map<string, Pending>();
 
   constructor(private readonly deps: RingRetryDeps) {}
 
-  /** A first ring went out; a newer ring replaces any chain in flight. */
+  /** A first ring went out; it replaces that session's chain in flight. */
   rang(sessionId: string, reason: string): void {
-    this.clear();
+    this.clear(sessionId);
     this.awaitAnswer(sessionId, reason, 1);
   }
 
-  /** The phone picked up: the chain is over. */
-  answered(): void {
-    this.clear();
+  /**
+   * The phone picked up: that session's chain is over. An older phone names
+   * no session, so its answer ends every chain rather than ring again.
+   */
+  answered(sessionId?: string): void {
+    if (sessionId === undefined) this.dispose();
+    else this.clear(sessionId);
   }
 
   dispose(): void {
-    this.clear();
+    for (const sessionId of [...this.pending.keys()]) this.clear(sessionId);
   }
 
   private awaitAnswer(sessionId: string, reason: string, attempt: 1 | 2): void {
     const timer = setTimeout(() => this.unanswered(sessionId, reason, attempt), RING_ANSWER_WINDOW_MS);
     timer.unref?.();
-    this.pending = { sessionId, reason, attempt, timer };
+    this.pending.set(sessionId, { sessionId, reason, attempt, timer });
   }
 
   private unanswered(sessionId: string, reason: string, attempt: 1 | 2): void {
-    this.pending = null;
+    this.pending.delete(sessionId);
     if (attempt === 2) {
       this.deps.missedTwice(sessionId, reason);
       return;
     }
     this.deps.missedOnce(sessionId, reason, Date.now() + RING_RETRY_AFTER_MS);
     const timer = setTimeout(() => {
-      this.pending = null;
+      this.pending.delete(sessionId);
       if (this.deps.ring(sessionId, reason)) this.awaitAnswer(sessionId, reason, 2);
       else this.deps.missedTwice(sessionId, reason);
     }, RING_RETRY_AFTER_MS);
     timer.unref?.();
-    this.pending = { sessionId, reason, attempt: 2, timer };
+    this.pending.set(sessionId, { sessionId, reason, attempt: 2, timer });
   }
 
-  private clear(): void {
-    if (this.pending) clearTimeout(this.pending.timer);
-    this.pending = null;
+  private clear(sessionId: string): void {
+    const pending = this.pending.get(sessionId);
+    if (pending) clearTimeout(pending.timer);
+    this.pending.delete(sessionId);
   }
 }

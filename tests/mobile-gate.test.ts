@@ -60,7 +60,7 @@ function build(
   const now = opts.now ?? (() => 0);
   const calls: Built['calls'] = [];
   const restarts: boolean[] = [];
-  let answeredRings = 0;
+  const answeredRings: Array<string | undefined> = [];
   const store = new MobileDeviceStore(undefined, now);
   const device = store.add({
     machineId: 'phone-machine',
@@ -78,7 +78,7 @@ function build(
     },
     rateLimiter: new PeerRateLimiter({ capacity: opts.capacity ?? 100, refillPerMs: 100 / 60000, now }),
     ...(opts.sessionLookup ? { sessionLookup: opts.sessionLookup } : {}),
-    ringAnswered: () => { answeredRings++; },
+    ringAnswered: (sessionId?: string) => { answeredRings.push(sessionId); },
     timesheet: (params: unknown) => ({ asked: params }),
     ...(opts.noRestart ? {} : {
       restartHelm: (resume: boolean) => {
@@ -338,6 +338,12 @@ describe('MobileGate — timesheet', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('an answer naming no session (older phone) reports no session', async () => {
+    const { gate, deviceId, answered } = build(['session_list']);
+    await gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {});
+    expect(answered()).toEqual([undefined]);
+  });
+
   it('denies a disabled device', async () => {
     const { gate, deviceId } = build(['*'], { enabled: false });
     await expect(gate.handle(deviceId, RESERVED_TIMESHEET_METHOD, {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
@@ -347,15 +353,21 @@ describe('MobileGate — timesheet', () => {
 describe('MobileGate — ring answered', () => {
   it('reports the answer in-gate, for any trusted device, without dispatching', async () => {
     const { gate, deviceId, calls, answered } = build(['session_list']);
-    await gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {});
-    expect(answered()).toBe(1);
+    await gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, { sessionId: 'work' });
+    expect(answered()).toEqual(['work']);
     expect(calls).toHaveLength(0);
+  });
+
+  it('an answer naming no session (older phone) reports no session', async () => {
+    const { gate, deviceId, answered } = build(['session_list']);
+    await gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {});
+    expect(answered()).toEqual([undefined]);
   });
 
   it('denies a disabled device', async () => {
     const { gate, deviceId, answered } = build(['*'], { enabled: false });
     await expect(gate.handle(deviceId, RESERVED_RING_ANSWERED_METHOD, {})).rejects.toThrow(MOBILE_DENY_MESSAGE);
-    expect(answered()).toBe(0);
+    expect(answered()).toEqual([]);
   });
 });
 

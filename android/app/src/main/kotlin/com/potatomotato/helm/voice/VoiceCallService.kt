@@ -249,7 +249,7 @@ class VoiceCallService : Service() {
         // An answered ring that really became a call: tell Helm, so it does not
         // ring again in 10 minutes. Only here — a call that never started (no
         // mic grant, no audio focus) leaves the retry armed.
-        if (opening != null) client.ringAnswered()
+        if (opening != null) client.ringAnswered(target)
     }
 
     /**

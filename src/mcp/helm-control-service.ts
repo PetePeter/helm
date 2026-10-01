@@ -1739,20 +1739,16 @@ export class HelmControlService extends EventEmitter {
     this.ringRetry = retry;
   }
 
-  /** A linked phone picked up: no retry for this ring. */
-  ringAnswered(): void {
-    this.ringRetry?.answered();
+  /** A linked phone picked up `sessionId`'s ring (unnamed: an older phone): no retry. */
+  ringAnswered(sessionId?: string): void {
+    this.ringRetry?.answered(sessionId);
   }
 
   /**
-   * Ring the user's phone (ring_user). OPERATOR ONLY: one voice calls the user;
-   * any other session hands the operator what to say (session_send_text or an
-   * artifact id) and the operator paraphrases it on the call.
+   * Ring the user's phone (ring_user) as the calling session: the phone shows
+   * its name as caller ID and Accept opens a call straight to it.
    */
   ringUser(callerSessionId: string, reason: string): { rung: true } {
-    if (this.sessionService.getSession(callerSessionId)?.role !== 'operator') {
-      throw new Error('ring_user is operator-only. Send the operator what to tell the user (session_send_text, or an artifact id) and it will call.');
-    }
     if (!this.phoneRinger?.(callerSessionId, reason)) {
       throw new Error('No linked phone took the ring. Fall back to chat_send or notify_user.');
     }

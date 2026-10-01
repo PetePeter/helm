@@ -71,9 +71,9 @@ export const RESERVED_CHAT_CURSOR_METHOD = '__chat_cursor__';
 export const RESERVED_RESTART_HELM_METHOD = '__restart_helm__';
 
 /**
- * The phone answered the operator's ring. Only ends the retry chain
- * (src/session/ring-retry.ts), so any device the registry trusts may say it —
- * the ring itself went to every linked phone.
+ * The phone answered a session's ring (`{ sessionId }`). Only ends that
+ * session's retry chain (src/session/ring-retry.ts), so any device the registry
+ * trusts may say it — the ring itself went to every linked phone.
  */
 export const RESERVED_RING_ANSWERED_METHOD = '__ring_answered__';
 
@@ -246,8 +246,8 @@ export interface MobileGateDeps {
    * restart meta-method is denied — the safe default.
    */
   restartHelm?: (resume: boolean) => unknown;
-  /** A linked phone picked up the operator's ring. */
-  ringAnswered?: () => void;
+  /** A linked phone picked up a session's ring; undefined = an older phone that names none. */
+  ringAnswered?: (sessionId?: string) => void;
   /** The phone's Time tab. Absent means the method is denied — the safe default. */
   timesheet?: (params: unknown) => unknown;
 }
@@ -315,7 +315,8 @@ export class MobileGate {
     // 2b'. The ring was answered: stop the retry chain.
     if (method === RESERVED_RING_ANSWERED_METHOD) {
       this.consumeOrThrow(deviceId, method);
-      this.ringAnswered?.();
+      const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
+      this.ringAnswered?.(typeof sessionId === 'string' ? sessionId : undefined);
       this.logOutcome(deviceId, method, 'ok');
       return { ok: true };
     }

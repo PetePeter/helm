@@ -1398,12 +1398,12 @@ describe('HelmControlService.ringUser', () => {
     expect(rings).toEqual([['op', 'build done']]);
   });
 
-  it('refuses any session that is not the operator', () => {
+  it('rings the phone for a work session too, as that session', () => {
     const service = withCaller();
-    const ringer = vi.fn(() => true);
-    service.setPhoneRinger(ringer);
-    expect(() => service.ringUser('op', 'x')).toThrow(/operator/);
-    expect(ringer).not.toHaveBeenCalled();
+    const rings: Array<[string, string]> = [];
+    service.setPhoneRinger((id, reason) => { rings.push([id, reason]); return true; });
+    expect(service.ringUser('op', 'tests green')).toEqual({ rung: true });
+    expect(rings).toEqual([['op', 'tests green']]);
   });
 
   it('fails legibly when no phone took the ring', () => {

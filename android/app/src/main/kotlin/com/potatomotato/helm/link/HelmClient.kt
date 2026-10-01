@@ -358,8 +358,9 @@ class HelmClient(
             onOutcome((outcome as? Outcome.Failed)?.message)
         }
 
-    /** The operator's ring was answered here: Helm drops its one retry. Best-effort. */
-    fun ringAnswered(): Boolean = call(METHOD_RING_ANSWERED) { }
+    /** [sessionId]'s ring was answered here: Helm drops that session's one retry. Best-effort. */
+    fun ringAnswered(sessionId: String): Boolean =
+        call(METHOD_RING_ANSWERED, linkedMapOf<String, Any>("sessionId" to sessionId)) { }
 
     /**
      * Directories Helm knows about, for the spawn form. A failure is STATE, not

@@ -424,7 +424,7 @@ stateDiagram-v2
   `open()` releases the stream and audio context. Empty transcripts send
   nothing. No new main-process code — the same `voice:*` IPC.
 
-## Ring me — the operator calls the user
+## Ring me — a session calls the user
 
 "Hey operator, call me when P-0850 finishes or has blocking questions." Calls
 were phone-initiated only; `ring_user` is the one reverse path.
@@ -444,9 +444,11 @@ sequenceDiagram
   O->>O: memory_delete the watch
 ```
 
-- **Operator only.** `ring_user` refuses every other role. Work sessions hand the
-  operator what to say (`session_send_text`, or an artifact id it reads with
-  `session_artifact_get`) and it paraphrases on the call — one voice calls the user.
+- **Any session.** `ring_user` rings as the calling session: the phone shows its
+  name as caller ID and Answer opens a Call Helm straight to it. The flow above is
+  the operator's "call me when X"; a work session the user asked directly just
+  rings when X is met. A work session may still hand the operator what to say
+  (`session_send_text`, or an artifact id) and let it make the call.
 - **Watches are plain memories**, tldr prefixed `[RING-ME]` (`RING_ME_PREFIX`,
   `context-injector.ts`). No new store: SessionStart fires after every
   compaction, and for the operator it lists those tldrs with the instruction to
@@ -475,15 +477,17 @@ sequenceDiagram
   via `CallController.start(opening)` with the mic already open). The user's
   spoken yes / no / "call me back in N" reaches the operator, whose guide says
   how to honour each — a call-back is a once scheduler self-timer.
-- **One retry.** The phone reports only ANSWERED (`__ring_answered__`, in-gate).
+- **One retry per session.** The phone reports only ANSWERED (`__ring_answered__`
+  with `{ sessionId }`, in-gate; an older phone names none and ends every chain).
   No answer inside 45 s — declined, timed out, phone off — and Helm rings once
-  more 10 min later (`src/session/ring-retry.ts`). Each miss leaves a note in
-  the operator chat: the first says when Helm will call back (~HH:MM), the
+  more 10 min later (`src/session/ring-retry.ts`). Each session keeps its own chain, so one
+  session's ring never cancels another's retry. Each miss leaves a note in
+  the ringing session's chat: the first says when Helm will call back (~HH:MM), the
   second says there are no more retries. In memory: a restart drops a pending retry.
 - **Ear sensor.** For the whole call, on any route, a proximity wake lock
   darkens the screen while the sensor is covered — at the ear, or face down
   on a stand to save battery. Lifting it wakes the screen. Released when the call ends.
-- **Fails legibly** when no phone takes the ring; the operator falls back to
+- **Fails legibly** when no phone takes the ring; the caller falls back to
   `chat_send`.
 
 ## Sessions the operator starts report back to it

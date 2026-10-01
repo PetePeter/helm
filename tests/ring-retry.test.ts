@@ -78,6 +78,29 @@ describe('RingRetry', () => {
     expect(rings).toEqual([{ sessionId: 'op', reason: 'second' }]);
   });
 
+  it('two sessions ringing keep independent retry chains', () => {
+    retry.rang('op', 'first');
+    retry.rang('work', 'second');
+    vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS + RING_RETRY_AFTER_MS);
+    expect(rings).toEqual([{ sessionId: 'op', reason: 'first' }, { sessionId: 'work', reason: 'second' }]);
+  });
+
+  it("answering one session's ring leaves another session's retry armed", () => {
+    retry.rang('op', 'first');
+    retry.rang('work', 'second');
+    retry.answered('op');
+    vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS + RING_RETRY_AFTER_MS);
+    expect(rings).toEqual([{ sessionId: 'work', reason: 'second' }]);
+  });
+
+  it('an answer that names no session (older phone) ends every chain', () => {
+    retry.rang('op', 'first');
+    retry.rang('work', 'second');
+    retry.answered();
+    vi.advanceTimersByTime(RING_ANSWER_WINDOW_MS + RING_RETRY_AFTER_MS);
+    expect(rings).toEqual([]);
+  });
+
   it('a retry no phone takes counts as the second miss', () => {
     retry = new RingRetry({ ring: () => false, missedOnce: () => {}, missedTwice: (s, r) => { missed.push({ sessionId: s, reason: r }); } });
     retry.rang('op', 'build done');

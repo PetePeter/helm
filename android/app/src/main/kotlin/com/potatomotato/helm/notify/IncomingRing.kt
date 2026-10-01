@@ -17,7 +17,7 @@ import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.wire.MobileRecord
 
 /**
- * The operator calling the user: a `kind: "ring"` chat record raised as an
+ * A session calling the user: a `kind: "ring"` chat record raised as an
  * incoming call rather than a shade row.
  *
  * The ring is offered to Telecom first ([HelmTelecom]) so the car and headset

@@ -1256,8 +1256,8 @@ export const MCP_TOOLS: McpTool[] = [
   },
   {
     name: 'ring_user',
-    title: 'Ring the User (operator only)',
-    description: 'OPERATOR ONLY. Ring the user\'s paired phone with a full-screen incoming call; Accept starts a voice call to you. reason is what the phone shows (short). Use when the user asked "call me when X": save the watch first with memory_create, tldr prefixed [RING-ME] (it is re-surfaced to you after every compaction), ring when X is met, then memory_delete it. Other sessions cannot ring: they send the operator what to say (session_send_text, or an artifact id) and the operator paraphrases it on the call. Fails if no phone is linked.',
+    title: 'Ring the User',
+    description: 'Ring the user\'s paired phone with a full-screen incoming call showing your session name; Accept starts a voice call to you. reason is what the phone shows (short). Use when the user asked "call me when X": save the watch first with memory_create, tldr prefixed [RING-ME] (it is re-surfaced to you after every compaction), ring when X is met, then memory_delete it. Ring only when the user asked to be called, or for something urgent they must hear now. Fails if no phone is linked.',
     inputSchema: {
       type: 'object',
       properties: {

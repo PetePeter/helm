@@ -263,7 +263,7 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /**
-   * RING the user — an incoming voice call from `sessionId` (the operator),
+   * RING the user — an incoming voice call from `sessionId` (any session),
    * with `reason` as what the phone shows. Same alert shape, `kind: 'ring'`;
    * the phone raises a full-screen call and Accept starts an ordinary Call Helm
    * to that session. Fire-and-forget: a ring nobody took is reported, not queued.

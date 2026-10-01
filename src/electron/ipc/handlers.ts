@@ -1203,7 +1203,7 @@ export function registerIPCHandlers(
     rateLimiter: createDefaultMobileRateLimiter(),
     sessionLookup: sessionManager,
     restartHelm: (resume) => helmControlService.restartHelm(resume),
-    ringAnswered: () => helmControlService.ringAnswered(),
+    ringAnswered: (sessionId) => helmControlService.ringAnswered(sessionId),
     timesheet: (params) => timesheetQuery(timeTracker, params),
   });
 
@@ -1245,7 +1245,7 @@ export function registerIPCHandlers(
   helmControlService.setCallTransferrer((from, to, line) => mobileChatBridge.sendTransfer(from, to, line));
   helmControlService.setRingRetry(new RingRetry({
     ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
-    // Missed calls leave a note in the operator's chat, where the phone shows it.
+    // Missed calls leave a note in the ringing session's chat, where the phone shows it.
     missedOnce: (sessionId, reason, retryAt) => {
       const at = new Date(retryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       mobileChatBridge.sendAlert(sessionId, 'attention', `Missed call: ${reason}. I'll call back ~${at}`);
