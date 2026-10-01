@@ -5,7 +5,6 @@ import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { TerminalOutputMode } from '../../session/terminal-output-buffer.js';
-import type { PlanStatus } from '../../types/plan.js';
 import type { SessionInfo } from '../../types/session.js';
 import type { SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
@@ -18,14 +17,6 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placement.js';
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
-
-/** Throw if value is null, otherwise return it. */
-function requireResult<T>(value: T | null, message: string): T {
-  if (value === null) {
-    throw new Error(message);
-  }
-  return value;
-}
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
@@ -50,6 +41,12 @@ export class HelmSessionService {
   setRuntimeGroupManager(manager: RuntimeGroupManager): void {
     this.runtimeGroupManager = manager;
   }
+
+  /** Late-bound: carries a session's artifacts to the session that continues it. */
+  setSessionArtifactCopier(copier: (fromSessionId: string, toSessionId: string) => void): void {
+    this.copySessionArtifacts = copier;
+  }
+  private copySessionArtifacts: ((fromSessionId: string, toSessionId: string) => void) | null = null;
 
   private requireRuntimeGroupManager(): RuntimeGroupManager {
     if (!this.runtimeGroupManager) {
@@ -202,6 +199,8 @@ export class HelmSessionService {
       runtimeGroupId: group?.id ?? 'none',
       initialPrompt: buildTranscriptResumePrompt(transcriptFile, opts.handover),
     });
+    // Before the close: closing clears the source's artifacts.
+    this.copySessionArtifacts?.(source.id, created.id);
 
     const closeSource = opts.closeSource !== false && !source.locked;
     if (closeSource) this.closeSession(source.id);

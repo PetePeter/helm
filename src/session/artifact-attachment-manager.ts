@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   closeSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -200,6 +201,35 @@ export class ArtifactAttachmentManager {
     if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
 
     logger.info(`[ArtifactAttachmentManager] Deleted ${owned.length} attachment(s) for artifact ${artifactId}`);
+    return owned.length;
+  }
+
+  /**
+   * Duplicate an artifact's attachments under another artifact id. Attachment
+   * ids are kept, so only the artifact segment of each path changes — matching
+   * the id swap ArtifactManager.copySession applies to content. Returns the count.
+   */
+  copyForArtifact(fromArtifactId: string, toArtifactId: string): number {
+    const index = this.loadIndex();
+    const owned = index.attachments.filter(a => a.artifactId === fromArtifactId);
+    if (owned.length === 0) return 0;
+
+    const targetDir = this.artifactStorageDir(toArtifactId);
+    this.assertInside(this.rootDir, targetDir);
+    mkdirSync(targetDir, { recursive: true });
+    for (const attachment of owned) {
+      const storedFilename = basename(attachment.relativePath);
+      const source = join(this.rootDir, attachment.relativePath);
+      this.assertInside(this.rootDir, source);
+      if (existsSync(source)) copyFileSync(source, join(targetDir, storedFilename));
+      index.attachments.push({
+        ...attachment,
+        artifactId: toArtifactId,
+        relativePath: `${toArtifactId}/${storedFilename}`,
+      });
+    }
+    this.saveIndex(index);
+    logger.info(`[ArtifactAttachmentManager] Copied ${owned.length} attachment(s) from artifact ${fromArtifactId} to ${toArtifactId}`);
     return owned.length;
   }
 

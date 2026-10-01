@@ -226,4 +226,50 @@ describe('ArtifactManager', () => {
 
     expect(deletedIds).toEqual([first.id, second.id]);
   });
+
+  describe('copySession()', () => {
+    it('copies every artifact to the target under new ids, keeping versions and leaving the source alone', () => {
+      const report = manager.create('s1', 'Report', 'markdown', '# v1');
+      manager.update(report.id, '# v2');
+      manager.create('s1', 'Page', 'html', '<p>hi</p>');
+      const events: Array<[string, string[]]> = [];
+      manager.on('artifact:changed', (sid: string, ids: string[]) => events.push([sid, ids]));
+
+      const pairs = manager.copySession('s1', 's2');
+
+      const copies = manager.getForSession('s2');
+      expect(copies).toHaveLength(2);
+      expect(pairs.map(p => p.to).sort()).toEqual(copies.map(c => c.id).sort());
+      for (const { from, to } of pairs) {
+        const original = manager.get(from)!;
+        const copy = manager.get(to)!;
+        expect(to).not.toBe(from);
+        expect(copy).toMatchObject({ sessionId: 's2', title: original.title, kind: original.kind });
+        expect(copy.versions.map(v => v.content)).toEqual(original.versions.map(v => v.content));
+        expect(original.sessionId).toBe('s1');
+      }
+      expect(manager.count('s1')).toBe(2);
+      expect(Object.keys(persisted!).sort()).toEqual(['s1', 's2']);
+      expect(events).toHaveLength(1);
+      expect(events[0][0]).toBe('s2');
+      expect([...events[0][1]].sort()).toEqual(copies.map(c => c.id).sort());
+    });
+
+    it('points copied content at the new artifact id, so attachment paths follow the copy', () => {
+      const original = manager.create('s1', 'Shots', 'markdown', 'placeholder');
+      manager.update(original.id, `![a](C:/cfg/artifact-attachments/${original.id}/img.png)`);
+
+      const [{ to }] = manager.copySession('s1', 's2');
+
+      const copy = manager.get(to)!;
+      expect(copy.versions[1].content).toBe(`![a](C:/cfg/artifact-attachments/${to}/img.png)`);
+      expect(copy.versions[0].content).toBe('placeholder');
+    });
+
+    it('is a no-op for a session with no artifacts', () => {
+      expect(manager.copySession('empty', 's2')).toEqual([]);
+      expect(persistCalls).toBe(0);
+    });
+  });
 });
+

@@ -24,6 +24,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
 import { RuntimeGroupManager } from '../src/session/runtime-group-manager.js';
+import { ArtifactManager } from '../src/session/artifact-manager.js';
 import type { SessionInfo } from '../src/types/session.js';
 
 let dir: string;
@@ -38,8 +39,10 @@ function setup(patch: Partial<SessionInfo> = {}) {
   const sessionManager = {
     getAllSessions: () => [...sessions.values()],
     getSession: (id: string) => sessions.get(id) ?? null,
-    removeSession: (id: string) => { sessions.delete(id); },
+    removeSession: (id: string) => { sessions.delete(id); artifacts.clearSession(id); },
   };
+  const artifacts = new ArtifactManager();
+  artifacts.create('old-sid', 'Findings', 'markdown', '# notes');
   const killed: string[] = [];
   const configLoader = {
     getWorkingDirectories: () => [{ path: '/repo/main', name: 'main' }],
@@ -51,7 +54,8 @@ function setup(patch: Partial<SessionInfo> = {}) {
   );
   const groups = new RuntimeGroupManager();
   service.setRuntimeGroupManager(groups);
-  return { service, sessions, killed, groups };
+  service.setSessionArtifactCopier((from, to) => { artifacts.copySession(from, to); });
+  return { service, sessions, killed, groups, artifacts };
 }
 
 describe('HelmSessionService.switchCli', () => {
@@ -77,6 +81,15 @@ describe('HelmSessionService.switchCli', () => {
     expect(result).toMatchObject({ oldSessionId: 'old-sid', newSessionId: 'new-sid', sourceClosed: true });
     expect(killed).toEqual(['old-sid']);
     expect(sessions.has('old-sid')).toBe(false);
+    rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('copies the source artifacts to the new session before the source closes', () => {
+    const { service, artifacts } = setup();
+
+    const result = service.switchCli('old-sid', 'codex');
+
+    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Findings']);
     rmSync(result.transcriptFile, { force: true });
   });
 
@@ -117,6 +130,16 @@ describe('HelmSessionService.cloneSession', () => {
     expect(result).toMatchObject({ oldSessionId: 'old-sid', newSessionId: 'new-sid', sourceClosed: false });
     expect(killed).toEqual([]);
     expect(sessions.has('old-sid')).toBe(true);
+    rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('copies artifacts to the clone and leaves the source its own', () => {
+    const { service, artifacts } = setup({ cliType: 'codex' });
+
+    const result = service.cloneSession('old-sid');
+
+    expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Findings']);
+    expect(artifacts.count('old-sid')).toBe(1);
     rmSync(result.transcriptFile, { force: true });
   });
 });

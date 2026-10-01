@@ -100,4 +100,21 @@ describe('ArtifactAttachmentManager', () => {
 
     expect(() => manager.getPath('artifact-1', attachment.id)).toThrow('file missing');
   });
+
+  it('copyForArtifact() duplicates files and index entries under the new artifact, surviving the source', () => {
+    const attachment = manager.add('artifact-1', { filename: 'shot.png', content: Buffer.from('png-bytes'), contentType: 'image/png' });
+
+    expect(manager.copyForArtifact('artifact-1', 'artifact-2')).toBe(1);
+    manager.deleteForArtifact('artifact-1');
+
+    const [copy] = manager.list('artifact-2');
+    expect(copy).toMatchObject({ id: attachment.id, filename: 'shot.png', contentType: 'image/png', sizeBytes: 9 });
+    expect(copy.relativePath).toBe(attachment.relativePath.replace('artifact-1', 'artifact-2'));
+    expect(readFileSync(manager.getPath('artifact-2', attachment.id), 'utf8')).toBe('png-bytes');
+  });
+
+  it('copyForArtifact() returns 0 when the artifact has no attachments', () => {
+    expect(manager.copyForArtifact('none', 'artifact-2')).toBe(0);
+  });
 });
+

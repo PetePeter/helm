@@ -166,6 +166,32 @@ export class ArtifactManager extends EventEmitter {
     this.deleteAllForSession(sessionId);
   }
 
+  /**
+   * Copy every artifact of `fromSessionId` to `toSessionId` under fresh ids, so
+   * a session continued elsewhere (switch CLI, clone) keeps its reports while
+   * the source keeps its own. Content can embed the artifact's attachment path,
+   * which is keyed by artifact id — that id is swapped so the copy points at its
+   * own attachments. Returns the old→new id pairs for side stores to follow.
+   */
+  copySession(fromSessionId: string, toSessionId: string): Array<{ from: string; to: string }> {
+    const sources = this.artifacts.get(fromSessionId) ?? [];
+    if (sources.length === 0) return [];
+    const copies = sources.map((source): Artifact => {
+      const id = randomUUID();
+      return {
+        ...source,
+        id,
+        sessionId: toSessionId,
+        versions: source.versions.map(v => ({ ...v, content: v.content.replaceAll(source.id, id) })),
+      };
+    });
+    if (!this.artifacts.has(toSessionId)) this.artifacts.set(toSessionId, []);
+    this.artifacts.get(toSessionId)!.push(...copies);
+    this.markChanged(toSessionId, copies.map(c => c.id));
+    logger.info(`[ArtifactManager] Copied ${copies.length} artifact(s) from session ${fromSessionId} to ${toSessionId}`);
+    return sources.map((source, i) => ({ from: source.id, to: copies[i].id }));
+  }
+
   /** Export all artifacts for persistence (sessions with 0 artifacts omitted). */
   exportAll(): Record<string, Artifact[]> {
     const result: Record<string, Artifact[]> = {};

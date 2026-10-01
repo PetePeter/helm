@@ -451,6 +451,11 @@ export class HelmControlService extends EventEmitter {
   ): void {
     this.artifactManager = manager;
     this.artifactAttachmentManager = attachmentManager;
+    this.sessionService.setSessionArtifactCopier((fromSessionId, toSessionId) => {
+      for (const { from, to } of manager.copySession(fromSessionId, toSessionId)) {
+        attachmentManager?.copyForArtifact(from, to);
+      }
+    });
   }
 
   /**
