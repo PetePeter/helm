@@ -30,6 +30,10 @@ export interface SessionCardSession {
   createdByPeerId?: string;
   remote?: { peerId: string; sessionId: string };
   locked?: boolean;
+  /** No input reaches it; drives the ❄ toggle's on state and the hatched row. */
+  frozen?: boolean;
+  /** Epoch ms of the last prompt (timer tooltip, cache fade). */
+  lastPromptAt?: number;
 }
 
 export type SessionCardFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -372,8 +376,9 @@ function onCardClick(e: MouseEvent): void {
 
       <!-- Freeze toggle — beside the lock: the lock guards closure, this guards input. -->
       <button
-        class="session-lock"
-        :class="{ 'session-lock--on': session.frozen }"
+        class="session-lock session-freeze"
+        :class="{ 'session-freeze--on': session.frozen }"
+        :aria-pressed="!!session.frozen"
         :title="session.frozen ? `${displayName} is frozen — no input reaches it. Click to thaw` : `Freeze ${displayName} — refuse all input`"
         @click.stop="emit('toggleFreeze', session.id, !session.frozen)"
       >
@@ -468,6 +473,16 @@ function onCardClick(e: MouseEvent): void {
   animation-fill-mode: both;
 }
 @keyframes session-prompt-fade { to { opacity: 0; } }
+/* The ❄ toggle must read as on/off at a glance: off is a faint grey glyph,
+   on is a lit blue pill. Opacity alone (the lock's cue) was indistinguishable. */
+.session-freeze { filter: grayscale(1); opacity: 0.35; }
+.session-freeze--on {
+  filter: none;
+  opacity: 1;
+  background: rgba(140, 188, 255, 0.28);
+  box-shadow: inset 0 0 0 1px #8cbcff;
+  border-radius: 4px;
+}
 /* Frozen — cross-hatched: no input reaches this session. */
 .session-card.frozen {
   background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);

@@ -69,9 +69,11 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
         <!-- xterm.js terminals rendered by TerminalManager -->
       </div>
       <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen">
-        <b>❄ Session frozen</b>
-        <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, with ❄ on its row, or from another session via MCP session_set_frozen.</span>
-        <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
+        <div class="terminal-view__frozen-card">
+          <b>❄ Session frozen</b>
+          <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, with ❄ on its row, or from another session via MCP session_set_frozen.</span>
+          <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
+        </div>
       </div>
       <OperatorChat
         v-if="isChatPane && operatorView === 'chat' && appStore.activeSession"
@@ -114,6 +116,18 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
   justify-content: center;
   gap: var(--spacing-sm);
   background: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.10) 0 8px, rgba(0, 0, 0, 0.45) 8px 16px);
+}
+/* Solid card: the hatching and terminal text behind made the label unreadable. */
+.terminal-view__frozen-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bg-secondary);
+  border: 1px solid #8cbcff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 .terminal-view__frozen b { color: #8cbcff; font-size: var(--font-size-md); }
 .terminal-view__frozen span { color: var(--text-secondary); font-size: var(--font-size-sm); text-align: center; max-width: 320px; }
