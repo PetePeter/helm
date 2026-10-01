@@ -1196,6 +1196,21 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_set_frozen',
+    title: 'Set Session Freeze',
+    description: 'Freeze or thaw a Helm session. A frozen session accepts NO input — keys, session_send_text, schedules, chat, Mess reminders — until thawed. Sessions auto-freeze once their last prompt is older than their CLI type\'s long cache (default 60 min). Thawing restarts that clock. Accepts sessionId or exact session name.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string' },
+        name: { type: 'string' },
+        frozen: { type: 'boolean', description: 'true freezes the session; false thaws it.' },
+      },
+      required: ['frozen'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_close',
     title: 'Close Session',
     description: 'Kill the PTY process and remove a session from Helm. Use this when a task is complete and the session is no longer needed, or to recover from a stuck session. Accepts sessionId or session name.',

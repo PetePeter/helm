@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../session/prompt-staleness.js';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
@@ -185,6 +186,11 @@ export interface CliTypeConfig {
    * a plain shell's stdin is not a nudge, it is a stray command.
    */
   messReminders?: boolean;
+  /** Minutes after the last prompt before the short prompt cache counts as expired:
+   *  Mess pokes stop, the row has faded, an orange banner shows. Default 5. */
+  cacheWarnMinutes?: number;
+  /** Minutes after the last prompt before the long cache counts as expired (red banner). Default 60. */
+  cacheExpireMinutes?: number;
   /**
    * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —
    * mouse modes are swallowed so plain click-drag selects text for copying.
@@ -1324,6 +1330,8 @@ export class ConfigLoader {
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
+    if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
+    if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
     if (options?.mouseTracking === true) tool.mouseTracking = true;
     if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
     const helmActions = this.cleanHelmActions(options?.helmActions);
@@ -1406,6 +1414,13 @@ export class ConfigLoader {
         } else {
           existing.messReminders = false;
         }
+      }
+      // 0 or the default clears the key, so YAML only carries overrides.
+      for (const [field, fallback] of [['cacheWarnMinutes', DEFAULT_CACHE_WARN_MINUTES], ['cacheExpireMinutes', DEFAULT_CACHE_EXPIRE_MINUTES]] as const) {
+        const val = options[field];
+        if (val === undefined) continue;
+        if (!val || val === fallback) delete existing[field];
+        else existing[field] = val;
       }
       if (options.mouseTracking !== undefined) {
         if (options.mouseTracking === false) {

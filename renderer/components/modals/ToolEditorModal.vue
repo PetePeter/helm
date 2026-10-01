@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../../src/session/prompt-staleness.js';
 /**
  * Tool editor modal — purpose-built form for adding/editing CLI Type tool
  * configurations. Replaces the generic FormModal with a structured layout
@@ -46,6 +47,8 @@ export interface ToolEditorData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  cacheWarnMinutes?: number;
+  cacheExpireMinutes?: number;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -76,6 +79,8 @@ const emit = defineEmits<{
     helmPreambleForInterSession?: boolean;
     largeTextAsTempFile: boolean;
     messReminders?: boolean;
+    cacheWarnMinutes?: number;
+    cacheExpireMinutes?: number;
     mouseTracking?: boolean;
     bindingProfileId: string;
     submitSuffix: string;
@@ -99,6 +104,8 @@ const renameCommand = ref('');
 const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
 const messReminders = ref(true);
+const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
+const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
 const bindingProfileId = ref('');
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
@@ -201,6 +208,8 @@ function initForm(): void {
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
   messReminders.value = d.messReminders !== false;
+  cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
+  cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
   bindingProfileId.value = d.bindingProfileId ?? '';
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
@@ -269,6 +278,8 @@ function onSave(): void {
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
     ...(messReminders.value !== true ? { messReminders: messReminders.value } : {}),
+    cacheWarnMinutes: cacheWarnMinutes.value,
+    cacheExpireMinutes: cacheExpireMinutes.value,
     mouseTracking: mouseTracking.value,
     bindingProfileId: bindingProfileId.value,
     submitSuffix: submitSuffix.value,
@@ -445,6 +456,9 @@ defineExpose({ handleButton });
             <label class="te-checkbox-row"><input v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
             <label class="te-checkbox-row"><input v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
             <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
+            <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" type="number" min="1" step="1" class="te-input focusable" /></div>
+            <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" type="number" min="1" step="1" class="te-input focusable" /></div>
+            <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red.</p>
           </fieldset>
 
           <fieldset class="te-section">

@@ -160,7 +160,11 @@ export class HookTracker {
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
-        this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
+        // A Mess poke is Helm talking, not someone engaging the session —
+        // counting it would keep a dormant session awake forever.
+        if (!event.prompt?.trimStart().startsWith('[HELM_MESS]')) {
+          this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
+        }
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
         break;

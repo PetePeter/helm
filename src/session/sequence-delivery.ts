@@ -1,4 +1,5 @@
 import { executeSequenceString } from '../input/sequence-executor.js';
+import { assertSessionWritable } from './frozen.js';
 import { parseSubmitSuffix } from '../mcp/submit-suffix.js';
 import type { ConfigLoader } from '../config/loader.js';
 import type { PtyManager, WriteIntent } from './pty-manager.js';
@@ -119,6 +120,7 @@ export async function deliverPromptSequenceToSession(input: {
   const { sessionId, text, ptyManager, sessionManager, configLoader, impliedSubmit, deliveryContext, writeIntent, verifyDelivery } = input;
   const session = sessionManager.getSession(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
+  assertSessionWritable(session);
 
   const cliEntry = configLoader.getCliTypeEntry(session.cliType);
   const submitSuffix = parseSubmitSuffix(cliEntry?.submitSuffix);

@@ -24,6 +24,7 @@ import { setupPtyHandlers } from '../src/electron/ipc/pty-handlers.js';
 class MockPtyManager extends EventEmitter {
   write = vi.fn();
   setActivityMarker = vi.fn();
+  setWriteGate = vi.fn();
   kill = vi.fn();
   resize = vi.fn();
   getTerminalTail = vi.fn(() => ({ raw: ['first line', 'second line'] }));

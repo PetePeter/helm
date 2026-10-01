@@ -30,6 +30,7 @@ function makeDeps(opts?: { api?: boolean; helmPreambleForInterSession?: boolean;
 
   const sessionManager = {
     getAllSessions: vi.fn(() => [receiver, sender]),
+    updateSession: vi.fn(),
     getSession: vi.fn((id: string) => {
       if (id === receiver.id) return receiver;
       if (id === sender.id) return sender;
@@ -72,6 +73,24 @@ function getSentText(ptyManager: ReturnType<typeof makeDeps>['ptyManager']): str
 }
 
 describe('HelmSessionDeliveryService', () => {
+  describe('wake and freeze', () => {
+    const from = { senderSessionId: 'sender-session', senderSessionName: 'SenderSession' };
+
+    it('a delivered message counts as a prompt, re-arming a dormant session', async () => {
+      const { service, sessionManager, receiver } = makeDeps();
+      await service.sendTextToSession(receiver.id, 'hi', from);
+      expect(sessionManager.updateSession).toHaveBeenCalledWith(receiver.id, { lastPromptAt: expect.any(Number) });
+    });
+
+    it('refuses a frozen recipient before anything reaches its PTY', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      (receiver as { frozen?: boolean }).frozen = true;
+      await expect(service.sendTextToSession(receiver.id, 'hi', from)).rejects.toThrow(/frozen/);
+      expect(ptyManager.deliverText).not.toHaveBeenCalled();
+    });
+  });
+
+
   describe('target busy report', () => {
     const from = { senderSessionId: 'sender-session', senderSessionName: 'SenderSession' };
 

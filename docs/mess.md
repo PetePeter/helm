@@ -213,6 +213,8 @@ delivered. The poke is itself PTY output, which drives the session back through
 `active` to `inactive`; without the throttle that bounce would re-poke every few
 seconds forever. The guard is the cooldown, never the activity level.
 
+**A stale or frozen session is never poked.** Past its CLI type's short cache (`cacheWarnMinutes`, default 5) since the last prompt the session is dormant; any real prompt re-arms it. See [session-freeze.md](session-freeze.md).
+
 **A CLI type can refuse the poke entirely.** The reminder is prose written into
 stdin: for an LLM that is a nudge, for a plain shell it is a stray command. The
 `Allow Mess reminders` checkbox on the CLI Type editor (Settings -> Tools) owns

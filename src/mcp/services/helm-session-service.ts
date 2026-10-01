@@ -242,6 +242,13 @@ export class HelmSessionService {
     return { ok: true, locked };
   }
 
+  setSessionFrozen(sessionRef: string, frozen: boolean): { ok: true; frozen: boolean } {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    this.sessionManager.setSessionFrozen(session.id, frozen);
+    return { ok: true, frozen };
+  }
+
   /** AI-side mission write; validation lives in SessionManager (shared with IPC). */
   setSessionMission(sessionRef: string, text: string): { ok: true; mission: SessionInfo['mission'] | null } {
     const session = this.findSession(sessionRef);

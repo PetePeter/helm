@@ -1,4 +1,5 @@
 import type { ProjectStore } from './project-store.js';
+import { warnAfterMs } from './prompt-staleness.js';
 import type { MessManager } from './mess-manager.js';
 import type { MessEntry } from '../types/mess.js';
 import type { SessionManager } from './manager.js';
@@ -28,6 +29,8 @@ export interface MessNotifierOptions {
   now?: () => number;
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
+  /** A session unprompted this long is dormant: no pokes until someone prompts it. */
+  dormantAfterMs?: (sessionId: string) => number;
 }
 
 /** Best-effort, output-silence-based reminder coordinator for project Mess. */
@@ -35,6 +38,7 @@ export class MessNotifier {
   private readonly now: () => number;
   private readonly setTimer: typeof setTimeout;
   private readonly clearTimer: typeof clearTimeout;
+  private readonly dormantAfterMs: (sessionId: string) => number;
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly lastDeliveredAt = new Map<string, number>();
   /** Sessions holding mail that arrived while they were busy and was never announced. */
@@ -103,6 +107,7 @@ export class MessNotifier {
     this.now = options.now ?? Date.now;
     this.setTimer = options.setTimeout ?? setTimeout;
     this.clearTimer = options.clearTimeout ?? clearTimeout;
+    this.dormantAfterMs = options.dormantAfterMs ?? (() => warnAfterMs(undefined));
     this.stateDetector.on('activity-change', this.onActivityChange);
     this.messManager.on('mess:appended', this.onMessAppended);
     this.sessionManager.on('session:removed', this.onSessionRemoved);
@@ -139,7 +144,8 @@ export class MessNotifier {
   private async consider(sessionId: string, newPost = false): Promise<void> {
     if (this.disposed || this.inFlight.has(sessionId)) return;
     const session = this.sessionManager.getSession(sessionId);
-    if (!session || !isReceptive(session.activityLevel)) return;
+    if (!session || !isReceptive(session.activityLevel) || session.frozen) return;
+    if (session.lastPromptAt !== undefined && this.now() - session.lastPromptAt > this.dormantAfterMs(sessionId)) return;
     if (!this.isSessionRunning(sessionId)) return;
     // Every path into a poke funnels through here, so one gate covers activity
     // changes, fresh posts and the join line alike.

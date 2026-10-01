@@ -155,6 +155,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/session-list-previews.md](docs/session-list-previews.md) | Session List rows — passive 5-line PTY tail, preview mode setting, message-flight envelopes (hold/ack) |
 | [docs/runtime-groups.md](docs/runtime-groups.md) | Custom cross-directory groups, exclusive membership, restore-to-group, drag/close flows |
 | [docs/recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day rolling bin, restore-with-resume |
+| [docs/session-freeze.md](docs/session-freeze.md) | Prompt-cache staleness (per-CLI short/long cache), row fade + banners, Mess dormancy, freeze / auto-freeze, `session_set_frozen` |
 | [docs/drafts.md](docs/drafts.md) | Per-session draft prompt memos |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |

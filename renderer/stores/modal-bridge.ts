@@ -353,6 +353,8 @@ export interface ToolEditorBridgeData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  cacheWarnMinutes?: number;
+  cacheExpireMinutes?: number;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -424,6 +426,8 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
+  cacheWarnMinutes?: number;
+  cacheExpireMinutes?: number;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix?: string;
@@ -455,6 +459,8 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     helmPreambleForInterSession: values.helmPreambleForInterSession !== false,
     largeTextAsTempFile: Boolean(values.largeTextAsTempFile),
     messReminders: values.messReminders !== false,
+    ...(Number(values.cacheWarnMinutes) > 0 ? { cacheWarnMinutes: Number(values.cacheWarnMinutes) } : {}),
+    ...(Number(values.cacheExpireMinutes) > 0 ? { cacheExpireMinutes: Number(values.cacheExpireMinutes) } : {}),
     mouseTracking: Boolean(values.mouseTracking),
     bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',

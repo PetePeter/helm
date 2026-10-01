@@ -7,6 +7,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { warnAfterMs } from '../../session/prompt-staleness.js';
+import { AutoFreezer } from '../../session/auto-freezer.js';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
 import { getMessageFlightTimeoutMs, type SessionMessageFlight } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
@@ -635,6 +637,9 @@ export function registerIPCHandlers(
     }
   });
   setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, undefined, patternMatcher, recycleBinManager);
+  // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
+  const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
+  autoFreezer.start();
   const messNotifier = messManager
     ? new MessNotifier(
       messManager,
@@ -650,6 +655,9 @@ export function registerIPCHandlers(
         if (entry?.messReminders === false) return false;
         // An API tool can only act on a Mess nudge if mess_check is one of its ticked tools.
         return !entry?.api || entry.api.allowedTools.includes('mess_check');
+      },
+      {
+        dormantAfterMs: sessionId => warnAfterMs(configLoader.getCliTypeEntry(sessionManager.getSession(sessionId)?.cliType ?? '')),
       },
     )
     : null;
@@ -1305,6 +1313,7 @@ export function registerIPCHandlers(
       cleanupPromptTemplates();
       cancelAllPrompts();
       messNotifier?.dispose();
+      autoFreezer.dispose();
       cleanupMess();
       hookTracker.dispose();
       cleanupHandover();

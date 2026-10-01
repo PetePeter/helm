@@ -123,6 +123,9 @@ export function setupPtyHandlers(
   // delivered from the main process (MCP, Telegram, pattern-matcher) must move
   // the dots too. See PtyManager.write.
   ptyManager.setActivityMarker(sessionId => stateDetector.markActive(sessionId));
+  // Freeze is enforced at the write itself so no path — desktop keys, hooks,
+  // Mess pokes, handover pastes — can wake a frozen session.
+  ptyManager.setWriteGate(sessionId => !sessionManager.getSession(sessionId)?.frozen);
 
   // pty:write - Write data to a session's PTY stdin
   ipcMain.handle('pty:write', (event, sessionId: string, data: string, options?: PtyWriteOptions) => {
@@ -139,7 +142,8 @@ export function setupPtyHandlers(
         // The user typing into an operator-started session takes it over.
         if (session?.reportsTo) sessionManager.updateSession(sessionId, { reportsTo: undefined });
         // Enter submits a prompt: the session timer restarts (CLIs without hooks included).
-        if (session && data.includes('\r')) sessionManager.updateSession(sessionId, { lastPromptAt: Date.now() });
+        // A frozen session dropped the keys, so no prompt was submitted.
+        if (session && !session.frozen && data.includes('\r')) sessionManager.updateSession(sessionId, { lastPromptAt: Date.now() });
         onPtyInput?.(sessionId, data);
       }
     } catch (error) {

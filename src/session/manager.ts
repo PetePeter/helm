@@ -234,6 +234,16 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
+  /**
+   * Persist a session freeze change and notify every projection. Thawing
+   * restarts the prompt clock, or an auto-frozen session would refreeze on
+   * the next AutoFreezer tick.
+   */
+  setSessionFrozen(sessionId: string, frozen: boolean, now = Date.now()): SessionInfo {
+    this.updateSession(sessionId, frozen ? { frozen } : { frozen, lastPromptAt: now });
+    return this.sessions.get(sessionId)!;
+  }
+
   /** Persist a session lock change and notify every projection. */
   setSessionLocked(sessionId: string, locked: boolean): SessionInfo {
     this.updateSession(sessionId, { locked });

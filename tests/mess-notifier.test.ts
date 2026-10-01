@@ -80,6 +80,42 @@ describe('MessNotifier', () => {
     notifier.dispose();
   });
 
+  it('goes dormant once the last prompt is over 5 minutes old', async () => {
+    vi.useFakeTimers();
+    const { manager, sessions, notifier, deliveries } = setup();
+    sessions.updateSession('receiver', { lastPromptAt: Date.now() - 5 * 60_000 - 1 });
+    manager.post('sender', 'hello');
+    await flush();
+
+    expect(deliveries).toEqual([]);
+    notifier.dispose();
+  });
+
+  it('a fresh prompt re-arms a dormant session', async () => {
+    vi.useFakeTimers();
+    const { manager, sessions, stateDetector, notifier, deliveries } = setup();
+    sessions.updateSession('receiver', { lastPromptAt: Date.now() - 10 * 60_000 });
+    manager.post('sender', 'hello');
+    await flush();
+    sessions.updateSession('receiver', { lastPromptAt: Date.now() });
+    stateDetector.emit('activity-change', { sessionId: 'receiver', level: 'idle' });
+    await flush();
+
+    expect(deliveries).toEqual(['[HELM_MESS] 1 new — call mess_check']);
+    notifier.dispose();
+  });
+
+  it('never pokes a frozen session', async () => {
+    vi.useFakeTimers();
+    const { manager, sessions, notifier, deliveries } = setup();
+    sessions.setSessionFrozen('receiver', true);
+    manager.post('sender', 'hello');
+    await flush();
+
+    expect(deliveries).toEqual([]);
+    notifier.dispose();
+  });
+
   it('stays silent for a session whose CLI type has reminders turned off', async () => {
     vi.useFakeTimers();
     const { manager, stateDetector, notifier, deliveries } = setup(sessionId => sessionId !== 'receiver');

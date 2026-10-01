@@ -11,7 +11,8 @@ import NotificationCarousel from './NotificationCarousel.vue';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
-import { getCliDisplayName } from '../../utils.js';
+import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
+import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 
 // --- Types ---
 
@@ -89,6 +90,7 @@ const emit = defineEmits<{
   stateChange: [sessionId: string, newState: string];
   toggleOverview: [sessionId: string];
   toggleLock: [sessionId: string, locked: boolean];
+  toggleFreeze: [sessionId: string, frozen: boolean];
   showArtifacts: [sessionId: string];
   cancelSchedule: [sessionId: string];
   dismissNotification: [notificationId: string];
@@ -108,6 +110,17 @@ const timerTooltip = computed(() => {
     : formatClockTime(props.session.lastActiveAt);
   const lastPrompt = formatClockTime(props.session.lastPromptAt);
   return `Time since last prompt\nLast prompt: ${lastPrompt}\nCreated: ${created}\nLast active: ${lastActive}`;
+});
+
+// --- Prompt-cache fade: the fill drains over the CLI's short cache window ---
+// A CSS animation with a negative delay starts part-way through, so the fill
+// matches the session's age on render; keying the element on lastPromptAt
+// restarts it on every new prompt. No per-second re-render needed.
+const fadeStyle = computed(() => {
+  const at = props.session.lastPromptAt;
+  if (at === undefined) return null;
+  const durationMs = warnAfterMs(resolveCliTypeRecord(props.session.cliType) ?? undefined);
+  return { animationDuration: `${durationMs}ms`, animationDelay: `${-(Date.now() - at)}ms` };
 });
 
 // --- Local state ---
@@ -251,7 +264,7 @@ function onCardClick(e: MouseEvent): void {
   <div
     ref="cardEl"
     class="session-card"
-    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded }, flashClass]"
+    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, frozen: session.frozen }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
@@ -260,6 +273,7 @@ function onCardClick(e: MouseEvent): void {
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >
+    <span v-if="fadeStyle" :key="session.lastPromptAt" class="session-prompt-fade" :style="fadeStyle" />
     <!-- Line 1: top row -->
     <div class="session-top-row">
       <span class="session-activity-dot" :style="{ background: dotColor }" />
@@ -356,6 +370,16 @@ function onCardClick(e: MouseEvent): void {
         {{ session.locked ? '🔒' : '🔓' }}
       </button>
 
+      <!-- Freeze toggle — beside the lock: the lock guards closure, this guards input. -->
+      <button
+        class="session-lock"
+        :class="{ 'session-lock--on': session.frozen }"
+        :title="session.frozen ? `${displayName} is frozen — no input reaches it. Click to thaw` : `Freeze ${displayName} — refuse all input`"
+        @click.stop="emit('toggleFreeze', session.id, !session.frozen)"
+      >
+        ❄️
+      </button>
+
       <!-- Close button -->
       <button
         class="session-close"
@@ -429,6 +453,26 @@ function onCardClick(e: MouseEvent): void {
 </template>
 
 <style scoped>
+/* Prompt-cache fade — a tint that drains to nothing over the CLI's short cache
+   window (cacheWarnMinutes). Behind the content, never catching clicks. */
+.session-card { position: relative; isolation: isolate; }
+.session-prompt-fade {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(100, 150, 255, 0.22);
+  animation-name: session-prompt-fade;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes session-prompt-fade { to { opacity: 0; } }
+/* Frozen — cross-hatched: no input reaches this session. */
+.session-card.frozen {
+  background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);
+}
+
 .draft-badge {
   display: inline-flex;
   align-items: center;

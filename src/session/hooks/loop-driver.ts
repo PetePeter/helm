@@ -186,7 +186,8 @@ export class LoopDriver {
    */
   stopBlock(session: SessionInfo): string | null {
     const state = this.states.get(session.id);
-    if (!state) return null;
+    // A block is a new prompt; a frozen session takes none.
+    if (!state || session.frozen) return null;
 
     const config = this.deps.getLoopConfig();
     // G10: autoImplement on the plan is the only consent. The global kill

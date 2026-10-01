@@ -1,4 +1,5 @@
 import { computed, ref, toRaw } from 'vue';
+import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../src/session/prompt-staleness.js';
 import { configClient, skillsClient, telegramClient, toolsClient } from '../ipc/clients.js';
 import { initConfigCache } from '../bindings.js';
 import { sessionsState } from '../screens/sessions-state.js';
@@ -269,6 +270,8 @@ export function useSettingsController(options: {
       mouseTracking: Boolean(value?.mouseTracking),
       bindingProfileId: value?.bindingProfileId ?? '',
       messReminders: value?.messReminders !== false,
+      cacheWarnMinutes: value?.cacheWarnMinutes ?? DEFAULT_CACHE_WARN_MINUTES,
+      cacheExpireMinutes: value?.cacheExpireMinutes ?? DEFAULT_CACHE_EXPIRE_MINUTES,
       submitSuffix: value?.submitSuffix ?? '\\r',
       helmActions: {
         clear: value?.helmActions?.clear ?? '',
@@ -421,6 +424,8 @@ export function useSettingsController(options: {
       helmPreambleForInterSession: true,
       largeTextAsTempFile: false,
       messReminders: true,
+      cacheWarnMinutes: DEFAULT_CACHE_WARN_MINUTES,
+      cacheExpireMinutes: DEFAULT_CACHE_EXPIRE_MINUTES,
       mouseTracking: false,
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },

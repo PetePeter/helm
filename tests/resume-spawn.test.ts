@@ -44,6 +44,7 @@ class MockPtyManager extends EventEmitter {
   getPid = vi.fn();
   getSessionIds = vi.fn(() => []);
   setActivityMarker = vi.fn();
+  setWriteGate = vi.fn();
   on = vi.fn((event: string, listener: Function) => {
     super.on(event, listener);
     return this;

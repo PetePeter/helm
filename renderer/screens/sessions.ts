@@ -226,6 +226,15 @@ export async function setSessionLocked(sessionId: string, locked: boolean): Prom
   }
 }
 
+/** Freeze or thaw a session; state returns through session:updated like the lock. */
+export async function setSessionFrozen(sessionId: string, frozen: boolean): Promise<void> {
+  try {
+    await sessionsClient.sessionSetFrozen?.(sessionId, frozen);
+  } catch (e) {
+    console.error('[Sessions] Failed to set session freeze:', e);
+  }
+}
+
 /** Flip the lock of the session under the gamepad cursor. */
 export function toggleLockForFocused(sessionId: string): void {
   const session = state.sessions.find(item => item.id === sessionId);

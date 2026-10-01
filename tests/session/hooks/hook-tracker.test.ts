@@ -230,6 +230,18 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('a Mess poke prompt does not count as a prompt — dormancy would never set in', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.sessionManager.updateSession('s1', { lastPromptAt: 5 });
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: '[HELM_MESS] 2 new — call mess_check' }));
+      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(5);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('PreToolUse makes the dot green through the same activity-change contract as PTY output', () => {
     const s = setup();
     try {

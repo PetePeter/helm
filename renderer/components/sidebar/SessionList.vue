@@ -102,6 +102,7 @@ const emit = defineEmits<{
   sessionStateChange: [sessionId: string, newState: string];
   toggleOverview: [sessionId: string];
   toggleLock: [sessionId: string, locked: boolean];
+  toggleFreeze: [sessionId: string, frozen: boolean];
   showArtifacts: [sessionId: string];
   cancelSchedule: [sessionId: string];
   dismissNotification: [notificationId: string];
@@ -285,6 +286,7 @@ function onNewGroupDrop(e: DragEvent): void {
               @state-change="onSessionStateChange"
               @toggle-overview="emit('toggleOverview', $event)"
               @toggle-lock="(id: string, locked: boolean) => emit('toggleLock', id, locked)"
+              @toggle-freeze="(id: string, frozen: boolean) => emit('toggleFreeze', id, frozen)"
               @show-artifacts="emit('showArtifacts', $event)"
               @cancel-schedule="emit('cancelSchedule', $event)"
               @dismiss-notification="emit('dismissNotification', $event)"

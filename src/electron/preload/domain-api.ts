@@ -68,6 +68,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   sessionSwitchCli: (id: string, cliType: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('session:switchCli', id, cliType),
 
+  /** Freeze (refuse all input) or thaw a session. Returns the resulting state. */
+  sessionSetFrozen: (id: string, frozen: boolean): Promise<{ success: boolean; frozen?: boolean; error?: string }> =>
+    ipcRenderer.invoke('session:setFrozen', id, frozen),
+
   /** Set or clear the closure lock. Returns the resulting lock state. */
   sessionSetLocked: (id: string, locked: boolean): Promise<{ success: boolean; locked?: boolean; error?: string }> =>
     ipcRenderer.invoke('session:setLocked', id, locked),
@@ -637,6 +641,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
+      cacheWarnMinutes?: number;
+      cacheExpireMinutes?: number;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
@@ -655,6 +661,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
+      cacheWarnMinutes?: number;
+      cacheExpireMinutes?: number;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };

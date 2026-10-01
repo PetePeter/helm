@@ -1,4 +1,5 @@
 import { logger } from '../../utils/logger.js';
+import { assertSessionWritable } from '../../session/frozen.js';
 import { randomUUID } from 'node:crypto';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
@@ -237,6 +238,7 @@ export class HelmSessionDeliveryService {
     if (session.id === options.senderSessionId) {
       throw new Error('Cannot send a message from a session to itself — sender and receiver must be different sessions');
     }
+    assertSessionWritable(session);
     if (isEmptyMessage(text)) {
       throw new Error('text is empty — session_send_text delivers a message; use session_send_input for bare keys like {Enter}');
     }
@@ -340,6 +342,9 @@ export class HelmSessionDeliveryService {
     if (deliveryVerification && deliveryVerification.status !== 'confirmed' && deliveryVerification.status !== 'retry_confirmed') {
       logger.warn(`[HelmSessionDelivery] Delivery verification for ${session.id}: ${deliveryVerification.status} (${deliveryVerification.detail})`);
     }
+    // A message is a prompt — it re-arms a dormant session even when its CLI
+    // has no UserPromptSubmit hook to say so.
+    this.sessionManager.updateSession(session.id, { lastPromptAt: Date.now() });
 
     return { ok: true, preambleUsed: usePreamble, ...summarizeDelivery(deliveryVerification), ...busyReport };
   }

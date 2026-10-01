@@ -33,6 +33,7 @@ vi.mock('../src/session/pty-manager.js', () => ({
     this.getPid = vi.fn();
     this.getSessionIds = vi.fn(() => []);
     this.setActivityMarker = vi.fn();
+    this.setWriteGate = vi.fn();
   }),
 }));
 

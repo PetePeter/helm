@@ -1381,6 +1381,10 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.setSessionLocked(sessionRef, locked);
   }
 
+  setSessionFrozen(sessionRef: string, frozen: boolean) {
+    return this.sessionService.setSessionFrozen(sessionRef, frozen);
+  }
+
   setSessionMission(sessionRef: string, text: string) {
     return this.sessionService.setSessionMission(sessionRef, text);
   }

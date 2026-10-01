@@ -112,6 +112,8 @@ export class PtyManager extends EventEmitter {
   private factory: PtyFactory;
   /** Marks a session active on stdin. Injected so PtyManager stays free of StateDetector. */
   private activityMarker?: (sessionId: string) => void;
+  /** False for a session that may not receive stdin (frozen). Injected so PtyManager stays free of SessionManager. */
+  private writeGate?: (sessionId: string) => boolean;
   private terminalOutputBuffer = new TerminalOutputBuffer();
   /** Main-process view of each CLI's DEC 2004 state, for sessions with no renderer. */
   private bracketedPaste = new BracketedPasteTracker();
@@ -258,6 +260,11 @@ export class PtyManager extends EventEmitter {
       logger.warn(`[PTY] No PTY found for session: ${sessionId} (available: ${[...this.ptys.keys()].join(', ')})`);
       return;
     }
+    // Scroll is the user reading, not input — a frozen session still scrolls.
+    if (intent !== 'scroll' && this.writeGate && !this.writeGate(sessionId)) {
+      logger.info(`[PTY] Dropped write to frozen session ${sessionId}`);
+      return;
+    }
     try {
       pty.write(data);
       this.writeCounts.set(sessionId, (this.writeCounts.get(sessionId) ?? 0) + 1);
@@ -266,6 +273,11 @@ export class PtyManager extends EventEmitter {
       return;
     }
     if (intent === 'input') this.activityMarker?.(sessionId);
+  }
+
+  /** Register the gate consulted before every non-scroll stdin write. */
+  setWriteGate(gate: ((sessionId: string) => boolean) | undefined): void {
+    this.writeGate = gate;
   }
 
   /** Register the activity sink invoked on every stdin write. */

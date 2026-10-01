@@ -52,6 +52,8 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     // cached session records with a spread merge, so an omitted key means
     // "keep whatever you had" — which would make unlocking invisible.
     locked: Boolean(s.locked),
+    // Always written for the same spread-merge reason as locked.
+    frozen: Boolean(s.frozen),
   };
 }
 

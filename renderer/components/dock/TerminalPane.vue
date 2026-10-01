@@ -23,6 +23,12 @@ import { computed, onBeforeUnmount } from 'vue';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
 import TerminalChips from '../chips/TerminalChips.vue';
 import MissionBar from './MissionBar.vue';
+import PromptCacheBanner from './PromptCacheBanner.vue';
+import { setSessionFrozen } from '../../screens/sessions.js';
+
+function thaw(sessionId: string): void {
+  void setSessionFrozen(sessionId, false);
+}
 import { useAppStore } from '../../stores/app.js';
 import OperatorChat from './OperatorChat.vue';
 import { operatorView } from '../../composables/useOperatorChat.js';
@@ -52,9 +58,20 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
       :mission="appStore.activeSession.mission"
       :height="appStore.activeSession.missionBarHeight"
     />
+    <PromptCacheBanner
+      v-if="appStore.activeSession"
+      :frozen="appStore.activeSession.frozen"
+      :cli-type="appStore.activeSession.cliType"
+      :last-prompt-at="appStore.activeSession.lastPromptAt"
+    />
     <div class="terminal-view__stage">
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">
         <!-- xterm.js terminals rendered by TerminalManager -->
+      </div>
+      <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen">
+        <b>❄ Session frozen</b>
+        <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, with ❄ on its row, or from another session via MCP session_set_frozen.</span>
+        <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
       </div>
       <OperatorChat
         v-if="isChatPane && operatorView === 'chat' && appStore.activeSession"
@@ -85,6 +102,21 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
   flex-direction: column;
   min-height: 0;
 }
+
+/* Frozen: hatched cover over the terminal; output stays visible, dimmed. */
+.terminal-view__frozen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  background: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.10) 0 8px, rgba(0, 0, 0, 0.45) 8px 16px);
+}
+.terminal-view__frozen b { color: #8cbcff; font-size: var(--font-size-md); }
+.terminal-view__frozen span { color: var(--text-secondary); font-size: var(--font-size-sm); text-align: center; max-width: 320px; }
 
 .terminal-view__chat-toggle {
   position: absolute;

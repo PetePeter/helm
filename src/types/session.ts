@@ -91,6 +91,9 @@ export interface SessionInfo {
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
   lastPromptAt?: number;
+  /** Refuse ALL stdin — desktop keys, other sessions, schedules, chat, Mess
+   *  pokes — until the user unfreezes it. Persists. */
+  frozen?: boolean;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
   /** Hook-reported turn failure (G3, Claude StopFailure — e.g. a usage limit or

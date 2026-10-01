@@ -131,6 +131,17 @@ export function setupSessionHandlers(
    * `session_set_locked` tool writes — this is the user-facing way in, which
    * until now did not exist.
    */
+  /** Freeze or thaw from the UI; MCP session_set_frozen is the other way in. */
+  ipcMain.handle('session:setFrozen', (_event, id: string, frozen: boolean) => {
+    try {
+      const session = sessionManager.setSessionFrozen(id, frozen);
+      return { success: true, frozen: Boolean(session.frozen) };
+    } catch (error) {
+      logger.error(`[Session] Set frozen failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('session:setLocked', (_event, id: string, locked: boolean) => {
     try {
       const session = sessionManager.setSessionLocked(id, locked);

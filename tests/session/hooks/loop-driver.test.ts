@@ -108,6 +108,15 @@ function makeHarness(patch: Partial<SessionInfo> = {}, plans: LoopPlanView[] = [
 }
 
 describe('continuation — the three existing facts', () => {
+  it('never blocks a frozen session — a Stop-block would wake it', () => {
+    const h = makeHarness({ frozen: true }, [
+      { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true },
+    ]);
+    h.complete();
+    expect(h.driver.stopBlock(h.sessions.get('s1')!)).toBeNull();
+  });
+
+
   it('blocks naming the plan when the follow-up is auto-implement and ready', () => {
     const h = makeHarness({}, [
       { id: 'p2', humanId: 'P-0002', title: 'Follow up', status: 'ready', autoImplement: true },

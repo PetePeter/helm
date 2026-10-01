@@ -109,6 +109,7 @@ function sessionElapsedText(sessionId: string): string {
       @session-state-change="sidebar.onSessionStateChange"
       @toggle-overview="sidebar.onToggleOverview"
       @toggle-lock="sidebar.onToggleLock"
+      @toggle-freeze="sidebar.onToggleFreeze"
       @show-artifacts="pane.showArtifactsForSession"
       @cancel-schedule="sidebar.onCancelSchedule"
       @dismiss-notification="llmNotificationsStore.dismiss"
