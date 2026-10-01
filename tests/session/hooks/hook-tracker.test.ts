@@ -194,7 +194,7 @@ describe('HookTracker — hook events become session truth', () => {
 
       s.updates.length = 0;
       s.hookReceiver.emit('hook', hookEvent('codex', 'Stop', {}));
-      s.hookReceiver.emit('hook', hookEvent('codex', 'PreToolUse', { session_id: 'thread-b' }));
+      s.hookReceiver.emit('hook', hookEvent('codex', 'Stop', { session_id: 'thread-b' }));
       expect(s.sessionManager.getSession('s1')?.cliThreadId).toBe('thread-b');
       // Unchanged id → no redundant session write.
       expect(s.updates.filter(u => 'cliThreadId' in u)).toEqual([]);
@@ -230,13 +230,28 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
-  it('a Mess poke prompt does not count as a prompt — dormancy would never set in', () => {
+  it.each(['SessionStart', 'PreCompact', 'PreToolUse', 'PostToolUse'] as const)(
+    'restarts the cache timer on %s — the context was rebuilt',
+    (event) => {
+      const s = setup();
+      try {
+        s.addSession();
+        s.sessionManager.updateSession('s1', { lastPromptAt: 5 });
+        s.hookReceiver.emit('hook', hookEvent('claude', event, {}));
+        expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(NOW);
+      } finally {
+        s.dispose();
+      }
+    },
+  );
+
+  it('a Mess poke prompt restarts the cache timer — it mutates the context too', () => {
     const s = setup();
     try {
       s.addSession();
       s.sessionManager.updateSession('s1', { lastPromptAt: 5 });
       s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: '[HELM_MESS] 2 new — call mess_check' }));
-      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(5);
+      expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(NOW);
     } finally {
       s.dispose();
     }

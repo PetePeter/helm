@@ -154,28 +154,27 @@ export class HookTracker {
       case 'SessionStart':
         // A fresh (or resumed) session: facts reset, stale stall irrelevant.
         this.facts.set(sessionId, { turns: 0, toolCounts: new Map(), filesTouched: new Set() });
+        this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
         break;
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
-        // A Mess poke is Helm talking, not someone engaging the session —
-        // counting it would keep a dormant session awake forever.
-        if (!event.prompt?.trimStart().startsWith('[HELM_MESS]')) {
-          this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
-        }
+        this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
         break;
 
       case 'PreToolUse':
+        this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
         break;
 
       case 'PostToolUse':
         this.recordToolUse(sessionId, event);
+        this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         this.advancePlanOnEdit(sessionId, event.toolName);
         break;
@@ -195,12 +194,23 @@ export class HookTracker {
         // Snapshot BEFORE delivery: peek() must still see the pending note.
         this.composePreCompactSnapshot(event);
         this.deps.handoverDelivery.deliverFromPreCompact(sessionId);
+        this.restartCacheTimer(sessionId);
         break;
 
       default:
         // SessionEnd-style noise and subagent events: observed, not acted on.
         break;
     }
+  }
+
+  /**
+   * The prompt-cache timer counts from lastPromptAt. Any context mutation —
+   * a prompt, a tool call or result, a start/resume/clear (SessionStart), or a
+   * compaction — rewrites
+   * the cache, so each restarts it.
+   */
+  private restartCacheTimer(sessionId: string): void {
+    this.deps.sessionManager.updateSession(sessionId, { lastPromptAt: this.now() });
   }
 
   /**
