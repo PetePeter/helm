@@ -140,8 +140,9 @@ class VoiceCallService : Service() {
     private var route: AudioRoute? = null
 
     /**
-     * Screen off at the ear, like a phone call — only on the earpiece: on the
-     * speaker or Bluetooth the phone is held away and the screen must stay usable.
+     * Screen off whenever something covers the sensor for the whole call, on any
+     * route: at the ear, or face down on a stand to save battery. Lifting it wakes
+     * the screen; held away, the sensor is clear and the screen stays usable.
      */
     private val earSensor by lazy {
         getSystemService(PowerManager::class.java)
@@ -151,7 +152,7 @@ class VoiceCallService : Service() {
 
     private fun syncEarSensor() {
         val lock = earSensor ?: return
-        val wanted = controller != null && route == AudioRoute.Earpiece
+        val wanted = controller != null
         if (wanted && !lock.isHeld) lock.acquire(EAR_SENSOR_MAX_MS)
         // WAIT flag: a release while at the ear keeps the screen dark until moved away.
         if (!wanted && lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
@@ -387,7 +388,6 @@ class VoiceCallService : Service() {
     private fun applyRoute(wanted: AudioRoute?) {
         val next = pickAudioRoute(wanted, availableRoutes())
         route = next
-        syncEarSensor()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             audio.availableCommunicationDevices.firstOrNull { routeOf(it.type) == next }
                 ?.let(audio::setCommunicationDevice)

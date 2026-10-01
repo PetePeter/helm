@@ -480,8 +480,9 @@ sequenceDiagram
   more 10 min later (`src/session/ring-retry.ts`). Each miss leaves a note in
   the operator chat: the first says when Helm will call back (~HH:MM), the
   second says there are no more retries. In memory: a restart drops a pending retry.
-- **Ear sensor.** On the earpiece a proximity wake lock darkens the screen at
-  the ear; speaker or Bluetooth keeps it on. Released when the call ends.
+- **Ear sensor.** For the whole call, on any route, a proximity wake lock
+  darkens the screen while the sensor is covered — at the ear, or face down
+  on a stand to save battery. Lifting it wakes the screen. Released when the call ends.
 - **Fails legibly** when no phone takes the ring; the operator falls back to
   `chat_send`.
 
