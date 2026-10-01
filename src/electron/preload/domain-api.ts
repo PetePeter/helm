@@ -69,6 +69,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('session:switchCli', id, cliType),
 
   /** Freeze (refuse all input) or thaw a session. Returns the resulting state. */
+  /** Keep the session's prompt cache warm (KeepWarmer pings), or switch it off. */
+  sessionSetKeepWarm: (id: string, on: boolean): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('session:setKeepWarm', id, on),
+
   sessionSetFrozen: (id: string, frozen: boolean): Promise<{ success: boolean; frozen?: boolean; error?: string }> =>
     ipcRenderer.invoke('session:setFrozen', id, frozen),
 

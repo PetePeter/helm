@@ -28,6 +28,8 @@ export interface Session {
   lastActiveAt?: number;
   /** Epoch ms of the last prompt — the row timer counts from it. */
   lastPromptAt?: number;
+  /** Keep-warm is on until this epoch ms (KeepWarmer pings the session). */
+  keepWarmUntil?: number;
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */
   createdByPeerId?: string;
   /** Remote row (`peer_attach`): this terminal views `sessionId` running on `peerId`. */

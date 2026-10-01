@@ -83,7 +83,11 @@ import {
   PANE_SESSIONS,
   PANE_TERMINAL,
 } from './dock-types.js';
-import { confirmCloseSessionById } from './screens/sessions.js';
+import {
+  confirmCloseSessionById, setSessionLocked, setSessionFrozen, setSessionKeepWarm, toggleSessionOverviewVisibility,
+} from './screens/sessions.js';
+import { startRename } from './sidebar/session-services.js';
+import { isSessionHiddenFromOverview } from './session-groups.js';
 
 // Sidebar components
 import StatusStrip from './components/sidebar/StatusStrip.vue';
@@ -482,6 +486,21 @@ const contextMenuGroupName = computed<string | null>(() => {
 });
 
 
+/** The menu's target session and its toggles (labels + the frozen short list). */
+const contextMenuSession = computed(() => {
+  const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+  return sessionId ? state.sessions.find(s => s.id === sessionId) ?? null : null;
+});
+const contextMenuSessionFlags = computed(() => {
+  const s = contextMenuSession.value;
+  return {
+    locked: !!s?.locked,
+    frozen: !!s?.frozen,
+    keepWarm: s?.keepWarmUntil !== undefined && s.keepWarmUntil > Date.now(),
+    hiddenFromOverview: s ? isSessionHiddenFromOverview(s, sessionsState.groupPrefs) : false,
+  };
+});
+
 const hasDrafts = computed(() => {
   if (!state.activeSessionId) return false;
   return (state.draftCounts.get(state.activeSessionId) ?? 0) > 0;
@@ -609,7 +628,26 @@ async function runTranscriptAction(pending: Promise<{ success: boolean; error?: 
 // Context menu
 function onContextMenuAction(action: string): void {
   contextMenu.visible = false;
+  const target = contextMenuSession.value;
   switch (action) {
+    case 'rename-session':
+      if (target) startRename(target.id);
+      break;
+    case 'unfreeze':
+      if (target) void setSessionFrozen(target.id, false);
+      break;
+    case 'toggle-freeze':
+      if (target) void setSessionFrozen(target.id, !target.frozen);
+      break;
+    case 'toggle-lock':
+      if (target) void setSessionLocked(target.id, !target.locked);
+      break;
+    case 'toggle-keep-warm':
+      if (target) void setSessionKeepWarm(target.id, !contextMenuSessionFlags.value.keepWarm);
+      break;
+    case 'toggle-overview':
+      if (target) void toggleSessionOverviewVisibility(target.id);
+      break;
     case 'copy': {
       const text = contextMenu.selectedText;
       if (text) navigator.clipboard.writeText(text);
@@ -1259,6 +1297,8 @@ onUnmounted(() => {
       :has-drafts="hasDrafts"
       :is-active-session-snapped-out="state.activeSessionId ? state.snappedOutSessions.has(state.activeSessionId) : false"
       :context-menu-group-name="contextMenuGroupName"
+      :context-menu-mode="contextMenu.mode"
+      :context-menu-session-flags="contextMenuSessionFlags"
       v-model:binding-editor-visible="bindingEditorVisible"
       :binding-editor-button="bindingEditorButton"
       :binding-editor-profile-name="settingsBindingProfiles.find((p) => p.id === bindingEditorProfileId)?.name ?? ''"

@@ -25,6 +25,7 @@ import TerminalChips from '../chips/TerminalChips.vue';
 import MissionBar from './MissionBar.vue';
 import PromptCacheBanner from './PromptCacheBanner.vue';
 import { setSessionFrozen } from '../../screens/sessions.js';
+import { showContextMenu } from '../../stores/modal-bridge.js';
 
 function thaw(sessionId: string): void {
   void setSessionFrozen(sessionId, false);
@@ -68,10 +69,14 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">
         <!-- xterm.js terminals rendered by TerminalManager -->
       </div>
-      <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen">
+      <div
+        v-if="appStore.activeSession?.frozen"
+        class="terminal-view__frozen"
+        @contextmenu.prevent="showContextMenu(appStore.activeSession.id, '', false)"
+      >
         <div class="terminal-view__frozen-card">
           <b>❄ Session frozen</b>
-          <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, with ❄ on its row, or from another session via MCP session_set_frozen.</span>
+          <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, right-click, use ⋮ on its row, or from another session via MCP session_set_frozen.</span>
           <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
         </div>
       </div>
@@ -90,6 +95,14 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
         @click="operatorView = 'chat'"
       >Chat</button>
     </div>
+    <!-- Repeated under the terminal, where the eyes are while typing. -->
+    <PromptCacheBanner
+      v-if="appStore.activeSession"
+      placement="bottom"
+      :frozen="appStore.activeSession.frozen"
+      :cli-type="appStore.activeSession.cliType"
+      :last-prompt-at="appStore.activeSession.lastPromptAt"
+    />
     <TerminalChips v-if="!isOperator" />
   </div>
 </template>

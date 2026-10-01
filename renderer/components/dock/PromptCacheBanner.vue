@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * PromptCacheBanner — warns above the terminal that the selected session's
+ * PromptCacheBanner — warns above and below the terminal that the selected session's
  * prompt cache has likely expired, so the next prompt re-reads the whole
  * context. Orange past the CLI type's short cache, red past its long one
  * (where AutoFreezer freezes it), blue once frozen.
@@ -10,7 +10,13 @@ import { formatElapsed } from '../../../src/utils/time-parser.js';
 import { promptStaleness, warnAfterMs, expireAfterMs } from '../../../src/session/prompt-staleness.js';
 import { resolveCliTypeRecord } from '../../utils.js';
 
-const props = defineProps<{ cliType: string; lastPromptAt?: number; frozen?: boolean }>();
+const props = defineProps<{
+  cliType: string;
+  lastPromptAt?: number;
+  frozen?: boolean;
+  /** 'bottom' = the copy under the terminal (border on top instead). */
+  placement?: 'top' | 'bottom';
+}>();
 
 const now = ref(Date.now());
 let clock: ReturnType<typeof setInterval> | null = null;
@@ -27,7 +33,7 @@ const text = computed(() => {
 </script>
 
 <template>
-  <div v-if="stage !== 'fresh'" class="prompt-cache-banner" :class="`prompt-cache-banner--${stage}`">{{ text }}</div>
+  <div v-if="stage !== 'fresh'" class="prompt-cache-banner" :class="[`prompt-cache-banner--${stage}`, { 'prompt-cache-banner--bottom': placement === 'bottom' }]">{{ text }}</div>
 </template>
 
 <style scoped>
@@ -37,6 +43,7 @@ const text = computed(() => {
   font-weight: 500;
   border-bottom: 1px solid var(--border-color, #333);
 }
+.prompt-cache-banner--bottom { border-bottom: none; border-top: 1px solid var(--border-color, #333); }
 .prompt-cache-banner--warn { color: #ff9f43; }
 .prompt-cache-banner--expired { color: #ff5c5c; }
 .prompt-cache-banner--frozen { color: #8cbcff; }

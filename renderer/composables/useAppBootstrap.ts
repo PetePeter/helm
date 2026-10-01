@@ -193,6 +193,7 @@ export async function refreshSessions(): Promise<void> {
       lastActiveAt: managed.lastActiveAt,
       // The row timer counts from it; dropped here it would reset on every refresh.
       lastPromptAt: managed.lastPromptAt,
+      keepWarmUntil: managed.keepWarmUntil,
       createdByPeerId: managed.createdByPeerId,
       remote: managed.remote,
       // Without this the card falls back to "unlocked" on every refresh, and

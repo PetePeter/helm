@@ -159,37 +159,16 @@ describe('SessionCard', () => {
     expect(w.emitted('click')).toEqual([['s1']]);
   });
 
-  it('emits rename on rename button click', async () => {
-    const w = mount(SessionCard, { props: makeCardProps() });
-    await w.find('.session-rename').trigger('click');
-    expect(w.emitted('rename')).toEqual([['s1']]);
-  });
-
   it('clicking the session name selects the row instead of opening rename', async () => {
     const w = mount(SessionCard, { props: makeCardProps() });
     await w.find('.session-name').trigger('click');
     expect(w.emitted('click')).toEqual([['s1']]);
-    expect(w.emitted('rename')).toBeUndefined();
   });
 
   it('emits close on close button click', async () => {
     const w = mount(SessionCard, { props: makeCardProps() });
     await w.find('.session-close').trigger('click');
     expect(w.emitted('close')).toEqual([['s1', 'Claude']]);
-  });
-
-  it('emits toggleOverview on eye button click', async () => {
-    const w = mount(SessionCard, { props: makeCardProps() });
-    await w.find('.session-overview-toggle').trigger('click');
-    expect(w.emitted('toggleOverview')).toEqual([['s1']]);
-  });
-
-  it('shows eye icon based on overview visibility', () => {
-    const hidden = mount(SessionCard, { props: makeCardProps({ isHiddenFromOverview: true }) });
-    expect(hidden.find('.session-overview-toggle').text()).toBe('👁‍🗨');
-
-    const visible = mount(SessionCard, { props: makeCardProps({ isHiddenFromOverview: false }) });
-    expect(visible.find('.session-overview-toggle').text()).toBe('👁');
   });
 
   it('emits commitRename on save button click', async () => {
@@ -249,7 +228,7 @@ describe('SessionCard', () => {
   });
 
   it('applies card-col-focused to correct column button', () => {
-    const w = mount(SessionCard, { props: makeCardProps({ isFocused: true, focusColumn: 4 }) });
+    const w = mount(SessionCard, { props: makeCardProps({ isFocused: true, focusColumn: 3 }) });
     expect(w.find('.session-close').classes()).toContain('card-col-focused');
     expect(w.find('.session-state-btn').classes()).not.toContain('card-col-focused');
   });
@@ -608,9 +587,6 @@ describe('SessionList', () => {
 
   it('forwards row-owned action events', async () => {
     const w = mount(SessionList, { props: makeSessionListProps() });
-    await w.find('.session-overview-toggle').trigger('click');
-    expect(w.emitted('toggleOverview')).toEqual([['s1']]);
-
     await w.find('.session-schedule-cancel').trigger('click');
     expect(w.emitted('cancelSchedule')).toEqual([['s1']]);
   });
@@ -658,7 +634,7 @@ describe('SessionList', () => {
         groups: [{ dirPath: '/workspace/a', collapsed: false, sessions: manySessions }],
         navIndexMap,
         focusedNavItem: { id: 's24', type: 'session-card' },
-        focusColumn: 4,
+        focusColumn: 3,
       }),
     });
 
@@ -670,8 +646,7 @@ describe('SessionList', () => {
     expect(cards.at(-1)?.classes()).toContain('focused');
     expect(cards.at(-1)?.find('.session-close').classes()).toContain('card-col-focused');
     expect(cards.at(-1)?.find('.session-state-btn').exists()).toBe(true);
-    expect(cards.at(-1)?.find('.session-rename').exists()).toBe(true);
-    expect(cards.at(-1)?.find('.session-overview-toggle').exists()).toBe(true);
+    expect(cards.at(-1)?.find('.session-kebab').exists()).toBe(true);
   });
 });
 

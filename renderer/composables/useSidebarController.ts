@@ -9,7 +9,7 @@ import { usePeers } from './usePeers.js';
 import { logEvent } from '../utils.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
-import { toggleSessionOverviewVisibility, setSessionLocked, setSessionFrozen, setSessionState, toggleGroupCollapse } from '../screens/sessions.js';
+import { setSessionState, toggleGroupCollapse } from '../screens/sessions.js';
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../src/types/scheduled-task.js';
 import type { SessionSortField, SortDirection } from '../sort-logic.js';
@@ -97,18 +97,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
 
   function onShowOverview(dirPath: string): void {
     void deps.navStore.openOverview(dirPath, state.activeSessionId ?? undefined);
-  }
-
-  function onToggleOverview(sessionId: string): void {
-    void toggleSessionOverviewVisibility(sessionId);
-  }
-
-  function onToggleLock(sessionId: string, locked: boolean): void {
-    void setSessionLocked(sessionId, locked);
-  }
-
-  function onToggleFreeze(sessionId: string, frozen: boolean): void {
-    void setSessionFrozen(sessionId, frozen);
   }
 
   async function onCancelSchedule(sessionId: string): Promise<void> {
@@ -210,9 +198,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     onGroupToggleCollapse,
     onShowPlans,
     onShowOverview,
-    onToggleOverview,
-    onToggleLock,
-    onToggleFreeze,
     onCancelSchedule,
     onSessionSnapOut,
     onSessionSnapBack,

@@ -47,6 +47,8 @@ defineProps<{
   hasDrafts: boolean;
   isActiveSessionSnappedOut: boolean;
   contextMenuGroupName?: string | null;
+  contextMenuMode?: 'terminal' | 'session';
+  contextMenuSessionFlags?: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
   bindingEditorVisible: boolean;
   bindingEditorButton: string;
   bindingEditorProfileName: string;
@@ -247,6 +249,8 @@ function onRuntimeGroupMoveCancel(): void {
     :has-drafts="hasDrafts"
     :is-snapped-out="isActiveSessionSnappedOut"
     :current-group-name="contextMenuGroupName ?? null"
+    :mode="contextMenuMode"
+    :session-flags="contextMenuSessionFlags"
     @action="emit('context-menu-action', $event)"
     @cancel="contextMenu.visible = false"
   />

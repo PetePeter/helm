@@ -13,6 +13,7 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
+import { showSessionMenu } from '../../stores/modal-bridge.js';
 
 // --- Types ---
 
@@ -34,6 +35,8 @@ export interface SessionCardSession {
   frozen?: boolean;
   /** Epoch ms of the last prompt (timer tooltip, cache fade). */
   lastPromptAt?: number;
+  /** Keep-warm is on until this epoch ms. */
+  keepWarmUntil?: number;
 }
 
 export type SessionCardFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -87,14 +90,10 @@ const props = defineProps<SessionCardProps>();
 
 const emit = defineEmits<{
   click: [sessionId: string];
-  rename: [sessionId: string];
   commitRename: [sessionId: string, newName: string];
   cancelRename: [];
   close: [sessionId: string, displayName: string];
   stateChange: [sessionId: string, newState: string];
-  toggleOverview: [sessionId: string];
-  toggleLock: [sessionId: string, locked: boolean];
-  toggleFreeze: [sessionId: string, frozen: boolean];
   showArtifacts: [sessionId: string];
   cancelSchedule: [sessionId: string];
   dismissNotification: [notificationId: string];
@@ -177,8 +176,13 @@ const peerTitle = computed(() => {
   return props.session.createdByPeerId ? `Opened by peer: ${props.session.createdByPeerId}` : undefined;
 });
 const stateLabel = computed(() => STATE_LABELS[props.sessionState] || '💤 Idle');
-const eyeIcon = computed(() => props.isHiddenFromOverview ? '👁‍🗨' : '👁');
-const eyeTitle = computed(() => props.isHiddenFromOverview ? 'Show in overview' : 'Hide from overview');
+/** Status shown in the middle of the row — every one that applies, side by side. */
+const statusIcons = computed(() => [
+  props.session.locked && { icon: '🔒', title: 'Locked against closure' },
+  props.session.frozen && { icon: '❄️', title: 'Frozen — no input reaches it' },
+  props.session.keepWarmUntil !== undefined && props.session.keepWarmUntil > Date.now()
+    && { icon: '⏰', title: `Keeping cache warm until ${new Date(props.session.keepWarmUntil).toLocaleTimeString()}` },
+].filter((x): x is { icon: string; title: string } => !!x));
 const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
@@ -278,6 +282,10 @@ function onCardClick(e: MouseEvent): void {
     @dragend="onDragEnd"
   >
     <span v-if="fadeStyle" :key="session.lastPromptAt" class="session-prompt-fade" :style="fadeStyle" />
+    <!-- Status at a glance, centred on the row: every one that applies, side by side. -->
+    <span v-if="statusIcons.length" class="session-status-icons" aria-hidden="true">
+      <span v-for="s in statusIcons" :key="s.icon" :title="s.title">{{ s.icon }}</span>
+    </span>
     <!-- Line 1: top row -->
     <div class="session-top-row">
       <span class="session-activity-dot" :style="{ background: dotColor }" />
@@ -343,52 +351,22 @@ function onCardClick(e: MouseEvent): void {
         {{ copied ? '✓' : '🔗' }}
       </button>
 
-      <!-- Rename button (hidden when editing) -->
+      <!-- Kebab: the session's own actions (rename, lock, freeze, keep warm, overview, compact, clone, switch). -->
       <button
         v-if="!isEditing"
-        class="session-rename"
+        class="session-kebab"
         :class="colClass(2)"
-        title="Rename session"
-        @click.stop="emit('rename', session.id)"
+        :title="`Actions for ${displayName}`"
+        aria-haspopup="menu"
+        @click.stop="showSessionMenu(session.id)"
       >
-        ✎
-      </button>
-
-      <!-- Eye toggle -->
-      <button
-        class="session-overview-toggle"
-        :class="colClass(3)"
-        :title="eyeTitle"
-        @click.stop="emit('toggleOverview', session.id)"
-      >
-        {{ eyeIcon }}
-      </button>
-
-      <!-- Lock toggle — sits beside the button it guards. -->
-      <button
-        class="session-lock"
-        :class="[colClass(5), { 'session-lock--on': session.locked }]"
-        :title="session.locked ? `${displayName} is locked — click to unlock` : `Lock ${displayName} against closure`"
-        @click.stop="emit('toggleLock', session.id, !session.locked)"
-      >
-        {{ session.locked ? '🔒' : '🔓' }}
-      </button>
-
-      <!-- Freeze toggle — beside the lock: the lock guards closure, this guards input. -->
-      <button
-        class="session-lock session-freeze"
-        :class="{ 'session-freeze--on': session.frozen }"
-        :aria-pressed="!!session.frozen"
-        :title="session.frozen ? `${displayName} is frozen — no input reaches it. Click to thaw` : `Freeze ${displayName} — refuse all input`"
-        @click.stop="emit('toggleFreeze', session.id, !session.frozen)"
-      >
-        ❄️
+        ⋮
       </button>
 
       <!-- Close button -->
       <button
         class="session-close"
-        :class="colClass(4)"
+        :class="colClass(3)"
         :title="session.locked ? `${displayName} is locked` : `Close ${displayName}`"
         :disabled="session.locked"
         @click.stop="emit('close', session.id, displayName)"
@@ -473,16 +451,20 @@ function onCardClick(e: MouseEvent): void {
   animation-fill-mode: both;
 }
 @keyframes session-prompt-fade { to { opacity: 0; } }
-/* The ❄ toggle must read as on/off at a glance: off is a faint grey glyph,
-   on is a lit blue pill. Opacity alone (the lock's cue) was indistinguishable. */
-.session-freeze { filter: grayscale(1); opacity: 0.35; }
-.session-freeze--on {
-  filter: none;
-  opacity: 1;
-  background: rgba(140, 188, 255, 0.28);
-  box-shadow: inset 0 0 0 1px #8cbcff;
-  border-radius: 4px;
+/* Lock / frozen / keep-warm, centred over the row; never steals a click. */
+.session-status-icons {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 6px;
+  font-size: 18px;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 1;
 }
+.session-status-icons > span { pointer-events: auto; }
 /* Frozen — cross-hatched: no input reaches this session. */
 .session-card.frozen {
   background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);

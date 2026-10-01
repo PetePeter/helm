@@ -252,7 +252,7 @@ private fun SessionRow(
             StateDot(state = session.activity)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (session.frozen) "❄ ${session.name}" else session.name,
+                    text = session.name,
                     color = HelmColors.Txt,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
@@ -275,6 +275,10 @@ private fun SessionRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 SessionRowText.missionLine(session.mission)?.let { MissionTicker(it) }
+            }
+            // Lock / frozen / keep-warm — the same icons the desktop row centres.
+            session.statusIcons(now).takeIf { it.isNotEmpty() }?.let { icons ->
+                Text(text = icons, style = MaterialTheme.typography.titleMedium, maxLines = 1)
             }
             // Unread chat is a count chip, not a sub-line word — it must be
             // findable without reading anything, the same way a plan-claimed

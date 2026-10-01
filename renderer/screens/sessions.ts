@@ -11,7 +11,7 @@ import { buildPlannerDirectories, buildPlannerDirectorySource } from './planner-
 import { sessionsState } from './sessions-state.js';
 import { logEvent, getCliDisplayName, toDirection } from '../utils.js';
 import type { Session } from '../state.js';
-import { closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
+import { closeConfirm, setCloseConfirmCallback, showSessionMenu } from '../stores/modal-bridge.js';
 import { sortSessions } from '../sort-logic.js';
 import { getOrderedSessionIds } from '../utils/session-shortcut-map.js';
 import {
@@ -30,7 +30,7 @@ import { loadStoredSessions } from '../session-store.js';
 // Sub-module imports — circular at module level, safe because all usages are in function bodies.
 import {
   updateStatusCounts,
-  startRename, commitRename, cancelRename,
+  commitRename, cancelRename,
   sessionsSortField, sessionsSortDirection,
 } from '../sidebar/session-services.js';
 
@@ -235,11 +235,13 @@ export async function setSessionFrozen(sessionId: string, frozen: boolean): Prom
   }
 }
 
-/** Flip the lock of the session under the gamepad cursor. */
-export function toggleLockForFocused(sessionId: string): void {
-  const session = state.sessions.find(item => item.id === sessionId);
-  if (!session) return;
-  void setSessionLocked(sessionId, !session.locked);
+/** Keep the session's prompt cache warm (KeepWarmer pings), or stop. */
+export async function setSessionKeepWarm(sessionId: string, on: boolean): Promise<void> {
+  try {
+    await sessionsClient.sessionSetKeepWarm?.(sessionId, on);
+  } catch (e) {
+    console.error('[Sessions] Failed to set keep-warm:', e);
+  }
 }
 
 export async function toggleSessionOverviewVisibility(sessionId: string): Promise<void> {
@@ -352,12 +354,6 @@ function getEditingRenameInput(): HTMLInputElement | null {
     if (editingInput) return editingInput;
   }
   return document.querySelector('.session-rename-input') as HTMLInputElement | null;
-}
-
-function startRenameForFocused(): void {
-  const session = getSessionAtFocus();
-  if (!session) return;
-  startRename(session.id);
 }
 
 function getDirPathForSession(sessionId: string): string | null {
@@ -649,22 +645,13 @@ function handleSessionsZoneButton(button: string): boolean {
       openStateDropdownForFocused();
       return true;
     }
+    // Column 2 is the row's kebab (⋮): rename, lock, freeze, keep warm, overview…
     if (sessionsState.cardColumn === 2) {
-      startRenameForFocused();
+      showSessionMenu(navItem.id);
       return true;
     }
     if (sessionsState.cardColumn === 3) {
-      toggleSessionOverviewVisibility(navItem.id);
-      return true;
-    }
-    if (sessionsState.cardColumn === 4) {
       confirmCloseSession();
-      return true;
-    }
-    // The lock sits left of ✕ on screen but keeps the highest column index, so
-    // the existing 1-4 column numbering (and its muscle memory) is untouched.
-    if (sessionsState.cardColumn === 5) {
-      toggleLockForFocused(navItem.id);
       return true;
     }
     // col=0: fall through to config bindings

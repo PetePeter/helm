@@ -91,6 +91,9 @@ export interface SessionInfo {
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
   lastPromptAt?: number;
+  /** Keep-warm is on until this epoch ms: KeepWarmer pings the session 10 s
+   *  before its CLI's short prompt cache would lapse, so it never does. Persists. */
+  keepWarmUntil?: number;
   /** Refuse ALL stdin — desktop keys, other sessions, schedules, chat, Mess
    *  pokes — until the user unfreezes it. Persists. */
   frozen?: boolean;

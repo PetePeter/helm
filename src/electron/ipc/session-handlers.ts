@@ -14,6 +14,7 @@ import type { SessionInfo } from '../../types/session.js';
 import { resolveWindowIconPath } from '../window-icon.js';
 import { applyNavigationPolicy } from '../navigation-policy.js';
 import { logger } from '../../utils/logger.js';
+import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
 
 /** Helm's strip-and-reload actions, owned by the MCP control service (one implementation for MCP and UI). */
 export interface TranscriptActions {
@@ -138,6 +139,17 @@ export function setupSessionHandlers(
       return { success: true, frozen: Boolean(session.frozen) };
     } catch (error) {
       logger.error(`[Session] Set frozen failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /** Keep the prompt cache warm for the default window, or switch it off. */
+  ipcMain.handle('session:setKeepWarm', (_event, id: string, on: boolean) => {
+    try {
+      sessionManager.updateSession(id, { keepWarmUntil: on ? Date.now() + KEEP_WARM_DEFAULT_MS : undefined });
+      return { success: true };
+    } catch (error) {
+      logger.error(`[Session] Set keep-warm failed: ${error}`);
       return { success: false, error: String(error) };
     }
   });

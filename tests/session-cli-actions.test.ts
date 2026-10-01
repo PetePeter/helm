@@ -23,10 +23,11 @@ import { HelmSessionDeliveryService } from '../src/mcp/services/helm-session-del
 import type { CliTypeConfig } from '../src/config/loader.js';
 
 function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true) {
-  const session = { id: 's1', name: 'worker', cliType: 'claude-code' };
+  const session: { id: string; name: string; cliType: string; frozen?: boolean } = { id: 's1', name: 'worker', cliType: 'claude-code' };
   const sessionManager = {
     getSession: (id: string) => (id === 's1' ? session : null),
     getAllSessions: () => [session],
+    setSessionFrozen: (_id: string, frozen: boolean) => { session.frozen = frozen; return session; },
   };
   const ptyManager = { has: () => ptyRunning };
   const configLoader = { getCliTypeEntry: () => entry, getCliTypeLabel: (ref: string) => ref };
@@ -223,6 +224,20 @@ describe('session_quick_compact', () => {
     expect(stripped).toContain('build the parser');
     expect(stripped).toContain('Parser built.');
     expect(stripped).not.toContain('hmm');
+    rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('thaws a frozen session first — Helm compact must type /clear into it', async () => {
+    const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log, frozen: true });
+
+    const result = await service.quickCompactSession('s1', {});
+
+    expect(session.frozen).toBe(false);
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(armed).toHaveLength(1);
     rmSync(result.transcriptFile, { force: true });
   });
 

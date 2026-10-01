@@ -1189,12 +1189,10 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-schedule-cancel:hover { color: #ff6060; }
 
-/* Session action buttons (rename, state, close, copy-id) - always visible */
-.session-rename,
+/* Session action buttons (state, kebab, close, copy-id) - always visible */
+.session-kebab,
 .session-state-btn,
-.session-overview-toggle,
 .session-close,
-.session-lock,
 .session-copy-id {
   background: none;
   border: none;
@@ -1207,31 +1205,15 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   transition: color 0.2s, background 0.2s;
   opacity: 1;
 }
-.session-rename:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
+.session-kebab { font-weight: 700; }
+.session-kebab:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
 .session-copy-id:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
-.session-rename.card-col-focused {
+.session-kebab.card-col-focused {
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
 }
 .session-state-btn:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
-.session-overview-toggle:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
-.session-overview-toggle.card-col-focused {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-
-/* Lock toggle — quiet when off (it is the resting state), lit when armed */
-.session-lock { opacity: 0.55; }
-.session-lock:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); opacity: 1; }
-.session-lock--on { opacity: 1; }
-.session-lock.card-col-focused {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-  opacity: 1;
-}
 
 /* Session close button specific styles */
 .session-close {
@@ -1304,9 +1286,8 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   text-overflow: ellipsis;
 }
 .session-top-row .session-state-btn,
-.session-top-row .session-rename,
+.session-top-row .session-kebab,
 .session-top-row .session-close,
-.session-top-row .session-lock,
 .session-top-row .session-copy-id {
   font-size: var(--font-size-sm);
   padding: 1px 4px;

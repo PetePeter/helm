@@ -1,20 +1,14 @@
 <script setup lang="ts">
 /**
- * Context menu overlay — Copy/Paste/Editor/New Session/etc.
- *
- * Items are conditionally enabled based on selection state and session state.
+ * Context menu overlay — the terminal's right-click menu and the session row's
+ * kebab (⋮). Items come from buildContextMenuItems (renderer/modals/context-menu-items.ts).
  * Gamepad D-pad up/down navigates (skipping disabled items), A executes, B cancels.
  */
 import { ref, watch, computed } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { toDirection } from '../../utils.js';
 import { jumpKeyLabel, jumpButtonToPosition } from '../../utils/jump-keys.js';
-
-interface MenuItem {
-  id: string;
-  label: string;
-  enabled: boolean;
-}
+import { buildContextMenuItems, type ContextMenuContext, type ContextMenuItem } from '../../modals/context-menu-items.js';
 
 const MODAL_ID = 'context-menu';
 
@@ -27,6 +21,10 @@ const props = defineProps<{
   isSnappedOut: boolean;
   /** Name of the runtime group the context session is in, or null when ungrouped. */
   currentGroupName?: string | null;
+  /** 'session' = the row kebab; 'terminal' (default) = right-click on the terminal. */
+  mode?: ContextMenuContext['mode'];
+  /** The context session's toggles, which pick labels and the frozen short list. */
+  sessionFlags?: ContextMenuContext['session'];
 }>();
 
 const emit = defineEmits<{
@@ -38,27 +36,14 @@ const emit = defineEmits<{
 const selectedIndex = ref(0);
 const modalStack = useModalStack();
 
-const menuItems = computed<MenuItem[]>(() => [
-  { id: 'copy', label: '📋 Copy', enabled: props.hasSelection },
-  { id: 'paste', label: '📎 Paste', enabled: props.hasActiveSession },
-  { id: 'editor', label: '📝 Compose in Editor', enabled: props.hasActiveSession },
-  { id: 'new-session', label: '🆕 New Session', enabled: true },
-  { id: 'new-session-with-selection', label: '📌 New Session with Selection', enabled: props.hasSelection },
-  { id: 'prompts', label: '⚡ Prompts…', enabled: props.hasActiveSession },
-  { id: 'drafts', label: '📝 Drafts…', enabled: props.hasActiveSession },
-  { id: 'quick-compact', label: '🗜️ Helm Compact', enabled: props.hasActiveSession },
-  { id: 'clone-session', label: '🧬 Clone', enabled: props.hasActiveSession },
-  { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: props.hasActiveSession },
-  { id: 'move-to-group', label: '🗂️ Move to group…', enabled: props.hasActiveSession },
-  {
-    id: 'remove-from-group',
-    label: props.currentGroupName ? `↩ Remove from “${props.currentGroupName}”` : '↩ Remove from group',
-    enabled: props.hasActiveSession && !!props.currentGroupName,
-  },
-  { id: 'snap-out', label: '📤 Snap Out', enabled: props.hasActiveSession && !props.isSnappedOut },
-  { id: 'snap-back', label: '📥 Snap Back', enabled: props.isSnappedOut },
-  { id: 'cancel', label: '✖ Cancel', enabled: true },
-]);
+const menuItems = computed<ContextMenuItem[]>(() => buildContextMenuItems({
+  mode: props.mode ?? 'terminal',
+  hasSelection: props.hasSelection,
+  hasActiveSession: props.hasActiveSession,
+  isSnappedOut: props.isSnappedOut,
+  currentGroupName: props.currentGroupName ?? null,
+  session: props.sessionFlags ?? { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
+}));
 
 const enabledIndices = computed(() =>
   menuItems.value.map((item, i) => item.enabled ? i : -1).filter(i => i >= 0),

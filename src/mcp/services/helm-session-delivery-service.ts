@@ -508,6 +508,9 @@ export class HelmSessionDeliveryService {
   ): Promise<{ ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }> {
     const session = this.requireRunningSession(sessionRef);
     const transcriptFile = writeStrippedTranscript(session);
+    // Compacting a frozen session is an explicit ask to bring it back: the
+    // /clear and the resume prompt both have to reach it.
+    if (session.frozen) this.sessionManager.setSessionFrozen(session.id, false);
     logger.info(`[HelmSessionDelivery] session_quick_compact for "${session.name}" (${session.id}) → ${transcriptFile}`);
     await this.clearSession(session.id, {
       ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),

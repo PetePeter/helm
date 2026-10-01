@@ -60,8 +60,6 @@ function makeContext(): Fake {
     onGroupToggleCollapse: vi.fn(),
     onShowPlans: vi.fn(),
     onShowOverview: vi.fn(),
-    onToggleOverview: vi.fn(),
-    onToggleLock: vi.fn(),
     onCancelSchedule: vi.fn(),
     toggleSpawnCollapse: vi.fn(),
     togglePlannerCollapse: vi.fn(),
@@ -260,12 +258,10 @@ describe('pane wrappers preserve the shell event seams', () => {
 
     list.vm.$emit('session-click', 's-1');
     list.vm.$emit('request-close', 's-1');
-    list.vm.$emit('toggle-lock', 's-1');
     wrapper.findComponent(SortBar).vm.$emit('change', 'state', 'desc');
 
     expect(sidebar().onSessionClick).toHaveBeenCalledWith('s-1');
     expect(sidebar().onRequestClose).toHaveBeenCalledWith('s-1');
-    expect(sidebar().onToggleLock).toHaveBeenCalledWith('s-1');
     expect(sidebar().onSortChange).toHaveBeenCalledWith('state', 'desc');
   });
 

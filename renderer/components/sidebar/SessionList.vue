@@ -95,14 +95,10 @@ const emit = defineEmits<{
   toggleGroupCollapse: [dirPath: string];
   showOverview: [dirPath: string];
   sessionClick: [sessionId: string];
-  sessionRename: [sessionId: string];
   commitRename: [sessionId: string, newName: string];
   cancelRename: [];
   requestClose: [sessionId: string, displayName: string];
   sessionStateChange: [sessionId: string, newState: string];
-  toggleOverview: [sessionId: string];
-  toggleLock: [sessionId: string, locked: boolean];
-  toggleFreeze: [sessionId: string, frozen: boolean];
   showArtifacts: [sessionId: string];
   cancelSchedule: [sessionId: string];
   dismissNotification: [notificationId: string];
@@ -254,7 +250,7 @@ function onNewGroupDrop(e: DragEvent): void {
             <SessionCard
               v-for="session in group.sessions"
               :key="session.id"
-              :session="{ id: session.id, name: session.name, cliType: session.cliType, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt }"
+              :session="{ id: session.id, name: session.name, cliType: session.cliType, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, keepWarmUntil: session.keepWarmUntil }"
               :nav-index="navIndexMap.get(session.id) ?? -1"
               :session-state="sessionStates.get(session.id) || 'idle'"
               :activity-level="sessionActivityLevels.get(session.id) || 'idle'"
@@ -279,14 +275,10 @@ function onNewGroupDrop(e: DragEvent): void {
               :preview-source="previewSourceFor(session.id)"
               :message-landed="landedSessionIds.has(session.id)"
               @click="emit('sessionClick', $event)"
-              @rename="emit('sessionRename', $event)"
               @commit-rename="onCommitRename"
               @cancel-rename="emit('cancelRename')"
               @close="onRequestClose"
               @state-change="onSessionStateChange"
-              @toggle-overview="emit('toggleOverview', $event)"
-              @toggle-lock="(id: string, locked: boolean) => emit('toggleLock', id, locked)"
-              @toggle-freeze="(id: string, frozen: boolean) => emit('toggleFreeze', id, frozen)"
               @show-artifacts="emit('showArtifacts', $event)"
               @cancel-schedule="emit('cancelSchedule', $event)"
               @dismiss-notification="emit('dismissNotification', $event)"

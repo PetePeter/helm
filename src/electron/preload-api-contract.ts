@@ -22,6 +22,7 @@ export const PRELOAD_API_DOMAINS = {
     'sessionRename',
     'sessionSetLocked',
     'sessionSetFrozen',
+    'sessionSetKeepWarm',
     'sessionQuickCompact',
     'sessionSwitchCli',
     'sessionClone',

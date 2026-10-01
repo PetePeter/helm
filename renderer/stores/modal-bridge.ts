@@ -72,6 +72,8 @@ export const contextMenu = reactive({
   selectedText: '',
   hasSelection: false,
   sourceSessionId: '',
+  /** 'session' = opened from a row's kebab (⋮); 'terminal' = right-click. */
+  mode: 'terminal' as 'terminal' | 'session',
 });
 
 export function showContextMenu(
@@ -90,8 +92,18 @@ export function showContextMenu(
     hasSelection = view?.hasSelection() ?? false;
   }
   contextMenu.visible = true;
+  contextMenu.mode = 'terminal';
   contextMenu.selectedText = selectedText;
   contextMenu.hasSelection = hasSelection;
+  contextMenu.sourceSessionId = sessionId;
+}
+
+/** The session row's kebab (⋮): the same menu, with the session's own actions. */
+export function showSessionMenu(sessionId: string): void {
+  contextMenu.visible = true;
+  contextMenu.mode = 'session';
+  contextMenu.selectedText = '';
+  contextMenu.hasSelection = false;
   contextMenu.sourceSessionId = sessionId;
 }
 

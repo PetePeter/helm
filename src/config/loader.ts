@@ -191,6 +191,9 @@ export interface CliTypeConfig {
   cacheWarnMinutes?: number;
   /** Minutes after the last prompt before the long cache counts as expired (red banner). Default 60. */
   cacheExpireMinutes?: number;
+  /** What a keep-warm ping types (sequence syntax), sent 10 s before the short
+   *  cache lapses. Keep it tiny: it costs a turn. Default "{Esc}heartbeat". */
+  keepWarmPrompt?: string;
   /**
    * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —
    * mouse modes are swallowed so plain click-drag selects text for copying.

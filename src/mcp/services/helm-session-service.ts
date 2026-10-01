@@ -344,6 +344,8 @@ export class HelmSessionService {
       ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
       ...(session.frozen ? { frozen: true } : {}),
+      ...(session.keepWarmUntil != null && session.keepWarmUntil > Date.now()
+        ? { keepWarmUntilEpochMs: session.keepWarmUntil } : {}),
       ...(session.lastPromptAt != null ? { lastPromptAtEpochMs: session.lastPromptAt } : {}),
       cacheWarnMinutes: warnAfterMs(cliEntry) / 60_000,
       cacheExpireMinutes: expireAfterMs(cliEntry) / 60_000,

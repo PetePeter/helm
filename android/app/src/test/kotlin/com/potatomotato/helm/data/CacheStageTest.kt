@@ -44,6 +44,19 @@ class CacheStageTest {
         assertEquals(CacheStage.Expired, s.cacheStage(60 * min + 1))
         assertEquals(CacheStage.Frozen, s.copy(frozen = true).cacheStage(0))
     }
+
+    @Test
+    fun `status icons mirror the desktop row - every one that applies, in order`() {
+        val now = 10_000 * min
+        assertEquals("", parse().statusIcons(now))
+        assertEquals("🔒", parse("locked" to true).statusIcons(now))
+        assertEquals(
+            "🔒 ❄️ ⏰",
+            parse("locked" to true, "frozen" to true, "keepWarmUntilEpochMs" to now + min).statusIcons(now),
+        )
+        assertEquals("", parse("keepWarmUntilEpochMs" to now - 1).statusIcons(now))
+    }
+
 }
 
 class FrozenRefusalTest {

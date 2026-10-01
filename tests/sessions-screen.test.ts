@@ -78,9 +78,11 @@ vi.mock('../renderer/utils.js', () => {
   };
 });
 
+const mockShowSessionMenu = vi.fn();
 vi.mock('../renderer/stores/modal-bridge.js', () => ({
   closeConfirm: mockCloseConfirm,
   setCloseConfirmCallback: mockSetCloseConfirmCallback,
+  showSessionMenu: (...args: unknown[]) => mockShowSessionMenu(...args),
 }));
 
 vi.mock('../renderer/plans/plan-screen.js', () => ({
@@ -1307,16 +1309,10 @@ describe('Sessions Screen', () => {
       expect(sessionsState.cardColumn).toBe(2);
     });
 
-    it('RIGHT reaches the lock toggle at column 5', () => {
-      sessionsState.cardColumn = 4;
+    it('RIGHT stops at the close button, column 3', () => {
+      sessionsState.cardColumn = 3;
       sessions.handleSessionsScreenButton('DPadRight');
-      expect(sessionsState.cardColumn).toBe(5);
-    });
-
-    it('RIGHT does not exceed 5', () => {
-      sessionsState.cardColumn = 5;
-      sessions.handleSessionsScreenButton('DPadRight');
-      expect(sessionsState.cardColumn).toBe(5);
+      expect(sessionsState.cardColumn).toBe(3);
     });
 
     it('LEFT moves cardColumn from 2 to 1', () => {
@@ -1380,16 +1376,16 @@ describe('Sessions Screen', () => {
       expect(sessionsState.cardColumn).toBe(0);
     });
 
-    it('A at col=4 triggers close confirm modal', async () => {
-      sessionsState.cardColumn = 4;
+    it('A at col=3 triggers close confirm modal', async () => {
+      sessionsState.cardColumn = 3;
       sessions.handleSessionsScreenButton('A');
       await flush();
       expect(mockCloseConfirm.sessionId).toBe('s-0');
       expect(mockSetCloseConfirmCallback).toHaveBeenCalledWith(expect.any(Function));
     });
 
-    it('A at col=4 close confirm callback closes the session via IPC', async () => {
-      sessionsState.cardColumn = 4;
+    it('A at col=3 close confirm callback closes the session via IPC', async () => {
+      sessionsState.cardColumn = 3;
       sessions.handleSessionsScreenButton('A');
       await flush();
       // Extract the onConfirm callback and invoke it
@@ -1400,11 +1396,11 @@ describe('Sessions Screen', () => {
       expect(mockDestroyTerminal).not.toHaveBeenCalledWith('s-0');
     });
 
-    it('A at col=2 triggers rename for focused session', () => {
+    it("A at col=2 opens the focused session's kebab menu", () => {
       sessionsState.cardColumn = 2;
       const result = sessions.handleSessionsScreenButton('A');
       expect(result).toBe(true);
-      expect(sessionsState.editingSessionId).toBe('s-0');
+      expect(mockShowSessionMenu).toHaveBeenCalledWith('s-0');
     });
 
     it('A at col=1 dispatches open-state-dropdown on the focused session card', () => {
@@ -1444,21 +1440,6 @@ describe('Sessions Screen', () => {
       await flush();
       expect(onPlanningClick).toHaveBeenCalled();
       dropdown.remove();
-    });
-
-    it('A on the eye toggle persists overviewHidden changes', async () => {
-      mockSessionGetAll.mockResolvedValueOnce([{ ...makeSessions(1)[0], cliSessionName: 'cli-0' }]);
-      sessionsState.sessionsFocusIndex = 1;
-      sessionsState.cardColumn = 3;
-      await loadAndFlush(sessions);
-
-      const result = sessions.handleSessionsScreenButton('A');
-
-      expect(result).toBe(true);
-      expect(mockConfigSetSessionGroupPrefs).toHaveBeenCalled();
-      expect(mockConfigSetSessionGroupPrefs.mock.calls.at(-1)?.[0]).toMatchObject({
-        overviewHidden: ['cli-0'],
-      });
     });
 
     it('setSessionPreviewMode persists the preview mode with the group prefs', async () => {

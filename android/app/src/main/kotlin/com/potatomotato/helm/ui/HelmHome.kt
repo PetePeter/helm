@@ -1273,7 +1273,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     val toList = { openSessionId = null }
                     BackHandler(onBack = toList)
                     SessionTabScaffold(
-                        sessionName = open.name,
+                        // The same status icons as the list row, after the name.
+                        sessionName = listOf(open.name, open.statusIcons(System.currentTimeMillis()))
+                            .filter { it.isNotEmpty() }.joinToString("  "),
                         mission = open.mission,
                         linkState = linkState,
                         tab = tab,

@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { warnAfterMs } from '../../session/prompt-staleness.js';
 import { AutoFreezer } from '../../session/auto-freezer.js';
+import { KeepWarmer } from '../../session/keep-warmer.js';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
 import { getMessageFlightTimeoutMs, type SessionMessageFlight } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
@@ -640,6 +641,13 @@ export function registerIPCHandlers(
   // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
   const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
   autoFreezer.start();
+  // Keep-warm pings, per session on request, just before the short cache lapses.
+  const keepWarmer = new KeepWarmer(
+    sessionManager,
+    async (sessionId, text) => { await deliverPromptSequenceToSession({ sessionId, text, ptyManager, sessionManager, configLoader }); },
+    cliType => configLoader.getCliTypeEntry(cliType),
+  );
+  keepWarmer.start();
   const messNotifier = messManager
     ? new MessNotifier(
       messManager,
@@ -1314,6 +1322,7 @@ export function registerIPCHandlers(
       cancelAllPrompts();
       messNotifier?.dispose();
       autoFreezer.dispose();
+      keepWarmer.dispose();
       cleanupMess();
       hookTracker.dispose();
       cleanupHandover();

@@ -144,6 +144,8 @@ export interface SessionSummary {
   cacheExpireMinutes?: number;
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
+  /** Keep-warm is on until this epoch ms (absent when off or lapsed). */
+  keepWarmUntilEpochMs?: number;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
   mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
   /** 'operator' marks the router-only "Helm" session. Voice clients (the

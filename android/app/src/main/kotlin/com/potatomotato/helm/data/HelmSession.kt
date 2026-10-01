@@ -56,12 +56,23 @@ data class HelmSession(
     val pendingSubagents: Int = 0,
     /** Refuses all input until thawed (docs/session-freeze.md). */
     val frozen: Boolean = false,
+    /** Protected from closure. */
+    val locked: Boolean = false,
+    /** Desktop-clock epoch ms until which keep-warm pings run; null when off. */
+    val keepWarmUntilEpochMs: Long? = null,
     /** Desktop-clock epoch ms of the last prompt — the clock the cache windows count from. */
     val lastPromptAtEpochMs: Long? = null,
     /** The CLI type's short / long prompt-cache windows, in minutes. */
     val cacheWarnMinutes: Int = 5,
     val cacheExpireMinutes: Int = 60,
 ) {
+    /** Lock / frozen / keep-warm, as the desktop row shows them — every one that applies. */
+    fun statusIcons(nowMs: Long): String = listOfNotNull(
+        "🔒".takeIf { locked },
+        "❄️".takeIf { frozen },
+        "⏰".takeIf { (keepWarmUntilEpochMs ?: 0L) > nowMs },
+    ).joinToString(" ")
+
     /**
      * How stale the session's prompt cache is. The desktop clock and the phone
      * clock can disagree, so this is a warning, never a gate — the desktop owns
@@ -148,6 +159,8 @@ object SessionWire {
             subagentOf = (summary.opt("subagentOf") as? String)?.takeIf { it.isNotBlank() },
             pendingSubagents = ((summary.opt("pendingSubagents") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
             frozen = summary.opt("frozen") == true,
+            locked = summary.opt("locked") == true,
+            keepWarmUntilEpochMs = (summary.opt("keepWarmUntilEpochMs") as? Number)?.toLong(),
             lastPromptAtEpochMs = (summary.opt("lastPromptAtEpochMs") as? Number)?.toLong(),
             cacheWarnMinutes = (summary.opt("cacheWarnMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 5,
             cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,

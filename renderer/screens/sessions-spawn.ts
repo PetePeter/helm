@@ -239,8 +239,9 @@ export function handleSessionsZone(button: string, dir: string | null): void {
       void useNavigationStore().openOverview(currentItem.id, state.activeSessionId ?? undefined);
       return;
     }
+    // Session card: 1 state · 2 kebab (⋮) · 3 close.
     const maxColumn = currentItem?.type === 'session-card'
-      ? 5
+      ? 3
       : currentItem?.type === 'group-header'
         ? 0
         : 0;
