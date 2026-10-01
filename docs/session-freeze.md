@@ -48,3 +48,14 @@ missed:
 
 Ways to thaw: the ❄ button on the row, the Unfreeze button on the terminal
 overlay, or MCP `session_set_frozen` from another session.
+
+## On the phone
+
+`session_list` carries `frozen`, `lastPromptAtEpochMs` and the CLI type's
+resolved `cacheWarnMinutes` / `cacheExpireMinutes`. The Android chat shows the
+same orange / red / blue banner above the thread (with Unfreeze when frozen),
+and frozen rows get a ❄. A message refused because the session is frozen
+settles as `Delivery.Frozen` — matched on the desktop's "is frozen" wording —
+with an **Unfreeze & send** action that calls `session_set_frozen` and resends.
+The phone's clock may disagree with the desktop's, so its banner is advisory;
+the desktop owns the actual freeze.

@@ -35,7 +35,7 @@ describe('MCP session_mission_set', () => {
     manager = new SessionManager();
     manager.addSession(session('me', 'caller'));
     manager.addSession(session('other', 'sibling'));
-    const configLoader = { getCliTypeLabel: (ref: string) => ref };
+    const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null };
     const sessionService = new HelmSessionService(manager, {} as never, configLoader as never, {} as never);
     const service = {
       getSession: (ref: string) => sessionService.getSession(ref),

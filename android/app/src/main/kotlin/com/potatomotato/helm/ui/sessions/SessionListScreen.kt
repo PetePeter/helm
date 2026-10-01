@@ -252,7 +252,7 @@ private fun SessionRow(
             StateDot(state = session.activity)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = session.name,
+                    text = if (session.frozen) "❄ ${session.name}" else session.name,
                     color = HelmColors.Txt,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,

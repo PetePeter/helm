@@ -184,7 +184,7 @@ describe('session_list exposes role (phone contract: HelmSession.kt reads "role"
     const service = new HelmSessionService(
       { getAllSessions: () => sessions, getSession: (id: string) => sessions.find(s => s.id === id) ?? null } as any,
       { has: () => true } as any,
-      { getCliTypeLabel: (ref: string) => ref, getWorkingDirectories: () => [] } as any,
+      { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null, getWorkingDirectories: () => [] } as any,
       { getForDirectory: () => [] } as any,
     );
     const [op, work] = service.listSessions();

@@ -35,6 +35,21 @@ function makePlanManager() {
 }
 
 describe('HelmSessionService.listSessions', () => {
+  it('carries freeze and prompt-cache staleness for the phone', () => {
+    const sessionManager = makeSessionManager([
+      { id: 's1', name: 'A', cliType: 'claude-code', workingDir: '/r', frozen: true, lastPromptAt: 1000 } as any,
+      { id: 's2', name: 'B', cliType: 'claude-code', workingDir: '/r' },
+    ]);
+    const config = makeConfigLoader();
+    config.getCliTypeEntry.mockReturnValue({ cacheWarnMinutes: 3 } as any);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, config as any, makePlanManager() as any);
+
+    const [frozen, fresh] = service.listSessions();
+    expect(frozen).toMatchObject({ frozen: true, lastPromptAtEpochMs: 1000, cacheWarnMinutes: 3, cacheExpireMinutes: 60 });
+    expect(fresh.frozen).toBeUndefined();
+    expect(fresh.lastPromptAtEpochMs).toBeUndefined();
+  });
+
   it('returns all sessions when no filter is provided', () => {
     const sessionManager = makeSessionManager([
       { id: 's1', name: 'A', cliType: 'claude-code', workingDir: '/repo/main' },

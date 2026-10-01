@@ -15,7 +15,13 @@ enum class Delivery {
 
     /** Denied, rate limited, or the link died mid-call. */
     Failed,
+
+    /** Refused because the session is frozen — thaw it, then send again. */
+    Frozen,
 }
+
+/** The desktop's refusal for a frozen session (src/session/frozen.ts) — matched by its wording. */
+fun isFrozenRefusal(message: String): Boolean = "is frozen" in message
 
 /**
  * One line in a session's thread.
@@ -374,11 +380,15 @@ class ChatRepository(
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */
     @Synchronized
-    fun settle(sessionId: String, key: String, delivered: Boolean) {
+    fun settle(sessionId: String, key: String, delivered: Boolean, frozen: Boolean = false) {
         val thread = _threads.value[sessionId] ?: return
         val settled = thread.map { message ->
             if (message.key == key) {
-                message.copy(delivery = if (delivered) Delivery.Sent else Delivery.Failed)
+                message.copy(delivery = when {
+                    delivered -> Delivery.Sent
+                    frozen -> Delivery.Frozen
+                    else -> Delivery.Failed
+                })
             } else {
                 message
             }

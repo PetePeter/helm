@@ -66,6 +66,11 @@ object HelmColors {
     /** Destructive actions — "Close session", "Reject". */
     val Danger = Color(0xFFF87171)
 
+    /** Prompt-cache warnings — mirror the desktop's PromptCacheBanner. */
+    val CacheWarn = Color(0xFFFF9F43)
+    val CacheExpired = Color(0xFFFF5C5C)
+    val Frozen = Color(0xFF8CBCFF)
+
     /**
      * Session state colours, per invariant 8.
      *

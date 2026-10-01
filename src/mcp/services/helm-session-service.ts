@@ -1,4 +1,5 @@
 import { buildTranscriptResumePrompt, writeStrippedTranscript } from '../../session/transcript-strip.js';
+import { expireAfterMs, warnAfterMs } from '../../session/prompt-staleness.js';
 import { logger } from '../../utils/logger.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
@@ -317,6 +318,7 @@ export class HelmSessionService {
     // Otherwise report the frozen last-active moment (fall back to createdAt).
     const isActive = session.activityLevel === 'active';
     const lastActiveMs = isActive ? Date.now() : (session.lastActiveAt ?? session.createdAt);
+    const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
     return {
       id: session.id,
       name: session.name,
@@ -341,6 +343,10 @@ export class HelmSessionService {
       ...(session.remote ? { remote: { ...session.remote } } : {}),
       ...(session.aiagentState ? { aiagentState: session.aiagentState } : {}),
       ...(session.locked ? { locked: true } : {}),
+      ...(session.frozen ? { frozen: true } : {}),
+      ...(session.lastPromptAt != null ? { lastPromptAtEpochMs: session.lastPromptAt } : {}),
+      cacheWarnMinutes: warnAfterMs(cliEntry) / 60_000,
+      cacheExpireMinutes: expireAfterMs(cliEntry) / 60_000,
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.role ? { role: session.role } : {}),
       ...(session.apiTool ? { apiTool: true } : {}),

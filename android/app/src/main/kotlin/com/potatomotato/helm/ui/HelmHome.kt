@@ -780,6 +780,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             // them it holds, so its journal (and an API session's history) drop
             // them too.
             onRetry = { key, text -> client.resendChat(sessionId, key, text) },
+            session = sessions.firstOrNull { it.id == sessionId },
+            onUnfreeze = { retry -> client.unfreeze(sessionId, retry) },
             onDelete = { keys -> client.deleteChats(sessionId, keys) },
             onTerminal = {
                 openSessionId = sessionId

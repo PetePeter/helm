@@ -135,6 +135,13 @@ export interface SessionSummary {
   createdByPeerId?: string;
   /** Set on a Remote row (`peer_attach`): the peer and ITS session id this row views. */
   remote?: { peerId: string; sessionId: string; machineName?: string };
+  /** True when the session refuses all input (docs/session-freeze.md). */
+  frozen?: boolean;
+  /** Last prompt (epoch ms) — the clock the cache thresholds count from. */
+  lastPromptAtEpochMs?: number;
+  /** The CLI type's short / long prompt-cache windows, resolved to minutes. */
+  cacheWarnMinutes?: number;
+  cacheExpireMinutes?: number;
   /** True when deliberate session closure is blocked. */
   locked?: boolean;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */

@@ -54,7 +54,29 @@ data class HelmSession(
     val subagentOf: String? = null,
     /** Subagents this session is waiting on right now — drawn as a 🔥 count. */
     val pendingSubagents: Int = 0,
+    /** Refuses all input until thawed (docs/session-freeze.md). */
+    val frozen: Boolean = false,
+    /** Desktop-clock epoch ms of the last prompt — the clock the cache windows count from. */
+    val lastPromptAtEpochMs: Long? = null,
+    /** The CLI type's short / long prompt-cache windows, in minutes. */
+    val cacheWarnMinutes: Int = 5,
+    val cacheExpireMinutes: Int = 60,
 ) {
+    /**
+     * How stale the session's prompt cache is. The desktop clock and the phone
+     * clock can disagree, so this is a warning, never a gate — the desktop owns
+     * the actual freeze.
+     */
+    fun cacheStage(nowMs: Long): CacheStage {
+        if (frozen) return CacheStage.Frozen
+        val age = nowMs - (lastPromptAtEpochMs ?: return CacheStage.Fresh)
+        return when {
+            age > cacheExpireMinutes * 60_000L -> CacheStage.Expired
+            age > cacheWarnMinutes * 60_000L -> CacheStage.Warn
+            else -> CacheStage.Fresh
+        }
+    }
+
     /**
      * What the group header shows. The full path is the identity — two projects
      * can share a last segment — but a phone screen has no room for it.
@@ -70,6 +92,8 @@ data class HelmSession(
     val groupLabel: String
         get() = machineName?.let { "🖥 $it" } ?: projectLabel
 }
+
+enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
 /**
  * The `session_list` result, read off the wire.
@@ -123,6 +147,10 @@ object SessionWire {
             apiTool = summary.opt("apiTool") == true,
             subagentOf = (summary.opt("subagentOf") as? String)?.takeIf { it.isNotBlank() },
             pendingSubagents = ((summary.opt("pendingSubagents") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+            frozen = summary.opt("frozen") == true,
+            lastPromptAtEpochMs = (summary.opt("lastPromptAtEpochMs") as? Number)?.toLong(),
+            cacheWarnMinutes = (summary.opt("cacheWarnMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 5,
+            cacheExpireMinutes = (summary.opt("cacheExpireMinutes") as? Number)?.toInt()?.takeIf { it > 0 } ?: 60,
         )
     }
 

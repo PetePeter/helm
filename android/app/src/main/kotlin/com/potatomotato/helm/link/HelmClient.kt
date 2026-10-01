@@ -3,6 +3,7 @@ package com.potatomotato.helm.link
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
 import com.potatomotato.helm.data.ArtifactUploads
+import com.potatomotato.helm.data.isFrozenRefusal
 import com.potatomotato.helm.data.StagedAttachment
 import com.potatomotato.helm.data.attachmentSliceBytes
 import com.potatomotato.helm.data.CapabilityCache
@@ -263,6 +264,16 @@ class HelmClient(
         return issueText(sessionId, text, key = newKey)
     }
 
+    /**
+     * Thaw a frozen session, then (when [retry] names a refused bubble) send its
+     * text again. The list is refreshed either way so the ❄ and banner clear.
+     */
+    fun unfreeze(sessionId: String, retry: Pair<String, String>? = null): Boolean =
+        call(METHOD_SESSION_SET_FROZEN, linkedMapOf("sessionId" to sessionId, "frozen" to false)) { outcome ->
+            if (outcome is Outcome.Ok) retry?.let { (key, text) -> resendChat(sessionId, key, text) }
+            refreshSessions()
+        }
+
     /** One `session_send_text` ask, settling the optimistic row named by [key]. */
     private fun issueText(sessionId: String, text: String, key: String): Boolean {
         val params = linkedMapOf("sessionId" to sessionId, "text" to text)
@@ -271,7 +282,10 @@ class HelmClient(
         // recognise its own words when the journal replays them back.
         val id = nextCallId()
         val issued = call(METHOD_SESSION_SEND_TEXT, params, id = id) { outcome ->
-            chats.settle(sessionId, key, outcome is Outcome.Ok)
+            chats.settle(
+                sessionId, key, outcome is Outcome.Ok,
+                frozen = outcome is Outcome.Failed && isFrozenRefusal(outcome.message),
+            )
         }
         if (issued) {
             // Only a call the link actually carried is registered: the desktop
@@ -1854,6 +1868,7 @@ class HelmClient(
 
         private const val METHOD_SESSION_LIST = "session_list"
         private const val METHOD_SESSION_SEND_TEXT = "session_send_text"
+        private const val METHOD_SESSION_SET_FROZEN = "session_set_frozen"
 
         /**
          * The gate's reserved chat-cursor meta-method (see the desktop's
