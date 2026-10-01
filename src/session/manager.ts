@@ -240,6 +240,11 @@ export class SessionManager extends EventEmitter {
    * the next AutoFreezer tick.
    */
   setSessionFrozen(sessionId: string, frozen: boolean, now = Date.now()): SessionInfo {
+    // The operator answers the phone and thaws frozen sessions — freezing it
+    // would leave nobody able to do either.
+    if (frozen && this.sessions.get(sessionId)?.role === 'operator') {
+      throw new Error('The operator cannot be frozen');
+    }
     this.updateSession(sessionId, frozen ? { frozen } : { frozen, lastPromptAt: now });
     return this.sessions.get(sessionId)!;
   }

@@ -65,4 +65,15 @@ describe('session freeze', () => {
     saveSessions(sessions.getAllSessions(), file);
     expect(loadSessions(file)[0].frozen).toBe(true);
   });
+
+  it('the operator can never be frozen — it is how frozen sessions get thawed', () => {
+    const { sessions } = setup();
+    sessions.addSession({ id: 'op', name: 'Helm', cliType: 'test', processId: 2, role: 'operator' });
+    expect(() => sessions.setSessionFrozen('op', true)).toThrow(/operator/i);
+    expect(sessions.getSession('op')?.frozen).toBeFalsy();
+    // …and it can still thaw others.
+    sessions.setSessionFrozen('s1', true);
+    sessions.setSessionFrozen('s1', false);
+    expect(sessions.getSession('s1')?.frozen).toBe(false);
+  });
 });
