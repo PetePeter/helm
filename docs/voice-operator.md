@@ -301,8 +301,10 @@ lifetime it:
 
 - sets `AudioManager.MODE_IN_COMMUNICATION` and restores the previous mode on end
   (only if the call actually began — a service that never began touches nothing);
-- requests transient audio focus as `USAGE_VOICE_COMMUNICATION` and abandons it;
-  a refused request ends the call, and losing focus (e.g. a GSM call) hangs up;
+- requests no audio focus of its own: every call is a Telecom call, Telecom
+  holds the call focus for it, and a second request for the same call is always
+  refused. A GSM call taking over ends ours through Telecom
+  (`HelmConnection.onDisconnect`);
 - routes via `setCommunicationDevice` (API 31+) or speakerphone/SCO (older), so
   the recorder and the voice share the call route (handset, speaker, Bluetooth);
 - speaks TTS as `USAGE_VOICE_COMMUNICATION`, so replies follow the call route.
@@ -538,7 +540,7 @@ sequenceDiagram
 - **Only the holder moves it.** The desktop cannot see which session the phone
   is talking to, so the phone checks: a transfer whose `fromSessionId` is not
   the live call's target is ignored (`VoiceCallService.transfer`).
-- **Nothing drops.** Mic, audio focus and route stay; only the send target and
+- **Nothing drops.** Mic, the Telecom call and route stay; only the send target and
   the reply feed change. The new feed baselines on the thread as it stands, so
   the new session's history is never read out.
 - **Wire:** the alert push with `kind: "transfer"`, `sessionId` = the session

@@ -8,10 +8,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -43,7 +41,7 @@ import kotlinx.coroutines.launch
  * A `microphone` foreground service, because a call that dies when the screen
  * sleeps is not a call. The audio side is the phone-call shape: the mode is
  * MODE_IN_COMMUNICATION for the call's lifetime (and restored after), focus is
- * held, and the route is earpiece / speaker / Bluetooth with Bluetooth taken
+ * Telecom's (the call is a Telecom call), and the route is earpiece / speaker / Bluetooth with Bluetooth taken
  * whenever it is there. The microphone is [VoskCallMic], one stream open for
  * the whole call.
  *
@@ -134,10 +132,9 @@ class VoiceCallService : Service() {
     private var feedJob: Job? = null
     private var tone: ToneGenerator? = null
 
-    /** takeAudio() ran: the mode, focus and route are ours to restore. */
+    /** takeAudio() ran: the mode and route are ours to restore. */
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL
-    private var focus: AudioFocusRequest? = null
     private var route: AudioRoute? = null
 
     /**
@@ -250,26 +247,25 @@ class VoiceCallService : Service() {
         // An answered ring is a system call already and opens at once, so its
         // audio is taken here; a call the user starts takes it when the system
         // has taken the call (see [line]).
-        if (opening != null && !takeAudio()) {
-            call.hangUp()
-            return
-        }
+        if (opening != null) takeAudio()
         call.start(opening)
         // An answered ring that really became a call: tell Helm, so it does not
         // ring again in 10 minutes. Only here — a call that never started (no
-        // mic grant, no audio focus) leaves the retry armed.
+        // mic grant) leaves the retry armed.
         if (opening != null) client.ringAnswered(target)
     }
 
     /**
      * Android's call system for the call to [target]. The audio is taken only
-     * once the system has the call: one it refuses, or one that cannot get the
-     * audio (a phone call holds it), never opens the microphone.
+     * once the system has the call: one it refuses never opens the microphone.
      */
     private fun line(target: String) = object : CallLine {
         override fun place(answer: (ready: Boolean) -> Unit): CallRefusal? {
             val name = HelmPairing.client.sessions.find(target)?.name.orEmpty()
-            return HelmTelecom.place(this@VoiceCallService, target, name) { created -> answer(created && takeAudio()) }
+            return HelmTelecom.place(this@VoiceCallService, target, name) { created ->
+                if (created) takeAudio()
+                answer(created)
+            }
         }
 
         override fun active() = HelmTelecom.active()
@@ -347,29 +343,18 @@ class VoiceCallService : Service() {
         _call.value = null
     }
 
-    /** The call's audio: communication mode, focus and route. False when refused. */
-    private fun takeAudio(): Boolean {
+    /**
+     * The call's audio: communication mode and route. No focus request: the
+     * call is a Telecom call, Telecom holds the call focus for it, and a
+     * request of our own for the same call is always refused. A phone call
+     * taking over reaches us as Telecom ending ours (HelmConnection.onDisconnect).
+     */
+    private fun takeAudio() {
         active = true
         savedMode = audio.mode
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build(),
-            )
-            .setOnAudioFocusChangeListener(::onFocusChange, main)
-            .build()
-        focus = request
-        // No focus (a phone call already holds it) means no call of ours.
-        if (audio.requestAudioFocus(request) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            HelmLog.w(HelmLog.UI, "voice call refused audio focus, ending")
-            return false
-        }
         audio.registerAudioDeviceCallback(devices, main)
         applyRoute(null)
-        return true
     }
 
     /**
@@ -381,8 +366,6 @@ class VoiceCallService : Service() {
         active = false
         runCatching { audio.unregisterAudioDeviceCallback(devices) }
         releaseRoute()
-        focus?.let(audio::abandonAudioFocusRequest)
-        focus = null
         route = null
         audio.mode = savedMode
         HelmLog.i(HelmLog.UI, "voice call ended, audio mode restored")
@@ -395,21 +378,6 @@ class VoiceCallService : Service() {
         tone?.release()
         tone = null
         super.onDestroy()
-    }
-
-    /**
-     * A permanent loss (another app's call) ends ours. A transient loss (a
-     * notification, the navigation voice) only ends it when the phone is
-     * actually ringing or in a GSM call.
-     */
-    private fun onFocusChange(change: Int) {
-        val phoneCall = audio.mode == AudioManager.MODE_RINGTONE || audio.mode == AudioManager.MODE_IN_CALL
-        val ends = change == AudioManager.AUDIOFOCUS_LOSS ||
-            (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT && phoneCall)
-        if (ends) {
-            HelmLog.i(HelmLog.UI, "voice call lost audio focus ($change), hanging up")
-            controller?.hangUp()
-        }
     }
 
     private fun publish(state: CallState = controller?.state?.value ?: CallState()) {
