@@ -103,6 +103,15 @@ class ChatRepositoryDeleteTest {
     }
 
     @Test
+    fun `reply stats add percent full when the window is known, and only then`() {
+        assertEquals("ctx 60.1k · 30%", replyStats(60_100, null, 200_000))
+        assertEquals("ctx 12.3k · 5% · 4 tools", replyStats(12_345, 4, 258_400))
+        assertEquals("ctx 199.9k · 100%", replyStats(199_900, null, 200_000))
+        assertEquals("ctx 60.1k", replyStats(60_100, null, null))
+        assertEquals("ctx 60.1k", replyStats(60_100, null, 0))
+    }
+
+    @Test
     fun `range selection covers everything between the first and last selected, in thread order`() {
         val thread = listOf("a", "b", "c", "d", "e")
 

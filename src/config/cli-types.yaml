@@ -21,6 +21,10 @@
     clear: /clear{Enter}
     compact: /compact $instruction{Enter}
     export: /export $path{Enter} {Wait 5000}
+  # Model context window in tokens: turns the phone's "ctx 60.1k" reply badge
+  # into "ctx 60.1k · 30%". Claude's log names no window, so it is stated here
+  # (raise it for a 1M-context model). Codex logs its own and needs none.
+  contextWindow: 200000
   # Which CLI family this tool speaks — the first-class provider mapping the
   # Tool mapping dropdown edits (auto-migrated onto older configs on load).
   provider: claude

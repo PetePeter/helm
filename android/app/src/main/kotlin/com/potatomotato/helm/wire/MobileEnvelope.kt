@@ -281,6 +281,7 @@ object MobileEnvelope {
             contextTokens = (record.opt("contextTokens") as? Number)?.toLong(),
             toolCalls = (record.opt("toolCalls") as? Number)?.toInt(),
             fromSessionId = record.string("fromSessionId"),
+            contextWindow = (record.opt("contextWindow") as? Number)?.toLong(),
         )
     }
 

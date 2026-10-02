@@ -127,6 +127,7 @@ internal object ChatSnapshotJson {
         message.originId?.let { put("originId", it) }
         message.contextTokens?.let { put("contextTokens", it) }
         message.toolCalls?.let { put("toolCalls", it) }
+        message.contextWindow?.let { put("contextWindow", it) }
         message.attachment?.let {
             put("attachment", JSONObject().apply {
                 put("artifactId", it.artifactId)
@@ -178,5 +179,6 @@ internal object ChatSnapshotJson {
         originId = if (row.has("originId")) row.getString("originId") else null,
         contextTokens = if (row.has("contextTokens")) row.getLong("contextTokens") else null,
         toolCalls = if (row.has("toolCalls")) row.getInt("toolCalls") else null,
+        contextWindow = if (row.has("contextWindow")) row.getLong("contextWindow") else null,
     )
 }

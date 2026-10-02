@@ -193,6 +193,9 @@ export interface CliTypeConfig {
   cacheExpireMinutes?: number;
   /** Local model: no prompt cache, so no staleness banner, row fade or auto-freeze. */
   noPromptCache?: boolean;
+  /** The model's context window in tokens — turns a chat reply's context badge into
+   *  "% full". Unset: the badge shows the count alone, unless the CLI logs its own window (Codex). */
+  contextWindow?: number;
   /** What a keep-warm ping types (sequence syntax), sent 10 s before the short
    *  cache lapses. Keep it tiny: it costs a turn. Default "{Esc}heartbeat". */
   keepWarmPrompt?: string;

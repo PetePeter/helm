@@ -422,8 +422,8 @@ private fun Bubble(
                             onOpen = onOpenAttachment,
                         )
                     }
-                    // API-tool replies carry the turn's cost: context size and tool calls.
-                    replyStats(message.contextTokens, message.toolCalls)?.let { stats ->
+                    // Replies carry how full the session's context is; API tools add tool calls.
+                    replyStats(message.contextTokens, message.toolCalls, message.contextWindow)?.let { stats ->
                         Text(
                             text = stats,
                             color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,

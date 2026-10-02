@@ -175,6 +175,8 @@ export interface MobileChatRecord {
   toolCalls?: number;
   /** On a `kind: 'transfer'` record only: the session the call is leaving. */
   fromSessionId?: string;
+  /** Beside `contextTokens`, when known: the model's window, so the badge can show "% full". Emitted LAST. */
+  contextWindow?: number;
 }
 
 /**
@@ -223,6 +225,7 @@ export interface ChatRecordInput {
   toolCalls?: number;
   /** On a `kind: 'transfer'` record only: the session the call is leaving. */
   fromSessionId?: string;
+  contextWindow?: number;
 }
 
 /**
@@ -272,6 +275,7 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.contextTokens !== undefined) record.contextTokens = input.contextTokens;
   if (input.toolCalls !== undefined) record.toolCalls = input.toolCalls;
   if (input.fromSessionId !== undefined) record.fromSessionId = input.fromSessionId;
+  if (input.contextWindow !== undefined) record.contextWindow = input.contextWindow;
   return encode(record);
 }
 

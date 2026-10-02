@@ -14,6 +14,7 @@ import type { ChatBroker } from '../../session/chat/chat-broker.js';
 import type { ChatOutboundMessage, ChatTurnUsage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
+import { readTranscriptUsage } from '../../session/transcript-usage.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
 import { PiperTts } from '../../voice/piper-tts.js';
 import { getTempDir } from '../../utils/app-paths.js';
@@ -160,7 +161,21 @@ export class HelmTelegramService {
     // name-resolution fallback that could mis-route a reply to the wrong topic.
     const session = this.sessionManager.getSession(sessionRef);
     if (!session) return { sent: false, reason: `Session not found by ID: ${sessionRef}` };
-    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}), ...(usage ? { usage } : {}) });
+    const badge = this.usageBadge(session, usage);
+    return this.fanOut({ sessionId: session.id, text: message, ...(filePath ? { filePath } : {}), ...(badge ? { usage: badge } : {}) });
+  }
+
+  /**
+   * The context-size badge for a reply. An API tool hands its own usage in; a
+   * CLI cannot, so its is read from the transcript its hooks reported. The
+   * window comes with the usage when the CLI logs one (Codex), else from the
+   * CLI type's `contextWindow`.
+   */
+  private usageBadge(session: SessionInfo, reported: ChatTurnUsage | undefined): ChatTurnUsage | undefined {
+    const usage = reported ?? readTranscriptUsage(session.cliTranscriptPath);
+    if (!usage) return undefined;
+    const contextWindow = usage.contextWindow ?? this.configLoader.getCliTypeEntry(session.cliType)?.contextWindow;
+    return contextWindow ? { ...usage, contextWindow } : usage;
   }
 
   /**

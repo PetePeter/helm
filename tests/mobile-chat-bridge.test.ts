@@ -754,4 +754,11 @@ describe('deleting chat messages', () => {
     await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 12345, toolCalls: 3 } });
     expect(links.records()[0]).toMatchObject({ text: 'done', contextTokens: 12345, toolCalls: 3 });
   });
+
+  it('carries a CLI reply\'s context window, and no tool count it never had', async () => {
+    links.online.add('phone-machine');
+    await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 60000, contextWindow: 200000 } });
+    expect(links.records()[0]).toMatchObject({ contextTokens: 60000, contextWindow: 200000 });
+    expect(links.records()[0]).not.toHaveProperty('toolCalls');
+  });
 });

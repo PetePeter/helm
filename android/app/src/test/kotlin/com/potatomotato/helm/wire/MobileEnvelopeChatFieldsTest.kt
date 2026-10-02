@@ -192,4 +192,20 @@ class MobileEnvelopeChatFieldsTest {
         assertNull(record.deletes)
         assertNull(record.contextTokens)
     }
+
+    @Test
+    fun `a reply decodes its context window, and a record without one still decodes`() {
+        val withWindow = MobileEnvelope.decode(
+            """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"done","at":5,"contextTokens":60000,"contextWindow":200000}"""
+                .toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+        val without = MobileEnvelope.decode(
+            """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"done","at":5,"contextTokens":60000}"""
+                .toByteArray(Charsets.UTF_8),
+        ) as MobileRecord.Chat
+
+        assertEquals(200000L, withWindow.contextWindow)
+        assertEquals(60000L, without.contextTokens)
+        assertNull(without.contextWindow)
+    }
 }

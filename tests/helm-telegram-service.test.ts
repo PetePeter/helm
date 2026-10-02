@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HelmTelegramService } from '../src/mcp/services/helm-telegram-service';
+import { ChatBroker } from '../src/session/chat/chat-broker.js';
+import type { ChatOutboundMessage } from '../src/session/chat/chat-bridge.js';
 import type { TelegramBridge, TelegramSendToUserInput, TelegramSendToUserResult } from '../src/types/telegram-channel.js';
 import type { TelegramCapabilities } from '../src/session/capability-detector.js';
 
@@ -145,5 +150,73 @@ describe('HelmTelegramService.sendTelegramVoice', () => {
       filePath: 'C:/Temp/helm-voice.ogg',
       asVoice: true,
     });
+  });
+});
+
+describe('HelmTelegramService.sendTelegramChat usage badge', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'helm-chat-usage-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A CLI session whose transcript holds one Claude reply of `tokens` context. */
+  function cliSession(tokens: number | null, cliType = 'claude'): Record<string, unknown> {
+    if (tokens === null) return { id: 'cli-1', name: 'Cli', cliType };
+    const cliTranscriptPath = join(dir, 'transcript.jsonl');
+    writeFileSync(cliTranscriptPath, JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [], usage: { input_tokens: tokens, output_tokens: 0 } },
+    }));
+    return { id: 'cli-1', name: 'Cli', cliType, cliTranscriptPath };
+  }
+
+  /** The service over a real broker with one recording chat surface. */
+  function chatService(session: Record<string, unknown>, cliTypes: Record<string, { contextWindow?: number }> = {}) {
+    const sent: ChatOutboundMessage[] = [];
+    const broker = new ChatBroker();
+    broker.register({
+      provider: 'recorder',
+      isAvailable: () => true,
+      sendToSession: async (message) => {
+        sent.push(message);
+        return { sent: true };
+      },
+    });
+    const svc = new HelmTelegramService(
+      { ...fakeConfigLoader, getCliTypeEntry: (id: string) => cliTypes[id] } as any,
+      { getSession: (id: string) => (id === session.id ? session : null) } as any,
+      new FakeCapabilityDetector({ available: true, openwhisper: false, piper: false, ffmpeg: false }) as any,
+    );
+    svc.setChatBroker(broker);
+    return { svc, sent };
+  }
+
+  it('fills a CLI session\'s reply with the context size from its transcript', async () => {
+    const { svc, sent } = chatService(cliSession(60_000));
+    expect(await svc.sendTelegramChat('cli-1', 'done')).toEqual({ sent: true });
+    expect(sent[0].usage).toEqual({ contextTokens: 60_000 });
+  });
+
+  it('adds the CLI type\'s configured window when the transcript names none', async () => {
+    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
+    await svc.sendTelegramChat('cli-1', 'done');
+    expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextWindow: 200_000 });
+  });
+
+  it('keeps the usage an API session passed rather than reading a transcript', async () => {
+    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
+    await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 1234, toolCalls: 2 });
+    expect(sent[0].usage).toEqual({ contextTokens: 1234, toolCalls: 2, contextWindow: 200_000 });
+  });
+
+  it('still sends, without a badge, when the session has no transcript', async () => {
+    const { svc, sent } = chatService(cliSession(null), { claude: { contextWindow: 200_000 } });
+    expect(await svc.sendTelegramChat('cli-1', 'done')).toEqual({ sent: true });
+    expect(sent[0]).toEqual({ sessionId: 'cli-1', text: 'done' });
   });
 });

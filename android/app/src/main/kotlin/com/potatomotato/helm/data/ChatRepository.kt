@@ -54,16 +54,18 @@ data class ChatMessage(
      * name the desktop knows the row by when the user deletes it.
      */
     val originId: String? = null,
-    /** API-tool reply stats (see [MobileRecord.Chat.contextTokens]); null elsewhere. */
+    /** Reply stats (see [MobileRecord.Chat.contextTokens]); null where the desktop knew none. */
     val contextTokens: Long? = null,
     val toolCalls: Int? = null,
+    val contextWindow: Long? = null,
 )
 
 /**
- * The muted badge under an API-tool reply: "ctx 12.3k · 4 tools". Null when
- * the row carries no stats. Thousands get one decimal; zero tools are omitted.
+ * The muted badge under a reply: "ctx 12.3k · 5% · 4 tools". Null when the row
+ * carries no stats. Thousands get one decimal; the percent full appears only
+ * when the window is known; zero tools are omitted.
  */
-fun replyStats(contextTokens: Long?, toolCalls: Int?): String? {
+fun replyStats(contextTokens: Long?, toolCalls: Int?, contextWindow: Long? = null): String? {
     if (contextTokens == null && toolCalls == null) return null
     val parts = mutableListOf<String>()
     if (contextTokens != null) {
@@ -71,6 +73,9 @@ fun replyStats(contextTokens: Long?, toolCalls: Int?): String? {
             "ctx " + String.format(java.util.Locale.ROOT, "%.1fk", contextTokens / 1000.0)
         } else {
             "ctx $contextTokens"
+        }
+        if (contextWindow != null && contextWindow > 0) {
+            parts += "${Math.round(contextTokens * 100.0 / contextWindow)}%"
         }
     }
     if (toolCalls != null && toolCalls > 0) parts += if (toolCalls == 1) "1 tool" else "$toolCalls tools"
@@ -351,6 +356,7 @@ class ChatRepository(
         seq = record.seq,
         contextTokens = record.contextTokens,
         toolCalls = record.toolCalls,
+        contextWindow = record.contextWindow,
     )
 
     /**

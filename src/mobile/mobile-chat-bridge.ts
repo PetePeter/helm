@@ -171,7 +171,7 @@ export class MobileChatBridge implements ChatBridge {
             sizeBytes: message.attachment.sizeBytes,
           }
         : {}),
-      ...(message.usage ? { contextTokens: message.usage.contextTokens, toolCalls: message.usage.toolCalls } : {}),
+      ...message.usage,
     };
 
     // Journaled BEFORE anyone is told, with its seq: the seq is what a phone

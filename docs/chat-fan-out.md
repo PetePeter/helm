@@ -360,6 +360,39 @@ npx tsx scripts/generate-mobile-envelope-vectors.ts
 
 Regenerating is a wire break.
 
+## Context badge — how full a session is
+
+A reply's bubble on the phone carries a muted badge: `ctx 60.1k · 30%`. It
+answers "is this session about to run out of context?" without opening the
+desktop.
+
+```mermaid
+graph LR
+    API[API tool loop<br/>server usage] -->|usage| S
+    CLI[CLI session<br/>chat_send] --> S[HelmTelegramService<br/>usageBadge]
+    T[cliTranscriptPath<br/>from CLI hooks] -->|readTranscriptUsage| S
+    C[cli-types.yaml<br/>contextWindow] -->|window fallback| S
+    S -->|ChatTurnUsage| B[ChatBroker] --> P[phone badge]
+```
+
+- **Why the transcript.** An API tool's loop sees the server's `usage`; a CLI in
+  a PTY reports nothing. Its own JSONL log does, and hooks already tell Helm
+  where that log is — so `src/session/transcript-usage.ts` reads the last usage
+  from the file's tail when the session sends a chat message.
+- **Per CLI.** Claude stamps `usage` on every reply (fresh + cached prompt +
+  output). Codex emits `token_count` with the last request's size *and* the
+  model window. Copilot writes its context size only at `session.shutdown`, so
+  it gets no badge rather than a stale one.
+- **Percent needs a window.** Taken from the transcript when it names one
+  (Codex), else from the CLI type's optional `contextWindow` (tokens). With
+  neither, the badge is the count alone.
+- **No hooks, no badge.** The transcript path arrives only through
+  [CLI hooks](cli-hooks.md). A read that fails for any reason drops the badge,
+  never the message.
+
+On the wire this is `contextTokens` plus an optional trailing `contextWindow`
+on the chat record; `toolCalls` stays API-only.
+
 ## Deleting messages
 
 Deleting a bubble on the phone is no longer only local. The phone calls the

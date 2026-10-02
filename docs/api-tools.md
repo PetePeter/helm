@@ -74,7 +74,8 @@ graph LR
   shrinks without a reply to carry the size (bubbles deleted between turns,
   compaction), Helm posts a short note whose badge is an estimate: the last
   reported size scaled by the characters kept. The next reply shows the
-  server's real figure.
+  server's real figure. CLI sessions get the same badge from their transcript —
+  see [chat-fan-out.md](chat-fan-out.md#context-badge--how-full-a-session-is).
 - **Forgetting on purpose.** Three tools, always offered:
   - `checkpoint` / `rollback` cut everything since a mark and leave a note.
   - `forget_turns` drops chosen past turns by quoting their first words. It

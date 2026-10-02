@@ -30,14 +30,19 @@ export interface ChatOutboundMessage {
   attachment?: ChatAttachmentRef;
   /** Send an audio attachment as a native voice message where supported. */
   asVoice?: boolean;
-  /** An API-tool reply's cost, shown as a badge where the surface can (the phone, the desktop pane). */
+  /** How full the session's context is, shown as a badge where the surface can (the phone, the desktop pane). */
   usage?: ChatTurnUsage;
 }
 
-/** What one API-tool turn cost: the model context size after it, and the tool calls it made. */
+/**
+ * The model context size after a reply. An API tool's loop reports it with the
+ * turn's tool calls; a CLI's is read from its transcript (transcript-usage.ts),
+ * which knows no tool count. `contextWindow` turns the size into "% full".
+ */
 export interface ChatTurnUsage {
   contextTokens: number;
-  toolCalls: number;
+  toolCalls?: number;
+  contextWindow?: number;
 }
 
 /** Where a chat file lives once Helm owns a copy of it. */

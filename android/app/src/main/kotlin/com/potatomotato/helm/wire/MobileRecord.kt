@@ -169,10 +169,10 @@ sealed interface MobileRecord {
         val deletes: Long? = null,
 
         /**
-         * On an API-tool session's reply only: how many tokens the model's
-         * context held after that turn, and how many tool calls the turn made.
-         * Display only — a small badge under the bubble. Emitted after
-         * `deletes`, in this order.
+         * On a session's reply: how many tokens the model's context held after
+         * it, and — from an API-tool session only — how many tool calls the
+         * turn made. Display only — a small badge under the bubble. Emitted
+         * after `deletes`, in this order.
          */
         val contextTokens: Long? = null,
         val toolCalls: Int? = null,
@@ -182,6 +182,12 @@ sealed interface MobileRecord {
          * leaving. [sessionId] is the one taking it. Emitted after `toolCalls`.
          */
         val fromSessionId: String? = null,
+
+        /**
+         * Beside [contextTokens], when the desktop knows it: the model's
+         * context window, so the badge can show "% full". Emitted last.
+         */
+        val contextWindow: Long? = null,
     ) : MobileRecord
 
     /**
