@@ -692,7 +692,7 @@ function onContextMenuAction(action: string): void {
       break;
     case 'quick-compact': {
       const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
-      if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Helm compact');
+      if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Quick compact');
       break;
     }
     case 'clone-session': {

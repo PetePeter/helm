@@ -251,7 +251,7 @@
     <string name="control_action_rename">Rename session</string>
     <string name="control_action_compact">Compact</string>
     <string name="control_action_clear">Clear context</string>
-    <string name="control_action_helm_compact">Helm compact</string>
+    <string name="control_action_helm_compact">Quick compact</string>
     <string name="control_action_switch_cli">Switch CLI</string>
     <string name="control_action_clone">Clone</string>
     <string name="control_action_stop">Stop</string>
@@ -278,9 +278,6 @@
     <string name="control_glyph_call">📞</string>
     <string name="control_group_chat">Chat</string>
     <string name="control_group_context">Context</string>
-    <string name="control_group_create">Create</string>
-    <string name="control_group_inspect">Inspect</string>
-    <string name="control_group_remove">Remove</string>
     <string name="control_group_session">Session</string>
     <string name="control_notice_done_keep_warm">Keep-warm enabled</string>
     <string name="control_notice_done_stop_keep_warm">Keep-warm stopped</string>
@@ -302,7 +299,7 @@
     <string name="control_confirm_clear">Clear “%1$s”? Its conversation is wiped.</string>
     <string name="control_confirm_clear_yes">Clear it</string>
     <string name="control_confirm_clear_no">Not now</string>
-    <string name="control_confirm_helm_compact">Helm-compact “%1$s”? Its context is cleared and reloaded from a stripped transcript.</string>
+    <string name="control_confirm_helm_compact">Quick-compact “%1$s”? Its context is cleared and reloaded from a stripped transcript.</string>
     <string name="control_confirm_helm_compact_yes">Compact it</string>
     <string name="control_switch_cli_title">Continue in which CLI?</string>
     <string name="control_switch_cli_loading">Asking the desktop for its CLIs…</string>
@@ -311,7 +308,7 @@
     <string name="control_notice_done_rename">Session renamed.</string>
     <string name="control_notice_done_compact">Compacting.</string>
     <string name="control_notice_done_clear">Clearing.</string>
-    <string name="control_notice_done_helm_compact">Helm compacting.</string>
+    <string name="control_notice_done_helm_compact">Quick compacting.</string>
     <string name="control_notice_done_switch_cli">Switching CLI.</string>
     <string name="control_notice_done_clone">Cloning.</string>
     <string name="control_notice_done_stop">Stop sent.</string>

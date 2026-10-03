@@ -227,7 +227,7 @@ describe('session_quick_compact', () => {
     rmSync(result.transcriptFile, { force: true });
   });
 
-  it('thaws a frozen session first — Helm compact must type /clear into it', async () => {
+  it('thaws a frozen session first — Quick compact must type /clear into it', async () => {
     const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
     const log = join(dir, 'log.jsonl');
     writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));

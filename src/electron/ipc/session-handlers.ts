@@ -359,7 +359,7 @@ export function setupSessionHandlers(
     }
   });
 
-  /** Context menu "Helm compact": strip transcript → clear → read it back. */
+  /** Context menu "Quick Compact": strip transcript → clear → read it back. */
   ipcMain.handle('session:quickCompact', async (_event, id: string) => {
     try {
       if (!transcriptActions) throw new Error('Quick compact is not available');

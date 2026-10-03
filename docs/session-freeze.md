@@ -53,8 +53,8 @@ missed:
 Ways to thaw: the row's ⋮ menu (or right-click the frozen terminal) →
 Unfreeze, the Unfreeze button on the terminal overlay, or MCP
 `session_set_frozen` from another session. A frozen session's menu offers only
-what works without typing into it — Unfreeze, Helm Compact, Clone, Switch CLI —
-and Helm Compact thaws it first, since it must type `/clear`.
+what works without typing into it — Unfreeze, Quick Compact, Clone, Switch CLI —
+and Quick Compact thaws it first, since it must type `/clear`.
 
 ## Keep warm
 

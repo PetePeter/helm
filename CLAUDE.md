@@ -160,7 +160,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/time-tracking.md](docs/time-tracking.md) | Per-project time tracking — 5-min You/AI slots, origin-tagged input, JSONL store, Timesheet pane + CSV |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
-| [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Helm Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |
+| [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Quick Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |
 | [docs/mess.md](docs/mess.md) | Durable local project conversation, ordered cursors, best-effort reminders, and read-only observer pane |
 | [docs/prompt-templates.md](docs/prompt-templates.md) | Global nested prompt-template library and the prompt editor apply flow |
 | [docs/artifact-viewer.md](docs/artifact-viewer.md) | Ephemeral per-session versioned md/html reports, sanitized render, `helm-img://` protocol |

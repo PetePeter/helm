@@ -57,7 +57,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   sessionRename: (id: string, newName: string) => ipcRenderer.invoke('session:rename', id, newName),
 
-  /** Helm compact: strip the transcript, clear the session, have it read the file back. */
+  /** Quick compact: strip the transcript, clear the session, have it read the file back. */
   sessionQuickCompact: (id: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('session:quickCompact', id),
 

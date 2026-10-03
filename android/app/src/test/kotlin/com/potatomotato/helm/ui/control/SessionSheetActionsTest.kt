@@ -19,16 +19,25 @@ class SessionSheetActionsTest {
     }
 
     @Test
-    fun `sheet groups actions by topic in alphabetical order`() {
+    fun `sheet groups actions by topic in a fixed order, mildest first`() {
         val groups = sessionSheetActionGroups(keepWarm = false, frozen = false)
         assertEquals(
-            listOf("CHAT", "CONTEXT", "CREATE", "INSPECT", "REMOVE", "SESSION"),
-            groups.map { it.category.name },
+            listOf(
+                SessionActionCategory.CHAT to listOf(SessionAction.Call, SessionAction.Stop, SessionAction.Snapshot),
+                SessionActionCategory.CONTEXT to
+                    listOf(SessionAction.HelmCompact, SessionAction.Compact, SessionAction.Clear),
+                SessionActionCategory.SESSION to listOf(
+                    SessionAction.Rename,
+                    SessionAction.SwitchCli,
+                    SessionAction.KeepWarmOn,
+                    SessionAction.Freeze,
+                    SessionAction.Clone,
+                    SessionAction.Spawn,
+                    SessionAction.Close,
+                ),
+            ),
+            groups.map { it.category to it.actions },
         )
-        groups.forEach { group ->
-            val names = group.actions.map { it.name }
-            assertEquals(names.sorted(), names)
-        }
     }
 
     @Test

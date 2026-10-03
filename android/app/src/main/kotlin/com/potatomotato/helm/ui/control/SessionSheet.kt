@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -102,7 +101,6 @@ fun SessionSheet(
     var selectedCategory by remember { mutableStateOf<SessionActionCategory?>(null) }
     val actionGroups = sessionSheetActionGroups(keepWarm, frozen)
     val selectedGroup = actionGroups.firstOrNull { it.category == selectedCategory }
-    val resources = LocalContext.current.resources
 
     BackHandler(enabled = selectedCategory != null) { selectedCategory = null }
 
@@ -156,7 +154,7 @@ fun SessionSheet(
                         .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
                 )
                 Hairline()
-                for (action in selectedGroup.actions.sortedBy { resources.getString(it.labelRes).lowercase() }) {
+                for (action in selectedGroup.actions) {
                     ActionRow(
                         action = action,
                         capabilities = capabilities,
@@ -210,15 +208,13 @@ fun SessionSheet(
 }
 
 /**
- * The sheet's order, top to bottom: talking to it, what you look at, what you tidy, what you
- * create, what you destroy. Destructive last, furthest from the reading position.
+ * The sheet's order, top to bottom: talking to it, what it remembers, the session itself.
+ * Declaration order IS display order, and inside a group the mildest action comes first —
+ * the one that loses the most sits last, furthest from the reading position.
  */
 internal enum class SessionActionCategory(val titleRes: Int) {
     CHAT(R.string.control_group_chat),
     CONTEXT(R.string.control_group_context),
-    CREATE(R.string.control_group_create),
-    INSPECT(R.string.control_group_inspect),
-    REMOVE(R.string.control_group_remove),
     SESSION(R.string.control_group_session),
 }
 
@@ -228,24 +224,27 @@ internal data class SessionSheetActionGroup(
 )
 
 internal fun sessionSheetActionGroups(keepWarm: Boolean, frozen: Boolean): List<SessionSheetActionGroup> = listOf(
-    SessionSheetActionGroup(SessionActionCategory.CHAT, listOf(SessionAction.Call, SessionAction.Stop)),
+    SessionSheetActionGroup(
+        SessionActionCategory.CHAT,
+        listOf(SessionAction.Call, SessionAction.Stop, SessionAction.Snapshot),
+    ),
     SessionSheetActionGroup(
         SessionActionCategory.CONTEXT,
-        listOf(SessionAction.Clear, SessionAction.Compact, SessionAction.HelmCompact),
+        listOf(SessionAction.HelmCompact, SessionAction.Compact, SessionAction.Clear),
     ),
-    SessionSheetActionGroup(SessionActionCategory.CREATE, listOf(SessionAction.Clone, SessionAction.Spawn)),
-    SessionSheetActionGroup(SessionActionCategory.INSPECT, listOf(SessionAction.Snapshot)),
-    SessionSheetActionGroup(SessionActionCategory.REMOVE, listOf(SessionAction.Close)),
     SessionSheetActionGroup(
         SessionActionCategory.SESSION,
         listOf(
-            if (frozen) SessionAction.Unfreeze else SessionAction.Freeze,
-            if (keepWarm) SessionAction.KeepWarmOff else SessionAction.KeepWarmOn,
             SessionAction.Rename,
             SessionAction.SwitchCli,
+            if (keepWarm) SessionAction.KeepWarmOff else SessionAction.KeepWarmOn,
+            if (frozen) SessionAction.Unfreeze else SessionAction.Freeze,
+            SessionAction.Clone,
+            SessionAction.Spawn,
+            SessionAction.Close,
         ),
     ),
-).sortedBy { it.category.name }
+)
 
 @Composable
 private fun CategoryRow(title: String, count: Int, onClick: () -> Unit) {

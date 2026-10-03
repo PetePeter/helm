@@ -31,13 +31,21 @@ describe('buildContextMenuItems', () => {
     expect(got).not.toContain('copy');
   });
 
-  it('groups the desktop session menu by topic with alphabetical groups and actions', () => {
+  it('groups the desktop session menu like the phone sheet, in a fixed order', () => {
     const groups = buildSessionContextMenuGroups({ ...base, mode: 'session' });
-    expect(groups.map(g => g.title)).toEqual(['Chat', 'Context', 'Create', 'Inspect', 'Remove', 'Session']);
-    for (const group of groups) {
-      const labels = group.items.map(i => i.label.replace(/^[^\p{L}\p{N}]*/u, '').toLocaleLowerCase());
-      expect(labels).toEqual([...labels].sort((a, b) => a.localeCompare(b)));
-    }
+    expect(groups.map(g => [g.title, g.items.map(i => i.id)])).toEqual([
+      ['Context', ['quick-compact']],
+      ['Session', ['rename-session', 'switch-cli', 'toggle-keep-warm', 'toggle-freeze', 'toggle-lock',
+        'toggle-overview', 'move-to-group', 'remove-from-group', 'clone-session']],
+    ]);
+  });
+
+  it('a frozen session keeps its short list inside the same groups', () => {
+    const groups = buildSessionContextMenuGroups({ ...base, mode: 'session', session: { ...base.session, frozen: true } });
+    expect(groups.map(g => [g.title, g.items.map(i => i.id)])).toEqual([
+      ['Context', ['quick-compact']],
+      ['Session', ['unfreeze', 'switch-cli', 'clone-session']],
+    ]);
   });
 
   it('labels the toggles by their current state', () => {
