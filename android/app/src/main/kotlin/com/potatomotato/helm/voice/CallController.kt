@@ -77,8 +77,13 @@ class CallController(
 
     private fun open(opening: String?) {
         placing = false
-        micWasMuted = micSwitch.muted
-        _state.value = _state.value.copy(phase = CallPhase.Listening, muted = micSwitch.muted)
+        val muted = micSwitch.muted
+        micWasMuted = muted
+        _state.value = _state.value.copy(
+            phase = CallPhase.Listening,
+            muted = muted,
+            micMode = if (muted) MicMode.Muted else MicMode.Open,
+        )
         line.active()
         mic.start(this)
         opening?.takeIf { it.isNotBlank() }?.let(::say)
@@ -87,15 +92,43 @@ class CallController(
     /** The Mute button. */
     fun setMuted(muted: Boolean) {
         if (!live) return
+        setMicMode(if (muted) MicMode.Muted else MicMode.Open)
+    }
+
+    /** Select open, muted, or key-held microphone operation. */
+    fun setMicMode(mode: MicMode) {
+        if (!live) return
+        val muted = mode != MicMode.Open
+        _state.value = _state.value.copy(micMode = mode, pttHeld = false, muted = muted, heard = "")
         micSwitch.muted = muted
-        syncMute()
+    }
+
+    /** The Red Key opens the mic only for the duration of a press in PTT mode. */
+    fun setPttKeyHeld(held: Boolean) {
+        if (!live || _state.value.micMode != MicMode.PushToTalk || _state.value.pttHeld == held) return
+        val muted = !held
+        _state.value = _state.value.copy(pttHeld = held, muted = muted, heard = "")
+        micSwitch.muted = muted
     }
 
     /** The switch may have been flipped elsewhere (the car, the system call UI): follow it. */
     fun syncMute() {
-        val muted = micSwitch.muted
-        if (!live || muted == _state.value.muted) return
-        _state.value = _state.value.copy(muted = muted, heard = "")
+        if (!live) return
+        val state = _state.value
+        // System call controls may also touch AudioManager's mute bit. PTT's
+        // release state remains authoritative so only the Red Key can open it.
+        val muted = if (state.micMode == MicMode.PushToTalk) !state.pttHeld else micSwitch.muted
+        if (micSwitch.muted != muted) micSwitch.muted = muted
+        val mode = if (state.micMode == MicMode.PushToTalk) {
+            state.micMode
+        } else if (muted) {
+            MicMode.Muted
+        } else {
+            MicMode.Open
+        }
+        if (muted != state.muted || mode != state.micMode) {
+            _state.value = state.copy(muted = muted, micMode = mode, heard = "")
+        }
     }
 
     fun hangUp() = end()
@@ -192,6 +225,8 @@ enum class CallPhase { Idle, Listening, Sending, Speaking, Ended }
 data class CallState(
     val phase: CallPhase = CallPhase.Idle,
     val muted: Boolean = false,
+    val micMode: MicMode = MicMode.Open,
+    val pttHeld: Boolean = false,
     /** The user's current utterance, as heard so far. */
     val heard: String = "",
     /** The last line Helm spoke. */
@@ -201,3 +236,5 @@ data class CallState(
     /** Why the call never started, when the system would not take it. */
     val refused: CallRefusal? = null,
 )
+
+enum class MicMode { Open, Muted, PushToTalk }

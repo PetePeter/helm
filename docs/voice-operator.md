@@ -51,8 +51,17 @@ One round button, Telegram-style, either 🎙 or 📞 (remembered):
 - 📞 **tap** to call this session; **hold** to switch mode.
 
 While a call with the session is live, `CallPanel` replaces the composer:
-status, what was heard, Handset / Speaker / Bluetooth, Mute, Hang up. Leaving
-the chat does not hang up — like a phone app; the notification can.
+status, what was heard, Handset / Speaker / Bluetooth, the three-state mic
+control, and Hang up. Leaving the chat does not hang up — like a phone app; the
+notification can.
+
+The mic control cycles through **Open → Muted → PTT**. In PTT mode the mic is
+muted until the ThinkPhone Red Key is held; releasing it mutes the mic again.
+Helm sees that key as Android `KEY_SEARCH` and filters it through the
+`RedKeyPttAccessibilityService`, so it works while the call screen is focused
+or in the background. Android requires the user to enable this service in
+Accessibility settings. Choosing PTT opens those settings if the service is
+not connected. The key filter consumes `KEY_SEARCH` only during a live PTT call.
 
 ## The Helm home tab
 

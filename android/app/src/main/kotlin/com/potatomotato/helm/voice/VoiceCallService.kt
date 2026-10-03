@@ -59,6 +59,8 @@ class VoiceCallService : Service() {
         private const val ACTION_START = "com.potatomotato.helm.call.START"
         private const val ACTION_HANG_UP = "com.potatomotato.helm.call.HANG_UP"
         private const val ACTION_MUTE = "com.potatomotato.helm.call.MUTE"
+        private const val ACTION_MIC_MODE = "com.potatomotato.helm.call.MIC_MODE"
+        private const val ACTION_PTT_KEY = "com.potatomotato.helm.call.PTT_KEY"
         private const val ACTION_ROUTE = "com.potatomotato.helm.call.ROUTE"
         private const val ACTION_TRANSFER = "com.potatomotato.helm.call.TRANSFER"
         private const val EXTRA_TARGET = "target"
@@ -86,6 +88,12 @@ class VoiceCallService : Service() {
 
         fun setMuted(context: Context, muted: Boolean) =
             context.startService(command(context, ACTION_MUTE).putExtra(EXTRA_VALUE, muted))
+
+        fun setMicMode(context: Context, mode: MicMode) =
+            context.startService(command(context, ACTION_MIC_MODE).putExtra(EXTRA_VALUE, mode.name))
+
+        fun setPttKeyHeld(context: Context, held: Boolean) =
+            context.startService(command(context, ACTION_PTT_KEY).putExtra(EXTRA_VALUE, held))
 
         fun setRoute(context: Context, route: AudioRoute) =
             context.startService(command(context, ACTION_ROUTE).putExtra(EXTRA_VALUE, route.name))
@@ -189,6 +197,10 @@ class VoiceCallService : Service() {
         when (action) {
             ACTION_HANG_UP -> call.hangUp()
             ACTION_MUTE -> call.setMuted(intent.getBooleanExtra(EXTRA_VALUE, false))
+            ACTION_MIC_MODE -> intent.getStringExtra(EXTRA_VALUE)
+                ?.let { name -> MicMode.entries.firstOrNull { it.name == name } }
+                ?.let(call::setMicMode)
+            ACTION_PTT_KEY -> call.setPttKeyHeld(intent.getBooleanExtra(EXTRA_VALUE, false))
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
                 // Not while still connecting: Telecom owns the route once the call is active.
                 ?.takeIf { active }

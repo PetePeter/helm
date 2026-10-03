@@ -1,6 +1,8 @@
 package com.potatomotato.helm.ui.call
 
 import android.widget.Toast
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -30,6 +32,8 @@ import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.voice.AudioRoute
 import com.potatomotato.helm.voice.CallPhase
+import com.potatomotato.helm.voice.MicMode
+import com.potatomotato.helm.voice.RedKeyPttAccessibilityService
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.voice.VoicePermission
 
@@ -85,9 +89,26 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
             Chip(
-                text = stringResource(if (call.state.muted) R.string.call_unmute else R.string.call_mute),
-                selected = call.state.muted,
-                onClick = { VoiceCallService.setMuted(context, !call.state.muted) },
+                text = stringResource(
+                    when (call.state.micMode) {
+                        MicMode.Open -> R.string.call_mic_open
+                        MicMode.Muted -> R.string.call_mic_muted
+                        MicMode.PushToTalk -> if (call.state.pttHeld) R.string.call_ptt_talking else R.string.call_ptt_ready
+                    },
+                ),
+                selected = call.state.micMode != MicMode.Open,
+                onClick = {
+                    val next = when (call.state.micMode) {
+                        MicMode.Open -> MicMode.Muted
+                        MicMode.Muted -> MicMode.PushToTalk
+                        MicMode.PushToTalk -> MicMode.Open
+                    }
+                    VoiceCallService.setMicMode(context, next)
+                    if (next == MicMode.PushToTalk && !RedKeyPttAccessibilityService.connected) {
+                        Toast.makeText(context, R.string.call_ptt_enable_accessibility, Toast.LENGTH_LONG).show()
+                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                },
                 modifier = Modifier.weight(1f),
             )
             Text(
