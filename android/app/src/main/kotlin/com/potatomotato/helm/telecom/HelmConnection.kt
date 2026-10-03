@@ -12,6 +12,7 @@ import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.telecom.TelecomManager
+import androidx.annotation.RequiresApi
 import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.IncomingRing
@@ -104,12 +105,14 @@ class HelmConnection(
         HelmTelecom.onAudioState?.invoke()
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onAvailableCallEndpointsChanged(availableEndpoints: List<CallEndpoint>) {
         this.availableEndpoints = availableEndpoints
         audioRoutes = availableEndpoints.mapNotNullTo(HashSet()) { routeOfEndpoint(it.endpointType) }
         publishAudioRoute()
     }
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     override fun onCallEndpointChanged(callEndpoint: CallEndpoint) {
         audioRoute = routeOfEndpoint(callEndpoint.endpointType)
         publishAudioRoute()

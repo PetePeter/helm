@@ -1,5 +1,6 @@
 package com.potatomotato.helm.telecom
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
@@ -97,6 +98,7 @@ object HelmTelecom {
      * returned; otherwise null, and [answer] runs when Telecom has created the
      * call (true) or failed to (false).
      */
+    @SuppressLint("MissingPermission") // MANAGE_OWN_CALLS is install-time; a refusal is caught below.
     fun place(context: Context, sessionId: String, sessionName: String, answer: (created: Boolean) -> Unit): CallRefusal? =
         try {
             val telecom = context.getSystemService(TelecomManager::class.java)
