@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -39,6 +40,7 @@ import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.IncomingRing
 import com.potatomotato.helm.notify.RingGreeting
 import com.potatomotato.helm.telecom.HelmTelecom
+import com.potatomotato.helm.voice.MicMode
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.notify.PendingOpen
 import com.potatomotato.helm.ui.components.GhostButton
@@ -83,7 +85,30 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         showOverLockScreen(false)
+        // The key-up of a held talk key never reaches a stopped activity.
+        if (VoiceCallService.call.value?.state?.pttHeld == true) VoiceCallService.setPttKeyHeld(this, false)
     }
+
+    /**
+     * The ThinkPhone Red Key (KEY_SEARCH) is the talk key of a push-to-talk
+     * call. Only while Helm is on screen: catching it from the background takes
+     * an accessibility service, and Play Protect blocks sideloaded apps that
+     * declare one.
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (!isTalkKey(keyCode)) return super.onKeyDown(keyCode, event)
+        if (event.repeatCount == 0) VoiceCallService.setPttKeyHeld(this, true)
+        return true
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (!isTalkKey(keyCode)) return super.onKeyUp(keyCode, event)
+        VoiceCallService.setPttKeyHeld(this, false)
+        return true
+    }
+
+    private fun isTalkKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_SEARCH && VoiceCallService.call.value?.state?.micMode == MicMode.PushToTalk
 
     private fun showOverLockScreen(show: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {

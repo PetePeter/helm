@@ -1,12 +1,11 @@
 package com.potatomotato.helm.ui.call
 
 import android.widget.Toast
-import android.content.Intent
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
@@ -20,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -33,7 +33,6 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.voice.AudioRoute
 import com.potatomotato.helm.voice.CallPhase
 import com.potatomotato.helm.voice.MicMode
-import com.potatomotato.helm.voice.RedKeyPttAccessibilityService
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.voice.VoicePermission
 
@@ -84,6 +83,13 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
                 )
             }
         }
+        if (call.state.micMode == MicMode.PushToTalk) {
+            TalkButton(
+                held = call.state.pttHeld,
+                onHeld = { VoiceCallService.setPttKeyHeld(context, it) },
+                modifier = Modifier.fillMaxWidth().padding(start = HelmSpacing.Md, end = HelmSpacing.Md, top = HelmSpacing.Md),
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(HelmSpacing.Md),
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
@@ -93,7 +99,7 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
                     when (call.state.micMode) {
                         MicMode.Open -> R.string.call_mic_open
                         MicMode.Muted -> R.string.call_mic_muted
-                        MicMode.PushToTalk -> if (call.state.pttHeld) R.string.call_ptt_talking else R.string.call_ptt_ready
+                        MicMode.PushToTalk -> R.string.call_mic_ptt
                     },
                 ),
                 selected = call.state.micMode != MicMode.Open,
@@ -104,10 +110,6 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
                         MicMode.PushToTalk -> MicMode.Open
                     }
                     VoiceCallService.setMicMode(context, next)
-                    if (next == MicMode.PushToTalk && !RedKeyPttAccessibilityService.connected) {
-                        Toast.makeText(context, R.string.call_ptt_enable_accessibility, Toast.LENGTH_LONG).show()
-                        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }
                 },
                 modifier = Modifier.weight(1f),
             )
@@ -155,6 +157,34 @@ fun rememberDialer(): (targetId: String) -> Unit {
             }
         }
     }
+}
+
+/**
+ * The on-screen talk key of a push-to-talk call: the mic is open for exactly as
+ * long as a finger is down. The Red Key does the same thing (MainActivity).
+ */
+@Composable
+private fun TalkButton(held: Boolean, onHeld: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text = stringResource(if (held) R.string.call_ptt_talking else R.string.call_ptt_hold),
+        color = if (held) HelmColors.OnAccent else HelmColors.Txt,
+        style = MaterialTheme.typography.labelLarge,
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .heightIn(min = 64.dp)
+            .clip(RoundedCornerShape(HelmRadius.Pill))
+            .background(if (held) HelmColors.Accent else HelmColors.Surface2)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        onHeld(true)
+                        tryAwaitRelease()
+                        onHeld(false)
+                    },
+                )
+            }
+            .padding(vertical = 20.dp, horizontal = HelmSpacing.Md),
+    )
 }
 
 @Composable

@@ -144,20 +144,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- User-enabled key filter for ThinkPhone Red Key push-to-talk. -->
-        <service
-            android:name=".voice.RedKeyPttAccessibilityService"
-            android:exported="true"
-            android:label="@string/accessibility_red_key_ptt_label"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/red_key_ptt_accessibility" />
-        </service>
-
         <!--
           Reboots restart the link on their own. exported is required for a
           receiver with an intent filter on API 31+, and safe here: the broadcast

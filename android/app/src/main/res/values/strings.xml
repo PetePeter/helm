@@ -544,11 +544,9 @@
     <string name="call_unmute">Unmute</string>
     <string name="call_mic_open">Mic: Open</string>
     <string name="call_mic_muted">Mic: Muted</string>
-    <string name="call_ptt_ready">PTT: Hold Red Key</string>
-    <string name="call_ptt_talking">PTT: Talking</string>
-    <string name="call_ptt_enable_accessibility">Enable Helm Red Key PTT in Accessibility settings.</string>
-    <string name="accessibility_red_key_ptt_label">Helm Red Key push-to-talk</string>
-    <string name="accessibility_red_key_ptt_description">Filters the ThinkPhone Red Key only during a Helm call in push-to-talk mode. The microphone is open only while the key is held.</string>
+    <string name="call_mic_ptt">Mic: Push to talk</string>
+    <string name="call_ptt_hold">Hold to talk</string>
+    <string name="call_ptt_talking">Talking</string>
     <string name="call_hang_up">Hang up</string>
     <string name="call_route_earpiece">Handset</string>
     <string name="call_route_speaker">Speaker</string>

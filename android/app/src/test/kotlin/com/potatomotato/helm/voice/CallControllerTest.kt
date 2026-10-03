@@ -179,6 +179,61 @@ class CallControllerTest {
     }
 
     @Test
+    fun `push-to-talk sends only what is said while the key is held`() {
+        dial()
+        controller.setMicMode(MicMode.PushToTalk)
+        assertTrue(micSwitch.muted)
+        mic.final("not for helm")
+
+        controller.setPttKeyHeld(true)
+        assertFalse(micSwitch.muted)
+        mic.final("check the build")
+
+        controller.setPttKeyHeld(false)
+        assertTrue(micSwitch.muted)
+        mic.final("nor this")
+
+        assertEquals(listOf("check the build"), sent)
+        assertEquals(MicMode.PushToTalk, controller.state.value.micMode)
+    }
+
+    @Test
+    fun `an unmute from the car cannot open a push-to-talk mic`() {
+        dial()
+        controller.setMicMode(MicMode.PushToTalk)
+
+        micSwitch.muted = false
+        controller.syncMute()
+
+        assertTrue(micSwitch.muted)
+        assertTrue(controller.state.value.muted)
+        assertEquals(MicMode.PushToTalk, controller.state.value.micMode)
+    }
+
+    @Test
+    fun `the talk key does nothing outside push-to-talk`() {
+        dial()
+        controller.setMuted(true)
+
+        controller.setPttKeyHeld(true)
+
+        assertTrue(micSwitch.muted)
+        assertFalse(controller.state.value.pttHeld)
+    }
+
+    @Test
+    fun `leaving push-to-talk mid-press drops the press`() {
+        dial()
+        controller.setMicMode(MicMode.PushToTalk)
+        controller.setPttKeyHeld(true)
+
+        controller.setMicMode(MicMode.Muted)
+
+        assertTrue(micSwitch.muted)
+        assertFalse(controller.state.value.pttHeld)
+    }
+
+    @Test
     fun `a mute from the car or the system mutes the call, and unmuting resumes sending`() {
         dial()
 

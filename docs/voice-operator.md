@@ -56,12 +56,15 @@ control, and Hang up. Leaving the chat does not hang up — like a phone app; th
 notification can.
 
 The mic control cycles through **Open → Muted → PTT**. In PTT mode the mic is
-muted until the ThinkPhone Red Key is held; releasing it mutes the mic again.
-Helm sees that key as Android `KEY_SEARCH` and filters it through the
-`RedKeyPttAccessibilityService`, so it works while the call screen is focused
-or in the background. Android requires the user to enable this service in
-Accessibility settings. Choosing PTT opens those settings if the service is
-not connected. The key filter consumes `KEY_SEARCH` only during a live PTT call.
+muted until a talk key is held; releasing it mutes the mic again. There are two
+talk keys: the panel's **Hold to talk** button, and the ThinkPhone Red Key, which
+Android delivers as `KEY_SEARCH` and `MainActivity` consumes only during a live
+PTT call.
+
+Both work only while Helm is on screen. Catching the Red Key from the background
+needs an accessibility service, and Play Protect refuses to install a sideloaded
+APK that declares one ("App blocked to protect your device") — which would block
+every release APK, so Helm declares none.
 
 ## The Helm home tab
 
