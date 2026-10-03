@@ -281,6 +281,17 @@ describe('MobileGate — uniform denials', () => {
 });
 
 describe('MobileGate — permitted-tool discovery', () => {
+  it('discovers and dispatches the keep-warm tool when a phone is allowed to use it', async () => {
+    const { gate, deviceId, calls } = build(['session_set_keep_warm']);
+    const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {
+      tools: Array<{ name: string }>;
+    };
+    expect(result.tools.map(t => t.name)).toEqual(['session_set_keep_warm']);
+
+    await gate.handle(deviceId, 'session_set_keep_warm', { sessionId: 's1', on: true });
+    expect(calls).toMatchObject([{ method: 'session_set_keep_warm', params: { sessionId: 's1', on: true } }]);
+  });
+
   it('answers in-gate with the allowed surface and never dispatches it', async () => {
     const { gate, deviceId, calls } = build(['session_list', 'session_get']);
     const result = (await gate.handle(deviceId, RESERVED_MOBILE_TOOLS_METHOD, {})) as {

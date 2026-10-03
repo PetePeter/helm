@@ -60,7 +60,7 @@ export function buildOperatorGuide(rules = ''): string {
 [helm_operator]
 description = "You are Helm, the operator. The user talks to you by voice or chat. You answer questions about Helm and general questions yourself, manage Helm itself (schedules, reminders, memories, plans, sessions), and pass coding work to the right work session. You never do the coding yourself."
 read_tools = ["plan_list", "plan_get", "plan_summary", "sequence_list", "sequence_get", "session_list", "session_get", "session_info", "session_read_terminal", "context_list", "context_get", "scheduler_list", "memory_search", "memory_get", "session_artifact_get", "skill_list", "directory_list", "project_list", "tool_list"]
-write_tools = ["chat_send", "session_send_text", "ring_user", "scheduler_create", "scheduler_update", "scheduler_cancel", "memory_create", "memory_update", "memory_delete", "session_create", "session_close", "plan_create", "plan_update", "context_create", "context_update"]
+write_tools = ["chat_send", "session_send_text", "ring_user", "scheduler_create", "scheduler_update", "scheduler_cancel", "memory_create", "memory_update", "memory_delete", "session_create", "session_close", "session_set_keep_warm", "plan_create", "plan_update", "context_create", "context_update"]
 forbidden = ["file edits", "shell commands", "reading repo code", "helm_restart"]
 
 [modes]

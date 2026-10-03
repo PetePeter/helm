@@ -23,6 +23,11 @@ export interface ContextMenuContext {
   session: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
 }
 
+export interface SessionContextMenuGroup {
+  title: string;
+  items: ContextMenuItem[];
+}
+
 const CANCEL: ContextMenuItem = { id: 'cancel', label: '✖ Cancel', enabled: true };
 
 function transcriptActions(enabled: boolean): ContextMenuItem[] {
@@ -44,22 +49,54 @@ function groupActions(ctx: ContextMenuContext): ContextMenuItem[] {
   ];
 }
 
+function alphabetical(items: ContextMenuItem[]): ContextMenuItem[] {
+  return items.sort((a, b) => sortLabel(a.label).localeCompare(sortLabel(b.label)));
+}
+
+function sortLabel(label: string): string {
+  return label.replace(/^[^\p{L}\p{N}]*/u, '').trim().toLocaleLowerCase();
+}
+
+/** The desktop session-row menu, organized to match the Android session sheet. */
+export function buildSessionContextMenuGroups(ctx: ContextMenuContext): SessionContextMenuGroup[] {
+  const s = ctx.session;
+  const sessionItems = s.frozen
+    ? [
+        { id: 'unfreeze', label: '🔥 Unfreeze', enabled: true },
+        { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: true },
+      ]
+    : [
+        { id: 'rename-session', label: '✎ Rename', enabled: true },
+        { id: 'move-to-group', label: '🗂️ Move to group…', enabled: ctx.hasActiveSession },
+        {
+          id: 'remove-from-group',
+          label: ctx.currentGroupName ? `↩ Remove from “${ctx.currentGroupName}”` : '↩ Remove from group',
+          enabled: ctx.hasActiveSession && !!ctx.currentGroupName,
+        },
+        { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: true },
+        { id: 'toggle-freeze', label: '❄️ Freeze', enabled: true },
+        { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: true },
+        { id: 'toggle-overview', label: s.hiddenFromOverview ? '👁 Show in overview' : '👁‍🗨 Hide from overview', enabled: true },
+        { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: true },
+      ];
+  const groups: SessionContextMenuGroup[] = [
+    { title: 'Chat', items: [] },
+    { title: 'Context', items: alphabetical(transcriptActions(true).filter(item => item.id === 'quick-compact')) },
+    { title: 'Create', items: alphabetical(transcriptActions(true).filter(item => item.id === 'clone-session')) },
+    { title: 'Inspect', items: [] },
+    { title: 'Remove', items: [] },
+    { title: 'Session', items: alphabetical(sessionItems) },
+  ];
+  return groups.sort((a, b) => a.title.localeCompare(b.title));
+}
+
 export function buildContextMenuItems(ctx: ContextMenuContext): ContextMenuItem[] {
   const s = ctx.session;
   if (s.frozen) {
     return [{ id: 'unfreeze', label: '🔥 Unfreeze', enabled: true }, ...transcriptActions(true), CANCEL];
   }
   if (ctx.mode === 'session') {
-    return [
-      { id: 'rename-session', label: '✎ Rename', enabled: true },
-      ...transcriptActions(true),
-      ...groupActions(ctx),
-      { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: true },
-      { id: 'toggle-freeze', label: '❄️ Freeze', enabled: true },
-      { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: true },
-      { id: 'toggle-overview', label: s.hiddenFromOverview ? '👁 Show in overview' : '👁‍🗨 Hide from overview', enabled: true },
-      CANCEL,
-    ];
+    return [...buildSessionContextMenuGroups(ctx).flatMap(group => group.items), CANCEL];
   }
   return [
     { id: 'copy', label: '📋 Copy', enabled: ctx.hasSelection },

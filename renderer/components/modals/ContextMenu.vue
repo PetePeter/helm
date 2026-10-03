@@ -8,7 +8,7 @@ import { ref, watch, computed } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { toDirection } from '../../utils.js';
 import { jumpKeyLabel, jumpButtonToPosition } from '../../utils/jump-keys.js';
-import { buildContextMenuItems, type ContextMenuContext, type ContextMenuItem } from '../../modals/context-menu-items.js';
+import { buildContextMenuItems, buildSessionContextMenuGroups, type ContextMenuContext, type ContextMenuItem } from '../../modals/context-menu-items.js';
 
 const MODAL_ID = 'context-menu';
 
@@ -34,9 +34,10 @@ const emit = defineEmits<{
 }>();
 
 const selectedIndex = ref(0);
+const activeGroup = ref<string | null>(null);
 const modalStack = useModalStack();
 
-const menuItems = computed<ContextMenuItem[]>(() => buildContextMenuItems({
+const context = computed<ContextMenuContext>(() => ({
   mode: props.mode ?? 'terminal',
   hasSelection: props.hasSelection,
   hasActiveSession: props.hasActiveSession,
@@ -44,6 +45,18 @@ const menuItems = computed<ContextMenuItem[]>(() => buildContextMenuItems({
   currentGroupName: props.currentGroupName ?? null,
   session: props.sessionFlags ?? { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
 }));
+const sessionGroups = computed(() => buildSessionContextMenuGroups(context.value).filter(group => group.items.length > 0));
+const menuItems = computed<ContextMenuItem[]>(() => {
+  if (context.value.mode !== 'session') return buildContextMenuItems(context.value);
+  if (activeGroup.value) {
+    const group = sessionGroups.value.find(item => item.title === activeGroup.value);
+    return [...(group?.items ?? []), { id: 'cancel', label: '‹ Back', enabled: true }];
+  }
+  return [
+    ...sessionGroups.value.map(group => ({ id: `group:${group.title}`, label: `› ${group.title}`, enabled: true })),
+    { id: 'cancel', label: '✖ Cancel', enabled: true },
+  ];
+});
 
 const enabledIndices = computed(() =>
   menuItems.value.map((item, i) => item.enabled ? i : -1).filter(i => i >= 0),
@@ -61,6 +74,7 @@ const jumpLabels = computed(() => {
 
 watch(() => props.visible, (v) => {
   if (v) {
+    activeGroup.value = null;
     // Select first enabled item
     selectedIndex.value = enabledIndices.value[0] ?? 0;
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
@@ -93,8 +107,13 @@ function handleButton(button: string): boolean {
     return true;
   }
   if (button === 'B') {
-    emit('cancel');
-    emit('update:visible', false);
+    if (activeGroup.value) {
+      activeGroup.value = null;
+      selectedIndex.value = 0;
+    } else {
+      emit('cancel');
+      emit('update:visible', false);
+    }
     return true;
   }
   const pos = jumpButtonToPosition(button);
@@ -108,7 +127,17 @@ function handleButton(button: string): boolean {
 function executeItem(index: number): void {
   const item = menuItems.value[index];
   if (!item || !item.enabled) return;
+  if (item.id.startsWith('group:')) {
+    activeGroup.value = item.id.slice('group:'.length);
+    selectedIndex.value = 0;
+    return;
+  }
   if (item.id === 'cancel') {
+    if (activeGroup.value) {
+      activeGroup.value = null;
+      selectedIndex.value = 0;
+      return;
+    }
     emit('cancel');
   } else {
     emit('action', item.id);
@@ -128,6 +157,9 @@ defineExpose({ handleButton });
       aria-label="Terminal context menu"
     >
       <div class="context-menu">
+        <div v-if="context.mode === 'session' && activeGroup" class="context-menu-header">
+          {{ activeGroup }}
+        </div>
         <div
           v-for="(item, i) in menuItems"
           :key="item.id"

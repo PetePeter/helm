@@ -144,6 +144,51 @@ class HelmClientTest {
     }
 
     @Test
+    fun `enabling keep warm calls the desktop tool and refreshes session status`() {
+        client.keepWarm("s1", true)
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_set_keep_warm", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+        assertTrue(call.getJSONObject("params").getBoolean("on"))
+
+        client.onInbound(resultFor(call.getString("id"), "{}"))
+
+        assertEquals(SessionAction.KeepWarmOn, client.control.notice.value?.action)
+        assertEquals("session_list", JSONObject(String(sent.last(), Charsets.UTF_8)).getString("method"))
+    }
+
+    @Test
+    fun `disabling keep warm sends false for the chosen session`() {
+        client.keepWarm("s1", false)
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_set_keep_warm", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+        assertFalse(call.getJSONObject("params").getBoolean("on"))
+
+        client.onInbound(resultFor(call.getString("id"), "{}"))
+
+        assertEquals(SessionAction.KeepWarmOff, client.control.notice.value?.action)
+    }
+
+    @Test
+    fun `freezing sends session_set_frozen for the selected session`() {
+        client.setFrozen("s1", true)
+
+        val call = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_set_frozen", call.getString("method"))
+        assertEquals("s1", call.getJSONObject("params").getString("sessionId"))
+        assertTrue(call.getJSONObject("params").getBoolean("frozen"))
+
+        client.setFrozen("s1", false)
+        val thaw = JSONObject(String(sent.last(), Charsets.UTF_8))
+        assertEquals("session_set_frozen", thaw.getString("method"))
+        assertEquals("s1", thaw.getJSONObject("params").getString("sessionId"))
+        assertFalse(thaw.getJSONObject("params").getBoolean("frozen"))
+    }
+
+    @Test
     fun `a rename sends the arguments session_rename needs and reconciles the list`() {
         client.renameSession("s1", "kitchen")
 

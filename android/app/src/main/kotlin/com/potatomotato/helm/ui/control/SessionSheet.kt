@@ -1,5 +1,6 @@
 package com.potatomotato.helm.ui.control
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
@@ -81,6 +83,8 @@ import com.potatomotato.helm.ui.theme.HelmSpacing
 @Composable
 fun SessionSheet(
     sessionName: String,
+    keepWarm: Boolean,
+    frozen: Boolean,
     capabilities: Capabilities,
     onAction: (SessionAction) -> Unit,
     onRename: (String) -> Unit,
@@ -95,6 +99,12 @@ fun SessionSheet(
     var confirming by remember { mutableStateOf<SessionAction?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var switching by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf<SessionActionCategory?>(null) }
+    val actionGroups = sessionSheetActionGroups(keepWarm, frozen)
+    val selectedGroup = actionGroups.firstOrNull { it.category == selectedCategory }
+    val resources = LocalContext.current.resources
+
+    BackHandler(enabled = selectedCategory != null) { selectedCategory = null }
 
     Box(modifier = modifier.fillMaxSize()) {
         Box(
@@ -135,8 +145,18 @@ fun SessionSheet(
                     },
                     onCancel = { confirming = null },
                 )
-            } else {
-                for (action in SHEET_ACTIONS) {
+            } else if (selectedGroup != null) {
+                Text(
+                    text = "‹ ${stringResource(selectedGroup.category.titleRes)}",
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { selectedCategory = null }
+                        .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
+                )
+                Hairline()
+                for (action in selectedGroup.actions.sortedBy { resources.getString(it.labelRes).lowercase() }) {
                     ActionRow(
                         action = action,
                         capabilities = capabilities,
@@ -152,6 +172,14 @@ fun SessionSheet(
                                 else -> onAction(action)
                             }
                         },
+                    )
+                }
+            } else {
+                for (group in actionGroups) {
+                    CategoryRow(
+                        title = stringResource(group.category.titleRes),
+                        count = group.actions.size,
+                        onClick = { selectedCategory = group.category },
                     )
                 }
             }
@@ -185,19 +213,54 @@ fun SessionSheet(
  * The sheet's order, top to bottom: talking to it, what you look at, what you tidy, what you
  * create, what you destroy. Destructive last, furthest from the reading position.
  */
-private val SHEET_ACTIONS = listOf(
-    SessionAction.Call,
-    SessionAction.Stop,
-    SessionAction.Snapshot,
-    SessionAction.Rename,
-    SessionAction.Compact,
-    SessionAction.HelmCompact,
-    SessionAction.SwitchCli,
-    SessionAction.Clone,
-    SessionAction.Clear,
-    SessionAction.Spawn,
-    SessionAction.Close,
+internal enum class SessionActionCategory(val titleRes: Int) {
+    CHAT(R.string.control_group_chat),
+    CONTEXT(R.string.control_group_context),
+    CREATE(R.string.control_group_create),
+    INSPECT(R.string.control_group_inspect),
+    REMOVE(R.string.control_group_remove),
+    SESSION(R.string.control_group_session),
+}
+
+internal data class SessionSheetActionGroup(
+    val category: SessionActionCategory,
+    val actions: List<SessionAction>,
 )
+
+internal fun sessionSheetActionGroups(keepWarm: Boolean, frozen: Boolean): List<SessionSheetActionGroup> = listOf(
+    SessionSheetActionGroup(SessionActionCategory.CHAT, listOf(SessionAction.Call, SessionAction.Stop)),
+    SessionSheetActionGroup(
+        SessionActionCategory.CONTEXT,
+        listOf(SessionAction.Clear, SessionAction.Compact, SessionAction.HelmCompact),
+    ),
+    SessionSheetActionGroup(SessionActionCategory.CREATE, listOf(SessionAction.Clone, SessionAction.Spawn)),
+    SessionSheetActionGroup(SessionActionCategory.INSPECT, listOf(SessionAction.Snapshot)),
+    SessionSheetActionGroup(SessionActionCategory.REMOVE, listOf(SessionAction.Close)),
+    SessionSheetActionGroup(
+        SessionActionCategory.SESSION,
+        listOf(
+            if (frozen) SessionAction.Unfreeze else SessionAction.Freeze,
+            if (keepWarm) SessionAction.KeepWarmOff else SessionAction.KeepWarmOn,
+            SessionAction.Rename,
+            SessionAction.SwitchCli,
+        ),
+    ),
+).sortedBy { it.category.name }
+
+@Composable
+private fun CategoryRow(title: String, count: Int, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, color = HelmColors.Txt, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(count.toString(), color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium)
+        Text("  ›", color = HelmColors.Dim, style = MaterialTheme.typography.bodyLarge)
+    }
+}
 
 @Composable
 private fun ActionRow(
@@ -522,6 +585,10 @@ internal val SessionAction.labelRes: Int
         SessionAction.SwitchCli -> R.string.control_action_switch_cli
         SessionAction.Clone -> R.string.control_action_clone
         SessionAction.Stop -> R.string.control_action_stop
+        SessionAction.KeepWarmOn -> R.string.control_action_keep_warm
+        SessionAction.KeepWarmOff -> R.string.control_action_stop_keep_warm
+        SessionAction.Freeze -> R.string.control_action_freeze
+        SessionAction.Unfreeze -> R.string.control_action_unfreeze
         SessionAction.Spawn -> R.string.control_action_spawn
         SessionAction.Close -> R.string.control_action_close
         SessionAction.Call -> R.string.control_action_call
@@ -542,6 +609,8 @@ internal val SessionAction.glyphRes: Int
         SessionAction.SwitchCli -> R.string.control_glyph_switch_cli
         SessionAction.Clone -> R.string.control_glyph_clone
         SessionAction.Stop -> R.string.control_glyph_stop
+        SessionAction.KeepWarmOn, SessionAction.KeepWarmOff -> R.string.control_glyph_keep_warm
+        SessionAction.Freeze, SessionAction.Unfreeze -> R.string.control_glyph_freeze
         SessionAction.Spawn -> R.string.control_glyph_spawn
         SessionAction.Close -> R.string.control_glyph_close
         SessionAction.Call -> R.string.control_glyph_call

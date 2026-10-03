@@ -1401,6 +1401,10 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.setSessionFrozen(sessionRef, frozen);
   }
 
+  setSessionKeepWarm(sessionRef: string, on: boolean) {
+    return this.sessionService.setSessionKeepWarm(sessionRef, on);
+  }
+
   setSessionMission(sessionRef: string, text: string) {
     return this.sessionService.setSessionMission(sessionRef, text);
   }

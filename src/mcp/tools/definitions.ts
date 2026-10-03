@@ -1211,6 +1211,20 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_set_keep_warm',
+    title: 'Keep Session Cache Warm',
+    description: 'Keep a session\'s prompt cache warm until its existing 8-hour limit, or turn keep-warm off. Pings use the CLI type\'s prompt just before its short-cache window lapses; active and frozen sessions are skipped. Omit sessionId to target your own session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Target session ID or exact name. Defaults to your own session.' },
+        on: { type: 'boolean', description: 'true enables keep-warm; false turns it off.' },
+      },
+      required: ['on'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_close',
     title: 'Close Session',
     description: 'Kill the PTY process and remove a session from Helm. Use this when a task is complete and the session is no longer needed, or to recover from a stuck session. Accepts sessionId or session name.',

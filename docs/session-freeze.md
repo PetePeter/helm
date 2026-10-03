@@ -65,6 +65,8 @@ lapses** (`cacheWarnMinutes` − 10 s; 4:50 for 5 min), so the next real prompt
 still hits the cheap cache. Each ping costs one short turn, which is why it is
 opt-in and lapses on its own. It skips a busy session (already warming itself)
 and a frozen one.
+MCP clients can toggle the same persisted state with `session_set_keep_warm`;
+the desktop row and Android session sheet read the same status.
 
 ```mermaid
 graph LR
@@ -90,5 +92,7 @@ and rows show the same 🔒 ❄️ ⏰ icons as the desktop (`locked`,
 `keepWarmUntilEpochMs` ride the summary too). A message refused because the session is frozen
 settles as `Delivery.Frozen` — matched on the desktop's "is frozen" wording —
 with an **Unfreeze & send** action that calls `session_set_frozen` and resends.
+The long-press session sheet offers the same keep-warm on/off control as the
+desktop row and calls `session_set_keep_warm` through the phone's tool gate.
 The phone's clock may disagree with the desktop's, so its banner is advisory;
 the desktop owns the actual freeze.

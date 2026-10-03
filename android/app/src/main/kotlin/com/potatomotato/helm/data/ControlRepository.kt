@@ -28,6 +28,10 @@ enum class SessionAction(val tool: String) {
 
     /** Interrupts the running turn — an Esc keypress, which stops a CLI and an API tool alike. */
     Stop("session_send_input"),
+    KeepWarmOn("session_set_keep_warm"),
+    KeepWarmOff("session_set_keep_warm"),
+    Freeze("session_set_frozen"),
+    Unfreeze("session_set_frozen"),
     Spawn("session_create"),
     Close("session_close"),
 

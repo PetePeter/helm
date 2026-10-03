@@ -89,6 +89,10 @@ private val SessionAction.doneRes: Int
         SessionAction.SwitchCli -> R.string.control_notice_done_switch_cli
         SessionAction.Clone -> R.string.control_notice_done_clone
         SessionAction.Stop -> R.string.control_notice_done_stop
+        SessionAction.KeepWarmOn -> R.string.control_notice_done_keep_warm
+        SessionAction.KeepWarmOff -> R.string.control_notice_done_stop_keep_warm
+        SessionAction.Freeze -> R.string.control_notice_done_freeze
+        SessionAction.Unfreeze -> R.string.control_notice_done_unfreeze
         SessionAction.Close -> R.string.control_notice_done_close
         SessionAction.Spawn -> R.string.control_notice_done_spawn
         // A snapshot and the artifacts row report themselves on their own

@@ -277,6 +277,22 @@ class HelmClient(
             refreshSessions()
         }
 
+    /** Change keep-warm on the desktop and reconcile the ⏰ row status. */
+    fun keepWarm(sessionId: String, on: Boolean): Boolean =
+        act(
+            if (on) SessionAction.KeepWarmOn else SessionAction.KeepWarmOff,
+            METHOD_SESSION_SET_KEEP_WARM,
+            linkedMapOf("sessionId" to sessionId, "on" to on),
+        ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
+
+    /** Freeze or unfreeze a session from the session action sheet. */
+    fun setFrozen(sessionId: String, frozen: Boolean): Boolean =
+        act(
+            if (frozen) SessionAction.Freeze else SessionAction.Unfreeze,
+            METHOD_SESSION_SET_FROZEN,
+            linkedMapOf("sessionId" to sessionId, "frozen" to frozen),
+        ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
+
     /** One `session_send_text` ask, settling the optimistic row named by [key]. */
     private fun issueText(sessionId: String, text: String, key: String): Boolean {
         val params = linkedMapOf("sessionId" to sessionId, "text" to text)
@@ -1889,6 +1905,7 @@ class HelmClient(
         private const val METHOD_SESSION_LIST = "session_list"
         private const val METHOD_SESSION_SEND_TEXT = "session_send_text"
         private const val METHOD_SESSION_SET_FROZEN = "session_set_frozen"
+        private const val METHOD_SESSION_SET_KEEP_WARM = "session_set_keep_warm"
 
         /**
          * The gate's reserved chat-cursor meta-method (see the desktop's

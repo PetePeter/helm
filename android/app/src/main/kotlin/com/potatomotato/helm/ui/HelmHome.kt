@@ -1375,6 +1375,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 BackHandler(onBack = toThread)
                 SessionSheet(
                     sessionName = open.name,
+                    keepWarm = (open.keepWarmUntilEpochMs ?: 0L) > System.currentTimeMillis(),
+                    frozen = open.frozen,
                     capabilities = capabilities,
                     onDismiss = toThread,
                     onAction = { action ->
@@ -1386,6 +1388,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             SessionAction.HelmCompact -> Destination.Thread.also { client.quickCompact(open.id) }
                             SessionAction.Clone -> Destination.Thread.also { client.cloneSession(open.id) }
                             SessionAction.Stop -> Destination.Thread.also { client.stop(open.id) }
+                            SessionAction.KeepWarmOn -> Destination.Thread.also { client.keepWarm(open.id, true) }
+                            SessionAction.KeepWarmOff -> Destination.Thread.also { client.keepWarm(open.id, false) }
+                            SessionAction.Freeze -> Destination.Thread.also { client.setFrozen(open.id, true) }
+                            SessionAction.Unfreeze -> Destination.Thread.also { client.setFrozen(open.id, false) }
                             SessionAction.Close -> Destination.Thread.also { client.closeSession(open.id) }
                             // Rename never reaches here — it is answered by
                             // onRename below, because it carries a name. The

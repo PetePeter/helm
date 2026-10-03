@@ -677,6 +677,12 @@ export async function callMcpTool(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
           asBoolean(args.frozen, 'frozen must be true or false'),
         );
+      case 'session_set_keep_warm': {
+        const target = typeof args.sessionId === 'string' && args.sessionId.trim()
+          ? args.sessionId
+          : requireCallerSession(authContext, 'session_set_keep_warm');
+        return service.setSessionKeepWarm(target, asBoolean(args.on, 'on must be true or false'));
+      }
       case 'session_mission_set': {
         // Own session by default — server-derived identity, never a client claim.
         const target = typeof args.sessionId === 'string' && args.sessionId.trim()

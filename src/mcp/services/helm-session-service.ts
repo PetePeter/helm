@@ -17,6 +17,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placement.js';
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
+import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
@@ -247,6 +248,19 @@ export class HelmSessionService {
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
     this.sessionManager.setSessionFrozen(session.id, frozen);
     return { ok: true, frozen };
+  }
+
+  setSessionKeepWarm(sessionRef: string, on: boolean): { ok: true; keepWarm: boolean; keepWarmUntilEpochMs?: number } {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    const now = Date.now();
+    const until = on
+      ? (session.keepWarmUntil != null && session.keepWarmUntil > now
+        ? session.keepWarmUntil
+        : now + KEEP_WARM_DEFAULT_MS)
+      : undefined;
+    this.sessionManager.updateSession(session.id, { keepWarmUntil: until });
+    return { ok: true, keepWarm: on, ...(until != null ? { keepWarmUntilEpochMs: until } : {}) };
   }
 
   /** AI-side mission write; validation lives in SessionManager (shared with IPC). */
