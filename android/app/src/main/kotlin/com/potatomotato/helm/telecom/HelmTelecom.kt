@@ -8,6 +8,7 @@ import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
 import android.util.Log
+import com.potatomotato.helm.voice.AudioRoute
 import com.potatomotato.helm.voice.CallRefusal
 
 /**
@@ -40,6 +41,10 @@ object HelmTelecom {
     /** The live call's audio state changed (mute, route). Set by the call while it is up. */
     @Volatile
     var onAudioState: (() -> Unit)? = null
+
+    /** The route and routes Telecom confirms for the live call. */
+    @Volatile
+    var onRouteState: ((AudioRoute?, Set<AudioRoute>) -> Unit)? = null
 
     private val busy get() = current != null || pending != null
 
@@ -134,6 +139,16 @@ object HelmTelecom {
     /** The call really started: the car shows it as active. */
     fun active() {
         current?.setActive()
+    }
+
+    /** Ask Telecom to route the live self-managed call. The callback publishes the accepted route. */
+    fun setAudioRoute(route: AudioRoute) {
+        current?.requestAudioRoute(route)
+    }
+
+    /** Re-publish the current route when the foreground service joins a live call. */
+    fun publishAudioRoute() {
+        current?.publishAudioRoute()
     }
 
     /** Declined from Helm's own notification. */

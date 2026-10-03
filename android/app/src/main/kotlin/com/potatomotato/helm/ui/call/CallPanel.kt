@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -97,8 +99,9 @@ fun CallPanel(call: VoiceCallService.Call, modifier: Modifier = Modifier) {
                     .weight(1f)
                     .clip(RoundedCornerShape(HelmRadius.Pill))
                     .background(HelmColors.Danger)
+                    .heightIn(min = 64.dp)
                     .clickable { VoiceCallService.hangUp(context) }
-                    .padding(vertical = HelmSpacing.Sm),
+                    .padding(vertical = 20.dp),
             )
         }
     }
@@ -142,10 +145,11 @@ private fun Chip(text: String, selected: Boolean, onClick: () -> Unit, modifier:
         maxLines = 1,
         textAlign = TextAlign.Center,
         modifier = modifier
+            .heightIn(min = 64.dp)
             .clip(RoundedCornerShape(HelmRadius.Pill))
             .background(if (selected) HelmColors.Accent else HelmColors.Surface2)
             .clickable(onClick = onClick)
-            .padding(vertical = HelmSpacing.Sm, horizontal = HelmSpacing.Md),
+            .padding(vertical = 20.dp, horizontal = HelmSpacing.Md),
     )
 }
 
@@ -163,4 +167,5 @@ private val AudioRoute.labelRes: Int
         AudioRoute.Earpiece -> R.string.call_route_earpiece
         AudioRoute.Speaker -> R.string.call_route_speaker
         AudioRoute.Bluetooth -> R.string.call_route_bluetooth
+        AudioRoute.WiredHeadset -> R.string.call_route_wired_headset
     }

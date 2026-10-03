@@ -8,14 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import android.widget.Toast
 import com.potatomotato.helm.MainActivity
@@ -41,12 +37,11 @@ import kotlinx.coroutines.launch
  * A `microphone` foreground service, because a call that dies when the screen
  * sleeps is not a call. The audio side is the phone-call shape: the mode is
  * MODE_IN_COMMUNICATION for the call's lifetime (and restored after), focus is
- * Telecom's (the call is a Telecom call), and the route is earpiece / speaker / Bluetooth with Bluetooth taken
- * whenever it is there. The microphone is [VoskCallMic], one stream open for
- * the whole call.
+ * Telecom's (the call is a Telecom call), and Telecom owns the route. The
+ * microphone is [VoskCallMic], one stream open for the whole call.
  *
- * Wiring only. What the call does is [CallController]; which route it takes is
- * [pickAudioRoute]; what counts as a reply is [CallFeed].
+ * Wiring only. What the call does is [CallController]; the active route comes
+ * from Telecom; what counts as a reply is [CallFeed].
  */
 class VoiceCallService : Service() {
 
@@ -54,7 +49,7 @@ class VoiceCallService : Service() {
     data class Call(
         val targetId: String,
         val state: CallState,
-        val route: AudioRoute,
+        val route: AudioRoute?,
         val routes: Set<AudioRoute>,
     )
 
@@ -117,7 +112,6 @@ class VoiceCallService : Service() {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val main = Handler(Looper.getMainLooper())
     private lateinit var audio: AudioManager
     /** The live call, or null. */
     private var controller: CallController? = null
@@ -132,10 +126,11 @@ class VoiceCallService : Service() {
     private var feedJob: Job? = null
     private var tone: ToneGenerator? = null
 
-    /** takeAudio() ran: the mode and route are ours to restore. */
+    /** takeAudio() ran: the communication mode is ours to restore. */
     private var active = false
     private var savedMode = AudioManager.MODE_NORMAL
     private var route: AudioRoute? = null
+    private var routes: Set<AudioRoute> = emptySet()
 
     /**
      * Screen off whenever something covers the sensor for the whole call, on any
@@ -154,11 +149,6 @@ class VoiceCallService : Service() {
         if (wanted && !lock.isHeld) lock.acquire(EAR_SENSOR_MAX_MS)
         // WAIT flag: a release while at the ear keeps the screen dark until moved away.
         if (!wanted && lock.isHeld) lock.release(PowerManager.RELEASE_FLAG_WAIT_FOR_NO_PROXIMITY)
-    }
-
-    private val devices = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>?) = applyRoute(route)
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>?) = applyRoute(route)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -200,10 +190,10 @@ class VoiceCallService : Service() {
             ACTION_HANG_UP -> call.hangUp()
             ACTION_MUTE -> call.setMuted(intent.getBooleanExtra(EXTRA_VALUE, false))
             ACTION_ROUTE -> intent.getStringExtra(EXTRA_VALUE)
-                // Not while still connecting: the route is only ours once the audio is.
+                // Not while still connecting: Telecom owns the route once the call is active.
                 ?.takeIf { active }
                 ?.let { name -> AudioRoute.entries.firstOrNull { it.name == name } }
-                ?.let(::applyRoute)
+                ?.let(HelmTelecom::setAudioRoute)
             ACTION_TRANSFER -> intent.getStringExtra(EXTRA_TARGET)
                 ?.takeIf { intent.getStringExtra(EXTRA_FROM) == targetId }
                 ?.let { to ->
@@ -244,6 +234,11 @@ class VoiceCallService : Service() {
             }
         }
         HelmTelecom.onAudioState = call::syncMute
+        HelmTelecom.onRouteState = { current, available ->
+            route = current
+            routes = available
+            publish()
+        }
         // An answered ring is a system call already and opens at once, so its
         // audio is taken here; a call the user starts takes it when the system
         // has taken the call (see [line]).
@@ -331,6 +326,7 @@ class VoiceCallService : Service() {
 
     private fun endCurrent() {
         HelmTelecom.onAudioState = null
+        HelmTelecom.onRouteState = null
         job?.cancel()
         job = null
         feedJob?.cancel()
@@ -344,29 +340,26 @@ class VoiceCallService : Service() {
     }
 
     /**
-     * The call's audio: communication mode and route. No focus request: the
-     * call is a Telecom call, Telecom holds the call focus for it, and a
-     * request of our own for the same call is always refused. A phone call
+     * The call's audio mode. Telecom owns routing and focus for the call, so
+     * this service does not request a second focus. A phone call
      * taking over reaches us as Telecom ending ours (HelmConnection.onDisconnect).
      */
     private fun takeAudio() {
         active = true
         savedMode = audio.mode
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        audio.registerAudioDeviceCallback(devices, main)
-        applyRoute(null)
+        HelmTelecom.publishAudioRoute()
     }
 
     /**
      * Only undo what [takeAudio] did: a service that never took the audio must
-     * not reset the mode or the route out from under a real phone call.
+     * not reset the mode out from under a real phone call.
      */
     private fun releaseAudio() {
         if (!active) return
         active = false
-        runCatching { audio.unregisterAudioDeviceCallback(devices) }
-        releaseRoute()
         route = null
+        routes = emptySet()
         audio.mode = savedMode
         HelmLog.i(HelmLog.UI, "voice call ended, audio mode restored")
     }
@@ -382,58 +375,7 @@ class VoiceCallService : Service() {
 
     private fun publish(state: CallState = controller?.state?.value ?: CallState()) {
         val target = targetId ?: return
-        _call.value = Call(target, state, route ?: AudioRoute.Earpiece, availableRoutes())
-    }
-
-    /** Re-pick against what is reachable now, preferring [wanted]; see [pickAudioRoute]. */
-    private fun applyRoute(wanted: AudioRoute?) {
-        val next = pickAudioRoute(wanted, availableRoutes())
-        route = next
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audio.availableCommunicationDevices.firstOrNull { routeOf(it.type) == next }
-                ?.let(audio::setCommunicationDevice)
-        } else {
-            @Suppress("DEPRECATION")
-            run {
-                audio.isSpeakerphoneOn = next == AudioRoute.Speaker
-                if (next == AudioRoute.Bluetooth) audio.startBluetoothSco() else audio.stopBluetoothSco()
-                audio.isBluetoothScoOn = next == AudioRoute.Bluetooth
-            }
-        }
-        publish()
-    }
-
-    private fun releaseRoute() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audio.clearCommunicationDevice()
-        } else {
-            @Suppress("DEPRECATION")
-            run {
-                audio.isSpeakerphoneOn = false
-                audio.stopBluetoothSco()
-                audio.isBluetoothScoOn = false
-            }
-        }
-    }
-
-    private fun availableRoutes(): Set<AudioRoute> {
-        val types = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            audio.availableCommunicationDevices.map { it.type }
-        } else {
-            audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).map { it.type }
-        }
-        return types.mapNotNullTo(HashSet(), ::routeOf) + AudioRoute.Speaker
-    }
-
-    private fun routeOf(type: Int): AudioRoute? = when (type) {
-        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> AudioRoute.Earpiece
-        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> AudioRoute.Speaker
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> AudioRoute.Bluetooth
-        else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && type == AudioDeviceInfo.TYPE_BLE_HEADSET) {
-            AudioRoute.Bluetooth
-        } else {
-            null
-        }
+        _call.value = Call(target, state, route, routes)
     }
 
     private val CallRefusal.messageRes: Int

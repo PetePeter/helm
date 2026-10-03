@@ -261,8 +261,9 @@ Why each rule exists:
 - **Mute is the phone's own microphone mute** (`MicSwitch` →
   `AudioManager.isMicrophoneMute`), not an app flag. The Mute button, a car
   screen and the system call UI all flip that one switch, so they cannot
-  disagree. Telecom reports a change through `onCallAudioStateChanged` and the
-  call re-reads the switch (`syncMute`), which is why a repeated or stale report
+  disagree. Telecom reports a change through the legacy
+  `onCallAudioStateChanged` callback or Android 14+'s mute callback; the call
+  re-reads the switch (`syncMute`), which is why a repeated or stale report
   can never flip it. Nothing is sent while muted, a muted user never interrupts,
   and the switch is handed back as it was found when the call ends. A headset
   that mutes inside itself tells the phone nothing: Helm just hears silence.
@@ -305,13 +306,15 @@ lifetime it:
   holds the call focus for it, and a second request for the same call is always
   refused. A GSM call taking over ends ours through Telecom
   (`HelmConnection.onDisconnect`);
-- routes via `setCommunicationDevice` (API 31+) or speakerphone/SCO (older), so
-  the recorder and the voice share the call route (handset, speaker, Bluetooth);
+- requests routes through its self-managed Telecom `Connection` (legacy route
+  API through Android 13, call endpoints on Android 14+), and marks only the
+  route Telecom confirms as active. The recorder and voice share that route;
 - speaks TTS as `USAGE_VOICE_COMMUNICATION`, so replies follow the call route.
 
-Route choice is the pure `pickAudioRoute`: keep the current route while it is
-available, else Bluetooth, else earpiece, else speaker. It is re-run on every
-audio device add/remove, so losing Bluetooth falls back to the earpiece.
+The call screen offers the routes Telecom reports as available. Its route
+selection follows Telecom's confirmed current route, so a rejected request does
+not make the UI claim the audio moved. Call controls have a 64 dp minimum height
+for reliable taps while moving.
 
 The notification carries a **Hang up** action. The call is not sticky: a killed
 call is never restarted behind the user's back.

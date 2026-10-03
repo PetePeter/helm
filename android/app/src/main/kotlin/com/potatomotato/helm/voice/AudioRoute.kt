@@ -1,7 +1,7 @@
 package com.potatomotato.helm.voice
 
 /** Where a call's audio goes. Order is the picker's order on the call screen. */
-enum class AudioRoute { Earpiece, Speaker, Bluetooth }
+enum class AudioRoute { Earpiece, Speaker, Bluetooth, WiredHeadset }
 
 /**
  * The route a call should be on, given what the phone can reach right now.

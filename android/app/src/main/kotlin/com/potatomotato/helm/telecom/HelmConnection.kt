@@ -2,14 +2,20 @@ package com.potatomotato.helm.telecom
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.OutcomeReceiver
+import android.telecom.CallEndpoint
+import android.telecom.CallEndpointException
 import android.telecom.CallAudioState
 import android.telecom.Connection
 import android.telecom.DisconnectCause
 import android.telecom.TelecomManager
 import com.potatomotato.helm.MainActivity
+import com.potatomotato.helm.log.HelmLog
 import com.potatomotato.helm.notify.IncomingRing
+import com.potatomotato.helm.voice.AudioRoute
 import com.potatomotato.helm.voice.VoiceCallService
 
 /**
@@ -25,6 +31,10 @@ class HelmConnection(
     private val reason: String,
     outgoing: Boolean,
 ) : Connection() {
+
+    private var audioRoute: AudioRoute? = null
+    private var audioRoutes: Set<AudioRoute> = emptySet()
+    private var availableEndpoints: List<CallEndpoint> = emptyList()
 
     init {
         connectionProperties = PROPERTY_SELF_MANAGED
@@ -86,7 +96,57 @@ class HelmConnection(
      */
     @Deprecated("Deprecated in API 34, but the only mute callback down to minSdk 26")
     override fun onCallAudioStateChanged(state: CallAudioState?) {
+        state?.let {
+            audioRoute = routeOfCallState(it.route)
+            audioRoutes = routesOf(it.supportedRouteMask)
+            publishAudioRoute()
+        }
         HelmTelecom.onAudioState?.invoke()
+    }
+
+    override fun onAvailableCallEndpointsChanged(availableEndpoints: List<CallEndpoint>) {
+        this.availableEndpoints = availableEndpoints
+        audioRoutes = availableEndpoints.mapNotNullTo(HashSet()) { routeOfEndpoint(it.endpointType) }
+        publishAudioRoute()
+    }
+
+    override fun onCallEndpointChanged(callEndpoint: CallEndpoint) {
+        audioRoute = routeOfEndpoint(callEndpoint.endpointType)
+        publishAudioRoute()
+    }
+
+    override fun onMuteStateChanged(isMuted: Boolean) {
+        HelmTelecom.onAudioState?.invoke()
+    }
+
+    /** Route requests belong to this self-managed Telecom connection. */
+    fun requestAudioRoute(route: AudioRoute) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val endpoint = availableEndpoints.firstOrNull { routeOfEndpoint(it.endpointType) == route }
+            if (endpoint == null) {
+                HelmLog.w(HelmLog.UI, "requested call route is not available: $route")
+                return
+            }
+            requestCallEndpointChange(
+                endpoint,
+                java.util.concurrent.Executor { command -> Handler(Looper.getMainLooper()).post(command) },
+                object : OutcomeReceiver<Void, CallEndpointException> {
+                    override fun onResult(result: Void?) = Unit
+                    override fun onError(error: CallEndpointException) {
+                        HelmLog.w(HelmLog.UI, "call route request failed: ${error.message}")
+                    }
+                },
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            setAudioRoute(route.toCallAudioRoute())
+        }
+    }
+
+    /** Publish only Telecom's observed route, never the requested route. */
+    fun publishAudioRoute() {
+        HelmLog.i(HelmLog.UI, "call audio route is ${audioRoute ?: "unknown"}")
+        HelmTelecom.onRouteState?.invoke(audioRoute, audioRoutes)
     }
 
     /** Our call ended first: take the system call down without looping back into hangUp. */
@@ -100,5 +160,35 @@ class HelmConnection(
         setDisconnected(cause)
         destroy()
         if (HelmTelecom.current === this) HelmTelecom.current = null
+    }
+
+    private fun routeOfCallState(route: Int): AudioRoute? = when (route) {
+        CallAudioState.ROUTE_EARPIECE -> AudioRoute.Earpiece
+        CallAudioState.ROUTE_SPEAKER -> AudioRoute.Speaker
+        CallAudioState.ROUTE_BLUETOOTH -> AudioRoute.Bluetooth
+        CallAudioState.ROUTE_WIRED_HEADSET -> AudioRoute.WiredHeadset
+        else -> null
+    }
+
+    private fun routeOfEndpoint(endpointType: Int): AudioRoute? = when (endpointType) {
+        CallEndpoint.TYPE_EARPIECE -> AudioRoute.Earpiece
+        CallEndpoint.TYPE_SPEAKER -> AudioRoute.Speaker
+        CallEndpoint.TYPE_BLUETOOTH -> AudioRoute.Bluetooth
+        CallEndpoint.TYPE_WIRED_HEADSET -> AudioRoute.WiredHeadset
+        else -> null
+    }
+
+    private fun routesOf(mask: Int): Set<AudioRoute> = buildSet {
+        if (mask and CallAudioState.ROUTE_EARPIECE != 0) add(AudioRoute.Earpiece)
+        if (mask and CallAudioState.ROUTE_SPEAKER != 0) add(AudioRoute.Speaker)
+        if (mask and CallAudioState.ROUTE_BLUETOOTH != 0) add(AudioRoute.Bluetooth)
+        if (mask and CallAudioState.ROUTE_WIRED_HEADSET != 0) add(AudioRoute.WiredHeadset)
+    }
+
+    private fun AudioRoute.toCallAudioRoute(): Int = when (this) {
+        AudioRoute.Earpiece -> CallAudioState.ROUTE_EARPIECE
+        AudioRoute.Speaker -> CallAudioState.ROUTE_SPEAKER
+        AudioRoute.Bluetooth -> CallAudioState.ROUTE_BLUETOOTH
+        AudioRoute.WiredHeadset -> CallAudioState.ROUTE_WIRED_HEADSET
     }
 }
