@@ -231,10 +231,11 @@ failure as a radio that may come back — and never guesses *which* rule, becaus
 every deny path answers with byte-identical text by design.
 
 **Snapshot is on demand, never streamed**, with the line count chosen before the
-pull, so the cost is decided by the person paying it. The tail is requested
-`stripped`: the ANSI cleaning is the desktop's own and this app has no second
-escape-code parser to drift from it. Lines scroll sideways rather than wrapping —
-a wrapped terminal line changes what a diff or a table means.
+pull, so the cost is decided by the person paying it. Current desktops return
+the rendered `screen`; older desktops that reject screen mode fall back to the
+desktop-cleaned `stripped` tail. This app has no second escape-code parser to
+drift from it. Lines scroll sideways rather than wrapping — a wrapped terminal
+line changes what a diff or a table means.
 
 **Spawn fills every field from a surface the phone already has** —
 `directory_list` for directories, distinct `cliType`s harvested from

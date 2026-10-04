@@ -197,7 +197,8 @@ export interface CliTypeConfig {
    *  "% full". Unset: the badge shows the count alone, unless the CLI logs its own window (Codex). */
   contextWindow?: number;
   /** What a keep-warm ping types (sequence syntax), sent 10 s before the short
-   *  cache lapses. Keep it tiny: it costs a turn. Default "{Esc}heartbeat". */
+   *  cache lapses. Default also suggests Quick Compact near 200k and checking
+   *  any in-flight worker sessions. */
   keepWarmPrompt?: string;
   /**
    * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —

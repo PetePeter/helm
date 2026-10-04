@@ -208,23 +208,26 @@ class ControlRepository {
     }
 
     /**
-     * Take a `session_read_terminal` result. A payload without a `screen` array
-     * is a failure rather than an empty screen: the phone asked for an emulator
-     * snapshot and an empty list would mean "the session has printed nothing".
+     * Take a `session_read_terminal` result. Prefer the rendered `screen` from
+     * current desktops; accept the cleaned `stripped` tail from older desktops
+     * that do not support screen mode. A payload with neither array is a failure,
+     * not an empty screen.
      */
     fun snapshotArrived(result: Any?, requested: Int) {
-        val screen = (result as? JSONObject)?.opt("screen") as? JSONArray
-        if (screen == null) {
+        val response = result as? JSONObject
+        val lines = (response?.opt("screen") as? JSONArray)
+            ?: (response?.opt("stripped") as? JSONArray)
+        if (lines == null) {
             WireShape.undecodable<Unit>(
                 "a session_read_terminal result",
-                "a JSON object with a `screen` array",
+                "a JSON object with a `screen` or `stripped` array",
                 result,
             )
         }
-        _snapshot.value = if (screen == null) {
+        _snapshot.value = if (lines == null) {
             Snapshot.Failed(UNREADABLE_TAIL)
         } else {
-            Snapshot.Lines((0 until screen.length()).map { screen.optString(it) }, requested)
+            Snapshot.Lines((0 until lines.length()).map { lines.optString(it) }, requested)
         }
     }
 

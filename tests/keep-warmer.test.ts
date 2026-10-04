@@ -47,7 +47,10 @@ describe('KeepWarmer', () => {
     const warmer = new KeepWarmer(sessions, async (_id, text) => { sent.push(text); }, () => ({ keepWarmPrompt: '.' }), { now: () => NOW });
     await warmer.tick();
     expect(sent).toEqual(['.']);
-    expect(KEEP_WARM_PROMPT).toBe('{Esc}heartbeat');
+    expect(KEEP_WARM_PROMPT).toBe(
+      '{Esc}heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+        'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.',
+    );
   });
 
   it('does nothing inside the window, while busy, frozen, or without keep-warm', async () => {

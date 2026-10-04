@@ -466,19 +466,34 @@ class HelmClient(
             return false
         }
         control.snapshotRequested(lines)
+        return readTerminal(sessionId, lines, SNAPSHOT_MODE)
+    }
+
+    /**
+     * Keep the rendered-screen request for current desktops. Older desktops
+     * reject `screen`, so retry only that known compatibility error with their
+     * cleaned text tail; the repository accepts either response shape.
+     */
+    private fun readTerminal(sessionId: String, lines: Int, mode: String): Boolean {
         val params = linkedMapOf<String, Any>(
             "sessionId" to sessionId,
             // A NUMBER on the wire. The desktop reads it with a typeof check and
             // silently ignores a quoted one, which would answer the default tail
             // while this screen said otherwise.
             "lines" to lines,
-            "mode" to SNAPSHOT_MODE,
+            "mode" to mode,
             "stripBlankLines" to false,
         )
         val issued = call(METHOD_READ_TERMINAL, params) { outcome ->
             when (outcome) {
                 is Outcome.Ok -> control.snapshotArrived(outcome.result, lines)
-                is Outcome.Failed -> control.snapshotFailed(outcome.message)
+                is Outcome.Failed -> {
+                    if (mode == SNAPSHOT_MODE && outcome.message.contains(LEGACY_SCREEN_MODE_ERROR)) {
+                        readTerminal(sessionId, lines, LEGACY_SNAPSHOT_MODE)
+                    } else {
+                        control.snapshotFailed(outcome.message)
+                    }
+                }
             }
         }
         return issued
@@ -2199,6 +2214,8 @@ class HelmClient(
 
         /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
         private const val SNAPSHOT_MODE = "screen"
+        private const val LEGACY_SNAPSHOT_MODE = "stripped"
+        private const val LEGACY_SCREEN_MODE_ERROR = "mode must be one of raw, stripped, or both"
 
         /** Comfortably more than a screen can issue before the first answers. */
         const val MAX_PENDING = 32

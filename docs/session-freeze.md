@@ -60,8 +60,10 @@ and Quick Compact thaws it first, since it must type `/clear`.
 
 The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarmUntil` (persisted)
 8 hours ahead. `KeepWarmer` then sends the CLI type's `keepWarmPrompt`
-(sequence syntax, default `{Esc}heartbeat`) **10 s before its short cache
-lapses** (`cacheWarnMinutes` − 10 s; 4:50 for 5 min), so the next real prompt
+(sequence syntax, default `{Esc}heartbeat` plus a one-time reminder near 200k
+tokens to suggest Quick Compact and a suggestion to check in-flight worker
+sessions) **10 s before its short cache lapses** (`cacheWarnMinutes` − 10 s;
+4:50 for 5 min), so the next real prompt
 still hits the cheap cache. Each ping costs one short turn, which is why it is
 opt-in and lapses on its own. It skips a busy session (already warming itself)
 and a frozen one.

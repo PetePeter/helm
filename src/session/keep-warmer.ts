@@ -14,9 +14,11 @@ export function keepWarmAfterMs(t: StalenessThresholds | null | undefined): numb
 
 /** How long one "Keep warm" switch-on lasts before it turns itself off. */
 export const KEEP_WARM_DEFAULT_MS = 8 * 3_600_000;
-/** Default ping: Esc clears any half-typed input, then the smallest prompt that
- *  makes the CLI re-read its context (which renews the cache). Per CLI: keepWarmPrompt. */
-export const KEEP_WARM_PROMPT = '{Esc}heartbeat';
+/** Default ping: Esc clears half-typed input, then renews the cache and gives
+ *  short housekeeping guidance. Per CLI: keepWarmPrompt. */
+export const KEEP_WARM_PROMPT =
+  '{Esc}heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+  'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.';
 
 /** The CLI-type settings the warmer reads. */
 export type KeepWarmConfig = StalenessThresholds & { keepWarmPrompt?: string };

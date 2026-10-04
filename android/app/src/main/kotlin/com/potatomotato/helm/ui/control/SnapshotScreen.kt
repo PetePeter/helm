@@ -44,8 +44,8 @@ import com.potatomotato.helm.ui.theme.HelmType
  * user away from the desk wants a look, not a feed. The line count is chosen
  * BEFORE the pull, so the cost is decided by the person paying it.
  *
- * The text arrives already cleaned: the phone asks for the `stripped` tail and
- * has no ANSI parser of its own to drift from the desktop's.
+ * The text arrives already rendered or cleaned by the desktop. Older desktops
+ * provide the `stripped` tail; this app has no ANSI parser of its own to drift.
  *
  * [requestedLines] is the repository's persisted count — the last ask, not the
  * current [Snapshot]. Deriving the chip and the refresh from the snapshot state
