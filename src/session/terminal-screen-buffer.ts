@@ -1,5 +1,11 @@
-import { Terminal } from '@xterm/headless';
+// @xterm/headless is CommonJS and main is an unbundled ESM import of it, so a
+// named import fails at load time under Node — only the default export works.
+import xtermHeadless from '@xterm/headless';
+import type { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { logger } from '../utils/logger.js';
+
+const { Terminal } = xtermHeadless;
+type Terminal = HeadlessTerminal;
 
 interface TerminalSize {
   cols: number;
@@ -15,6 +21,8 @@ export class TerminalScreenBuffer {
   attach(sessionId: string, size: TerminalSize): void {
     this.clear(sessionId);
     this.terminals.set(sessionId, new Terminal({
+      // Reading terminal.buffer is an xterm proposed API; screen snapshots need it.
+      allowProposedApi: true,
       cols: Math.max(1, size.cols),
       rows: Math.max(1, size.rows),
       scrollback: MAX_SCROLLBACK,

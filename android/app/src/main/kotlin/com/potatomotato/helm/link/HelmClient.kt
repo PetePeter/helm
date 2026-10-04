@@ -470,9 +470,9 @@ class HelmClient(
     }
 
     /**
-     * Keep the rendered-screen request for current desktops. Older desktops
-     * reject `screen`, so retry only that known compatibility error with their
-     * cleaned text tail; the repository accepts either response shape.
+     * Prefer the rendered screen. Older desktops can reject `screen`, and
+     * desktops whose xterm buffer API is not enabled cannot render it, so retry
+     * those known compatibility failures with their cleaned text tail.
      */
     private fun readTerminal(sessionId: String, lines: Int, mode: String): Boolean {
         val params = linkedMapOf<String, Any>(
@@ -488,7 +488,11 @@ class HelmClient(
             when (outcome) {
                 is Outcome.Ok -> control.snapshotArrived(outcome.result, lines)
                 is Outcome.Failed -> {
-                    if (mode == SNAPSHOT_MODE && outcome.message.contains(LEGACY_SCREEN_MODE_ERROR)) {
+                    if (mode == SNAPSHOT_MODE && (
+                            outcome.message.contains(LEGACY_SCREEN_MODE_ERROR) ||
+                                outcome.message.contains(PROPOSED_SCREEN_API_ERROR)
+                            )
+                    ) {
                         readTerminal(sessionId, lines, LEGACY_SNAPSHOT_MODE)
                     } else {
                         control.snapshotFailed(outcome.message)
@@ -2216,6 +2220,8 @@ class HelmClient(
         private const val SNAPSHOT_MODE = "screen"
         private const val LEGACY_SNAPSHOT_MODE = "stripped"
         private const val LEGACY_SCREEN_MODE_ERROR = "mode must be one of raw, stripped, or both"
+        private const val PROPOSED_SCREEN_API_ERROR =
+            "You must set the allowProposedApi option to true to use proposed API"
 
         /** Comfortably more than a screen can issue before the first answers. */
         const val MAX_PENDING = 32
