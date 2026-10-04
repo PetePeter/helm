@@ -5,7 +5,7 @@ import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
 import type { PtyManager } from '../session/pty-manager.js';
-import type { TerminalOutputMode } from '../session/terminal-output-buffer.js';
+import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
 import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanTask, PlanType } from '../types/plan.js';
 import { nextCheckAt } from '../session/operator-tasks.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
@@ -107,6 +107,8 @@ export interface SessionSummary {
   /** Human label for cliType. Use this in anything a person reads. */
   cliTypeName: string;
   workingDir?: string;
+  /** Current local git branch; omitted for main/master and non-repositories. */
+  gitBranch?: string;
   projectId?: string;
   projectPath?: string;
   state?: string;
@@ -204,6 +206,7 @@ export interface SessionTerminalTailResponse {
   lastOutputAt?: number;
   raw?: string[];
   stripped?: string[];
+  screen?: string[];
 }
 
 export interface SessionInfoResponse {
@@ -743,6 +746,10 @@ export class HelmControlService extends EventEmitter {
   /** Move 3 of a phone SHARE: verify, write to the inbox, add the draft. */
   commitShareUpload(deviceId: string, uploadId: string, draft = true): import('../mobile/mobile-artifact-upload.js').ShareReceipt {
     return this.requireArtifactUploadService().commitShare(deviceId, uploadId, draft);
+  }
+
+  cancelShareUpload(deviceId: string, uploadId: string): import('../mobile/mobile-artifact-upload.js').ShareCancelResult {
+    return this.requireArtifactUploadService().cancelShare(deviceId, uploadId);
   }
 
   private requireArtifactUploadService(): import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService {
@@ -1606,7 +1613,7 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.setAiagentState(sessionRef, state);
   }
 
-  readSessionTerminal(sessionRef: string, requestedLines?: number, mode?: TerminalOutputMode, stripBlankLines?: boolean) {
+  readSessionTerminal(sessionRef: string, requestedLines?: number, mode?: TerminalReadMode, stripBlankLines?: boolean) {
     return this.sessionService.readSessionTerminal(sessionRef, requestedLines, mode, stripBlankLines);
   }
 

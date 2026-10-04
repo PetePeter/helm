@@ -39,8 +39,12 @@ import com.potatomotato.helm.wire.MobileEnvelope
 import com.potatomotato.helm.data.ArtifactRules
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -156,9 +160,12 @@ class HelmClient(
     var stageAttachment: suspend (source: String, displayName: String, mimeType: String?) -> StagedAttachment? =
         { _, _, _ -> null }
 
-    /** Outstanding calls, oldest first, each with a deadline that owns its cleanup. */
+    /** Outstanding calls, oldest first, with optional deadlines that own their cleanup. */
     private val pending = LinkedHashMap<String, PendingCall>()
     private var sequence = 0L
+    private var shareSequence = 0L
+    private val shareLock = Any()
+    @Volatile private var activeShare: ActiveShare? = null
     private var sessionRefreshInFlight = false
     private var sessionRefreshQueued = false
 
@@ -187,7 +194,7 @@ class HelmClient(
 
     private data class PendingCall(
         val onOutcome: (Outcome) -> Unit,
-        val deadline: Cancellable,
+        val deadline: Cancellable?,
     )
 
     /** A desktop's answer to a slot-open: where to send the bytes and how big a slice may be. */
@@ -196,6 +203,18 @@ class HelmClient(
         val maxSliceBytes: Long,
         val total: Long,
     )
+
+    private class ActiveShare(
+        val attemptId: Long,
+        val sessionName: String,
+        val onLanded: ((String) -> Unit)?,
+    ) {
+        var offer: UploadOffer? = null
+        var job: Job? = null
+        var waitPrompt: Cancellable? = null
+        var cancelRequested = false
+        var cancelRequestPending = false
+    }
 
     /** How a call ended. A denial and a dead link are both [Failed] — by design. */
     sealed interface Outcome {
@@ -438,8 +457,8 @@ class HelmClient(
      * [MAX_SNAPSHOT_LINES], and asking for more would spend the link's budget on
      * text that does not exist.
      *
-     * The tail is requested `stripped`, so the ANSI cleaning is the desktop's own
-     * and this app never grows a second escape-code parser.
+     * The desktop returns xterm's rendered screen, so this app never grows a
+     * second escape-code parser or treats cursor updates as printed text.
      */
     fun readTerminal(sessionId: String, lines: Int): Boolean {
         if (lines !in 1..MAX_SNAPSHOT_LINES) {
@@ -454,7 +473,7 @@ class HelmClient(
             // while this screen said otherwise.
             "lines" to lines,
             "mode" to SNAPSHOT_MODE,
-            "stripBlankLines" to true,
+            "stripBlankLines" to false,
         )
         val issued = call(METHOD_READ_TERMINAL, params) { outcome ->
             when (outcome) {
@@ -823,7 +842,15 @@ class HelmClient(
         staged: StagedAttachment,
         onLanded: ((path: String) -> Unit)? = null,
     ): Boolean {
-        if (!shares.start(staged.sizeBytes)) return false
+        val attemptId = synchronized(shareLock) { ++shareSequence }
+        if (!shares.start(attemptId, staged.sizeBytes)) return false
+        val active = ActiveShare(attemptId, sessionName, onLanded)
+        synchronized(shareLock) {
+            activeShare = active
+            active.waitPrompt = scheduler.schedule(SHARE_WAIT_PROMPT_MS) {
+                shares.askToContinue(attemptId)
+            }
+        }
         val params = linkedMapOf<String, Any>(
             "sessionId" to sessionId,
             "filename" to staged.filename,
@@ -831,46 +858,144 @@ class HelmClient(
             "sha256" to staged.sha256,
         )
         staged.mimeType?.takeIf { it.isNotBlank() }?.let { params["contentType"] = it }
-        val issued = call(METHOD_SESSION_SHARE_FILE_ADD, params) { outcome ->
+        val issued = call(METHOD_SESSION_SHARE_FILE_ADD, params, requestDeadlineMs = null) { outcome ->
             when (outcome) {
                 is Outcome.Ok -> {
                     val offer = uploadOffer(outcome.result)
                     if (offer == null) {
-                        shares.failed(UNREADABLE_UPLOAD_OFFER)
+                        failShare(active, UNREADABLE_UPLOAD_OFFER)
                     } else {
-                        uploadScope.launch { streamShare(sessionName, staged, offer, onLanded) }
+                        val shouldCancel = synchronized(shareLock) {
+                            if (activeShare !== active) return@call
+                            active.offer = offer
+                            active.cancelRequested
+                        }
+                        if (shouldCancel) {
+                            cancelRemoteShare(active, offer)
+                        } else {
+                            val job = uploadScope.launch { streamShare(active, staged, offer) }
+                            synchronized(shareLock) {
+                                if (activeShare === active && !active.cancelRequested) active.job = job
+                                else job.cancel()
+                            }
+                        }
                     }
                 }
-                is Outcome.Failed -> shares.failed(outcome.message)
+                is Outcome.Failed -> failShare(active, outcome.message)
             }
         }
-        if (!issued) shares.failed(NOT_LINKED)
+        if (!issued) failShare(active, NOT_LINKED)
         return issued
     }
 
     private suspend fun streamShare(
-        sessionName: String,
+        active: ActiveShare,
         staged: StagedAttachment,
         offer: UploadOffer,
-        onLanded: ((String) -> Unit)?,
     ) {
-        val failure = pumpSlices(staged, offer, shares::progress)
-        if (failure != null) {
-            shares.failed(failure)
-            return
-        }
-        val params = linkedMapOf<String, Any>("uploadId" to offer.uploadId)
-        if (onLanded != null) params["draft"] = false
-        val issued = call(METHOD_SESSION_SHARE_FILE_COMMIT, params) { outcome ->
-            when (outcome) {
-                is Outcome.Ok -> {
-                    shares.done(sessionName)
-                    ((outcome.result as? JSONObject)?.opt("path") as? String)?.let { onLanded?.invoke(it) }
+        try {
+            val failure = pumpSlices(staged, offer) { sent -> shares.progress(active.attemptId, sent) }
+            if (failure != null) {
+                cancelRemoteShare(active, offer)
+                failShare(active, failure)
+                return
+            }
+            val params = linkedMapOf<String, Any>("uploadId" to offer.uploadId)
+            if (active.onLanded != null) params["draft"] = false
+            val issued = call(
+                METHOD_SESSION_SHARE_FILE_COMMIT,
+                params,
+                requestDeadlineMs = null,
+            ) { outcome ->
+                when (outcome) {
+                    is Outcome.Ok -> finishShareSuccess(active, outcome.result)
+                    is Outcome.Failed -> failShare(active, outcome.message)
                 }
-                is Outcome.Failed -> shares.failed(outcome.message)
+            }
+            if (!issued) failShare(active, NOT_LINKED)
+        } catch (cancelled: CancellationException) {
+            val requested = synchronized(shareLock) { active.cancelRequested }
+            if (!requested) {
+                cancelRemoteShare(active, offer)
+                failShare(active, LINK_LOST)
+            }
+        } catch (failure: Exception) {
+            cancelRemoteShare(active, offer)
+            failShare(active, failure.message ?: SHARE_FAILED)
+        }
+    }
+
+    /** Continue is UI-only: the same upload request keeps running. */
+    fun continueShareWait(attemptId: Long) {
+        shares.continueWaiting(attemptId)
+    }
+
+    /** Stop the local pump and ask Helm to drop the slot (or report a racing commit). */
+    fun cancelShare(attemptId: Long) {
+        val active = synchronized(shareLock) {
+            activeShare?.takeIf { it.attemptId == attemptId && !it.cancelRequested }?.also {
+                it.cancelRequested = true
+                it.job?.cancel()
+                shares.cancelling(attemptId)
+            }
+        } ?: return
+        active.offer?.let { cancelRemoteShare(active, it) }
+    }
+
+    private fun cancelRemoteShare(active: ActiveShare, offer: UploadOffer) {
+        val issue = synchronized(shareLock) {
+            if (activeShare !== active || active.cancelRequestPending) false
+            else {
+                active.cancelRequestPending = true
+                true
             }
         }
-        if (!issued) shares.failed(NOT_LINKED)
+        if (!issue) return
+
+        call(
+            METHOD_SESSION_SHARE_FILE_CANCEL,
+            linkedMapOf("uploadId" to offer.uploadId),
+            requestDeadlineMs = null,
+        ) { outcome ->
+            when (outcome) {
+                is Outcome.Failed -> failShare(active, outcome.message)
+                is Outcome.Ok -> {
+                    val result = json(outcome.result)
+                    val receipt = result?.optJSONObject("receipt")
+                    if (result?.optBoolean("committed") == true && receipt != null) {
+                        finishShareSuccess(active, receipt)
+                    } else {
+                        finishShareCancelled(active)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun finishShareSuccess(active: ActiveShare, result: Any?) {
+        val path = json(result)?.opt("path") as? String
+        shares.done(active.attemptId, active.sessionName)
+        path?.let { active.onLanded?.invoke(it) }
+        retireShare(active)
+    }
+
+    private fun finishShareCancelled(active: ActiveShare) {
+        shares.cancelled(active.attemptId)
+        retireShare(active)
+    }
+
+    private fun failShare(active: ActiveShare, message: String) {
+        shares.failed(active.attemptId, message)
+        retireShare(active)
+    }
+
+    private fun retireShare(active: ActiveShare) {
+        synchronized(shareLock) {
+            if (activeShare === active) {
+                active.waitPrompt?.cancel()
+                activeShare = null
+            }
+        }
     }
 
     /**
@@ -1691,7 +1816,7 @@ class HelmClient(
             HelmLog.w(HelmLog.CLIENT, "ORPHANED answer for call $id; no call is waiting on it")
             return
         }
-        waiting.deadline.cancel()
+        waiting.deadline?.cancel()
         HelmLog.d(HelmLog.CLIENT) {
             "call $id settled as ${if (outcome is Outcome.Ok) "ok" else "failed"}; ${pending.size} still pending"
         }
@@ -1707,7 +1832,7 @@ class HelmClient(
         }
         pending.clear()
         abandoned.forEach {
-            it.deadline.cancel()
+            it.deadline?.cancel()
             it.onOutcome(Outcome.Failed(LINK_LOST))
         }
         sessionRefreshInFlight = false
@@ -1839,6 +1964,7 @@ class HelmClient(
         method: String,
         params: Map<String, Any>? = null,
         id: String? = null,
+        requestDeadlineMs: Long? = REQUEST_DEADLINE_MS,
         onOutcome: (Outcome) -> Unit,
     ): Boolean {
         val callId = id ?: nextCallId()
@@ -1856,9 +1982,8 @@ class HelmClient(
             return false
         }
         evictOldestIfFull()
-        lateinit var deadline: Cancellable
-        deadline = scheduler.schedule(REQUEST_DEADLINE_MS) {
-            settle(callId, Outcome.Failed(REQUEST_TIMED_OUT))
+        val deadline = requestDeadlineMs?.let { timeout ->
+            scheduler.schedule(timeout) { settle(callId, Outcome.Failed(REQUEST_TIMED_OUT)) }
         }
         pending[callId] = PendingCall(onOutcome, deadline)
         return true
@@ -1876,7 +2001,7 @@ class HelmClient(
         while (pending.size >= MAX_PENDING) {
             val oldest = pending.keys.first()
             pending.remove(oldest)?.let {
-                it.deadline.cancel()
+                it.deadline?.cancel()
                 it.onOutcome(Outcome.Failed(ABANDONED))
             }
         }
@@ -1958,12 +2083,9 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"
 
         /**
-         * The upload half (protocol 4). `add` opens a slot and answers with the
-         * slice budget; the slices then travel as raw blob records answered by
-         * nothing; `commit` is the one moment the desktop says whether the file
-         * exists. There is deliberately no abort — an abandoned slot evicts
-         * itself on the desktop, which is one less call to make and one less
-         * way to be wrong about a slot that already died.
+         * The upload half (protocol 4). `add` opens a slot; raw slices fill it;
+         * `commit` reports success. Share uploads also have an explicit cancel
+         * so the phone can stop the transfer and release an unfinished slot.
          */
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
@@ -1971,6 +2093,7 @@ class HelmClient(
         /** Share-to-Helm: the same slot protocol, landing in a session's draft. */
         private const val METHOD_SESSION_SHARE_FILE_ADD = "session_share_file_add"
         private const val METHOD_SESSION_SHARE_FILE_COMMIT = "session_share_file_commit"
+        private const val METHOD_SESSION_SHARE_FILE_CANCEL = "session_share_file_cancel"
 
         /** The local ceiling on one upload slice, inside this link's frame cap. */
         private const val MAX_UPLOAD_SLICE_BYTES = 64 * 1024
@@ -1988,6 +2111,9 @@ class HelmClient(
          */
         private const val FLUSH_POLL_MS = 100L
 
+        /** Ask whether to keep waiting once the upload has run for a minute. */
+        private const val SHARE_WAIT_PROMPT_MS = 60_000L
+
         /** The staged copy vanished before its upload could read it. */
         private const val STAGE_GONE = "The staged file is no longer readable — attach it again"
 
@@ -1996,6 +2122,7 @@ class HelmClient(
 
         /** A slot-open answer of a shape this app cannot read. */
         private const val UNREADABLE_UPLOAD_OFFER = "Helm answered with an upload slot this app could not read"
+        private const val SHARE_FAILED = "The file share failed"
 
         /**
          * Helm's planning surface: reads and, since P-0812, single-record writes
@@ -2071,7 +2198,7 @@ class HelmClient(
         private const val UNREADABLE_PROJECTS = "Helm answered with a project list this app could not read"
 
         /** Cleaned server-side; the phone has no ANSI parser and must not grow one. */
-        private const val SNAPSHOT_MODE = "stripped"
+        private const val SNAPSHOT_MODE = "screen"
 
         /** Comfortably more than a screen can issue before the first answers. */
         const val MAX_PENDING = 32

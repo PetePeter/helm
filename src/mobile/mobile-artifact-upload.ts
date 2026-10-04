@@ -55,6 +55,7 @@ export const UPLOAD_SLOT_TTL_MS = 2 * 60 * 1000;
 
 /** Open slots per device. One upload at a time is the app's own flow; three is slack. */
 export const MAX_ACTIVE_UPLOAD_SLOTS = 3;
+const MAX_COMMITTED_SHARE_RECEIPTS = 128;
 
 /**
  * Room in the frame for the blob record AROUND its raw slice: the marker, the
@@ -96,6 +97,11 @@ export interface ShareReceipt {
   /** Absent when the commit asked for no draft (a chat attachment). */
   draftId?: string;
 }
+
+export type ShareCancelResult =
+  | { cancelled: true }
+  | { cancelled: false; committed: true; receipt: ShareReceipt }
+  | { cancelled: false; committed: false };
 
 /** The sink a committed share is handed to — `MobileShareInbox` in production. */
 export interface ShareSink {
@@ -251,6 +257,8 @@ export interface ArtifactUploadDeps {
  */
 export class MobileArtifactUploadService {
   private readonly entries = new Map<string, SlotEntry>();
+  /** Bounded receipts let a cancel racing a delayed commit answer truthfully. */
+  private readonly committedShares = new Map<string, { owner: string; receipt: ShareReceipt }>();
   private readonly now: () => number;
   private readonly ttlMs: number;
 
@@ -330,10 +338,31 @@ export class MobileArtifactUploadService {
    * names it.
    */
   commitShare(deviceId: string, uploadId: string, draft = true): ShareReceipt {
+    const committed = this.committedShares.get(uploadId);
+    if (committed?.owner === deviceId) return { ...committed.receipt };
+
     const { target, input, whole } = this.verified(deviceId, uploadId, 'share');
     const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole, draft);
+    this.committedShares.set(uploadId, { owner: deviceId, receipt: { ...receipt } });
+    while (this.committedShares.size > MAX_COMMITTED_SHARE_RECEIPTS) {
+      this.committedShares.delete(this.committedShares.keys().next().value!);
+    }
     logger.info(`[mobile-artifact-upload] shared file landed for session ${target.sessionId}`);
     return receipt;
+  }
+
+  /** Cancel an unfinished share, or return its receipt if commit already won the race. */
+  cancelShare(deviceId: string, uploadId: string): ShareCancelResult {
+    const committed = this.committedShares.get(uploadId);
+    if (committed?.owner === deviceId) {
+      return { cancelled: false, committed: true, receipt: { ...committed.receipt } };
+    }
+    const entry = this.entries.get(uploadId);
+    if (!entry || entry.owner !== deviceId || entry.target.kind !== 'share') {
+      return { cancelled: false, committed: false };
+    }
+    this.drop(deviceId, uploadId);
+    return { cancelled: true };
   }
 
   /**

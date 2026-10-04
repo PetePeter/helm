@@ -17,7 +17,6 @@ import {
   asPlanTypeOrNull,
   asContextBindingTargetType,
   asAiagentState,
-  asTerminalOutputMode,
   requireResult,
   requireBooleanResult,
   normalizeStructuredContent,

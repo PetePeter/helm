@@ -286,8 +286,8 @@ fun ChatScreen(
                     }
                 }
             },
-            onSend = {
-                val text = draft.text.trim()
+            onSend = { submitted ->
+                val text = submitted.trim()
                 if (text.isNotEmpty()) {
                     onSend(text)
                     draft = TextFieldValue()
@@ -692,10 +692,10 @@ private fun Composer(
     onTerminal: () -> Unit,
     onCall: (() -> Unit)?,
     onAttach: (() -> Unit)?,
-    onSend: () -> Unit,
+    onSend: (String) -> Unit,
 ) {
     Hairline()
-    val dictation = rememberDictation(draft = draft, onDraft = onDraft)
+    val dictation = rememberDictation(draft = draft, onDraft = onDraft, onSubmit = onSend)
     if (dictation.message != null) ComposerNote(dictation.message)
 
     Row(
@@ -725,7 +725,7 @@ private fun Composer(
         ) {
             ComposerTerminal(onTerminal)
             ComposerVoice(dictation = dictation, onCall = onCall)
-            ComposerSend(hasText = draft.text.isNotBlank(), onSend = onSend, onAttach = onAttach)
+            ComposerSend(hasText = draft.text.isNotBlank(), onSend = { onSend(draft.text) }, onAttach = onAttach)
         }
     }
 }

@@ -13,9 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * is a callback surface with no useful state of its own; the state that the
  * screen needs lives here.
  *
- * Nothing in here sends anything, and nothing in here edits: the words land in
- * the chat composer's own draft, which is where the user corrects them and where
- * the decision to send stays theirs.
+ * Nothing in here edits the chat draft. On release, the best transcript already
+ * available is captured immediately; the composer decides what to submit.
  */
 class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener {
     private val _state = MutableStateFlow(VoiceState())
@@ -24,8 +23,8 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
     /**
      * The mic button's finger. A pause ends the platform's UTTERANCE, not the
      * dictation: while the finger is down, a final or a silence error restarts
-     * listening and the words keep accumulating. Only releasing the button
-     * (stop) decides the dictation is over.
+     * listening and the words keep accumulating. Releasing captures the latest
+     * partial immediately instead of waiting for the platform's final callback.
      */
     private var held = false
 
@@ -51,10 +50,14 @@ class SpeechController(private val engine: SpeechEngine) : SpeechEngine.Listener
         engine.start(this)
     }
 
-    /** The finger came up. Ask for the final result; it arrives as [onFinal]. */
+    /** The finger came up. Keep the best transcript now; a final callback is too late to wait for. */
     fun stop() {
         if (_state.value.phase != VoicePhase.Listening) return
         held = false
+        val transcript = join(committed, pending).trim()
+        // Snapshot before the asynchronous final arrives. The screen submits
+        // this text on release; a later callback is ignored in Captured phase.
+        _state.value = VoiceState(phase = VoicePhase.Captured, transcript = transcript)
         engine.stop()
     }
 

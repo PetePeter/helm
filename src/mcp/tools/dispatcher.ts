@@ -28,7 +28,7 @@ import {
   asString,
   asStringArray,
   asStringValue,
-  asTerminalOutputMode,
+  asTerminalReadMode,
   requireBooleanResult,
   requireResult,
 } from './validation.js';
@@ -652,7 +652,7 @@ export async function callMcpTool(
         return service.readSessionTerminal(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
           typeof args.lines === 'number' ? args.lines : undefined,
-          asTerminalOutputMode(args.mode),
+          asTerminalReadMode(args.mode),
           typeof args.stripBlankLines === 'boolean' ? args.stripBlankLines : undefined,
         );
       case 'session_plan_claim':
@@ -1012,6 +1012,13 @@ export async function callMcpTool(
           throw new Error('session_share_file_commit is the paired-phone upload surface');
         }
         return service.commitShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'), args.draft !== false);
+      }
+      case 'session_share_file_cancel': {
+        const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);
+        if (deviceId === undefined) {
+          throw new Error('session_share_file_cancel is the paired-phone upload surface');
+        }
+        return service.cancelShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'));
       }
       case 'memory_list': {
         const sessionId = requireCallerSession(authContext, 'memory_list');

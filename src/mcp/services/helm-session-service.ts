@@ -4,12 +4,13 @@ import { logger } from '../../utils/logger.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
-import type { TerminalOutputMode } from '../../session/terminal-output-buffer.js';
+import type { TerminalReadMode, TerminalTail } from '../../session/terminal-output-buffer.js';
 import type { SessionInfo } from '../../types/session.js';
 import type { SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { HelmSessionPlanService } from './helm-session-plan-service.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
+import { GitBranchResolver } from '../../session/git-branch-resolver.js';
 import { resolveWorkingDirectory } from './working-dir-gate.js';
 import type { ProjectStore } from '../../session/project-store.js';
 import type { RuntimeGroupManager } from '../../session/runtime-group-manager.js';
@@ -25,6 +26,7 @@ import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
  */
 export class HelmSessionService {
   readonly planService: HelmSessionPlanService;
+  private readonly gitBranchResolver = new GitBranchResolver();
   /** Runtime session groups (optional overlay on top of project grouping). */
   private runtimeGroupManager: RuntimeGroupManager | null = null;
 
@@ -290,12 +292,12 @@ export class HelmSessionService {
     return { ok: true };
   }
 
-  readSessionTerminal(
+  async readSessionTerminal(
     sessionRef: string,
     requestedLines = 50,
-    mode: TerminalOutputMode = 'both',
+    mode: TerminalReadMode = 'both',
     stripBlankLines = false,
-  ): SessionTerminalTailResponse {
+  ): Promise<SessionTerminalTailResponse> {
     const session = this.findSession(sessionRef);
     if (!session) {
       throw new Error(`Session not found: ${sessionRef}`);
@@ -304,7 +306,12 @@ export class HelmSessionService {
       throw new Error('lines must be a positive integer');
     }
 
-    const tail = this.ptyManager.getTerminalTail(session.id, requestedLines, mode, stripBlankLines);
+    const screen = mode === 'screen'
+      ? await this.ptyManager.getTerminalScreenTail(session.id, requestedLines)
+      : undefined;
+    const tail: TerminalTail = mode === 'screen'
+      ? {}
+      : this.ptyManager.getTerminalTail(session.id, requestedLines, mode, stripBlankLines);
     const rawLength = tail.raw?.length ?? 0;
     const strippedLength = tail.stripped?.length ?? 0;
 
@@ -314,11 +321,12 @@ export class HelmSessionService {
       cliType: session.cliType,
       cliTypeName: this.configLoader.getCliTypeLabel(session.cliType),
       workingDir: session.workingDir,
-      returnedLines: Math.max(rawLength, strippedLength),
+      returnedLines: Math.max(rawLength, strippedLength, screen?.length ?? 0),
       ptyRunning: this.ptyManager.has(session.id),
       ...(tail.lastOutputAt !== undefined ? { lastOutputAt: tail.lastOutputAt } : {}),
       ...(tail.raw ? { raw: tail.raw } : {}),
       ...(tail.stripped ? { stripped: tail.stripped } : {}),
+      ...(screen ? { screen } : {}),
     };
   }
 
@@ -332,12 +340,14 @@ export class HelmSessionService {
     const isActive = session.activityLevel === 'active';
     const lastActiveMs = isActive ? Date.now() : (session.lastActiveAt ?? session.createdAt);
     const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
+    const gitBranch = session.remote ? undefined : this.gitBranchResolver.get(session.workingDir);
     return {
       id: session.id,
       name: session.name,
       cliType: session.cliType,
       cliTypeName: this.configLoader.getCliTypeLabel(session.cliType),
       workingDir: session.workingDir,
+      ...(gitBranch ? { gitBranch } : {}),
       projectId: session.projectId,
       projectPath: session.projectPath,
       state: session.state,

@@ -63,6 +63,7 @@ class VoiceCallService : Service() {
         private const val ACTION_PTT_KEY = "com.potatomotato.helm.call.PTT_KEY"
         private const val ACTION_ROUTE = "com.potatomotato.helm.call.ROUTE"
         private const val ACTION_TRANSFER = "com.potatomotato.helm.call.TRANSFER"
+        private const val ACTION_RETARGET = "com.potatomotato.helm.call.RETARGET"
         private const val EXTRA_TARGET = "target"
         private const val EXTRA_VALUE = "value"
         private const val EXTRA_OPENING = "opening"
@@ -99,20 +100,27 @@ class VoiceCallService : Service() {
             context.startService(command(context, ACTION_ROUTE).putExtra(EXTRA_VALUE, route.name))
 
         /**
-         * Hand the live call from [from] to [to], speaking [line]. Only the
-         * session holding the call can move it. Checked here so no service is
+         * Hand the live call from [from] to [to], optionally speaking [line].
+         * Only the session holding the call can move it. Checked here so no service is
          * started for a call that is not there, and again in the service, which
          * owns the target.
          */
-        fun transfer(context: Context, from: String?, to: String, line: String) {
+        fun transfer(context: Context, from: String?, to: String, line: String? = null) {
             if (from == null || _call.value?.targetId != from) {
                 HelmLog.i(HelmLog.UI, "call transfer ignored: not from the live call's session")
                 return
             }
-            context.startService(
-                command(context, ACTION_TRANSFER)
-                    .putExtra(EXTRA_FROM, from).putExtra(EXTRA_TARGET, to).putExtra(EXTRA_OPENING, line),
-            )
+            val request = command(context, ACTION_TRANSFER)
+                .putExtra(EXTRA_FROM, from)
+                .putExtra(EXTRA_TARGET, to)
+            if (line != null) request.putExtra(EXTRA_OPENING, line)
+            context.startService(request)
+        }
+
+        /** Retarget the live call to the session currently on screen, without reconnecting Telecom. */
+        fun retarget(context: Context, to: String) {
+            if (_call.value == null) return
+            context.startService(command(context, ACTION_RETARGET).putExtra(EXTRA_TARGET, to))
         }
 
         private fun command(context: Context, action: String) =
@@ -212,6 +220,7 @@ class VoiceCallService : Service() {
                     retarget(to)
                     intent.getStringExtra(EXTRA_OPENING)?.let(call::onReply)
                 }
+            ACTION_RETARGET -> intent.getStringExtra(EXTRA_TARGET)?.let(::retarget)
         }
         // A killed call is not resumed behind the user's back.
         return START_NOT_STICKY

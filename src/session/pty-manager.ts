@@ -14,6 +14,7 @@ import {
 } from './delivery-context.js';
 import { BracketedPasteTracker } from './bracketed-paste-tracker.js';
 import { TerminalOutputBuffer, type TerminalOutputMode, type TerminalTail } from './terminal-output-buffer.js';
+import { TerminalScreenBuffer } from './terminal-screen-buffer.js';
 
 const esmRequire = createRequire(import.meta.url);
 
@@ -115,6 +116,7 @@ export class PtyManager extends EventEmitter {
   /** False for a session that may not receive stdin (frozen). Injected so PtyManager stays free of SessionManager. */
   private writeGate?: (sessionId: string) => boolean;
   private terminalOutputBuffer = new TerminalOutputBuffer();
+  private terminalScreenBuffer = new TerminalScreenBuffer();
   /** Main-process view of each CLI's DEC 2004 state, for sessions with no renderer. */
   private bracketedPaste = new BracketedPasteTracker();
   private writeCounts: Map<string, number> = new Map();
@@ -210,6 +212,7 @@ export class PtyManager extends EventEmitter {
   private register(sessionId: string, ptyProcess: PtyProcess, size: { cols: number; rows: number }): void {
     this.ptys.set(sessionId, ptyProcess);
     this.sizes.set(sessionId, { ...size });
+    this.terminalScreenBuffer.attach(sessionId, size);
     // Seed the quiet-window clock at spawn: a session that has never spoken
     // counts as busy from birth, not from the epoch — its first paint is
     // still ahead of it and a write landed now would be split by it.
@@ -227,6 +230,7 @@ export class PtyManager extends EventEmitter {
 
     ptyProcess.onData((data: string) => {
       this.terminalOutputBuffer.append(sessionId, data);
+      this.terminalScreenBuffer.append(sessionId, data);
       this.bracketedPaste.observe(sessionId, data);
       this.lastOutputAt.set(sessionId, Date.now());
       this.emit('data', sessionId, data);
@@ -235,6 +239,7 @@ export class PtyManager extends EventEmitter {
     ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
       this.ptys.delete(sessionId);
       this.terminalOutputBuffer.clear(sessionId);
+      this.terminalScreenBuffer.clear(sessionId);
       this.bracketedPaste.clear(sessionId);
       this.writeCounts.delete(sessionId);
       this.sizes.delete(sessionId);
@@ -366,6 +371,7 @@ export class PtyManager extends EventEmitter {
     try {
       pty.resize(cols, rows);
       this.sizes.set(sessionId, { cols, rows });
+      this.terminalScreenBuffer.resize(sessionId, { cols, rows });
     } catch (error) {
       logger.error(`[PTY] Resize failed for session=${sessionId}: ${error}`);
     }
@@ -409,6 +415,7 @@ export class PtyManager extends EventEmitter {
     }
     this.ptys.delete(sessionId);
     this.terminalOutputBuffer.clear(sessionId);
+    this.terminalScreenBuffer.clear(sessionId);
     this.bracketedPaste.clear(sessionId);
     this.writeCounts.delete(sessionId);
     this.sizes.delete(sessionId);
@@ -439,6 +446,7 @@ export class PtyManager extends EventEmitter {
     }
     this.ptys.clear();
     this.terminalOutputBuffer.clearAll();
+    this.terminalScreenBuffer.clearAll();
     this.bracketedPaste.clearAll();
     this.writeCounts.clear();
     this.sizes.clear();
@@ -463,6 +471,11 @@ export class PtyManager extends EventEmitter {
   /** Read recent terminal output captured from PTY stdout. */
   getTerminalTail(sessionId: string, lines: number, mode: TerminalOutputMode, stripBlankLines = false): TerminalTail {
     return this.terminalOutputBuffer.tail(sessionId, lines, mode, stripBlankLines);
+  }
+
+  /** Read the emulator's current screen and scrollback, after its PTY writes settle. */
+  getTerminalScreenTail(sessionId: string, lines: number): Promise<string[]> {
+    return this.terminalScreenBuffer.tail(sessionId, lines);
   }
 
 }

@@ -208,23 +208,23 @@ class ControlRepository {
     }
 
     /**
-     * Take a `session_read_terminal` result. A payload without a `stripped` tail
-     * is a failure rather than an empty screen: the phone asked for cleaned text
-     * and an empty list would read as "the session has printed nothing".
+     * Take a `session_read_terminal` result. A payload without a `screen` array
+     * is a failure rather than an empty screen: the phone asked for an emulator
+     * snapshot and an empty list would mean "the session has printed nothing".
      */
     fun snapshotArrived(result: Any?, requested: Int) {
-        val stripped = (result as? JSONObject)?.opt("stripped") as? JSONArray
-        if (stripped == null) {
+        val screen = (result as? JSONObject)?.opt("screen") as? JSONArray
+        if (screen == null) {
             WireShape.undecodable<Unit>(
                 "a session_read_terminal result",
-                "a JSON object with a `stripped` array",
+                "a JSON object with a `screen` array",
                 result,
             )
         }
-        _snapshot.value = if (stripped == null) {
+        _snapshot.value = if (screen == null) {
             Snapshot.Failed(UNREADABLE_TAIL)
         } else {
-            Snapshot.Lines((0 until stripped.length()).map { stripped.optString(it) }, requested)
+            Snapshot.Lines((0 until screen.length()).map { screen.optString(it) }, requested)
         }
     }
 

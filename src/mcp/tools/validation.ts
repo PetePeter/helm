@@ -113,10 +113,10 @@ export function asAiagentState(value: unknown, errorMessage?: string): 'planning
 }
 
 
-export function asTerminalOutputMode(value: unknown): 'raw' | 'stripped' | 'both' {
+export function asTerminalReadMode(value: unknown): 'raw' | 'stripped' | 'both' | 'screen' {
   if (value === undefined) return 'both';
-  if (value === 'raw' || value === 'stripped' || value === 'both') return value;
-  throw new Error('mode must be one of raw, stripped, or both');
+  if (value === 'raw' || value === 'stripped' || value === 'both' || value === 'screen') return value;
+  throw new Error('mode must be one of raw, stripped, both, or screen');
 }
 
 

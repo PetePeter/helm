@@ -288,7 +288,7 @@ export class MobileGate {
       const tools = MCP_TOOLS
         .filter(t => !HARD_DENY_TOOLS.has(t.name)
           && !isMobileUnreachableTool(t.name)
-          && this.deviceStore.isToolAllowed(deviceId, t.name))
+          && this.isToolAllowed(deviceId, t.name))
         .map(t => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema }));
       this.logOutcome(deviceId, method, 'ok');
       return { tools };
@@ -367,7 +367,7 @@ export class MobileGate {
 
     // 5. Per-device allow-list. Already deny-by-default for unknown, disabled and
     // empty-allow devices (MobileDeviceStore.isToolAllowed).
-    if (!this.deviceStore.isToolAllowed(deviceId, method)) {
+    if (!this.isToolAllowed(deviceId, method)) {
       return this.denied(deviceId, method);
     }
 
@@ -399,6 +399,13 @@ export class MobileGate {
    */
   private isDeviceDisabled(deviceId: string): boolean {
     return this.deviceStore.get(deviceId)?.enabled === false;
+  }
+
+  /** Upload cancellation inherits the share-open grant: it can only reduce upload access. */
+  private isToolAllowed(deviceId: string, method: string): boolean {
+    return this.deviceStore.isToolAllowed(deviceId, method)
+      || (method === 'session_share_file_cancel'
+        && this.deviceStore.isToolAllowed(deviceId, 'session_share_file_add'));
   }
 
   /** Consume a rate-limit token or throw. */

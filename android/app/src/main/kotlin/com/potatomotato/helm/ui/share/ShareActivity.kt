@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,6 +26,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.BlePermissions
 import com.potatomotato.helm.ble.HelmLink
 import com.potatomotato.helm.ble.HelmLinkService
@@ -44,6 +47,7 @@ import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.HelmRow
 import com.potatomotato.helm.ui.components.PrimaryButton
 import com.potatomotato.helm.ui.components.StateDot
+import com.potatomotato.helm.ui.share.ShareWaitDialog
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmTheme
@@ -207,8 +211,18 @@ private fun ShareScreen(
                 GhostButton(text = "Pick another session", onClick = client.shares::reset)
                 PrimaryButton(text = "Close", onClick = onClose)
             }
+            is ShareState.Cancelled -> Footer {
+                Text(text = stringResource(R.string.share_cancelled), style = MaterialTheme.typography.titleMedium, color = HelmColors.Txt)
+                PrimaryButton(text = "Done", onClick = onClose)
+            }
         }
     }
+    BackHandler(enabled = state is ShareState.Sending) { }
+    ShareWaitDialog(
+        state = state as? ShareState.Sending,
+        onContinue = client::continueShareWait,
+        onCancel = client::cancelShare,
+    )
 }
 
 @Composable

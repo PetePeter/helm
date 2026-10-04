@@ -111,6 +111,9 @@ import com.potatomotato.helm.ui.plans.PlanSpawn
 import com.potatomotato.helm.ui.sequences.SequenceDetail
 import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionListScreen
+import com.potatomotato.helm.ui.sessions.SessionRowText
+import com.potatomotato.helm.ui.sessions.SessionRows
+import com.potatomotato.helm.ui.share.ShareWaitDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -211,8 +214,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // never asked, and back is one tap away if they still mean it.
     var leaving by remember { mutableStateOf(false) }
     var where by rememberSaveable { mutableStateOf(Destination.Thread) }
-    // A call is a mode of a session's chat: it rings the session whose call
-    // button was pressed, and its controls replace that chat's composer.
+    // The call connection is process-scoped; the visible session is its current
+    // chat target, so changing sessions never tears down Telecom.
     val liveCall by VoiceCallService.call.collectAsState()
     val dial = rememberDialer()
     // Which of the open session's tabs is showing. Saveable for the same reason
@@ -298,6 +301,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // The Helm home tab shows the operator's thread without opening it, so it
     // counts as reading that thread too.
     val operator = remember(sessions, threads) { operatorSummary(sessions, threads) }
+    val callScreenTarget = openSessionId
+        ?: (operator as? OperatorSummary.On)?.id?.takeIf {
+            where == Destination.Thread && homeTab == HomeTab.Helm
+        }
+    LaunchedEffect(liveCall?.targetId, callScreenTarget) {
+        val call = liveCall ?: return@LaunchedEffect
+        val target = callScreenTarget ?: return@LaunchedEffect
+        if (call.targetId != target) VoiceCallService.retarget(context, target)
+    }
     val onScreenThread = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }
     ReportVisibility(client)
@@ -674,9 +686,17 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var chatAttachSession by remember { mutableStateOf<HelmSession?>(null) }
     val shareState by client.shares.state.collectAsState()
     LaunchedEffect(shareState) {
-        val failed = shareState as? ShareState.Failed ?: return@LaunchedEffect
-        if (chatAttachSession != null) Toast.makeText(context, failed.message, Toast.LENGTH_LONG).show()
-        chatAttachSession = null
+        when (val current = shareState) {
+            is ShareState.Failed -> if (chatAttachSession != null) {
+                Toast.makeText(context, current.message, Toast.LENGTH_LONG).show()
+                chatAttachSession = null
+            }
+            is ShareState.Cancelled -> if (chatAttachSession != null) {
+                Toast.makeText(context, R.string.share_cancelled, Toast.LENGTH_SHORT).show()
+                chatAttachSession = null
+            }
+            else -> Unit
+        }
     }
     val chatAttachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val insert = chatInsert
@@ -1291,6 +1311,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         sessionName = listOf(open.name, open.statusIcons(System.currentTimeMillis()))
                             .filter { it.isNotEmpty() }.joinToString("  "),
                         mission = open.mission,
+                        details = sessionHeaderDetails(open),
                         linkState = linkState,
                         tab = tab,
                         onSelectTab = { tab = it },
@@ -1482,6 +1503,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     onDismiss = { leaving = false },
                 )
             }
+            if (chatAttachSession != null) {
+                ShareWaitDialog(
+                    state = shareState as? ShareState.Sending,
+                    onContinue = client::continueShareWait,
+                    onCancel = client::cancelShare,
+                )
+            }
         }
     }
 }
@@ -1548,6 +1576,7 @@ private fun ExitDialog(onBackground: () -> Unit, onQuit: () -> Unit, onDismiss: 
 private fun SessionTabScaffold(
     sessionName: String,
     mission: String?,
+    details: String,
     linkState: LinkState,
     tab: SessionTab,
     onSelectTab: (SessionTab) -> Unit,
@@ -1556,10 +1585,46 @@ private fun SessionTabScaffold(
     body: @Composable () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        HelmAppBar(title = sessionName, subtitle = mission, linkState = linkState, onBack = onBack, onOverflow = onOverflow)
+        HelmAppBar(
+            title = sessionName,
+            subtitle = mission,
+            detailLine = details,
+            linkState = linkState,
+            onBack = onBack,
+            onOverflow = onOverflow,
+        )
         SessionTabs(selected = tab, onSelect = onSelectTab)
         Box(modifier = Modifier.weight(1f)) { body() }
     }
+}
+
+/** Reuse the session row's status and branch wording in the open-session header. */
+@Composable
+private fun sessionHeaderDetails(session: HelmSession): String {
+    val labels = SessionRowText.Labels(
+        needsDecision = stringResource(R.string.sessions_sub_needs_decision),
+        working = stringResource(R.string.sessions_sub_working),
+        waitingApproval = stringResource(R.string.sessions_sub_waiting),
+        idle = stringResource(R.string.sessions_sub_idle),
+        planning = stringResource(R.string.agent_planning),
+        implementing = stringResource(R.string.agent_implementing),
+        completed = stringResource(R.string.agent_completed),
+    )
+    val now = System.currentTimeMillis()
+    val status = SessionRowText.subLine(
+        activity = session.activity,
+        questionPending = session.questionPending,
+        aiagentState = session.aiagentState,
+        cliTypeName = session.cliTypeName,
+        age = SessionRowText.relativeTime(session.lastActiveAtEpochMs, now),
+        labels = labels,
+    )
+    return listOfNotNull(
+        status,
+        session.gitBranch?.let { stringResource(R.string.sessions_git_branch, it) },
+        stringResource(R.string.sessions_plan_claimed).takeIf { session.currentPlanId != null },
+        SessionRows.subagentBadgeLabel(session.pendingSubagents),
+    ).joinToString("  ·  ")
 }
 
 /**

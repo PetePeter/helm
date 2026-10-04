@@ -67,6 +67,8 @@ data class HelmSession(
     val cacheExpireMinutes: Int = 60,
     /** A local model: no prompt cache, so the session never goes stale. */
     val noPromptCache: Boolean = false,
+    /** Current git branch when the session's local working directory has one. */
+    val gitBranch: String? = null,
 ) {
     /** Lock / frozen / keep-warm, as the desktop row shows them — every one that applies. */
     fun statusIcons(nowMs: Long): String = listOfNotNull(
@@ -148,6 +150,7 @@ object SessionWire {
                 ?: "",
             cliType = summary.opt("cliType") as? String ?: "",
             cliTypeName = summary.opt("cliTypeName") as? String ?: "",
+            gitBranch = (summary.opt("gitBranch") as? String)?.takeIf { it.isNotBlank() },
             activity = activityOf(summary.opt("activityLevel")),
             aiagentState = summary.opt("aiagentState") as? String,
             questionPending = summary.opt("questionPending") == true,

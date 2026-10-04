@@ -24,9 +24,8 @@ import com.potatomotato.helm.voice.VoicePermission
 import com.potatomotato.helm.voice.VoicePhase
 
 /**
- * Push-to-talk for the chat composer: hold the mic, watch the words appear in
- * the draft, let go, edit them if the recogniser got a name wrong, send when YOU
- * decide to.
+ * Push-to-talk for the chat composer: hold the mic, watch words appear in the
+ * draft, then release to send the draft with the best transcript available.
  *
  * Dictation used to be a screen of its own, which meant leaving the conversation
  * to say something into it and coming back with a message already sent. The
@@ -40,7 +39,11 @@ import com.potatomotato.helm.voice.VoicePhase
  * live in [DictationInsert] and [SpeechController], where they are testable.
  */
 @Composable
-fun rememberDictation(draft: TextFieldValue, onDraft: (TextFieldValue) -> Unit): DictationHandle {
+fun rememberDictation(
+    draft: TextFieldValue,
+    onDraft: (TextFieldValue) -> Unit,
+    onSubmit: (String) -> Unit,
+): DictationHandle {
     val context = LocalContext.current
     val controller = remember { SpeechController(AndroidSpeechEngine(context)) }
     val voice by controller.state.collectAsState()
@@ -50,6 +53,7 @@ fun rememberDictation(draft: TextFieldValue, onDraft: (TextFieldValue) -> Unit):
     // draft the user has since edited.
     val currentDraft by rememberUpdatedState(draft)
     val currentOnDraft by rememberUpdatedState(onDraft)
+    val currentOnSubmit by rememberUpdatedState(onSubmit)
 
     var anchor by remember { mutableStateOf<Dictation?>(null) }
     var pressedAt by remember { mutableStateOf(0L) }
@@ -58,14 +62,18 @@ fun rememberDictation(draft: TextFieldValue, onDraft: (TextFieldValue) -> Unit):
         ActivityResultContracts.RequestPermission(),
     ) { allowed -> granted = allowed }
 
-    // Every guess — partial, final, or the empty one a cancel leaves behind —
-    // is rendered against the anchor the press captured. The anchor outlives the
-    // release on purpose: the final result arrives after the user's thumb is
-    // already gone, and it must land in the same place the partials did.
+    // Every partial is rendered against the anchor the press captured. On
+    // release the controller snapshots that best-known transcript and submits
+    // it with the draft immediately; it does not wait for a slow final callback.
     LaunchedEffect(voice.transcript, voice.phase) {
         val held = anchor ?: return@LaunchedEffect
         val next = held.with(voice.transcript)
-        currentOnDraft(TextFieldValue(next.text, TextRange(next.caret)))
+        if (voice.phase == VoicePhase.Captured) {
+            anchor = null
+            currentOnSubmit(next.text.trim())
+        } else {
+            currentOnDraft(TextFieldValue(next.text, TextRange(next.caret)))
+        }
     }
 
     // The microphone must not stay open behind a user who has left the thread.

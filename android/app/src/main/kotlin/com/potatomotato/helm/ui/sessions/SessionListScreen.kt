@@ -274,6 +274,15 @@ private fun SessionRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                session.gitBranch?.let { branch ->
+                    Text(
+                        text = stringResource(R.string.sessions_git_branch, branch),
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 SessionRowText.missionLine(session.mission)?.let { MissionTicker(it) }
             }
             // Lock / frozen / keep-warm — the same icons the desktop row centres.

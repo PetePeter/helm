@@ -1,6 +1,7 @@
 import { stripAnsi } from '../utils/strip-ansi.js';
 
 export type TerminalOutputMode = 'raw' | 'stripped' | 'both';
+export type TerminalReadMode = TerminalOutputMode | 'screen';
 
 interface LineBuffer {
   lines: string[];

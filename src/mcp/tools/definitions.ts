@@ -1094,14 +1094,14 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_read_terminal',
     title: 'Read Session Terminal',
-    description: 'Read the recent terminal tail for any known session by sessionId or exact name. Use this immediately after session_send_text handoffs to verify the recipient received the message and started responding. lines must be a positive integer (buffer holds up to 500). mode controls raw ANSI output, ANSI-stripped output, or both. Set stripBlankLines=true to omit empty and whitespace-only rows from the returned tail.',
+    description: 'Read recent terminal output or the rendered terminal screen for any known session by sessionId or exact name. Use after session_send_text handoffs to verify receipt. lines must be a positive integer (buffer holds up to 500). mode is raw, stripped, both, or screen; screen applies terminal cursor and erase controls and preserves blank rows.',
     inputSchema: {
       type: 'object',
       properties: {
         sessionId: { type: 'string' },
         name: { type: 'string' },
         lines: { type: 'number', minimum: 1 },
-        mode: { type: 'string', enum: ['raw', 'stripped', 'both'] },
+        mode: { type: 'string', enum: ['raw', 'stripped', 'both', 'screen'] },
         stripBlankLines: { type: 'boolean', description: 'When true, omit empty and whitespace-only rows from the returned tail.' },
       },
       additionalProperties: false,
@@ -1751,6 +1751,20 @@ export const MCP_TOOLS: McpTool[] = [
       properties: {
         uploadId: { type: 'string', description: 'The uploadId session_share_file_add returned.' },
         draft: { type: 'boolean', description: 'Default true. false = no draft (a chat attachment whose message carries the returned path).' },
+      },
+      required: ['uploadId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_share_file_cancel',
+    title: 'Cancel Share-to-Session Upload',
+    description:
+      'Cancel an unfinished phone share upload. If it already committed, return its receipt so the phone can report success. The uploadId is bound to the paired phone that opened it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        uploadId: { type: 'string', description: 'The uploadId session_share_file_add returned.' },
       },
       required: ['uploadId'],
       additionalProperties: false,

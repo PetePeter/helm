@@ -33,14 +33,24 @@ sealed interface ShareState {
     data object Picking : ShareState
 
     /** Bytes are leaving: [sent] of [total]. */
-    data class Sending(val sent: Long, val total: Long) : ShareState
+    data class Sending(
+        val sent: Long,
+        val total: Long,
+        val attemptId: Long = 0L,
+        val waitStage: ShareWaitStage = ShareWaitStage.Uploading,
+    ) : ShareState
 
     /** Landed. [message] is what the user reads. */
     data class Done(val message: String) : ShareState
 
+    /** The user stopped an upload before Helm committed it. */
+    data class Cancelled(val attemptId: Long) : ShareState
+
     /** Nothing landed — refused up front, or failed on the way. */
-    data class Failed(val message: String) : ShareState
+    data class Failed(val message: String, val attemptId: Long? = null) : ShareState
 }
+
+enum class ShareWaitStage { Uploading, AskToContinue, Waiting, Cancelling }
 
 /**
  * Why a share must not start, or null when it may. Checked before the slot is
@@ -88,18 +98,74 @@ class ShareFlow {
     }
 
     /** Only one share at a time: a second start while one is sending is refused. */
-    fun start(total: Long): Boolean {
+    fun start(attemptId: Long, total: Long): Boolean {
         if (_state.value is ShareState.Sending) return false
-        _state.value = ShareState.Sending(0, total)
+        _state.value = sending(attemptId, 0, total, ShareWaitStage.Uploading)
         return true
     }
 
-    fun progress(sent: Long) {
+    fun start(total: Long): Boolean = start(0L, total)
+
+    fun askToContinue(attemptId: Long) {
         val current = _state.value as? ShareState.Sending ?: return
-        _state.value = current.copy(sent = sent.coerceIn(current.sent, current.total))
+        if (current.attemptId == attemptId && current.waitStage == ShareWaitStage.Uploading) {
+            _state.value = sending(current.attemptId, current.sent, current.total, ShareWaitStage.AskToContinue)
+        }
     }
 
-    fun done(sessionName: String) {
-        _state.value = ShareState.Done(shareDoneMessage(sessionName))
+    fun continueWaiting(attemptId: Long) {
+        val current = _state.value as? ShareState.Sending ?: return
+        if (current.attemptId == attemptId && current.waitStage == ShareWaitStage.AskToContinue) {
+            _state.value = sending(current.attemptId, current.sent, current.total, ShareWaitStage.Waiting)
+        }
     }
+
+    fun cancelling(attemptId: Long) {
+        val current = _state.value as? ShareState.Sending ?: return
+        if (current.attemptId == attemptId) {
+            _state.value = sending(current.attemptId, current.sent, current.total, ShareWaitStage.Cancelling)
+        }
+    }
+
+    fun progress(attemptId: Long, sent: Long) {
+        val current = _state.value as? ShareState.Sending ?: return
+        if (current.attemptId == attemptId) {
+            _state.value = sending(
+                current.attemptId,
+                sent.coerceIn(current.sent, current.total),
+                current.total,
+                current.waitStage,
+            )
+        }
+    }
+
+    fun progress(sent: Long) = (_state.value as? ShareState.Sending)?.let { progress(it.attemptId, sent) }
+
+    fun failed(attemptId: Long, message: String) {
+        val current = _state.value
+        if (current is ShareState.Sending && current.attemptId == attemptId) {
+            _state.value = ShareState.Failed(message, attemptId)
+        }
+    }
+
+    fun cancelled(attemptId: Long) {
+        val current = _state.value as? ShareState.Sending ?: return
+        if (current.attemptId == attemptId && current.waitStage == ShareWaitStage.Cancelling) {
+            _state.value = ShareState.Cancelled(attemptId)
+        }
+    }
+
+    fun done(attemptId: Long, sessionName: String) {
+        val current = _state.value
+        if ((current is ShareState.Sending && current.attemptId == attemptId)
+            || (current is ShareState.Cancelled && current.attemptId == attemptId)
+            || (current is ShareState.Failed && current.attemptId == attemptId)) {
+            _state.value = ShareState.Done(shareDoneMessage(sessionName))
+        }
+    }
+
+    fun done(sessionName: String) = (_state.value as? ShareState.Sending)?.let { done(it.attemptId, sessionName) }
+
+    private fun sending(attemptId: Long, sent: Long, total: Long, waitStage: ShareWaitStage) =
+        ShareState.Sending(sent, total, attemptId, waitStage)
 }

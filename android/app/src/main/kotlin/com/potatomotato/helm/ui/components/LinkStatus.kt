@@ -165,6 +165,8 @@ fun HelmAppBar(
     contextLabel: String? = null,
     /** One quiet line under the title — the open session's mission. Null draws nothing. */
     subtitle: String? = null,
+    /** Compact session-row details, below the mission when present. */
+    detailLine: String? = null,
     /**
      * The choices the context label can switch between, when the label is a menu
      * rather than a caption. Empty (the default) renders the plain label; the
@@ -270,6 +272,15 @@ fun HelmAppBar(
                         // A long mission scrolls non-stop, radio-display style,
                         // instead of hiding its tail behind an ellipsis.
                         modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                    )
+                }
+                if (detailLine != null) {
+                    Text(
+                        text = detailLine,
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
