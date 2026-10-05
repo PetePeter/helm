@@ -5,6 +5,16 @@ import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.ui.time.TimeScreen
 import android.app.Activity
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -23,7 +33,11 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.compose.ui.res.stringResource
 import com.potatomotato.helm.HelmApp
@@ -210,6 +224,27 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // rotation only means landing back on this week's totals.
     var timeAsk by remember { mutableStateOf(TimeAsk(TimePeriod.Day, System.currentTimeMillis(), null)) }
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var sessionSwipeDirection by remember { mutableStateOf(0) }
+    val sessionSwipeOffset = remember { Animatable(0f) }
+    var edgeBounceDirection by remember { mutableStateOf(0) }
+    var edgeBounceRequest by remember { mutableStateOf(0) }
+    val edgeBounce = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    LaunchedEffect(edgeBounceRequest) {
+        if (edgeBounceRequest == 0) return@LaunchedEffect
+        edgeBounce.snapTo(0f)
+        val extent = with(density) { EDGE_BOUNCE_DISTANCE_DP.dp.toPx() } * edgeBounceDirection
+        edgeBounce.animateTo(extent, animationSpec = tween(EDGE_BOUNCE_PULL_MS))
+        edgeBounce.animateTo(
+            targetValue = 0f,
+            animationSpec = spring(dampingRatio = EDGE_BOUNCE_DAMPING, stiffness = EDGE_BOUNCE_STIFFNESS),
+        )
+    }
+    LaunchedEffect(openSessionId, sessionSwipeDirection) {
+        if (sessionSwipeDirection == 0) return@LaunchedEffect
+        delay(SESSION_SWITCH_MS.toLong() + 50L)
+        sessionSwipeDirection = 0
+    }
     // Deliberately NOT saveable: a rotation must not redraw a question the user
     // never asked, and back is one tap away if they still mean it.
     var leaving by remember { mutableStateOf(false) }
@@ -799,10 +834,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // One chat surface, two homes: the open session's Chat tab and the Helm
     // home tab's operator thread. The terminal shortcut opens the session it
     // belongs to, so it works from either.
-    val sessionChat: @Composable (String, ((Int) -> Unit)?) -> Unit = { sessionId, onSwipeSession ->
+    val sessionChat: @Composable (String, ((Int) -> Boolean)?, Int, Int) -> Unit = { sessionId, onSwipeSession, earlierUnread, laterUnread ->
         ChatScreen(
             sessionId = sessionId,
             onSwipeSession = onSwipeSession,
+            swipeOffset = sessionSwipeOffset,
+            earlierUnreadSessions = earlierUnread,
+            laterUnreadSessions = laterUnread,
             messages = threads[sessionId].orEmpty(),
             onSend = { text -> client.sendChat(sessionId, text) },
             // Retry re-issues over the wire (the repository swaps the dead
@@ -1076,7 +1114,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 )
                                 // The operator's recent conversation, right under its controls.
                                 if (operator is OperatorSummary.On) {
-                                    Box(modifier = Modifier.weight(1f)) { sessionChat(operator.id, null) }
+                                    Box(modifier = Modifier.weight(1f)) { sessionChat(operator.id, null, 0, 0) }
                                 }
                             }
 
@@ -1309,12 +1347,39 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 else -> {
                     val toList = { openSessionId = null }
                     BackHandler(onBack = toList)
-                    SessionTabScaffold(
+                    val currentOpenId = open.id
+                    AnimatedContent(
+                        targetState = currentOpenId,
+                        modifier = Modifier.fillMaxSize(),
+                        transitionSpec = {
+                            if (sessionSwipeDirection == 0) {
+                                EnterTransition.None togetherWith ExitTransition.None
+                            } else {
+                                slideInHorizontally(
+                                    initialOffsetX = { -sessionSwipeDirection * it },
+                                    animationSpec = tween(SESSION_SWITCH_MS),
+                                ) togetherWith slideOutHorizontally(
+                                    targetOffsetX = { sessionSwipeDirection * it },
+                                    animationSpec = tween(SESSION_SWITCH_MS),
+                                )
+                            }
+                        },
+                        label = "session-horizontal-slide",
+                    ) { targetSessionId ->
+                        val targetSession = sessions.firstOrNull { it.id == targetSessionId } ?: return@AnimatedContent
+                        val isIncoming = targetSessionId == currentOpenId
+                        val neighbors = SessionRows.unreadNeighbors(listedSessionIds, targetSessionId, unreadCounts)
+                        SessionTabScaffold(
+                        modifier = Modifier.graphicsLayer {
+                            translationX = edgeBounce.value + if (sessionSwipeDirection == 0 || !isIncoming) sessionSwipeOffset.value else 0f
+                            shape = RoundedCornerShape(18.dp)
+                            clip = true
+                        },
                         // The same status icons as the list row, after the name.
-                        sessionName = listOf(open.name, open.statusIcons(System.currentTimeMillis()))
+                        sessionName = listOf(targetSession.name, targetSession.statusIcons(System.currentTimeMillis()))
                             .filter { it.isNotEmpty() }.joinToString("  "),
-                        mission = open.mission,
-                        details = sessionHeaderDetails(open),
+                        mission = targetSession.mission,
+                        details = sessionHeaderDetails(targetSession),
                         linkState = linkState,
                         tab = tab,
                         onSelectTab = { tab = it },
@@ -1322,10 +1387,25 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onOverflow = { where = Destination.Sheet },
                     ) {
                         when (tab) {
-                            SessionTab.Chat -> sessionChat(open.id) { step ->
-                                SessionRows.adjacentSessionId(listedSessionIds, open.id, step)
-                                    ?.let { openSessionId = it }
-                            }
+                            SessionTab.Chat -> sessionChat(
+                                targetSession.id,
+                                if (targetSessionId == currentOpenId && sessionSwipeDirection == 0) ({ step ->
+                                    if (sessionSwipeDirection == 0 && !edgeBounce.isRunning) {
+                                        val next = SessionRows.adjacentSessionId(listedSessionIds, targetSessionId, step)
+                                        if (next != null) {
+                                            sessionSwipeDirection = -step
+                                            openSessionId = next
+                                            true
+                                        } else {
+                                            edgeBounceDirection = -step
+                                            edgeBounceRequest++
+                                            false
+                                        }
+                                    } else false
+                                }) else null,
+                                neighbors.earlierSessions,
+                                neighbors.laterSessions,
+                            )
 
                             SessionTab.Artifacts -> ArtifactsScreen(
                                 state = artifactList,
@@ -1393,6 +1473,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         }
                     }
                 }
+            }
             }
 
             // The sheet is an overlay on the thread, not a screen of its own: the
@@ -1541,7 +1622,7 @@ private fun ProjectScoped(
     onRetryProjects: () -> Unit,
     noProjectText: String,
     body: @Composable () -> Unit,
-) {
+ ) {
     Column(modifier = Modifier.fillMaxSize()) {
         ProjectPicker(
             projects = projects,
@@ -1580,6 +1661,7 @@ private fun ExitDialog(onBackground: () -> Unit, onQuit: () -> Unit, onDismiss: 
  */
 @Composable
 private fun SessionTabScaffold(
+    modifier: Modifier = Modifier,
     sessionName: String,
     mission: String?,
     details: String,
@@ -1590,7 +1672,7 @@ private fun SessionTabScaffold(
     onOverflow: () -> Unit,
     body: @Composable () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         HelmAppBar(
             title = sessionName,
             subtitle = mission,
@@ -1690,6 +1772,11 @@ private fun ReportVisibility(client: HelmClient) {
 }
 
 /** Half the per-device budget, leaving room for whatever the user is doing. */
+private const val SESSION_SWITCH_MS = 220
+private const val EDGE_BOUNCE_DISTANCE_DP = 10
+private const val EDGE_BOUNCE_PULL_MS = 90
+private const val EDGE_BOUNCE_DAMPING = 0.62f
+private const val EDGE_BOUNCE_STIFFNESS = 720f
 private const val POLL_INTERVAL_MS = 2_000L
 private const val OPEN_SESSION_POLL_INTERVAL_MS = 10_000L
 

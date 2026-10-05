@@ -88,6 +88,32 @@ class SessionRowsTest {
     }
 
     @Test
+    fun `swiping right goes backward and swiping left goes toward later sessions`() {
+        assertEquals(-1, SessionRows.swipeStep(80f, 60f))
+        assertEquals(1, SessionRows.swipeStep(-80f, 60f))
+        assertEquals(0, SessionRows.swipeStep(60f, 60f))
+        assertEquals(0, SessionRows.swipeStep(-60f, 60f))
+        assertEquals(0, SessionRows.swipeStep(59f, 60f))
+        assertEquals(0, SessionRows.swipeStep(-59f, 60f))
+    }
+
+    @Test
+    fun `unread neighbors count sessions on each side rather than messages`() {
+        assertEquals(
+            SessionUnreadNeighbors(earlierSessions = 1, laterSessions = 2),
+            SessionRows.unreadNeighbors(
+                listOf("a", "b", "current", "d", "e"),
+                "current",
+                mapOf("a" to 8, "b" to 0, "d" to 2, "e" to 1),
+            ),
+        )
+        assertEquals(
+            SessionUnreadNeighbors(0, 0),
+            SessionRows.unreadNeighbors(listOf("a"), "missing", mapOf("a" to 1)),
+        )
+    }
+
+    @Test
     fun `an unread badge shows the count, caps at nine-plus, and hides at zero`() {
         // A two-digit count breaks the pill's rhythm and buys nothing: past nine
         // the row only has to say "more than you have read".

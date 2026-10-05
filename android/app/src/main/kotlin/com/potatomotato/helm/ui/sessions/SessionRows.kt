@@ -19,6 +19,8 @@ sealed interface RowEntry {
     data class Session(val session: HelmSession) : RowEntry
 }
 
+data class SessionUnreadNeighbors(val earlierSessions: Int, val laterSessions: Int)
+
 object SessionRows {
 
     /** The neighboring session in list order, or null at either end. */
@@ -27,6 +29,30 @@ object SessionRows {
         val index = sessionIds.indexOf(currentSessionId)
         if (index < 0) return null
         return sessionIds.getOrNull(index + step)
+    }
+
+    /** Swiping right moves backward; swiping left moves toward later sessions. */
+    fun swipeStep(horizontalDragPx: Float, thresholdPx: Float): Int {
+        require(thresholdPx > 0f) { "thresholdPx must be positive" }
+        return when {
+            horizontalDragPx > thresholdPx -> -1
+            horizontalDragPx < -thresholdPx -> 1
+            else -> 0
+        }
+    }
+
+    /** Pending unread sessions on either side of the current session in list order. */
+    fun unreadNeighbors(
+        sessionIds: List<String>,
+        currentSessionId: String,
+        unreadCounts: Map<String, Int>,
+    ): SessionUnreadNeighbors {
+        val index = sessionIds.indexOf(currentSessionId)
+        if (index < 0) return SessionUnreadNeighbors(earlierSessions = 0, laterSessions = 0)
+        return SessionUnreadNeighbors(
+            earlierSessions = sessionIds.take(index).count { (unreadCounts[it] ?: 0) > 0 },
+            laterSessions = sessionIds.drop(index + 1).count { (unreadCounts[it] ?: 0) > 0 },
+        )
     }
 
     /**

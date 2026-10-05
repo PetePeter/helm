@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session swipe gutters</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0d;
+      --surface: #15171d;
+      --line: #2d3039;
+      --text: #f4f5f7;
+      --muted: #969ba7;
+      --accent: #91a7ff;
+      --reply: #91e1b5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(ellipse at 50% 0, #202431, var(--bg) 60%);
+      color: var(--text);
+      font: 15px/1.45 system-ui, sans-serif;
+    }
+    main { max-width: 900px; margin: auto; padding: 28px 18px 50px; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    p { color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 390px) minmax(220px, 1fr);
+      gap: 28px;
+      align-items: center;
+    }
+    .phone {
+      width: min(100%, 390px);
+      height: 740px;
+      margin: auto;
+      padding: 9px;
+      border: 1px solid #454955;
+      border-radius: 34px;
+      background: #050608;
+      box-shadow: 0 28px 85px #000b;
+    }
+    .screen { height: 100%; overflow: hidden; border-radius: 26px; background: #0b0c0f; }
+    .status {
+      display: flex;
+      justify-content: space-between;
+      height: 27px;
+      padding: 5px 17px;
+      color: #b8bac1;
+      font-size: 11px;
+    }
+    .header { height: 83px; padding: 8px 16px 11px; border-bottom: 1px solid var(--line); background: #12141a; }
+    .title { font-size: 17px; font-weight: 650; }
+    .subtitle { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .tabs { display: flex; justify-content: space-between; margin-top: 14px; color: #a7a9b0; font-size: 10px; }
+    .tabs b { padding-bottom: 6px; border-bottom: 2px solid var(--accent); color: var(--text); }
+    .chat-frame {
+      position: relative;
+      height: calc(100% - 110px);
+    }
+    .gutter {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: absolute;
+      z-index: 1;
+      top: 50%;
+      width: 25px;
+      height: 46px;
+      transform: translateY(-50%);
+      border: 1px solid #292d38;
+      border-radius: 14px;
+      color: #505560;
+      background: #16181eaa;
+      transition: background .2s, color .2s;
+    }
+    .gutter:first-child { left: 1px; }
+    .gutter:last-child { right: 1px; }
+    .gutter.has-reply { color: #839a8d; background: #0e1111; }
+    .cue {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      width: 100%;
+      padding: 2px;
+      text-align: center;
+      font-size: 9px;
+      line-height: 1.15;
+    }
+    .cue svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .cue strong { display: none; }
+    .cue .count { color: #a6b7ac; font-size: 9px; font-weight: 600; }
+    .cue span:last-child { display: none; }
+    .quiet-mark { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .45; }
+    .conversation { position: relative; width: 100%; height: 100%; min-width: 0; padding: 24px 11px 70px; }
+    .day { margin: 0 0 25px; color: #7d818c; text-align: center; font-size: 9px; }
+    .bubble { max-width: 94%; margin-bottom: 13px; padding: 10px; border: 1px solid #292d38; border-radius: 14px; background: #1b1e26; font-size: 11px; }
+    .bubble.me { margin-left: auto; border-color: #343c5c; background: #242940; }
+    .time { margin-top: 5px; color: #888d9b; text-align: right; font-size: 8px; }
+    .composer { position: absolute; right: 6px; bottom: 10px; left: 6px; height: 42px; padding: 12px 13px; border: 1px solid #30333c; border-radius: 22px; background: #17191f; color: #777c88; font-size: 11px; }
+    .controls { padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: #12141a; }
+    .controls h2 { margin: 0 0 8px; font-size: 16px; }
+    button { margin: 5px 4px 0 0; padding: 9px 11px; border: 1px solid #373b47; border-radius: 10px; background: #1c1f27; color: var(--text); font: inherit; cursor: pointer; }
+    button[aria-pressed="true"] { border-color: var(--accent); color: #c3ceff; }
+    .note { margin: 14px 0 0; font-size: 12px; }
+    @media (max-width: 680px) {
+      main { padding: 18px 12px 32px; }
+      .layout { grid-template-columns: 1fr; gap: 18px; }
+      .phone { height: min(700px, 84vh); min-height: 560px; }
+      .controls { width: min(100%, 390px); margin: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pending replies in neighboring sessions</h1>
+    <p>Quiet edge overlays show where replies are waiting without narrowing the chat. Drag the session card past halfway to switch.</p>
+    <div class="layout">
+      <div class="phone" aria-label="Interactive phone mockup">
+        <div class="screen">
+          <div class="status"><span>9:41</span><span>● ● ▰</span></div>
+          <header class="header">
+            <div class="title">Session 4 · build</div>
+            <div class="subtitle">Working · helm</div>
+            <nav class="tabs"><b>Chat</b><span>Artifacts</span><span>Plans</span><span>Sequences</span></nav>
+          </header>
+          <div class="chat-frame">
+            <aside id="leftGutter" class="gutter has-reply" aria-label="Earlier sessions have pending replies">
+              <div class="cue">
+                <svg viewBox="0 0 24 24" role="img" aria-label="Swipe right to go backward"><path d="m10 18 6-6-6-6"/><path d="M4 12h12"/></svg>
+                <strong>Earlier sessions</strong><span class="count">1</span><span>Swipe right to go backward</span>
+              </div>
+            </aside>
+            <section class="conversation" aria-label="Chat messages">
+              <div class="day">TODAY · 9:40 AM</div>
+              <div class="bubble">The release build finished. Certificate is verified.<div class="time">9:40 AM</div></div>
+              <div class="bubble me">I’ll check the signed APK and install it.<div class="time">9:40 AM</div></div>
+              <div class="bubble">The install succeeded on the phone.<div class="time">9:41 AM</div></div>
+              <div class="composer">Message…</div>
+            </section>
+            <aside id="rightGutter" class="gutter has-reply" aria-label="Later sessions have pending replies">
+              <div class="cue">
+                <svg viewBox="0 0 24 24" role="img" aria-label="Swipe left to go toward later sessions"><path d="m14 18-6-6 6-6"/><path d="M20 12H8"/></svg>
+                <strong>Later sessions</strong><span class="count">2</span><span>Swipe left to view</span>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+      <aside class="controls">
+        <h2>Preview the edge cues</h2>
+        <button id="both" aria-pressed="true">Both sides</button>
+        <button id="left" aria-pressed="false">Earlier only</button>
+        <button id="right" aria-pressed="false">Later only</button>
+        <button id="none" aria-pressed="false">No pending replies</button>
+        <p class="note">Swipe right to go backward and left to move toward later sessions. Release before halfway to spring back; cross halfway to switch.</p>
+      </aside>
+    </div>
+  </main>
+  <script>
+    const choices = { both: [true, true], left: [true, false], right: [false, true], none: [false, false] };
+    for (const [id, visible] of Object.entries(choices)) {
+      document.getElementById(id).addEventListener('click', () => {
+        document.getElementById('leftGutter').classList.toggle('has-reply', visible[0]);
+        document.getElementById('rightGutter').classList.toggle('has-reply', visible[1]);
+        document.getElementById('leftGutter').innerHTML = visible[0]
+          ? '<div class="cue"><svg viewBox="0 0 24 24" role="img" aria-label="Swipe right to go backward"><path d="m10 18 6-6-6-6"/><path d="M4 12h12"/></svg><strong>Earlier sessions</strong><span class="count">1</span><span>Swipe right to go backward</span></div>'
+          : '<span class="quiet-mark" aria-hidden="true"></span>';
+        document.getElementById('rightGutter').innerHTML = visible[1]
+          ? '<div class="cue"><svg viewBox="0 0 24 24" role="img" aria-label="Swipe left to view later sessions"><path d="m14 18-6-6 6-6"/><path d="M20 12H8"/></svg><strong>Later sessions</strong><span class="count">2</span><span>Swipe left to view</span></div>'
+          : '<span class="quiet-mark" aria-hidden="true"></span>';
+        for (const button of document.querySelectorAll('button')) button.setAttribute('aria-pressed', String(button.id === id));
+      });
+    }
+  </script>
+</body>
+</html>

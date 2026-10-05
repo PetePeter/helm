@@ -5,11 +5,16 @@ import com.potatomotato.helm.data.CacheStage
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.voice.CallPhase
 import com.potatomotato.helm.voice.VoiceCallService
+import com.potatomotato.helm.ui.sessions.SessionRows
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -55,7 +60,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -69,6 +76,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -79,6 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
@@ -99,6 +108,7 @@ import com.potatomotato.helm.ui.theme.HelmType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 /**
  * Mockup screen 2 — one session's conversation, and the reply box.
@@ -137,8 +147,11 @@ fun ChatScreen(
     session: HelmSession? = null,
     /** Thaw the session; with a bubble's key + text, resend it after. */
     onUnfreeze: (retry: Pair<String, String>?) -> Unit = {},
-    /** Switch to the neighboring session on a horizontal swipe; null disables navigation. */
-    onSwipeSession: ((step: Int) -> Unit)? = null,
+    /** Switch to the neighboring session after a swipe crosses half the chat width. */
+    onSwipeSession: ((step: Int) -> Boolean)? = null,
+    swipeOffset: Animatable<Float, AnimationVector1D>,
+    earlierUnreadSessions: Int = 0,
+    laterUnreadSessions: Int = 0,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. It also
@@ -156,24 +169,48 @@ fun ChatScreen(
     }
     val listState = rememberLazyListState()
     val currentSwipeSession by rememberUpdatedState(onSwipeSession)
-    val swipeThresholdPx = with(LocalDensity.current) { SESSION_SWITCH_SWIPE_THRESHOLD_DP.dp.toPx() }
+    var swipeWidthPx by remember(sessionId) { mutableIntStateOf(0) }
+    val swipeScope = rememberCoroutineScope()
     val threadSwipeModifier = if (onSwipeSession == null) {
         Modifier
     } else {
-        Modifier.pointerInput(sessionId) {
+        Modifier.onSizeChanged { swipeWidthPx = it.width }
+            .pointerInput(sessionId, swipeWidthPx) {
             var horizontalDrag = 0f
             detectHorizontalDragGestures(
-                onDragEnd = {
-                    val step = when {
-                        horizontalDrag <= -swipeThresholdPx -> 1
-                        horizontalDrag >= swipeThresholdPx -> -1
-                        else -> 0
-                    }
-                    if (step != 0) currentSwipeSession?.invoke(step)
+                onDragStart = {
                     horizontalDrag = 0f
+                    swipeScope.launch { swipeOffset.snapTo(0f) }
                 },
-                onDragCancel = { horizontalDrag = 0f },
-                onHorizontalDrag = { _, dragAmount -> horizontalDrag += dragAmount },
+                onDragEnd = {
+                    val threshold = swipeWidthPx * 0.5f
+                    val step = if (threshold > 0f) SessionRows.swipeStep(horizontalDrag, threshold) else 0
+                    val changed = step != 0 && currentSwipeSession?.invoke(step) == true
+                    if (step == 0) {
+                        swipeScope.launch {
+                            swipeOffset.animateTo(0f, animationSpec = spring(dampingRatio = 0.62f, stiffness = 720f))
+                        }
+                    } else {
+                        swipeScope.launch {
+                            swipeOffset.animateTo(
+                                targetValue = 0f,
+                                animationSpec = if (changed) tween(SESSION_SWITCH_MS) else spring(dampingRatio = 0.62f, stiffness = 720f),
+                            )
+                        }
+                    }
+                },
+                onDragCancel = {
+                    horizontalDrag = 0f
+                    swipeScope.launch {
+                        swipeOffset.animateTo(0f, animationSpec = spring(dampingRatio = 0.62f, stiffness = 720f))
+                    }
+                },
+                onHorizontalDrag = { _, dragAmount ->
+                    if (swipeWidthPx > 0) {
+                        horizontalDrag = (horizontalDrag + dragAmount).coerceIn(-swipeWidthPx.toFloat(), swipeWidthPx.toFloat())
+                        swipeScope.launch { swipeOffset.snapTo(horizontalDrag) }
+                    }
+                },
             )
         }
     }
@@ -248,53 +285,66 @@ fun ChatScreen(
             )
             Hairline()
         }
-        Box(
-            modifier = Modifier.weight(1f).fillMaxWidth().then(threadSwipeModifier),
-        ) {
-            if (messages.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = stringResource(R.string.chat_empty),
-                        color = HelmColors.Dim,
-                        style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(HelmSpacing.Gutter),
-                    verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                ) {
-                    items(messages, key = { it.key }) {
-                        Bubble(
-                            message = it,
-                            selected = it.key in selected,
-                            onTap = if (selecting) ({ toggle(it.key) }) else null,
-                            onLongPress = { toggle(it.key) },
-                            onRetry = onRetry,
-                            onUnfreeze = onUnfreeze,
-                            onDelete = onDelete,
-                            pulls = pulls,
-                            onPull = onPull,
-                            onCancelPull = onCancelPull,
-                            onDeleteAttachment = onDeleteAttachment,
-                            onOpenAttachment = onOpenAttachment,
-                        )
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxSize().then(threadSwipeModifier)) {
+                Column(modifier = Modifier.weight(1f).fillMaxSize()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (messages.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stringResource(R.string.chat_empty),
+                                color = HelmColors.Dim,
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(HelmSpacing.Gutter),
+                            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                        ) {
+                            items(messages, key = { it.key }) {
+                                Bubble(
+                                    message = it,
+                                    selected = it.key in selected,
+                                    onTap = if (selecting) ({ toggle(it.key) }) else null,
+                                    onLongPress = { toggle(it.key) },
+                                    onRetry = onRetry,
+                                    onUnfreeze = onUnfreeze,
+                                    onDelete = onDelete,
+                                    pulls = pulls,
+                                    onPull = onPull,
+                                    onCancelPull = onCancelPull,
+                                    onDeleteAttachment = onDeleteAttachment,
+                                    onOpenAttachment = onOpenAttachment,
+                                )
+                            }
+                        }
                     }
                 }
+                if (call != null && call.state.phase != CallPhase.Ended) {
+                    CallPanel(call = call)
+                }
+                }
             }
+            SessionSwipeEdgeCue(
+                unreadSessions = earlierUnreadSessions,
+                earlier = true,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+            SessionSwipeEdgeCue(
+                unreadSessions = laterUnreadSessions,
+                earlier = false,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
         }
 
-        if (call != null && call.state.phase != CallPhase.Ended) {
-            CallPanel(call = call, modifier = threadSwipeModifier)
-            return@Column
-        }
-        Composer(
+        if (call == null || call.state.phase == CallPhase.Ended) Composer(
             draft = draft,
             onDraft = { next ->
                 draft = next
@@ -324,6 +374,38 @@ fun ChatScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun SessionSwipeEdgeCue(unreadSessions: Int, earlier: Boolean, modifier: Modifier = Modifier) {
+    if (unreadSessions <= 0) return
+    val accessibilityLabel = if (earlier) {
+        stringResource(R.string.session_swipe_earlier_unread, unreadSessions)
+    } else {
+        stringResource(R.string.session_swipe_later_unread, unreadSessions)
+    }
+    Box(
+        modifier = modifier
+            .padding(horizontal = 2.dp)
+            .size(width = 24.dp, height = 44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(HelmColors.Surface.copy(alpha = 0.78f))
+            .semantics { contentDescription = accessibilityLabel },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = if (earlier) "›" else "‹",
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = if (unreadSessions > MAX_VISIBLE_GUTTER_COUNT) "$MAX_VISIBLE_GUTTER_COUNT+" else unreadSessions.toString(),
+                color = HelmColors.Accent,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+            )
+        }
     }
 }
 
@@ -1117,10 +1199,11 @@ private val HOLD_ARROW_RISE = 18.dp
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private const val BUBBLE_WIDTH_FRACTION = 0.75f
+private const val MAX_VISIBLE_GUTTER_COUNT = 9
+private const val SESSION_SWITCH_MS = 220
 
 /** Accent wash behind a selected row: visible on true black, text still readable. */
 private const val SELECTED_TINT = 0.16f
-private const val SESSION_SWITCH_SWIPE_THRESHOLD_DP = 80
 
 /**
  * The three circles stacked with their gaps — the composer field's minimum

@@ -80,6 +80,8 @@
     <string name="session_tab_artifacts">Artifacts</string>
     <string name="session_tab_plans">Plans</string>
     <string name="session_tab_sequences">Sequences</string>
+    <string name="session_swipe_earlier_unread">%1$d earlier sessions have unread replies. Swipe right to view.</string>
+    <string name="session_swipe_later_unread">%1$d later sessions have unread replies. Swipe left to view.</string>
 
     <string name="home_tab_helm">Helm</string>
     <string name="home_tab_sessions">Sessions</string>
