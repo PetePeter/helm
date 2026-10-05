@@ -49,6 +49,24 @@ describe('shipped cli-types.yaml', () => {
     expect(entries.map(([, c]) => c.provider)).toEqual(['claude', 'codex', 'copilot', undefined]);
   });
 
+  it('ships the same shell deletion guardrail for Claude, Codex, and Copilot', () => {
+    const agentConfigs = entries
+      .map(([, config]) => config)
+      .filter((config) => config.provider === 'claude' || config.provider === 'codex' || config.provider === 'copilot');
+    const rules = agentConfigs.map((config) => config.hooks?.denyRules?.find(
+      (rule): rule is { commandPattern: string; reason: string } =>
+        typeof rule === 'object' && rule !== null &&
+        'commandPattern' in rule && typeof rule.commandPattern === 'string',
+    ));
+
+    expect(rules).toHaveLength(3);
+    expect(rules.every(Boolean)).toBe(true);
+    expect(new Set(rules.map((rule) => rule?.commandPattern)).size).toBe(1);
+    expect(new Set(rules.map((rule) => rule?.reason)).size).toBe(1);
+    expect(rules[0]?.reason).toContain('coarse text match');
+    expect(rules[0]?.reason).toContain('quoted mentions');
+  });
+
   it('gives the agent types the Helm session init prompt and the shell none', () => {
     for (const [, config] of entries) {
       if (config.displayName === 'cmd') {

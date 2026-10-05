@@ -124,7 +124,14 @@ flowchart LR
   1. `AskUserQuestion` while `interactionChannel === 'telegram'` (phone or
      Telegram — G1's mobile-bridge affinity feeds this) → use `chat_send`
   2. native `Artifact` tool → use `session_artifact_create`
-  3. command guardrail: `rm -rf` (either flag order). `git push` is
+  3. command guardrail: shell tool command text containing `rm` with combined
+     `-r` and `-f` flags in either order. This is a coarse text match: it can
+     also block quoted mentions or echoed examples, even when the command does
+     not execute a deletion. The denial reason explains this and directs the
+     user to run the intended deletion at the terminal. The same shipped rule
+     is configured for Claude, Codex, and Copilot; the shared hook receiver
+     applies each provider's rules and encodes the denial in that CLI's format.
+     `git push` is
      deliberately NOT in the shipped defaults — Helm's own release workflow
      (`sendDeploy.py`) pushes from inside a Helm session; a push guard is a
      one-line user rule, not a default.
