@@ -190,6 +190,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    */
   configSetNotifications: (enabled: boolean) => ipcRenderer.invoke('config:setNotifications', enabled),
 
+  /** Whether the one-time first-run guide has been completed or skipped. */
+  configGetOnboardingCompleted: (): Promise<boolean> => ipcRenderer.invoke('config:getOnboardingCompleted'),
+
+  /** Persist first-run guide completion. */
+  configSetOnboardingCompleted: (completed: boolean): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('config:setOnboardingCompleted', completed),
+
   /**
    * Get localhost MCP server settings
    */

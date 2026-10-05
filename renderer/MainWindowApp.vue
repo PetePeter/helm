@@ -38,7 +38,7 @@ import { useRuntimeGroups } from './composables/useRuntimeGroups.js';
 import { useRuntimeGroupActions } from './composables/useRuntimeGroupActions.js';
 import { useDraftPlanContextEditor } from './composables/useDraftPlanContextEditor.js';
 import { usePlanWorkspaceController } from './composables/usePlanWorkspaceController.js';
-import { appClient, configClient, deliveryClient, draftsClient, eventsClient, sessionsClient, systemClient } from './ipc/clients.js';
+import { appClient, configClient, deliveryClient, dialogClient, draftsClient, eventsClient, projectsClient, sessionsClient, systemClient } from './ipc/clients.js';
 import {
   contextMenu,
   openQuickSpawn,
@@ -93,6 +93,7 @@ import { isSessionHiddenFromOverview } from './session-groups.js';
 import StatusStrip from './components/sidebar/StatusStrip.vue';
 import RecycleBinModal from './components/sidebar/RecycleBinModal.vue';
 import SettingsPanel from './components/sidebar/SettingsPanel.vue';
+import FirstRunOnboarding from './components/modals/FirstRunOnboarding.vue';
 
 // Settings tab components
 import BindingsTab from './components/sidebar/BindingsTab.vue';
@@ -132,6 +133,7 @@ import DockViewMenu from './components/dock/DockViewMenu.vue';
 import DockWorkspace from './components/dock/DockWorkspace.vue';
 import { createVoiceKeyHandler } from './keyboard/handlers/voice-keys.js';
 import { useVoiceCall } from './composables/useVoiceCall.js';
+import { useFirstRunOnboarding } from './composables/useFirstRunOnboarding.js';
 import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
 
 // ============================================================================
@@ -435,6 +437,27 @@ const {
     navStore.closeSettings();
   },
   openBindingEditor: (button, profileId, binding) => onEditBinding(button, profileId, binding),
+});
+
+const firstRunOnboarding = useFirstRunOnboarding({
+  getCompleted: () => configClient.configGetOnboardingCompleted(),
+  setCompleted: (completed) => configClient.configSetOnboardingCompleted(completed),
+  getTools: async () => state.cliTypes.map((id) => ({ id, name: getCliDisplayName(id) })),
+  getProjects: async () => {
+    await refreshProjects();
+    return state.projects;
+  },
+  browseDirectory: () => dialogClient.dialogOpenFolder(),
+  createProject: (dirPath) => projectsClient.projectCreate(dirPath),
+  spawnSession: (cliType, dirPath, prompt) => doSpawn(cliType, dirPath, prompt),
+  openSettings: (tabId) => {
+    if (tabId === 'scheduled-tasks') {
+      schedulerPopupTaskId.value = null;
+      schedulerPopupVisible.value = true;
+      return;
+    }
+    openSettingsTab(tabId);
+  },
 });
 
 const sidebarController = useSidebarController({
@@ -747,9 +770,13 @@ function onOpenHelp(): void {
 }
 
 function onOpenSettings(): void {
+  openSettingsTab(state.settingsTab || 'tools');
+}
+
+function openSettingsTab(tabId: string): void {
   settingsVisible.value = true;
   navStore.openSettings();
-  settingsTab.value = state.settingsTab || 'tools';
+  settingsTab.value = tabId;
   void loadSettingsData();
 }
 
@@ -1058,6 +1085,7 @@ onMounted(async () => {
     setPlanScreenPlanChangesChecker(hasUnsavedChanges);
 
     await chipBarStore.refresh(state.activeSessionId ?? null);
+    await firstRunOnboarding.initialize();
   } catch (error) {
     console.error('[App] Startup failed:', error);
   } finally {
@@ -1111,6 +1139,7 @@ onUnmounted(() => {
           @reset="onDockLayoutReset"
         />
         <button class="sidebar-btn" title="User Guide" @click="onOpenHelp">ℹ️</button>
+        <button class="sidebar-btn" title="Getting Started and setup topics" aria-label="Getting Started" @click="firstRunOnboarding.open">🚀</button>
         <button class="sidebar-btn" title="Open Logs Folder" @click="onOpenLogsFolder">🐛</button>
         <button class="sidebar-btn" title="Settings" @click="onOpenSettings">⚙</button>
       </div>
@@ -1318,5 +1347,6 @@ onUnmounted(() => {
       @task-updated="onScheduledTaskUpdated"
       @task-cancelled="onScheduledTaskCancelled"
     />
+    <FirstRunOnboarding :flow="firstRunOnboarding" />
   </div>
 </template>

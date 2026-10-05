@@ -70,6 +70,8 @@ export const PRELOAD_API_DOMAINS = {
     'configSetHapticFeedback',
     'configGetNotifications',
     'configSetNotifications',
+    'configGetOnboardingCompleted',
+    'configSetOnboardingCompleted',
     'configGetMcpConfig',
     'configSetMcpConfig',
     'configGetOperatorConfig',

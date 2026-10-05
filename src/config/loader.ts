@@ -400,6 +400,8 @@ export type UpdateCheckMode = 'auto' | 'manual';
 export interface SettingsConfig {
   hapticFeedback: boolean;
   notifications: boolean;
+  /** Whether first-run onboarding has been completed or skipped. */
+  onboardingCompleted?: boolean;
   escProtectionEnabled: boolean;
   /** Self-update: 'auto' checks GitHub at launch, 'manual' only on "Check now". */
   updateCheck?: UpdateCheckMode;
@@ -897,6 +899,16 @@ export class ConfigLoader {
   setNotifications(enabled: boolean): void {
     this.ensureLoaded();
     this.settings!.notifications = enabled;
+    this.saveSettings();
+  }
+
+  getOnboardingCompleted(): boolean {
+    return this.settings?.onboardingCompleted === true;
+  }
+
+  setOnboardingCompleted(completed: boolean): void {
+    if (!this.settings || typeof completed !== 'boolean') return;
+    this.settings.onboardingCompleted = completed;
     this.saveSettings();
   }
 

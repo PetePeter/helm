@@ -70,7 +70,13 @@ export class SettingsManager {
     if (!settings) {
       throw new Error('Invalid settings.yaml: could not parse');
     }
-    return this.normalize(settings);
+    const needsOnboardingMigration = settings.onboardingCompleted === undefined;
+    const normalized = this.normalize(settings);
+    // Bundled fresh-install settings explicitly contain false. An older user
+    // settings file does not, so migrate it as completed rather than showing a
+    // first-run wizard to someone upgrading an established installation.
+    if (needsOnboardingMigration) this.write(normalized);
+    return normalized;
   }
 
   save(settings: SettingsConfig): void {
@@ -91,6 +97,7 @@ export class SettingsManager {
   }
 
   private normalize(settings: SettingsConfig): SettingsConfig {
+    if (typeof settings.onboardingCompleted !== 'boolean') settings.onboardingCompleted = true;
     if (settings.hapticFeedback === undefined) settings.hapticFeedback = true;
     if (settings.notifications === undefined) settings.notifications = true;
 

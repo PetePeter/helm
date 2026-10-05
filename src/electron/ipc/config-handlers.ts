@@ -227,6 +227,26 @@ export function setupConfigHandlers(
     }
   });
 
+  ipcMain.handle('config:getOnboardingCompleted', () => {
+    try {
+      return configLoader.getOnboardingCompleted();
+    } catch (error) {
+      logger.error(`[IPC] Failed to get onboarding status: ${error}`);
+      return true;
+    }
+  });
+
+  ipcMain.handle('config:setOnboardingCompleted', (_event, completed: boolean) => {
+    try {
+      if (typeof completed !== 'boolean') return { success: false, error: 'Expected a boolean value' };
+      configLoader.setOnboardingCompleted(completed);
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to update onboarding status: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('config:getMcpConfig', () => {
     try {
       return configLoader.getMcpConfig();

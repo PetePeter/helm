@@ -1,3 +1,4 @@
 activeProfile: default
 hapticFeedback: false
 notifications: true
+onboardingCompleted: false
