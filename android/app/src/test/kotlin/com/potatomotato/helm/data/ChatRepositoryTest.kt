@@ -122,6 +122,22 @@ class ChatRepositoryTest {
     }
 
     @Test
+    fun `retry refuses a frozen message until it is unfrozen`() {
+        val frozen = repository.sending("s1", "carry on", at = 10)
+        repository.settle("s1", frozen, delivered = false, frozen = true)
+
+        val retried = repository.retry("s1", frozen, at = 20)
+
+        val thread = repository.thread("s1")
+        assertEquals(1, thread.size)
+        assertEquals("carry on", thread.single().text)
+        assertEquals(Delivery.Frozen, thread.single().delivery)
+        assertTrue(thread.single().fromPhone)
+        assertNull(retried)
+        assertEquals(frozen, thread.single().key)
+    }
+
+    @Test
     fun `retry is refused for anything not sitting in Failed`() {
         val sending = repository.sending("s1", "in flight", at = 10)
         val sent = repository.sending("s1", "delivered", at = 20)

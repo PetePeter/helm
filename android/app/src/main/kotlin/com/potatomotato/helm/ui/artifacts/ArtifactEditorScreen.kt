@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +41,7 @@ import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ArtifactRules.Verdict
+import com.potatomotato.helm.data.ArtifactIntent
 import com.potatomotato.helm.data.HelmArtifact
 import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.StagedAttachment
@@ -66,7 +68,11 @@ sealed interface ArtifactEdit {
      * screen was SHOWING — the version the user read, so paging back to v2 of 3
      * and revising means editing from v2, which is the honest place to start.
      */
-    data class Revision(val artifact: HelmArtifact, val shown: String) : ArtifactEdit
+    data class Revision(
+        val artifact: HelmArtifact,
+        val shown: String,
+        val intent: ArtifactIntent = artifact.intent,
+    ) : ArtifactEdit
 }
 
 /**
@@ -94,7 +100,7 @@ fun ArtifactEditorScreen(
     edit: ArtifactEdit,
     linkState: LinkState,
     /** The raw title and body; the caller decides which fields changed. */
-    onSubmit: (title: String, content: String) -> Unit,
+    onSubmit: (title: String, content: String, intent: ArtifactIntent) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     /** The staged files, in staged order. */
@@ -103,6 +109,7 @@ fun ArtifactEditorScreen(
     uploadStates: Map<String, AttachmentUploadState> = emptyMap(),
     /** Why the attach toolbar is dark, when it is. Null hides the toolbar entirely. */
     attachSupport: UploadSupport? = null,
+    manifestoSupported: Boolean = true,
     onAttachCamera: () -> Unit = {},
     onAttachGallery: () -> Unit = {},
     onAttachFiles: () -> Unit = {},
@@ -127,18 +134,26 @@ fun ArtifactEditorScreen(
     // The fields survive a rotation; the draft is the thing worth saving. The
     // edit is rebuilt by navigation, so the artifact here is display only —
     // the submit never reads it back.
-    var title by rememberSaveable { mutableStateOf(revision?.artifact?.title ?: "") }
-    var body by rememberSaveable { mutableStateOf(revision?.shown ?: "") }
+    var title by rememberSaveable(revision?.artifact?.id) { mutableStateOf(revision?.artifact?.title ?: "") }
+    var body by rememberSaveable(revision?.artifact?.id) { mutableStateOf(revision?.shown ?: "") }
+    var intent by rememberSaveable(revision?.artifact?.id) {
+        mutableStateOf(revision?.intent ?: ArtifactIntent.Normal)
+    }
 
+    val revisionRules = revision?.let {
+        ArtifactRules.Revision(it.artifact.title, it.shown, title, body)
+    }
     val verdict = when (edit) {
         is ArtifactEdit.New -> ArtifactRules.judgeCreate(title, body)
         is ArtifactEdit.Revision -> ArtifactRules.judgeRevision(
-            ArtifactRules.Revision(edit.artifact.title, edit.shown, title, body),
+            revisionRules!!,
             // A finished upload is already on the artifact, so it is no change.
             hasStaged = staged.any { uploadStates[it.key] !is AttachmentUploadState.Done },
         )
     }
     val sendable = verdict == Verdict.Ok
+    val intentChanged = manifestoSupported && revision != null && intent != revision.intent
+    val canSubmit = sendable || (verdict == Verdict.Unchanged && intentChanged)
     // Anything past Waiting is a create already in motion; Create must not fire
     // a second artifact into the one being assembled.
     val uploadsRunning = staged.any { it.key !in uploadStates || uploadStates[it.key] is AttachmentUploadState.Uploading }
@@ -219,7 +234,7 @@ fun ArtifactEditorScreen(
                 )
             }
             when (verdict) {
-                Verdict.Unchanged -> Hint(stringResource(R.string.artifacts_body_unchanged))
+                Verdict.Unchanged -> if (!intentChanged) Hint(stringResource(R.string.artifacts_body_unchanged))
                 Verdict.TooLarge -> Hint(stringResource(R.string.artifacts_too_large))
                 else -> {}
             }
@@ -232,6 +247,10 @@ fun ArtifactEditorScreen(
                 .padding(HelmSpacing.Gutter),
             verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
         ) {
+            if (manifestoSupported) ManifestoIntentToggle(
+                checked = intent == ArtifactIntent.Manifesto,
+                onCheckedChange = { intent = if (it) ArtifactIntent.Manifesto else ArtifactIntent.Normal },
+            )
             // A revise edits what the artifact ALREADY carries. Read live from the
             // list cache (the revision's artifact is rebuilt from it), so a
             // delete that lands removes the row without a manual refresh.
@@ -255,12 +274,17 @@ fun ArtifactEditorScreen(
             AttachToolbar(attachSupport, onAttachCamera, onAttachGallery, onAttachFiles)
             PrimaryButton(
                 text = stringResource(
-                    if (revision == null) R.string.artifacts_submit_create else R.string.artifacts_submit_revise,
+                    when {
+                        revision == null -> R.string.artifacts_submit_create
+                        revisionRules?.changesText == false && intentChanged && staged.isEmpty() ->
+                            R.string.artifacts_submit_intent
+                        else -> R.string.artifacts_submit_revise
+                    },
                 ),
-                enabled = sendable && !uploadsRunning && !reviseSent,
+                enabled = canSubmit && !uploadsRunning && !reviseSent,
                 // The client enforces the same rules again before the radio; the
                 // trim here is the one place the title is settled.
-                onClick = { onSubmit(ArtifactRules.title(title), body) },
+                onClick = { onSubmit(ArtifactRules.title(title), body, intent) },
             )
             GhostButton(text = stringResource(R.string.control_rename_cancel), onClick = onBack)
         }
@@ -275,6 +299,32 @@ fun ArtifactEditorScreen(
             onCancel = { confirmingDelete = null },
         )
     }
+    }
+}
+
+@Composable
+private fun ManifestoIntentToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.artifacts_intent_manifesto),
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+                text = stringResource(R.string.artifacts_intent_manifesto_help),
+                color = HelmColors.Faint,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
     }
 }
 

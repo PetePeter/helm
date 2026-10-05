@@ -38,6 +38,7 @@ import {
 import type { LoopDriver } from './loop-driver.js';
 import { OPERATOR_MANTRA } from '../../mcp/guides/operator-guide.js';
 import { logger } from '../../utils/logger.js';
+import { appendManifestoContext, formatManifestoContext } from '../artifact-context.js';
 
 /** A claimed plan reduced to what a nudge names. */
 export interface ClaimedPlanSummary {
@@ -58,6 +59,8 @@ export interface ContextInjectorDeps {
   getStartablePlans(dirPath: string): ClaimedPlanSummary[];
   /** Draft memos for the session. */
   getDrafts(sessionId: string): { label: string; text: string }[];
+  /** Persistent artifact context; every selected manifesto is included. */
+  getManifestos?(sessionId: string): Array<{ title: string; content: string }>;
   /** Handover text pending across a compaction, when armed. */
   getHandover(sessionId: string): string | undefined;
   /**
@@ -164,8 +167,10 @@ export class ContextInjector {
   // -- A. SessionStart: plan + drafts + handover ---------------------------
 
   private respondSessionStart(event: HookEvent, session: SessionInfo): InjectorResponse {
-    // The mantra leads for the operator: the cap drops trailing sources first.
+    // Manifesto context and any already-pending handover travel together, but
+    // keep the whole persistent section ahead of capped incidental context.
     const parts: string[] = session.role === 'operator' ? [OPERATOR_MANTRA] : [];
+    const manifestoContext = formatManifestoContext(this.deps.getManifestos?.(session.id) ?? []);
     const plan = this.deps.getClaimedPlan(session.id);
     if (plan) {
       parts.push(
@@ -210,12 +215,20 @@ export class ContextInjector {
       ));
     }
     const handover = this.deps.getHandover(session.id);
-    if (handover) {
-      parts.push(truncate(`Handover note carried across your last compaction:\n${handover}`, SOURCE_CAP_CHARS));
+    const persistentContext = appendManifestoContext(
+      handover ? `One-shot Handover note carried across your last compaction:\n${handover}` : undefined,
+      manifestoContext,
+    );
+    if (persistentContext) {
+      if (manifestoContext) parts.unshift(persistentContext);
+      else parts.push(truncate(persistentContext, SOURCE_CAP_CHARS));
     }
     if (parts.length === 0) return null;
 
-    const context = capJoined(parts, TOTAL_CAP_CHARS);
+    // Manifestos are explicitly opted-in persistent context: reserve space for
+    // every one plus the ordinary allowance for other context sources.
+    const protectedLength = manifestoContext ? persistentContext?.length ?? 0 : 0;
+    const context = capJoined(parts, protectedLength + TOTAL_CAP_CHARS);
     logger.info(
       `[HookInject] SessionStart session=${session.id} (${session.name}): ` +
         `${parts.length} source(s), ${context.length} chars`,

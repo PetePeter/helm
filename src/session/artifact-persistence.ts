@@ -23,7 +23,8 @@ function isArtifact(value: unknown): value is Artifact {
     && value.versions.every(isArtifactVersion)
     && isNumber(value.createdAt)
     && isNumber(value.updatedAt)
-    && (value.source === undefined || value.source === 'ai' || value.source === 'manual');
+    && (value.source === undefined || value.source === 'ai' || value.source === 'manual')
+    && (value.intent === undefined || typeof value.intent === 'string');
 }
 
 function sanitizeArtifacts(value: unknown): Record<string, Artifact[]> {
@@ -31,7 +32,12 @@ function sanitizeArtifacts(value: unknown): Record<string, Artifact[]> {
   const result: Record<string, Artifact[]> = {};
   for (const [sessionId, artifacts] of Object.entries(value)) {
     if (!Array.isArray(artifacts)) continue;
-    const valid = artifacts.filter(isArtifact);
+    const valid = artifacts.filter(isArtifact).map(artifact => {
+      if (artifact.intent !== undefined && artifact.intent !== 'normal' && artifact.intent !== 'manifesto') {
+        return { ...artifact, intent: 'normal' as const };
+      }
+      return artifact;
+    });
     if (valid.length > 0) result[sessionId] = valid;
   }
   return result;

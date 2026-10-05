@@ -1498,6 +1498,7 @@ export const MCP_TOOLS: McpTool[] = [
         content: { type: 'string', description: 'The artifact body (markdown or HTML source).' },
         filePath: { type: 'string', description: 'Absolute path to an existing source file. Caller owns this file; Helm reads it but never deletes or modifies it.' },
         contentType: { type: 'string', description: 'Optional MIME type for filePath input.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: "Context intent. Defaults to 'normal'; 'manifesto' is automatically supplied as context after session resets." },
       },
       oneOf: [
         { required: ['title', 'kind', 'content'], not: { required: ['filePath'] } },
@@ -1518,12 +1519,27 @@ export const MCP_TOOLS: McpTool[] = [
         content: { type: 'string', description: 'The new full content body (becomes the latest version).' },
         filePath: { type: 'string', description: 'Absolute path to an existing source file. Caller owns this file; Helm reads it but never deletes or modifies it.' },
         contentType: { type: 'string', description: 'Optional MIME type for filePath input.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: 'Optional new intent. Omit to preserve the artifact intent.' },
       },
       required: ['id'],
       oneOf: [
         { required: ['content'], not: { required: ['filePath'] } },
         { required: ['filePath'], not: { required: ['content'] } },
       ],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'artifact_set_intent',
+    title: 'Set Artifact Intent',
+    description: 'Change an artifact between normal and manifesto without adding a content version. Manifesto artifacts are included as context after session resets.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The artifact id to change.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: 'The artifact intent.' },
+      },
+      required: ['id', 'intent'],
       additionalProperties: false,
     },
   },
@@ -1545,7 +1561,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'artifact_list',
     title: 'List Artifacts',
     description:
-      'List THIS session\'s artifacts (resolved from your auth context) so you can see the reports/analyses you have already produced. Returns id, title, kind, version count, and timestamps for each — call artifact_get(id) to re-read full content.',
+      'List THIS session\'s artifacts (resolved from your auth context) so you can see the reports/analyses you have already produced. Returns id, title, kind, intent, version count, and timestamps for each — call artifact_get(id) to re-read full content.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -1581,7 +1597,7 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_artifact_list',
     title: 'List Session Artifacts',
     description:
-      'List the artifacts owned by the NAMED session (sessionId argument, not your own auth context — this is the session-addressed surface a paired phone uses). Returns id, title, kind, versionCount, timestamps, and the attachments metadata (id, filename, contentType, sizeBytes, createdAt) for each — call session_artifact_get to read one, or session_artifact_download for an attachment\'s bytes.',
+      'List the artifacts owned by the NAMED session (sessionId argument, not your own auth context — this is the session-addressed surface a paired phone uses). Returns id, title, kind, intent, versionCount, timestamps, and the attachments metadata (id, filename, contentType, sizeBytes, createdAt) for each — call session_artifact_get to read one, or session_artifact_download for an attachment\'s bytes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1619,6 +1635,7 @@ export const MCP_TOOLS: McpTool[] = [
         title: { type: 'string', description: 'Display title for the artifact.' },
         kind: { type: 'string', enum: ['md'], description: "Only 'md' (markdown) can be created from a session-addressed call in v1." },
         content: { type: 'string', description: 'The markdown source.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: "Context intent. Defaults to 'normal'." },
       },
       required: ['sessionId', 'title', 'kind', 'content'],
       additionalProperties: false,
@@ -1636,8 +1653,25 @@ export const MCP_TOOLS: McpTool[] = [
         artifactId: { type: 'string', description: 'The artifact id to revise.' },
         content: { type: 'string', description: 'Optional new full content body (becomes the latest version).' },
         title: { type: 'string', description: 'Optional new title (trimmed; must not be blank). Renaming does not add a version.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: 'Optional new intent; omit to preserve the current intent.' },
       },
       required: ['sessionId', 'artifactId'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_artifact_set_intent',
+    title: 'Set Session Artifact Intent',
+    description:
+      'Set the context intent of one artifact owned by a NAMED session. This capability is also the compatibility signal for clients that offer manifesto intent controls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: '[TARGET] The session that must own the artifact.' },
+        artifactId: { type: 'string', description: 'The artifact id to update.' },
+        intent: { type: 'string', enum: ['normal', 'manifesto'], description: 'The artifact intent.' },
+      },
+      required: ['sessionId', 'artifactId', 'intent'],
       additionalProperties: false,
     },
   },

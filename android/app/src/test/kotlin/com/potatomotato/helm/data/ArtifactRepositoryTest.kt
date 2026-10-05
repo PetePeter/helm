@@ -83,6 +83,19 @@ class ArtifactRepositoryTest {
     }
 
     @Test
+    fun `manifesto intent parses and missing or unknown values default to normal`() {
+        repo.listArrived(
+            "s1",
+            parse("""[{"id":"manifesto","intent":"manifesto"},{"id":"old"},{"id":"future","intent":"later"}]"""),
+        )
+
+        val artifacts = (repo.list.value as ArtifactList.Ready).artifacts
+        assertEquals(ArtifactIntent.Manifesto, artifacts[0].intent)
+        assertEquals(ArtifactIntent.Normal, artifacts[1].intent)
+        assertEquals(ArtifactIntent.Normal, artifacts[2].intent)
+    }
+
+    @Test
     fun `a list answer that is not an array leaves the previous list standing`() {
         repo.listArrived("s1", listArray())
 
@@ -258,6 +271,14 @@ class ArtifactRepositoryTest {
         assertEquals(3, done.read.artifact.versionCount)
         assertEquals(2, done.read.requestedVersion)
         assertEquals("# Report\n\nBody.", done.read.content)
+    }
+
+    @Test
+    fun `a read carries manifesto intent`() {
+        val body = parse(readJson().replace("\"updatedAt\":200", "\"updatedAt\":200,\"intent\":\"manifesto\""))
+        assertTrue(repo.readArrived("s1", "a1", null, body))
+
+        assertEquals(ArtifactIntent.Manifesto, (repo.read.value as ArtifactRead.Done).read.artifact.intent)
     }
 
     @Test

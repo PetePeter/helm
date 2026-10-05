@@ -5,6 +5,7 @@ function makeDeps() {
   const service = {
     createArtifactFromFile: vi.fn(() => ({ artifact: { id: 'a1' } })),
     updateArtifactFromFile: vi.fn(() => ({ artifact: { id: 'a1' }, attachment: { id: 'att-1' } })),
+    setArtifactIntent: vi.fn(() => ({ id: 'a1', intent: 'manifesto' })),
     getArtifact: vi.fn(() => ({ artifactId: 'a1', version: 1, tempPath: 'C:\\Temp\\artifact.md' })),
   };
   return {
@@ -24,7 +25,7 @@ describe('MCP artifact file dispatch', () => {
     }, { sessionId: 'sess-1' });
 
     expect(deps.serviceMocks.createArtifactFromFile).toHaveBeenCalledWith(
-      'sess-1', 'C:\\reports\\result.pdf', undefined, 'application/pdf',
+      'sess-1', 'C:\\reports\\result.pdf', undefined, 'application/pdf', undefined,
     );
   });
 
@@ -38,11 +39,17 @@ describe('MCP artifact file dispatch', () => {
     }, { sessionId: 'sess-1' });
 
     expect(deps.serviceMocks.updateArtifactFromFile).toHaveBeenCalledWith(
-      'sess-1', 'a1', 'C:\\reports\\new.pdf', 'application/pdf',
+      'sess-1', 'a1', 'C:\\reports\\new.pdf', 'application/pdf', undefined,
     );
     expect(deps.serviceMocks.getArtifact).toHaveBeenCalledWith(
       'sess-1', 'a1', 2, { asFile: true },
     );
+  });
+
+  it('dispatches a metadata-only artifact intent change', async () => {
+    const deps = makeDeps();
+    await callMcpTool(deps, 'artifact_set_intent', { id: 'a1', intent: 'manifesto' }, { sessionId: 'sess-1' });
+    expect(deps.serviceMocks.setArtifactIntent).toHaveBeenCalledWith('sess-1', 'a1', 'manifesto');
   });
 
   it('rejects content and filePath together', async () => {

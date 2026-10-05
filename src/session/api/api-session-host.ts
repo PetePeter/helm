@@ -46,6 +46,8 @@ export interface ApiSessionHostDeps {
   mcpTools: () => readonly McpTool[];
   listSkills: (cwd: string | undefined) => SkillSummary[];
   getMission: (sessionId: string) => string | undefined;
+  /** Persistent opted-in artifact context, supplied on API context reset paths. */
+  getManifestoContext?: (sessionId: string) => string;
   /** Create a memory owned by a session, with the first-party agentRun / summary flags. */
   createMemory: (sessionId: string, input: { tldr: string; content: string; agentRun: boolean; summary: boolean }) => { id: string };
   linkMemory: (sessionId: string, fromId: string, toId: string) => void;
@@ -231,9 +233,10 @@ export class ApiSessionHost {
       maxToolRounds: api.maxToolRounds,
       history: this.loadHistory(historyFile),
       saveHistory: (history) => this.saveHistory(historyFile, history),
-      quickCompactHistory: (history, handover) => this.quickCompactHistory(
-        history, spawn.cliSessionName, historyFile, handover,
+      quickCompactHistory: (history, handover, manifestoContext) => this.quickCompactHistory(
+        history, spawn.cliSessionName, historyFile, handover, manifestoContext,
       ),
+      getManifestoContext: () => this.deps.getManifestoContext?.(sessionId) ?? '',
       mutableContext: () => buildMutableContext({
         now: now(),
         cwd,
@@ -595,13 +598,14 @@ export class ApiSessionHost {
     cliSessionName: string,
     historyFile: string | null,
     handover?: string,
+    manifestoContext?: string,
   ): { history: ChatMessage[]; archiveFile: string; transcriptFile: string } {
     if (!historyFile) throw new Error('Cannot persist API history for this session name');
     const archiveId = randomUUID();
     const archiveFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.json`);
     const transcriptFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.md`);
     const nextHistory: ChatMessage[] = [
-      { role: 'user', content: buildTranscriptResumePrompt(transcriptFile, handover) },
+      { role: 'user', content: buildTranscriptResumePrompt(transcriptFile, handover, manifestoContext) },
       { role: 'assistant', content: 'Understood — continuing from the saved API transcript.' },
     ];
     const created: string[] = [];

@@ -10,7 +10,7 @@ import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanTask, PlanType
 import { nextCheckAt } from '../session/operator-tasks.js';
 import type { PlanAttachment, PlanAttachmentTempFile } from '../types/plan-attachment.js';
 import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
-import type { Artifact, ArtifactKind } from '../types/artifact.js';
+import type { Artifact, ArtifactIntent, ArtifactKind } from '../types/artifact.js';
 import type {
   TelegramBridge,
   TelegramChannel,
@@ -596,8 +596,8 @@ export class HelmControlService extends EventEmitter {
     return this.artifactManager;
   }
 
-  createArtifact(sessionId: string, title: string, kind: ArtifactKind, content: string): Artifact {
-    return this.requireArtifactManager().create(sessionId, title, kind, content);
+  createArtifact(sessionId: string, title: string, kind: ArtifactKind, content: string, intent: ArtifactIntent = 'normal'): Artifact {
+    return this.requireArtifactManager().create(sessionId, title, kind, content, undefined, undefined, intent);
   }
 
   createArtifactFromFile(
@@ -605,6 +605,7 @@ export class HelmControlService extends EventEmitter {
     filePath: string,
     title?: string,
     contentType?: string,
+    intent: ArtifactIntent = 'normal',
   ): ReturnType<typeof createArtifactFromBytes> {
     const input = readArtifactInputFile(filePath, contentType);
     return createArtifactFromBytes(
@@ -613,6 +614,9 @@ export class HelmControlService extends EventEmitter {
       sessionId,
       input,
       title,
+      'ai',
+      true,
+      intent,
     );
   }
 
@@ -636,14 +640,21 @@ export class HelmControlService extends EventEmitter {
    * body history, and a rename is metadata. The rename is validated before any
    * mutation so a blank title never leaves a half-applied revision behind.
    */
-  updateArtifact(callerSessionId: string, id: string, content: string | undefined, title?: string): Artifact {
+  updateArtifact(callerSessionId: string, id: string, content: string | undefined, title?: string, intent?: ArtifactIntent): Artifact {
     this.requireOwnedArtifact(callerSessionId, id);
     const newTitle = title === undefined ? undefined : title.trim();
     if (newTitle === '') throw new Error('title must not be blank');
-    if (content === undefined && newTitle === undefined) throw new Error('content or title is required');
+    if (content === undefined && newTitle === undefined && intent === undefined) throw new Error('content, title, or intent is required');
     const manager = this.requireArtifactManager();
     if (newTitle !== undefined) manager.rename(id, newTitle);
-    if (content !== undefined) manager.update(id, content);
+    if (content !== undefined) manager.update(id, content, intent);
+    else if (intent !== undefined) manager.setIntent(id, intent);
+    return this.requireOwnedArtifact(callerSessionId, id);
+  }
+
+  setArtifactIntent(callerSessionId: string, id: string, intent: ArtifactIntent): Artifact {
+    this.requireOwnedArtifact(callerSessionId, id);
+    this.requireArtifactManager().setIntent(id, intent);
     return this.requireOwnedArtifact(callerSessionId, id);
   }
 
@@ -652,14 +663,17 @@ export class HelmControlService extends EventEmitter {
     id: string,
     filePath: string,
     contentType?: string,
+    intent?: ArtifactIntent,
   ): ReturnType<typeof updateArtifactFromBytes> {
     const artifact = this.requireOwnedArtifact(callerSessionId, id);
-    return updateArtifactFromBytes(
+    const result = updateArtifactFromBytes(
       this.requireArtifactManager(),
       this.requireArtifactAttachmentManager(),
       artifact,
       readArtifactInputFile(filePath, contentType),
+      intent,
     );
+    return result;
   }
 
   showArtifact(callerSessionId: string, id: string): { id: string; revealed: true } {
@@ -764,6 +778,7 @@ export class HelmControlService extends EventEmitter {
     id: string;
     title: string;
     kind: ArtifactKind;
+    intent: ArtifactIntent;
     versionCount: number;
     createdAt: number;
     updatedAt: number;
@@ -774,6 +789,7 @@ export class HelmControlService extends EventEmitter {
       id: a.id,
       title: a.title,
       kind: a.kind,
+      intent: a.intent ?? 'normal',
       versionCount: a.versions.length,
       createdAt: a.createdAt,
       updatedAt: a.updatedAt,

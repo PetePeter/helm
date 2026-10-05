@@ -1,5 +1,5 @@
 import type { ContextBindingTargetType } from '../../types/context.js';
-import type { ArtifactKind } from '../../types/artifact.js';
+import type { ArtifactIntent, ArtifactKind } from '../../types/artifact.js';
 import { validateGraphDepth } from '../../session/memory-graph.js';
 import {
   MEMORY_DREAM_MAX_CANDIDATES,
@@ -125,6 +125,11 @@ export function asArtifactKind(value: unknown): ArtifactKind {
     return value;
   }
   throw new Error('kind must be one of markdown or html');
+}
+
+export function asArtifactIntent(value: unknown): ArtifactIntent {
+  if (value === 'normal' || value === 'manifesto') return value;
+  throw new Error('intent must be one of normal or manifesto');
 }
 
 /**

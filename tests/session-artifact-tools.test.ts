@@ -149,7 +149,7 @@ describe('session_artifact_* dispatch', () => {
     await callMcpTool(deps, 'session_artifact_create', {
       sessionId: SESSION, title: 'Report', kind: 'md', content: '# Report',
     }, {});
-    expect(deps.serviceMocks.createArtifact).toHaveBeenCalledWith(SESSION, 'Report', 'markdown', '# Report');
+    expect(deps.serviceMocks.createArtifact).toHaveBeenCalledWith(SESSION, 'Report', 'markdown', '# Report', undefined);
   });
 
   it('rejects every other kind rather than silently coercing it', async () => {
@@ -167,7 +167,7 @@ describe('session_artifact_* dispatch', () => {
     await callMcpTool(deps, 'session_artifact_update', {
       sessionId: SESSION, artifactId: 'a1', content: 'v2 body',
     }, {});
-    expect(deps.serviceMocks.updateArtifact).toHaveBeenCalledWith(SESSION, 'a1', 'v2 body', undefined);
+    expect(deps.serviceMocks.updateArtifact).toHaveBeenCalledWith(SESSION, 'a1', 'v2 body', undefined, undefined);
   });
 
   it('downloads as a base64 file envelope', async () => {

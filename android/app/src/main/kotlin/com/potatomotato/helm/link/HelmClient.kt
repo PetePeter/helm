@@ -2,6 +2,7 @@ package com.potatomotato.helm.link
 
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactRepository
+import com.potatomotato.helm.data.ArtifactIntent
 import com.potatomotato.helm.data.ArtifactUploads
 import com.potatomotato.helm.data.TimeAsk
 import com.potatomotato.helm.data.TimeRepository
@@ -579,20 +580,23 @@ class HelmClient(
         title: String,
         content: String,
         attachmentKeys: List<String> = emptyList(),
+        intent: ArtifactIntent? = ArtifactIntent.Normal,
     ): Boolean {
         if (!ArtifactRules.fitsCreate(title, content)) {
             control.noticed(SessionAction.CreateArtifact, ActionOutcome.Failed(TOO_LARGE))
             return false
         }
+        val params = linkedMapOf<String, Any>(
+            "sessionId" to sessionId,
+            "title" to ArtifactRules.title(title),
+            "kind" to CREATE_KIND,
+            "content" to content,
+        )
+        intent?.let { params["intent"] = it.wireValue }
         return act(
             SessionAction.CreateArtifact,
             METHOD_SESSION_ARTIFACT_CREATE,
-            linkedMapOf(
-                "sessionId" to sessionId,
-                "title" to ArtifactRules.title(title),
-                "kind" to CREATE_KIND,
-                "content" to content,
-            ),
+            params,
         ) { outcome ->
             if (outcome is Outcome.Ok) {
                 val artifactId = idIn(outcome.result)
@@ -1085,12 +1089,26 @@ class HelmClient(
         artifactId: String,
         revision: ArtifactRules.Revision,
         attachmentKeys: List<String> = emptyList(),
+        intent: ArtifactIntent? = null,
     ): Boolean {
-        if (!ArtifactRules.fitsRevise(revision)) {
+        if (revision.changesText && !ArtifactRules.fitsRevise(revision)) {
             control.noticed(SessionAction.ReviseArtifact, ActionOutcome.Failed(TOO_LARGE))
             return false
         }
-        if (!revision.changesText) {
+        if (!revision.changesText && revision.newTitle == null && intent != null) {
+            val params = linkedMapOf<String, Any>(
+                "sessionId" to sessionId,
+                "artifactId" to artifactId,
+                "intent" to intent.wireValue,
+            )
+            return act(SessionAction.SetArtifactIntent, METHOD_SESSION_ARTIFACT_SET_INTENT, params) { outcome ->
+                if (outcome is Outcome.Ok) {
+                    if (attachmentKeys.isEmpty()) control.artifactLanded(SessionAction.ReviseArtifact, artifactId)
+                    else beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
+                }
+            }
+        }
+        if (!revision.changesText && intent == null) {
             if (attachmentKeys.isEmpty()) return false
             beginArtifactUploads(SessionAction.ReviseArtifact, sessionId, artifactId)
             return true
@@ -1098,6 +1116,7 @@ class HelmClient(
         val params = linkedMapOf<String, Any>("sessionId" to sessionId, "artifactId" to artifactId)
         revision.newBody?.let { params["content"] = it }
         revision.newTitle?.let { params["title"] = it }
+        intent?.let { params["intent"] = it.wireValue }
         return act(SessionAction.ReviseArtifact, METHOD_SESSION_ARTIFACT_UPDATE, params) { outcome ->
             if (outcome is Outcome.Ok) {
                 if (attachmentKeys.isEmpty()) {
@@ -2097,6 +2116,7 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_GET = "session_artifact_get"
         private const val METHOD_SESSION_ARTIFACT_CREATE = "session_artifact_create"
         private const val METHOD_SESSION_ARTIFACT_UPDATE = "session_artifact_update"
+        private const val METHOD_SESSION_ARTIFACT_SET_INTENT = "session_artifact_set_intent"
         private const val METHOD_SESSION_ARTIFACT_DOWNLOAD = "session_artifact_download"
         private const val METHOD_SESSION_ARTIFACT_DELETE = "session_artifact_delete"
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_DELETE = "session_artifact_attachment_delete"

@@ -593,6 +593,7 @@ internal val SessionAction.labelRes: Int
         SessionAction.Call -> R.string.control_action_call
         SessionAction.CreateArtifact -> R.string.artifacts_action_new
         SessionAction.ReviseArtifact -> R.string.artifacts_action_revise
+        SessionAction.SetArtifactIntent -> R.string.artifacts_action_revise
         SessionAction.SaveArtifact -> R.string.artifacts_action_save
         SessionAction.DeleteArtifact -> R.string.artifacts_action_delete
     }
@@ -615,6 +616,7 @@ internal val SessionAction.glyphRes: Int
         SessionAction.Call -> R.string.control_glyph_call
         SessionAction.CreateArtifact -> R.string.artifacts_glyph_new
         SessionAction.ReviseArtifact -> R.string.artifacts_glyph_revise
+        SessionAction.SetArtifactIntent -> R.string.artifacts_glyph_revise
         SessionAction.SaveArtifact -> R.string.artifacts_glyph_save
         SessionAction.DeleteArtifact -> R.string.artifacts_glyph_delete
     }

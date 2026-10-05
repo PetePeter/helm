@@ -22,7 +22,7 @@
  */
 
 import { logger } from '../utils/logger.js';
-import type { Artifact, ArtifactKind } from '../types/artifact.js';
+import type { Artifact, ArtifactIntent, ArtifactKind } from '../types/artifact.js';
 
 /**
  * Room for everything that rides WITH the body on the wire: the JSON-RPC
@@ -182,6 +182,7 @@ export interface ArtifactRead {
   id: string;
   title: string;
   kind: ArtifactKind;
+  intent: ArtifactIntent;
   versionCount: number;
   createdAt: number;
   updatedAt: number;
@@ -307,6 +308,7 @@ export function buildArtifactRead(artifact: Artifact, version?: number): Artifac
     id: artifact.id,
     title: artifact.title,
     kind: artifact.kind,
+    intent: artifact.intent ?? 'normal',
     versionCount: artifact.versions.length,
     createdAt: artifact.createdAt,
     updatedAt: artifact.updatedAt,

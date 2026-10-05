@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type { Artifact, ArtifactSource } from '../types/artifact.js';
+import type { Artifact, ArtifactIntent, ArtifactSource } from '../types/artifact.js';
 import { buildAttachmentHref, type ArtifactAttachment } from '../types/artifact-attachment.js';
 import { buildTextArtifact, isTextLikeFile, TEXT_INLINE_MAX_BYTES } from '../types/artifact-file.js';
 import type { ArtifactAttachmentManager } from './artifact-attachment-manager.js';
@@ -32,11 +32,12 @@ export function createArtifactFromBytes(
   title?: string,
   source: ArtifactSource = 'ai',
   inlineText = true,
+  intent: ArtifactIntent = 'normal',
 ): ArtifactFileResult {
   if (inlineText && isTextLikeFile(input.filename, input.contentType) && input.content.byteLength <= TEXT_INLINE_MAX_BYTES) {
     const draft = buildTextArtifact(input.filename, input.content.toString('utf8'));
     return {
-      artifact: artifactManager.create(sessionId, title ?? draft.title, 'markdown', draft.content, source),
+      artifact: artifactManager.create(sessionId, title ?? draft.title, 'markdown', draft.content, source, undefined, intent),
     };
   }
 
@@ -44,7 +45,7 @@ export function createArtifactFromBytes(
   try {
     const attachment = attachmentManager.add(artifactId, input);
     const content = buildAttachmentContent(attachmentManager, artifactId, attachment, input.contentType);
-    const artifact = artifactManager.create(sessionId, title ?? input.filename, 'markdown', content, source, artifactId);
+    const artifact = artifactManager.create(sessionId, title ?? input.filename, 'markdown', content, source, artifactId, intent);
     return { artifact, attachment };
   } catch (error) {
     try { attachmentManager.deleteForArtifact(artifactId); } catch { /* best effort rollback */ }
@@ -57,10 +58,11 @@ export function updateArtifactFromBytes(
   attachmentManager: ArtifactAttachmentManager,
   artifact: Artifact,
   input: ArtifactFileBytes,
+  intent?: ArtifactIntent,
 ): ArtifactFileResult {
   if (isTextLikeFile(input.filename, input.contentType) && input.content.byteLength <= TEXT_INLINE_MAX_BYTES) {
     const draft = buildTextArtifact(input.filename, input.content.toString('utf8'));
-    return { artifact: artifactManager.update(artifact.id, draft.content) ?? artifact };
+    return { artifact: artifactManager.update(artifact.id, draft.content, intent) ?? artifact };
   }
 
   const attachment = attachmentManager.add(artifact.id, input);
@@ -68,6 +70,7 @@ export function updateArtifactFromBytes(
     const updated = artifactManager.update(
       artifact.id,
       buildAttachmentContent(attachmentManager, artifact.id, attachment, input.contentType),
+      intent,
     );
     if (!updated) throw new Error(`Artifact not found: ${artifact.id}`);
     return { artifact: updated, attachment };

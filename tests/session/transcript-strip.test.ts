@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { stripTranscript } from '../../src/session/transcript-strip.js';
+import { buildTranscriptResumePrompt, stripTranscript } from '../../src/session/transcript-strip.js';
 import { KEEP_WARM_PROMPT, HEARTBEAT_OPEN, HEARTBEAT_CLOSE } from '../../src/session/keep-warmer.js';
 
 const jsonl = (...records: unknown[]): string => records.map(r => JSON.stringify(r)).join('\n');
@@ -13,6 +13,15 @@ const jsonl = (...records: unknown[]): string => records.map(r => JSON.stringify
 const ccUser = (content: unknown, extra: Record<string, unknown> = {}) =>
   ({ type: 'user', message: { role: 'user', content }, ...extra });
 const ccAssistant = (content: unknown) => ({ type: 'assistant', message: { role: 'assistant', content } });
+
+describe('buildTranscriptResumePrompt', () => {
+  it('keeps a one-shot handover distinct from persistent manifesto context', () => {
+    const prompt = buildTranscriptResumePrompt('history.md', 'preserve these ids', 'Persistent manifesto context\n\n## Rules');
+    expect(prompt).toContain('Handover note: preserve these ids');
+    expect(prompt).toContain('Persistent manifesto context');
+    expect(prompt.indexOf('Handover note: preserve these ids')).toBeLessThan(prompt.indexOf('Persistent manifesto context'));
+  });
+});
 
 describe('stripTranscript — Claude Code', () => {
   it('keeps prompts and prose, reduces tool calls to one line and drops thinking and tool output', () => {

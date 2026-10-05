@@ -2079,8 +2079,9 @@ describe('HelmControlService artifact session ownership', () => {
 describe('HelmControlService artifact title revision', () => {
   async function setup() {
     const { ArtifactManager } = await import('../src/session/artifact-manager.js');
+    const { ArtifactAttachmentManager } = await import('../src/session/artifact-attachment-manager.js');
     const { service } = makeService();
-    service.setArtifactManager(new ArtifactManager());
+    service.setArtifactManager(new ArtifactManager(), new ArtifactAttachmentManager());
     const created = service.createArtifact('sessA', 'Old', 'markdown', 'v1 body');
     return { service, id: created.id };
   }
@@ -2114,6 +2115,15 @@ describe('HelmControlService artifact title revision', () => {
 
   it('rejects a call with neither content nor title', async () => {
     const { service, id } = await setup();
-    expect(() => service.updateArtifact('sessA', id, undefined)).toThrow('content or title is required');
+    expect(() => service.updateArtifact('sessA', id, undefined)).toThrow('content, title, or intent is required');
+  });
+
+  it('changes intent without adding a version and includes it in artifact listing', async () => {
+    const { service, id } = await setup();
+    const changed = service.setArtifactIntent('sessA', id, 'manifesto');
+    expect(changed.intent).toBe('manifesto');
+    expect(changed.versions).toHaveLength(1);
+    expect(service.listArtifacts('sessA')[0].intent).toBe('manifesto');
+    expect(service.updateArtifact('sessA', id, undefined, undefined, 'normal').intent).toBe('normal');
   });
 });

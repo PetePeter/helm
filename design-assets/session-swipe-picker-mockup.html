@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helm · Swipe session picker</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --surface: #0b0b0d;
+      --line: #1e1e23;
+      --txt: #fff;
+      --dim: #8b8b95;
+      --faint: #5a5a63;
+      --accent: #ccff00;
+      --active: #4ade80;
+      --waiting: #60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: #111114;
+      color: var(--txt);
+      font: 15px/1.45 system-ui, sans-serif;
+    }
+    main { width: min(100%, 850px); display: grid; gap: 18px; justify-items: center; }
+    h1 { margin: 0; font-size: clamp(20px, 4vw, 28px); font-weight: 650; }
+    .lede { margin: -10px 0 0; color: var(--dim); text-align: center; }
+    .phone {
+      width: min(100%, 390px);
+      aspect-ratio: 390 / 790;
+      position: relative;
+      overflow: hidden;
+      border: 8px solid #29292e;
+      border-radius: 36px;
+      background: var(--bg);
+      box-shadow: 0 24px 80px #000a;
+      isolation: isolate;
+    }
+    .status {
+      height: 35px; padding: 10px 20px 0; display: flex; justify-content: space-between;
+      color: #ddd; font-size: 11px; position: relative; z-index: 2;
+    }
+    .chat-image {
+      position: absolute; inset: 35px 0 0; width: 100%; height: calc(100% - 35px);
+      object-fit: cover; transform: translateX(-39%); transition: transform .18s ease-out;
+    }
+    .session-picker {
+      position: absolute; z-index: 1; top: 35px; right: 0; bottom: 0; width: 39%;
+      border-left: 1px solid #25252a; background: #000; display: flex; flex-direction: column;
+    }
+    .picker-title {
+      min-height: 48px; padding: 12px 9px 8px; color: var(--dim); font-size: 10px;
+      line-height: 1.2; letter-spacing: .08em; text-transform: uppercase;
+      border-bottom: 1px solid var(--line);
+    }
+    .picker-list { flex: 1; min-height: 0; overflow: auto; touch-action: none; }
+    .group-header {
+      min-height: 35px; display: flex; align-items: center; justify-content: space-between;
+      gap: 4px; padding: 8px 7px; border-bottom: 1px solid var(--line);
+      color: var(--dim); font-size: 9px; letter-spacing: .04em; text-transform: uppercase;
+    }
+    .session {
+      min-height: 65px; display: grid; grid-template-columns: 27px minmax(0, 1fr) auto;
+      align-items: center; gap: 4px; padding: 7px 6px 7px 2px;
+      border-bottom: 1px solid #151519; color: #c6c6cc; cursor: pointer;
+      font-size: 11px; line-height: 1.2;
+    }
+    .session .arrow { color: transparent; font-size: 26px; font-weight: 800; text-align: center; }
+    .session .name { min-width: 0; }
+    .session .name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+    .session.selected { color: var(--txt); background: #171a08; box-shadow: inset 3px 0 var(--accent); }
+    .session.selected .arrow { color: var(--accent); }
+    .session small { display: block; margin-top: 4px; color: var(--dim); font-size: 9px; }
+    .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; background: var(--active); }
+    .dot.waiting { background: var(--waiting); }
+    .badge { border-radius: 10px; background: var(--accent); color: #111; padding: 3px 5px; font-size: 9px; font-weight: 750; }
+    .hint {
+      position: absolute; z-index: 2; left: 50%; bottom: 15px; transform: translateX(-50%);
+      width: max-content; max-width: 92%; border: 1px solid #333; border-radius: 20px;
+      background: #111e; padding: 7px 11px; color: #ddd; font-size: 10px; text-align: center;
+      backdrop-filter: blur(8px);
+    }
+    .controls { display: flex; align-items: center; gap: 10px; color: var(--dim); font-size: 13px; }
+    button {
+      border: 1px solid #45454b; border-radius: 10px; background: var(--surface);
+      color: var(--txt); padding: 8px 12px; font: inherit; cursor: pointer;
+    }
+    button:focus-visible, .session:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .result { min-height: 20px; color: var(--accent); font-size: 13px; }
+    .notes { max-width: 540px; color: var(--dim); text-align: center; font-size: 13px; }
+    @media (max-width: 440px) { body { padding: 18px 10px; } .phone { border-width: 5px; border-radius: 30px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Swipe session picker</h1>
+    <p class="lede">Preview the destination before switching chats.</p>
+    <section class="phone" aria-label="Helm chat swipe preview">
+      <div class="status"><span>9:41</span><span>●  ▰  82%</span></div>
+      <img class="chat-image" alt="Embedded SVG illustration of a chat thread sliding left to reveal the session picker"
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 390 755'%3E%3Crect width='390' height='755' fill='%23000000'/%3E%3Crect y='0' width='390' height='58' fill='%230b0b0d'/%3E%3Cpath d='M20 30h13m-6-6-7 6 7 6' stroke='%23fff' stroke-width='2' fill='none'/%3E%3Ctext x='48' y='27' fill='white' font-family='Arial,sans-serif' font-size='15' font-weight='bold'%3ERelease planning%3C/text%3E%3Ctext x='48' y='44' fill='%238b8b95' font-family='Arial,sans-serif' font-size='10'%3Efeature branch · working%3C/text%3E%3Crect x='18' y='108' width='240' height='62' rx='16' fill='%23151519'/%3E%3Ctext x='32' y='134' fill='%23eee' font-family='Arial,sans-serif' font-size='12'%3EThe Android build is ready.%3C/text%3E%3Ctext x='32' y='153' fill='%238b8b95' font-family='Arial,sans-serif' font-size='10'%3Edesktop · 9:38%3C/text%3E%3Crect x='112' y='202' width='250' height='77' rx='16' fill='%2323290a'/%3E%3Ctext x='127' y='229' fill='white' font-family='Arial,sans-serif' font-size='12'%3ECan you review the swipe%3C/text%3E%3Ctext x='127' y='247' fill='white' font-family='Arial,sans-serif' font-size='12'%3Epreview before I switch?%3C/text%3E%3Ctext x='127' y='265' fill='%238b8b95' font-family='Arial,sans-serif' font-size='10'%3Eyou · now%3C/text%3E%3Crect x='18' y='321' width='222' height='62' rx='16' fill='%23151519'/%3E%3Ctext x='32' y='347' fill='%23eee' font-family='Arial,sans-serif' font-size='12'%3EChoose the target, then%3C/text%3E%3Ctext x='32' y='366' fill='%23eee' font-family='Arial,sans-serif' font-size='12'%3Erelease to open it.%3C/text%3E%3Crect y='650' width='390' height='70' fill='%230b0b0d'/%3E%3Crect x='18' y='665' width='354' height='42' rx='22' fill='%23151519' stroke='%2325252a'/%3E%3Ctext x='39' y='691' fill='%238b8b95' font-family='Arial,sans-serif' font-size='12'%3EMessage...%3C/text%3E%3Ccircle cx='343' cy='686' r='16' fill='%23ccff00'/%3E%3Cpath d='M337 686h12m-5-5 5 5-5 5' stroke='%230b0b0d' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+      <aside class="session-picker">
+        <div class="picker-title">Choose session<br>Release to open</div>
+        <div class="picker-list" id="picker" tabindex="0" aria-label="Sessions. Use up and down arrows to choose, Enter to open.">
+          <div class="group-header"><span>Gamepad CLI Hub</span><span>5</span></div>
+          <div class="session" role="option" tabindex="-1"><span class="arrow">➜</span><span class="name"><strong>Desktop onboarding</strong><small><i class="dot"></i>working</small></span><span class="badge">2</span></div>
+          <div class="session" role="option" tabindex="-1"><span class="arrow">➜</span><span class="name"><strong>Reply count badges</strong><small><i class="dot waiting"></i>waiting</small></span></div>
+          <div class="session selected" role="option" aria-selected="true" tabindex="-1"><span class="arrow">➜</span><span class="name"><strong>Swipe session picker</strong><small><i class="dot"></i>working</small></span><span class="badge">4</span></div>
+          <div class="session" role="option" tabindex="-1"><span class="arrow">➜</span><span class="name"><strong>Android context CRUD</strong><small><i class="dot waiting"></i>planning</small></span></div>
+          <div class="session" role="option" tabindex="-1"><span class="arrow">➜</span><span class="name"><strong>Voice operator</strong><small><i class="dot"></i>active</small></span><span class="badge">1</span></div>
+        </div>
+      </aside>
+      <div class="hint">← chat slides away · drag up/down to choose · release to open</div>
+    </section>
+    <div class="controls">
+      <button id="up" aria-label="Previous session">↑</button>
+      <span>Hold or tap ↑ / ↓ to move the arrow</span>
+      <button id="down" aria-label="Next session">↓</button>
+    </div>
+    <div class="result" id="result" aria-live="polite"></div>
+    <p class="notes">The bright arrow identifies the destination. Vertical touch movement and repeated keyboard arrows move the selection; releasing the swipe opens it.</p>
+  </main>
+  <script>
+    const picker = document.querySelector('#picker');
+    const rows = [...picker.querySelectorAll('.session')];
+    const result = document.querySelector('#result');
+    let selected = rows.findIndex(row => row.classList.contains('selected'));
+    let dragging = false;
+    function choose(index) {
+      selected = Math.max(0, Math.min(rows.length - 1, index));
+      rows.forEach((row, i) => {
+        row.classList.toggle('selected', i === selected);
+        row.setAttribute('aria-selected', String(i === selected));
+      });
+      rows[selected].scrollIntoView({ block: 'nearest' });
+      result.textContent = '';
+    }
+    function openSelected() {
+      result.textContent = `Preview action: open “${rows[selected].querySelector('.name').childNodes[0].textContent.trim()}”`;
+    }
+    document.querySelector('#up').addEventListener('click', () => choose(selected - 1));
+    document.querySelector('#down').addEventListener('click', () => choose(selected + 1));
+    picker.addEventListener('keydown', event => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault(); choose(selected + (event.key === 'ArrowUp' ? -1 : 1));
+      } else if (event.key === 'Enter') { event.preventDefault(); openSelected(); }
+    });
+    picker.addEventListener('pointerdown', event => { dragging = true; picker.setPointerCapture(event.pointerId); chooseAt(event.clientY); });
+    picker.addEventListener('pointermove', event => { if (dragging) chooseAt(event.clientY); });
+    picker.addEventListener('pointerup', () => { if (dragging) openSelected(); dragging = false; });
+    picker.addEventListener('pointercancel', () => { dragging = false; });
+    function chooseAt(y) {
+      let best = 0, distance = Infinity;
+      rows.forEach((row, i) => {
+        const rect = row.getBoundingClientRect();
+        const d = Math.abs(y - (rect.top + rect.height / 2));
+        if (d < distance) { distance = d; best = i; }
+      });
+      choose(best);
+    }
+  </script>
+</body>
+</html>

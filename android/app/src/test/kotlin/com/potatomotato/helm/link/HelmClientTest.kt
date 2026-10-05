@@ -5,6 +5,7 @@ import com.potatomotato.helm.wire.MobileRecord
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.ArtifactRead
+import com.potatomotato.helm.data.ArtifactIntent
 import com.potatomotato.helm.data.ArtifactLanding
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
@@ -1036,6 +1037,7 @@ class HelmClientTest {
         // so a phone-authored artifact is markdown by construction.
         assertEquals("md", params.getString("kind"))
         assertEquals("# body", params.getString("content"))
+        assertEquals("normal", params.getString("intent"))
 
         // The real wire shape: createArtifact answers the full Artifact, and the
         // id inside it is what opens the new artifact's detail screen.
@@ -1064,6 +1066,14 @@ class HelmClientTest {
             ArtifactLanding(SessionAction.CreateArtifact, null),
             client.control.artifactLanding.value,
         )
+    }
+
+    @Test
+    fun `a manifesto create carries intent over the session-addressed wire`() {
+        client.createArtifact("s1", "Rules", "Keep this", intent = ArtifactIntent.Manifesto)
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("manifesto", params.getString("intent"))
     }
 
     @Test
@@ -1119,6 +1129,18 @@ class HelmClientTest {
     fun `a revise with nothing changed and nothing staged sends nothing`() {
         assertFalse(client.reviseArtifact("s1", "a1", body("# v1")))
         assertTrue(sent.isEmpty())
+    }
+
+    @Test
+    fun `a metadata-only intent revise sends no content or title`() {
+        client.reviseArtifact("s1", "a1", body("# v1"), intent = ArtifactIntent.Manifesto)
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("session_artifact_set_intent", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals("manifesto", params.getString("intent"))
+        assertFalse(params.has("content"))
+        assertFalse(params.has("title"))
     }
 
     @Test

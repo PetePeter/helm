@@ -37,4 +37,13 @@ describe('MCP tool definitions (P-0343)', () => {
     expect(get.inputSchema.properties).toHaveProperty('asFile');
     expect(get.description).toContain('caller-owned');
   });
+
+  it('exposes normal/manifesto intent on artifact create/update plus a metadata-only setter', () => {
+    const create = MCP_TOOLS.find((t) => t.name === 'artifact_create')!;
+    const update = MCP_TOOLS.find((t) => t.name === 'artifact_update')!;
+    const set = MCP_TOOLS.find((t) => t.name === 'artifact_set_intent')!;
+    expect(create.inputSchema.properties.intent.enum).toEqual(['normal', 'manifesto']);
+    expect(update.inputSchema.properties.intent.enum).toEqual(['normal', 'manifesto']);
+    expect(set.inputSchema.required).toEqual(['id', 'intent']);
+  });
 });

@@ -61,6 +61,8 @@ enum class SessionAction(val tool: String) {
     ReviseArtifact("session_artifact_update"),
     SaveArtifact("session_artifact_download"),
     DeleteArtifact("session_artifact_delete"),
+    /** Explicit feature capability: older desktops do not know artifact intent. */
+    SetArtifactIntent("session_artifact_set_intent"),
 }
 
 /** How the last control action ended. */

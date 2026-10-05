@@ -307,12 +307,14 @@ function countTypes(lines: Line[]): Record<string, number> {
 }
 
 /** The first prompt a cleared or freshly spawned session receives. */
-export function buildTranscriptResumePrompt(transcriptFile: string, handover?: string): string {
+export function buildTranscriptResumePrompt(transcriptFile: string, handover?: string, manifestoContext?: string): string {
   const note = handover?.trim();
+  const manifesto = manifestoContext?.trim();
   return [
     `Helm moved this conversation into a fresh context. The earlier conversation, stripped of`,
     `tool output and thinking, is at: ${transcriptFile}`,
     'Read that file in full first, then continue the work from where it left off.',
     ...(note ? ['', `Handover note: ${note}`] : []),
+    ...(manifesto ? ['', manifesto] : []),
   ].join('\n');
 }

@@ -8,6 +8,17 @@ import org.json.JSONArray
 import com.potatomotato.helm.wire.MobileRecord
 import org.json.JSONObject
 
+/** Persistent context intent shared with the desktop artifact model. */
+enum class ArtifactIntent(val wireValue: String) {
+    Normal("normal"),
+    Manifesto("manifesto");
+
+    companion object {
+        fun fromWire(value: Any?): ArtifactIntent =
+            if (value == Manifesto.wireValue) Manifesto else Normal
+    }
+}
+
 /**
  * One binary file stored on the desktop beside an artifact — a chart image, a
  * data dump — as the list answer names it. METADATA ONLY: the bytes never ride
@@ -48,6 +59,7 @@ data class HelmArtifact(
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
     val attachments: List<HelmArtifactAttachment> = emptyList(),
+    val intent: ArtifactIntent = ArtifactIntent.Normal,
 )
 
 /**
@@ -406,6 +418,7 @@ class ArtifactRepository {
             createdAtEpochMs = (entry.opt("createdAt") as? Number)?.toLong() ?: 0L,
             updatedAtEpochMs = (entry.opt("updatedAt") as? Number)?.toLong() ?: 0L,
             attachments = parseAttachments(entry.opt("attachments")),
+            intent = ArtifactIntent.fromWire(entry.opt("intent")),
         )
     }
 
@@ -438,6 +451,7 @@ class ArtifactRepository {
                 versionCount = (body.opt("versionCount") as? Number)?.toInt() ?: 1,
                 createdAtEpochMs = (body.opt("createdAt") as? Number)?.toLong() ?: 0L,
                 updatedAtEpochMs = (body.opt("updatedAt") as? Number)?.toLong() ?: 0L,
+                intent = ArtifactIntent.fromWire(body.opt("intent")),
             ),
             requestedVersion = (body.opt("requestedVersion") as? Number)?.toInt() ?: 1,
             content = content,

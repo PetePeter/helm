@@ -24,7 +24,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
-import type { Artifact, ArtifactKind, ArtifactSource } from '../types/artifact.js';
+import type { Artifact, ArtifactIntent, ArtifactKind, ArtifactSource } from '../types/artifact.js';
 
 export class ArtifactManager extends EventEmitter {
   private artifacts = new Map<string, Artifact[]>(); // sessionId -> artifacts
@@ -47,7 +47,10 @@ export class ArtifactManager extends EventEmitter {
    * artifact, letting version 1 hold the real content instead of being seeded
    * empty and immediately updated.
    */
-  create(sessionId: string, title: string, kind: ArtifactKind, content: string, source?: ArtifactSource, id?: string): Artifact {
+  create(
+    sessionId: string, title: string, kind: ArtifactKind, content: string,
+    source?: ArtifactSource, id?: string, intent: ArtifactIntent = 'normal',
+  ): Artifact {
     const ts = this.now();
     const artifact: Artifact = {
       id: id ?? randomUUID(),
@@ -58,6 +61,7 @@ export class ArtifactManager extends EventEmitter {
       createdAt: ts,
       updatedAt: ts,
       ...(source ? { source } : {}),
+      intent,
     };
     if (!this.artifacts.has(sessionId)) this.artifacts.set(sessionId, []);
     this.artifacts.get(sessionId)!.push(artifact);
@@ -71,17 +75,43 @@ export class ArtifactManager extends EventEmitter {
    * Append a new version to an existing artifact. Returns it, or null if
    * unknown. Emits 'artifact:reveal' so the UI brings it forward.
    */
-  update(artifactId: string, content: string): Artifact | null {
+  update(artifactId: string, content: string, intent?: ArtifactIntent): Artifact | null {
     for (const [sessionId, artifacts] of this.artifacts) {
       const artifact = artifacts.find(a => a.id === artifactId);
       if (artifact) {
         this.appendVersion(artifact, content);
+        if (intent !== undefined) artifact.intent = intent;
         this.markChanged(sessionId, [artifact.id]);
         this.emitReveal(sessionId, artifact.id);
         return artifact;
       }
     }
     return null;
+  }
+
+  /** Change metadata without creating a new content version. */
+  setIntent(artifactId: string, intent: ArtifactIntent): boolean {
+    for (const [sessionId, artifacts] of this.artifacts) {
+      const artifact = artifacts.find(a => a.id === artifactId);
+      if (!artifact) continue;
+      if ((artifact.intent ?? 'normal') === intent) return true;
+      artifact.intent = intent;
+      artifact.updatedAt = this.now();
+      this.markChanged(sessionId, [artifactId]);
+      return true;
+    }
+    return false;
+  }
+
+  /** Latest content for every manifesto artifact, in stable creation order. */
+  getManifestosForSession(sessionId: string): Array<{ id: string; title: string; content: string }> {
+    return (this.artifacts.get(sessionId) ?? [])
+      .filter(artifact => (artifact.intent ?? 'normal') === 'manifesto')
+      .map(artifact => ({
+        id: artifact.id,
+        title: artifact.title,
+        content: artifact.versions[artifact.versions.length - 1].content,
+      }));
   }
 
   /**
@@ -206,7 +236,7 @@ export class ArtifactManager extends EventEmitter {
     this.artifacts.clear();
     for (const [sessionId, artifacts] of Object.entries(data)) {
       if (Array.isArray(artifacts) && artifacts.length > 0) {
-        this.artifacts.set(sessionId, [...artifacts]);
+        this.artifacts.set(sessionId, artifacts.map(artifact => ({ ...artifact, intent: artifact.intent ?? 'normal' })));
       }
     }
     logger.info(`[ArtifactManager] Imported artifacts for ${Object.keys(data).length} session(s)`);

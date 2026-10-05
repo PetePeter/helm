@@ -84,6 +84,14 @@ describe('artifact-persistence', () => {
     expect(loadArtifacts()).toEqual({});
   });
 
+  it('preserves artifacts with unknown intent as normal', async () => {
+    const YAML = await importYaml();
+    files.set(ARTIFACTS_FILE, YAML.stringify({
+      artifacts: { s1: [makeArtifact({ intent: 'future-value' as Artifact['intent'] })] },
+    }));
+    expect(loadArtifacts().s1[0].intent).toBe('normal');
+  });
+
   it('rejects an artifact with an empty version stack', async () => {
     const YAML = await importYaml();
     files.set(ARTIFACTS_FILE, YAML.stringify({

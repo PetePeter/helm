@@ -72,11 +72,13 @@ export interface ApiSessionDeps {
   history: ChatMessage[];
   saveHistory: (history: ChatMessage[]) => void;
   /** Archive and atomically persist a quick-compact replacement before returning it. */
-  quickCompactHistory?: (history: ChatMessage[], handover?: string) => {
+  quickCompactHistory?: (history: ChatMessage[], handover?: string, manifestoContext?: string) => {
     history: ChatMessage[];
     archiveFile: string;
     transcriptFile: string;
   };
+  /** Persistent opted-in artifact context, supplied on context reset paths. */
+  getManifestoContext?: () => string;
   /** Per-turn context (time, cwd) appended to the END of the user message. */
   mutableContext: () => string;
   /** A turn begins; may resolve per-prompt context to append after the mutable context. */
@@ -362,7 +364,8 @@ export class ApiSessionProcess implements PtyProcess {
     const oldHistory = this.history;
     try {
       if (!oldHistory.length) throw new Error('There is no API conversation history to quick compact');
-      const saved = this.deps.quickCompactHistory!(oldHistory, handover);
+      const persistentContext = this.deps.getManifestoContext?.() ?? '';
+      const saved = this.deps.quickCompactHistory!(oldHistory, handover, persistentContext);
       this.contextTokens = rescaleTokens(before, oldHistory, saved.history);
       this.history = saved.history;
       this.checkpoints.clear();
@@ -406,7 +409,13 @@ export class ApiSessionProcess implements PtyProcess {
 
   /** `/clear` — what session_clear sends by default — starts a fresh conversation. */
   private clearHistory(): void {
-    this.history = [];
+    const manifesto = this.deps.getManifestoContext?.().trim();
+    this.history = manifesto
+      ? [
+        { role: 'user', content: manifesto },
+        { role: 'assistant', content: 'Understood — continuing with the persistent manifesto context.' },
+      ]
+      : [];
     this.contextTokens = undefined;
     this.checkpoints.clear();
     this.deps.saveHistory(this.history);
@@ -436,8 +445,9 @@ export class ApiSessionProcess implements PtyProcess {
       const summary = result.finalText.trim();
       if (!summary) throw new Error('the model returned an empty summary');
       const memoryId = this.deps.stashSummary?.(summary);
+      const manifesto = this.deps.getManifestoContext?.() ?? '';
       const next: ChatMessage[] = [
-        { role: 'user', content: `${HANDOVER_PREFIX}\n${summary}` },
+        { role: 'user', content: `${HANDOVER_PREFIX}\n${summary}${manifesto ? `\n\n${manifesto}` : ''}` },
         { role: 'assistant', content: 'Understood — continuing from the summary.' },
       ];
       const before = result.contextTokens ?? this.contextTokens;

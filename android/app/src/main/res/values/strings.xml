@@ -338,6 +338,9 @@
     <string name="artifacts_loading">Pulling the artifact list…</string>
     <string name="artifacts_empty">Nothing here yet. Anything this session writes appears here.</string>
     <string name="artifacts_detail_loading">Pulling the artifact…</string>
+    <string name="artifacts_intent_manifesto">Persistent manifesto context</string>
+    <string name="artifacts_intent_manifesto_help">Supplied after session context resets.</string>
+    <string name="artifacts_intent_manifesto_badge">Manifesto</string>
     <string name="artifacts_view_source">View source</string>
     <string name="artifacts_view_rendered">View rendered</string>
     <plurals name="artifacts_version_count">
@@ -373,6 +376,7 @@
     <string name="artifacts_too_large">Too large for the link — trim it, or write it on the desktop.</string>
     <string name="artifacts_submit_create">Create</string>
     <string name="artifacts_submit_revise">Add version</string>
+    <string name="artifacts_submit_intent">Save</string>
 
     <!-- Attach toolbar: three circles above Create, staged chips below the body. -->
     <string name="artifacts_attach_camera">Take a photo to attach</string>

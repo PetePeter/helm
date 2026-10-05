@@ -47,6 +47,7 @@ import { ConfigLoader } from '../../config/loader.js';
 import { keyboard } from '../../output/keyboard.js';
 import { logger } from '../../utils/logger.js';
 import { ApiSessionHost, registerApiSessionHost } from '../../session/api/api-session-host.js';
+import { formatManifestoContext } from '../../session/artifact-context.js';
 /** Skill type whose reviews collect request_tool wishes from API-tool sessions. */
 const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
 import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
@@ -473,6 +474,7 @@ export function registerIPCHandlers(
     mcpTools: () => filterToolsByCapabilities(MCP_TOOLS, helmControlService.getTelegramStatus().capabilities),
     listSkills: (cwd) => helmControlService.listSkills(cwd ? { dirPath: cwd } : undefined),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
+    getManifestoContext: (sessionId) => formatManifestoContext(artifactManager.getManifestosForSession(sessionId)),
     // Wishes land as reviews on one all-projects skill, where skill feedback is already read.
     recordToolRequest: ({ name, purpose, example }, auth) => {
       const skillId = helmControlService.resolveSkill(API_TOOL_REQUESTS_SKILL_TYPE)?.id
@@ -810,6 +812,7 @@ export function registerIPCHandlers(
     })),
     getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
+    getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
     clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),
     getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records

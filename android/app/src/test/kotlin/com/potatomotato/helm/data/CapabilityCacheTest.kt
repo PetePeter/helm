@@ -106,6 +106,7 @@ class CapabilityCacheTest {
                 "session_artifact_list",
                 "session_artifact_create",
                 "session_artifact_update",
+                "session_artifact_set_intent",
                 "session_artifact_download",
                 "session_artifact_delete",
             ),
@@ -116,6 +117,7 @@ class CapabilityCacheTest {
             SessionAction.ReviseArtifact,
             SessionAction.SaveArtifact,
             SessionAction.DeleteArtifact,
+            SessionAction.SetArtifactIntent,
         )) {
             assertTrue(all.permits(action))
         }

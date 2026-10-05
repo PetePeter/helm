@@ -138,6 +138,7 @@ describe('buildArtifactRead', () => {
       id: 'a-fixed-id',
       title: 'report',
       kind: 'markdown',
+      intent: 'normal',
       versionCount: 3,
       createdAt: 1700000000000,
       updatedAt: 1700000000000,

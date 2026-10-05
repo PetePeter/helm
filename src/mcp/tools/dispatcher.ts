@@ -8,6 +8,7 @@ import { requireOperatorTask, trackOperatorTask } from '../../session/operator-d
 import {
   asAiagentState,
   asArtifactKind,
+  asArtifactIntent,
   asBoolean,
   asContextBindingTargetType,
   asMdArtifactKind,
@@ -827,6 +828,7 @@ export async function callMcpTool(
             asString(args.filePath, 'filePath is required'),
             args.title === undefined ? undefined : asString(args.title, 'title must not be empty'),
             args.contentType === undefined ? undefined : asString(args.contentType, 'contentType must not be empty'),
+            args.intent === undefined ? undefined : asArtifactIntent(args.intent),
           );
         }
         return service.createArtifact(
@@ -834,6 +836,7 @@ export async function callMcpTool(
           asString(args.title, 'title is required'),
           asArtifactKind(args.kind),
           asString(args.content, 'content is required'),
+          args.intent === undefined ? undefined : asArtifactIntent(args.intent),
         );
       }
       case 'artifact_update': {
@@ -845,12 +848,23 @@ export async function callMcpTool(
             asString(args.id, 'id is required'),
             asString(args.filePath, 'filePath is required'),
             args.contentType === undefined ? undefined : asString(args.contentType, 'contentType must not be empty'),
+            args.intent === undefined ? undefined : asArtifactIntent(args.intent),
           );
         }
         return service.updateArtifact(
           sessionId,
           asString(args.id, 'id is required'),
           asString(args.content, 'content is required'),
+          undefined,
+          args.intent === undefined ? undefined : asArtifactIntent(args.intent),
+        );
+      }
+      case 'artifact_set_intent': {
+        const sessionId = requireCallerSession(authContext, 'artifact_set_intent');
+        return service.setArtifactIntent(
+          sessionId,
+          asString(args.id, 'id is required'),
+          asArtifactIntent(args.intent),
         );
       }
       case 'artifact_show': {
@@ -897,6 +911,7 @@ export async function callMcpTool(
           asString(args.title, 'title is required'),
           asMdArtifactKind(args.kind),
           asString(args.content, 'content is required'),
+          args.intent === undefined ? undefined : asArtifactIntent(args.intent),
         );
       }
       case 'session_artifact_update': {
@@ -906,6 +921,15 @@ export async function callMcpTool(
           asString(args.artifactId, 'artifactId is required'),
           args.content === undefined ? undefined : asStringValue(args.content, 'content must be a string'),
           args.title === undefined ? undefined : asStringValue(args.title, 'title must be a string'),
+          args.intent === undefined ? undefined : asArtifactIntent(args.intent),
+        );
+      }
+      case 'session_artifact_set_intent': {
+        const target = requireTargetSession(service, args);
+        return service.setArtifactIntent(
+          target,
+          asString(args.artifactId, 'artifactId is required'),
+          asArtifactIntent(args.intent),
         );
       }
       case 'session_artifact_download': {

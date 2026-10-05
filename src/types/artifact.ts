@@ -10,6 +10,9 @@ export type ArtifactKind = 'markdown' | 'html';
 /** How the artifact was created. Defaults to 'ai' for backward compat. */
 export type ArtifactSource = 'ai' | 'manual';
 
+/** How an artifact participates in automatic session context delivery. */
+export type ArtifactIntent = 'normal' | 'manifesto';
+
 /** A single immutable version of an artifact's content. */
 export interface ArtifactVersion {
   /** 1-based version number, monotonically increasing within its artifact. */
@@ -38,4 +41,6 @@ export interface Artifact {
   updatedAt: number;
   /** How the artifact was created. 'ai' (MCP) or 'manual' (user). Defaults to 'ai'. */
   source?: ArtifactSource;
+  /** Omitted by legacy persisted artifacts, which are treated as normal. */
+  intent?: ArtifactIntent;
 }

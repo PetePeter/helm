@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.data.ArtifactList
+import com.potatomotato.helm.data.ArtifactIntent
 import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.Capabilities
@@ -145,8 +146,13 @@ private fun ArtifactRows(
                 copy = HelmReferences.artifact(artifact),
                 subtitle = {
                     Text(
-                        text = listOf(kindLabel(artifact.kind), versionLabel(artifact.versionCount))
-                            .joinToString(SEPARATOR),
+                        text = buildList {
+                            add(kindLabel(artifact.kind))
+                            add(versionLabel(artifact.versionCount))
+                            if (artifact.intent == ArtifactIntent.Manifesto) {
+                                add(stringResource(R.string.artifacts_intent_manifesto_badge))
+                            }
+                        }.joinToString(SEPARATOR),
                         color = HelmColors.Faint,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -199,6 +205,11 @@ fun ArtifactDetailScreen(
                 linkState = linkState,
                 onBack = onBack,
             )
+
+            val displayedIntent = shownRead(state)?.artifact?.intent ?: artifact?.intent
+            if (displayedIntent == ArtifactIntent.Manifesto) {
+                ManifestoBanner()
+            }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 when (state) {
@@ -278,6 +289,28 @@ fun ArtifactDetailScreen(
                 onCancel = { confirmingDelete = false },
             )
         }
+    }
+}
+
+@Composable
+private fun ManifestoBanner() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(HelmColors.Surface2)
+            .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Sm),
+        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+    ) {
+        Text(
+            text = stringResource(R.string.artifacts_intent_manifesto_badge),
+            color = HelmColors.Accent,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            text = stringResource(R.string.artifacts_intent_manifesto_help),
+            color = HelmColors.Faint,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 

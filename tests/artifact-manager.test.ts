@@ -74,6 +74,26 @@ describe('ArtifactManager', () => {
     expect(manager.update('nope', 'x')).toBeNull();
   });
 
+  it('intent defaults to normal, can change without a content version, and selects every latest manifesto', () => {
+    const normal = manager.create('s1', 'Normal', 'markdown', 'ordinary');
+    const reveals: string[] = [];
+    manager.on('artifact:reveal', (_sessionId: string, id: string) => reveals.push(id));
+    const first = manager.create('s1', 'Rules', 'markdown', 'v1', undefined, undefined, 'manifesto');
+    const second = manager.create('s1', 'Context', 'markdown', 'all context', undefined, undefined, 'manifesto');
+    reveals.length = 0;
+
+    expect(normal.intent).toBe('normal');
+    expect(manager.setIntent(normal.id, 'manifesto')).toBe(true);
+    expect(manager.get(normal.id)?.versions).toHaveLength(1);
+    expect(reveals).toEqual([]);
+    expect(manager.update(first.id, 'v2')?.intent).toBe('manifesto');
+    expect(manager.getManifestosForSession('s1')).toEqual([
+      { id: normal.id, title: 'Normal', content: 'ordinary' },
+      { id: first.id, title: 'Rules', content: 'v2' },
+      { id: second.id, title: 'Context', content: 'all context' },
+    ]);
+  });
+
   it('retains prior versions in order after multiple updates', () => {
     const art = manager.create('s1', 'Doc', 'markdown', 'one');
     manager.update(art.id, 'two');
@@ -174,7 +194,8 @@ describe('ArtifactManager', () => {
   });
 
   it('exportAll/importAll round-trips artifacts', () => {
-    manager.create('s1', 'A', 'markdown', '1');
+    const manifesto = manager.create('s1', 'A', 'markdown', '1');
+    manager.setIntent(manifesto.id, 'manifesto');
     manager.create('s2', 'B', 'html', '2');
     const exported = manager.exportAll();
 
@@ -183,6 +204,17 @@ describe('ArtifactManager', () => {
     expect(fresh.count('s1')).toBe(1);
     expect(fresh.count('s2')).toBe(1);
     expect(fresh.getForSession('s1')[0].versions[0].content).toBe('1');
+    expect(fresh.get(manifesto.id)?.intent).toBe('manifesto');
+  });
+
+  it('imports legacy artifacts without intent as normal', () => {
+    const fresh = new ArtifactManager(undefined, makeClock());
+    fresh.importAll({ s1: [{
+      id: 'legacy', sessionId: 's1', title: 'Old', kind: 'markdown',
+      versions: [{ version: 1, content: 'old', createdAt: 1 }], createdAt: 1, updatedAt: 1,
+    }] });
+    expect(fresh.get('legacy')?.intent).toBe('normal');
+    expect(fresh.getManifestosForSession('s1')).toEqual([]);
   });
 
   it('create() with source param stores the source on the artifact', () => {

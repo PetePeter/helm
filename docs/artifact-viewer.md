@@ -5,6 +5,14 @@ user to *read* — explanations, reports, analyses, results — rendered in a
 dedicated in-app panel instead of making the user open a random file. Artifacts
 are **markdown or HTML**, **versioned**, and **die with their session**.
 
+## Artifact intent
+
+Artifacts default to the `normal` intent and are not automatically added to session context. Set an artifact's intent to `manifesto` to make its latest content persistent context. Every manifesto artifact belonging to a session is supplied after context resets, alongside any one-shot handover note. Multiple manifesto artifacts are all included.
+
+Use the MCP `artifact_create` or `artifact_update` `intent` field when creating or revising content. Use `artifact_set_intent` to change intent without adding a content version. The session-addressed `session_artifact_update` tool can also change intent; omitting it preserves the current value. `artifact_list` and `session_artifact_list` report the intent.
+
+The context is supplied after CLI compact, Quick Compact, and clear flows, and after those resets in API sessions. It is not a replacement for the existing handover note.
+
 Distinct from:
 - **Drafts** (per-session prompt memos the user composes) — see [directory-plans.md](directory-plans.md) neighbours.
 - **Plans** (per-directory DAG work items).

@@ -99,6 +99,7 @@ private val SessionAction.doneRes: Int
         // screens; they never raise a notice.
         SessionAction.CreateArtifact -> R.string.artifacts_notice_done_create
         SessionAction.ReviseArtifact -> R.string.artifacts_notice_done_revise
+        SessionAction.SetArtifactIntent -> R.string.artifacts_notice_done_revise
         SessionAction.SaveArtifact -> R.string.artifacts_notice_done_save
         SessionAction.DeleteArtifact -> R.string.artifacts_notice_done_delete
         SessionAction.Snapshot -> R.string.snapshot_title

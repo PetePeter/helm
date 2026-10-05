@@ -489,6 +489,49 @@ describe('ApiSessionProcess (terminal adapter)', () => {
     expect(client.calls[0].messages.map((m) => m.content)).toEqual(['SYS', 'hi\n\n<ctx/>']);
   });
 
+  it('/clear starts the new API history with manifesto context', async () => {
+    const { proc, saved } = makeProcess([], {
+      history: [{ role: 'user', content: 'old' }],
+      getManifestoContext: () => 'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+    });
+    proc.write('/clear\r');
+    await vi.waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0].map((message) => message.content)).toEqual([
+      'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      'Understood — continuing with the persistent manifesto context.',
+    ]);
+  });
+
+  it('/compact keeps generated handover and appends manifesto context', async () => {
+    const { proc, saved } = makeProcess([{ content: 'summary of old context' }], {
+      history: [{ role: 'user', content: 'old' }],
+      getManifestoContext: () => 'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+    });
+    proc.write('/compact\r');
+    await vi.waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0][0].content).toContain('summary of old context');
+    expect(saved[0][0].content).toContain('Persistent manifesto context');
+  });
+
+  it('quick compact keeps manifesto context separate from the optional handover', async () => {
+    let capturedHandover: string | undefined;
+    let capturedManifesto: string | undefined;
+    const { proc } = makeProcess([], {
+      history: [{ role: 'user', content: 'old' }],
+      tools: [{ name: 'Read', description: '', parameters: {} }],
+      getManifestoContext: () => 'Persistent manifesto context',
+      quickCompactHistory: (_history, handover, manifesto) => {
+        capturedHandover = handover;
+        capturedManifesto = manifesto;
+        return { history: [{ role: 'user', content: 'resume' }], archiveFile: 'archive', transcriptFile: 'transcript' };
+      },
+    });
+    const result = await proc.quickCompact('keep this handover');
+    expect(result.queued).toBe(false);
+    expect(capturedHandover).toBe('keep this handover');
+    expect(capturedManifesto).toContain('Persistent manifesto context');
+  });
+
   it('persists history after each completed turn and resumes from it', async () => {
     const { proc, saved, outcomes } = makeProcess([{ content: 'a1' }]);
     proc.write('q1\r');

@@ -59,6 +59,7 @@ import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
 import com.potatomotato.helm.data.Capabilities
+import com.potatomotato.helm.data.permits
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.data.METHOD_SHARE_ADD
 import com.potatomotato.helm.data.ShareState
@@ -896,7 +897,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     ?.takeIf { it.cached.artifact.id == editingArtifactId }
                     ?.cached?.artifact
             val shown = editingShown
-            if (revised != null && shown != null) ArtifactEdit.Revision(revised, shown) else null
+            val currentRead = when (val current = artifactRead) {
+                is ArtifactRead.Done -> current.read
+                is ArtifactRead.Refreshing -> current.cached
+                else -> null
+            }
+            val currentIntent = currentRead
+                ?.takeIf { it.artifact.id == editingArtifactId }
+                ?.artifact?.intent ?: revised?.intent ?: com.potatomotato.helm.data.ArtifactIntent.Normal
+            if (revised != null && shown != null) ArtifactEdit.Revision(revised, shown, currentIntent) else null
         }
     }
     LaunchedEffect(where, edit) {
@@ -1266,12 +1275,19 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             replacingAttachmentId = attachmentId
                             replaceLauncher.launch(ANY_MIME)
                         },
-                        onSubmit = { title, content ->
+                        onSubmit = { title, content, intent ->
+                            val intentSupported = capabilities.permits(SessionAction.SetArtifactIntent)
                             if (edit is ArtifactEdit.New) {
                                 // The staged keys ride the create; the client
                                 // chains the uploads and lands the notice only
                                 // when the last commit has answered.
-                                client.createArtifact(open.id, title, content, client.uploads.pendingKeys())
+                                client.createArtifact(
+                                    open.id,
+                                    title,
+                                    content,
+                                    client.uploads.pendingKeys(),
+                                    intent.takeIf { intentSupported && it != com.potatomotato.helm.data.ArtifactIntent.Normal },
+                                )
                             } else {
                                 val artifactId = editingArtifactId
                                 // A revise chains its staged files too: the
@@ -1283,11 +1299,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                         artifactId,
                                         ArtifactRules.Revision(edit.artifact.title, edit.shown, title, content),
                                         client.uploads.pendingKeys(),
+                                        intent.takeIf { intentSupported && it != edit.intent },
                                     )
                                 }
                             }
                         },
                         onBack = leaveEditor,
+                        manifestoSupported = capabilities.permits(SessionAction.SetArtifactIntent),
                     )
                 }
 

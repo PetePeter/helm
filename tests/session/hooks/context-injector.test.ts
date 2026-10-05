@@ -136,6 +136,22 @@ describe('SessionStart injection', () => {
     expect(context).toContain('mid-checkpoint');
   });
 
+  it('includes every manifesto beside the one-shot handover, even above the ordinary context cap', async () => {
+    const { injector } = makeInjector({
+      getHandover: () => 'explicit next step',
+      getManifestos: () => [
+        { title: 'Rules', content: 'r'.repeat(1800) },
+        { title: 'Decisions', content: 'all decisions are kept' },
+      ],
+    });
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('explicit next step');
+    expect(context).toContain('Persistent manifesto context');
+    expect(context).toContain('## Rules');
+    expect(context).toContain('## Decisions');
+    expect(context).toContain('all decisions are kept');
+  });
+
   it('truncates an oversized source deterministically and caps the whole payload', async () => {
     const { injector } = makeInjector({
       getDrafts: () => [1, 2, 3, 4].map((n) => ({ label: `big-${n}`, text: 'x'.repeat(5000) })),
