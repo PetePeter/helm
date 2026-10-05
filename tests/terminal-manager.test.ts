@@ -948,6 +948,31 @@ describe('TerminalView — custom key handler', () => {
     expect(lastTerminal().scrollLines).not.toHaveBeenCalled();
   });
 
+  it('PageDown in frozen alternate buffer uses scroll-only input', () => {
+    const scrollInput = vi.fn();
+    const view = new TerminalView({ sessionId: 'ckh-frozen-alt', container, isFrozen: () => true, onScrollInput: scrollInput, onData: vi.fn() });
+    lastTerminal().buffer.active.type = 'alternate';
+    const handler = lastTerminal().attachCustomKeyEventHandler.mock.calls[0][0] as (event: Partial<KeyboardEvent>) => boolean;
+
+    expect(handler({ key: 'PageDown', type: 'keydown' } as KeyboardEvent)).toBe(false);
+    expect(scrollInput).toHaveBeenCalledWith('\x1b[6~');
+  });
+
+  it('blocks frozen ordinary key input and routes wheel to scroll-only input', () => {
+    const scrollInput = vi.fn();
+    new TerminalView({ sessionId: 'ckh-frozen-input', container, isFrozen: () => true, onScrollInput: scrollInput, onData: vi.fn() });
+    const term = lastTerminal();
+    term.buffer.active.type = 'alternate';
+    const keyHandler = term.attachCustomKeyEventHandler.mock.calls[0][0] as (event: Partial<KeyboardEvent>) => boolean;
+    const wheelHandler = term.attachCustomWheelEventHandler.mock.calls[0][0] as (event: Partial<WheelEvent>) => boolean;
+
+    expect(keyHandler({ key: 'Enter', type: 'keydown' } as KeyboardEvent)).toBe(false);
+    expect(wheelHandler({ deltaY: 80, deltaX: 0 } as WheelEvent)).toBe(false);
+    expect(scrollInput).toHaveBeenCalledTimes(2);
+    expect(scrollInput).toHaveBeenNthCalledWith(1, '\x1b[6~');
+    expect(scrollInput).toHaveBeenNthCalledWith(2, '\x1b[6~');
+  });
+
   it('PageUp keyup event does not trigger scrollLines', () => {
     new TerminalView({ sessionId: 'ckh-pgup-up', container });
     lastTerminal().buffer.active.type = 'normal';

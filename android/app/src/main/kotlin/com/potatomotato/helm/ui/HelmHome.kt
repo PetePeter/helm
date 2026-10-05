@@ -22,6 +22,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.focusable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -128,6 +131,15 @@ import com.potatomotato.helm.ui.sequences.SequenceList
 import com.potatomotato.helm.ui.sessions.SessionListScreen
 import com.potatomotato.helm.ui.sessions.SessionRowText
 import com.potatomotato.helm.ui.sessions.SessionRows
+import com.potatomotato.helm.ui.sessions.SessionSwipePicker
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.Alignment
 import com.potatomotato.helm.ui.share.ShareWaitDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
@@ -226,6 +238,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var timeAsk by remember { mutableStateOf(TimeAsk(TimePeriod.Day, System.currentTimeMillis(), null)) }
     var openSessionId by rememberSaveable { mutableStateOf<String?>(null) }
     var sessionSwipeDirection by remember { mutableStateOf(0) }
+    var sessionSwipeTargetId by remember { mutableStateOf<String?>(null) }
     val sessionSwipeOffset = remember { Animatable(0f) }
     var edgeBounceDirection by remember { mutableStateOf(0) }
     var edgeBounceRequest by remember { mutableStateOf(0) }
@@ -839,6 +852,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         ChatScreen(
             sessionId = sessionId,
             onSwipeSession = onSwipeSession,
+            onSwipePreview = { step, verticalDeltaPx ->
+                if (step == 0) sessionSwipeTargetId = null else {
+                    val rowHeightPx = with(density) { 80.dp.toPx() }
+                    val targetIndex = SessionRows.verticalDragTargetIndex(
+                        listedSessionIds, sessionId, step, verticalDeltaPx, rowHeightPx,
+                    )
+                    sessionSwipeTargetId = targetIndex?.let(listedSessionIds::getOrNull)
+                }
+            },
             swipeOffset = sessionSwipeOffset,
             earlierUnreadSessions = earlierUnread,
             laterUnreadSessions = laterUnread,
@@ -1366,6 +1388,37 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                     val toList = { openSessionId = null }
                     BackHandler(onBack = toList)
                     val currentOpenId = open.id
+                    Box(Modifier.fillMaxSize()) {
+                    val swipePreviewVisible = sessionSwipeDirection == 0 && kotlin.math.abs(sessionSwipeOffset.value) > 8f
+                    val pickerFocusRequester = remember { FocusRequester() }
+                    LaunchedEffect(swipePreviewVisible, tab) {
+                        if (swipePreviewVisible && tab == SessionTab.Chat) pickerFocusRequester.requestFocus()
+                    }
+                    if (swipePreviewVisible && tab == SessionTab.Chat) {
+                        SessionSwipePicker(
+                            sessions = listedSessions,
+                            unread = unreadCounts,
+                            selectedId = sessionSwipeTargetId ?: currentOpenId,
+                            onSelect = { sessionSwipeTargetId = it },
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .fillMaxWidth(0.58f)
+                                .align(if (sessionSwipeOffset.value < 0f) Alignment.CenterEnd else Alignment.CenterStart)
+                                .focusRequester(pickerFocusRequester)
+                                .focusable()
+                                .onPreviewKeyEvent { event ->
+                                    if (event.type != KeyEventType.KeyDown || listedSessionIds.isEmpty()) return@onPreviewKeyEvent false
+                                    val currentIndex = listedSessionIds.indexOf(sessionSwipeTargetId ?: currentOpenId)
+                                    val nextIndex = when (event.key) {
+                                        Key.DirectionUp -> (currentIndex - 1).coerceAtLeast(0)
+                                        Key.DirectionDown -> (currentIndex + 1).coerceAtMost(listedSessionIds.lastIndex)
+                                        else -> return@onPreviewKeyEvent false
+                                    }
+                                    sessionSwipeTargetId = listedSessionIds[nextIndex]
+                                    true
+                                },
+                        )
+                    }
                     AnimatedContent(
                         targetState = currentOpenId,
                         modifier = Modifier.fillMaxSize(),
@@ -1409,9 +1462,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 targetSession.id,
                                 if (targetSessionId == currentOpenId && sessionSwipeDirection == 0) ({ step ->
                                     if (sessionSwipeDirection == 0 && !edgeBounce.isRunning) {
-                                        val next = SessionRows.adjacentSessionId(listedSessionIds, targetSessionId, step)
+                                        val next = sessionSwipeTargetId
+                                            ?.takeIf { it in listedSessionIds && it != targetSessionId }
+                                            ?: SessionRows.adjacentSessionId(listedSessionIds, targetSessionId, step)
                                         if (next != null) {
-                                            sessionSwipeDirection = -step
+                                            val distance = listedSessionIds.indexOf(next) - listedSessionIds.indexOf(targetSessionId)
+                                            sessionSwipeDirection = -distance.compareTo(0)
+                                            sessionSwipeTargetId = null
                                             openSessionId = next
                                             true
                                         } else {
@@ -1489,6 +1546,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 )
                             }
                         }
+                    }
                     }
                 }
             }

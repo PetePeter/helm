@@ -149,6 +149,7 @@ fun ChatScreen(
     onUnfreeze: (retry: Pair<String, String>?) -> Unit = {},
     /** Switch to the neighboring session after a swipe crosses half the chat width. */
     onSwipeSession: ((step: Int) -> Boolean)? = null,
+    onSwipePreview: ((step: Int, verticalDeltaPx: Float) -> Unit)? = null,
     swipeOffset: Animatable<Float, AnimationVector1D>,
     earlierUnreadSessions: Int = 0,
     laterUnreadSessions: Int = 0,
@@ -169,6 +170,7 @@ fun ChatScreen(
     }
     val listState = rememberLazyListState()
     val currentSwipeSession by rememberUpdatedState(onSwipeSession)
+    val currentSwipePreview by rememberUpdatedState(onSwipePreview)
     var swipeWidthPx by remember(sessionId) { mutableIntStateOf(0) }
     val swipeScope = rememberCoroutineScope()
     val threadSwipeModifier = if (onSwipeSession == null) {
@@ -177,13 +179,16 @@ fun ChatScreen(
         Modifier.onSizeChanged { swipeWidthPx = it.width }
             .pointerInput(sessionId, swipeWidthPx) {
             var horizontalDrag = 0f
+            var startY = 0f
             detectHorizontalDragGestures(
-                onDragStart = {
+                onDragStart = { start ->
                     horizontalDrag = 0f
+                    startY = start.y
+                    currentSwipePreview?.invoke(0, 0f)
                     swipeScope.launch { swipeOffset.snapTo(0f) }
                 },
                 onDragEnd = {
-                    val threshold = swipeWidthPx * 0.5f
+                    val threshold = if (swipeWidthPx > 0) SessionRows.swipeThreshold(swipeWidthPx) else 0f
                     val step = if (threshold > 0f) SessionRows.swipeStep(horizontalDrag, threshold) else 0
                     val changed = step != 0 && currentSwipeSession?.invoke(step) == true
                     if (step == 0) {
@@ -201,14 +206,26 @@ fun ChatScreen(
                 },
                 onDragCancel = {
                     horizontalDrag = 0f
+                    currentSwipePreview?.invoke(0, 0f)
                     swipeScope.launch {
                         swipeOffset.animateTo(0f, animationSpec = spring(dampingRatio = 0.62f, stiffness = 720f))
                     }
                 },
-                onHorizontalDrag = { _, dragAmount ->
+                onHorizontalDrag = { change, dragAmount ->
                     if (swipeWidthPx > 0) {
                         horizontalDrag = (horizontalDrag + dragAmount).coerceIn(-swipeWidthPx.toFloat(), swipeWidthPx.toFloat())
                         swipeScope.launch { swipeOffset.snapTo(horizontalDrag) }
+                        val threshold = SessionRows.swipeThreshold(swipeWidthPx)
+                        if (threshold > 0f) {
+                            val step = SessionRows.swipeStep(horizontalDrag, threshold)
+                            val previewStep = when {
+                                step != 0 -> step
+                                horizontalDrag > 8f -> -1
+                                horizontalDrag < -8f -> 1
+                                else -> 0
+                            }
+                            currentSwipePreview?.invoke(previewStep, change.position.y - startY)
+                        }
                     }
                 },
             )

@@ -449,7 +449,7 @@ class ChatRepository(
     @Synchronized
     fun retry(sessionId: String, key: String, at: Long): String? {
         val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
-        if (failed.delivery != Delivery.Failed) return null
+        if (failed.delivery != Delivery.Failed && failed.delivery != Delivery.Frozen) return null
         remove(sessionId, key)
         return sending(sessionId, failed.text, at)
     }

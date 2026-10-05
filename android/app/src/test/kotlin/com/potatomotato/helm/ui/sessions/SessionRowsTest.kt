@@ -88,6 +88,29 @@ class SessionRowsTest {
     }
 
     @Test
+    fun `vertical swipe drag selects sessions from its directional neighbor`() {
+        val sessions = listOf("a", "b", "c", "d", "e")
+        assertEquals(2, SessionRows.verticalDragTargetIndex(sessions, "b", 1, 0f, 80f))
+        assertEquals(3, SessionRows.verticalDragTargetIndex(sessions, "b", 1, 80f, 80f))
+        assertEquals(1, SessionRows.verticalDragTargetIndex(sessions, "b", 1, -80f, 80f))
+        assertEquals(4, SessionRows.verticalDragTargetIndex(sessions, "b", -1, 500f, 80f))
+        assertEquals(0, SessionRows.verticalDragTargetIndex(sessions, "a", -1, 0f, 80f))
+    }
+
+    @Test
+    fun `vertical swipe selection remains available when horizontal neighbor is beyond either list end`() {
+        val sessions = listOf("a", "b", "c")
+
+        // A right swipe at the first row still opens the picker on the current
+        // row, so dragging down can select the next session.
+        assertEquals(0, SessionRows.verticalDragTargetIndex(sessions, "a", -1, 0f, 80f))
+        assertEquals(1, SessionRows.verticalDragTargetIndex(sessions, "a", -1, 80f, 80f))
+        // Symmetrically, a left swipe at the final row can move upward.
+        assertEquals(2, SessionRows.verticalDragTargetIndex(sessions, "c", 1, 0f, 80f))
+        assertEquals(1, SessionRows.verticalDragTargetIndex(sessions, "c", 1, -80f, 80f))
+    }
+
+    @Test
     fun `swiping right goes backward and swiping left goes toward later sessions`() {
         assertEquals(-1, SessionRows.swipeStep(80f, 60f))
         assertEquals(1, SessionRows.swipeStep(-80f, 60f))
@@ -95,6 +118,14 @@ class SessionRowsTest {
         assertEquals(0, SessionRows.swipeStep(-60f, 60f))
         assertEquals(0, SessionRows.swipeStep(59f, 60f))
         assertEquals(0, SessionRows.swipeStep(-59f, 60f))
+    }
+
+    @Test
+    fun `swipe threshold is one quarter of the chat width`() {
+        val threshold = SessionRows.swipeThreshold(400)
+        assertEquals(-1, SessionRows.swipeStep(threshold + 1f, threshold))
+        assertEquals(1, SessionRows.swipeStep(-threshold - 1f, threshold))
+        assertEquals(0, SessionRows.swipeStep(threshold, threshold))
     }
 
     @Test

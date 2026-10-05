@@ -19,10 +19,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -217,11 +219,12 @@ private fun ProjectHeader(label: String, collapsed: Boolean, count: Int, onToggl
 }
 
 @Composable
-private fun SessionRow(
+fun SessionRow(
     session: HelmSession,
     unreadCount: Int,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
+    selected: Boolean = false,
 ) {
     val labels = SessionRowText.Labels(
         needsDecision = stringResource(R.string.sessions_sub_needs_decision),
@@ -242,6 +245,7 @@ private fun SessionRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = HelmSize.TouchTarget)
+                .background(if (selected) HelmColors.Surface2 else HelmColors.Bg)
                 // Long-press opens the control sheet without entering the thread —
                 // close and compact are list-level questions, not thread-level ones.
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -249,6 +253,9 @@ private fun SessionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
+            if (selected) {
+                Text("➜", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
+            }
             StateDot(state = session.activity)
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -346,6 +353,41 @@ private fun SessionRow(
             }
         }
         Hairline(color = HelmColors.Separator)
+    }
+}
+
+@Composable
+fun SessionSwipePicker(
+    sessions: List<HelmSession>,
+    unread: Map<String, Int>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val rows = remember(sessions) { SessionRows.build(sessions, emptySet()) }
+    val listState = rememberLazyListState()
+    LaunchedEffect(selectedId, rows) {
+        rows.indexOfFirst { it is RowEntry.Session && it.session.id == selectedId }
+            .takeIf { it >= 0 }
+            ?.let { listState.animateScrollToItem(it) }
+    }
+    LazyColumn(state = listState, modifier = modifier.background(HelmColors.Bg)) {
+        rows.forEach { entry ->
+            when (entry) {
+                is RowEntry.Header -> item(key = "picker-header:${entry.label}") {
+                    ProjectHeader(entry.label, collapsed = false, count = entry.count, onToggle = {})
+                }
+                is RowEntry.Session -> item(key = "picker-session:${entry.session.id}") {
+                    SessionRow(
+                        session = entry.session,
+                        unreadCount = unread[entry.session.id] ?: 0,
+                        selected = entry.session.id == selectedId,
+                        onClick = { onSelect(entry.session.id) },
+                        onLongClick = {},
+                    )
+                }
+            }
+        }
     }
 }
 

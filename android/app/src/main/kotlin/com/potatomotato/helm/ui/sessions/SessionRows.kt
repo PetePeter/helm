@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.sessions
 
 import com.potatomotato.helm.data.HelmSession
+import kotlin.math.roundToInt
 
 /**
  * What the sessions list renders, decided before Compose gets involved: the
@@ -22,6 +23,26 @@ sealed interface RowEntry {
 data class SessionUnreadNeighbors(val earlierSessions: Int, val laterSessions: Int)
 
 object SessionRows {
+
+    /** The swipe begins session selection after a quarter of the chat width. */
+    fun swipeThreshold(widthPx: Int): Float {
+        require(widthPx > 0) { "widthPx must be positive" }
+        return widthPx * 0.25f
+    }
+
+    /**
+     * Start at the horizontal swipe's adjacent session, then apply vertical
+     * drag distance. At a list end, keep the current row as the starting point
+     * so the picker still permits vertical navigation.
+     */
+    fun verticalDragTargetIndex(sessionIds: List<String>, currentSessionId: String, step: Int, verticalDeltaPx: Float, rowHeightPx: Float): Int? {
+        require(rowHeightPx > 0f) { "rowHeightPx must be positive" }
+        val currentIndex = sessionIds.indexOf(currentSessionId)
+        if (currentIndex < 0 || step !in -1..1 || step == 0) return null
+        val startingIndex = (currentIndex + step).coerceIn(sessionIds.indices)
+        val verticalRows = (verticalDeltaPx / rowHeightPx).roundToInt()
+        return (startingIndex + verticalRows).coerceIn(sessionIds.indices)
+    }
 
     /** The neighboring session in list order, or null at either end. */
     fun adjacentSessionId(sessionIds: List<String>, currentSessionId: String, step: Int): String? {

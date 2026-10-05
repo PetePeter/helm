@@ -18,6 +18,8 @@ export interface TerminalViewOptions {
   onData?: (data: string) => void;
   /** Callback for scroll input — bypasses AIAGENT keyword detection. */
   onScrollInput?: (data: string) => void;
+  /** Read-only snapshot; lets scrolling remain available while frozen. */
+  isFrozen?: () => boolean;
   onResize?: (cols: number, rows: number) => void;
   onTitleChange?: (title: string) => void;
   /** Let the CLI capture the mouse. Off by default so plain click-drag selects text. */
@@ -102,14 +104,20 @@ export class TerminalView {
           .catch((err: unknown) => console.warn('[TerminalView] copy failed:', err));
         return false;
       }
-      if ((event.key === 'PageUp' || event.key === 'PageDown') &&
-          event.type === 'keydown' &&
-          this.terminal.buffer.active.type === 'normal') {
-        const lines = this.terminal.rows;
-        this.terminal.scrollLines(event.key === 'PageDown' ? lines : -lines);
+      if ((event.key === 'PageUp' || event.key === 'PageDown') && event.type === 'keydown' &&
+          ((options.isFrozen?.() ?? false) || this.terminal.buffer.active.type === 'normal')) {
+        this.scroll(event.key === 'PageDown' ? 'down' : 'up', this.terminal.rows);
         return false;
       }
+      if ((options.isFrozen?.() ?? false) && event.type === 'keydown') return false;
       return true;
+    });
+
+    this.terminal.attachCustomWheelEventHandler((event: WheelEvent) => {
+      if (!(options.isFrozen?.() ?? false)) return true;
+      const delta = event.deltaY || event.deltaX;
+      if (delta) this.scroll(delta > 0 ? 'down' : 'up', Math.max(1, Math.round(Math.abs(delta) / 40)));
+      return false;
     });
 
     if (options.onData) {

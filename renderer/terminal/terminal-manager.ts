@@ -117,6 +117,7 @@ export class TerminalManager {
       onScrollInput: (data) => {
         terminalClient.ptyScrollInput?.(sessionId, data);
       },
+      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
       onResize: (cols, rows) => {
         terminalClient.ptyResize?.(sessionId, cols, rows);
       },
@@ -201,6 +202,7 @@ export class TerminalManager {
       onScrollInput: (data) => {
         terminalClient.ptyScrollInput?.(sessionId, data);
       },
+      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
       onResize: (cols, rows) => {
         terminalClient.ptyResize?.(sessionId, cols, rows);
       },
@@ -538,6 +540,7 @@ export class TerminalManager {
       mouseTracking: cliTypeWantsMouseTracking(managed.cliType),
       onData: (data) => { terminalClient.ptyWrite?.(sessionId, data); },
       onScrollInput: (data) => { terminalClient.ptyScrollInput?.(sessionId, data); },
+      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
       onResize: (cols, rows) => { terminalClient.ptyResize?.(sessionId, cols, rows); },
       onTitleChange: (title) => {
         const sess = this.terminals.get(sessionId);
@@ -620,21 +623,24 @@ export class TerminalManager {
 
   /** Set up IPC event listeners for PTY data routing */
   private setupIpcListeners(): void {
-    if (!eventsClient.onPtyData) return;
-
-    const unsubData = eventsClient.onPtyData((sessionId: string, data: string) => {
-      this.writeToTerminal(sessionId, data);
-      this.outputBuffer.append(sessionId, data);
-    });
-    this.unsubscribers.push(unsubData);
-
-    const unsubExit = eventsClient.onPtyExit((sessionId: string, _exitCode: number) => {
-      const session = this.terminals.get(sessionId);
-      if (session) {
-        session.view.write('\r\n\x1b[33m[Process exited]\x1b[0m\r\n');
-      }
-    });
-    this.unsubscribers.push(unsubExit);
+    if (eventsClient.onPtyData) {
+      this.unsubscribers.push(eventsClient.onPtyData((sessionId: string, data: string) => {
+        this.writeToTerminal(sessionId, data);
+        this.outputBuffer.append(sessionId, data);
+      }));
+    }
+    if (eventsClient.onPtyExit) {
+      this.unsubscribers.push(eventsClient.onPtyExit((sessionId: string, _exitCode: number) => {
+        const session = this.terminals.get(sessionId);
+        if (session) session.view.write('\r\n\x1b[33m[Process exited]\x1b[0m\r\n');
+      }));
+    }
+    if (eventsClient.onSessionUpdated) {
+      this.unsubscribers.push(eventsClient.onSessionUpdated((session) => {
+        const existing = this.managedSessions.get(session.id);
+        if (existing) this.upsertManagedSession({ ...existing, ...session });
+      }));
+    }
   }
 
   private upsertManagedSession(record: ManagedTerminalSession): void {

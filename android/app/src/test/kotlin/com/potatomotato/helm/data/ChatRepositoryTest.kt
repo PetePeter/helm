@@ -122,7 +122,7 @@ class ChatRepositoryTest {
     }
 
     @Test
-    fun `retry refuses a frozen message until it is unfrozen`() {
+    fun `retrying a frozen message replaces it with an identical Sending one`() {
         val frozen = repository.sending("s1", "carry on", at = 10)
         repository.settle("s1", frozen, delivered = false, frozen = true)
 
@@ -131,10 +131,10 @@ class ChatRepositoryTest {
         val thread = repository.thread("s1")
         assertEquals(1, thread.size)
         assertEquals("carry on", thread.single().text)
-        assertEquals(Delivery.Frozen, thread.single().delivery)
+        assertEquals(Delivery.Sending, thread.single().delivery)
         assertTrue(thread.single().fromPhone)
-        assertNull(retried)
-        assertEquals(frozen, thread.single().key)
+        assertEquals(retried, thread.single().key)
+        assertNotEquals(frozen, retried)
     }
 
     @Test

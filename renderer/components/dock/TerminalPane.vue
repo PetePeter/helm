@@ -25,7 +25,6 @@ import TerminalChips from '../chips/TerminalChips.vue';
 import MissionBar from './MissionBar.vue';
 import PromptCacheBanner from './PromptCacheBanner.vue';
 import { setSessionFrozen } from '../../screens/sessions.js';
-import { showContextMenu } from '../../stores/modal-bridge.js';
 
 function thaw(sessionId: string): void {
   void setSessionFrozen(sessionId, false);
@@ -65,20 +64,13 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
       :cli-type="appStore.activeSession.cliType"
       :last-prompt-at="appStore.activeSession.lastPromptAt"
     />
+    <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen-bar">
+      <span>Scroll and select text to read. Input and paste are disabled.</span>
+      <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
+    </div>
     <div class="terminal-view__stage">
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">
         <!-- xterm.js terminals rendered by TerminalManager -->
-      </div>
-      <div
-        v-if="appStore.activeSession?.frozen"
-        class="terminal-view__frozen"
-        @contextmenu.prevent="showContextMenu(appStore.activeSession.id, '', false)"
-      >
-        <div class="terminal-view__frozen-card">
-          <b>❄ Session frozen</b>
-          <span>No input reaches it — keys, messages, schedules, Mess. Unfreeze here, right-click, use ⋮ on its row, or from another session via MCP session_set_frozen.</span>
-          <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
-        </div>
       </div>
       <OperatorChat
         v-if="isChatPane && operatorView === 'chat' && appStore.activeSession"
@@ -97,7 +89,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     </div>
     <!-- Repeated under the terminal, where the eyes are while typing. -->
     <PromptCacheBanner
-      v-if="appStore.activeSession && !isOperator"
+      v-if="appStore.activeSession && !isOperator && !appStore.activeSession.frozen"
       placement="bottom"
       :frozen="appStore.activeSession.frozen"
       :cli-type="appStore.activeSession.cliType"
@@ -118,32 +110,16 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
   min-height: 0;
 }
 
-/* Frozen: hatched cover over the terminal; output stays visible, dimmed. */
-.terminal-view__frozen {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
+.terminal-view__frozen-bar {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  background: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.10) 0 8px, rgba(0, 0, 0, 0.45) 8px 16px);
-}
-/* Solid card: the hatching and terminal text behind made the label unreadable. */
-.terminal-view__frozen-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-md) var(--spacing-lg);
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 4px 10px;
+  color: #8cbcff;
   background: var(--bg-secondary);
-  border: 1px solid #8cbcff;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+  border-bottom: 1px solid #8cbcff;
 }
-.terminal-view__frozen b { color: #8cbcff; font-size: var(--font-size-md); }
-.terminal-view__frozen span { color: var(--text-secondary); font-size: var(--font-size-sm); text-align: center; max-width: 320px; }
 
 .terminal-view__chat-toggle {
   position: absolute;
