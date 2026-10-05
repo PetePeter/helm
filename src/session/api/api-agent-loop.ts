@@ -90,6 +90,8 @@ export interface AgentTurnResult {
   toolsUsed: string[];
   /** Tokens in the model's context after the turn (last request's prompt + reply), when the server reports usage. */
   contextTokens?: number;
+  /** Completion rounds that returned reasoning metadata; reasoning text stays out of chat records. */
+  thoughtCount: number;
 }
 
 function contextSize(usage: CompletionUsage | undefined): number | undefined {
@@ -277,6 +279,7 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
   const history: ChatMessage[] = [...params.history, { role: 'user', content: params.userContent }];
   const toolsUsed: string[] = [];
   let contextTokens: number | undefined;
+  let thoughtCount = 0;
 
   for (let round = 0; ; round++) {
     // On the last allowed round, offer no tools: the model must answer in text.
@@ -287,13 +290,14 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
       params.signal,
     );
     contextTokens = contextSize(usage) ?? contextTokens;
+    if (message.reasoning_content) thoughtCount++;
     if (message.reasoning_content) params.onEvent?.({ type: 'reasoning', text: cleanModelText(message.reasoning_content) });
     const text = cleanModelText(message.content ?? '');
     const calls = offerTools.length ? message.tool_calls ?? [] : [];
     history.push({ role: 'assistant', content: text || null, ...(calls.length ? { tool_calls: calls } : {}) });
     const stepStart = history.length - 1;
     if (text) params.onEvent?.({ type: 'text', text });
-    if (calls.length === 0) return { history, finalText: text, toolsUsed, ...(contextTokens !== undefined ? { contextTokens } : {}) };
+    if (calls.length === 0) return { history, finalText: text, toolsUsed, thoughtCount, ...(contextTokens !== undefined ? { contextTokens } : {}) };
 
     // A rollback rewinds the conversation instead of answering: the assistant
     // message that asked for it (and everything since the checkpoint) is cut.

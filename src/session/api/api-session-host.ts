@@ -480,7 +480,11 @@ export class ApiSessionHost {
     if (replied.has(target)) return;
     try {
       if (target === CHAT_TARGET) {
-        const usage: ChatTurnUsage = { contextTokens: outcome.contextTokens ?? 0, toolCalls: outcome.toolsUsed.length };
+        const usage: ChatTurnUsage = {
+          contextTokens: outcome.contextTokens ?? 0,
+          thoughtCount: outcome.thoughtCount ?? 0,
+          toolCalls: outcome.toolsUsed.length,
+        };
         for (const message of chunkForChat(reply)) await this.deps.postChat(sessionId, message, usage);
       } else {
         await this.deps.dispatchTool('session_send_text', { sessionId: target, senderSessionId: sessionId, text: reply }, auth);

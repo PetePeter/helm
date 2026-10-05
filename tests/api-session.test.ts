@@ -57,6 +57,18 @@ describe('runAgentTurn', () => {
     expect(client.calls[1].messages[0]).toEqual({ role: 'system', content: 'SYS' });
   });
 
+  it('counts completion rounds that return reasoning metadata, not visible thought text', async () => {
+    const client = scriptedClient([
+      { reasoning_content: 'thinking', content: '', tool_calls: [toolCall('c1', 'Read', '{}')] },
+      { reasoning_content: 'still thinking', content: 'answer' },
+    ]);
+    const result = await runAgentTurn({
+      client, system: '', tools: [{ name: 'Read', description: '', parameters: {} }], history: [], userContent: 'x',
+      executeTool: async () => 'ok',
+    });
+    expect(result.thoughtCount).toBe(2);
+  });
+
   it('keeps the prompt prefix stable: prior history is sent unchanged and never mutated', async () => {
     const history: Msg[] = [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'ok' }];
     const client = scriptedClient([{ content: 'done' }]);
@@ -603,11 +615,12 @@ describe('ApiSessionHost', () => {
   const mobileMsg = '[HELM_MSG]{"fromSessionId":"mobile:dev1"}how are you';
 
   it('auto-replies to chat with the final answer when the model did not call chat_send', async () => {
-    const { host, dispatched, hooks } = makeHost([{ content: 'fine thanks' }]);
+    const { host, dispatched, hooks, usages } = makeHost([{ reasoning_content: 'one brief thought', content: 'fine thanks' }]);
     const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'abc-1', api });
     proc.write(`${mobileMsg}\r`);
     await vi.waitFor(() => expect(dispatched).toEqual([{ name: 'chat_send', args: { message: 'fine thanks' }, sessionId: 's1' }]));
     expect(hooks).toEqual(['UserPromptSubmit', 'Stop']);
+    expect(usages[0]).toMatchObject({ thoughtCount: 1, toolCalls: 0 });
   });
 
   it('does not double-post when the model replied through chat_send itself', async () => {

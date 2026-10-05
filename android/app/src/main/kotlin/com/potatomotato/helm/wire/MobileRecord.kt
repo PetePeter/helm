@@ -185,9 +185,11 @@ sealed interface MobileRecord {
 
         /**
          * Beside [contextTokens], when the desktop knows it: the model's
-         * context window, so the badge can show "% full". Emitted last.
+         * context window, so the badge can show "% full".
          */
         val contextWindow: Long? = null,
+        /** API completion rounds that returned reasoning metadata; the text is never sent. */
+        val thoughtCount: Int? = null,
     ) : MobileRecord
 
     /**

@@ -282,6 +282,7 @@ object MobileEnvelope {
             toolCalls = (record.opt("toolCalls") as? Number)?.toInt(),
             fromSessionId = record.string("fromSessionId"),
             contextWindow = (record.opt("contextWindow") as? Number)?.toLong(),
+            thoughtCount = (record.opt("thoughtCount") as? Number)?.toInt(),
         )
     }
 

@@ -29,6 +29,7 @@ export interface OperatorChatRecord {
   /** On an API-tool reply: model context size after the turn, and its tool calls. */
   contextTokens?: number;
   toolCalls?: number;
+  thoughtCount?: number;
 }
 
 export interface OperatorChatEntry {
@@ -60,11 +61,14 @@ export interface ChatBubble {
 }
 
 /** The API-tool reply badge: context size (k above 1000) and, when any, tool calls. */
-export function usageBadge(record: Pick<OperatorChatRecord, 'contextTokens' | 'toolCalls'>): string | undefined {
+export function usageBadge(record: Pick<OperatorChatRecord, 'contextTokens' | 'thoughtCount' | 'toolCalls'>): string | undefined {
   if (record.contextTokens === undefined) return undefined;
   const ctx = record.contextTokens >= 1000 ? `${(record.contextTokens / 1000).toFixed(1)}k` : String(record.contextTokens);
+  const thoughts = record.thoughtCount && record.thoughtCount > 0
+    ? ` · ${record.thoughtCount} thought${record.thoughtCount === 1 ? '' : 's'}`
+    : '';
   const tools = record.toolCalls ? ` · ${record.toolCalls} tool${record.toolCalls === 1 ? '' : 's'}` : '';
-  return `ctx ${ctx}${tools}`;
+  return `ctx ${ctx}${thoughts}${tools}`;
 }
 
 /** What a composer keypress means: Enter sends, Shift/Ctrl+Enter is a newline. */

@@ -423,7 +423,7 @@ private fun Bubble(
                         )
                     }
                     // Replies carry how full the session's context is; API tools add tool calls.
-                    replyStats(message.contextTokens, message.toolCalls, message.contextWindow)?.let { stats ->
+                    replyStats(message.contextTokens, message.toolCalls, message.contextWindow, message.thoughtCount)?.let { stats ->
                         Text(
                             text = stats,
                             color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.55f) else HelmColors.Faint,

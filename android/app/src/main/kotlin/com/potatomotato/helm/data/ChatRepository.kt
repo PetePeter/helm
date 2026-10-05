@@ -58,15 +58,16 @@ data class ChatMessage(
     val contextTokens: Long? = null,
     val toolCalls: Int? = null,
     val contextWindow: Long? = null,
+    val thoughtCount: Int? = null,
 )
 
 /**
  * The muted badge under a reply: "ctx 12.3k · 5% · 4 tools". Null when the row
  * carries no stats. Thousands get one decimal; the percent full appears only
- * when the window is known; zero tools are omitted.
+ * when the window is known; zero thought and tool counts are omitted.
  */
-fun replyStats(contextTokens: Long?, toolCalls: Int?, contextWindow: Long? = null): String? {
-    if (contextTokens == null && toolCalls == null) return null
+fun replyStats(contextTokens: Long?, toolCalls: Int?, contextWindow: Long? = null, thoughtCount: Int? = null): String? {
+    if (contextTokens == null && toolCalls == null && thoughtCount == null) return null
     val parts = mutableListOf<String>()
     if (contextTokens != null) {
         parts += if (contextTokens >= 1000) {
@@ -78,6 +79,7 @@ fun replyStats(contextTokens: Long?, toolCalls: Int?, contextWindow: Long? = nul
             parts += "${Math.round(contextTokens * 100.0 / contextWindow)}%"
         }
     }
+    if (thoughtCount != null && thoughtCount > 0) parts += if (thoughtCount == 1) "1 thought" else "$thoughtCount thoughts"
     if (toolCalls != null && toolCalls > 0) parts += if (toolCalls == 1) "1 tool" else "$toolCalls tools"
     return parts.joinToString(" · ").ifEmpty { null }
 }
@@ -357,6 +359,7 @@ class ChatRepository(
         contextTokens = record.contextTokens,
         toolCalls = record.toolCalls,
         contextWindow = record.contextWindow,
+        thoughtCount = record.thoughtCount,
     )
 
     /**

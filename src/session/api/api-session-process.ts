@@ -46,6 +46,7 @@ export interface ApiTurnOutcome {
   finalText: string;
   toolsUsed: string[];
   contextTokens?: number;
+  thoughtCount?: number;
   error?: string;
 }
 
@@ -435,6 +436,7 @@ export class ApiSessionProcess implements PtyProcess {
       this.deps.saveHistory(this.history);
       outcome.finalText = result.finalText;
       outcome.toolsUsed = result.toolsUsed;
+      outcome.thoughtCount = result.thoughtCount;
       this.contextTokens = result.contextTokens ?? this.contextTokens;
     } catch (err) {
       outcome.error = controller.signal.aborted ? 'aborted' : err instanceof Error ? err.message : String(err);

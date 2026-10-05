@@ -96,7 +96,7 @@ class ChatRepositoryDeleteTest {
 
     @Test
     fun `reply stats render context in thousands with one decimal and drop zero tools`() {
-        assertEquals("ctx 12.3k · 4 tools", replyStats(12_345, 4))
+        assertEquals("ctx 12.3k · 2 thoughts · 4 tools", replyStats(12_345, 4, thoughtCount = 2))
         assertEquals("ctx 850 · 1 tool", replyStats(850, 1))
         assertEquals("ctx 2.0k", replyStats(2_000, 0))
         assertNull(replyStats(null, null))
@@ -105,7 +105,7 @@ class ChatRepositoryDeleteTest {
     @Test
     fun `reply stats add percent full when the window is known, and only then`() {
         assertEquals("ctx 60.1k · 30%", replyStats(60_100, null, 200_000))
-        assertEquals("ctx 12.3k · 5% · 4 tools", replyStats(12_345, 4, 258_400))
+        assertEquals("ctx 12.3k · 5% · 2 thoughts · 4 tools", replyStats(12_345, 4, 258_400, 2))
         assertEquals("ctx 199.9k · 100%", replyStats(199_900, null, 200_000))
         assertEquals("ctx 60.1k", replyStats(60_100, null, null))
         assertEquals("ctx 60.1k", replyStats(60_100, null, 0))

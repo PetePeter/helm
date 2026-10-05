@@ -42,6 +42,8 @@ export interface ChatOutboundMessage {
 export interface ChatTurnUsage {
   contextTokens: number;
   toolCalls?: number;
+  /** API completion rounds that returned reasoning metadata. */
+  thoughtCount?: number;
   contextWindow?: number;
 }
 

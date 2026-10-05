@@ -47,6 +47,15 @@ describe('mobile envelope round-trips', () => {
     expect(record).toMatchObject({ sessionName: 'ñoño', text: 'build ✅ — 完了' });
   });
 
+  it('appends thought counts after all existing chat fields and round-trips them', () => {
+    const encoded = encodeChat({
+      sessionId: 's1', sessionName: 'work', text: 'answer', at: 1,
+      contextTokens: 1200, toolCalls: 2, contextWindow: 32000, thoughtCount: 3,
+    }).toString('utf8');
+    expect(encoded).toBe('{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"answer","at":1,"contextTokens":1200,"toolCalls":2,"contextWindow":32000,"thoughtCount":3}');
+    expect(decodeRecord(Buffer.from(encoded))).toMatchObject({ thoughtCount: 3 });
+  });
+
   it('appends an alert kind last, and omits it entirely from a plain message', () => {
     // Key order is part of this format: `kind` goes after the other optional
     // keys so a record with every field set stays byte-predictable, and a

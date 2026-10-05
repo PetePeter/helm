@@ -131,10 +131,10 @@ describe('API-tool chat extras', () => {
   });
 
   it('an API reply shows its context and tool-call badge', async () => {
-    const f = fakes([{ seq: 1, record: { text: 'answer', at: 1, contextTokens: 12345, toolCalls: 3 } }]);
+    const f = fakes([{ seq: 1, record: { text: 'answer', at: 1, contextTokens: 12345, thoughtCount: 2, toolCalls: 3 } }]);
     await f.chat.open();
-    expect(f.chat.bubbles.value[0].badge).toBe('ctx 12.3k · 3 tools');
-    expect(usageBadge({ contextTokens: 800, toolCalls: 0 })).toBe('ctx 800');
+    expect(f.chat.bubbles.value[0].badge).toBe('ctx 12.3k · 2 thoughts · 3 tools');
+    expect(usageBadge({ contextTokens: 800, thoughtCount: 0, toolCalls: 0 })).toBe('ctx 800');
     expect(usageBadge({})).toBeUndefined();
   });
 });

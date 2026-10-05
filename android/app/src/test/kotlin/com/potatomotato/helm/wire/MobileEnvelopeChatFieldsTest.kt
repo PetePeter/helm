@@ -158,7 +158,7 @@ class MobileEnvelopeChatFieldsTest {
         val record = MobileEnvelope.decode(
             (
                 """{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"","at":5,"kind":"deleted",""" +
-                    """"seq":12,"deletes":7,"contextTokens":12345,"toolCalls":4}"""
+                    """"seq":12,"deletes":7,"contextTokens":12345,"toolCalls":4,"thoughtCount":2}"""
                 ).toByteArray(Charsets.UTF_8),
         ) as MobileRecord.Chat
 
@@ -167,6 +167,7 @@ class MobileEnvelopeChatFieldsTest {
         assertEquals(7L, record.deletes)
         assertEquals(12345L, record.contextTokens)
         assertEquals(4, record.toolCalls)
+        assertEquals(2, record.thoughtCount)
     }
 
     @Test

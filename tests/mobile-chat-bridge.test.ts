@@ -751,8 +751,8 @@ describe('deleting chat messages', () => {
 
   it('carries an API reply\'s usage onto the chat record for the bubble badge', async () => {
     links.online.add('phone-machine');
-    await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 12345, toolCalls: 3 } });
-    expect(links.records()[0]).toMatchObject({ text: 'done', contextTokens: 12345, toolCalls: 3 });
+    await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 12345, thoughtCount: 2, toolCalls: 3 } });
+    expect(links.records()[0]).toMatchObject({ text: 'done', contextTokens: 12345, thoughtCount: 2, toolCalls: 3 });
   });
 
   it('carries a CLI reply\'s context window, and no tool count it never had', async () => {

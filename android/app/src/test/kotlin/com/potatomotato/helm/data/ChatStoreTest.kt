@@ -42,6 +42,15 @@ class ChatStoreTest {
     }
 
     @Test
+    fun `reply thought counts survive a restart`() {
+        repository().receive(DESK, chat("answer", seq = 1, thoughtCount = 3))
+
+        val restored = repository().thread("s1").single()
+
+        assertEquals(3, restored.thoughtCount)
+    }
+
+    @Test
     fun `restored rows get fresh distinct keys`() {
         repository().apply { receive(DESK, chat("a", seq = 1)); receive(DESK, chat("b", seq = 2)) }
 
@@ -166,6 +175,7 @@ class ChatStoreTest {
         originId: String? = null,
         replay: Boolean = false,
         at: Long = seq ?: 0,
+        thoughtCount: Int? = null,
     ) = MobileRecord.Chat(
         sessionId = sessionId,
         sessionName = "work",
@@ -174,6 +184,7 @@ class ChatStoreTest {
         seq = seq,
         originId = originId,
         replay = replay,
+        thoughtCount = thoughtCount,
     )
 
     private companion object {
