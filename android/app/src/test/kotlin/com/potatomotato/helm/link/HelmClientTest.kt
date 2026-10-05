@@ -703,15 +703,25 @@ class HelmClientTest {
     }
 
     @Test
-    fun `a snapshot asks for a numeric line count and the desktop's own cleaning`() {
+    fun `a snapshot asks for a numeric line count and the rendered screen`() {
         assertTrue(client.readTerminal("s1", 200))
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         // A NUMBER, not "200": the desktop reads lines with a typeof check and
         // silently answers the default tail for a quoted one.
         assertEquals(200, params.get("lines"))
-        assertEquals("stripped", params.getString("mode"))
-        assertTrue(params.getBoolean("stripBlankLines"))
+        assertEquals("screen", params.getString("mode"))
+        assertFalse(params.getBoolean("stripBlankLines"))
+    }
+
+    @Test
+    fun `a snapshot falls back to the cleaned tail when screen mode is unsupported`() {
+        assertTrue(client.readTerminal("s1", 200))
+        client.onInbound(errorFor(lastCallId(), "mode must be one of raw, stripped, or both"))
+
+        val fallback = JSONObject(String(sent.last(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("stripped", fallback.getString("mode"))
+        assertFalse(fallback.getBoolean("stripBlankLines"))
     }
 
     @Test

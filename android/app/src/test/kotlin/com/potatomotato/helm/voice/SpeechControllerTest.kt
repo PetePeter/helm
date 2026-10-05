@@ -34,15 +34,21 @@ class SpeechControllerTest {
     }
 
     @Test
-    fun `a final result supersedes the last partial and ends listening`() {
+    fun `release captures the latest partial and ignores a late final`() {
         controller.start()
         engine.emitPartial("surface it and let the")
 
         controller.stop()
+
+        val released = controller.state.value
+        assertEquals("surface it and let the", released.transcript)
+        assertEquals(VoicePhase.Captured, released.phase)
+        assertNull(released.error)
+
         engine.emitFinal("surface it and let the app retry")
 
         val state = controller.state.value
-        assertEquals("surface it and let the app retry", state.transcript)
+        assertEquals("surface it and let the", state.transcript)
         assertEquals(VoicePhase.Captured, state.phase)
         assertNull(state.error)
     }
@@ -152,15 +158,21 @@ class SpeechControllerTest {
     }
 
     @Test
-    fun `a final with nothing heard at all reports no match rather than capturing emptiness`() {
+    fun `releasing without a partial captures an empty transcript and ignores a late final`() {
         controller.start()
 
         controller.stop()
+
+        val released = controller.state.value
+        assertEquals(VoicePhase.Captured, released.phase)
+        assertEquals("", released.transcript)
+        assertNull(released.error)
+
         engine.emitFinal("   ")
 
         val state = controller.state.value
-        assertEquals(VoicePhase.Failed, state.phase)
-        assertEquals(SpeechError.NoMatch, state.error)
+        assertEquals(VoicePhase.Captured, state.phase)
+        assertNull(state.error)
         assertEquals("", state.transcript)
     }
 
@@ -271,18 +283,20 @@ class SpeechControllerTest {
     }
 
     @Test
-    fun `stopping asks for a final result, and does nothing when not listening`() {
+    fun `stopping captures immediately, asks the engine to stop, and does nothing when idle`() {
         controller.stop()
         assertEquals(0, engine.stopCount)
 
         controller.start()
+        engine.emitPartial("done talking")
         controller.stop()
         assertEquals(1, engine.stopCount)
 
-        // Still listening until the final actually lands — stopping is a request.
-        assertEquals(VoicePhase.Listening, controller.state.value.phase)
-        engine.emitFinal("done talking")
         assertEquals(VoicePhase.Captured, controller.state.value.phase)
+        assertEquals("done talking", controller.state.value.transcript)
+        engine.emitFinal("late correction")
+        assertEquals(VoicePhase.Captured, controller.state.value.phase)
+        assertEquals("done talking", controller.state.value.transcript)
     }
 
     @Test

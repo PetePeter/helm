@@ -321,6 +321,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     }
 
     val open = sessions.firstOrNull { it.id == openSessionId }
+    val listedSessions = remember(sessions) { withoutOperator(sessions) }
+    val listedSessionIds = remember(listedSessions) { listedSessions.map { it.id } }
     if (openSessionId != null && open == null && sessions.isNotEmpty()) {
         // The session went away while it was on screen. Fall back to the list
         // rather than leaving the user in a thread that can no longer be replied to.
@@ -797,9 +799,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // One chat surface, two homes: the open session's Chat tab and the Helm
     // home tab's operator thread. The terminal shortcut opens the session it
     // belongs to, so it works from either.
-    val sessionChat: @Composable (String) -> Unit = { sessionId ->
+    val sessionChat: @Composable (String, ((Int) -> Unit)?) -> Unit = { sessionId, onSwipeSession ->
         ChatScreen(
             sessionId = sessionId,
+            onSwipeSession = onSwipeSession,
             messages = threads[sessionId].orEmpty(),
             onSend = { text -> client.sendChat(sessionId, text) },
             // Retry re-issues over the wire (the repository swaps the dead
@@ -1073,12 +1076,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 )
                                 // The operator's recent conversation, right under its controls.
                                 if (operator is OperatorSummary.On) {
-                                    Box(modifier = Modifier.weight(1f)) { sessionChat(operator.id) }
+                                    Box(modifier = Modifier.weight(1f)) { sessionChat(operator.id, null) }
                                 }
                             }
 
                             HomeTab.Sessions -> SessionListScreen(
-                                sessions = remember(sessions) { withoutOperator(sessions) },
+                                sessions = listedSessions,
                                 linkState = linkState,
                                 reach = reach,
                                 capabilities = capabilities,
@@ -1319,7 +1322,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                         onOverflow = { where = Destination.Sheet },
                     ) {
                         when (tab) {
-                            SessionTab.Chat -> sessionChat(open.id)
+                            SessionTab.Chat -> sessionChat(open.id) { step ->
+                                SessionRows.adjacentSessionId(listedSessionIds, open.id, step)
+                                    ?.let { openSessionId = it }
+                            }
 
                             SessionTab.Artifacts -> ArtifactsScreen(
                                 state = artifactList,

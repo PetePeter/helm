@@ -21,6 +21,14 @@ sealed interface RowEntry {
 
 object SessionRows {
 
+    /** The neighboring session in list order, or null at either end. */
+    fun adjacentSessionId(sessionIds: List<String>, currentSessionId: String, step: Int): String? {
+        require(step == -1 || step == 1) { "step must be -1 (previous) or 1 (next)" }
+        val index = sessionIds.indexOf(currentSessionId)
+        if (index < 0) return null
+        return sessionIds.getOrNull(index + step)
+    }
+
     /**
      * Group [HelmSession.groupLabel]-sorted sessions into headers and rows.
      * A collapsed group contributes its header only — the header keeps the

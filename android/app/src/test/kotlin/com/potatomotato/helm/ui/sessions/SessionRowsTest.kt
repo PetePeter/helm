@@ -77,6 +77,17 @@ class SessionRowsTest {
     }
 
     @Test
+    fun `adjacent sessions follow list order and stop at both ends`() {
+        val sessions = listOf("a1", "a2", "b1")
+
+        assertEquals("b1", SessionRows.adjacentSessionId(sessions, "a2", step = 1))
+        assertEquals("a1", SessionRows.adjacentSessionId(sessions, "a2", step = -1))
+        assertEquals(null, SessionRows.adjacentSessionId(sessions, "a1", step = -1))
+        assertEquals(null, SessionRows.adjacentSessionId(sessions, "b1", step = 1))
+        assertEquals(null, SessionRows.adjacentSessionId(sessions, "missing", step = 1))
+    }
+
+    @Test
     fun `an unread badge shows the count, caps at nine-plus, and hides at zero`() {
         // A two-digit count breaks the pill's rhythm and buys nothing: past nine
         // the row only has to say "more than you have read".

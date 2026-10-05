@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
@@ -136,6 +137,8 @@ fun ChatScreen(
     session: HelmSession? = null,
     /** Thaw the session; with a bubble's key + text, resend it after. */
     onUnfreeze: (retry: Pair<String, String>?) -> Unit = {},
+    /** Switch to the neighboring session on a horizontal swipe; null disables navigation. */
+    onSwipeSession: ((step: Int) -> Unit)? = null,
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. It also
@@ -152,6 +155,28 @@ fun ChatScreen(
         )
     }
     val listState = rememberLazyListState()
+    val currentSwipeSession by rememberUpdatedState(onSwipeSession)
+    val swipeThresholdPx = with(LocalDensity.current) { SESSION_SWITCH_SWIPE_THRESHOLD_DP.dp.toPx() }
+    val threadSwipeModifier = if (onSwipeSession == null) {
+        Modifier
+    } else {
+        Modifier.pointerInput(sessionId) {
+            var horizontalDrag = 0f
+            detectHorizontalDragGestures(
+                onDragEnd = {
+                    val step = when {
+                        horizontalDrag <= -swipeThresholdPx -> 1
+                        horizontalDrag >= swipeThresholdPx -> -1
+                        else -> 0
+                    }
+                    if (step != 0) currentSwipeSession?.invoke(step)
+                    horizontalDrag = 0f
+                },
+                onDragCancel = { horizontalDrag = 0f },
+                onHorizontalDrag = { _, dragAmount -> horizontalDrag += dragAmount },
+            )
+        }
+    }
 
     // Selection mode: long-press a bubble to start, tap to toggle. Keyed on the
     // session like the draft: a selection never follows the user into another
@@ -223,46 +248,50 @@ fun ChatScreen(
             )
             Hairline()
         }
-        if (messages.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(HelmSpacing.Xl),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_empty),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(HelmSpacing.Gutter),
-                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-            ) {
-                items(messages, key = { it.key }) {
-                    Bubble(
-                        message = it,
-                        selected = it.key in selected,
-                        onTap = if (selecting) ({ toggle(it.key) }) else null,
-                        onLongPress = { toggle(it.key) },
-                        onRetry = onRetry,
-                        onUnfreeze = onUnfreeze,
-                        onDelete = onDelete,
-                        pulls = pulls,
-                        onPull = onPull,
-                        onCancelPull = onCancelPull,
-                        onDeleteAttachment = onDeleteAttachment,
-                        onOpenAttachment = onOpenAttachment,
+        Box(
+            modifier = Modifier.weight(1f).fillMaxWidth().then(threadSwipeModifier),
+        ) {
+            if (messages.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_empty),
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
                     )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(HelmSpacing.Gutter),
+                    verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                ) {
+                    items(messages, key = { it.key }) {
+                        Bubble(
+                            message = it,
+                            selected = it.key in selected,
+                            onTap = if (selecting) ({ toggle(it.key) }) else null,
+                            onLongPress = { toggle(it.key) },
+                            onRetry = onRetry,
+                            onUnfreeze = onUnfreeze,
+                            onDelete = onDelete,
+                            pulls = pulls,
+                            onPull = onPull,
+                            onCancelPull = onCancelPull,
+                            onDeleteAttachment = onDeleteAttachment,
+                            onOpenAttachment = onOpenAttachment,
+                        )
+                    }
                 }
             }
         }
 
         if (call != null && call.state.phase != CallPhase.Ended) {
-            CallPanel(call = call)
+            CallPanel(call = call, modifier = threadSwipeModifier)
             return@Column
         }
         Composer(
@@ -1091,6 +1120,7 @@ private const val BUBBLE_WIDTH_FRACTION = 0.75f
 
 /** Accent wash behind a selected row: visible on true black, text still readable. */
 private const val SELECTED_TINT = 0.16f
+private const val SESSION_SWITCH_SWIPE_THRESHOLD_DP = 80
 
 /**
  * The three circles stacked with their gaps — the composer field's minimum
