@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { stripTranscript } from '../../src/session/transcript-strip.js';
-import { KEEP_WARM_PROMPT } from '../../src/session/keep-warmer.js';
+import { KEEP_WARM_PROMPT, HEARTBEAT_OPEN, HEARTBEAT_CLOSE } from '../../src/session/keep-warmer.js';
 
 const jsonl = (...records: unknown[]): string => records.map(r => JSON.stringify(r)).join('\n');
 
@@ -216,6 +216,23 @@ describe('stripTranscript — Helm plumbing', () => {
 
   it('drops a message that was nothing but plumbing, leaving no empty section', () => {
     const md = strip('[HELM_MSG_RULES]\nrules\n[/HELM_MSG_RULES]');
+    expect(md).not.toContain('## User');
+  });
+
+  it('drops a bounded keep-warm heartbeat whole, keeping the prompt before and after', () => {
+    const md = strip(
+      'fix the strip',
+      `${HEARTBEAT_OPEN} heartbeat. brief housekeeping note ${HEARTBEAT_CLOSE}`,
+      'keep working on the strip',
+    );
+    expect(md).toContain('fix the strip');
+    expect(md).toContain('keep working on the strip');
+    expect(md).not.toMatch(/HEARTBEAT|housekeeping/);
+  });
+
+  it('drops a keep-warm ping that only carries the default marker, e.g. a custom keepWarmPrompt', () => {
+    const md = strip(`${HEARTBEAT_OPEN} poke: check my workers [ping]`);
+    expect(md).not.toMatch(/HEARTBEAT|poke|ping/);
     expect(md).not.toContain('## User');
   });
 

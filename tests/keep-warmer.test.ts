@@ -48,8 +48,8 @@ describe('KeepWarmer', () => {
     await warmer.tick();
     expect(sent).toEqual(['.']);
     expect(KEEP_WARM_PROMPT).toBe(
-      '{Esc}heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
-        'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.',
+      '{Esc}[HEARTBEAT_START] heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+        'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.[HEARTBEAT_END]',
     );
   });
 

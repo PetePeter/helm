@@ -14,7 +14,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
-import { KEEP_WARM_HEARTBEAT } from './keep-warmer.js';
+import { HEARTBEAT_MARKER, HEARTBEAT_OPEN } from './keep-warmer.js';
 import { logger } from '../utils/logger.js';
 
 const TOOL_ARGS_MAX = 200;
@@ -34,6 +34,7 @@ const NOISE_PREFIXES = ['<local-command', '<command-', '<environment_context', '
 const HELM_PLUMBING: RegExp[] = [
   /\[(HELM_[A-Z_]*(?:RULES|MODE))\][\s\S]*?\[\/\1\]/g, // injected instruction blocks, whole
   /\{"type":"inter_llm_message"[^{}]*\}/g, // envelope JSON
+  /\[HEARTBEAT_START\][\s\S]*?\[HEARTBEAT_END\]/gi, // keep-warm pings, whole (markers from keep-warmer.ts)
   /\[\/?HELM_[A-Z_]*(?:[:\s][^\]\n]*)?\]/g, // any remaining tag, e.g. [HELM_MSG: …reply to "<old id>"…]
 ];
 
@@ -41,8 +42,12 @@ const HELM_PLUMBING: RegExp[] = [
 const PLUMBING_LINE =
   /^\s*(?:\[HELM_(?:MISSION|MESS)\]|possibly related: |Startable plan here: |\S+ hook additional context:|Stop hook feedback:|\S+ hook blocking error|A large .+ was written to a Helm temp file\.|Read the full file at: |Delete the temp file after processing\.|Your AIAGENT state is unset)/;
 
+/** A keep-warm ping, whole line: the ping itself is Helm plumbing, not conversation.
+ *  `{Esc}` is the sequence token that clears half-typed input before the marker. */
+const HEARTBEAT_LINE = /^\s*(?:\{Esc\})?\[HEARTBEAT_START\]/i;
+
 function cleanText(text: string): string {
-  const dropLines = (s: string) => s.split('\n').filter(line => !PLUMBING_LINE.test(line)).join('\n');
+  const dropLines = (s: string) => s.split('\n').filter(line => !(PLUMBING_LINE.test(line) || HEARTBEAT_LINE.test(line))).join('\n');
   // Lines are dropped both before tag removal (some are identified by their
   // tag) and after (some only start a line once an envelope is stripped off).
   let out = dropLines(text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ''));
@@ -51,7 +56,12 @@ function cleanText(text: string): string {
 }
 
 function isNoise(text: string): boolean {
-  return NOISE_PREFIXES.some(p => text.startsWith(p)) || text.toLowerCase().startsWith(KEEP_WARM_HEARTBEAT.toLowerCase());
+  // A keep-warm ping is plumbing, not conversation: a marked ping drops as a wrapped
+  // block (PLUMBING_LINE / HELM_PLUMBING), and a custom keepWarmPrompt that still starts
+  // with the default marker drops even when its pair is unclosed.
+  const p = text.toLowerCase();
+  return p.startsWith(HEARTBEAT_OPEN.toLowerCase()) || p.startsWith(HEARTBEAT_MARKER.toLowerCase())
+    || NOISE_PREFIXES.some(n => text.startsWith(n));
 }
 
 function clip(text: string, max: number): string {

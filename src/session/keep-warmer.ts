@@ -14,13 +14,18 @@ export function keepWarmAfterMs(t: StalenessThresholds | null | undefined): numb
 
 /** How long one "Keep warm" switch-on lasts before it turns itself off. */
 export const KEEP_WARM_DEFAULT_MS = 8 * 3_600_000;
-/** Stable marker shared with transcript stripping; user prompts may contain the rest of the ping. */
-export const KEEP_WARM_HEARTBEAT = '{Esc}heartbeat';
-/** Default ping: Esc clears half-typed input, then renews the cache and gives
- *  short housekeeping guidance. Per CLI: keepWarmPrompt. */
+/** A ping is wrapped in these so quick compact can drop the whole thing: bracket
+ *  delimiters, no braces, so sequence escaping ships them byte for byte. */
+export const HEARTBEAT_OPEN = '[HEARTBEAT_START]';
+export const HEARTBEAT_CLOSE = '[HEARTBEAT_END]';
+/** The prefix the CLI records: `{Esc}` clears half-typed input, then the ping starts. */
+export const HEARTBEAT_MARKER = `{Esc}${HEARTBEAT_OPEN}`;
+/** Default ping: the bounded marker pair plus short housekeeping guidance.
+ *  Per CLI: keepWarmPrompt. */
 export const KEEP_WARM_PROMPT =
-  `${KEEP_WARM_HEARTBEAT}. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ` +
-  'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.';
+  `${HEARTBEAT_MARKER} heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ` +
+  'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.' +
+  HEARTBEAT_CLOSE;
 
 /** The CLI-type settings the warmer reads. */
 export type KeepWarmConfig = StalenessThresholds & { keepWarmPrompt?: string };
