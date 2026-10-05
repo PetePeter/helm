@@ -14,6 +14,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
+import { KEEP_WARM_HEARTBEAT } from './keep-warmer.js';
 import { logger } from '../utils/logger.js';
 
 const TOOL_ARGS_MAX = 200;
@@ -50,7 +51,7 @@ function cleanText(text: string): string {
 }
 
 function isNoise(text: string): boolean {
-  return NOISE_PREFIXES.some(p => text.startsWith(p));
+  return NOISE_PREFIXES.some(p => text.startsWith(p)) || text.toLowerCase().startsWith(KEEP_WARM_HEARTBEAT.toLowerCase());
 }
 
 function clip(text: string, max: number): string {
@@ -66,7 +67,7 @@ function toolLine(name: unknown, args: unknown): string {
 function resultText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.map(b => (typeof (b as Block)?.text === 'string' ? (b as Block).text : '')).join(' ');
+  return content.map(b => (typeof (b as Block)?.text === 'string' ? (b as Block).text as string : '')).join(' ');
 }
 
 const READ_CHUNK_BYTES = 16 * 1024 * 1024;
@@ -169,7 +170,13 @@ function stripCodex(lines: Line[]): string {
     const p = (l.payload ?? {}) as Block;
 
     if (p.type === 'message' && (p.role === 'user' || p.role === 'assistant')) {
-      const text = cleanText(resultText(p.content));
+      const text = cleanText(Array.isArray(p.content)
+        ? p.content
+          .filter((b): b is Block => Boolean(b && typeof b === 'object'))
+          .filter(b => b.type === 'input_text' || b.type === 'output_text')
+          .map(b => typeof b.text === 'string' ? b.text : '')
+          .join(' ')
+        : resultText(p.content));
       if (text && !isNoise(text)) out.add(p.role === 'user' ? 'User' : 'Assistant', text);
     } else if (p.type === 'function_call' || p.type === 'custom_tool_call') {
       out.add('Assistant', toolLine(p.name, p.arguments ?? p.input));
@@ -197,9 +204,11 @@ function stripCopilot(lines: Line[]): string {
     if (d.parentToolCallId) continue; // sub-agent chatter; the parent already logs the call
     if (l.type === 'user.message') {
       // content is what the user typed; transformedContent adds Copilot's injected context.
-      out.add('User', cleanText(String(d.content ?? '')));
+      const text = cleanText(String(d.content ?? ''));
+      if (!isNoise(text)) out.add('User', text);
     } else if (l.type === 'assistant.message') {
-      out.add('Assistant', cleanText(String(d.content ?? '')));
+      const text = cleanText(String(d.content ?? ''));
+      if (!isNoise(text)) out.add('Assistant', text);
       for (const req of (Array.isArray(d.toolRequests) ? d.toolRequests : []) as Block[]) {
         out.add('Assistant', toolLine(req.name, req.arguments));
       }

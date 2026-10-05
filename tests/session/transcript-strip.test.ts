@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { stripTranscript } from '../../src/session/transcript-strip.js';
+import { KEEP_WARM_PROMPT } from '../../src/session/keep-warmer.js';
 
 const jsonl = (...records: unknown[]): string => records.map(r => JSON.stringify(r)).join('\n');
 
@@ -232,5 +233,22 @@ describe('stripTranscript — Helm plumbing', () => {
     expect(codex).toContain('codex body');
     expect(copilot).toContain('copilot body');
     expect(codex + copilot).not.toContain('old-id');
+  });
+
+  it('drops default keep-warm heartbeats from every CLI format', () => {
+    const claude = stripTranscript(jsonl(ccUser(KEEP_WARM_PROMPT), ccAssistant('real reply')));
+    const codex = stripTranscript(jsonl(
+      { type: 'session_meta', payload: {} },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: KEEP_WARM_PROMPT }] } },
+    ));
+    const copilot = stripTranscript(jsonl(cp('session.start', {}), cp('user.message', { content: KEEP_WARM_PROMPT })));
+
+    expect(claude).toContain('real reply');
+    expect(claude).not.toContain('heartbeat');
+    expect(codex).not.toContain('heartbeat');
+    expect(copilot).not.toContain('heartbeat');
+    expect(claude).not.toContain('Quick Compact');
+    expect(codex).not.toContain('Quick Compact');
+    expect(copilot).not.toContain('Quick Compact');
   });
 });
