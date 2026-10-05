@@ -2,6 +2,21 @@
 
 All notable changes to Helm are documented in this file.
 
+## [4.5.0] - 2026-10-05
+
+### Features
+
+- Stream API-backed chat completions and apply each model's configured temperature.
+- Show thought-round and tool-call counts on completed API reply badges.
+- Add an opt-in keep-warm control that sends bounded heartbeat prompts before a CLI prompt cache expires.
+- Ship updated Claude, Codex, and Copilot shell guardrail explanations, including the coarse command-text match behavior.
+
+### Improvements
+
+- Preserve bounded keep-warm heartbeat markers when compacting transcripts.
+- Carry context, thought, and tool counts through the Android chat wire format and saved message history.
+- Improve shell guardrail documentation and keep the shipped provider defaults aligned.
+
 ## [3.0.0] - 2026-08-27
 
 ### Features
