@@ -366,13 +366,17 @@ export function createOpenAiChatClient(options: {
   baseUrl: string;
   model: string;
   apiKey?: string;
+  /** Sampling temperature; omitted from the request when unset so the server default applies. */
+  temperature?: number;
   fetchImpl?: typeof fetch;
 }): ChatClient {
   const fetchImpl = options.fetchImpl ?? fetch;
   const url = `${options.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   return {
     async complete(messages, tools, signal) {
-      const body: Record<string, unknown> = { model: options.model, messages };
+      // Streamed so slow local models (long first prefill) never hit undici's ~300 s headers/body timeout.
+      const body: Record<string, unknown> = { model: options.model, messages, stream: true, stream_options: { include_usage: true } };
+      if (options.temperature !== undefined) body.temperature = options.temperature;
       if (tools.length) {
         body.tools = tools.map((tool) => ({ type: 'function', function: tool }));
       }
@@ -388,13 +392,86 @@ export function createOpenAiChatClient(options: {
       if (!response.ok) {
         throw new Error(`API ${response.status}: ${(await response.text()).slice(0, 500)}`);
       }
-      const json = await response.json() as {
-        choices?: Array<{ message?: CompletionResult['message']; finish_reason?: string }>;
-        usage?: CompletionUsage;
-      };
-      const choice = json.choices?.[0];
-      if (!choice?.message) throw new Error('API returned no choices');
-      return { message: choice.message, finishReason: choice.finish_reason, ...(json.usage ? { usage: json.usage } : {}) };
+      if (!(response.headers.get('content-type') ?? '').includes('text/event-stream')) {
+        // Server ignored stream:true and replied with a plain completion.
+        const json = await response.json() as {
+          choices?: Array<{ message?: CompletionResult['message']; finish_reason?: string }>;
+          usage?: CompletionUsage;
+        };
+        const choice = json.choices?.[0];
+        if (!choice?.message) throw new Error('API returned no choices');
+        return { message: choice.message, finishReason: choice.finish_reason, ...(json.usage ? { usage: json.usage } : {}) };
+      }
+      return readCompletionStream(response);
     },
+  };
+}
+
+interface StreamChunk {
+  choices?: Array<{
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string;
+      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+    };
+    finish_reason?: string | null;
+  }>;
+  usage?: CompletionUsage | null;
+}
+
+/** Folds an OpenAI SSE chat-completion stream into one CompletionResult. */
+async function readCompletionStream(response: Response): Promise<CompletionResult> {
+  let content = '';
+  let reasoning = '';
+  let finishReason: string | undefined;
+  let usage: CompletionUsage | undefined;
+  const calls: ToolCall[] = [];
+
+  const apply = (chunk: StreamChunk): void => {
+    if (chunk.usage) usage = chunk.usage;
+    const choice = chunk.choices?.[0];
+    if (!choice) return;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    const delta = choice.delta;
+    if (!delta) return;
+    if (delta.content) content += delta.content;
+    if (delta.reasoning_content) reasoning += delta.reasoning_content;
+    for (const part of delta.tool_calls ?? []) {
+      const call = (calls[part.index ?? 0] ??= { id: '', type: 'function', function: { name: '', arguments: '' } });
+      if (part.id) call.id = part.id;
+      if (part.function?.name) call.function.name += part.function.name;
+      if (part.function?.arguments) call.function.arguments += part.function.arguments;
+    }
+  };
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const flushLines = (final: boolean): void => {
+    const lines = buffer.split('\n');
+    buffer = final ? '' : lines.pop() ?? '';
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data && data !== '[DONE]') apply(JSON.parse(data) as StreamChunk);
+    }
+  };
+  for await (const part of response.body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(part, { stream: true });
+    flushLines(false);
+  }
+  buffer += decoder.decode();
+  flushLines(true);
+
+  const toolCalls = calls.filter(Boolean);
+  if (!content && !reasoning && !toolCalls.length) throw new Error('API returned no choices');
+  return {
+    message: {
+      content: content || null,
+      ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      ...(reasoning ? { reasoning_content: reasoning } : {}),
+    },
+    finishReason,
+    ...(usage ? { usage } : {}),
   };
 }

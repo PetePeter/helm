@@ -45,6 +45,8 @@ export interface ApiToolConfig {
   systemPrompt?: string;
   /** Upper bound on model→tool round trips in one turn. Default 25. */
   maxToolRounds?: number;
+  /** Sampling temperature sent with each request. Unset = the server's own default. */
+  temperature?: number;
   /**
    * Model requests this API tool may have in flight at once, across all its
    * sessions and their subagents — match the server's parallel slots. Default 1.

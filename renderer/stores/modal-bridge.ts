@@ -348,6 +348,7 @@ export interface ToolEditorApiConfig {
   allowedTools: string[];
   systemPrompt?: string;
   maxToolRounds?: number;
+  temperature?: number;
   /** Concurrent model requests (server slots) for this API tool; subagents queue for them. */
   slots?: number;
 }
@@ -418,6 +419,9 @@ export function buildApiToolPayload(api: unknown): ToolEditorApiConfig | null {
     : [];
   const rounds = Math.floor(Number(raw.maxToolRounds));
   const slots = Math.floor(Number(raw.slots));
+  const temperature = typeof raw.temperature === 'number' && Number.isFinite(raw.temperature) && raw.temperature >= 0
+    ? raw.temperature
+    : undefined;
   return {
     baseUrl: text('baseUrl'),
     model: text('model'),
@@ -426,6 +430,7 @@ export function buildApiToolPayload(api: unknown): ToolEditorApiConfig | null {
     ...(text('systemPrompt') ? { systemPrompt: text('systemPrompt') } : {}),
     ...(rounds > 0 ? { maxToolRounds: rounds } : {}),
     ...(slots > 0 ? { slots } : {}),
+    ...(temperature !== undefined ? { temperature } : {}),
   };
 }
 

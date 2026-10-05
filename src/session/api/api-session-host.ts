@@ -173,7 +173,7 @@ export class ApiSessionHost {
       ? spawn.env?.[api.apiKeyEnv] || (this.deps.env ?? process.env)[api.apiKeyEnv]
       : undefined;
     const rawClient = this.deps.createClient?.(api, apiKey)
-      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey });
+      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey, temperature: api.temperature });
     // Every request of this API tool waits for one of its slots, so a burst of
     // subagents queues here instead of overrunning the server.
     const slotKey = spawn.cliType ?? sessionId;
