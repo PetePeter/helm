@@ -9,10 +9,17 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { deliverSpy } = vi.hoisted(() => ({ deliverSpy: vi.fn(async () => undefined) }));
+const { deliverSpy, quickCompactSpy } = vi.hoisted(() => ({
+  deliverSpy: vi.fn(async () => undefined),
+  quickCompactSpy: vi.fn(),
+}));
 
 vi.mock('../src/session/sequence-delivery.js', () => ({
   deliverPromptSequenceToSession: deliverSpy,
+}));
+
+vi.mock('../src/session/api/api-session-host.js', () => ({
+  getApiSessionHost: () => ({ quickCompactSession: quickCompactSpy }),
 }));
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -198,6 +205,7 @@ describe('session_quick_compact', () => {
   let dir: string;
   beforeEach(() => {
     deliverSpy.mockClear();
+    quickCompactSpy.mockReset();
     process.env.HELM_CLEAR_SETTLE_DELAY_MS = '0';
     dir = mkdtempSync(join(tmpdir(), 'helm-quick-compact-'));
   });
@@ -239,6 +247,29 @@ describe('session_quick_compact', () => {
     expect(deliveredText(0)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('routes API sessions to their history owner without delivering /clear', async () => {
+    quickCompactSpy.mockResolvedValue({ queued: false, archiveFile: 'archive.json', transcriptFile: 'history.md' });
+    const { service, session } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['Read'] } });
+    session.frozen = true;
+
+    const result = await service.quickCompactSession('s1', { handover: 'keep the ids' });
+
+    expect(quickCompactSpy).toHaveBeenCalledWith('s1', 'keep the ids');
+    expect(deliverSpy).not.toHaveBeenCalled();
+    expect(session.frozen).toBe(false);
+    expect(result).toMatchObject({ transcriptFile: 'history.md', archiveFile: 'archive.json' });
+  });
+
+  it('returns a queued result for a busy API session without waiting for its turn', async () => {
+    quickCompactSpy.mockResolvedValue({ queued: true });
+    const { service } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['Read'] } });
+
+    const result = await service.quickCompactSession('s1', {});
+
+    expect(result).toMatchObject({ queued: true, action: 'quick_compact' });
+    expect(deliverSpy).not.toHaveBeenCalled();
   });
 
   it('refuses without a hook-reported transcript and never clears', async () => {

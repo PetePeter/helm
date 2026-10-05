@@ -71,6 +71,12 @@ export interface ApiSessionDeps {
   maxToolRounds?: number;
   history: ChatMessage[];
   saveHistory: (history: ChatMessage[]) => void;
+  /** Archive and atomically persist a quick-compact replacement before returning it. */
+  quickCompactHistory?: (history: ChatMessage[], handover?: string) => {
+    history: ChatMessage[];
+    archiveFile: string;
+    transcriptFile: string;
+  };
   /** Per-turn context (time, cwd) appended to the END of the user message. */
   mutableContext: () => string;
   /** A turn begins; may resolve per-prompt context to append after the mutable context. */
@@ -196,6 +202,8 @@ export class ApiSessionProcess implements PtyProcess {
   private inPaste = false;
   private pending = '';
   private queue: string[] = [];
+  private pendingQuickCompacts: Array<string | undefined> = [];
+  private draining = false;
   private running: AbortController | null = null;
   private history: ChatMessage[];
   private exited = false;
@@ -229,6 +237,32 @@ export class ApiSessionProcess implements PtyProcess {
 
   get busy(): boolean {
     return this.running !== null;
+  }
+
+  get hasReadTool(): boolean {
+    return this.deps.tools.some((tool) => tool.name === 'Read');
+  }
+
+  get canQuickCompact(): boolean {
+    return Boolean(this.deps.quickCompactHistory) && this.hasReadTool;
+  }
+
+  /** Snapshot the current history, or defer until its active turn has committed. */
+  async quickCompact(handover?: string): Promise<
+    | { queued: true }
+    | { queued: false; archiveFile: string; transcriptFile: string }
+  > {
+    if (!this.hasReadTool) {
+      throw new Error('API quick compact requires the Read tool to be enabled');
+    }
+    if (!this.deps.quickCompactHistory) throw new Error('API quick compact is not available for this session');
+    if (this.running || this.draining) {
+      this.pendingQuickCompacts.push(handover?.trim() || undefined);
+      if (!this.draining) void this.drain();
+      return { queued: true };
+    }
+    if (!this.history.length) throw new Error('There is no API conversation history to quick compact');
+    return { queued: false, ...this.applyQuickCompact(handover) };
   }
 
   write(data: string): void {
@@ -297,13 +331,49 @@ export class ApiSessionProcess implements PtyProcess {
   }
 
   private async drain(): Promise<void> {
-    while (this.queue.length && !this.exited) {
-      const input = this.queue.shift()!;
-      if (input === CLEAR_COMMAND) this.clearHistory();
-      else if (isCompact(input)) await this.compact(input.slice(COMPACT_COMMAND.length).trim());
-      else await this.runTurn(input);
+    if (this.draining) return;
+    this.draining = true;
+    try {
+      while (!this.exited) {
+        if (this.pendingQuickCompacts.length) {
+          const handover = this.pendingQuickCompacts.shift();
+          try {
+            this.applyQuickCompact(handover);
+          } catch {
+            // The failure is rendered and the live history remains untouched.
+          }
+          continue;
+        }
+        if (!this.queue.length) break;
+        const input = this.queue.shift()!;
+        if (input === CLEAR_COMMAND) this.clearHistory();
+        else if (isCompact(input)) await this.compact(input.slice(COMPACT_COMMAND.length).trim());
+        else await this.runTurn(input);
+      }
+    } finally {
+      this.draining = false;
+      if (!this.exited) this.emit(PROMPT);
     }
-    if (!this.exited) this.emit(PROMPT);
+  }
+
+  /** The host writes both archive files and the replacement history before we swap memory. */
+  private applyQuickCompact(handover?: string): { archiveFile: string; transcriptFile: string } {
+    const before = this.contextTokens;
+    const oldHistory = this.history;
+    try {
+      if (!oldHistory.length) throw new Error('There is no API conversation history to quick compact');
+      const saved = this.deps.quickCompactHistory!(oldHistory, handover);
+      this.contextTokens = rescaleTokens(before, oldHistory, saved.history);
+      this.history = saved.history;
+      this.checkpoints.clear();
+      this.emit(`${DIM}(context quick compacted; transcript: ${toTerminal(saved.transcriptFile)})${RESET}\r\n`);
+      this.deps.onContextShrunk?.('compacted', before, this.contextTokens);
+      return { archiveFile: saved.archiveFile, transcriptFile: saved.transcriptFile };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.emit(`${RED}Quick compact failed (${toTerminal(reason)}) — history kept${RESET}\r\n`);
+      throw err;
+    }
   }
 
   /**

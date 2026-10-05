@@ -11,6 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
 import type { ApiToolConfig } from '../../config/loader.js';
 import type { AuthContext, McpTool } from '../../mcp/tools/types.js';
 import { getToolReminder } from '../../mcp/tools/reminders.js';
@@ -35,6 +36,8 @@ import {
   type SkillSummary,
 } from './api-prompt.js';
 import { ApiSessionProcess, type ApiTurnOutcome } from './api-session-process.js';
+import { buildTranscriptResumePrompt } from '../transcript-strip.js';
+import { formatApiHistoryTranscript } from './api-history-transcript.js';
 import type { ChatTurnUsage } from '../chat/chat-bridge.js';
 
 export interface ApiSessionHostDeps {
@@ -93,6 +96,21 @@ export const MAX_LIVE_SUBAGENTS_PER_ROOT = 20;
 /** Reply-target key for the user's chat surfaces (session ids never collide with it). */
 const CHAT_TARGET = 'chat';
 
+function writeAtomic(file: string, contents: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, contents, { encoding: 'utf8', flag: 'wx' });
+    fs.renameSync(temporary, file);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch { /* The rename consumed it, or it never existed. */ }
+  }
+}
+
+function removeIfPresent(file: string): void {
+  try { fs.unlinkSync(file); } catch { /* Best-effort cleanup after a failed transaction. */ }
+}
+
 /** Where a subagent sits: its depth below the top-level session, and that session's id. */
 interface SubagentLineage {
   depth: number;
@@ -135,6 +153,18 @@ export class ApiSessionHost {
 
   forgetMessages(sessionId: string, messages: ReadonlyArray<{ text: string; fromUser: boolean }>): void {
     this.processes.get(sessionId)?.forget(messages);
+  }
+
+  /** Quick compact the process-owned API history, or queue it behind its active turn. */
+  async quickCompactSession(
+    sessionId: string,
+    handover?: string,
+  ): Promise<Awaited<ReturnType<ApiSessionProcess['quickCompact']>>> {
+    const proc = this.processes.get(sessionId);
+    if (!proc) throw new Error(`API session ${sessionId} is not running`);
+    if (!proc.hasReadTool) throw new Error('API quick compact requires the Read tool to be enabled');
+    if (!proc.canQuickCompact) throw new Error('There is no API conversation history to quick compact');
+    return proc.quickCompact(handover);
   }
 
   create(spawn: ApiSessionSpawn): ApiSessionProcess {
@@ -201,6 +231,9 @@ export class ApiSessionHost {
       maxToolRounds: api.maxToolRounds,
       history: this.loadHistory(historyFile),
       saveHistory: (history) => this.saveHistory(historyFile, history),
+      quickCompactHistory: (history, handover) => this.quickCompactHistory(
+        history, spawn.cliSessionName, historyFile, handover,
+      ),
       mutableContext: () => buildMutableContext({
         now: now(),
         cwd,
@@ -553,6 +586,35 @@ export class ApiSessionHost {
       fs.writeFileSync(file, JSON.stringify(history), 'utf8');
     } catch (err) {
       logger.warn(`[ApiSession] Could not persist history: ${String(err)}`);
+    }
+  }
+
+  /** Write both archive views, then atomically replace the live persisted history. */
+  private quickCompactHistory(
+    history: ChatMessage[],
+    cliSessionName: string,
+    historyFile: string | null,
+    handover?: string,
+  ): { history: ChatMessage[]; archiveFile: string; transcriptFile: string } {
+    if (!historyFile) throw new Error('Cannot persist API history for this session name');
+    const archiveId = randomUUID();
+    const archiveFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.json`);
+    const transcriptFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.md`);
+    const nextHistory: ChatMessage[] = [
+      { role: 'user', content: buildTranscriptResumePrompt(transcriptFile, handover) },
+      { role: 'assistant', content: 'Understood — continuing from the saved API transcript.' },
+    ];
+    const created: string[] = [];
+    try {
+      writeAtomic(archiveFile, `${JSON.stringify(history, null, 2)}\n`);
+      created.push(archiveFile);
+      writeAtomic(transcriptFile, formatApiHistoryTranscript(history, archiveFile));
+      created.push(transcriptFile);
+      writeAtomic(historyFile, JSON.stringify(nextHistory));
+      return { history: nextHistory, archiveFile, transcriptFile };
+    } catch (err) {
+      for (const file of created) removeIfPresent(file);
+      throw err;
     }
   }
 }

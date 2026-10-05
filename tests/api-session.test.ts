@@ -810,6 +810,171 @@ describe('ApiSessionHost', () => {
     expect(last(client.calls[1].messages).content).toMatch(/carry on without it/);
   });
 
+  it('quick compacts API history into a readable pointer while retaining linked raw archives', async () => {
+    const history: Msg[] = [
+      { role: 'user', content: 'read the config' },
+      { role: 'assistant', content: null, tool_calls: [toolCall('read-1', 'Read', '{"file_path":"config.json"}') ] },
+      { role: 'tool', tool_call_id: 'read-1', content: 'successful output that should stay in the raw archive' },
+      { role: 'assistant', content: 'The config is valid.' },
+      { role: 'user', content: 'check the other file' },
+      { role: 'assistant', content: null, tool_calls: [toolCall('read-2', 'Read', '{"file_path":"missing.json"}') ] },
+      { role: 'tool', tool_call_id: 'read-2', content: 'Error: file not found' },
+      { role: 'assistant', content: 'The second file is missing.' },
+    ];
+    fs.writeFileSync(path.join(dir, 'qc-1.json'), JSON.stringify(history));
+    const calls: Array<{ messages: Msg[]; toolNames: string[] }> = [];
+    let replies: Result['message'][] = [];
+    const client = {
+      calls,
+      complete: async (messages: Msg[], tools: Array<{ name: string }>) => {
+        calls.push({ messages: structuredClone(messages), toolNames: tools.map((tool) => tool.name) });
+        const next = replies.shift();
+        if (!next) throw new Error('script exhausted');
+        return { message: next };
+      },
+    };
+    const { host, dispatched } = makeHost([], { createClient: () => client as never });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'qc-1', api });
+
+    const first = await host.quickCompactSession('s1', 'keep the ids');
+    expect(first.queued).toBe(false);
+    if (first.queued) throw new Error('quick compact unexpectedly queued');
+    expect(JSON.parse(fs.readFileSync(first.archiveFile, 'utf8'))).toEqual(history);
+    const readable = fs.readFileSync(first.transcriptFile, 'utf8');
+    expect(readable).toContain('read the config');
+    expect(readable).toContain('Read({"file_path":"config.json"})');
+    expect(readable).toContain('Error: file not found');
+    expect(readable).not.toContain('successful output that should stay in the raw archive');
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'qc-1.json'), 'utf8'))[0].content)
+      .toContain(`at: ${first.transcriptFile}`);
+    const compactedHistory = JSON.parse(fs.readFileSync(path.join(dir, 'qc-1.json'), 'utf8')) as Msg[];
+    expect(compactedHistory).toHaveLength(2);
+    expect(compactedHistory[0].content).toContain('Handover note: keep the ids');
+
+    // The configured native Read tool can load the persisted transcript on the next turn.
+    replies = [
+      { content: '', tool_calls: [toolCall('reload', 'Read', JSON.stringify({ file_path: first.transcriptFile }))] },
+      { content: 'continued from the transcript' },
+    ];
+    proc.write('continue\r');
+    await vi.waitFor(() => expect(dispatched.map((item) => item.args.message)).toContain('continued from the transcript'));
+    expect(client.calls[0].toolNames).toContain('Read');
+    expect(client.calls[1].messages.at(-1)?.content).toContain('read the config');
+
+    const second = await host.quickCompactSession('s1');
+    expect(second.queued).toBe(false);
+    if (second.queued) throw new Error('second quick compact unexpectedly queued');
+    expect(fs.existsSync(first.archiveFile)).toBe(true);
+    expect(fs.readFileSync(second.transcriptFile, 'utf8')).toContain(first.transcriptFile);
+  });
+
+  it('invalidates checkpoints and updates context usage after quick compact', async () => {
+    const replies: Result['message'][] = [
+      { content: '', tool_calls: [toolCall('cp', 'checkpoint', '{"label":"before"}')] },
+      { content: 'answer '.repeat(200) },
+    ];
+    const calls: Array<{ messages: Msg[]; toolNames: string[] }> = [];
+    const client = {
+      complete: async (messages: Msg[], tools: Array<{ name: string }>) => {
+        calls.push({ messages: structuredClone(messages), toolNames: tools.map((tool) => tool.name) });
+        const message = replies.shift();
+        if (!message) throw new Error('script exhausted');
+        return { message, usage: { total_tokens: 1300 } };
+      },
+    };
+    const { host, hooks, usages, dispatched } = makeHost([], { createClient: () => client as never });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'qc-checkpoint', api });
+    proc.write(`${'large question '.repeat(80)}\r`);
+    await vi.waitFor(() => expect(hooks).toContain('Stop'));
+
+    const compacted = await host.quickCompactSession('s1');
+    expect(compacted.queued).toBe(false);
+    expect(dispatched.map((item) => item.args.message)).toContain('(context compacted)');
+    expect(usages.at(-1)?.contextTokens).toBeGreaterThan(0);
+    expect(usages.at(-1)?.contextTokens).toBeLessThan(1300);
+
+    replies.push(
+      { content: '', tool_calls: [toolCall('rb', 'rollback', '{"label":"before","note":"stale checkpoint"}')] },
+      { content: 'continuing without the stale checkpoint' },
+    );
+    proc.write('try the old checkpoint\r');
+    await vi.waitFor(() => expect(hooks.filter((hook) => hook === 'Stop')).toHaveLength(2));
+    expect(calls[3].messages.at(-1)?.content).toMatch(/no such checkpoint/);
+  });
+
+  it('requires Read and leaves history unchanged when archive creation fails', async () => {
+    const history: Msg[] = [{ role: 'user', content: 'original question' }];
+    fs.writeFileSync(path.join(dir, 'qc-no-read.json'), JSON.stringify(history));
+    const noRead = makeHost(scriptedClient([{ content: 'done' }])).host;
+    noRead.create({ sessionId: 'no-read', sessionName: 'n', cliSessionName: 'qc-no-read', api: { ...api, allowedTools: [] } });
+    await expect(noRead.quickCompactSession('no-read')).rejects.toThrow(/Read tool/);
+    expect(fs.readFileSync(path.join(dir, 'qc-no-read.json'), 'utf8')).toBe(JSON.stringify(history));
+
+    const blockedDir = path.join(dir, 'not-a-directory');
+    fs.writeFileSync(blockedDir, 'blocked');
+    const blockedClient = scriptedClient([{ content: 'first answer' }, { content: 'second answer' }]);
+    const blockedHost = new ApiSessionHost({
+      dispatchTool: async () => ({}), createMemory: () => ({ id: 'm' }), linkMemory: () => {},
+      postChat: async () => ({}), mcpTools: () => [], listSkills: () => [], getMission: () => undefined,
+      recordToolRequest: () => {}, emitHook: () => {}, historyDir: blockedDir,
+      createClient: () => blockedClient as never,
+    });
+    const blockedProc = blockedHost.create({ sessionId: 'blocked', sessionName: 'n', cliSessionName: 'blocked-1', api });
+    blockedProc.write('first question\r');
+    await vi.waitFor(() => expect(blockedProc.busy).toBe(false));
+    await expect(blockedHost.quickCompactSession('blocked')).rejects.toThrow();
+    blockedProc.write('second question\r');
+    await vi.waitFor(() => expect(blockedClient.calls).toHaveLength(2));
+    // The archive write failed before changing the in-memory canonical history.
+    const retryHistory = blockedClient.calls[1].messages;
+    expect(retryHistory.at(-3)?.content).toMatch(/^first question/);
+    expect(retryHistory.at(-2)?.content).toBe('first answer');
+    expect(retryHistory.at(-1)?.content).toMatch(/^second question/);
+  });
+
+  it('keeps in-memory history when the atomic replacement write fails', async () => {
+    // A directory at the history filename lets archive files succeed but makes
+    // the final temp-file rename fail, exercising the commit boundary itself.
+    fs.mkdirSync(path.join(dir, 'persist-fail.json'));
+    const client = scriptedClient([{ content: 'first answer' }, { content: 'second answer' }]);
+    const { host, hooks } = makeHost([], { createClient: () => client as never });
+    const proc = host.create({ sessionId: 'persist-fail', sessionName: 'n', cliSessionName: 'persist-fail', api });
+    proc.write('first question\r');
+    await vi.waitFor(() => expect(hooks).toContain('Stop'));
+
+    await expect(host.quickCompactSession('persist-fail')).rejects.toThrow();
+    expect(fs.readdirSync(dir).filter((name) => name.startsWith('persist-fail.') && name.includes('quick-compact'))).toEqual([]);
+
+    proc.write('second question\r');
+    await vi.waitFor(() => expect(client.calls).toHaveLength(2));
+    expect(client.calls[1].messages.at(-3)?.content).toMatch(/^first question/);
+    expect(client.calls[1].messages.at(-2)?.content).toBe('first answer');
+    expect(client.calls[1].messages.at(-1)?.content).toMatch(/^second question/);
+  });
+
+  it('queues quick compact until the running API turn has committed its answer', async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const requestStarted = new Promise<void>((resolve) => { started = resolve; });
+    const client = { complete: async () => { started(); await gate; return { message: { content: 'committed answer' } }; } };
+    const { host } = makeHost([], { createClient: () => client as never });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'qc-busy', api });
+    proc.write('active question\r');
+    await requestStarted;
+
+    await expect(host.quickCompactSession('s1', 'queued note')).resolves.toEqual({ queued: true });
+    release();
+    const historyFile = path.join(dir, 'qc-busy.json');
+    await vi.waitFor(() => {
+      const history = JSON.parse(fs.readFileSync(historyFile, 'utf8')) as Msg[];
+      expect(history[0].content).toContain('.quick-compact.md');
+    });
+    const archive = fs.readdirSync(dir).find((name) => name.endsWith('.quick-compact.json'))!;
+    const archivedHistory = JSON.parse(fs.readFileSync(path.join(dir, archive), 'utf8')) as Msg[];
+    expect(archivedHistory.map((message) => message.content)).toContain('committed answer');
+  });
+
   it('resumes a session from its persisted history file', async () => {
     const first = makeHost([{ content: 'remembered' }]);
     const proc = first.host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'abc-4', api });

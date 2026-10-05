@@ -10,6 +10,7 @@ import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { formatSenderTag } from '../../session/api/api-prompt.js';
+import { getApiSessionHost } from '../../session/api/api-session-host.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
   MESSAGE_FLIGHT_REPLY_WINDOW_MS,
@@ -507,8 +508,29 @@ export class HelmSessionDeliveryService {
   async quickCompactSession(
     sessionRef: string,
     options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
-  ): Promise<{ ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }> {
+  ): Promise<
+    | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; archiveFile: string; note: string }
+    | { ok: true; action: 'quick_compact'; sessionId: string; queued: true; note: string }
+    | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }
+  > {
     const session = this.requireRunningSession(sessionRef);
+    if (this.configLoader.getCliTypeEntry(session.cliType)?.api) {
+      // The API process owns the canonical ChatMessage history; there is no CLI transcript or /clear to deliver.
+      const compacted = await getApiSessionHost().quickCompactSession(session.id, options.handover);
+      if (session.frozen) this.sessionManager.setSessionFrozen(session.id, false);
+      if (compacted.queued) {
+        return { ok: true, action: 'quick_compact', sessionId: session.id, queued: true, note: 'Quick compact queued after the active API turn.' };
+      }
+      logger.info(`[HelmSessionDelivery] API session_quick_compact for "${session.name}" (${session.id}) → ${compacted.transcriptFile}`);
+      return {
+        ok: true,
+        action: 'quick_compact',
+        sessionId: session.id,
+        transcriptFile: compacted.transcriptFile,
+        archiveFile: compacted.archiveFile,
+        note: 'API history quick compacted; the next turn can read the saved transcript.',
+      };
+    }
     const transcriptFile = writeStrippedTranscript(session);
     // Compacting a frozen session is an explicit ask to bring it back: the
     // /clear and the resume prompt both have to reach it.

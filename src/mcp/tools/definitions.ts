@@ -999,9 +999,10 @@ export const MCP_TOOLS: McpTool[] = [
     description:
       "Helm's own compaction, an alternative to the CLI's /compact. Helm strips the session's transcript " +
       '(keeps every prompt, reply and a one-line record of each tool call; drops thinking and tool output) to a markdown file, ' +
-      'clears the session, then asks it to read the file back and continue. Keeps exact details /compact loses, ' +
-      'at a somewhat larger context. Needs CLI hooks (the transcript path comes from them); Claude Code, Codex and Copilot CLI logs are supported. ' +
-      'DESTINATION: sessionId is REQUIRED — a session may target itself. Asynchronous: wait ~1 min before reading results.',
+      'then replaces live context with a short instruction to read the file and continue. Keeps exact details /compact loses, ' +
+      'at a somewhat larger context. CLI sessions need transcript hooks; API sessions archive their own history and require the Read tool. ' +
+      'An API request during an active turn queues after that turn and returns immediately. CLI sessions process the clear asynchronously. ' +
+      'DESTINATION: sessionId is REQUIRED — a session may target itself.',
     inputSchema: {
       type: 'object',
       properties: {
