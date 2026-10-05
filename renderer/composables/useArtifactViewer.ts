@@ -13,7 +13,7 @@
  */
 import { ref, computed } from 'vue';
 import { artifactsClient, eventsClient } from '../ipc/clients.js';
-import type { Artifact } from '../../src/types/artifact.js';
+import type { Artifact, ArtifactIntent } from '../../src/types/artifact.js';
 import type { ArtifactAttachment } from '../../src/types/artifact-attachment.js';
 import { buildTextArtifact, decodeBase64Text, isTextLikeFile } from '../artifacts/text-file-drop.js';
 
@@ -176,12 +176,14 @@ async function openExternal(id: string, version?: number): Promise<{ success: bo
 // ── Manual creation ──────────────────────────────────────────────────────
 
 /** Create a manual text/markdown artifact. Returns the artifact or null. */
-async function createTextArtifact(title: string, content: string, kind?: 'markdown' | 'html'): Promise<Artifact | null> {
+async function createTextArtifact(title: string, content: string, kind?: 'markdown' | 'html', intent: ArtifactIntent = 'normal'): Promise<Artifact | null> {
   const sessionId = activeSessionId;
   const request = ++creationRequest;
   if (!sessionId) return null;
   try {
-    const artifact = await artifactsClient.artifactCreateText(sessionId, title, content, kind);
+    const artifact = intent === 'normal'
+      ? await artifactsClient.artifactCreateText(sessionId, title, content, kind)
+      : await artifactsClient.artifactCreateText(sessionId, title, content, kind, intent);
     await refresh(sessionId);
     if (artifact && request === creationRequest && activeSessionId === sessionId) select(artifact.id);
     return artifact ?? null;
@@ -193,12 +195,12 @@ async function createFileArtifact(input: {
   filename: string;
   contentBase64: string;
   contentType?: string;
-}): Promise<Artifact | null> {
+}, intent: ArtifactIntent = 'normal'): Promise<Artifact | null> {
   const sessionId = activeSessionId;
   const request = ++creationRequest;
   if (!sessionId) return null;
   try {
-    const result = await artifactsClient.artifactCreateWithFile(sessionId, input);
+    const result = await artifactsClient.artifactCreateWithFile(sessionId, intent === 'normal' ? input : { ...input, intent });
     await refresh(sessionId);
     if (result?.artifact && request === creationRequest && activeSessionId === sessionId) select(result.artifact.id);
     return result?.artifact ?? null;
@@ -210,15 +212,15 @@ async function createFileArtifact(input: {
  * Readable files become readable content (same extension-first rule as drop
  * and paste); only real binaries become attachments.
  */
-async function attachFile(): Promise<Artifact | null> {
+async function attachFile(intent: ArtifactIntent = 'normal'): Promise<Artifact | null> {
   try {
     const fileData = await artifactsClient.artifactPickAndReadFile();
     if (!fileData) return null;
     if (isTextLikeFile(fileData.filename, fileData.contentType)) {
       const draft = buildTextArtifact(fileData.filename, decodeBase64Text(fileData.contentBase64));
-      return createTextArtifact(draft.title, draft.content);
+      return createTextArtifact(draft.title, draft.content, undefined, intent);
     }
-    return createFileArtifact(fileData);
+    return createFileArtifact(fileData, intent);
   } catch { return null; }
 }
 
@@ -240,6 +242,15 @@ async function updateArtifact(id: string, content: string): Promise<boolean> {
     const updated = await artifactsClient.artifactUpdate(id, content);
     if (updated) void refresh();
     return updated !== null;
+  } catch { return false; }
+}
+
+/** Change metadata without creating a content version. */
+async function setArtifactIntent(id: string, intent: ArtifactIntent): Promise<boolean> {
+  try {
+    const updated = await artifactsClient.artifactSetIntent(id, intent);
+    if (updated) void refresh();
+    return updated;
   } catch { return false; }
 }
 
@@ -363,6 +374,7 @@ export function useArtifactViewer() {
     attachFile,
     renameArtifact,
     updateArtifact,
+    setArtifactIntent,
     openAttachment,
     // attachments on the selected artifact
     addAttachmentToSelected,

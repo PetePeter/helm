@@ -46,7 +46,7 @@ let persisted: Record<string, unknown[]>;
 let changedEvents: string[];
 let revealEvents: Array<[string, string]>;
 
-function createWithFile(input: { filename: string; contentBase64: string; contentType?: string }) {
+function createWithFile(input: { filename: string; contentBase64: string; contentType?: string; intent?: 'normal' | 'manifesto' }) {
   return handlers.get('artifact:createWithFile')!({}, SESSION, input) as {
     artifact: { id: string; versions: Array<{ version: number; content: string }> };
     attachment: { id: string };
@@ -77,6 +77,17 @@ afterEach(() => {
 });
 
 describe('artifact:createWithFile', () => {
+  it('creates imported files with their selected intent', () => {
+    const { artifact } = createWithFile({
+      filename: 'rules.md',
+      contentBase64: Buffer.from('# rules').toString('base64'),
+      intent: 'manifesto',
+    });
+
+    expect(artifactManager.get(artifact.id)?.intent).toBe('manifesto');
+    expect(artifactManager.getManifestosForSession(SESSION)).toHaveLength(1);
+  });
+
   it('produces exactly one version holding the real markdown', () => {
     const { artifact } = createWithFile({
       filename: 'screenshot.png',
@@ -188,5 +199,19 @@ describe('artifact:createText', () => {
     expect(artifact.versions[0].content).toBe('# hello');
     expect(changedEvents).toEqual([SESSION]);
     expect(revealEvents).toHaveLength(1);
+  });
+
+  it('changes intent through the metadata-only handler without adding a version', () => {
+    const artifact = handlers.get('artifact:createText')!({}, SESSION, 'Notes', '# hello') as {
+      id: string;
+      versions: Array<{ version: number; content: string }>;
+    };
+
+    expect(handlers.get('artifact:setIntent')!({}, artifact.id, 'manifesto')).toBe(true);
+
+    const stored = artifactManager.get(artifact.id)!;
+    expect(stored.intent).toBe('manifesto');
+    expect(stored.versions).toHaveLength(1);
+    expect(stored.versions[0].content).toBe('# hello');
   });
 });

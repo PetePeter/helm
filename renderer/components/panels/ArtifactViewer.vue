@@ -29,7 +29,7 @@ import { artifactsClient, systemClient } from '../../ipc/clients.js';
 import { clipboardFileInput } from '../../artifacts/clipboard-file.js';
 import { isEditableElement } from '../../input/input-ownership.js';
 import { buildTextArtifact, isTextLikeFile, TEXT_INLINE_MAX_BYTES } from '../../artifacts/text-file-drop.js';
-import type { Artifact } from '../../../src/types/artifact.js';
+import type { Artifact, ArtifactIntent } from '../../../src/types/artifact.js';
 import { parseAttachmentHref } from '../../../src/types/artifact-attachment.js';
 import Chip from '../common/Chip.vue';
 import EmptyState from '../common/EmptyState.vue';
@@ -272,6 +272,9 @@ function kindTone(a: Artifact): 'accent' | 'info' | 'warning' {
 }
 
 const count = computed(() => artifacts.value.length);
+const newArtifactIntent = ref<ArtifactIntent>('normal');
+const settingIntent = ref(false);
+const selectedIntent = computed<ArtifactIntent>(() => selected.value?.intent ?? 'normal');
 
 // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -431,7 +434,7 @@ async function onSaveTextNote(): Promise<void> {
   const title = newTextTitle.value.trim() || 'Untitled note';
   const content = newTextContent.value;
   if (!content.trim()) return;
-  const artifact = await viewer.createTextArtifact(title, content);
+  const artifact = await viewer.createTextArtifact(title, content, undefined, newArtifactIntent.value);
   if (artifact) {
     isCreatingText.value = false;
     newTextTitle.value = '';
@@ -451,7 +454,7 @@ function onCancelTextNote(): void {
 // ── Manual creation: file attach (file picker) ──────────────────────────────
 
 async function onAttachFile(): Promise<void> {
-  const artifact = await viewer.attachFile();
+  const artifact = await viewer.attachFile(newArtifactIntent.value);
   if (artifact) {
     addToast({ message: 'File attached', type: 'success' });
   } else if (artifact === null) {
@@ -506,9 +509,9 @@ async function addBlobAsArtifact(blob: Blob, filename?: string): Promise<boolean
   const name = filename ?? '';
   if (blob.size <= TEXT_INLINE_MAX_BYTES && isTextLikeFile(name, blob.type)) {
     const draft = buildTextArtifact(name, await blob.text());
-    return Boolean(await viewer.createTextArtifact(draft.title, draft.content));
+    return Boolean(await viewer.createTextArtifact(draft.title, draft.content, undefined, newArtifactIntent.value));
   }
-  return Boolean(await viewer.createFileArtifact(await clipboardFileInput(blob, filename)));
+  return Boolean(await viewer.createFileArtifact(await clipboardFileInput(blob, filename), newArtifactIntent.value));
 }
 
 async function createArtifactFromBlob(blob: Blob, filename?: string): Promise<void> {
@@ -611,6 +614,18 @@ async function onSaveEdit(): Promise<void> {
   addToast({ message: 'Saved as a new version', type: 'success' });
 }
 
+async function onSetArtifactIntent(event: Event): Promise<void> {
+  const id = selectedId.value;
+  const intent = (event.target as HTMLSelectElement).value as ArtifactIntent;
+  if (!id || intent === selectedIntent.value || settingIntent.value) return;
+  settingIntent.value = true;
+  const success = await viewer.setArtifactIntent(id, intent);
+  settingIntent.value = false;
+  addToast(success
+    ? { message: 'Artifact intent updated', type: 'success' }
+    : { message: 'Could not update artifact intent', type: 'error' });
+}
+
 function onCancelEdit(): void {
   isEditing.value = false;
   editContent.value = '';
@@ -671,6 +686,13 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
               </div>
               <button class="ap-btn-attach" title="Pick a file to attach" @click="onAttachFile">📎</button>
             </div>
+            <label class="ap-create-intent">
+              <span>Create as</span>
+              <select v-model="newArtifactIntent" class="ap-new-intent" aria-label="New artifact intent" title="Manifesto artifacts are added to context after session resets">
+                <option value="normal">Normal</option>
+                <option value="manifesto">Manifesto</option>
+              </select>
+            </label>
             <div class="ap-sort">
               <span>Sort</span>
               <select v-model="sortMode">
@@ -696,6 +718,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
                 <template #title>
                   <span class="ap-dot" aria-hidden="true"></span>
                   <span class="ap-it-title">{{ row.artifact!.title }}</span>
+                  <span v-if="row.artifact!.intent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
                 </template>
                 <template #meta>
                   <span class="ap-it-meta">
@@ -751,6 +774,14 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
             <template v-else>
               <span class="ap-d-name ap-d-name--renameable" title="Double-click to rename" @dblclick="onStartRename">{{ selected.title }}</span>
               <button class="ap-v-step ap-rename-btn" title="Rename" @click="onStartRename">✎</button>
+              <span v-if="selectedIntent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
+              <label class="ap-selected-intent-label" title="Manifesto artifacts are added to context after session resets">
+                <span>Intent</span>
+                <select class="ap-selected-intent" :value="selectedIntent" :disabled="settingIntent" aria-label="Artifact intent" @change="onSetArtifactIntent">
+                  <option value="normal">Normal</option>
+                  <option value="manifesto">Manifesto</option>
+                </select>
+              </label>
             </template>
             <span class="ap-v-spacer"></span>
             <button class="ap-v-step" title="Older" @click="stepVersion(-1)">‹</button>
@@ -891,6 +922,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-btn:focus-visible,
 .ap-sort select:focus-visible,
 .ap-v-sel select:focus-visible,
+.ap-create-intent select:focus-visible,
+.ap-selected-intent-label select:focus-visible,
 .ap-create-title-input:focus-visible,
 .ap-create-body:focus-visible,
 .ap-rename-input:focus-visible {
@@ -908,6 +941,9 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 
 /* New + Attach row */
 .ap-new-row { display: flex; gap: var(--spacing-xs); }
+.ap-create-intent { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); font-size: var(--font-size-xs); color: var(--text-secondary); }
+.ap-create-intent select,
+.ap-selected-intent-label select { min-width: 0; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); color: var(--text-primary); font-size: var(--font-size-xs); font-family: inherit; }
 .ap-btn-new { flex: 1; font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); border: 1px solid var(--accent); background: rgba(79,208,139,0.12); color: var(--accent); cursor: pointer; font-weight: 600; font-family: inherit; display: flex; align-items: center; justify-content: center; gap: var(--spacing-xs); }
 .ap-btn-new:hover { background: rgba(79,208,139,0.22); }
 .ap-btn-attach { font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer; font-family: inherit; }
@@ -930,6 +966,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin: 0 var(--spacing-sm) 0 0; background: transparent; }
 .ap-item--unread .ap-dot { background: var(--accent); }
 .ap-it-title { color: var(--text-primary); }
+.ap-intent-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 999px; padding: 1px var(--spacing-xs); color: var(--accent); font-size: var(--font-size-xs); line-height: 1.3; white-space: nowrap; }
 .ap-it-meta { display: inline-flex; gap: var(--spacing-sm); align-items: center; margin-top: 0; }
 .ap-vcount { color: var(--text-dim); }
 .ap-src { color: var(--text-dim); font-style: italic; }
@@ -945,6 +982,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-v-sel { display: flex; align-items: center; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-primary); }
 .ap-v-sel select { background: none; border: none; outline: none; color: var(--text-primary); font-size: var(--font-size-sm); padding: var(--spacing-xs) var(--spacing-sm); font-family: inherit; }
 .ap-v-sel select option { background: var(--bg-secondary); color: var(--text-primary); }
+.ap-selected-intent-label { display: inline-flex; align-items: center; gap: var(--spacing-xs); color: var(--text-dim); font-size: var(--font-size-xs); white-space: nowrap; }
 
 .ap-v-old { display: flex; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-md); background: color-mix(in srgb, var(--info) 9%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--info) 35%, var(--border)); font-size: var(--font-size-sm); color: var(--info); }
 .ap-restore { margin-left: auto; font-size: var(--font-size-xs); color: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); background: none; }

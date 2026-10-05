@@ -14,6 +14,7 @@ import { readFile, stat, writeFile as fsWriteFile } from 'node:fs/promises';
 import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
+import type { ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
 import type { WindowManager } from '../window-manager.js';
 import { mimeForPath } from '../helm-img-protocol.js';
@@ -181,8 +182,8 @@ export function setupArtifactHandlers(
   // ── Manual creation operations (new) ───────────────────────────────────────
 
   /** Create a manual text/markdown artifact. */
-  ipcMain.handle('artifact:createText', (_event, sessionId: string, title: string, content: string, kind?: 'markdown' | 'html') => {
-    return artifactManager.create(sessionId, title, kind ?? 'markdown', content, 'manual');
+  ipcMain.handle('artifact:createText', (_event, sessionId: string, title: string, content: string, kind?: 'markdown' | 'html', intent?: ArtifactIntent) => {
+    return artifactManager.create(sessionId, title, kind ?? 'markdown', content, 'manual', undefined, intent);
   });
 
   /** Create a manual artifact from a base64-encoded file (clipboard paste or drag-drop). */
@@ -190,9 +191,10 @@ export function setupArtifactHandlers(
     filename: string;
     contentBase64: string;
     contentType?: string;
+    intent?: ArtifactIntent;
   }) => {
     try {
-      return createArtifactFromBytes(artifactManager, attachmentManager, sessionId, decodeAttachmentInput(input), undefined, 'manual', false);
+      return createArtifactFromBytes(artifactManager, attachmentManager, sessionId, decodeAttachmentInput(input), undefined, 'manual', false, input.intent);
     } catch (err) {
       logger.error(`[artifact:createWithFile] Failed to store ${input.filename}: ${err}`);
       throw err;
@@ -247,6 +249,11 @@ export function setupArtifactHandlers(
   ipcMain.handle('artifact:update', (_event, artifactId: string, content: string) => {
     if (typeof content !== 'string' || content.trim() === '') return null;
     return artifactManager.update(artifactId, content);
+  });
+
+  /** Change context intent without adding a content version. */
+  ipcMain.handle('artifact:setIntent', (_event, artifactId: string, intent: ArtifactIntent) => {
+    return artifactManager.setIntent(artifactId, intent);
   });
 
   /** Open an attachment file in the system's default app. */

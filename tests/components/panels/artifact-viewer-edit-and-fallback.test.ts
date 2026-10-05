@@ -13,6 +13,7 @@ import type { Artifact } from '../../../src/types/artifact.js';
 
 const artifactList = vi.fn();
 const artifactUpdate = vi.fn();
+const artifactSetIntent = vi.fn();
 const artifactRename = vi.fn();
 const artifactOpenExternal = vi.fn();
 const artifactPrepareRender = vi.fn();
@@ -21,6 +22,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactUpdate: (...a: unknown[]) => artifactUpdate(...a),
+    artifactSetIntent: (...a: unknown[]) => artifactSetIntent(...a),
     artifactRename: (...a: unknown[]) => artifactRename(...a),
     artifactOpenExternal: (...a: unknown[]) => artifactOpenExternal(...a),
     artifactPrepareRender: (...a: unknown[]) => artifactPrepareRender(...a),
@@ -89,6 +91,7 @@ beforeEach(() => {
   artifactRename.mockResolvedValue(true);
   artifactUpdate.mockImplementation(async (_id: string, content: string) =>
     makeArtifact({ versions: [{ version: 3, content, createdAt: Date.now() }] }));
+  artifactSetIntent.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -96,6 +99,16 @@ afterEach(() => {
 });
 
 describe('ArtifactViewer — in-situ edit', () => {
+  it('changes intent through metadata without appending a content version', async () => {
+    const { w } = await mountWith([makeArtifact()]);
+
+    await w.find('.ap-selected-intent').setValue('manifesto');
+    await flushPromises();
+
+    expect(artifactSetIntent).toHaveBeenCalledWith('a1', 'manifesto');
+    expect(artifactUpdate).not.toHaveBeenCalled();
+  });
+
   it('opens the editor with the raw source of the shown version', async () => {
     const { w } = await mountWith([makeArtifact()]);
 

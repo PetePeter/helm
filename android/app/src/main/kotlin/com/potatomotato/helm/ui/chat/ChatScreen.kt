@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -87,7 +88,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
@@ -305,60 +305,54 @@ fun ChatScreen(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             Row(modifier = Modifier.fillMaxSize().then(threadSwipeModifier)) {
                 Column(modifier = Modifier.weight(1f).fillMaxSize()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    if (messages.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.chat_empty),
-                                color = HelmColors.Dim,
-                                style = MaterialTheme.typography.bodyLarge,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(HelmSpacing.Gutter),
-                            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                        ) {
-                            items(messages, key = { it.key }) {
-                                Bubble(
-                                    message = it,
-                                    selected = it.key in selected,
-                                    onTap = if (selecting) ({ toggle(it.key) }) else null,
-                                    onLongPress = { toggle(it.key) },
-                                    onRetry = onRetry,
-                                    onUnfreeze = onUnfreeze,
-                                    onDelete = onDelete,
-                                    pulls = pulls,
-                                    onPull = onPull,
-                                    onCancelPull = onCancelPull,
-                                    onDeleteAttachment = onDeleteAttachment,
-                                    onOpenAttachment = onOpenAttachment,
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (messages.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(HelmSpacing.Xl),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.chat_empty),
+                                    color = HelmColors.Dim,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    textAlign = TextAlign.Center,
                                 )
+                            }
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(HelmSpacing.Gutter),
+                                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                            ) {
+                                items(messages, key = { it.key }) {
+                                    Bubble(
+                                        message = it,
+                                        selected = it.key in selected,
+                                        onTap = if (selecting) ({ toggle(it.key) }) else null,
+                                        onLongPress = { toggle(it.key) },
+                                        onRetry = onRetry,
+                                        onUnfreeze = onUnfreeze,
+                                        onDelete = onDelete,
+                                        pulls = pulls,
+                                        onPull = onPull,
+                                        onCancelPull = onCancelPull,
+                                        onDeleteAttachment = onDeleteAttachment,
+                                        onOpenAttachment = onOpenAttachment,
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                if (call != null && call.state.phase != CallPhase.Ended) {
-                    CallPanel(call = call)
-                }
+                    SessionSwipeCueRow(
+                        earlierUnreadSessions = earlierUnreadSessions,
+                        laterUnreadSessions = laterUnreadSessions,
+                    )
+                    if (call != null && call.state.phase != CallPhase.Ended) {
+                        CallPanel(call = call)
+                    }
                 }
             }
-            SessionSwipeEdgeCue(
-                unreadSessions = earlierUnreadSessions,
-                earlier = true,
-                modifier = Modifier.align(Alignment.CenterStart),
-            )
-            SessionSwipeEdgeCue(
-                unreadSessions = laterUnreadSessions,
-                earlier = false,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
         }
 
         if (call == null || call.state.phase == CallPhase.Ended) Composer(
@@ -395,35 +389,42 @@ fun ChatScreen(
 }
 
 @Composable
-private fun SessionSwipeEdgeCue(unreadSessions: Int, earlier: Boolean, modifier: Modifier = Modifier) {
-    if (unreadSessions <= 0) return
+private fun SessionSwipeCueRow(earlierUnreadSessions: Int, laterUnreadSessions: Int) {
+    if (earlierUnreadSessions <= 0 && laterUnreadSessions <= 0) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Xs),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        if (earlierUnreadSessions > 0) SessionSwipeCueBadge(earlierUnreadSessions, earlier = true)
+        else Spacer(Modifier.weight(1f))
+        if (laterUnreadSessions > 0) SessionSwipeCueBadge(laterUnreadSessions, earlier = false)
+        else Spacer(Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SessionSwipeCueBadge(unreadSessions: Int, earlier: Boolean) {
+    val countLabel = if (unreadSessions > MAX_VISIBLE_GUTTER_COUNT) "$MAX_VISIBLE_GUTTER_COUNT+" else unreadSessions.toString()
+    val badgeLabel = if (earlier) {
+        stringResource(R.string.session_swipe_earlier_badge, countLabel)
+    } else {
+        stringResource(R.string.session_swipe_later_badge, countLabel)
+    }
     val accessibilityLabel = if (earlier) {
         stringResource(R.string.session_swipe_earlier_unread, unreadSessions)
     } else {
         stringResource(R.string.session_swipe_later_unread, unreadSessions)
     }
-    Box(
-        modifier = modifier
-            .padding(horizontal = 2.dp)
-            .size(width = 24.dp, height = 44.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(HelmColors.Surface.copy(alpha = 0.78f))
-            .semantics { contentDescription = accessibilityLabel },
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = if (earlier) "›" else "‹",
-                color = HelmColors.Dim,
-                style = MaterialTheme.typography.titleSmall,
-            )
-            Text(
-                text = if (unreadSessions > MAX_VISIBLE_GUTTER_COUNT) "$MAX_VISIBLE_GUTTER_COUNT+" else unreadSessions.toString(),
-                color = HelmColors.Accent,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-            )
-        }
-    }
+    Text(
+        text = badgeLabel,
+        color = HelmColors.Txt,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(HelmColors.Surface2)
+            .semantics { contentDescription = accessibilityLabel }
+            .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
+    )
 }
 
 /**

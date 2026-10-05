@@ -5,7 +5,7 @@ import type { DraftPrompt, SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
-import type { Artifact } from '../../types/artifact.js';
+import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
@@ -1281,14 +1281,15 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('artifact:openExternal', artifactId, version),
 
   /** Create a manual text/markdown artifact */
-  artifactCreateText: (sessionId: string, title: string, content: string, kind?: 'markdown' | 'html'): Promise<Artifact> =>
-    ipcRenderer.invoke('artifact:createText', sessionId, title, content, kind),
+  artifactCreateText: (sessionId: string, title: string, content: string, kind?: 'markdown' | 'html', intent?: ArtifactIntent): Promise<Artifact> =>
+    ipcRenderer.invoke('artifact:createText', sessionId, title, content, kind, intent),
 
   /** Create a manual artifact from a base64-encoded file */
   artifactCreateWithFile: (sessionId: string, input: {
     filename: string;
     contentBase64: string;
     contentType?: string;
+    intent?: ArtifactIntent;
   }): Promise<{ artifact: Artifact; attachment: { id: string } }> =>
     ipcRenderer.invoke('artifact:createWithFile', sessionId, input),
 
@@ -1306,6 +1307,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Save an edited artifact body as a new version. Null when refused/unknown. */
   artifactUpdate: (artifactId: string, content: string): Promise<Artifact | null> =>
     ipcRenderer.invoke('artifact:update', artifactId, content),
+
+  /** Change an artifact's context intent without adding a content version. */
+  artifactSetIntent: (artifactId: string, intent: ArtifactIntent): Promise<boolean> =>
+    ipcRenderer.invoke('artifact:setIntent', artifactId, intent),
 
   /** Open an attachment file in the system's default app */
   artifactOpenAttachment: (artifactId: string, attachmentId: string): Promise<boolean> =>

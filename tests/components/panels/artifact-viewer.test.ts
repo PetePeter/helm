@@ -17,6 +17,7 @@ const artifactOpenExternal = vi.fn().mockResolvedValue({ success: true, path: '/
 const artifactPrepareRender = vi.fn().mockResolvedValue('nonce-1');
 const artifactCreateText = vi.fn();
 const artifactCreateWithFile = vi.fn();
+const artifactSetIntent = vi.fn();
 const systemOpenExternalUrl = vi.fn().mockResolvedValue(true);
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
@@ -29,6 +30,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     artifactPrepareRender: (...a: unknown[]) => artifactPrepareRender(...a),
     artifactCreateText: (...a: unknown[]) => artifactCreateText(...a),
     artifactCreateWithFile: (...a: unknown[]) => artifactCreateWithFile(...a),
+    artifactSetIntent: (...a: unknown[]) => artifactSetIntent(...a),
   },
   systemClient: {
     systemOpenExternalUrl: (...a: unknown[]) => systemOpenExternalUrl(...a),
@@ -86,6 +88,7 @@ beforeEach(() => {
   artifactPrepareRender.mockResolvedValue('nonce-1');
   artifactCreateText.mockResolvedValue(makeArtifact({ id: 'text-note' }));
   artifactCreateWithFile.mockResolvedValue({ artifact: makeArtifact({ id: 'pasted-file' }) });
+  artifactSetIntent.mockResolvedValue(true);
   systemOpenExternalUrl.mockResolvedValue(true);
 });
 
@@ -168,6 +171,41 @@ describe('ArtifactViewer — artifact frame link bridge', () => {
 });
 
 describe('ArtifactViewer', () => {
+  it('creates Normal artifacts by default', async () => {
+    const { w } = await mountWith([]);
+    await w.find('.ap-btn-new').trigger('click');
+    await w.findAll('.dropdown-item')[0].trigger('click');
+    await w.find('.ap-create-title-input').setValue('Note');
+    await w.find('.ap-create-body').setValue('Body');
+    await w.find('.ap-btn--primary').trigger('click');
+    await flushPromises();
+
+    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'Note', 'Body', undefined);
+  });
+
+  it('creates a manifesto text artifact when selected, with Normal as the default', async () => {
+    artifactCreateText.mockResolvedValue(makeArtifact({ id: 'manifesto-note', intent: 'manifesto' }));
+    const { w } = await mountWith([]);
+
+    expect((w.find('.ap-new-intent').element as HTMLSelectElement).value).toBe('normal');
+    await w.find('.ap-new-intent').setValue('manifesto');
+    await w.find('.ap-btn-new').trigger('click');
+    await w.findAll('.dropdown-item')[0].trigger('click');
+    await w.find('.ap-create-title-input').setValue('Rules');
+    await w.find('.ap-create-body').setValue('Keep this');
+    await w.find('.ap-btn--primary').trigger('click');
+    await flushPromises();
+
+    expect(artifactCreateText).toHaveBeenCalledWith('sess-1', 'Rules', 'Keep this', undefined, 'manifesto');
+  });
+
+  it('shows a Manifesto badge in the artifact list and detail header', async () => {
+    const { w } = await mountWith([makeArtifact({ intent: 'manifesto' })]);
+
+    expect(w.findAll('.ap-intent-badge')).toHaveLength(2);
+    expect(w.findAll('.ap-intent-badge').every(badge => badge.text() === 'Manifesto')).toBe(true);
+  });
+
   it('creates and selects a distinct artifact for each pasted text note', async () => {
     const notes: Artifact[] = [];
     let nextId = 1;
@@ -222,6 +260,26 @@ describe('ArtifactViewer', () => {
       filename: 'capture.dat',
       contentBase64: 'AAH/',
       contentType: 'application/octet-stream',
+    });
+  });
+
+  it('imports a file with the selected manifesto intent', async () => {
+    const { w } = await mountWith([]);
+    await w.find('.ap-new-intent').setValue('manifesto');
+    const file = new File([new Uint8Array([0, 1, 255])], 'capture.dat', {
+      type: 'application/octet-stream',
+    });
+
+    await w.find('.artifact-panel').trigger('paste', {
+      clipboardData: { items: [{ kind: 'file', getAsFile: () => file }] },
+    });
+    await flushPromises();
+
+    expect(artifactCreateWithFile).toHaveBeenCalledWith('sess-1', {
+      filename: 'capture.dat',
+      contentBase64: 'AAH/',
+      contentType: 'application/octet-stream',
+      intent: 'manifesto',
     });
   });
 
