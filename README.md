@@ -4,7 +4,7 @@
 
 You're running Claude Code in one terminal, Copilot CLI in another, Codex CLI in a third, maybe a fourth session for a side project. Alt-tabbing between them is slow. Finding the right window is annoying. Typing repetitive commands is tedious.
 
-Pick up your controller. One button spawns a new Claude Code session — it opens as an embedded terminal right inside the app. Another fires up Copilot CLI or Codex CLI in its own tab. The D-pad flips between sessions instantly, auto-selecting the terminal so you can start typing right away. Step away from your desk? Monitor and control everything from your phone via the Telegram bot.
+Pick up your controller. One button spawns a new Claude Code session — it opens as an embedded terminal right inside the app. Another fires up Copilot CLI or Codex CLI in its own tab. The D-pad flips between sessions instantly, auto-selecting the terminal so you can start typing right away. Step away from your desk? Use the Android companion over Bluetooth LE or your local network, or control sessions through the Telegram bot.
 
 This is a session manager for people who run multiple AI-assisted terminals at once and got tired of the friction.
 
@@ -14,11 +14,15 @@ This is a session manager for people who run multiple AI-assisted terminals at o
 
 Helm is an Electron desktop app that lets you control multiple AI coding CLI sessions from a game controller. Each CLI runs as an embedded terminal (via node-pty + xterm.js) — no external windows to manage.
 
-It ships for **Windows** (installer `.exe`) and **macOS** (universal `.dmg` — native arm64 and x64, no Rosetta).
+The desktop app ships for **Windows** (installer `.exe`) and **macOS** (universal `.dmg` — native arm64 and x64, no Rosetta). A separate **Android companion** is distributed as a versioned APK in GitHub Releases.
 
 **Why use it?**
 
 - **Multi-CLI workflows** — Run Claude Code, Copilot CLI, Codex CLI, and other AI tools side-by-side in embedded terminals
+- **API tool sessions** — Run an agent loop against an OpenAI-compatible endpoint with streaming replies and a per-session tool allow-list
+- **Reply usage badges** — API replies show context size, reasoning counts, and tool-call counts; CLI replies show context size when transcript usage is available
+- **Android companion** — View and control sessions, chat, plans, and artifacts over a paired Bluetooth LE or local-network connection; includes voice calls and notifications
+- **Keep session caches warm** — Opt in per session to send a short heartbeat before a supported CLI's prompt cache expires; it turns itself off after eight hours
 - **Physical controls** — D-pad, buttons, and analog sticks replace keyboard shortcuts. Works with Xbox controllers and generic/DirectInput gamepads
 - **Session groups** — Sessions grouped by working directory with collapsible headers, bookmarks, and a live preview grid
 - **Directory planning** — Per-folder plan graph with `planning`/`ready`/`coding`/`review`/`blocked`/`done` states, plan sequences, contexts, attachments, and plan chips
@@ -41,7 +45,7 @@ It ships for **Windows** (installer `.exe`) and **macOS** (universal `.dmg` — 
 - **Recycle bin** — Closed recoverable sessions are kept 30 days in a searchable Project › Group › Folder tree, restorable with their resume id and artifacts
 - **Runtime session groups** — Custom cross-directory groups alongside the folder groups, with drag-to-move and restore-to-group
 - **Fleet** — Pair two machines and drive sessions, terminals, and plans on the other one from here
-- **Cross-platform** — Windows and macOS, from one codebase
+- **Cross-platform** — Windows and macOS desktop, plus an Android companion
 
 ---
 
@@ -51,6 +55,9 @@ Download the latest installers from [GitHub Releases](https://github.com/PetePet
 
 - **Windows:** `Helm Setup <version>.exe`
 - **macOS:** `Helm-<version>-universal.dmg` for native Intel (`x86_64`) and Apple Silicon (`arm64`)
+- **Android:** `helm-<version>.apk` from the release assets, or scan the QR code in the desktop app's **Settings → Mobile** tab
+
+The Android app is sideloaded rather than installed from an app store. Pair it with your desktop Helm instance before using session controls.
 
 Current macOS packages are not notarized. If Gatekeeper blocks the first launch, open the app from Finder with **Control-click → Open** and confirm the prompt.
 
@@ -404,9 +411,13 @@ Settings → MCP Server provides ready-to-use setup instructions for configuring
 | Document | Content |
 |----------|---------|
 | [helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Inter-session coordination, plan workflow, environment variables |
-| [helm-envelope-reference.md](docs/helm-envelope-reference.md) | `[HELM_MSG]` envelope format for sending and receiving instructions |
+| [helm-mcp-protocol.md](docs/helm-mcp-protocol.md#envelope-format) | `[HELM_MSG]` envelope format for sending and receiving instructions |
 | [helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Client implementation guide for parsing envelopes and replying |
 | [helm-session-info.md](docs/helm-session-info.md) | `session_info` tool reference, AIAGENT state registry, plan/attachment guides |
+
+## API Tool Sessions
+
+Helm can run an agent loop directly against an OpenAI-compatible chat-completions endpoint, without launching a CLI process. Replies stream as they are generated, selected native and Helm MCP tools are available to the model, and completed API replies show context size, reasoning counts, and tool-call counts. See [docs/api-tools.md](docs/api-tools.md) for setup and behavior.
 
 ## Fleet (Cross-Machine)
 
@@ -525,9 +536,14 @@ User-facing docs are in `docs/`:
 | [modules.md](docs/modules.md) | Module reference — all modules, stores, composables, and components |
 | [file-structure.md](docs/file-structure.md) | Complete directory tree with per-file descriptions |
 | [helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Inter-session coordination, plan workflow, environment variables |
-| [helm-envelope-reference.md](docs/helm-envelope-reference.md) | `[HELM_MSG]` envelope format quick reference |
+| [helm-mcp-protocol.md](docs/helm-mcp-protocol.md#envelope-format) | `[HELM_MSG]` envelope format quick reference |
 | [helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Client implementation guide for MCP envelope parsing |
 | [helm-session-info.md](docs/helm-session-info.md) | `session_info` tool, AIAGENT states, plan attachments |
+| [api-tools.md](docs/api-tools.md) | OpenAI-compatible API sessions, streaming, tool access, and usage badges |
+| [mobile-app.md](docs/mobile-app.md) | Android companion app, pairing, chat, controls, and notifications |
+| [cli-hooks.md](docs/cli-hooks.md) | Shared CLI hooks and shipped command guardrails |
+| [apk-distribution.md](docs/apk-distribution.md) | Versioned Android APK release and signature verification |
+| [session-freeze.md](docs/session-freeze.md) | Prompt-cache status, session freezing, and keep-warm controls |
 | [plans-file-structure.md](docs/plans-file-structure.md) | Plan persistence format and file layout |
 | [CHANGELOG.md](CHANGELOG.md) | Versioned release notes |
 
