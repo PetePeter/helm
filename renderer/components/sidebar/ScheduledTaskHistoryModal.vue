@@ -12,6 +12,7 @@ import type { ScheduledTaskHistoryEntry } from '../../../src/types/scheduled-tas
 import { useFocusTrap } from '../../composables/useFocusTrap.js';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { getCliDisplayName } from '../../utils.js';
+import { formatLocalDayLabel, startOfLocalDay } from '../../utils/local-day.js';
 
 const MODAL_ID = 'scheduler-history';
 
@@ -38,28 +39,14 @@ interface DayGroup {
   entries: ScheduledTaskHistoryEntry[];
 }
 
-function startOfDay(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function dayLabel(ms: number): string {
-  const today = startOfDay(Date.now());
-  const day = startOfDay(ms);
-  if (day === today) return 'Today';
-  if (day === today - 86_400_000) return 'Yesterday';
-  return new Date(ms).toLocaleDateString();
-}
-
 const dayGroups = computed<DayGroup[]>(() => {
   const groups = new Map<string, DayGroup>();
   // entries arrive newest-first; preserve that order within each group.
   for (const entry of entries.value) {
-    const key = String(startOfDay(entry.ranAt));
+    const key = String(startOfLocalDay(entry.ranAt));
     let group = groups.get(key);
     if (!group) {
-      group = { key, label: dayLabel(entry.ranAt), entries: [] };
+      group = { key, label: formatLocalDayLabel(entry.ranAt), entries: [] };
       groups.set(key, group);
     }
     group.entries.push(entry);

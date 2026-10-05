@@ -1095,7 +1095,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_read_terminal',
     title: 'Read Session Terminal',
-    description: 'Read recent terminal output or the rendered terminal screen for any known session by sessionId or exact name. Use after session_send_text handoffs to verify receipt. lines must be a positive integer (buffer holds up to 500). mode is raw, stripped, both, or screen; screen applies terminal cursor and erase controls and preserves blank rows.',
+    description: 'Read the terminal tail or rendered terminal screen for any known session by sessionId or exact name. Raw mode preserves raw ANSI escape sequences; stripped mode removes them. Use after session_send_text handoffs to verify the recipient received the message by checking for its text, a new prompt, or a response. lines must be a positive integer (buffer holds up to 500). mode is raw, stripped, both, or screen; screen applies terminal cursor and erase controls and preserves blank rows.',
     inputSchema: {
       type: 'object',
       properties: {

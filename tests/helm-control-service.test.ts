@@ -1023,7 +1023,7 @@ describe('HelmControlService.getPlan', () => {
 });
 
 describe('HelmControlService.readSessionTerminal', () => {
-  it('returns terminal tail metadata and clamps line count', () => {
+  it('returns terminal tail metadata and clamps line count', async () => {
     const { service, ptyManager, sessionManager } = makeService();
     (sessionManager.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
       id: 's1',
@@ -1032,7 +1032,7 @@ describe('HelmControlService.readSessionTerminal', () => {
       workingDir: '/work',
     });
 
-    const result = service.readSessionTerminal('s1', 120, 'both');
+    const result = await service.readSessionTerminal('s1', 120, 'both');
 
     expect(ptyManager.getTerminalTail).toHaveBeenCalledWith('s1', 120, 'both', false);
     expect(result).toEqual({
@@ -1049,9 +1049,9 @@ describe('HelmControlService.readSessionTerminal', () => {
     });
   });
 
-  it('rejects invalid line counts', () => {
+  it('rejects invalid line counts', async () => {
     const { service } = makeService();
-    expect(() => service.readSessionTerminal('s1', 0, 'raw')).toThrow('lines must be a positive integer');
+    await expect(service.readSessionTerminal('s1', 0, 'raw')).rejects.toThrow('lines must be a positive integer');
   });
 });
 

@@ -10,6 +10,7 @@
 import { computed, onUnmounted, watch } from 'vue';
 import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { usePeers, type PeerAuditEntry } from '../../composables/usePeers.js';
+import { formatLocalDayLabel, startOfLocalDay } from '../../utils/local-day.js';
 
 const MODAL_ID = 'peer-audit';
 
@@ -25,27 +26,13 @@ interface DayGroup {
   entries: PeerAuditEntry[];
 }
 
-function startOfDay(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function dayLabel(ms: number): string {
-  const today = startOfDay(Date.now());
-  const day = startOfDay(ms);
-  if (day === today) return 'Today';
-  if (day === today - 86_400_000) return 'Yesterday';
-  return new Date(ms).toLocaleDateString();
-}
-
 const dayGroups = computed<DayGroup[]>(() => {
   const groups = new Map<string, DayGroup>();
   for (const entry of audit.value) {
-    const key = String(startOfDay(entry.ranAt));
+    const key = String(startOfLocalDay(entry.ranAt));
     let group = groups.get(key);
     if (!group) {
-      group = { key, label: dayLabel(entry.ranAt), entries: [] };
+      group = { key, label: formatLocalDayLabel(entry.ranAt), entries: [] };
       groups.set(key, group);
     }
     group.entries.push(entry);
