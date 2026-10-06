@@ -343,11 +343,14 @@ fun ChatScreen(
                                 }
                             }
                         }
+                        if (earlierUnreadSessions > 0 || laterUnreadSessions > 0) {
+                            SessionSwipeCueHint(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Md),
+                            )
+                        }
                     }
-                    SessionSwipeCueRow(
-                        earlierUnreadSessions = earlierUnreadSessions,
-                        laterUnreadSessions = laterUnreadSessions,
-                    )
                     if (call != null && call.state.phase != CallPhase.Ended) {
                         CallPanel(call = call)
                     }
@@ -389,40 +392,17 @@ fun ChatScreen(
 }
 
 @Composable
-private fun SessionSwipeCueRow(earlierUnreadSessions: Int, laterUnreadSessions: Int) {
-    if (earlierUnreadSessions <= 0 && laterUnreadSessions <= 0) return
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = HelmSpacing.Gutter, vertical = HelmSpacing.Xs),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        if (earlierUnreadSessions > 0) SessionSwipeCueBadge(earlierUnreadSessions, earlier = true)
-        else Spacer(Modifier.weight(1f))
-        if (laterUnreadSessions > 0) SessionSwipeCueBadge(laterUnreadSessions, earlier = false)
-        else Spacer(Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun SessionSwipeCueBadge(unreadSessions: Int, earlier: Boolean) {
-    val countLabel = if (unreadSessions > MAX_VISIBLE_GUTTER_COUNT) "$MAX_VISIBLE_GUTTER_COUNT+" else unreadSessions.toString()
-    val badgeLabel = if (earlier) {
-        stringResource(R.string.session_swipe_earlier_badge, countLabel)
-    } else {
-        stringResource(R.string.session_swipe_later_badge, countLabel)
-    }
-    val accessibilityLabel = if (earlier) {
-        stringResource(R.string.session_swipe_earlier_unread, unreadSessions)
-    } else {
-        stringResource(R.string.session_swipe_later_unread, unreadSessions)
-    }
+private fun SessionSwipeCueHint(modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.session_swipe_hint)
     Text(
-        text = badgeLabel,
+        text = label,
         color = HelmColors.Txt,
         style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier
+            .then(modifier)
             .clip(RoundedCornerShape(16.dp))
             .background(HelmColors.Surface2)
-            .semantics { contentDescription = accessibilityLabel }
+            .semantics { contentDescription = label }
             .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
     )
 }
@@ -1217,7 +1197,6 @@ private val HOLD_ARROW_RISE = 18.dp
 
 /** A bubble never spans the full width: the gutter is what says who is talking. */
 private const val BUBBLE_WIDTH_FRACTION = 0.75f
-private const val MAX_VISIBLE_GUTTER_COUNT = 9
 private const val SESSION_SWITCH_MS = 220
 
 /** Accent wash behind a selected row: visible on true black, text still readable. */

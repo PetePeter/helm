@@ -225,6 +225,7 @@ fun SessionRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     selected: Boolean = false,
+    selectedMarkerAtEnd: Boolean = false,
 ) {
     val labels = SessionRowText.Labels(
         needsDecision = stringResource(R.string.sessions_sub_needs_decision),
@@ -253,7 +254,7 @@ fun SessionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
         ) {
-            if (selected) {
+            if (selected && !selectedMarkerAtEnd) {
                 Text("➜", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
             }
             StateDot(state = session.activity)
@@ -351,6 +352,9 @@ fun SessionRow(
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
+            if (selected && selectedMarkerAtEnd) {
+                Text("←", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
+            }
         }
         Hairline(color = HelmColors.Separator)
     }
@@ -361,6 +365,7 @@ fun SessionSwipePicker(
     sessions: List<HelmSession>,
     unread: Map<String, Int>,
     selectedId: String,
+    selectedMarkerAtEnd: Boolean = false,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -382,6 +387,7 @@ fun SessionSwipePicker(
                         session = entry.session,
                         unreadCount = unread[entry.session.id] ?: 0,
                         selected = entry.session.id == selectedId,
+                        selectedMarkerAtEnd = selectedMarkerAtEnd,
                         onClick = { onSelect(entry.session.id) },
                         onLongClick = {},
                     )

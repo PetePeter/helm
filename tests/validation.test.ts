@@ -6,7 +6,7 @@ vi.mock('node:fs', () => ({
 }))
 
 import { existsSync, statSync } from 'node:fs'
-import { validateProjectDirectory } from '../src/session/validation.js'
+import { validateProjectDirectory, validateProjectPath } from '../src/session/validation.js'
 
 const mockExists = vi.mocked(existsSync)
 const mockStat = vi.mocked(statSync)
@@ -43,5 +43,21 @@ describe('validateProjectDirectory', () => {
     mockExists.mockReturnValue(true)
     mockStat.mockReturnValue({ isDirectory: () => false } as ReturnType<typeof statSync>)
     expect(() => validateProjectDirectory('X:\\coding\\file.txt')).toThrow('Path is not a directory')
+  })
+})
+
+describe('validateProjectPath', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('accepts a non-empty path without checking whether it exists', () => {
+    expect(() => validateProjectPath('X:\\coding\\removed')).not.toThrow()
+    expect(mockExists).not.toHaveBeenCalled()
+    expect(mockStat).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty path', () => {
+    expect(() => validateProjectPath('  ')).toThrow('Directory path must not be empty')
   })
 })

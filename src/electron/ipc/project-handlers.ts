@@ -10,7 +10,7 @@ import type { ProjectStore } from '../../session/project-store.js';
 import type { PlanManager } from '../../session/plan-manager.js';
 import type { ContextManager } from '../../session/context-manager.js';
 import { PlanAttachmentManager } from '../../session/plan-attachment-manager.js';
-import { validateProjectDirectory } from '../../session/validation.js';
+import { validateProjectDirectory, validateProjectPath } from '../../session/validation.js';
 import { logger } from '../../utils/logger.js';
 import type { WindowManager } from '../window-manager.js';
 
@@ -113,7 +113,9 @@ export function setupProjectHandlers(
 
   ipcMain.handle('project:removeDir', (_event, id: string, dirPath: string) => {
     try {
-      validateProjectDirectory(dirPath);
+      // Removing a stale alternate path must remain possible after its folder
+      // disappears from disk. Keep the non-empty path check, but do not stat it.
+      validateProjectPath(dirPath);
       projectStore.removeDirectory(id, dirPath);
       projectStore.save();
       logger.info(`[IPC] Removed directory "${dirPath}" from project ${id}`);

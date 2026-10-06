@@ -1399,6 +1399,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             sessions = listedSessions,
                             unread = unreadCounts,
                             selectedId = sessionSwipeTargetId ?: currentOpenId,
+                            selectedMarkerAtEnd = sessionSwipeOffset.value < 0f,
                             onSelect = { sessionSwipeTargetId = it },
                             modifier = Modifier
                                 .fillMaxHeight()
