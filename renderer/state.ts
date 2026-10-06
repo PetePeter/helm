@@ -5,6 +5,8 @@
  * compatibility alias for non-Vue modules still being migrated.
  */
 
+import type { UserPromptSource } from '../src/types/session.js';
+
 export interface Session {
   id: string;
   name: string;
@@ -28,6 +30,9 @@ export interface Session {
   lastActiveAt?: number;
   /** Epoch ms of the last prompt — the row timer counts from it. */
   lastPromptAt?: number;
+  /** Epoch ms and source of the last actual user-submitted prompt. */
+  lastUserPromptAt?: number;
+  lastUserPromptSource?: UserPromptSource;
   /** Keep-warm is on until this epoch ms (KeepWarmer pings the session). */
   keepWarmUntil?: number;
   /** Remote Fleet peer that created this session, when spawned over the peer proxy. */

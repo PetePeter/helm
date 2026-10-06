@@ -27,7 +27,7 @@ const FLEET_TARGET = `fleet:mac:${REMOTE_SESSION_ID}`;
 interface SendCall {
   sessionRef: string;
   text: string;
-  options: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean };
+  options: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: 'terminal' | 'phone' };
 }
 interface PeerCall {
   peer: string;
@@ -218,6 +218,14 @@ describe('session_send_text — local behaviour is unaffected', () => {
     const service = new FakeService([LOCAL_SESSION, { id: 'op', name: 'Helm' }]);
     await callMcpTool(deps(service), 'session_send_text', { sessionId: LOCAL_SESSION.id, text: 'hi' }, { sessionId: 'op' });
     expect(service.sends[0].options).toMatchObject({ senderSessionId: 'op', senderSessionName: 'Helm' });
+  });
+
+  it('marks an authenticated mobile caller as a phone prompt', async () => {
+    const service = new FakeService();
+    await callMcpTool(deps(service), 'session_send_text',
+      { sessionId: LOCAL_SESSION.id, text: 'from phone' },
+      { sessionId: 'mobile:device-1', sessionName: 'Phone' });
+    expect(service.sends[0].options.userPromptSource).toBe('phone');
   });
 });
 

@@ -13,6 +13,7 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
+import type { UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 
 function openSessionMenu(event: MouseEvent): void {
@@ -39,6 +40,8 @@ export interface SessionCardSession {
   frozen?: boolean;
   /** Epoch ms of the last prompt (timer tooltip, cache fade). */
   lastPromptAt?: number;
+  lastUserPromptAt?: number;
+  lastUserPromptSource?: UserPromptSource;
   /** Keep-warm is on until this epoch ms. */
   keepWarmUntil?: number;
 }
@@ -58,6 +61,7 @@ export interface SessionCardProps {
   /** Subagents this session is waiting on. 0 = none. */
   pendingSubagents: number;
   elapsedText: string;
+  userPromptElapsedText?: string;
   workingPlanLabel: string;
   workingPlanTooltip: string;
   isActive: boolean;
@@ -117,6 +121,13 @@ const timerTooltip = computed(() => {
     : formatClockTime(props.session.lastActiveAt);
   const lastPrompt = formatClockTime(props.session.lastPromptAt);
   return `Time since last prompt\nLast prompt: ${lastPrompt}\nCreated: ${created}\nLast active: ${lastActive}`;
+});
+
+const userPromptTimerTooltip = computed(() => {
+  const source = props.session.lastUserPromptSource;
+  const at = props.session.lastUserPromptAt;
+  const origin = source === 'phone' ? 'phone' : 'terminal';
+  return `Time since your last submitted prompt from ${origin}${at !== undefined ? `\nSubmitted: ${formatClockTime(at)}` : ''}`;
 });
 
 // --- Prompt-cache fade: the fill drains over the CLI's short cache window ---
@@ -346,7 +357,29 @@ function onCardClick(e: MouseEvent): void {
 
       <span style="flex: 1" />
 
-      <span class="session-timer" :title="timerTooltip">{{ elapsedText }}</span>
+      <span class="session-timer session-timer-with-icon" :title="timerTooltip">
+        <svg class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <circle cx="10" cy="10" r="7.25" />
+          <path d="M10 5.5v4.7l3 1.8" />
+        </svg>
+        <span>{{ elapsedText }}</span>
+      </span>
+      <span
+        v-if="userPromptElapsedText && session.lastUserPromptSource"
+        class="session-timer session-timer-with-icon session-user-prompt-timer"
+        :class="`source-${session.lastUserPromptSource}`"
+        :title="userPromptTimerTooltip"
+      >
+        <svg v-if="session.lastUserPromptSource === 'phone'" class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="5" y="2.5" width="10" height="15" rx="2" />
+          <path d="M8 5h4M9 14.5h2" />
+        </svg>
+        <svg v-else class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <rect x="2.5" y="3.5" width="15" height="13" rx="1.8" />
+          <path d="m5.5 7 2.2 2-2.2 2M9.5 11h4" />
+        </svg>
+        <span>{{ userPromptElapsedText }}</span>
+      </span>
 
       <!-- Copy session id button -->
       <button

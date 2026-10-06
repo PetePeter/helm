@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
-import type { SessionInfo } from '../types/session.js';
+import type { SessionInfo, UserPromptSource } from '../types/session.js';
 import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
@@ -39,6 +39,9 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.createdByMobileDeviceId ? { createdByMobileDeviceId: s.createdByMobileDeviceId } : {}),
     ...(isString(s.reportsTo) ? { reportsTo: s.reportsTo } : {}),
     ...(isNumber(s.lastPromptAt) ? { lastPromptAt: s.lastPromptAt } : {}),
+    ...(isNumber(s.lastUserPromptAt) && isUserPromptSource(s.lastUserPromptSource)
+      ? { lastUserPromptAt: s.lastUserPromptAt, lastUserPromptSource: s.lastUserPromptSource }
+      : {}),
     ...(isNumber(s.keepWarmUntil) ? { keepWarmUntil: s.keepWarmUntil } : {}),
     // Durable hook-derived stall (G3). Absent = not stalled; omitted key means
     // the same as no stall, so a cleared stall simply drops off disk.
@@ -66,6 +69,10 @@ function isSessionInfo(value: unknown): value is SessionInfo {
 /** Type guard for the durable hook-stall record — malformed shapes drop off on load. */
 function isHookStall(value: unknown): value is SessionInfo['hookStall'] {
   return isRecord(value) && isNumber(value.at) && isString(value.reason);
+}
+
+function isUserPromptSource(value: unknown): value is UserPromptSource {
+  return value === 'terminal' || value === 'phone';
 }
 
 export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
@@ -108,6 +115,10 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       }
       if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
         delete session.missionBarHeight;
+      }
+      if (!isNumber(session.lastUserPromptAt) || !isUserPromptSource(session.lastUserPromptSource)) {
+        delete session.lastUserPromptAt;
+        delete session.lastUserPromptSource;
       }
       if (session.role !== undefined && session.role !== 'operator') {
         delete session.role;

@@ -118,8 +118,12 @@ describe('lastPromptAt persistence', () => {
     const dir = mkdtempSync(join(tmpdir(), 'helm-last-prompt-'));
     try {
       const file = join(dir, 'sessions.yaml');
-      saveSessions([row({ id: 'worker', lastPromptAt: 1234 })], file);
-      expect(loadSessions(file)[0].lastPromptAt).toBe(1234);
+      saveSessions([row({ id: 'worker', lastPromptAt: 1234, lastUserPromptAt: 5678, lastUserPromptSource: 'phone' })], file);
+      expect(loadSessions(file)[0]).toMatchObject({
+        lastPromptAt: 1234,
+        lastUserPromptAt: 5678,
+        lastUserPromptSource: 'phone',
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -82,6 +82,16 @@ describe('HelmSessionDeliveryService', () => {
       expect(sessionManager.updateSession).toHaveBeenCalledWith(receiver.id, { lastPromptAt: expect.any(Number) });
     });
 
+    it('records a phone prompt separately from automated session delivery', async () => {
+      const { service, sessionManager, receiver } = makeDeps();
+      await service.sendTextToSession(receiver.id, 'hi', { ...from, userPromptSource: 'phone' });
+      expect(sessionManager.updateSession).toHaveBeenCalledWith(receiver.id, {
+        lastPromptAt: expect.any(Number),
+        lastUserPromptAt: expect.any(Number),
+        lastUserPromptSource: 'phone',
+      });
+    });
+
     it('refuses a frozen recipient before anything reaches its PTY', async () => {
       const { service, ptyManager, receiver } = makeDeps();
       (receiver as { frozen?: boolean }).frozen = true;

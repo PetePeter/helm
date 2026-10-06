@@ -147,6 +147,10 @@ function resolveSenderIdentity(
   return { senderSessionId: explicitSenderId, senderSessionName: senderSession.name };
 }
 
+function isMobileSenderSessionId(id: string): boolean {
+  return isMobileSessionId(id) || isMobileSessionId(parseFleetSessionId(id)?.realSessionId);
+}
+
 export interface McpToolDispatcherDeps {
   service: HelmControlService;
   setPlanStateWithValidation: (
@@ -589,6 +593,9 @@ export async function callMcpTool(
             senderSessionId,
             senderSessionName,
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
+            ...(isMobileSessionId(authContext.sessionId) || isMobileSenderSessionId(senderSessionId)
+              ? { userPromptSource: 'phone' as const }
+              : {}),
           },
         );
         const builderId = operatorTask ? service.getSession(targetRef)?.id : undefined;

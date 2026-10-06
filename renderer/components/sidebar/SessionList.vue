@@ -14,6 +14,7 @@ import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
 import { useMessageFlights } from '../../composables/useMessageFlights.js';
+import type { UserPromptSource } from '../../../src/types/session.js';
 
 interface FlashEntry {
   phase: 'pulse' | 'solid';
@@ -41,6 +42,8 @@ interface SessionListGroupSession {
   loopContinues?: number;
   /** Subagents this session is waiting on — the 🔥 badge. */
   pendingSubagents?: number;
+  lastUserPromptAt?: number;
+  lastUserPromptSource?: UserPromptSource;
 }
 
 type SessionListFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -80,6 +83,7 @@ const props = defineProps<{
   resolveGroupDisplayName: (dirPath: string, directories: SessionListDirectory[], projects?: SessionListProject[]) => string;
   isSessionHiddenFromOverview: (session: SessionListGroupSession) => boolean;
   sessionElapsedText: (sessionId: string) => string;
+  userPromptElapsedText?: (sessionId: string) => string;
   sessionShortcutMap: Map<string, number>;
   /** PTY preview density. Absent = 'on'. */
   previewMode?: SessionPreviewMode;
@@ -250,7 +254,7 @@ function onNewGroupDrop(e: DragEvent): void {
             <SessionCard
               v-for="session in group.sessions"
               :key="session.id"
-              :session="{ id: session.id, name: session.name, cliType: session.cliType, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, keepWarmUntil: session.keepWarmUntil }"
+              :session="{ id: session.id, name: session.name, cliType: session.cliType, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, lastUserPromptAt: session.lastUserPromptAt, lastUserPromptSource: session.lastUserPromptSource, keepWarmUntil: session.keepWarmUntil }"
               :nav-index="navIndexMap.get(session.id) ?? -1"
               :session-state="sessionStates.get(session.id) || 'idle'"
               :activity-level="sessionActivityLevels.get(session.id) || 'idle'"
@@ -260,6 +264,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :loop-continues="session.loopContinues ?? 0"
               :pending-subagents="session.pendingSubagents ?? 0"
               :elapsed-text="sessionElapsedText(session.id)"
+              :user-prompt-elapsed-text="userPromptElapsedText?.(session.id) ?? ''"
               :working-plan-label="workingPlanLabels.get(session.id) || ''"
               :working-plan-tooltip="workingPlanTooltips.get(session.id) || ''"
               :is-active="activeSessionId === session.id"

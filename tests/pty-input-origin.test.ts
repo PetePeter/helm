@@ -54,7 +54,7 @@ function setup() {
   const session = { id: 's1', interactionChannel: 'telegram' };
   const sessionManager = {
     getSession: vi.fn((id: string) => id === 's1' ? session : null),
-    updateSession: vi.fn(),
+    updateSession: vi.fn((_id: string, patch: object) => Object.assign(session, patch)),
     removeSession: vi.fn(),
   };
   const pipelineQueue = new EventEmitter();
@@ -121,6 +121,7 @@ describe('pty:write input origin', () => {
     await handlers.get('pty:write')?.({}, 's1', '\r');
     expect(stamped()).toHaveLength(1);
     expect(typeof stamped()[0][1].lastPromptAt).toBe('number');
+    expect(stamped()[0][1]).toMatchObject({ lastUserPromptAt: expect.any(Number), lastUserPromptSource: 'terminal' });
   });
 
   it('rejects input from a renderer that does not own the session', async () => {

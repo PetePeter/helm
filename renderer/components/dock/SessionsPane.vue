@@ -55,6 +55,14 @@ function sessionElapsedText(sessionId: string): string {
   if (since === undefined) return '';
   return formatClock(Date.now() - since);
 }
+
+/** Time since the last prompt submitted by a user, with a separately stored source. */
+function userPromptElapsedText(sessionId: string): string {
+  state.lastOutputTimes.get('__tick__');
+  const session = state.sessions.find((s) => s.id === sessionId);
+  if (session?.lastUserPromptAt === undefined || !session.lastUserPromptSource) return '';
+  return formatClock(Date.now() - session.lastUserPromptAt);
+}
 </script>
 
 <template>
@@ -91,6 +99,7 @@ function sessionElapsedText(sessionId: string): string {
       :resolve-group-display-name="resolveGroupDisplayName"
       :is-session-hidden-from-overview="(session) => isSessionHiddenFromOverview(session, sessionsState.groupPrefs)"
       :session-elapsed-text="sessionElapsedText"
+      :user-prompt-elapsed-text="userPromptElapsedText"
       :session-shortcut-map="sessionsScreenStore.sessionShortcutMap"
       :preview-mode="sessionsState.groupPrefs.sessionPreviewMode"
       @new-group="pane.groups.newGroup"

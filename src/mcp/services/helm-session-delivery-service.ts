@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
-import type { SessionInfo } from '../../types/session.js';
+import type { SessionInfo, UserPromptSource } from '../../types/session.js';
 import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.js';
 import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
@@ -224,7 +224,7 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean },
+    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource },
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -347,7 +347,14 @@ export class HelmSessionDeliveryService {
     }
     // A message is a prompt — it re-arms a dormant session even when its CLI
     // has no UserPromptSubmit hook to say so.
-    this.sessionManager.updateSession(session.id, { lastPromptAt: Date.now() });
+    const submittedAt = Date.now();
+    this.sessionManager.updateSession(session.id, {
+      lastPromptAt: submittedAt,
+      ...(options.userPromptSource ? {
+        lastUserPromptAt: submittedAt,
+        lastUserPromptSource: options.userPromptSource,
+      } : {}),
+    });
 
     return { ok: true, preambleUsed: usePreamble, ...summarizeDelivery(deliveryVerification), ...busyReport };
   }

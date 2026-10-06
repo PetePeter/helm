@@ -193,6 +193,8 @@ export async function refreshSessions(): Promise<void> {
       lastActiveAt: managed.lastActiveAt,
       // The row timer counts from it; dropped here it would reset on every refresh.
       lastPromptAt: managed.lastPromptAt,
+      lastUserPromptAt: managed.lastUserPromptAt,
+      lastUserPromptSource: managed.lastUserPromptSource,
       keepWarmUntil: managed.keepWarmUntil,
       createdByPeerId: managed.createdByPeerId,
       remote: managed.remote,

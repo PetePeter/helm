@@ -1156,6 +1156,28 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   pointer-events: none;
 }
 
+.session-timer-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.session-timer-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.session-user-prompt-timer { color: #bbb; }
+.session-user-prompt-timer.source-phone .session-timer-icon { color: #d0b8f5; }
+.session-user-prompt-timer.source-terminal .session-timer-icon { color: #9de0d4; }
+
 /* Top row: dot, state, badges, timer, actions */
 .session-top-row {
   display: flex;

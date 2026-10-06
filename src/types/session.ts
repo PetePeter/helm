@@ -14,6 +14,9 @@ export const VALID_SESSION_STATES: readonly SessionState[] = ['implementing', 'w
  */
 export type ActivityLevel = 'active' | 'inactive' | 'idle';
 
+/** Surface where the user most recently submitted a prompt. */
+export type UserPromptSource = 'terminal' | 'phone';
+
 /**
  * CLI session information
  */
@@ -91,6 +94,9 @@ export interface SessionInfo {
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
   lastPromptAt?: number;
+  /** Timestamp and source of the last actual user-submitted prompt. */
+  lastUserPromptAt?: number;
+  lastUserPromptSource?: UserPromptSource;
   /** Keep-warm is on until this epoch ms: KeepWarmer pings the session 10 s
    *  before its CLI's short prompt cache would lapse, so it never does. Persists. */
   keepWarmUntil?: number;

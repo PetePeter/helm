@@ -143,7 +143,14 @@ export function setupPtyHandlers(
         if (session?.reportsTo) sessionManager.updateSession(sessionId, { reportsTo: undefined });
         // Enter submits a prompt: the session timer restarts (CLIs without hooks included).
         // A frozen session dropped the keys, so no prompt was submitted.
-        if (session && !session.frozen && data.includes('\r')) sessionManager.updateSession(sessionId, { lastPromptAt: Date.now() });
+        if (session && !session.frozen && data.includes('\r')) {
+          const submittedAt = Date.now();
+          sessionManager.updateSession(sessionId, {
+            lastPromptAt: submittedAt,
+            lastUserPromptAt: submittedAt,
+            lastUserPromptSource: 'terminal',
+          });
+        }
         onPtyInput?.(sessionId, data);
       }
     } catch (error) {
