@@ -604,8 +604,13 @@ export class ApiSessionHost {
     const archiveId = randomUUID();
     const archiveFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.json`);
     const transcriptFile = path.join(this.deps.historyDir, `${cliSessionName}.${archiveId}.quick-compact.md`);
+    const manifesto = manifestoContext?.trim();
     const nextHistory: ChatMessage[] = [
-      { role: 'user', content: buildTranscriptResumePrompt(transcriptFile, handover, manifestoContext) },
+      ...(manifesto ? [
+        { role: 'user' as const, content: manifesto },
+        { role: 'assistant' as const, content: 'Understood — continuing with the persistent manifesto context.' },
+      ] : []),
+      { role: 'user', content: buildTranscriptResumePrompt(transcriptFile, handover) },
       { role: 'assistant', content: 'Understood — continuing from the saved API transcript.' },
     ];
     const created: string[] = [];

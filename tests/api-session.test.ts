@@ -853,7 +853,7 @@ describe('ApiSessionHost', () => {
     expect(last(client.calls[1].messages).content).toMatch(/carry on without it/);
   });
 
-  it('quick compacts API history into a readable pointer while retaining linked raw archives', async () => {
+  it('starts quick compact history with manifesto context before the transcript handover', async () => {
     const history: Msg[] = [
       { role: 'user', content: 'read the config' },
       { role: 'assistant', content: null, tool_calls: [toolCall('read-1', 'Read', '{"file_path":"config.json"}') ] },
@@ -876,7 +876,11 @@ describe('ApiSessionHost', () => {
         return { message: next };
       },
     };
-    const { host, dispatched } = makeHost([], { createClient: () => client as never });
+    const manifesto = 'Persistent HELM manifesto.';
+    const { host, dispatched } = makeHost([], {
+      createClient: () => client as never,
+      getManifestoContext: () => manifesto,
+    });
     const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'qc-1', api });
 
     const first = await host.quickCompactSession('s1', 'keep the ids');
@@ -888,11 +892,14 @@ describe('ApiSessionHost', () => {
     expect(readable).toContain('Read({"file_path":"config.json"})');
     expect(readable).toContain('Error: file not found');
     expect(readable).not.toContain('successful output that should stay in the raw archive');
-    expect(JSON.parse(fs.readFileSync(path.join(dir, 'qc-1.json'), 'utf8'))[0].content)
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'qc-1.json'), 'utf8'))[2].content)
       .toContain(`at: ${first.transcriptFile}`);
     const compactedHistory = JSON.parse(fs.readFileSync(path.join(dir, 'qc-1.json'), 'utf8')) as Msg[];
-    expect(compactedHistory).toHaveLength(2);
-    expect(compactedHistory[0].content).toContain('Handover note: keep the ids');
+    expect(compactedHistory).toHaveLength(4);
+    expect(compactedHistory[0]).toEqual({ role: 'user', content: manifesto });
+    expect(compactedHistory[1].content).toContain('persistent manifesto context');
+    expect(compactedHistory[2].content).toContain('Handover note: keep the ids');
+    expect(compactedHistory[2].content).not.toContain(manifesto);
 
     // The configured native Read tool can load the persisted transcript on the next turn.
     replies = [
