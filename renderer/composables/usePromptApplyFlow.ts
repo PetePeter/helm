@@ -15,12 +15,12 @@ import type { PromptTemplate } from '../../src/session/prompt-template-types.js'
 
 export function usePromptApplyFlow(getSessionId: () => string | null | undefined) {
   /** Entry point for context menu / gamepad — open the picker tree. */
-  async function openPromptPicker(): Promise<void> {
-    await showPromptTree((templateId) => { void openEditorForTemplate(templateId); });
+  async function openPromptPicker(sessionId = getSessionId()): Promise<void> {
+    await showPromptTree((templateId) => { void openEditorForTemplate(templateId, sessionId); });
   }
 
   /** Open the editor prefilled with the picked template's body. */
-  async function openEditorForTemplate(templateId: string): Promise<void> {
+  async function openEditorForTemplate(templateId: string, sessionId = getSessionId()): Promise<void> {
     let body = '';
     try {
       const node = await promptTemplatesClient.promptTemplateGetNode(templateId);
@@ -31,7 +31,6 @@ export function usePromptApplyFlow(getSessionId: () => string | null | undefined
     // hasPrefill=true: the body is an explicit prefill and must override any
     // saved ctrl-g draft, even when the template body (or failed lookup) is ''.
     await showEditorPopup((text) => {
-      const sessionId = getSessionId();
       if (sessionId) void deliverPromptSequence(sessionId, text);
     }, body, templateId, true);
   }

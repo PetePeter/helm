@@ -13,7 +13,11 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
-import { showSessionMenu } from '../../stores/modal-bridge.js';
+import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
+
+function openSessionMenu(event: MouseEvent): void {
+  showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
+}
 
 // --- Types ---
 
@@ -360,7 +364,8 @@ function onCardClick(e: MouseEvent): void {
         :class="colClass(2)"
         :title="`Actions for ${displayName}`"
         aria-haspopup="menu"
-        @click.stop="showSessionMenu(session.id)"
+        :aria-expanded="contextMenu.visible && contextMenu.mode === 'session' && contextMenu.sourceSessionId === props.session.id"
+        @click.stop="openSessionMenu"
       >
         ⋮
       </button>

@@ -1,62 +1,71 @@
-/**
- * Which actions a session menu offers. The row kebab (⋮) is the session's own
- * menu; right-clicking the terminal adds the text actions. A frozen session
- * takes no input, so either way it only offers what works without typing into
- * it — plus the way out.
- */
-import { describe, it, expect } from 'vitest';
-import { buildContextMenuItems, buildSessionContextMenuGroups, type ContextMenuContext } from '../renderer/modals/context-menu-items.js';
+import { describe, expect, it } from 'vitest';
+import {
+  buildContextMenuGroups,
+  type ContextMenuContext,
+} from '../renderer/modals/context-menu-items.js';
 
 const base: ContextMenuContext = {
-  mode: 'terminal', hasSelection: false, hasActiveSession: true, isSnappedOut: false, currentGroupName: null,
+  mode: 'terminal',
+  targetSessionId: 'session-1',
+  hasSelection: false,
+  isSnappedOut: false,
+  currentGroupName: null,
   session: { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
 };
-const ids = (ctx: Partial<ContextMenuContext>) =>
-  buildContextMenuItems({ ...base, ...ctx }).filter(i => i.enabled).map(i => i.id);
 
-describe('buildContextMenuItems', () => {
-  it('a frozen session — kebab or terminal — offers only unfreeze, compact, clone, switch, cancel', () => {
+const groups = (overrides: Partial<ContextMenuContext>) =>
+  buildContextMenuGroups({ ...base, ...overrides });
+
+const findItem = (items: ReturnType<typeof buildContextMenuGroups>, id: string) =>
+  items.flatMap(group => group.items).find(item => item.id === id)!;
+
+describe('buildContextMenuGroups', () => {
+  it('shares every non-cursor group between the kebab and terminal menus', () => {
+    const session = groups({ mode: 'session' });
+    const terminal = groups({ mode: 'terminal' });
+
+    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
+    expect(findItem(session, 'editor').enabled).toBe(true);
+    expect(findItem(session, 'prompts').enabled).toBe(true);
+    expect(findItem(session, 'drafts').enabled).toBe(true);
+    expect(findItem(session, 'new-session').enabled).toBe(true);
+  });
+
+  it('adds cursor actions only to the terminal menu and gates selection actions', () => {
+    const session = groups({ mode: 'session', hasSelection: true });
+    const terminal = groups({ mode: 'terminal' });
+
+    expect(session.some(group => group.title === 'Cursor')).toBe(false);
+    expect(findItem(terminal, 'copy').enabled).toBe(false);
+    expect(findItem(terminal, 'new-session-with-selection').enabled).toBe(false);
+    expect(findItem(terminal, 'paste').enabled).toBe(true);
+
+    const selected = groups({ mode: 'terminal', hasSelection: true });
+    expect(findItem(selected, 'copy').enabled).toBe(true);
+    expect(findItem(selected, 'new-session-with-selection').enabled).toBe(true);
+  });
+
+  it('keeps common session controls grouped for frozen targets and disables delivery', () => {
     const frozen = { ...base.session, frozen: true };
-    const short = ['unfreeze', 'quick-compact', 'clone-session', 'switch-cli', 'cancel'];
-    expect(ids({ mode: 'session', session: frozen })).toEqual(short);
-    expect(ids({ mode: 'terminal', session: frozen })).toEqual(short);
-  });
+    const session = groups({ mode: 'session', session: frozen, currentGroupName: 'Work' });
+    const terminal = groups({ mode: 'terminal', session: frozen, currentGroupName: 'Work', hasSelection: true });
 
-  it('the kebab offers the session actions that used to be row buttons', () => {
-    const got = buildSessionContextMenuGroups({ ...base, mode: 'session' }).flatMap(g => g.items.map(i => i.id));
-    for (const id of ['rename-session', 'toggle-lock', 'toggle-freeze', 'toggle-keep-warm', 'toggle-overview',
-      'quick-compact', 'clone-session', 'switch-cli']) {
-      expect(got).toContain(id);
+    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
+    expect(findItem(session, 'toggle-freeze').label).toMatch(/unfreeze/i);
+    for (const id of ['rename-session', 'toggle-lock', 'toggle-keep-warm', 'toggle-overview', 'move-to-group', 'remove-from-group']) {
+      expect(findItem(session, id).enabled).toBe(true);
     }
-    expect(got).not.toContain('copy');
+    for (const id of ['editor', 'prompts', 'drafts']) expect(findItem(session, id).enabled).toBe(false);
+    expect(findItem(terminal, 'copy').enabled).toBe(true);
+    expect(findItem(terminal, 'new-session-with-selection').enabled).toBe(true);
+    expect(findItem(terminal, 'paste').enabled).toBe(false);
   });
 
-  it('groups the desktop session menu like the phone sheet, in a fixed order', () => {
-    const groups = buildSessionContextMenuGroups({ ...base, mode: 'session' });
-    expect(groups.map(g => [g.title, g.items.map(i => i.id)])).toEqual([
-      ['Context', ['quick-compact']],
-      ['Session', ['rename-session', 'switch-cli', 'toggle-keep-warm', 'toggle-freeze', 'toggle-lock',
-        'toggle-overview', 'move-to-group', 'remove-from-group', 'clone-session']],
-    ]);
-  });
-
-  it('a frozen session keeps its short list inside the same groups', () => {
-    const groups = buildSessionContextMenuGroups({ ...base, mode: 'session', session: { ...base.session, frozen: true } });
-    expect(groups.map(g => [g.title, g.items.map(i => i.id)])).toEqual([
-      ['Context', ['quick-compact']],
-      ['Session', ['unfreeze', 'switch-cli', 'clone-session']],
-    ]);
-  });
-
-  it('labels the toggles by their current state', () => {
-    const items = buildContextMenuItems({ ...base, mode: 'session', session: { locked: true, frozen: false, keepWarm: true, hiddenFromOverview: true } });
-    const label = (id: string) => items.find(i => i.id === id)!.label;
-    expect(label('toggle-lock')).toMatch(/unlock/i);
-    expect(label('toggle-keep-warm')).toMatch(/stop/i);
-    expect(label('toggle-overview')).toMatch(/show/i);
-  });
-
-  it('the terminal menu keeps its text actions for a normal session', () => {
-    expect(ids({ mode: 'terminal', hasSelection: true })).toContain('copy');
+  it('disables session-targeted actions when the selected target no longer exists', () => {
+    const missing = groups({ targetSessionId: null });
+    for (const id of ['quick-compact', 'editor', 'prompts', 'drafts', 'clone-session', 'switch-cli', 'rename-session', 'move-to-group']) {
+      expect(findItem(missing, id).enabled).toBe(false);
+    }
+    expect(findItem(missing, 'new-session').enabled).toBe(true);
   });
 });

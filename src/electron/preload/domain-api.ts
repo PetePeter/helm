@@ -5,6 +5,7 @@ import type { DraftPrompt, SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
+import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
@@ -97,6 +98,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
    * display slot and focus the owning session's window.
    */
   sessionRequestFocusSlot: (slot: number) => ipcRenderer.invoke('session:requestFocusSlot', slot),
+
+  /** Forward an action from a popped-out terminal to the main window's shared UI. */
+  sessionDispatchContextMenuAction: (action: ContextMenuAction): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('session:dispatchContextMenuAction', action),
 
   /**
    * Raise the window that owns a session (main or a child popout).
@@ -532,6 +537,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: Electron.IpcRendererEvent, slot: number) => callback(slot);
     ipcRenderer.on('session:focusSlot', listener);
     return () => ipcRenderer.removeListener('session:focusSlot', listener);
+  },
+
+  /** Subscribe to context-menu actions forwarded from snapped-out windows. */
+  onContextMenuAction: (callback: (action: ContextMenuAction) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, action: ContextMenuAction) => callback(action);
+    ipcRenderer.on('session:contextMenuAction', listener);
+    return () => ipcRenderer.removeListener('session:contextMenuAction', listener);
   },
 
   /**

@@ -760,9 +760,9 @@ describe('ContextMenu.vue', () => {
       props: {
         visible: true,
         hasSelection: false,
-        hasActiveSession: true,
-        hasSequences: true,
-        hasDrafts: true,
+        targetSessionId: 'session-1',
+        selectedText: 'captured text',
+        position: null,
         isSnappedOut: false,
         ...props,
       },
@@ -771,51 +771,78 @@ describe('ContextMenu.vue', () => {
     });
   }
 
-  it('renders all menu items', () => {
+  it('renders shared groups with a source-specific accessible name', () => {
     const w = factory();
     const items = w.findAll('.context-menu-item');
-    expect(items.length).toBeGreaterThanOrEqual(8);
+    expect(items.map(item => item.text().replace(/^\d+\s*/, ''))).toEqual([
+      '› Context', '› Compose', '› Session', '› Cursor', '✖ Cancel',
+    ]);
+    expect(w.find('[role="menu"]').attributes('aria-label')).toBe('Terminal actions');
     w.unmount();
   });
 
-  it('disables copy when no selection', () => {
+  it('disables copy when no selection', async () => {
     const w = factory({ hasSelection: false });
+    await w.find('[data-action="group:Cursor"]').trigger('click');
     const copyItem = w.find('[data-action="copy"]');
     expect(copyItem.classes()).toContain('context-menu-item--disabled');
     w.unmount();
   });
 
-  it('enables copy when has selection', () => {
+  it('enables copy when a selection was captured', async () => {
     const w = factory({ hasSelection: true });
+    await w.find('[data-action="group:Cursor"]').trigger('click');
     const copyItem = w.find('[data-action="copy"]');
     expect(copyItem.classes()).not.toContain('context-menu-item--disabled');
     w.unmount();
   });
 
-  it('disables paste when no active session', () => {
-    const w = factory({ hasActiveSession: false });
+  it('disables paste when the target session no longer exists', async () => {
+    const w = factory({ targetSessionId: null });
+    await w.find('[data-action="group:Cursor"]').trigger('click');
     const pasteItem = w.find('[data-action="paste"]');
     expect(pasteItem.classes()).toContain('context-menu-item--disabled');
     w.unmount();
   });
 
-  it('gamepad D-pad down skips disabled items', () => {
-    const w = factory({ hasSelection: false }); // Copy disabled
+  it('gamepad D-pad down skips disabled items inside the Cursor group', async () => {
+    const w = factory({ hasSelection: false });
+    await w.find('[data-action="group:Cursor"]').trigger('click');
     const vm = w.vm as any;
-    // First enabled item should be selected (Paste at index 1)
-    expect(vm.selectedIndex).toBe(1); // skip disabled Copy
+    expect(vm.selectedIndex).toBe(1);
     vm.handleButton('DPadDown');
-    expect(vm.selectedIndex).toBe(2); // Editor
+    expect(vm.selectedIndex).toBe(3);
     w.unmount();
   });
 
-  it('gamepad A executes action and emits', () => {
+  it('keeps management actions in frozen menus while disabling delivery actions', async () => {
+    const w = factory({
+      mode: 'session',
+      hasSelection: true,
+      sessionFlags: { locked: false, frozen: true, keepWarm: false, hiddenFromOverview: false },
+    });
+    expect(w.find('[data-action="group:Cursor"]').exists()).toBe(false);
+    await w.find('[data-action="group:Session"]').trigger('click');
+    expect(w.find('[data-action="toggle-freeze"]').text()).toMatch(/unfreeze/i);
+    expect(w.find('[data-action="rename-session"]').attributes('aria-disabled')).toBe('false');
+    expect(w.find('[data-action="move-to-group"]').attributes('aria-disabled')).toBe('false');
+    await w.find('[data-action="back"]').trigger('click');
+    await w.find('[data-action="group:Compose"]').trigger('click');
+    for (const id of ['editor', 'prompts', 'drafts']) {
+      expect(w.find(`[data-action="${id}"]`).attributes('aria-disabled')).toBe('true');
+    }
+    w.unmount();
+  });
+
+  it('gamepad A emits target and captured selection with the action', async () => {
     const w = factory();
+    await w.find('[data-action="group:Session"]').trigger('click');
     const vm = w.vm as any;
-    // Navigate to "New Session" which is always enabled
-    vm.selectedIndex = 3; // new-session
+    vm.selectedIndex = vm.menuItems.findIndex((item: { id: string }) => item.id === 'new-session');
     vm.handleButton('A');
-    expect(w.emitted('action')?.[0]).toEqual(['new-session']);
+    expect(w.emitted('action')?.[0]).toEqual([{
+      id: 'new-session', targetSessionId: 'session-1', selectedText: 'captured text',
+    }]);
     w.unmount();
   });
 
@@ -836,16 +863,20 @@ describe('ContextMenu.vue', () => {
     w.unmount();
   });
 
-  it('click on enabled item emits action', async () => {
+  it('clicking a session action emits the same action payload', async () => {
     const w = factory();
+    await w.find('[data-action="group:Session"]').trigger('click');
     const newSession = w.find('[data-action="new-session"]');
     await newSession.trigger('click');
-    expect(w.emitted('action')?.[0]).toEqual(['new-session']);
+    expect(w.emitted('action')?.[0]).toEqual([{
+      id: 'new-session', targetSessionId: 'session-1', selectedText: 'captured text',
+    }]);
     w.unmount();
   });
 
   it('click on disabled item does nothing', async () => {
     const w = factory({ hasSelection: false });
+    await w.find('[data-action="group:Cursor"]').trigger('click');
     const copyItem = w.find('[data-action="copy"]');
     await copyItem.trigger('click');
     expect(w.emitted('action')).toBeUndefined();

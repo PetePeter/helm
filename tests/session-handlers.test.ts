@@ -86,6 +86,7 @@ function createMockDraftManager(): DraftManager {
 function createMockWindowManager(): WindowManager {
   const mainWindow = {
     isDestroyed: vi.fn(() => false),
+    focus: vi.fn(),
     webContents: { send: vi.fn() },
   };
   return {
@@ -183,6 +184,31 @@ describe('session:close IPC handler', () => {
 
     expect(sessionManager.setActiveSession).toHaveBeenCalledWith('sess-1');
     expect(windowManager.focusWindowForSession).toHaveBeenCalledWith('sess-1');
+  });
+
+  it('forwards a popped-out context-menu action to the focused main window', async () => {
+    setup({
+      'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 },
+    });
+
+    const action = { id: 'drafts', targetSessionId: 'sess-1', selectedText: '' };
+    const handler = electronMockState.handlers.get('session:dispatchContextMenuAction')!;
+    const result = await handler({}, action);
+
+    expect(result).toEqual({ success: true });
+    expect((windowManager.getMainWindow as any)().focus).toHaveBeenCalledOnce();
+    expect(mainWindowSend).toHaveBeenCalledWith('session:contextMenuAction', action);
+  });
+
+  it('rejects context-menu actions with missing targets or unknown sessions', async () => {
+    setup();
+    const handler = electronMockState.handlers.get('session:dispatchContextMenuAction')!;
+
+    expect(handler({}, { id: 'drafts', targetSessionId: null, selectedText: '' }))
+      .toEqual({ success: false, error: 'Context-menu action requires a target session' });
+    expect(handler({}, { id: 'drafts', targetSessionId: 'missing', selectedText: '' }))
+      .toEqual({ success: false, error: 'Session not found' });
+    expect(mainWindowSend).not.toHaveBeenCalled();
   });
 
   it('creates snap-out windows without parenting them to the main window', async () => {

@@ -25,9 +25,11 @@ import { createNumberKeyHandlers } from '../../keyboard/handlers/number-keys.js'
 import { useAppStore } from '../../stores/app.js';
 import { useChipBarStore } from '../../stores/chip-bar.js';
 import { deliverBulkText } from '../../paste-handler.js';
-import { deliverPromptSequence } from '../../sequence-delivery.js';
 import { contextMenu } from '../../stores/modal-bridge.js';
-import { usePromptApplyFlow } from '../../composables/usePromptApplyFlow.js';
+import { sessionsState } from '../../screens/sessions-state.js';
+import { isSessionHiddenFromOverview } from '../../session-groups.js';
+import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
+import type { ContextMenuAction } from '../../../src/types/context-menu.js';
 import TerminalChips from '../chips/TerminalChips.vue';
 import MissionBar from './MissionBar.vue';
 import ContextMenu from '../modals/ContextMenu.vue';
@@ -39,9 +41,22 @@ import { cliTypeWantsMouseTracking } from '../../utils.js';
 const appStore = useAppStore();
 const chipBarStore = useChipBarStore();
 const containerRef = ref<HTMLElement | null>(null);
+const runtimeGroups = useRuntimeGroups();
+runtimeGroups.ensureSubscribed();
 
 /** The pinned session. Reading it live keeps every pane on one source of truth. */
 const sessionId = computed(() => appStore.state.activeSessionId ?? '');
+const currentGroupName = computed(() => runtimeGroups.groups.value
+  .find(group => group.sessionIds.includes(sessionId.value))?.name ?? null);
+const sessionFlags = computed(() => {
+  const session = appStore.state.sessions.find(item => item.id === sessionId.value);
+  return {
+    locked: !!session?.locked,
+    frozen: !!session?.frozen,
+    keepWarm: !!session?.keepWarmUntil && session.keepWarmUntil > Date.now(),
+    hiddenFromOverview: session ? isSessionHiddenFromOverview(session, sessionsState.groupPrefs) : false,
+  };
+});
 
 let view: TerminalView | null = null;
 let unsubData: (() => void) | null = null;
@@ -57,8 +72,6 @@ let unmounted = false;
 /** Held past unmount: Vue clears the template ref before `onUnmounted` runs. */
 let container: HTMLElement | null = null;
 
-
-const { openPromptPicker } = usePromptApplyFlow(() => sessionId.value);
 
 async function getEscProtectionEnabled(): Promise<boolean> {
   try { return await configClient.configGetEscProtectionEnabled(); }
@@ -108,33 +121,25 @@ function onContextMenuOpen(event: MouseEvent): void {
   contextMenu.selectedText = view?.getSelection() ?? '';
   contextMenu.hasSelection = view?.hasSelection() ?? false;
   contextMenu.sourceSessionId = sessionId.value;
+  contextMenu.mode = 'terminal';
+  contextMenu.position = { x: event.clientX, y: event.clientY };
   contextMenu.visible = true;
 }
 
-async function onContextMenuAction(action: string): Promise<void> {
+async function onContextMenuAction(action: ContextMenuAction): Promise<void> {
   contextMenu.visible = false;
-  const id = sessionId.value;
-  switch (action) {
-    case 'copy': {
-      const text = view?.getSelection() ?? '';
-      if (text) navigator.clipboard.writeText(text);
-      break;
-    }
-    case 'paste':
-      navigator.clipboard.readText().then((text) => { if (text) void deliverBulkText(id, text); });
-      break;
-    case 'editor': {
-      const { showEditorPopup } = await import('../../editor/editor-popup.js');
-      showEditorPopup((text) => { void deliverPromptSequence(id, text); });
-      break;
-    }
-    case 'prompts':
-      void openPromptPicker();
-      break;
-    case 'snap-back':
-      void snapBack();
-      break;
+  if (action.id === 'copy') {
+    if (action.selectedText) navigator.clipboard.writeText(action.selectedText);
+    return;
   }
+  if (action.id === 'paste') {
+    const text = await navigator.clipboard.readText();
+    if (text && action.targetSessionId) void deliverBulkText(action.targetSessionId, text);
+    return;
+  }
+
+  const result = await sessionsClient.sessionDispatchContextMenuAction(action);
+  if (!result?.success) console.error('[ContextMenu] Failed to dispatch action to main window:', result?.error);
 }
 
 /** Release PTY ownership before the main window re-adopts the session. */
@@ -254,10 +259,13 @@ defineExpose({ snapBack });
     <ContextMenu
       v-model:visible="contextMenu.visible"
       :has-selection="contextMenu.hasSelection"
-      :has-active-session="true"
-      :has-sequences="false"
-      :has-drafts="false"
+      :target-session-id="sessionId || null"
+      :selected-text="contextMenu.selectedText"
+      :position="contextMenu.position"
       :is-snapped-out="true"
+      :current-group-name="currentGroupName"
+      :mode="contextMenu.mode"
+      :session-flags="sessionFlags"
       @action="onContextMenuAction"
       @cancel="onContextMenuCancel"
     />

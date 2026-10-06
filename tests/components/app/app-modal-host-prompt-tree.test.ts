@@ -21,10 +21,11 @@ import type { TreeNode } from '../../../src/session/prompt-template-manager.js';
 
 const BASE_PROPS = {
   cliTypes: ['claude'],
-  hasActiveSession: false,
-  hasSequences: false,
-  hasDrafts: false,
-  isActiveSessionSnappedOut: false,
+  contextMenuTargetSessionId: null,
+  contextMenuSelectedText: '',
+  contextMenuHasSelection: false,
+  contextMenuPosition: null,
+  contextMenuIsSnappedOut: false,
   bindingEditorVisible: false,
   bindingEditorButton: '',
   bindingEditorProfileName: '',

@@ -91,6 +91,21 @@ describe('usePromptApplyFlow', () => {
     expect(mockShowEditorPopup.mock.calls[0][1]).toBe('nine');
   });
 
+  it('keeps the session captured when the picker opened through the later edit and send', async () => {
+    mockGetNode.mockResolvedValue({ id: 't9', body: 'nine' });
+    let activeSessionId = 'initial-session';
+    const { openPromptPicker } = usePromptApplyFlow(() => activeSessionId);
+    await openPromptPicker('row-session');
+    activeSessionId = 'newly-active-session';
+
+    const onSelect = mockShowPromptTree.mock.calls[0][0] as (id: string) => void;
+    await onSelect('t9');
+    const onSend = mockShowEditorPopup.mock.calls[0][0] as (text: string) => void;
+    onSend('prompt');
+
+    expect(mockDeliver).toHaveBeenCalledWith('row-session', 'prompt');
+  });
+
   it('handlePromptTreeSelect fires the registered picker callback then hides', () => {
     const cb = vi.fn();
     mockGetCb.mockReturnValue(cb);

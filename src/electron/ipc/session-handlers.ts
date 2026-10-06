@@ -11,6 +11,7 @@ import type { DraftManager } from '../../session/draft-manager.js';
 import type { WindowManager } from '../window-manager.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionInfo } from '../../types/session.js';
+import { CONTEXT_MENU_ACTION_IDS, type ContextMenuAction } from '../../types/context-menu.js';
 import { resolveWindowIconPath } from '../window-icon.js';
 import { applyNavigationPolicy } from '../navigation-policy.js';
 import { logger } from '../../utils/logger.js';
@@ -91,6 +92,29 @@ export function setupSessionHandlers(
     if (mainWin && !mainWin.isDestroyed()) {
       mainWin.webContents.send('session:focusSlot', slot);
     }
+    return { success: true };
+  });
+
+  ipcMain.handle('session:dispatchContextMenuAction', (_event, value: unknown) => {
+    const action = value as Partial<ContextMenuAction> | null;
+    if (!action || !CONTEXT_MENU_ACTION_IDS.includes(action.id as ContextMenuAction['id'])
+      || typeof action.selectedText !== 'string'
+      || (action.targetSessionId !== null && typeof action.targetSessionId !== 'string')) {
+      return { success: false, error: 'Invalid context-menu action' };
+    }
+    if (action.id !== 'new-session' && !action.targetSessionId) {
+      return { success: false, error: 'Context-menu action requires a target session' };
+    }
+    if (action.targetSessionId && !sessionManager.getSession(action.targetSessionId)) {
+      return { success: false, error: 'Session not found' };
+    }
+
+    const mainWindow = windowManager.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: 'Main window is unavailable' };
+    }
+    mainWindow.focus();
+    mainWindow.webContents.send('session:contextMenuAction', action);
     return { success: true };
   });
 

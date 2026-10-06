@@ -39,13 +39,15 @@ import RuntimeGroupCloseDialog from '../modals/RuntimeGroupCloseDialog.vue';
 import RuntimeGroupMoveSubmenu from '../modals/RuntimeGroupMoveSubmenu.vue';
 import ScheduledTasksTab from '../sidebar/ScheduledTasksTab.vue';
 import ToastNotification from '../ToastNotification.vue';
+import type { ContextMenuAction } from '../../../src/types/context-menu.js';
 
 defineProps<{
   cliTypes: string[];
-  hasActiveSession: boolean;
-  hasSequences: boolean;
-  hasDrafts: boolean;
-  isActiveSessionSnappedOut: boolean;
+  contextMenuTargetSessionId: string | null;
+  contextMenuSelectedText: string;
+  contextMenuHasSelection: boolean;
+  contextMenuPosition?: { x: number; y: number } | null;
+  contextMenuIsSnappedOut: boolean;
   contextMenuGroupName?: string | null;
   contextMenuMode?: 'terminal' | 'session';
   contextMenuSessionFlags?: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
@@ -60,7 +62,7 @@ defineProps<{
 
 const emit = defineEmits<{
   'close-session': [sessionId: string];
-  'context-menu-action': [action: string];
+  'context-menu-action': [action: ContextMenuAction];
   'draft-new-draft': [];
   'draft-apply': [draft: { id: string; text: string }];
   'draft-edit': [draft: { id: string; label: string; text: string }];
@@ -243,11 +245,11 @@ function onRuntimeGroupMoveCancel(): void {
 
   <ContextMenu
     v-model:visible="contextMenu.visible"
-    :has-selection="contextMenu.hasSelection"
-    :has-active-session="hasActiveSession"
-    :has-sequences="hasSequences"
-    :has-drafts="hasDrafts"
-    :is-snapped-out="isActiveSessionSnappedOut"
+    :has-selection="contextMenuHasSelection"
+    :target-session-id="contextMenuTargetSessionId"
+    :selected-text="contextMenuSelectedText"
+    :position="contextMenuPosition"
+    :is-snapped-out="contextMenuIsSnappedOut"
     :current-group-name="contextMenuGroupName ?? null"
     :mode="contextMenuMode"
     :session-flags="contextMenuSessionFlags"

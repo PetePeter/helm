@@ -72,6 +72,7 @@ export const contextMenu = reactive({
   selectedText: '',
   hasSelection: false,
   sourceSessionId: '',
+  position: null as { x: number; y: number } | null,
   /** 'session' = opened from a row's kebab (⋮); 'terminal' = right-click. */
   mode: 'terminal' as 'terminal' | 'session',
 });
@@ -79,6 +80,7 @@ export const contextMenu = reactive({
 export function showContextMenu(
   sessionId: string,
   preCapturedText?: string, preCapturedHasSelection?: boolean,
+  position?: { x: number; y: number },
 ): void {
   let selectedText: string;
   let hasSelection: boolean;
@@ -96,15 +98,17 @@ export function showContextMenu(
   contextMenu.selectedText = selectedText;
   contextMenu.hasSelection = hasSelection;
   contextMenu.sourceSessionId = sessionId;
+  contextMenu.position = position ?? null;
 }
 
 /** The session row's kebab (⋮): the same menu, with the session's own actions. */
-export function showSessionMenu(sessionId: string): void {
+export function showSessionMenu(sessionId: string, position?: { x: number; y: number }): void {
   contextMenu.visible = true;
   contextMenu.mode = 'session';
   contextMenu.selectedText = '';
   contextMenu.hasSelection = false;
   contextMenu.sourceSessionId = sessionId;
+  contextMenu.position = position ?? null;
 }
 
 export function hideContextMenu(): void {

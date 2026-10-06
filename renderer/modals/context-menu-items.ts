@@ -1,11 +1,6 @@
-/**
- * The items a session menu offers. `session` mode is the row's kebab (⋮) — the
- * session's own actions, which used to be row buttons; `terminal` mode is the
- * right-click menu over a terminal, which adds the text actions.
- *
- * A frozen session takes no input, so in either mode it offers only what works
- * without typing into it (Quick Compact thaws it first) plus the way out.
- */
+import type { ContextMenuAction } from '../../src/types/context-menu.js';
+
+/** Shared desktop session actions, with terminal-only cursor actions. */
 
 export interface ContextMenuItem {
   id: string;
@@ -15,85 +10,77 @@ export interface ContextMenuItem {
 
 export interface ContextMenuContext {
   mode: 'terminal' | 'session';
+  targetSessionId: string | null;
   hasSelection: boolean;
-  hasActiveSession: boolean;
   isSnappedOut: boolean;
-  /** Name of the runtime group the session is in, or null when ungrouped. */
+  /** Name of the runtime group the target session is in, or null when ungrouped. */
   currentGroupName: string | null;
   session: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
 }
 
-export interface SessionContextMenuGroup {
+export interface ContextMenuGroup {
   title: string;
   items: ContextMenuItem[];
 }
 
-const CANCEL: ContextMenuItem = { id: 'cancel', label: '✖ Cancel', enabled: true };
+export type { ContextMenuAction };
 
-const QUICK_COMPACT: ContextMenuItem = { id: 'quick-compact', label: '🗜️ Quick Compact', enabled: true };
-const CLONE: ContextMenuItem = { id: 'clone-session', label: '🧬 Clone', enabled: true };
-const SWITCH_CLI: ContextMenuItem = { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: true };
-
-function transcriptActions(enabled: boolean): ContextMenuItem[] {
-  return [QUICK_COMPACT, CLONE, SWITCH_CLI].map(item => ({ ...item, enabled }));
-}
-
-function groupActions(ctx: ContextMenuContext): ContextMenuItem[] {
+function buildSessionControls(ctx: ContextMenuContext): ContextMenuItem[] {
+  const hasTarget = !!ctx.targetSessionId;
+  const s = ctx.session;
   return [
-    { id: 'move-to-group', label: '🗂️ Move to group…', enabled: ctx.hasActiveSession },
+    { id: 'new-session', label: '🆕 New Session', enabled: true },
+    { id: 'rename-session', label: '✎ Rename', enabled: hasTarget },
+    { id: 'switch-cli', label: '🔀 Switch CLI…', enabled: hasTarget },
+    { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: hasTarget },
+    { id: 'toggle-freeze', label: s.frozen ? '🔥 Unfreeze' : '❄️ Freeze', enabled: hasTarget },
+    { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: hasTarget },
+    { id: 'toggle-overview', label: s.hiddenFromOverview ? '👁 Show in overview' : '👁‍🗨 Hide from overview', enabled: hasTarget },
+    { id: 'move-to-group', label: '🗂️ Move to group…', enabled: hasTarget },
     {
       id: 'remove-from-group',
       label: ctx.currentGroupName ? `↩ Remove from “${ctx.currentGroupName}”` : '↩ Remove from group',
-      enabled: ctx.hasActiveSession && !!ctx.currentGroupName,
+      enabled: hasTarget && !!ctx.currentGroupName,
     },
+    { id: 'clone-session', label: '🧬 Clone', enabled: hasTarget },
+    { id: 'snap-out', label: '📤 Snap Out', enabled: hasTarget && !ctx.isSnappedOut },
+    { id: 'snap-back', label: '📥 Snap Back', enabled: hasTarget && ctx.isSnappedOut },
   ];
 }
 
 /**
- * The desktop session-row menu, grouped and ordered like the Android session
- * sheet: array order is display order. The sheet's Chat group has no desktop
- * counterpart — its actions live on the terminal itself.
+ * Both desktop entry points use the same ordered groups. The session row menu
+ * omits only Cursor, since those actions need a terminal selection or caret.
  */
-export function buildSessionContextMenuGroups(ctx: ContextMenuContext): SessionContextMenuGroup[] {
-  const s = ctx.session;
-  const sessionItems = s.frozen
-    ? [{ id: 'unfreeze', label: '🔥 Unfreeze', enabled: true }, SWITCH_CLI, CLONE]
-    : [
-        { id: 'rename-session', label: '✎ Rename', enabled: true },
-        SWITCH_CLI,
-        { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: true },
-        { id: 'toggle-freeze', label: '❄️ Freeze', enabled: true },
-        { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: true },
-        { id: 'toggle-overview', label: s.hiddenFromOverview ? '👁 Show in overview' : '👁‍🗨 Hide from overview', enabled: true },
-        ...groupActions(ctx),
-        CLONE,
-      ];
-  return [
-    { title: 'Context', items: [QUICK_COMPACT] },
-    { title: 'Session', items: sessionItems },
+export function buildContextMenuGroups(ctx: ContextMenuContext): ContextMenuGroup[] {
+  const hasTarget = !!ctx.targetSessionId;
+  const canType = hasTarget && !ctx.session.frozen;
+  const groups: ContextMenuGroup[] = [
+    {
+      title: 'Context',
+      items: [{ id: 'quick-compact', label: '🗜️ Quick Compact', enabled: hasTarget }],
+    },
+    {
+      title: 'Compose',
+      items: [
+        { id: 'editor', label: '📝 Compose in Editor', enabled: canType },
+        { id: 'prompts', label: '⚡ Prompts…', enabled: canType },
+        { id: 'drafts', label: '📝 Drafts…', enabled: canType },
+      ],
+    },
+    { title: 'Session', items: buildSessionControls(ctx) },
   ];
-}
 
-export function buildContextMenuItems(ctx: ContextMenuContext): ContextMenuItem[] {
-  const s = ctx.session;
-  if (s.frozen) {
-    return [{ id: 'unfreeze', label: '🔥 Unfreeze', enabled: true }, ...transcriptActions(true), CANCEL];
+  if (ctx.mode === 'terminal') {
+    groups.push({
+      title: 'Cursor',
+      items: [
+        { id: 'copy', label: '📋 Copy', enabled: ctx.hasSelection },
+        { id: 'paste', label: '📎 Paste', enabled: canType },
+        { id: 'new-session-with-selection', label: '📌 New Session with Selection', enabled: ctx.hasSelection },
+      ],
+    });
   }
-  if (ctx.mode === 'session') {
-    return [...buildSessionContextMenuGroups(ctx).flatMap(group => group.items), CANCEL];
-  }
-  return [
-    { id: 'copy', label: '📋 Copy', enabled: ctx.hasSelection },
-    { id: 'paste', label: '📎 Paste', enabled: ctx.hasActiveSession },
-    { id: 'editor', label: '📝 Compose in Editor', enabled: ctx.hasActiveSession },
-    { id: 'new-session', label: '🆕 New Session', enabled: true },
-    { id: 'new-session-with-selection', label: '📌 New Session with Selection', enabled: ctx.hasSelection },
-    { id: 'prompts', label: '⚡ Prompts…', enabled: ctx.hasActiveSession },
-    { id: 'drafts', label: '📝 Drafts…', enabled: ctx.hasActiveSession },
-    ...transcriptActions(ctx.hasActiveSession),
-    ...groupActions(ctx),
-    { id: 'snap-out', label: '📤 Snap Out', enabled: ctx.hasActiveSession && !ctx.isSnappedOut },
-    { id: 'snap-back', label: '📥 Snap Back', enabled: ctx.isSnappedOut },
-    CANCEL,
-  ];
+
+  return groups;
 }

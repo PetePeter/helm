@@ -42,6 +42,7 @@ describe('Context Menu (modal-bridge)', () => {
     Object.assign(bridge.contextMenu, {
       visible: false,
       selectedText: '', hasSelection: false, sourceSessionId: '',
+      position: null, mode: 'terminal',
     });
     mockGetTerminalManager.mockReturnValue(makeMockTerminalManager());
   });
@@ -51,10 +52,23 @@ describe('Context Menu (modal-bridge)', () => {
     vi.clearAllMocks();
   });
 
-  it('showContextMenu sets bridge state', () => {
-    bridge.showContextMenu('sess-1');
+  it('showContextMenu sets terminal source, selection, and pointer position', () => {
+    bridge.showContextMenu('sess-1', 'captured', true, { x: 20, y: 40 });
     expect(bridge.contextMenu.visible).toBe(true);
     expect(bridge.contextMenu.sourceSessionId).toBe('sess-1');
+    expect(bridge.contextMenu.mode).toBe('terminal');
+    expect(bridge.contextMenu.selectedText).toBe('captured');
+    expect(bridge.contextMenu.position).toEqual({ x: 20, y: 40 });
+  });
+
+  it('showSessionMenu resets terminal-only state and records its trigger position', () => {
+    bridge.showContextMenu('sess-terminal', 'old selection', true, { x: 1, y: 2 });
+    bridge.showSessionMenu('sess-row', { x: 30, y: 50 });
+    expect(bridge.contextMenu.mode).toBe('session');
+    expect(bridge.contextMenu.sourceSessionId).toBe('sess-row');
+    expect(bridge.contextMenu.selectedText).toBe('');
+    expect(bridge.contextMenu.hasSelection).toBe(false);
+    expect(bridge.contextMenu.position).toEqual({ x: 30, y: 50 });
   });
 
   it('hideContextMenu clears visibility', () => {

@@ -73,6 +73,7 @@ import {
 } from './plans/plan-screen.js';
 import { deliverBulkText } from './paste-handler.js';
 import { deliverPromptSequence } from './sequence-delivery.js';
+import type { ContextMenuAction } from '../src/types/context-menu.js';
 
 // Docking workspace — every view/tool window is resolved through the registry.
 import { provideHelmPaneContext } from './dock-pane-context.js';
@@ -365,6 +366,7 @@ const {
 let unsubSnapOut: (() => void) | null = null;
 let unsubSnapBack: (() => void) | null = null;
 let unsubFocusSlot: (() => void) | null = null;
+let unsubContextMenuAction: (() => void) | null = null;
 let unsubLlmNotify: (() => void) | null = null;
 let unsubFlashAttention: (() => void) | null = null;
 let unsubAppCloseRequest: (() => void) | null = null;
@@ -499,19 +501,16 @@ const planWorkspaceController = usePlanWorkspaceController();
 // Computed props for components
 // ============================================================================
 
-const hasActiveSession = computed(() => !!state.activeSessionId);
-
 // Runtime group name for the session the context menu targets (null when ungrouped).
 const contextMenuGroupName = computed<string | null>(() => {
-  const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+  const sessionId = contextMenu.sourceSessionId || null;
   if (!sessionId) return null;
   return runtimeGroupActions.groupOfSession(sessionId)?.name ?? null;
 });
 
-
-/** The menu's target session and its toggles (labels + the frozen short list). */
+/** The menu's target session and its state-dependent labels/actions. */
 const contextMenuSession = computed(() => {
-  const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
+  const sessionId = contextMenu.sourceSessionId || null;
   return sessionId ? state.sessions.find(s => s.id === sessionId) ?? null : null;
 });
 const contextMenuSessionFlags = computed(() => {
@@ -524,10 +523,9 @@ const contextMenuSessionFlags = computed(() => {
   };
 });
 
-const hasDrafts = computed(() => {
-  if (!state.activeSessionId) return false;
-  return (state.draftCounts.get(state.activeSessionId) ?? 0) > 0;
-});
+const contextMenuIsSnappedOut = computed(() =>
+  !!contextMenu.sourceSessionId && state.snappedOutSessions.has(contextMenu.sourceSessionId),
+);
 
 watch(() => activeView.value, (view) => {
   if (view === 'overview') {
@@ -649,15 +647,15 @@ async function runTranscriptAction(pending: Promise<{ success: boolean; error?: 
 }
 
 // Context menu
-function onContextMenuAction(action: string): void {
+const draftSubmenuSessionId = ref<string | null>(null);
+
+function onContextMenuAction(action: ContextMenuAction): void {
   contextMenu.visible = false;
-  const target = contextMenuSession.value;
-  switch (action) {
+  const sessionId = action.targetSessionId;
+  const target = sessionId ? state.sessions.find(s => s.id === sessionId) ?? null : null;
+  switch (action.id) {
     case 'rename-session':
-      if (target) startRename(target.id);
-      break;
-    case 'unfreeze':
-      if (target) void setSessionFrozen(target.id, false);
+      if (sessionId) startRename(sessionId);
       break;
     case 'toggle-freeze':
       if (target) void setSessionFrozen(target.id, !target.frozen);
@@ -672,20 +670,18 @@ function onContextMenuAction(action: string): void {
       if (target) void toggleSessionOverviewVisibility(target.id);
       break;
     case 'copy': {
-      const text = contextMenu.selectedText;
+      const text = action.selectedText;
       if (text) navigator.clipboard.writeText(text);
       break;
     }
     case 'paste':
       navigator.clipboard.readText().then(text => {
-        if (text && state.activeSessionId) {
-          void deliverBulkText(state.activeSessionId, text);
-        }
+        if (text && sessionId) void deliverBulkText(sessionId, text);
       });
       break;
     case 'editor':
       void showEditorPopup((text) => {
-        if (state.activeSessionId) void deliverPromptSequence(state.activeSessionId, text);
+        if (sessionId) void deliverPromptSequence(sessionId, text);
       });
       break;
     case 'new-session':
@@ -695,36 +691,33 @@ function onContextMenuAction(action: string): void {
       });
       break;
     case 'new-session-with-selection': {
-      const selText = contextMenu.selectedText;
-      setPendingContextText(selText || null);
+      setPendingContextText(action.selectedText || null);
       openQuickSpawn((cliType) => {
         onSpawn(cliType);
       });
       break;
     }
     case 'prompts':
-      void openPromptPicker();
+      if (sessionId) void openPromptPicker(sessionId);
       break;
     case 'drafts':
-      if (state.activeSessionId) {
-        void draftsClient.draftList(state.activeSessionId).then(drafts => {
+      if (sessionId) {
+        draftSubmenuSessionId.value = sessionId;
+        void draftsClient.draftList(sessionId).then(drafts => {
           draftSubmenu.visible = true;
           draftSubmenu.items = [...(drafts ?? [])];
         });
       }
       break;
     case 'quick-compact': {
-      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Quick compact');
       break;
     }
     case 'clone-session': {
-      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) void runTranscriptAction(sessionsClient.sessionClone(sessionId), 'Clone');
       break;
     }
     case 'switch-cli': {
-      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) {
         openQuickSpawn((cliType) => {
           void runTranscriptAction(sessionsClient.sessionSwitchCli(sessionId, cliType), 'Switch CLI');
@@ -733,7 +726,6 @@ function onContextMenuAction(action: string): void {
       break;
     }
     case 'move-to-group': {
-      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) {
         const current = runtimeGroupActions.groupOfSession(sessionId);
         openRuntimeGroupMoveSubmenu(
@@ -745,17 +737,14 @@ function onContextMenuAction(action: string): void {
       break;
     }
     case 'remove-from-group': {
-      const sessionId = contextMenu.sourceSessionId || state.activeSessionId;
       if (sessionId) void runtimeGroupActions.removeFromGroup(sessionId);
       break;
     }
     case 'snap-out':
-      if (state.activeSessionId) void onSessionSnapOut(state.activeSessionId);
+      if (sessionId) void onSessionSnapOut(sessionId);
       break;
     case 'snap-back':
-      if (state.activeSessionId) void onSessionSnapBack(state.activeSessionId);
-      break;
-    case 'cancel':
+      if (sessionId) void onSessionSnapBack(sessionId);
       break;
   }
 }
@@ -819,22 +808,25 @@ async function onScheduledTaskCancelled(taskId: string): Promise<void> {
 // Draft submenu actions
 function onDraftNewDraft(): void {
   draftSubmenu.visible = false;
-  if (!state.activeSessionId) return;
-  openDraftEditor(state.activeSessionId);
+  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
+  if (!sessionId) return;
+  openDraftEditor(sessionId);
 }
 
 async function onDraftSubmenuApply(draft: { id: string; text: string }): Promise<void> {
   draftSubmenu.visible = false;
-  if (state.activeSessionId && draft.text) {
-    void deliverPromptSequence(state.activeSessionId, draft.text);
+  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
+  if (sessionId && draft.text) {
+    void deliverPromptSequence(sessionId, draft.text);
   }
   await draftsClient.draftDelete(draft.id);
 }
 
 function onDraftSubmenuEdit(draft: { id: string; label: string; text: string }): void {
   draftSubmenu.visible = false;
-  if (!state.activeSessionId) return;
-  openDraftEditor(state.activeSessionId, draft);
+  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
+  if (!sessionId) return;
+  openDraftEditor(sessionId, draft);
 }
 
 async function onDraftSubmenuDelete(draft: { id: string }): Promise<void> {
@@ -1037,6 +1029,15 @@ onMounted(async () => {
         })
       : null;
 
+    unsubContextMenuAction = eventsClient.onContextMenuAction
+      ? eventsClient.onContextMenuAction((action: ContextMenuAction) => {
+          contextMenu.sourceSessionId = action.targetSessionId;
+          contextMenu.selectedText = action.selectedText;
+          contextMenu.hasSelection = !!action.selectedText;
+          onContextMenuAction(action);
+        })
+      : null;
+
     // LLM notification IPC listener
     unsubLlmNotify = eventsClient.onLlmNotify
       ? eventsClient.onLlmNotify(({ sessionId, title, content }) => {
@@ -1107,6 +1108,8 @@ onUnmounted(() => {
   unsubSnapBack = null;
   unsubFocusSlot?.();
   unsubFocusSlot = null;
+  unsubContextMenuAction?.();
+  unsubContextMenuAction = null;
   unsubLlmNotify?.();
   unsubLlmNotify = null;
   unsubFlashAttention?.();
@@ -1321,10 +1324,11 @@ onUnmounted(() => {
 
     <AppModalHost
       :cli-types="state.cliTypes"
-      :has-active-session="hasActiveSession"
-      :has-sequences="false"
-      :has-drafts="hasDrafts"
-      :is-active-session-snapped-out="state.activeSessionId ? state.snappedOutSessions.has(state.activeSessionId) : false"
+      :context-menu-target-session-id="contextMenu.sourceSessionId || null"
+      :context-menu-selected-text="contextMenu.selectedText"
+      :context-menu-has-selection="contextMenu.hasSelection"
+      :context-menu-position="contextMenu.position"
+      :context-menu-is-snapped-out="contextMenuIsSnappedOut"
       :context-menu-group-name="contextMenuGroupName"
       :context-menu-mode="contextMenu.mode"
       :context-menu-session-flags="contextMenuSessionFlags"

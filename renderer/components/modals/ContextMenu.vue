@@ -1,59 +1,54 @@
 <script setup lang="ts">
-/**
- * Context menu overlay — the terminal's right-click menu and the session row's
- * kebab (⋮). Items come from buildContextMenuItems (renderer/modals/context-menu-items.ts).
- * Gamepad D-pad up/down navigates (skipping disabled items), A executes, B cancels.
- */
-import { ref, watch, computed } from 'vue';
+/** Shared, grouped desktop actions for a session row or terminal surface. */
+import { computed, nextTick, ref, watch } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { toDirection } from '../../utils.js';
 import { jumpKeyLabel, jumpButtonToPosition } from '../../utils/jump-keys.js';
-import { buildContextMenuItems, buildSessionContextMenuGroups, type ContextMenuContext, type ContextMenuItem } from '../../modals/context-menu-items.js';
+import { buildContextMenuGroups, type ContextMenuContext, type ContextMenuItem } from '../../modals/context-menu-items.js';
+import type { ContextMenuAction } from '../../../src/types/context-menu.js';
 
 const MODAL_ID = 'context-menu';
 
 const props = defineProps<{
   visible: boolean;
   hasSelection: boolean;
-  hasActiveSession: boolean;
-  hasSequences: boolean;
-  hasDrafts: boolean;
+  targetSessionId: string | null;
+  selectedText?: string;
   isSnappedOut: boolean;
-  /** Name of the runtime group the context session is in, or null when ungrouped. */
   currentGroupName?: string | null;
-  /** 'session' = the row kebab; 'terminal' (default) = right-click on the terminal. */
   mode?: ContextMenuContext['mode'];
-  /** The context session's toggles, which pick labels and the frozen short list. */
   sessionFlags?: ContextMenuContext['session'];
+  position?: { x: number; y: number } | null;
 }>();
 
 const emit = defineEmits<{
-  (e: 'action', action: string): void;
+  (e: 'action', action: ContextMenuAction): void;
   (e: 'cancel'): void;
   (e: 'update:visible', value: boolean): void;
 }>();
 
 const selectedIndex = ref(0);
 const activeGroup = ref<string | null>(null);
+const menuRef = ref<HTMLElement | null>(null);
+const menuPosition = ref<Record<string, string>>({ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' });
 const modalStack = useModalStack();
 
 const context = computed<ContextMenuContext>(() => ({
   mode: props.mode ?? 'terminal',
+  targetSessionId: props.targetSessionId,
   hasSelection: props.hasSelection,
-  hasActiveSession: props.hasActiveSession,
   isSnappedOut: props.isSnappedOut,
   currentGroupName: props.currentGroupName ?? null,
   session: props.sessionFlags ?? { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
 }));
-const sessionGroups = computed(() => buildSessionContextMenuGroups(context.value).filter(group => group.items.length > 0));
+const groups = computed(() => buildContextMenuGroups(context.value));
 const menuItems = computed<ContextMenuItem[]>(() => {
-  if (context.value.mode !== 'session') return buildContextMenuItems(context.value);
   if (activeGroup.value) {
-    const group = sessionGroups.value.find(item => item.title === activeGroup.value);
-    return [...(group?.items ?? []), { id: 'cancel', label: '‹ Back', enabled: true }];
+    const group = groups.value.find(item => item.title === activeGroup.value);
+    return [...(group?.items ?? []), { id: 'back', label: '‹ Back', enabled: true }];
   }
   return [
-    ...sessionGroups.value.map(group => ({ id: `group:${group.title}`, label: `› ${group.title}`, enabled: true })),
+    ...groups.value.map(group => ({ id: `group:${group.title}`, label: `› ${group.title}`, enabled: true })),
     { id: 'cancel', label: '✖ Cancel', enabled: true },
   ];
 });
@@ -62,7 +57,6 @@ const enabledIndices = computed(() =>
   menuItems.value.map((item, i) => item.enabled ? i : -1).filter(i => i >= 0),
 );
 
-/** Jump-number label per menu index — numbers enabled items in order. */
 const jumpLabels = computed(() => {
   const labels = new Map<number, number>();
   enabledIndices.value.forEach((menuIdx, pos) => {
@@ -72,24 +66,40 @@ const jumpLabels = computed(() => {
   return labels;
 });
 
-watch(() => props.visible, (v) => {
-  if (v) {
-    activeGroup.value = null;
-    // Select first enabled item
-    selectedIndex.value = enabledIndices.value[0] ?? 0;
-    modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
-  } else {
+watch(() => [props.visible, props.mode, props.targetSessionId] as const, async ([visible]) => {
+  activeGroup.value = null;
+  if (!visible) {
     modalStack.pop(MODAL_ID);
+    return;
   }
+  selectedIndex.value = 0;
+  modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
+  await nextTick();
+  positionMenu();
 }, { immediate: true });
+
+function positionMenu(): void {
+  if (!props.position || !menuRef.value) {
+    menuPosition.value = { left: '50%', top: '50%', transform: 'translate(-50%, -50%)' };
+    return;
+  }
+  const rect = menuRef.value.getBoundingClientRect();
+  const margin = 8;
+  let left = props.position.x;
+  let top = props.position.y;
+  if (left + rect.width > window.innerWidth - margin) left -= rect.width;
+  if (top + rect.height > window.innerHeight - margin) top -= rect.height;
+  left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - rect.height - margin));
+  menuPosition.value = { left: `${left}px`, top: `${top}px`, transform: 'none' };
+}
 
 function findNextEnabled(fromIndex: number, direction: 1 | -1): number {
   const indices = enabledIndices.value;
   if (indices.length === 0) return fromIndex;
   const currentPos = indices.indexOf(fromIndex);
   if (currentPos < 0) return indices[0];
-  const nextPos = (currentPos + direction + indices.length) % indices.length;
-  return indices[nextPos];
+  return indices[(currentPos + direction + indices.length) % indices.length];
 }
 
 function handleButton(button: string): boolean {
@@ -111,8 +121,7 @@ function handleButton(button: string): boolean {
       activeGroup.value = null;
       selectedIndex.value = 0;
     } else {
-      emit('cancel');
-      emit('update:visible', false);
+      dismiss();
     }
     return true;
   }
@@ -129,19 +138,28 @@ function executeItem(index: number): void {
   if (!item || !item.enabled) return;
   if (item.id.startsWith('group:')) {
     activeGroup.value = item.id.slice('group:'.length);
-    selectedIndex.value = 0;
+    selectedIndex.value = enabledIndices.value[0] ?? 0;
+    return;
+  }
+  if (item.id === 'back') {
+    activeGroup.value = null;
+    selectedIndex.value = enabledIndices.value[0] ?? 0;
     return;
   }
   if (item.id === 'cancel') {
-    if (activeGroup.value) {
-      activeGroup.value = null;
-      selectedIndex.value = 0;
-      return;
-    }
-    emit('cancel');
-  } else {
-    emit('action', item.id);
+    dismiss();
+    return;
   }
+  emit('action', {
+    id: item.id,
+    targetSessionId: context.value.targetSessionId,
+    selectedText: props.selectedText ?? '',
+  });
+  emit('update:visible', false);
+}
+
+function dismiss(): void {
+  emit('cancel');
   emit('update:visible', false);
 }
 
@@ -152,28 +170,39 @@ defineExpose({ handleButton });
   <Teleport to="body">
     <div
       v-if="visible"
-      class="modal-overlay modal--visible"
-      role="menu"
-      aria-label="Terminal context menu"
+      class="modal-overlay modal--visible context-menu-overlay"
+      @click.self="dismiss"
     >
-      <div class="context-menu">
-        <div v-if="context.mode === 'session' && activeGroup" class="context-menu-header">
-          {{ activeGroup }}
-        </div>
-        <div
+      <div
+        ref="menuRef"
+        class="context-menu"
+        :style="menuPosition"
+        role="menu"
+        :aria-label="`${mode === 'session' ? 'Session' : 'Terminal'} actions${activeGroup ? `: ${activeGroup}` : ''}`"
+      >
+        <div v-if="activeGroup" class="context-menu-header">{{ activeGroup }}</div>
+        <button
           v-for="(item, i) in menuItems"
           :key="item.id"
+          type="button"
+          role="menuitem"
           class="context-menu-item"
           :class="{
             'context-menu-item--selected': i === selectedIndex,
             'context-menu-item--disabled': !item.enabled,
+            'context-menu-item--cancel': item.id === 'cancel' || item.id === 'back',
           }"
           :data-action="item.id"
-          @click="item.enabled && executeItem(i)"
+          :aria-disabled="!item.enabled"
+          :aria-haspopup="item.id.startsWith('group:') ? 'menu' : undefined"
+          :aria-expanded="item.id === `group:${activeGroup}` ? 'true' : undefined"
+          :tabindex="i === selectedIndex ? 0 : -1"
+          :disabled="!item.enabled"
+          @click="executeItem(i)"
         >
           <span v-if="jumpLabels.has(i)" class="jump-key">{{ jumpLabels.get(i) }}</span>
           {{ item.label }}
-        </div>
+        </button>
       </div>
     </div>
   </Teleport>
