@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -353,7 +354,12 @@ fun SessionRow(
                 )
             }
             if (selected && selectedMarkerAtEnd) {
-                Text("←", color = HelmColors.Accent, style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "➜",
+                    color = HelmColors.Accent,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.graphicsLayer(scaleX = -1f),
+                )
             }
         }
         Hairline(color = HelmColors.Separator)
