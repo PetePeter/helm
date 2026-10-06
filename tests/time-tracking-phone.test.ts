@@ -1,9 +1,10 @@
 /** Which phone calls count as the user's time, and where. */
 import { describe, expect, it, vi } from 'vitest';
+import { ipcMain } from 'electron';
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), removeHandler: vi.fn() } }));
 
-import { phoneActivityTarget, timesheetQuery } from '../src/electron/ipc/time-tracking-handlers.js';
+import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from '../src/electron/ipc/time-tracking-handlers.js';
 import type { TimeSlot } from '../src/session/time-tracker.js';
 
 const planDir = (id: string) => (id === 'plan-1' ? 'C:/proj' : null);
@@ -56,6 +57,22 @@ describe('timesheetQuery (the phone Time tab)', () => {
     const result = timesheetQuery(tracker, { projectKey: 'pA', period: 'hour', anchor: day }) as { sheet: { rows: unknown[]; columns: number[] } };
     expect(result.sheet.columns).toHaveLength(24);
     expect(result.sheet.rows).toEqual([{ dir: 'C:/a', user: expect.any(Array), ai: expect.any(Array) }]);
+  });
+
+  it('registers the shared desktop query for the same overview and project detail', async () => {
+    vi.mocked(ipcMain.handle).mockClear();
+    const cleanup = setupTimeTrackingHandlers(tracker as any, () => ({ projectKey: 'pA', projectName: 'Alpha', dir: 'C:/a' }));
+    const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === 'time:query')?.[1] as
+      (event: unknown, params: unknown) => unknown;
+
+    expect(handler).toBeTypeOf('function');
+    expect(handler({}, { period: 'day', anchor: day })).toEqual({
+      projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5 }],
+    });
+    expect(handler({}, { projectKey: 'pA', period: 'hour', anchor: day })).toMatchObject({
+      sheet: { rows: [{ dir: 'C:/a' }], columns: expect.any(Array) },
+    });
+    cleanup();
   });
 
   it('rejects a malformed ask', () => {

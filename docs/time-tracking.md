@@ -33,7 +33,7 @@ Append-only JSONL, one file per local month under the app-data `time-tracking/` 
 
 ## Timesheet pane
 
-Dock pane **Timesheet** (⏱). It follows the active session's project, like the Mess pane. Rows are folders; the views are:
+Dock pane **Timesheet** (⏱) starts with totals for every project in the selected period, like the Android Time tab. Choose a project to drill into its folder rows; Back returns to the project list. The selected session never changes the timesheet scope. Project totals are ordered by user time, then AI time, then project name. The views are:
 
 | View  | Columns |
 |-------|---------|
@@ -42,8 +42,8 @@ Dock pane **Timesheet** (⏱). It follows the active session's project, like the
 | Week  | the Monday weeks covering a month |
 | Month | the 12 months of a year |
 
-Each cell shows *You* time plus *AI* time underneath. The arrows page the view, and the range label jumps back to now. **CSV** exports the current view (`period_start,project,directory,you_minutes,ai_minutes`).
+Each folder cell shows *You* time plus *AI* time underneath. The project overview shows each project's *You*, *AI*, and combined totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes`).
 
-All arithmetic (`periodEdges`, `buildTimesheet`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The renderer only renders, so the planned phone screen can reuse the same IPC/gate surface.
+All arithmetic (`periodEdges`, `buildTimesheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. Desktop queries use the same main-process `timesheetQuery` path as the phone Time tab; the phone response contract is unchanged.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).

@@ -9,7 +9,7 @@ import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
-import type { Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
+import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
@@ -629,6 +629,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   // ========================================================================
   // Time tracking
   // ========================================================================
+
+  /** All project totals, or one project's folder grid for a period. */
+  timeQuery: (params: { period: TimesheetPeriod; anchor: number; projectKey?: string }): Promise<{ projects: ProjectTotal[] } | { sheet: Timesheet }> =>
+    ipcRenderer.invoke('time:query', params),
 
   /** One project's timesheet: minutes per directory per day/week/month column. */
   timeTimesheet: (projectKey: string, period: TimesheetPeriod, anchor: number): Promise<Timesheet> =>

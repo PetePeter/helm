@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
- * TimesheetPane — time worked on the active session's project, per folder,
- * by hour / day / week / month. "You" is the user's own time; "AI" is when
- * the project's agents were busy. See docs/time-tracking.md.
+ * TimesheetPane — project totals with drilldown to a project's folders,
+ * independent of the selected session. See docs/time-tracking.md.
  */
 import { computed } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
@@ -17,7 +16,7 @@ const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ];
 
-const { project, period, anchor, sheet, step, exportCsv } = useTimesheetPane();
+const { projects, selectedProject, period, anchor, sheet, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const range = computed(() => {
@@ -25,16 +24,18 @@ const range = computed(() => {
   if (period.value === 'hour') return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
   if (period.value === 'month') return String(d.getFullYear());
   if (period.value === 'week') return d.toLocaleDateString([], { month: 'long', year: 'numeric' });
-  const cols = sheet.value?.columns ?? [];
-  if (!cols.length) return '';
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
   const fmt = (t: number) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'short' });
-  return `${fmt(cols[0])} – ${fmt(cols[cols.length - 1])}`;
+  return `${fmt(monday.getTime())} – ${fmt(sunday.getTime())}`;
 });
 </script>
 
 <template>
-  <section class="timesheet-pane" aria-label="Project timesheet">
-    <PanelHeader title="Timesheet" icon="⏱" :subtitle="project?.name ?? 'No active project'">
+  <section class="timesheet-pane" aria-label="Timesheet">
+    <PanelHeader title="Timesheet" icon="⏱" :subtitle="selectedProject?.projectName ?? 'All projects'">
       <template #toolbar>
         <div class="timesheet-toolbar">
           <div class="timesheet-toggle" role="group" aria-label="View">
@@ -49,15 +50,41 @@ const range = computed(() => {
           <button type="button" aria-label="Previous" @click="step(-1)">◀</button>
           <button type="button" @click="step(0)">{{ range }}</button>
           <button type="button" aria-label="Next" @click="step(1)">▶</button>
-          <button type="button" :disabled="!sheet?.rows.length" @click="exportCsv">⬇ CSV</button>
+          <button type="button" :disabled="!selectedProject || !sheet?.rows.length" @click="exportCsv">⬇ CSV</button>
         </div>
       </template>
     </PanelHeader>
 
-    <EmptyState v-if="!project" title="No active project" hint="Select a session to see its project's timesheet." icon="⏱" />
-    <EmptyState v-else-if="!sheet" title="Loading timesheet" loading />
-    <EmptyState v-else-if="!sheet.rows.length" title="No time recorded" hint="Time is counted in 5-minute slots while you work in this project's sessions." icon="⏱" />
-    <div v-else class="timesheet-scroll">
+    <EmptyState v-if="projects === null && sheet === null" title="Loading timesheet" loading />
+    <EmptyState v-else-if="projects !== null && !projects.length" title="No time recorded" hint="Time is counted in 5-minute slots while you work across projects." icon="⏱" />
+    <div v-else-if="projects !== null" class="timesheet-scroll">
+      <table class="timesheet-table">
+        <thead>
+          <tr><th>Project</th><th>You</th><th>AI</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="project in projects" :key="project.projectKey">
+            <td class="timesheet-project-cell">
+              <button type="button" class="timesheet-project" @click="openProject(project)">{{ project.projectName }}</button>
+            </td>
+            <td>{{ formatMinutes(project.user) }}</td>
+            <td>{{ formatMinutes(project.ai) }}</td>
+            <td>{{ formatMinutes(project.user + project.ai) }}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>Total</td>
+            <td>{{ formatMinutes(sum(projects.map(p => p.user))) }}</td>
+            <td>{{ formatMinutes(sum(projects.map(p => p.ai))) }}</td>
+            <td>{{ formatMinutes(sum(projects.map(p => p.user + p.ai))) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <EmptyState v-else-if="sheet && !sheet.rows.length" title="No time recorded" hint="No time was recorded for this project in the selected period." icon="⏱" />
+    <div v-else-if="sheet" class="timesheet-scroll">
+      <button type="button" class="timesheet-back" aria-label="Back to projects" @click="backToProjects">‹ {{ selectedProject?.projectName }}</button>
       <table class="timesheet-table">
         <thead>
           <tr>
@@ -106,6 +133,10 @@ const range = computed(() => {
 .timesheet-toggle { display: inline-flex; gap: 2px; }
 .timesheet-toggle .is-active { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
 .timesheet-toggle .is-active:hover { background: var(--accent-hover); }
+.timesheet-back { margin: 0 0 var(--spacing-sm); padding: 0; border: 0; background: none; color: var(--accent); text-align: left; cursor: pointer; font: inherit; }
+.timesheet-project-cell { text-align: left !important; }
+.timesheet-project { display: block; max-width: 280px; overflow: hidden; padding: 0; border: 0; background: none; color: var(--accent); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; font: inherit; }
+.timesheet-project:hover, .timesheet-back:hover { text-decoration: underline; }
 .timesheet-scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--spacing-sm) var(--spacing-md); }
 .timesheet-table { border-collapse: collapse; font-size: var(--font-size-sm); }
 .timesheet-table th, .timesheet-table td { padding: var(--spacing-xs) var(--spacing-sm); border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; vertical-align: top; }

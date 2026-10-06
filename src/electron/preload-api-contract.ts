@@ -131,6 +131,7 @@ export const PRELOAD_API_DOMAINS = {
     'onMessAppended',
   ],
   time: [
+    'timeQuery',
     'timeTimesheet',
     'timeCsv',
     'timeActivity',

@@ -1,37 +1,48 @@
 /**
- * Timesheet pane state: the active session's project, a period view, and an
- * anchor date to page through. All arithmetic lives in the main process
- * (time-tracker.ts); this only asks for a sheet and refreshes it.
+ * Timesheet pane state: all-project totals with drilldown to one project's
+ * folder grid. All arithmetic lives in the main process (time-tracker.ts).
  */
-import { computed, onUnmounted, ref, watch } from 'vue';
-import type { Timesheet, TimesheetPeriod } from '../../src/session/time-tracker.js';
+import { onUnmounted, ref, watch } from 'vue';
+import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../src/session/time-tracker.js';
 import { timeClient } from '../ipc/clients.js';
-import { useAppStore } from '../stores/app.js';
 
 const REFRESH_MS = 60_000;
 
 export function useTimesheetPane() {
-  const appStore = useAppStore();
   const period = ref<TimesheetPeriod>('day');
   const anchor = ref(Date.now());
   const sheet = ref<Timesheet | null>(null);
-
-  /** Same key the tracker credits: the Helm project id, else the session's directory. */
-  const project = computed(() => {
-    const session = appStore.activeSession;
-    if (!session) return null;
-    const record = session.projectId ? appStore.state.projects.find(p => p.id === session.projectId) : undefined;
-    if (record) return { key: record.id, name: record.name };
-    return session.workingDir ? { key: session.workingDir, name: session.workingDir } : null;
-  });
+  const projects = ref<ProjectTotal[] | null>(null);
+  const selectedProject = ref<ProjectTotal | null>(null);
 
   let generation = 0;
   async function refresh(): Promise<void> {
-    const target = project.value;
+    const target = selectedProject.value;
     const ticket = ++generation;
-    if (!target) { sheet.value = null; return; }
-    const next = await timeClient.timeTimesheet(target.key, period.value, anchor.value);
-    if (ticket === generation) sheet.value = next;
+    const next = await timeClient.timeQuery({
+      period: period.value,
+      anchor: anchor.value,
+      projectKey: target?.projectKey,
+    });
+    if (ticket !== generation) return;
+    if ('projects' in next) {
+      projects.value = next.projects;
+      sheet.value = null;
+    } else {
+      projects.value = null;
+      sheet.value = next.sheet;
+    }
+  }
+
+  function openProject(project: ProjectTotal): void {
+    projects.value = null;
+    sheet.value = null;
+    selectedProject.value = project;
+  }
+  function backToProjects(): void {
+    projects.value = null;
+    sheet.value = null;
+    selectedProject.value = null;
   }
 
   /** Move one view-width back (-1) or forward (+1); 0 returns to now. */
@@ -46,22 +57,22 @@ export function useTimesheetPane() {
   }
 
   async function exportCsv(): Promise<void> {
-    const target = project.value;
+    const target = selectedProject.value;
     if (!target) return;
-    const csv = await timeClient.timeCsv(target.key, period.value, anchor.value, target.name);
+    const csv = await timeClient.timeCsv(target.projectKey, period.value, anchor.value, target.projectName);
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `timesheet-${target.name.replace(/[^\w.-]+/g, '_')}-${period.value}.csv`;
+    link.download = `timesheet-${target.projectName.replace(/[^\w.-]+/g, '_')}-${period.value}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
-  watch([() => project.value?.key, period, anchor], () => { void refresh(); }, { immediate: true });
+  watch([() => selectedProject.value?.projectKey, period, anchor], () => { void refresh(); }, { immediate: true });
   const timer = setInterval(() => { void refresh(); }, REFRESH_MS);
   onUnmounted(() => clearInterval(timer));
 
-  return { project, period, anchor, sheet, step, exportCsv };
+  return { projects, selectedProject, period, anchor, sheet, openProject, backToProjects, step, exportCsv };
 }
 
 /** Column heading for a view. */

@@ -69,6 +69,7 @@ export function setupTimeTrackingHandlers(
   tracker: TimeTracker,
   whereIsDir: (dir: string) => SessionWhere,
 ): () => void {
+  ipcMain.handle('time:query', (_event, params: unknown) => timesheetQuery(tracker, params));
   ipcMain.handle('time:timesheet', (_event, projectKey: unknown, period: unknown, anchor: unknown) =>
     sheetFor(tracker, ...validate(projectKey, period, anchor)));
 
@@ -86,6 +87,7 @@ export function setupTimeTrackingHandlers(
 
   return () => {
     ipcMain.removeHandler('time:activity');
+    ipcMain.removeHandler('time:query');
     ipcMain.removeHandler('time:timesheet');
     ipcMain.removeHandler('time:csv');
   };
