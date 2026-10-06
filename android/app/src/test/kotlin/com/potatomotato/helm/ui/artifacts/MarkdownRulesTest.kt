@@ -151,19 +151,47 @@ class MarkdownRulesTest {
     }
 
     @Test
-    fun `a fenced code block keeps its lines verbatim`() {
-        // No inline parsing inside a fence: markdown's own rule, and the reason
-        // code examples survive rendering intact.
+    fun `a fenced code block keeps ordinary lines plain`() {
+        // No inline parsing inside a fence: code remains code, not markdown.
         assertEquals(
-            listOf(MdBlock.Code(listOf("val x = **not bold**", "keep `this`"))),
+            listOf(MdBlock.Code(listOf(MdCodeLine("val x = **not bold**", 0), MdCodeLine("keep `this`", 0)))),
             MarkdownRules.blocks("```\nval x = **not bold**\nkeep `this`\n```"),
         )
     }
 
     @Test
+    fun `code lines at the render limit remain complete`() {
+        val line = "x".repeat(4_096)
+
+        assertEquals(
+            listOf(MdBlock.Code(listOf(MdCodeLine(line, 0)))),
+            MarkdownRules.blocks("```\n$line\n```"),
+        )
+    }
+
+    @Test
+    fun `code lines over the render limit keep a short preview and exact omitted count`() {
+        val line = "x".repeat(4_097)
+
+        assertEquals(
+            listOf(MdBlock.Code(listOf(MdCodeLine("x".repeat(256), 3_841)))),
+            MarkdownRules.blocks("```\n$line\n```"),
+        )
+    }
+
+    @Test
+    fun `the reported artifact line is bounded before rendering`() {
+        val line = "x".repeat(496_386)
+        val rendered = (MarkdownRules.blocks("```\n$line\n```").single() as MdBlock.Code).lines.single()
+
+        assertEquals("x".repeat(256), rendered.text)
+        assertEquals(496_130, rendered.omittedCharacters)
+    }
+
+    @Test
     fun `an unclosed fence runs to the end of the body`() {
         assertEquals(
-            listOf(MdBlock.Code(listOf("still code"))),
+            listOf(MdBlock.Code(listOf(MdCodeLine("still code", 0)))),
             MarkdownRules.blocks("```\nstill code"),
         )
     }
@@ -196,7 +224,7 @@ class MarkdownRulesTest {
     @Test
     fun `a fence naming another language stays code`() {
         assertEquals(
-            listOf(MdBlock.Code(listOf("println()"))),
+            listOf(MdBlock.Code(listOf(MdCodeLine("println()", 0)))),
             MarkdownRules.blocks("```kotlin\nprintln()\n```"),
         )
     }
@@ -235,7 +263,7 @@ class MarkdownRulesTest {
                 MdBlock.Heading(1, "Title"),
                 MdBlock.Paragraph(listOf(MdSpan.Text("Intro with "), MdSpan.CodeSpan("code"), MdSpan.Text("."))),
                 MdBlock.Bullet(listOf(MdSpan.Text("item"))),
-                MdBlock.Code(listOf("code")),
+                MdBlock.Code(listOf(MdCodeLine("code", 0))),
                 MdBlock.Quote(listOf(MdSpan.Text("quote"))),
                 MdBlock.Rule,
             ),

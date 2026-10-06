@@ -360,6 +360,7 @@
     <string name="artifacts_action_revise">Revise</string>
     <string name="artifacts_glyph_revise">✎</string>
     <string name="artifacts_action_save">Save to phone</string>
+    <string name="artifacts_code_line_truncated">%1$d characters omitted. Use Save to phone for the full artifact.</string>
     <string name="artifacts_glyph_save">⇣</string>
     <string name="artifacts_action_delete">Delete</string>
     <string name="artifacts_glyph_delete">🗑</string>

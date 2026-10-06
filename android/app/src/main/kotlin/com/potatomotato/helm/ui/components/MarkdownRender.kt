@@ -128,10 +128,17 @@ fun MarkdownBlock(block: MdBlock) {
         ) {
             block.lines.forEach { line ->
                 Text(
-                    text = line.ifEmpty { " " },
+                    text = line.text.ifEmpty { " " } + if (line.omittedCharacters > 0) "…" else "",
                     color = HelmColors.Terminal,
                     style = HelmType.Terminal,
                 )
+                if (line.omittedCharacters > 0) {
+                    Text(
+                        text = stringResource(R.string.artifacts_code_line_truncated, line.omittedCharacters),
+                        color = HelmColors.Dim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
 

@@ -48,7 +48,7 @@ object MarkdownRules {
                     blocks += if (info.equals(MERMAID_INFO, ignoreCase = true)) {
                         MdBlock.Diagram(body.joinToString("\n"))
                     } else {
-                        MdBlock.Code(body)
+                        MdBlock.Code(body.map(::codeLine))
                     }
                 }
 
@@ -232,6 +232,16 @@ object MarkdownRules {
 
     private fun isQuote(line: String): Boolean = line.startsWith("> ")
 
+    private fun codeLine(line: String): MdCodeLine =
+        if (line.length <= MAX_RENDERED_CODE_LINE_CHARS) {
+            MdCodeLine(line, omittedCharacters = 0)
+        } else {
+            MdCodeLine(
+                text = line.take(CODE_LINE_PREVIEW_CHARS),
+                omittedCharacters = line.length - CODE_LINE_PREVIEW_CHARS,
+            )
+        }
+
     /** A GFM table needs a pipe row followed by a `---` separator of the same width. */
     private fun isTableStart(line: String, next: String?): Boolean {
         if (next == null || !line.contains('|') || !next.contains('|')) return false
@@ -260,6 +270,8 @@ object MarkdownRules {
     private const val BOLD_DELIM = "**"
     private const val ITALIC_DELIM = "*"
     private const val MERMAID_INFO = "mermaid"
+    private const val MAX_RENDERED_CODE_LINE_CHARS = 4_096
+    private const val CODE_LINE_PREVIEW_CHARS = 256
     private val TABLE_SEPARATOR = Regex(":?-+:?")
     private val UNESCAPED_PIPE = Regex("(?<!\\\\)\\|")
     private val IMAGE =Regex("!\\[([^]]*)]\\((.+)\\)")
@@ -281,8 +293,8 @@ sealed interface MdBlock {
     /** A `> ` line, rendered as an indented row (no nesting). */
     data class Quote(val spans: List<MdSpan>) : MdBlock
 
-    /** A fenced block; its lines are VERBATIM — no inline parsing inside. */
-    data class Code(val lines: List<String>) : MdBlock
+    /** A fenced block; its lines are plain text and bounded for phone rendering. */
+    data class Code(val lines: List<MdCodeLine>) : MdBlock
 
     /**
      * A ` ```mermaid ` fence, whose text is a DIAGRAM and not code to read. The
@@ -302,6 +314,9 @@ sealed interface MdBlock {
         val rows: List<List<List<MdSpan>>>,
     ) : MdBlock
 }
+
+/** The renderable prefix of a fenced code line and the exact omitted character count. */
+data class MdCodeLine(val text: String, val omittedCharacters: Int)
 
 /** A table column's alignment, from the separator's colons. */
 enum class MdAlign { Start, Center, End }
