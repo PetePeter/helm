@@ -373,6 +373,8 @@ export interface ToolEditorBridgeData {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  /** Keep-warm ping text; blank = the default. */
+  keepWarmPrompt?: string;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -451,6 +453,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  keepWarmPrompt?: string;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix?: string;
@@ -486,6 +489,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     ...(Number(values.cacheExpireMinutes) > 0 ? { cacheExpireMinutes: Number(values.cacheExpireMinutes) } : {}),
     mouseTracking: Boolean(values.mouseTracking),
     noPromptCache: Boolean(values.noPromptCache),
+    keepWarmPrompt: typeof values.keepWarmPrompt === 'string' ? values.keepWarmPrompt.trim() : '',
     bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,

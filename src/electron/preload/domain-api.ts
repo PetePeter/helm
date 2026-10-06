@@ -688,6 +688,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       cacheWarnMinutes?: number;
       cacheExpireMinutes?: number;
       noPromptCache?: boolean;
+      keepWarmPrompt?: string;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };
@@ -709,6 +710,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       cacheWarnMinutes?: number;
       cacheExpireMinutes?: number;
       noPromptCache?: boolean;
+      keepWarmPrompt?: string;
       mouseTracking?: boolean;
       submitSuffix?: string;
       helmActions?: { clear?: string; compact?: string; export?: string };

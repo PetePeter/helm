@@ -196,9 +196,10 @@ export interface CliTypeConfig {
   /** The model's context window in tokens — turns a chat reply's context badge into
    *  "% full". Unset: the badge shows the count alone, unless the CLI logs its own window (Codex). */
   contextWindow?: number;
-  /** What a keep-warm ping types (sequence syntax), sent 10 s before the short
-   *  cache lapses. Default also suggests Quick Compact near 200k and checking
-   *  any in-flight worker sessions. */
+  /** The text of a keep-warm ping (sequence syntax), sent 10 s before the short
+   *  cache lapses. KeepWarmer wraps it in the heartbeat markers at send time.
+   *  Default also suggests Quick Compact near 200k and checking any in-flight
+   *  worker sessions. */
   keepWarmPrompt?: string;
   /**
    * Let the CLI enable xterm mouse tracking (DECSET 1000-1016). Default: false —
@@ -1354,6 +1355,7 @@ export class ConfigLoader {
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
     if (options?.noPromptCache === true) tool.noPromptCache = true;
+    if (options?.keepWarmPrompt) tool.keepWarmPrompt = options.keepWarmPrompt;
     if (options?.mouseTracking === true) tool.mouseTracking = true;
     if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
     const helmActions = this.cleanHelmActions(options?.helmActions);
@@ -1410,7 +1412,7 @@ export class ConfigLoader {
         if (options.env.length === 0) delete existing.env;
         else existing.env = options.env;
       }
-      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix', 'bindingProfileId'] as const) {
+      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix', 'bindingProfileId', 'keepWarmPrompt'] as const) {
         const val = options[field];
         if (val === undefined) continue;
         if (val === '') { delete (existing as any)[field]; }

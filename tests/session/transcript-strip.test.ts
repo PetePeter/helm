@@ -6,7 +6,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildTranscriptResumePrompt, stripTranscript } from '../../src/session/transcript-strip.js';
-import { KEEP_WARM_PROMPT, HEARTBEAT_OPEN, HEARTBEAT_CLOSE } from '../../src/session/keep-warmer.js';
+import { buildKeepWarmPrompt, HEARTBEAT_OPEN, HEARTBEAT_CLOSE } from '../../src/session/keep-warm-prompt.js';
+
+const KEEP_WARM_PROMPT = buildKeepWarmPrompt();
 
 const jsonl = (...records: unknown[]): string => records.map(r => JSON.stringify(r)).join('\n');
 
@@ -239,7 +241,20 @@ describe('stripTranscript — Helm plumbing', () => {
     expect(md).not.toMatch(/HEARTBEAT|housekeeping/);
   });
 
-  it('drops a keep-warm ping that only carries the default marker, e.g. a custom keepWarmPrompt', () => {
+  it("drops a ping built from a CLI type's own keepWarmPrompt, in every CLI format", () => {
+    const ping = buildKeepWarmPrompt('poke: check my workers\nand report [ping]').replace('{Esc}', '');
+    const claude = stripTranscript(jsonl(ccUser(ping), ccAssistant('real reply')));
+    const codex = stripTranscript(jsonl(
+      { type: 'session_meta', payload: {} },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: ping }] } },
+    ));
+    const copilot = stripTranscript(jsonl(cp('session.start', {}), cp('user.message', { content: ping })));
+
+    expect(claude).toContain('real reply');
+    expect(claude + codex + copilot).not.toMatch(/HEARTBEAT|poke|ping/);
+  });
+
+  it('drops a keep-warm ping whose marker pair is unclosed', () => {
     const md = strip(`${HEARTBEAT_OPEN} poke: check my workers [ping]`);
     expect(md).not.toMatch(/HEARTBEAT|poke|ping/);
     expect(md).not.toContain('## User');

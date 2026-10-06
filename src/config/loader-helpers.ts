@@ -74,6 +74,8 @@ export type CliTypeOptions = {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  /** Keep-warm ping text; '' clears it on update (back to the default). */
+  keepWarmPrompt?: string;
   mouseTracking?: boolean;
   submitSuffix?: string;
   helmActions?: HelmActionMap;

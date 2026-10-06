@@ -269,6 +269,7 @@ export function useSettingsController(options: {
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),
       mouseTracking: Boolean(value?.mouseTracking),
       noPromptCache: Boolean(value?.noPromptCache),
+      keepWarmPrompt: value?.keepWarmPrompt ?? '',
       bindingProfileId: value?.bindingProfileId ?? '',
       messReminders: value?.messReminders !== false,
       cacheWarnMinutes: value?.cacheWarnMinutes ?? DEFAULT_CACHE_WARN_MINUTES,

@@ -1,5 +1,6 @@
 import type { SessionManager } from './manager.js';
 import { dormantAfterMs, type StalenessThresholds } from './prompt-staleness.js';
+import { buildKeepWarmPrompt } from './keep-warm-prompt.js';
 import { logger } from '../utils/logger.js';
 
 const TICK_MS = 10_000;
@@ -14,18 +15,6 @@ export function keepWarmAfterMs(t: StalenessThresholds | null | undefined): numb
 
 /** How long one "Keep warm" switch-on lasts before it turns itself off. */
 export const KEEP_WARM_DEFAULT_MS = 8 * 3_600_000;
-/** A ping is wrapped in these so quick compact can drop the whole thing: bracket
- *  delimiters, no braces, so sequence escaping ships them byte for byte. */
-export const HEARTBEAT_OPEN = '[HEARTBEAT_START]';
-export const HEARTBEAT_CLOSE = '[HEARTBEAT_END]';
-/** The prefix the CLI records: `{Esc}` clears half-typed input, then the ping starts. */
-export const HEARTBEAT_MARKER = `{Esc}${HEARTBEAT_OPEN}`;
-/** Default ping: the bounded marker pair plus short housekeeping guidance.
- *  Per CLI: keepWarmPrompt. */
-export const KEEP_WARM_PROMPT =
-  `${HEARTBEAT_MARKER} heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ` +
-  'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.' +
-  HEARTBEAT_CLOSE;
 
 /** The CLI-type settings the warmer reads. */
 export type KeepWarmConfig = StalenessThresholds & { keepWarmPrompt?: string };
@@ -75,7 +64,7 @@ export class KeepWarmer {
       // Stamped before the send so a slow delivery cannot double-ping on the next tick.
       this.sessionManager.updateSession(session.id, { lastPromptAt: now });
       try {
-        await this.send(session.id, config?.keepWarmPrompt?.trim() || KEEP_WARM_PROMPT);
+        await this.send(session.id, buildKeepWarmPrompt(config?.keepWarmPrompt));
       } catch (error) {
         logger.warn(`[KeepWarmer] Ping to ${session.id} failed: ${error}`);
       }

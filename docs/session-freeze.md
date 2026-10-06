@@ -59,14 +59,21 @@ and Quick Compact thaws it first, since it must type `/clear`.
 ## Keep warm
 
 The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarmUntil` (persisted)
-8 hours ahead. `KeepWarmer` then sends the CLI type's `keepWarmPrompt`
-(sequence syntax, default `{Esc}[HEARTBEAT_START] heartbeat … [HEARTBEAT_END]` plus a
-one-time reminder near 200k tokens to suggest Quick Compact and a suggestion to check
-in-flight worker sessions) **10 s before its short cache lapses** (`cacheWarnMinutes` − 10 s;
-4:50 for 5 min), so the next real prompt
+8 hours ahead. `KeepWarmer` then sends a ping **10 s before its short cache
+lapses** (`cacheWarnMinutes` − 10 s; 4:50 for 5 min), so the next real prompt
 still hits the cheap cache. Each ping costs one short turn, which is why it is
 opt-in and lapses on its own. It skips a busy session (already warming itself)
 and a frozen one.
+
+The ping's words are the CLI type's `keepWarmPrompt` (sequence syntax), set in
+the CLI type editor as **Heartbeat text**. Blank uses the default: a heartbeat
+note, a one-time reminder near 200k tokens to suggest Quick Compact, and a
+suggestion to check in-flight worker sessions. Only the words are stored. The
+wrapper is added when the ping is sent (`buildKeepWarmPrompt` in
+`src/session/keep-warm-prompt.ts`), so every ping is
+`{Esc}[HEARTBEAT_START] <text>[HEARTBEAT_END]` on one line. That is what lets
+Quick Compact drop any ping whole, whatever it says: the strip keys on the
+markers, never on the text. Markers typed into the text are removed.
 MCP clients can toggle the same persisted state with `session_set_keep_warm`;
 the desktop row and Android session sheet read the same status.
 
@@ -74,7 +81,7 @@ the desktop row and Android session sheet read the same status.
 graph LR
     P[last prompt] -->|cacheWarnMinutes − 10 s| K{keep-warm on?}
     K -->|no / frozen / busy| X[nothing]
-    K -->|yes| S[send keepWarmPrompt] --> P
+    K -->|yes| W[wrap keepWarmPrompt in heartbeat markers] --> S[send] --> P
 ```
 
 ## Row status icons

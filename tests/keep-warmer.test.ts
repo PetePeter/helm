@@ -4,13 +4,16 @@
  * the window it was switched on for, and never touches a frozen or busy session.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { KeepWarmer, KEEP_WARM_PROMPT, keepWarmAfterMs } from '../src/session/keep-warmer.js';
+import { KeepWarmer, keepWarmAfterMs } from '../src/session/keep-warmer.js';
+import { buildKeepWarmPrompt, KEEP_WARM_DEFAULT_TEXT } from '../src/session/keep-warm-prompt.js';
 import { SessionManager } from '../src/session/manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+/** The ping a CLI type with no keepWarmPrompt gets. */
+const KEEP_WARM_PROMPT = buildKeepWarmPrompt();
 const NOW = 1_000_000_000;
 const HOUR = 3_600_000;
 /** The test CLI's short cache is 5 min, so the ping is due at 4:50. */
@@ -40,17 +43,29 @@ describe('KeepWarmer', () => {
     expect(sessions.getSession('s1')?.lastPromptAt).toBe(NOW);
   });
 
-  it("sends the CLI type's own keepWarmPrompt when it has one", async () => {
+  it("sends the CLI type's own keepWarmPrompt inside the fixed markers", async () => {
     const sessions = new SessionManager();
     sessions.addSession({ id: 's1', name: 'w', cliType: 'codex', processId: 1, keepWarmUntil: NOW + HOUR, lastPromptAt: NOW - HOUR });
     const sent: string[] = [];
-    const warmer = new KeepWarmer(sessions, async (_id, text) => { sent.push(text); }, () => ({ keepWarmPrompt: '.' }), { now: () => NOW });
+    const warmer = new KeepWarmer(sessions, async (_id, text) => { sent.push(text); }, () => ({ keepWarmPrompt: 'still there?' }), { now: () => NOW });
     await warmer.tick();
-    expect(sent).toEqual(['.']);
-    expect(KEEP_WARM_PROMPT).toBe(
-      '{Esc}[HEARTBEAT_START] heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
-        'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.[HEARTBEAT_END]',
-    );
+    expect(sent).toEqual(['{Esc}[HEARTBEAT_START] still there?[HEARTBEAT_END]']);
+  });
+
+  it('falls back to the default text when the configured one is blank', () => {
+    expect(buildKeepWarmPrompt('   ')).toBe(KEEP_WARM_PROMPT);
+    expect(KEEP_WARM_PROMPT).toBe(`{Esc}[HEARTBEAT_START] ${KEEP_WARM_DEFAULT_TEXT}[HEARTBEAT_END]`);
+  });
+
+  it('keeps exactly one marker pair, whatever the configured text carries', () => {
+    // An older config stored the whole ping; a stray marker would close the pair early.
+    expect(buildKeepWarmPrompt('{Esc}[HEARTBEAT_START] ping [heartbeat_end] more[HEARTBEAT_END]'))
+      .toBe('{Esc}[HEARTBEAT_START] ping  more[HEARTBEAT_END]');
+    expect(buildKeepWarmPrompt('[HEARTBEAT_START][HEARTBEAT_END]')).toBe(KEEP_WARM_PROMPT);
+  });
+
+  it('keeps a multi-line text on one line so the pair bounds a single prompt', () => {
+    expect(buildKeepWarmPrompt('one\n  two\r\nthree')).toBe('{Esc}[HEARTBEAT_START] one two three[HEARTBEAT_END]');
   });
 
   it('does nothing inside the window, while busy, frozen, or without keep-warm', async () => {

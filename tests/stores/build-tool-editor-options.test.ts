@@ -122,6 +122,8 @@ describe('buildToolEditorOptions', () => {
       messReminders: true,
       mouseTracking: true,
       noPromptCache: false,
+      // Always stated, so blanking the field clears a stored text back to the default.
+      keepWarmPrompt: '',
       bindingProfileId: '',
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },

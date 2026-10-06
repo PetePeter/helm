@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../../../src/session/prompt-staleness.js';
+import { HEARTBEAT_CLOSE, HEARTBEAT_OPEN, KEEP_WARM_DEFAULT_TEXT } from '../../../src/session/keep-warm-prompt.js';
 /**
  * Tool editor modal — purpose-built form for adding/editing CLI Type tool
  * configurations. Replaces the generic FormModal with a structured layout
@@ -50,6 +51,7 @@ export interface ToolEditorData {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  keepWarmPrompt?: string;
   mouseTracking?: boolean;
   bindingProfileId?: string;
   submitSuffix: string;
@@ -83,6 +85,7 @@ const emit = defineEmits<{
     cacheWarnMinutes?: number;
     cacheExpireMinutes?: number;
     noPromptCache?: boolean;
+    keepWarmPrompt: string;
     mouseTracking?: boolean;
     bindingProfileId: string;
     submitSuffix: string;
@@ -110,6 +113,7 @@ const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
 const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
 const noPromptCache = ref(false);
+const keepWarmPrompt = ref('');
 const bindingProfileId = ref('');
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
 const helmActionClear = ref('');
@@ -215,6 +219,7 @@ function initForm(): void {
   cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
   noPromptCache.value = Boolean(d.noPromptCache);
+  keepWarmPrompt.value = d.keepWarmPrompt ?? '';
   bindingProfileId.value = d.bindingProfileId ?? '';
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
   helmActionClear.value = d.helmActions?.clear ?? '';
@@ -286,6 +291,7 @@ function onSave(): void {
     cacheExpireMinutes: cacheExpireMinutes.value,
     mouseTracking: mouseTracking.value,
     noPromptCache: noPromptCache.value,
+    keepWarmPrompt: keepWarmPrompt.value,
     bindingProfileId: bindingProfileId.value,
     submitSuffix: submitSuffix.value,
     helmActions: {
@@ -465,6 +471,11 @@ defineExpose({ handleButton });
             <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</p>
+            <div class="te-field">
+              <label for="te-keep-warm">Heartbeat text</label>
+              <input id="te-keep-warm" v-model="keepWarmPrompt" :disabled="noPromptCache" type="text" :placeholder="KEEP_WARM_DEFAULT_TEXT" class="te-input focusable" />
+              <p class="te-section__hint">What a Keep cache warm ping says, in sequence syntax. Blank uses the default shown. Helm sends it as <code>{{ HEARTBEAT_OPEN }} your text{{ HEARTBEAT_CLOSE }}</code>, so Quick Compact always strips it.</p>
+            </div>
           </fieldset>
 
           <fieldset class="te-section">

@@ -14,7 +14,7 @@ import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 import type { SessionInfo } from '../types/session.js';
 import { writeLargeTextTempFile } from './large-text-temp-file.js';
-import { HEARTBEAT_MARKER, HEARTBEAT_OPEN } from './keep-warmer.js';
+import { HEARTBEAT_MARKER, HEARTBEAT_OPEN } from './keep-warm-prompt.js';
 import { logger } from '../utils/logger.js';
 
 const TOOL_ARGS_MAX = 200;
@@ -34,7 +34,7 @@ const NOISE_PREFIXES = ['<local-command', '<command-', '<environment_context', '
 const HELM_PLUMBING: RegExp[] = [
   /\[(HELM_[A-Z_]*(?:RULES|MODE))\][\s\S]*?\[\/\1\]/g, // injected instruction blocks, whole
   /\{"type":"inter_llm_message"[^{}]*\}/g, // envelope JSON
-  /\[HEARTBEAT_START\][\s\S]*?\[HEARTBEAT_END\]/gi, // keep-warm pings, whole (markers from keep-warmer.ts)
+  /\[HEARTBEAT_START\][\s\S]*?\[HEARTBEAT_END\]/gi, // keep-warm pings, whole (markers from keep-warm-prompt.ts)
   /\[\/?HELM_[A-Z_]*(?:[:\s][^\]\n]*)?\]/g, // any remaining tag, e.g. [HELM_MSG: …reply to "<old id>"…]
 ];
 
@@ -57,8 +57,8 @@ function cleanText(text: string): string {
 
 function isNoise(text: string): boolean {
   // A keep-warm ping is plumbing, not conversation: a marked ping drops as a wrapped
-  // block (PLUMBING_LINE / HELM_PLUMBING), and a custom keepWarmPrompt that still starts
-  // with the default marker drops even when its pair is unclosed.
+  // block (PLUMBING_LINE / HELM_PLUMBING), and one that starts with the marker drops
+  // even when its pair is unclosed. Every ping carries the pair, whatever its text.
   const p = text.toLowerCase();
   return p.startsWith(HEARTBEAT_OPEN.toLowerCase()) || p.startsWith(HEARTBEAT_MARKER.toLowerCase())
     || NOISE_PREFIXES.some(n => text.startsWith(n));
