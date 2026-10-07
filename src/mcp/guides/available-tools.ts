@@ -107,7 +107,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'scheduler_create', title: 'Create Scheduler Entry', description: 'Create a scheduled task. Direct tasks can use targetSession:"caller" as a self-timer for the creating Helm session.' },
     { name: 'scheduler_list', title: 'List Scheduler Entries', description: 'List all scheduled tasks.' },
     { name: 'scheduler_get', title: 'Get Scheduler Entry', description: 'Get a scheduled task by ID.' },
-    { name: 'scheduler_update', title: 'Update Scheduler Entry', description: 'Update a pending scheduled task. Only pending tasks can be updated.' },
+    { name: 'scheduler_update', title: 'Update Scheduler Entry', description: 'Update a pending task; use scheduleKind:"none" to discard its cadence, then provide a fresh schedule to resume.' },
     { name: 'scheduler_cancel', title: 'Cancel Scheduler Entry', description: 'Cancel a pending scheduled task.' },
     { name: 'scheduler_delete', title: 'Delete Scheduler Entry', description: 'Delete a scheduled task and cancel its pending run.' },
   ];

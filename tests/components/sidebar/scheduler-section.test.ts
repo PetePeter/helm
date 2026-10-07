@@ -80,6 +80,21 @@ describe('SchedulerSection', () => {
     vi.useRealTimers();
   });
 
+  it('keeps unscheduled tasks visible after active schedules without treating them as due', async () => {
+    mockScheduledTaskList.mockResolvedValue([
+      { ...task, id: 'paused', title: 'Paused', scheduleKind: 'none', scheduledTime: new Date(2026, 4, 4, 8, 0, 0) },
+      { ...task, id: 'active', title: 'Active', scheduledTime: new Date(2026, 4, 4, 10, 0, 0) },
+    ]);
+
+    const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
+    await flushPromises();
+
+    expect(wrapper.findAll('.scheduler-title').map((node) => node.text())).toEqual(['Active', 'Paused']);
+    expect(wrapper.findAll('.scheduler-time').map((node) => node.text())).toEqual(['1h 0m', 'off']);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it('marks every acting control focusable so the gamepad can walk the pane', async () => {
     const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
     await flushPromises();

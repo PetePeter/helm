@@ -6,6 +6,7 @@
 
 export type ScheduledTaskStatus = 'pending' | 'executing' | 'completed' | 'failed' | 'cancelled';
 export type ScheduledTaskScheduleKind = 'once' | 'interval' | 'cron';
+export type ScheduledTaskScheduleSelection = ScheduledTaskScheduleKind | 'none';
 export type ScheduledTaskMode = 'spawn' | 'direct';
 
 export interface ScheduledTask {
@@ -17,7 +18,7 @@ export interface ScheduledTask {
   cliType: string;
   cliParams?: string;
   scheduledTime: Date;
-  scheduleKind?: ScheduledTaskScheduleKind;
+  scheduleKind?: ScheduledTaskScheduleSelection;
   intervalMs?: number;
   cronExpression?: string;
   endDate?: Date;
@@ -95,7 +96,7 @@ export interface UpdateScheduledTaskParams {
   cliType?: string;
   cliParams?: string;
   scheduledTime?: Date;
-  scheduleKind?: ScheduledTaskScheduleKind;
+  scheduleKind?: ScheduledTaskScheduleSelection;
   intervalMs?: number;
   cronExpression?: string;
   endDate?: Date;

@@ -28,7 +28,10 @@ let offProjectChanged: (() => void) | null = null;
 
 const activeTasks = computed(() => tasks.value
   .filter((task) => task.status === 'pending' || task.status === 'executing')
-  .sort((a, b) => nextRunMs(a) - nextRunMs(b)));
+  .sort((a, b) => {
+    if ((a.scheduleKind === 'none') !== (b.scheduleKind === 'none')) return a.scheduleKind === 'none' ? 1 : -1;
+    return nextRunMs(a) - nextRunMs(b);
+  }));
 const dreamTasks = computed(() => activeTasks.value
   .filter((task) => task.systemKind === 'dream')
   .sort((a, b) => projectLabel(a).localeCompare(projectLabel(b))));
@@ -63,6 +66,7 @@ async function loadTasks(): Promise<void> {
 }
 
 function nextRunMs(task: ScheduledTask): number {
+  if (task.scheduleKind === 'none') return Number.POSITIVE_INFINITY;
   return new Date(task.nextRunAt ?? task.scheduledTime).getTime();
 }
 
@@ -165,6 +169,7 @@ async function loadCliTypes(): Promise<void> {
 
 function timeRemaining(task: ScheduledTask): string {
   if (task.status === 'executing') return 'running';
+  if (task.scheduleKind === 'none') return 'off';
   const diff = nextRunMs(task) - Date.now();
   if (diff <= 0) return 'due';
   const hours = Math.floor(diff / 3600000);

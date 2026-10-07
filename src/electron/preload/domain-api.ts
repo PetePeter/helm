@@ -1200,7 +1200,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     cliType?: string;
     cliParams?: string;
     scheduledTime?: Date;
-    scheduleKind?: 'once' | 'interval' | 'cron';
+    scheduleKind?: 'none' | 'once' | 'interval' | 'cron';
     intervalMs?: number;
     cronExpression?: string;
     endDate?: Date;

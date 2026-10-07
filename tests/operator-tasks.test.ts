@@ -16,6 +16,7 @@ describe('nextCheckAt', () => {
       timer({ id: 'a', planIds: ['p1'], nextRunAt: new Date(5000) }),
       timer({ id: 'b', planIds: ['p1'], scheduledTime: new Date(3000) }),
       timer({ id: 'c', planIds: ['p2'], nextRunAt: new Date(100) }),
+      timer({ id: 'd', planIds: ['p1'], scheduleKind: 'none', scheduledTime: new Date(500) }),
     ];
     expect(nextCheckAt('p1', timers)).toBe(3000);
   });

@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 import { saveScheduledTasks, loadScheduledTasks } from './persistence.js';
-import type { ScheduledTask, ScheduledTaskMode, ScheduledTaskStatus, ScheduledTaskHistoryEntry, CreateScheduledTaskParams, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
+import type { ScheduledTask, ScheduledTaskMode, ScheduledTaskStatus, ScheduledTaskHistoryEntry, ScheduledTaskScheduleKind, CreateScheduledTaskParams, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
 import type { ScheduledTaskHistoryManager } from './scheduled-task-history-manager.js';
 import type { SessionManager } from './manager.js';
 import type { PtyManager } from './pty-manager.js';
@@ -87,7 +87,7 @@ export class ScheduledTaskManager extends EventEmitter {
       dirPath: task.dirPath,
       ...(task.mode !== undefined ? { mode: task.mode } : {}),
       ...(task.targetSessionId !== undefined ? { targetSessionId: task.targetSessionId } : {}),
-      ...(task.scheduleKind !== undefined ? { scheduleKind: task.scheduleKind } : {}),
+      ...(task.scheduleKind !== undefined && task.scheduleKind !== 'none' ? { scheduleKind: task.scheduleKind } : {}),
       ...(task.intervalMs !== undefined ? { intervalMs: task.intervalMs } : {}),
       ...(task.cronExpression !== undefined ? { cronExpression: task.cronExpression } : {}),
       ...(task.endDate !== undefined ? { endDate: task.endDate } : {}),
@@ -146,6 +146,9 @@ export class ScheduledTaskManager extends EventEmitter {
 
   /** Create a new scheduled task. */
   createTask(params: CreateScheduledTaskParams): ScheduledTask {
+    if ((params.scheduleKind as string | undefined) === 'none') {
+      throw new Error('New scheduled tasks require a schedule');
+    }
     const now = Date.now();
     const cliType = this.resolveTaskCliType(params.mode, params.cliType, params.targetSessionId);
     const scheduleKind = params.scheduleKind ?? 'once';
@@ -306,6 +309,36 @@ export class ScheduledTaskManager extends EventEmitter {
       throw new Error('System dream tasks use userPrompt; initialPrompt is Helm-owned');
     }
 
+    const currentScheduleKind = task.scheduleKind ?? 'once';
+    const nextScheduleKind = updates.scheduleKind ?? currentScheduleKind;
+    const isRescheduling = currentScheduleKind === 'none' && nextScheduleKind !== 'none';
+    if (isDream && updates.scheduleKind === 'none') {
+      throw new Error('System dream tasks use enabled to control their schedule');
+    }
+    if (nextScheduleKind === 'none') {
+      const includesScheduleDetails = updates.scheduledTime !== undefined
+        || updates.intervalMs !== undefined
+        || Object.prototype.hasOwnProperty.call(updates, 'cronExpression')
+        || Object.prototype.hasOwnProperty.call(updates, 'endDate');
+      if (includesScheduleDetails) {
+        throw new Error('Choose a schedule kind before providing schedule details');
+      }
+    }
+    if (isRescheduling) {
+      if (!updates.scheduledTime) {
+        throw new Error('Rescheduling an unscheduled task requires a new scheduledTime');
+      }
+      if (!Number.isFinite(updates.scheduledTime.getTime()) || updates.scheduledTime.getTime() <= Date.now()) {
+        throw new Error('scheduledTime must be in the future when rescheduling an unscheduled task');
+      }
+      if (nextScheduleKind === 'interval'
+        && (!Number.isFinite(updates.intervalMs) || (updates.intervalMs ?? 0) < MIN_INTERVAL_MS)) {
+        throw new Error('Rescheduling an unscheduled task as an interval requires intervalMs of at least 60000');
+      }
+      if (nextScheduleKind === 'cron' && !updates.cronExpression?.trim()) {
+        throw new Error('Rescheduling an unscheduled task as cron requires cronExpression');
+      }
+    }
     // Validate against the post-merge shape before mutating, so a rejected
     // update leaves the task exactly as it was.
     const mode = updates.mode ?? task.mode;
@@ -314,7 +347,7 @@ export class ScheduledTaskManager extends EventEmitter {
       : task.targetSessionId;
     const nextEnabled = updates.enabled ?? task.enabled ?? true;
     const requestedCliType = updates.cliType ?? task.cliType;
-    const cliType = isDream && !nextEnabled
+    const cliType = (isDream && !nextEnabled) || nextScheduleKind === 'none'
       ? requestedCliType
       : this.resolveTaskCliType(mode, requestedCliType, targetSessionId);
 
@@ -345,12 +378,17 @@ export class ScheduledTaskManager extends EventEmitter {
       || updates.scheduleKind !== undefined
       || Object.prototype.hasOwnProperty.call(updates, 'cronExpression')
       || Object.prototype.hasOwnProperty.call(updates, 'endDate');
-    if (scheduleChanged || !task.nextRunAt) {
-      task.nextRunAt = this.computeInitialNextRunAt(task.scheduleKind ?? 'once', task.scheduledTime, task.cronExpression, task.endDate);
+    if (nextScheduleKind === 'none') {
+      delete task.intervalMs;
+      delete task.cronExpression;
+      delete task.endDate;
+      delete task.nextRunAt;
+    } else if (scheduleChanged || !task.nextRunAt) {
+      task.nextRunAt = this.computeInitialNextRunAt(nextScheduleKind, task.scheduledTime, task.cronExpression, task.endDate);
     }
 
     this.saveTasks();
-    if (task.enabled === false) this.clearTimer(task.id);
+    if (task.enabled === false || task.scheduleKind === 'none') this.clearTimer(task.id);
     else this.scheduleTask(task);
     this.emit('task:changed', task);
     logger.info(`[ScheduledTaskManager] Updated task "${task.title}" (${id})`);
@@ -366,7 +404,7 @@ export class ScheduledTaskManager extends EventEmitter {
    */
   async runTaskNow(id: string): Promise<boolean> {
     const task = this.tasks.get(id);
-    if (!task || task.status !== 'pending') return false;
+    if (!task || task.status !== 'pending' || task.scheduleKind === 'none') return false;
 
     const nextRunAt = task.nextRunAt;
     const scheduledTime = task.scheduledTime;
@@ -438,7 +476,14 @@ export class ScheduledTaskManager extends EventEmitter {
         if (task.mode !== 'direct' && task.cliType) {
           task.cliType = this.canonicalCliTypeOrKeep(task.cliType);
         }
-        task.nextRunAt ??= this.computeInitialNextRunAt(task.scheduleKind, task.scheduledTime, task.cronExpression, task.endDate);
+        if (task.scheduleKind === 'none') {
+          delete task.intervalMs;
+          delete task.cronExpression;
+          delete task.endDate;
+          delete task.nextRunAt;
+        } else {
+          task.nextRunAt ??= this.computeInitialNextRunAt(task.scheduleKind, task.scheduledTime, task.cronExpression, task.endDate);
+        }
         this.tasks.set(task.id, task);
       }
     }
@@ -459,7 +504,7 @@ export class ScheduledTaskManager extends EventEmitter {
     // Schedule all pending tasks
     const now = Date.now();
     for (const task of this.tasks.values()) {
-      if (task.status === 'pending' && task.enabled !== false) {
+      if (task.status === 'pending' && task.enabled !== false && task.scheduleKind !== 'none') {
         if (this.getNextRunTime(task).getTime() <= now) {
           // Past scheduled time - execute immediately
           void this.executeTask(task);
@@ -486,7 +531,7 @@ export class ScheduledTaskManager extends EventEmitter {
    * and re-arms, so it executes exactly once — at its real due time.
    */
   private scheduleTask(task: ScheduledTask): void {
-    if (task.status !== 'pending' || task.enabled === false) return;
+    if (task.status !== 'pending' || task.enabled === false || task.scheduleKind === 'none') return;
 
     this.clearTimer(task.id);
 
@@ -513,7 +558,7 @@ export class ScheduledTaskManager extends EventEmitter {
   private async executeTask(task: ScheduledTask, options?: { force?: boolean }): Promise<void> {
     this.clearTimer(task.id);
 
-    if (task.status !== 'pending' || (task.enabled === false && !options?.force)) {
+    if (task.status !== 'pending' || task.scheduleKind === 'none' || (task.enabled === false && !options?.force)) {
       logger.warn(`[ScheduledTaskManager] Skipping execution of task ${task.id} - status is ${task.status}`);
       return;
     }
@@ -715,7 +760,7 @@ export class ScheduledTaskManager extends EventEmitter {
   }
 
   private computeInitialNextRunAt(
-    scheduleKind: ScheduledTask['scheduleKind'],
+    scheduleKind: ScheduledTaskScheduleKind,
     scheduledTime: Date,
     cronExpression?: string,
     endDate?: Date,

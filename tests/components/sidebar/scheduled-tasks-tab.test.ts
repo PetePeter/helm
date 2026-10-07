@@ -255,6 +255,122 @@ describe('ScheduledTasksTab', () => {
     expect(mockScheduledTaskCreate).not.toHaveBeenCalled();
   });
 
+  it('lets an edited task discard its cadence without sending stale timing fields', async () => {
+    const task = {
+      id: 'task-1',
+      title: 'Recurring task',
+      planIds: [],
+      initialPrompt: 'Prompt',
+      cliType: 'codex',
+      scheduledTime: new Date(2026, 3, 29, 11, 0, 0, 0),
+      scheduleKind: 'interval',
+      intervalMs: 60_000,
+      dirPath: 'X:\\coding\\gamepad-cli-hub',
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    mockScheduledTaskList.mockResolvedValue([task]);
+    mockScheduledTaskUpdate.mockResolvedValue({ ...task, scheduleKind: 'none' });
+    const wrapper = mount(ScheduledTasksTab, {
+      props: { popup: true, initialEditTaskId: 'task-1' },
+    });
+    await flushPromises();
+
+    const scheduleSelect = wrapper.findAll('select').find((select) =>
+      select.findAll('option').some((option) => option.attributes('value') === 'none'),
+    )!;
+    await scheduleSelect.setValue('none');
+    expect(wrapper.find('input[type="datetime-local"]').exists()).toBe(false);
+    await wrapper.find('.st-btn--primary').trigger('click');
+    await flushPromises();
+
+    const updates = mockScheduledTaskUpdate.mock.calls[0][1];
+    expect(updates).toMatchObject({ scheduleKind: 'none' });
+    expect(updates).not.toHaveProperty('scheduledTime');
+    expect(updates).not.toHaveProperty('intervalMs');
+  });
+
+  it('shows an unscheduled task and requires a fresh time before re-enabling it', async () => {
+    const task = {
+      id: 'task-1',
+      title: 'Paused task',
+      planIds: [],
+      initialPrompt: 'Prompt',
+      cliType: 'codex',
+      scheduledTime: new Date(2026, 3, 29, 9, 0, 0, 0),
+      scheduleKind: 'none',
+      dirPath: 'X:\\coding\\gamepad-cli-hub',
+      status: 'pending',
+      createdAt: Date.now(),
+    };
+    mockScheduledTaskList.mockResolvedValue([task]);
+    mockScheduledTaskUpdate.mockResolvedValue({ ...task, scheduleKind: 'once' });
+    const wrapper = mountTab();
+    await flushPromises();
+
+    expect(wrapper.find('.st-task-badge').text()).toBe('Unscheduled');
+    expect(wrapper.find('.st-task-countdown').exists()).toBe(false);
+    await wrapper.find('.st-btn--secondary').trigger('click');
+
+    const scheduleSelect = wrapper.findAll('select').find((select) =>
+      select.findAll('option').some((option) => option.attributes('value') === 'none'),
+    )!;
+    expect((scheduleSelect.element as HTMLSelectElement).value).toBe('none');
+    await scheduleSelect.setValue('once');
+
+    const timeInput = wrapper.find('input[type="datetime-local"]');
+    expect((timeInput.element as HTMLInputElement).value).toBe('');
+    expect(wrapper.find('.st-btn--primary').attributes('disabled')).toBeDefined();
+    await timeInput.setValue('2026-04-29T11:00');
+    await wrapper.find('.st-btn--primary').trigger('click');
+    await flushPromises();
+
+    expect(mockScheduledTaskUpdate).toHaveBeenCalledWith('task-1', expect.objectContaining({
+      scheduleKind: 'once',
+      scheduledTime: new Date(2026, 3, 29, 11, 0, 0, 0),
+    }));
+  });
+
+  it('cloning an unscheduled task starts a new one-off schedule with a fresh time', async () => {
+    const task = {
+      id: 'task-1', title: 'Paused task', planIds: [], initialPrompt: 'Prompt', cliType: 'codex',
+      scheduledTime: new Date(2026, 3, 28, 9, 0, 0, 0), scheduleKind: 'none',
+      dirPath: 'X:\\coding\\gamepad-cli-hub', status: 'pending', createdAt: Date.now(),
+    };
+    mockScheduledTaskList.mockResolvedValue([task]);
+    const wrapper = mount(ScheduledTasksTab, { props: { popup: true, initialEditTaskId: task.id } });
+    await flushPromises();
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Clone')!.trigger('click');
+
+    const scheduleSelect = wrapper.findAll('select').find((select) =>
+      select.findAll('option').some((option) => option.text() === 'Once'),
+    )!;
+    expect((scheduleSelect.element as HTMLSelectElement).value).toBe('once');
+    expect((wrapper.find('input[type="datetime-local"]').element as HTMLInputElement).value).toBe('2026-04-29T10:00');
+    wrapper.unmount();
+  });
+
+  it('shows feedback when re-enabling an unscheduled task with a past time', async () => {
+    const task = {
+      id: 'task-1', title: 'Paused task', planIds: [], initialPrompt: 'Prompt', cliType: 'codex',
+      scheduledTime: new Date(2026, 3, 28, 9, 0, 0, 0), scheduleKind: 'none',
+      dirPath: 'X:\\coding\\gamepad-cli-hub', status: 'pending', createdAt: Date.now(),
+    };
+    mockScheduledTaskList.mockResolvedValue([task]);
+    const wrapper = mount(ScheduledTasksTab, { props: { popup: true, initialEditTaskId: task.id } });
+    await flushPromises();
+    await wrapper.findAll('select').find((select) =>
+      select.findAll('option').some((option) => option.text() === 'Once'),
+    )!.setValue('once');
+    await wrapper.find('input[type="datetime-local"]').setValue('2026-04-29T09:00');
+    await wrapper.find('.st-btn--primary').trigger('click');
+
+    expect(wrapper.find('[role="alert"]').text()).toMatch(/future/i);
+    expect(mockScheduledTaskUpdate).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it('clones an edited task into a new create payload', async () => {
     const task = {
       id: 'task-1',

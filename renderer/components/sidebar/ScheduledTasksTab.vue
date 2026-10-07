@@ -4,7 +4,7 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * ScheduledTasksTab.vue -- UI for creating and managing scheduled tasks.
  */
 import { ref, computed, onMounted, onUnmounted, watch, ref as templateRef } from 'vue';
-import type { ScheduledTask, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleKind } from '../../../src/types/scheduled-task.js';
+import type { ScheduledTask, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../src/types/scheduled-task.js';
 import { CronEngine } from '../../../src/utils/cron-engine.js';
 import QuickSpawnModal from '../modals/QuickSpawnModal.vue';
 import DirPickerModal from '../modals/DirPickerModal.vue';
@@ -30,6 +30,7 @@ const props = withDefaults(defineProps<{
 
 const tasks = ref<ScheduledTask[]>([]);
 const creating = ref(false);
+const formError = ref('');
 const showCreateForm = ref(false);
 const editingTaskId = ref<string | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -43,7 +44,7 @@ const selectedDirPath = ref('');
 const formCliParams = ref('');
 const selectedTargetSessionId = ref('');
 const formTime = ref('');
-const scheduleKind = ref<ScheduledTaskScheduleKind>('once');
+const scheduleKind = ref<ScheduledTaskScheduleSelection>('once');
 const intervalMinutes = ref(60);
 const cronExpression = ref('0 9 * * 1-5');
 const endDate = ref('');
@@ -77,14 +78,19 @@ const sessionsForDir = computed(() => {
 });
 
 const canCreate = computed(() => {
-  const hasValidSchedule = (scheduleKind.value !== 'interval' || intervalMinutes.value >= 1)
-    && (scheduleKind.value !== 'cron' || cronValidation.value.valid);
-  const hasBasics = formTitle.value.trim() !== '' && formInitialPrompt.value.length > 0 && formTime.value !== '' && selectedDirPath.value.trim() !== '' && hasValidSchedule;
+  const unscheduledEdit = Boolean(editingTaskId.value) && scheduleKind.value === 'none';
+  const hasValidSchedule = unscheduledEdit || ((scheduleKind.value !== 'interval' || intervalMinutes.value >= 1)
+    && (scheduleKind.value !== 'cron' || cronValidation.value.valid));
+  const hasBasics = formTitle.value.trim() !== '' && formInitialPrompt.value.length > 0
+    && (unscheduledEdit || formTime.value !== '') && selectedDirPath.value.trim() !== '' && hasValidSchedule;
   if (formMode.value === 'direct') return hasBasics && selectedTargetSessionId.value !== '';
   return hasBasics && selectedCliType.value.trim() !== '';
 });
 
-const sortedTasks = computed(() => [...tasks.value].sort((a, b) => new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime()));
+const sortedTasks = computed(() => [...tasks.value].sort((a, b) => {
+  if ((a.scheduleKind === 'none') !== (b.scheduleKind === 'none')) return a.scheduleKind === 'none' ? 1 : -1;
+  return new Date(a.scheduledTime).getTime() - new Date(b.scheduledTime).getTime();
+}));
 const formVisible = computed(() => props.popup || showCreateForm.value);
 const cronValidation = computed(() => {
   if (scheduleKind.value !== 'cron') return { valid: true };
@@ -117,8 +123,11 @@ function formatCountdown(scheduledTime: Date | string): string {
   return `${secs}s`;
 }
 
-function getStatusBadge(status: string): { label: string; cssClass: string } {
-  switch (status) {
+function getStatusBadge(task: ScheduledTask): { label: string; cssClass: string } {
+  if (task.status === 'pending' && task.scheduleKind === 'none') {
+    return { label: 'Unscheduled', cssClass: 'badge--pending' };
+  }
+  switch (task.status) {
     case 'pending': return { label: 'Pending', cssClass: 'badge--pending' };
     case 'executing': return { label: 'Running', cssClass: 'badge--executing' };
     case 'completed': return { label: 'Done', cssClass: 'badge--completed' };
@@ -131,6 +140,7 @@ function getStatusBadge(status: string): { label: string; cssClass: string } {
 function formatTime(date: Date | string): string { return (typeof date === 'string' ? new Date(date) : date).toLocaleString(); }
 function formatNextRun(task: ScheduledTask): string { return formatCountdown(task.nextRunAt ?? task.scheduledTime); }
 function formatSchedule(task: ScheduledTask): string {
+  if (task.scheduleKind === 'none') return 'None';
   if (task.scheduleKind === 'interval' && task.intervalMs) return `Every ${Math.round(task.intervalMs / 60000)} min`;
   if (task.scheduleKind === 'cron' && task.cronExpression) return task.cronExpression;
   return 'Once';
@@ -182,6 +192,15 @@ function resetForm(): void {
   endDate.value = '';
 }
 
+function onScheduleKindChange(): void {
+  if (scheduleKind.value !== 'none') return;
+  formTime.value = '';
+  intervalMinutes.value = 60;
+  cronExpression.value = '0 9 * * 1-5';
+  endDate.value = '';
+  formError.value = '';
+}
+
 async function openCliPicker(): Promise<void> {
   try { availableCliTypes.value = await configClient.configGetCliTypes() as string[]; cliPickerVisible.value = true; } catch {}
 }
@@ -201,31 +220,54 @@ async function loadSessions(): Promise<void> {
 }
 async function createTask(): Promise<void> {
   if (!canCreate.value) return;
+  formError.value = '';
+  const currentTask = tasks.value.find((task) => task.id === editingTaskId.value);
+  if (currentTask?.scheduleKind === 'none' && scheduleKind.value !== 'none') {
+    const scheduledTime = new Date(formTime.value);
+    if (!Number.isFinite(scheduledTime.getTime()) || scheduledTime.getTime() <= Date.now()) {
+      formError.value = 'Choose a future time to resume this schedule.';
+      return;
+    }
+  }
   creating.value = true;
   try {
-    const payload = {
+    const common = {
       title: formTitle.value.trim(),
       description: formDescription.value.trim() || undefined,
       planIds: [],
       initialPrompt: formInitialPrompt.value,
       cliType: formMode.value === 'direct' ? (availableSessions.value.find(s => s.id === selectedTargetSessionId.value)?.cliType ?? selectedCliType.value) : selectedCliType.value,
       cliParams: formCliParams.value.trim() || undefined,
-      scheduledTime: new Date(formTime.value),
-      scheduleKind: scheduleKind.value,
-      intervalMs: scheduleKind.value === 'interval' ? intervalMinutes.value * 60_000 : undefined,
-      cronExpression: scheduleKind.value === 'cron' ? cronExpression.value.trim() : undefined,
-      endDate: scheduleKind.value === 'cron' ? parseEndDate() : undefined,
       dirPath: selectedDirPath.value.trim(),
       mode: formMode.value,
       targetSessionId: formMode.value === 'direct' ? selectedTargetSessionId.value : undefined,
     };
-    const result = editingTaskId.value ? await schedulerClient.scheduledTaskUpdate(editingTaskId.value, payload) : await schedulerClient.scheduledTaskCreate(payload);
+    let result;
+    if (scheduleKind.value === 'none') {
+      if (!editingTaskId.value) return;
+      result = await schedulerClient.scheduledTaskUpdate(editingTaskId.value, { ...common, scheduleKind: 'none' });
+    } else {
+      const schedule = {
+        scheduledTime: new Date(formTime.value),
+        scheduleKind: scheduleKind.value,
+        intervalMs: scheduleKind.value === 'interval' ? intervalMinutes.value * 60_000 : undefined,
+        cronExpression: scheduleKind.value === 'cron' ? cronExpression.value.trim() : undefined,
+        endDate: scheduleKind.value === 'cron' ? parseEndDate() : undefined,
+      };
+      result = editingTaskId.value
+        ? await schedulerClient.scheduledTaskUpdate(editingTaskId.value, { ...common, ...schedule })
+        : await schedulerClient.scheduledTaskCreate({ ...common, ...schedule });
+    }
     if (result) {
       emit(editingTaskId.value ? 'task-updated' : 'task-created', result);
       if (props.popup) emit('close');
       else { showCreateForm.value = false; resetForm(); await loadTasks(); }
+    } else {
+      formError.value = 'The schedule could not be saved. Check the schedule and try again.';
     }
-  } catch {} finally { creating.value = false; }
+  } catch (error) {
+    formError.value = error instanceof Error ? error.message : 'The schedule could not be saved.';
+  } finally { creating.value = false; }
 }
 
 function editTask(task: ScheduledTask): void {
@@ -238,11 +280,11 @@ function editTask(task: ScheduledTask): void {
   selectedDirPath.value = task.dirPath;
   formCliParams.value = task.cliParams ?? '';
   selectedTargetSessionId.value = task.targetSessionId ?? '';
-  formTime.value = toLocalDateTimeInputValue(new Date(task.scheduledTime));
   scheduleKind.value = task.scheduleKind ?? 'once';
+  formTime.value = scheduleKind.value === 'none' ? '' : toLocalDateTimeInputValue(new Date(task.scheduledTime));
   intervalMinutes.value = Math.max(1, Math.round((task.intervalMs ?? 3600000) / 60000));
   cronExpression.value = task.cronExpression ?? '0 9 * * 1-5';
-  endDate.value = task.endDate ? toLocalDateInputValue(new Date(task.endDate)) : '';
+  endDate.value = task.endDate && scheduleKind.value === 'cron' ? toLocalDateInputValue(new Date(task.endDate)) : '';
   showCreateForm.value = true;
   if (formMode.value === 'direct') loadSessions();
 }
@@ -277,6 +319,13 @@ function cloneTask(): void {
   if (!editingTaskId.value) return;
   editingTaskId.value = null;
   formTitle.value = formTitle.value.trim() ? `${formTitle.value.trim()} (copy)` : '';
+  if (scheduleKind.value === 'none') {
+    scheduleKind.value = 'once';
+    const nextHour = new Date();
+    nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
+    formTime.value = toLocalDateTimeInputValue(nextHour);
+  }
+  formError.value = '';
   showCreateForm.value = true;
 }
 
@@ -304,6 +353,7 @@ onMounted(async () => {
 watch(() => props.initialCreate, (initialCreate) => { if (!initialCreate || props.initialEditTaskId || props.initialPrefill) return; showCreateForm.value = true; startCreateForm(); });
 watch(() => props.initialPrefill, (prefill) => { if (!prefill || props.initialEditTaskId) return; prefillFromSnapshot(prefill); });
 watch(() => props.initialEditTaskId, async (taskId) => { if (!taskId) return; await loadTasks(); const task = tasks.value.find((item) => item.id === taskId); if (task) editTask(task); });
+watch([scheduleKind, formTime], () => { formError.value = ''; });
 onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.pop('scheduler-popup'); });
 </script>
 
@@ -326,8 +376,10 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
       <div v-if="formMode !== 'direct'" class="st-form-row st-form-row--picker"><label class="st-label">CLI Type *</label><button class="st-picker-btn focusable" @click="openCliPicker">{{ selectedCliType ? getCliDisplayName(selectedCliType) : 'Select CLI...' }}</button></div>
       <div v-if="formMode === 'direct'" class="st-form-row"><label class="st-label">Target Session *</label><select v-model="selectedTargetSessionId" class="st-input focusable" :disabled="sessionsForDir.length === 0"><option value="" disabled>{{ sessionsForDir.length === 0 ? 'No sessions in this directory' : 'Select session...' }}</option><option v-for="s in sessionsForDir" :key="s.id" :value="s.id">{{ s.name }} ({{ getCliDisplayName(s.cliType) }})</option></select></div>
       <div v-if="formMode !== 'direct'" class="st-form-row"><label class="st-label">CLI Params (optional)</label><input v-model="formCliParams" type="text" class="st-input focusable" placeholder="Additional CLI arguments" /></div>
-      <div class="st-form-row"><label class="st-label">Scheduled Time *</label><input v-model="formTime" type="datetime-local" class="st-input focusable" /></div>
-      <div class="st-form-row st-form-row--inline"><div class="st-form-row"><label class="st-label">Schedule</label><select v-model="scheduleKind" class="st-input focusable"><option value="once">Once</option><option value="interval">Recurring interval</option><option value="cron">Cron calendar</option></select></div><div v-if="scheduleKind === 'interval'" class="st-form-row"><label class="st-label">Repeat Every (min) *</label><input v-model.number="intervalMinutes" type="number" min="1" class="st-input focusable" /></div></div>
+      <div v-if="scheduleKind !== 'none'" class="st-form-row"><label class="st-label">Scheduled Time *</label><input v-model="formTime" type="datetime-local" class="st-input focusable" /></div>
+      <div class="st-form-row st-form-row--inline"><div class="st-form-row"><label class="st-label">Schedule</label><select v-model="scheduleKind" class="st-input focusable" @change="onScheduleKindChange"><option v-if="editingTaskId" value="none">None</option><option value="once">Once</option><option value="interval">Recurring interval</option><option value="cron">Cron calendar</option></select></div><div v-if="scheduleKind === 'interval'" class="st-form-row"><label class="st-label">Repeat Every (min) *</label><input v-model.number="intervalMinutes" type="number" min="1" class="st-input focusable" /></div></div>
+      <p v-if="scheduleKind === 'none'" class="st-unscheduled-hint">No cadence is set. Choose a schedule and future time to resume.</p>
+      <p v-if="formError" class="st-form-error" role="alert">{{ formError }}</p>
       <div v-if="scheduleKind === 'cron'" class="st-form-row st-cron-box">
         <label class="st-label">Cron Expression *</label>
         <input v-model="cronExpression" type="text" class="st-input focusable" placeholder="0 9 * * 1-5" />
@@ -345,9 +397,9 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
     <div v-if="!popup" class="st-task-list">
       <div v-if="sortedTasks.length === 0 && !showCreateForm" class="st-empty">No scheduled tasks yet. Click "+ Create Task" to add one.</div>
       <div v-for="task in sortedTasks" :key="task.id" class="st-task-card" :class="'st-task-card--' + task.status">
-        <div class="st-task-header"><h4 class="st-task-title">{{ task.title }}</h4><span class="st-task-badge" :class="getStatusBadge(task.status).cssClass">{{ getStatusBadge(task.status).label }}</span></div>
+        <div class="st-task-header"><h4 class="st-task-title">{{ task.title }}</h4><span class="st-task-badge" :class="getStatusBadge(task).cssClass">{{ getStatusBadge(task).label }}</span></div>
         <p v-if="task.description" class="st-task-description">{{ task.description }}</p>
-        <div class="st-task-meta"><span class="st-task-chip">{{ getCliDisplayName(task.cliType) }}</span><span class="st-task-chip">{{ shortenPath(task.dirPath) }}</span><span class="st-task-chip">{{ formatSchedule(task) }}</span><span v-if="task.status === 'pending'" class="st-task-countdown">{{ formatNextRun(task) }}</span><span v-else-if="task.status === 'executing'" class="st-task-countdown st-task-countdown--running">running...</span><span v-else class="st-task-time">{{ formatTime(task.scheduledTime) }}</span></div>
+        <div class="st-task-meta"><span class="st-task-chip">{{ getCliDisplayName(task.cliType) }}</span><span class="st-task-chip">{{ shortenPath(task.dirPath) }}</span><span class="st-task-chip">{{ formatSchedule(task) }}</span><span v-if="task.status === 'pending' && task.scheduleKind === 'none'" class="st-task-time">not scheduled</span><span v-else-if="task.status === 'pending'" class="st-task-countdown">{{ formatNextRun(task) }}</span><span v-else-if="task.status === 'executing'" class="st-task-countdown st-task-countdown--running">running...</span><span v-else class="st-task-time">{{ formatTime(task.scheduledTime) }}</span></div>
         <div v-if="task.error" class="st-task-error">{{ task.error }}</div>
         <div v-if="task.status === 'pending' && !task.systemKind" class="st-task-actions"><button class="st-btn st-btn--secondary focusable" :disabled="creating" @click="editTask(task)">Edit</button><button class="st-btn st-btn--danger focusable" :disabled="creating" @click="cancelTask(task.id)">Cancel Task</button></div>
       </div>
@@ -384,6 +436,8 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-preset-btn:hover { border-color: var(--accent); }
 .st-cron-status { margin: 0; font-size: 0.82rem; color: #44cc44; }
 .st-cron-status--invalid { color: #ff6666; }
+.st-unscheduled-hint { margin: 0; color: var(--text-secondary); font-size: 0.85rem; }
+.st-form-error { margin: 0; color: #ff6666; font-size: 0.85rem; }
 .st-form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--border); }
 .st-btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-size: 0.95rem; }
 .st-btn--primary { background: var(--accent); color: white; }

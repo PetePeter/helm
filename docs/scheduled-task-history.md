@@ -14,6 +14,18 @@ The history therefore captures the task's **setup fields at fire time**, as an
 explicit copy rather than a live reference. Each fire of a recurring or cron task
 produces exactly one entry.
 
+## Disable and resume a schedule
+
+Edit a pending task and choose **None** to disable its schedule. This clears its
+recurrence, cron, end-date, and next-run data while keeping the task pending. The
+task does not run while unscheduled, including through automatic operator checks.
+
+To resume it, choose a schedule kind and provide a new future scheduled time. The
+previous cadence is not restored, and enabling the new schedule does not trigger an
+immediate catch-up run. It runs at the time and cadence selected in the edit form.
+The MCP `scheduler_update` tool accepts `scheduleKind: "none"` to disable a task and
+the normal schedule fields to resume it.
+
 **No stdout is stored — intentionally.** PTY output is large, noisy and already
 available through the session itself. The history answers *"what did I schedule, when
 did it run, and did it work?"* — not *"what did it print"*. Keeping entries small is

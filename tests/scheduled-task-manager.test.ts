@@ -263,6 +263,19 @@ describe('ScheduledTaskManager', () => {
       expect(task.completedAt).toBeUndefined();
     });
 
+    it('requires a real cadence when creating a task', () => {
+      expect(() => manager.createTask({
+        title: 'Unscheduled',
+        planIds: [],
+        initialPrompt: 'Test',
+        cliType: 'claude-code',
+        scheduledTime: new Date(Date.now() + 10000),
+        scheduleKind: 'none' as any,
+        dirPath: TEST_DIR,
+      })).toThrow(/require a schedule/);
+      expect(manager.listTasks()).toHaveLength(0);
+    });
+
     it('rejects an unknown cliType instead of persisting a task that cannot run', () => {
       configLoader.unknownCliTypes.add('deleted-cli');
 
@@ -358,6 +371,7 @@ describe('ScheduledTaskManager', () => {
       manager.reconcileProjects([project]);
       expect(manager.listTasks()).toHaveLength(1);
       expect(() => manager.updateTask(dream.id, { enabled: true })).toThrow(/cliType/);
+      expect(() => manager.updateTask(dream.id, { scheduleKind: 'none' })).toThrow(/enabled to control their schedule/);
       expect(manager.updateTask(dream.id, { cliType: 'claude', enabled: true, userPrompt: 'Focus on API decisions.' })).toMatchObject({
         enabled: true,
         cliType: 'claude',
@@ -415,6 +429,81 @@ describe('ScheduledTaskManager', () => {
         status: 'pending',
       });
       expect(listener).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps a task unscheduled across restart until a fresh future schedule is provided', async () => {
+      const oldDue = new Date(Date.now() + 60_000);
+      const task = manager.createTask({
+        title: 'Recurring task',
+        planIds: [],
+        initialPrompt: 'Test',
+        cliType: 'claude-code',
+        scheduledTime: oldDue,
+        scheduleKind: 'interval',
+        intervalMs: 60_000,
+        dirPath: TEST_DIR,
+      });
+      manager.start();
+
+      const unscheduled = manager.updateTask(task.id, { scheduleKind: 'none' });
+      expect(unscheduled).toMatchObject({
+        status: 'pending',
+        scheduleKind: 'none',
+      });
+      expect(unscheduled).not.toHaveProperty('intervalMs');
+      expect(unscheduled).not.toHaveProperty('cronExpression');
+      expect(unscheduled).not.toHaveProperty('endDate');
+      expect(unscheduled).not.toHaveProperty('nextRunAt');
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(manager.getTask(task.id)?.status).toBe('pending');
+
+      manager.stop();
+      manager = new ScheduledTaskManager(
+        sessionManager as any,
+        ptyManager as any,
+        planManager as any,
+        configLoader as any,
+      );
+      manager.start();
+
+      expect(manager.getTask(task.id)).toMatchObject({ status: 'pending', scheduleKind: 'none' });
+      expect(manager.getTask(task.id)).not.toHaveProperty('nextRunAt');
+      expect(() => manager.updateTask(task.id, { scheduleKind: 'once' })).toThrow(/scheduledTime/i);
+      expect(() => manager.updateTask(task.id, {
+        scheduleKind: 'once',
+        scheduledTime: new Date(Date.now() - 1),
+      })).toThrow(/future/i);
+      expect(manager.getTask(task.id)?.scheduleKind).toBe('none');
+
+      const freshDue = new Date(Date.now() + 10_000);
+      manager.updateTask(task.id, { scheduleKind: 'once', scheduledTime: freshDue });
+      expect(manager.getTask(task.id)?.nextRunAt).toEqual(freshDue);
+
+      await vi.advanceTimersByTimeAsync(9_999);
+      expect(manager.getTask(task.id)?.status).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      await vi.runOnlyPendingTimersAsync();
+      const executing = manager.getTask(task.id);
+      expect(executing?.status).toBe('executing');
+      ptyManager.emitExit(executing!.sessionId!);
+      expect(manager.getTask(task.id)?.status).toBe('completed');
+    });
+
+    it('refuses to run an unscheduled task through the manual run-now path', async () => {
+      const task = manager.createTask({
+        title: 'Paused task',
+        planIds: [],
+        initialPrompt: 'Test',
+        cliType: 'claude-code',
+        scheduledTime: new Date(Date.now() + 60_000),
+        scheduleKind: 'once',
+        dirPath: TEST_DIR,
+      });
+      manager.updateTask(task.id, { scheduleKind: 'none' });
+
+      await expect(manager.runTaskNow(task.id)).resolves.toBe(false);
+      expect(manager.getTask(task.id)).toMatchObject({ status: 'pending', scheduleKind: 'none' });
     });
 
     it('should reject updates for non-pending tasks', () => {

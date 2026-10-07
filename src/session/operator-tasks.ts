@@ -41,7 +41,7 @@ export function mergePlanTask(current: PlanTask | undefined, patch: PlanTask): P
 export function nextCheckAt(planId: string, timers: readonly ScheduledTask[]): number | undefined {
   let earliest: number | undefined;
   for (const t of timers) {
-    if (t.status !== 'pending' || t.enabled === false || !t.planIds.includes(planId)) continue;
+    if (t.status !== 'pending' || t.enabled === false || t.scheduleKind === 'none' || !t.planIds.includes(planId)) continue;
     // new Date(): rows that crossed IPC or JSON may carry ISO strings.
     const at = new Date(t.nextRunAt ?? t.scheduledTime).getTime();
     if (earliest === undefined || at < earliest) earliest = at;

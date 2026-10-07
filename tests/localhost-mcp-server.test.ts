@@ -280,6 +280,7 @@ describe('LocalhostMcpServer', () => {
     const telegramStatusTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'telegram_status');
     const telegramChatTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'telegram_chat');
     const schedulerCreateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_create');
+    const schedulerUpdateTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_update');
     const schedulerDeleteTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'scheduler_delete');
     const notifyUserTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'notify_user');
     const appVisibilityTool = toolsJson.result.tools.find((tool: { name: string }) => tool.name === 'get_app_visibility');
@@ -322,6 +323,7 @@ describe('LocalhostMcpServer', () => {
     expect(telegramStatusTool.description).toContain('No bot token');
     expect(telegramChatTool!.description).toContain('mobile-friendly');
     expect(schedulerCreateTool!.description).toContain('scheduled task');
+    expect(schedulerUpdateTool!.inputSchema.properties.scheduleKind.enum).toContain('none');
     expect(schedulerDeleteTool!.description).toContain('Delete');
     expect(notifyUserTool!.description).toContain('smart delivery routing');
     expect(notifyUserTool!.description).toContain('completion');
@@ -1232,9 +1234,9 @@ describe('LocalhostMcpServer', () => {
       jsonrpc: '2.0',
       id: 83,
       method: 'tools/call',
-      params: { name: 'scheduler_update', arguments: { id: 'task-1', title: 'Updated' } },
+      params: { name: 'scheduler_update', arguments: { id: 'task-1', scheduleKind: 'none' } },
     });
-    expect((service.updateScheduledTask as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('task-1', { title: 'Updated' });
+    expect((service.updateScheduledTask as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('task-1', { scheduleKind: 'none' });
 
     await rpc(port, 'secret-token', {
       jsonrpc: '2.0',

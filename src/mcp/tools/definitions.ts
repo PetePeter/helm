@@ -1437,7 +1437,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'scheduler_update',
     title: 'Update Scheduler Entry',
-    description: 'Update a pending scheduled task. Only pending tasks can be updated. scheduledTime is an ISO 8601 date string.',
+    description: 'Update a pending scheduled task. Set scheduleKind to "none" to discard its cadence and leave it unscheduled. To schedule it again, provide a new future scheduledTime and the new cadence details.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1448,7 +1448,7 @@ export const MCP_TOOLS: McpTool[] = [
         cliType: { type: 'string' },
         dirPath: { type: 'string' },
         scheduledTime: { type: 'string', description: 'ISO 8601 datetime' },
-        scheduleKind: { type: 'string', enum: ['once', 'interval', 'cron'] },
+        scheduleKind: { type: 'string', enum: ['none', 'once', 'interval', 'cron'] },
         intervalMs: { type: 'number' },
         cronExpression: { type: 'string' },
         endDate: { type: 'string' },

@@ -55,6 +55,25 @@ describe('OperatorTaskWatcher', () => {
     expect(port.ran).toEqual(['t1']);
   });
 
+  it('does not run an unscheduled operator check when its builder finishes', () => {
+    port.timers[0] = { ...port.timers[0], scheduleKind: 'none' };
+
+    setState('worker', 'completed');
+
+    expect(port.ran).toEqual([]);
+  });
+
+  it('turns operator checks off when a timer is unscheduled, and keeps it off after rescheduling', () => {
+    const timerWasDisabled = { ...timer('t1', 'p1'), scheduleKind: 'none' };
+    port.emit('task:changed', timerWasDisabled);
+    expect(port.plans.get('p1')!.task?.checks).toBe('off');
+
+    port.timers[0] = { ...timer('t1', 'p1'), scheduleKind: 'interval' };
+    setState('worker', 'completed');
+
+    expect(port.ran).toEqual([]);
+  });
+
   it('checks once per transition, not on every repeat of the same state', () => {
     setState('worker', 'completed');
     setState('worker', 'completed');
@@ -85,6 +104,18 @@ describe('OperatorTaskWatcher', () => {
     fresh.timers.push(timer('t2', 'p2'));
     new OperatorTaskWatcher(fresh).start();
     expect(fresh.timers).toEqual([]);
+  });
+
+  it('still cleans up an unscheduled timer whose builder disappeared while Helm was down', () => {
+    const fresh = new FakePort();
+    fresh.plans.set('p2', { status: 'coding', task: { builderSessionId: 'ghost' } });
+    fresh.timers.push({ ...timer('t2', 'p2'), scheduleKind: 'none' });
+
+    new OperatorTaskWatcher(fresh).start();
+
+    expect(fresh.timers).toEqual([]);
+    expect(fresh.plans.get('p2')!.task?.waitingOn).toMatch(/builder session .*gone/i);
+    expect(fresh.plans.get('p2')!.task?.checks).toBe('off');
   });
 
   it('does not treat a builder that finished before a restart as news', () => {

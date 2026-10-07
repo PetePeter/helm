@@ -38,7 +38,11 @@ export class OperatorTaskWatcher {
     this.port.onSessionRemoved((e) => this.endChecksFor(e.sessionId));
     this.port.onTimerChanged((t) => this.onTimerChanged(t));
     for (const { planId, task } of this.checks()) {
-      const builder = this.port.getPlan(planId)?.task?.builderSessionId;
+      const planTask = this.port.getPlan(planId)?.task;
+      if (this.isDisabled(task) && planTask?.checks !== 'off') {
+        this.port.patchPlanTask(planId, { checks: 'off' });
+      }
+      const builder = planTask?.builderSessionId;
       if (!builder) continue;
       const session = this.port.getSession(builder);
       // Closed while Helm was down: session:removed never came.
@@ -67,7 +71,8 @@ export class OperatorTaskWatcher {
     const previous = this.lastState.get(sessionId);
     this.lastState.set(sessionId, state);
     if (!state || state === previous || !NEWS_STATES.has(state)) return;
-    for (const { task } of this.checksBuiltBy(sessionId)) {
+    for (const { planId, task } of this.checksBuiltBy(sessionId)) {
+      if (this.isDisabled(task) || this.port.getPlan(planId)?.task?.checks === 'off') continue;
       logger.info(`[OperatorTaskWatcher] builder ${sessionId} is ${state} — checking "${task.title}" now`);
       void this.port.runTaskNow(task.id);
     }
@@ -85,10 +90,14 @@ export class OperatorTaskWatcher {
   }
 
   private onTimerChanged(timer: ScheduledTask): void {
-    if (timer.status !== 'cancelled') return;
+    if (timer.status !== 'cancelled' && !this.isDisabled(timer)) return;
     for (const planId of timer.planIds) {
       const plan = this.port.getPlan(planId);
       if (plan?.task && plan.status !== 'done') this.port.patchPlanTask(planId, { checks: 'off' });
     }
+  }
+
+  private isDisabled(task: ScheduledTask): boolean {
+    return task.enabled === false || task.scheduleKind === 'none';
   }
 }
