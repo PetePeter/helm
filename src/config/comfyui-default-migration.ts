@@ -4,7 +4,7 @@ import * as YAML from 'yaml';
 import { cloneDefaultComfyUiConfigForKind } from '../session/comfyui/comfyui-config.js';
 import logger from '../utils/logger.js';
 
-const MIGRATION_ID = 'comfyui-tool-profiles-v6';
+const MIGRATION_ID = 'comfyui-tool-profiles-v8';
 const DEFAULT_COMFYUI_TYPES = [
   {
     id: '3cef90de-c638-49b5-942c-aa7c198fc294',
@@ -21,6 +21,9 @@ const DEFAULT_COMFYUI_TYPES = [
 ];
 const PREVIOUS_DEFAULT_CHECKPOINTS: Record<string, string> = {
   'image-lustify-v8-apex': 'lustifySDXLNSFW_apexV8.safetensors',
+};
+const PREVIOUS_DEFAULT_SIZES: Record<string, number> = {
+  'image-lustify-v8-apex': 1536,
 };
 // Presets that shipped once and were withdrawn: FLUX FP8 decodes to NaN noise
 // on ROCm, so the migration takes it back out of tools that received it.
@@ -86,7 +89,47 @@ function findTargetId(
   return matches.length === 1 ? matches[0] : null;
 }
 
-function mergeProfile(existing: Record<string, any>, defaults: Record<string, any>): Record<string, any> {
+const SINGLE_PASS_NODE_IDS = ['1', '2', '3', '4', '5', '6', '7'];
+/** Nodes the single-pass and upscale graphs share, whose settings a user may have changed. */
+const CARRIED_NODE_IDS = ['1', '2', '4', '5'];
+
+/**
+ * Move a profile still on the shipped single-pass graph to the default's
+ * upscale graph. A graph the user restructured no longer has exactly the
+ * shipped nodes and is left alone.
+ */
+function upgradeToUpscaleGraph(existing: Record<string, any>, defaults: Record<string, any>): Record<string, any> {
+  const current = existing.workflow;
+  if (!isRecord(defaults.workflow?.['8']) || !isRecord(current) || !isRecord(existing.mappings)
+    || Object.keys(current).sort().join() !== [...SINGLE_PASS_NODE_IDS].sort().join()
+    || current['3']?.class_type !== 'EmptyLatentImage') return existing;
+
+  const workflow = structuredClone(defaults.workflow);
+  for (const id of CARRIED_NODE_IDS) {
+    if (current[id]?.class_type === workflow[id].class_type && isRecord(current[id].inputs)) {
+      workflow[id].inputs = { ...workflow[id].inputs, ...current[id].inputs };
+    }
+  }
+  // A size the user set survives; the old shipped default gives way to the
+  // model's trained size, which the new default carries.
+  const nextDefaults = { ...(isRecord(existing.defaults) ? existing.defaults : {}) };
+  const previousSize = PREVIOUS_DEFAULT_SIZES[defaults.id];
+  for (const field of ['width', 'height'] as const) {
+    const size = current['3'].inputs?.[field];
+    if (typeof size === 'number' && size !== previousSize) workflow['8'].inputs[field] = size;
+    if (nextDefaults[field] === previousSize) nextDefaults[field] = defaults.defaults?.[field];
+  }
+  if (!nextDefaults.negativePrompt) nextDefaults.negativePrompt = defaults.defaults?.negativePrompt ?? '';
+  return {
+    ...existing,
+    workflow,
+    mappings: { ...existing.mappings, width: defaults.mappings.width, height: defaults.mappings.height },
+    defaults: nextDefaults,
+  };
+}
+
+function mergeProfile(current: Record<string, any>, defaults: Record<string, any>): Record<string, any> {
+  const existing = upgradeToUpscaleGraph(current, defaults);
   const merged = { ...existing };
   const legacyName = defaults.id === 'image' ? 'Image' : defaults.id === 'video' ? 'Video' : undefined;
   if (!existing.name || existing.name === legacyName || existing.name === defaults.name

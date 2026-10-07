@@ -16,6 +16,8 @@ describe('ComfyUI configuration', () => {
     expect(config.profiles.map(({ id, name, kind }) => [id, name, kind])).toEqual([
       ['image', 'SDXL Turbo', 'image'],
       ['image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 'image'],
+      ['image-z-image-turbo', 'Graphics · Z-Image Turbo', 'image'],
+      ['image-qwen-image-2-1', 'Detail · Qwen-Image 2.1 (slow)', 'image'],
       ['video', '1080p Landscape (1920x1088)', 'video'],
       ['video-1080p-portrait', '1080p Portrait (1088x1920)', 'video'],
     ]);
@@ -40,7 +42,7 @@ describe('ComfyUI configuration', () => {
       return [graph['7'].inputs.width, graph['7'].inputs.height, graph['10'].inputs.fps, graph['7'].inputs.length];
     });
 
-    expect(imageSizes).toEqual([[512, 512], [1536, 1536]]);
+    expect(imageSizes).toEqual([[512, 512], [1024, 1024], [1024, 1024], [1024, 1024]]);
     expect(videoSettings).toEqual([
       [1920, 1088, 30, 49], [1088, 1920, 30, 49],
     ]);
@@ -102,7 +104,7 @@ describe('ComfyUI configuration', () => {
     );
 
     expect(comfyUiChatProfiles(config).map(profile => profile.id)).toEqual([
-      'image', 'image-lustify-v8-apex', 'video', 'video-1080p-portrait',
+      'image', 'image-lustify-v8-apex', 'image-z-image-turbo', 'image-qwen-image-2-1', 'video', 'video-1080p-portrait',
     ]);
   });
 
@@ -123,8 +125,22 @@ describe('ComfyUI configuration', () => {
     const lustify = profiles.find(profile => profile.id === 'image-lustify-v8-apex')!;
     const lustifyGraph = applyComfyUiProfile(lustify, 'a realistic portrait');
     expect(lustifyGraph['1'].inputs.ckpt_name).toBe('lustifyNSFWCheckpoint_apexV8.safetensors');
-    expect(lustifyGraph['3'].inputs).toMatchObject({ width: 1536, height: 1536 });
     expect(lustifyGraph['4'].inputs).toMatchObject({ steps: 30, cfg: 3.5, sampler_name: 'dpmpp_2m_sde', scheduler: 'karras' });
+    expect(lustifyGraph['5'].inputs.text).not.toBe('');
+
+    // The picked size reaches the size probe, never the first-pass latent:
+    // SDXL warps anatomy when sampled above about one megapixel.
+    const fhd = applyComfyUiProfile(lustify, 'a realistic portrait', 7, 'fhd-landscape');
+    expect(fhd['8'].inputs).toMatchObject({ width: 1920, height: 1080 });
+    expect(fhd['3'].inputs).toMatchObject({ width: ['10', 0], height: ['10', 1] });
+    expect(fhd['9'].inputs.megapixels).toBe(1);
+    // The repaint pass works on the resized image and its result is what gets saved.
+    expect(fhd['13'].inputs).toMatchObject({ cfg: 3.5, sampler_name: 'dpmpp_2m_sde', scheduler: 'karras', latent_image: ['12', 0] });
+    expect(fhd['13'].inputs.denoise).toBeLessThan(1);
+    // Above the repaint cap the picked size is reached by a plain resize of the repainted image.
+    expect(String(fhd['16'].inputs.expression)).toContain('min(');
+    expect(fhd['17'].inputs).toMatchObject({ image: ['14', 0], width: ['15', 0], height: ['15', 1] });
+    expect(fhd['7'].inputs.images).toEqual(['17', 0]);
 
   });
 

@@ -6,7 +6,7 @@ import {
   migrateComfyUiToolDefaults,
   type ComfyUiDefaultMigrationFiles,
 } from '../src/config/comfyui-default-migration.js';
-import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
+import { cloneDefaultComfyUiConfigForKind, validateComfyUiConfig } from '../src/session/comfyui/comfyui-config.js';
 
 const IMAGE_ID = '3cef90de-c638-49b5-942c-aa7c198fc294';
 const VIDEO_ID = '36ccf04a-e326-4f05-b525-3d1150fa8497';
@@ -64,7 +64,7 @@ describe('ComfyUI profile migration', () => {
     const types = readTypes();
     expect(types.existing.spawnCommand).toBe('existing');
     expect(types[IMAGE_ID].comfyUi.profiles.map((profile: any) => profile.name)).toEqual([
-      'SDXL Turbo', 'Photoreal · LUSTIFY V8 Apex',
+      'SDXL Turbo', 'Photoreal · LUSTIFY V8 Apex', 'Graphics · Z-Image Turbo', 'Detail · Qwen-Image 2.1 (slow)',
     ]);
     expect(types[IMAGE_ID].noPromptCache).toBe(true);
     expect(types[VIDEO_ID].comfyUi.profiles.map((profile: any) => profile.name)).toEqual([
@@ -111,7 +111,7 @@ describe('ComfyUI profile migration', () => {
     expect(migrated.profiles.find((profile: any) => profile.id === 'image').workflow['7'].inputs.filename_prefix)
       .toBe('MyImages');
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v6');
+      .toContain('comfyui-tool-profiles-v8');
   });
 
   it('preserves custom endpoints and graphs while merging missing presets once', () => {
@@ -183,6 +183,36 @@ describe('ComfyUI profile migration', () => {
       .toBe('my-checkpoint.safetensors');
   });
 
+  it('moves a single-pass LUSTIFY profile to the upscale graph and keeps its tuning', () => {
+    const image = defaultType(IMAGE_ID);
+    // The graph LUSTIFY shipped with before the upscale pass: the Turbo shape.
+    const singlePass = structuredClone(image.comfyUi.profiles.find((profile: any) => profile.id === 'image'));
+    singlePass.id = 'image-lustify-v8-apex';
+    singlePass.workflow['1'].inputs.ckpt_name = 'lustifyNSFWCheckpoint_apexV8.safetensors';
+    singlePass.workflow['3'].inputs = { width: 1536, height: 1536, batch_size: 1 };
+    singlePass.workflow['4'].inputs.steps = 33;
+    singlePass.defaults = { negativePrompt: '', width: 1536, height: 1536, steps: 33, cfg: 3.5, seed: 0 };
+    const restructured = structuredClone(singlePass);
+    restructured.id = 'my-own-graph';
+    restructured.workflow['20'] = { class_type: 'ImageInvert', inputs: { image: ['6', 0] } };
+    image.comfyUi.profiles = [singlePass, restructured];
+    writeTypes({ [IMAGE_ID]: image });
+
+    expect(migrateComfyUiToolDefaults(files)).toBe(true);
+
+    const profiles = readTypes()[IMAGE_ID].comfyUi.profiles;
+    const migrated = profiles.find((profile: any) => profile.id === 'image-lustify-v8-apex');
+    // The old shipped 1536 default gives way to the size the model was trained at.
+    expect(migrated.workflow['8'].inputs).toMatchObject({ width: 1024, height: 1024 });
+    expect(migrated.defaults).toMatchObject({ width: 1024, height: 1024 });
+    expect(migrated.mappings.width).toEqual({ nodeId: '8', input: 'width' });
+    expect(migrated.workflow['4'].inputs.steps).toBe(33);
+    expect(migrated.workflow['7'].inputs.images).toEqual(['17', 0]);
+    expect(migrated.defaults.negativePrompt).not.toBe('');
+    expect(() => validateComfyUiConfig({ endpoint: 'http://127.0.0.1:8188', profiles: [migrated] })).not.toThrow();
+    expect(profiles.find((profile: any) => profile.id === 'my-own-graph').workflow['8']).toBeUndefined();
+  });
+
   it('does not replace tuning with defaults when a profile lacks defaults', () => {
     const image = defaultType(IMAGE_ID);
     image.comfyUi.profiles = [structuredClone(image.comfyUi.profiles[0])];
@@ -215,7 +245,7 @@ describe('ComfyUI profile migration', () => {
     writeTypes({ [IMAGE_ID]: defaultType(IMAGE_ID) });
     expect(migrateComfyUiToolDefaults(files)).toBe(true);
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v6');
+      .toContain('comfyui-tool-profiles-v8');
     const types = readTypes();
     types[IMAGE_ID].comfyUi.profiles = types[IMAGE_ID].comfyUi.profiles
       .filter((profile: any) => profile.id !== 'image-lustify-v8-apex');

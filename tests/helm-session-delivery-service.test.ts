@@ -733,6 +733,7 @@ describe('HelmSessionDeliveryService', () => {
         artifacts: { getForSession: () => [], create: () => ({}) as never },
         attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' },
         postChat: async (_sessionId, text) => { chatLines.push(text); },
+        recordPrompt: () => undefined,
         notifyRequester: async requesterSessionId => { notified.push(requesterSessionId); },
       });
       host.create(deps.receiver.id, config);

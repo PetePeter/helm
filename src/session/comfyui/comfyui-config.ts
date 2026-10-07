@@ -49,12 +49,42 @@ const IMAGE_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
   '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['6', 0] } },
 };
 
+/**
+ * SDXL is trained near one megapixel: asked for FHD or 4K outright it doubles
+ * subjects and warps anatomy. These nodes make the first pass at the requested
+ * aspect scaled to one megapixel, enlarge it and repaint lightly, then resize
+ * to the exact requested size. The repaint is capped near FHD because above
+ * that a 16 GB card takes minutes per step; larger sizes get a plain resize of
+ * the repainted image. Every size is worked out in the graph, so the chat size
+ * picker keeps writing one plain width and height.
+ */
+const UPSCALE_NODES: ComfyUiProfileConfig['workflow'] = {
+  '8': { class_type: 'EmptyImage', inputs: { width: 1024, height: 1024, batch_size: 1, color: 0 } },
+  '9': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['8', 0], upscale_method: 'nearest-exact', megapixels: 1, resolution_steps: 64 } },
+  '10': { class_type: 'GetImageSize', inputs: { image: ['9', 0] } },
+  '3': { class_type: 'EmptyLatentImage', inputs: { width: ['10', 0], height: ['10', 1], batch_size: 1 } },
+  '15': { class_type: 'GetImageSize', inputs: { image: ['8', 0] } },
+  '16': { class_type: 'ComfyMathExpression', inputs: { expression: 'min(a * b, 2100000) / 1000000', 'values.a': ['15', 0], 'values.b': ['15', 1] } },
+  '11': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['6', 0], upscale_method: 'lanczos', megapixels: ['16', 0], resolution_steps: 8 } },
+  '12': { class_type: 'VAEEncode', inputs: { pixels: ['11', 0], vae: ['1', 2] } },
+  // Eight repaint steps look the same as twenty at this strength and cost less than half.
+  '13': { class_type: 'KSampler', inputs: { seed: 1, steps: 8, cfg: 1, sampler_name: 'euler_ancestral', scheduler: 'sgm_uniform', denoise: 0.35, model: ['1', 0], positive: ['2', 0], negative: ['5', 0], latent_image: ['12', 0] } },
+  '14': { class_type: 'VAEDecode', inputs: { samples: ['13', 0], vae: ['1', 2] } },
+  '17': { class_type: 'ImageScale', inputs: { image: ['14', 0], upscale_method: 'lanczos', width: ['15', 0], height: ['15', 1], crop: 'disabled' } },
+  '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['17', 0] } },
+};
+
+const PHOTOREAL_NEGATIVE_PROMPT = 'blurry, low quality, deformed, extra limbs, extra fingers, watermark, text';
+
 interface ImageProfileOptions {
   checkpoint?: string;
   steps?: number;
   cfg?: number;
   samplerName?: string;
   scheduler?: string;
+  negativePrompt?: string;
+  /** Generate near one megapixel, then upscale to the requested size. */
+  upscale?: boolean;
 }
 
 const IMAGE_MAPPINGS: ComfyUiProfileConfig['mappings'] = {
@@ -74,29 +104,118 @@ function imageProfile(
   height: number,
   options: ImageProfileOptions = {},
 ): ComfyUiProfileConfig {
-  const workflow = structuredClone(IMAGE_WORKFLOW);
-  const checkpoint = workflow['1'] as { inputs: Record<string, unknown> };
-  const latent = workflow['3'] as { inputs: Record<string, unknown> };
-  const sampler = workflow['4'] as { inputs: Record<string, unknown> };
+  type Node = { inputs: Record<string, unknown> };
+  const workflow = structuredClone({ ...IMAGE_WORKFLOW, ...(options.upscale ? UPSCALE_NODES : {}) }) as Record<string, Node>;
+  const mappings = structuredClone(IMAGE_MAPPINGS);
+  // With the upscale pass the requested size goes to the size probe; the latent follows it.
+  const sizeNodeId = options.upscale ? '8' : '3';
+  mappings.width = { nodeId: sizeNodeId, input: 'width' };
+  mappings.height = { nodeId: sizeNodeId, input: 'height' };
   const steps = options.steps ?? 4;
   const cfg = options.cfg ?? 1;
-  checkpoint.inputs.ckpt_name = options.checkpoint ?? 'sd_xl_turbo_1.0_fp16.safetensors';
-  latent.inputs.width = width;
-  latent.inputs.height = height;
-  sampler.inputs.steps = steps;
-  sampler.inputs.cfg = cfg;
-  if (options.samplerName) sampler.inputs.sampler_name = options.samplerName;
-  if (options.scheduler) sampler.inputs.scheduler = options.scheduler;
+  workflow['1'].inputs.ckpt_name = options.checkpoint ?? 'sd_xl_turbo_1.0_fp16.safetensors';
+  workflow[sizeNodeId].inputs.width = width;
+  workflow[sizeNodeId].inputs.height = height;
+  // The repaint pass keeps the first pass's guidance and sampler, not its step count.
+  for (const samplerId of options.upscale ? ['4', '13'] : ['4']) {
+    const sampler = workflow[samplerId].inputs;
+    sampler.cfg = cfg;
+    if (options.samplerName) sampler.sampler_name = options.samplerName;
+    if (options.scheduler) sampler.scheduler = options.scheduler;
+  }
+  workflow['4'].inputs.steps = steps;
   return {
     id,
     name,
     kind: 'image',
     workflow,
-    mappings: structuredClone(IMAGE_MAPPINGS),
-    defaults: { negativePrompt: '', width, height, steps, cfg, seed: 0 },
+    mappings,
+    defaults: { negativePrompt: options.negativePrompt ?? '', width, height, steps, cfg, seed: 0 },
     outputNodeIds: ['7'],
   };
 }
+
+/**
+ * Z-Image Turbo: follows a prompt closely and spells text, which SDXL cannot,
+ * so it is the profile for signs, icons and game assets. The int8 model with
+ * the fp8 encoder is the pair that fits a 16 GB card together; the bf16 model
+ * looks the same but spills out of VRAM and runs five times slower.
+ */
+const Z_IMAGE_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
+  '1': { class_type: 'UNETLoader', inputs: { unet_name: 'z_image_turbo_int8_convrot.safetensors', weight_dtype: 'default' } },
+  '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen_3_4b_fp8_mixed.safetensors', type: 'lumina2', device: 'default' } },
+  '3': { class_type: 'VAELoader', inputs: { vae_name: 'z_image_ae.safetensors' } },
+  '4': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['2', 0] } },
+  // The distilled model runs without guidance, so there is no negative prompt to map.
+  '5': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['4', 0] } },
+  // Sampled at the picked aspect scaled to one megapixel, then resized: at FHD
+  // the model and its encoder no longer fit a 16 GB card and a step takes minutes.
+  '11': { class_type: 'EmptyImage', inputs: { width: 1024, height: 1024, batch_size: 1, color: 0 } },
+  '12': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['11', 0], upscale_method: 'nearest-exact', megapixels: 1, resolution_steps: 16 } },
+  '13': { class_type: 'GetImageSize', inputs: { image: ['12', 0] } },
+  '14': { class_type: 'GetImageSize', inputs: { image: ['11', 0] } },
+  '6': { class_type: 'EmptySD3LatentImage', inputs: { width: ['13', 0], height: ['13', 1], batch_size: 1 } },
+  '8': { class_type: 'ModelSamplingAuraFlow', inputs: { model: ['1', 0], shift: 3 } },
+  '9': { class_type: 'KSampler', inputs: { seed: 0, steps: 8, cfg: 1, sampler_name: 'res_multistep', scheduler: 'simple', denoise: 1, model: ['8', 0], positive: ['4', 0], negative: ['5', 0], latent_image: ['6', 0] } },
+  '10': { class_type: 'VAEDecode', inputs: { samples: ['9', 0], vae: ['3', 0] } },
+  '15': { class_type: 'ImageScale', inputs: { image: ['10', 0], upscale_method: 'lanczos', width: ['14', 0], height: ['14', 1], crop: 'disabled' } },
+  '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['15', 0] } },
+};
+
+const Z_IMAGE_PROFILE: ComfyUiProfileConfig = {
+  id: 'image-z-image-turbo',
+  name: 'Graphics · Z-Image Turbo',
+  kind: 'image',
+  workflow: Z_IMAGE_WORKFLOW,
+  mappings: {
+    prompt: { nodeId: '4', input: 'text' },
+    width: { nodeId: '11', input: 'width' },
+    height: { nodeId: '11', input: 'height' },
+    steps: { nodeId: '9', input: 'steps' },
+    cfg: { nodeId: '9', input: 'cfg' },
+    seed: { nodeId: '9', input: 'seed' },
+  },
+  defaults: { width: 1024, height: 1024, steps: 8, cfg: 1, seed: 0 },
+  outputNodeIds: ['7'],
+};
+
+/**
+ * Qwen-Image 2.1: the most detailed of the three, kept for when quality
+ * matters more than time. Its model and text encoder do not fit a 16 GB card
+ * together, so each new prompt swaps them and a picture takes minutes.
+ */
+const QWEN_IMAGE_PROFILE: ComfyUiProfileConfig = {
+  id: 'image-qwen-image-2-1',
+  name: 'Detail · Qwen-Image 2.1 (slow)',
+  kind: 'image',
+  workflow: {
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'qwen_image_2.1_int8_convrot.safetensors', weight_dtype: 'default' } },
+    '2': { class_type: 'CLIPLoader', inputs: { clip_name: 'qwen3vl_8b_int8_convrot.safetensors', type: 'qwen_image', device: 'default' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: 'qwen_image_2.1_vae_bf16.safetensors' } },
+    '4': { class_type: 'TextEncodeQwenImage21', inputs: { clip: ['2', 0], prompt: '', negative_prompt: '', resolution: 1024 } },
+    // Same sizing as the Graphics profile: one megapixel at the picked aspect, then a resize.
+    '11': { class_type: 'EmptyImage', inputs: { width: 1024, height: 1024, batch_size: 1, color: 0 } },
+    '12': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['11', 0], upscale_method: 'nearest-exact', megapixels: 1, resolution_steps: 16 } },
+    '13': { class_type: 'GetImageSize', inputs: { image: ['12', 0] } },
+    '14': { class_type: 'GetImageSize', inputs: { image: ['11', 0] } },
+    '6': { class_type: 'EmptyLatentImage', inputs: { width: ['13', 0], height: ['13', 1], batch_size: 1 } },
+    '9': { class_type: 'KSampler', inputs: { seed: 0, steps: 25, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1, model: ['1', 0], positive: ['4', 0], negative: ['4', 1], latent_image: ['6', 0] } },
+    '10': { class_type: 'VAEDecode', inputs: { samples: ['9', 0], vae: ['3', 0] } },
+    '15': { class_type: 'ImageScale', inputs: { image: ['10', 0], upscale_method: 'lanczos', width: ['14', 0], height: ['14', 1], crop: 'disabled' } },
+    '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['15', 0] } },
+  },
+  mappings: {
+    prompt: { nodeId: '4', input: 'prompt' },
+    negativePrompt: { nodeId: '4', input: 'negative_prompt' },
+    width: { nodeId: '11', input: 'width' },
+    height: { nodeId: '11', input: 'height' },
+    steps: { nodeId: '9', input: 'steps' },
+    cfg: { nodeId: '9', input: 'cfg' },
+    seed: { nodeId: '9', input: 'seed' },
+  },
+  defaults: { negativePrompt: '', width: 1024, height: 1024, steps: 25, cfg: 1, seed: 0 },
+  outputNodeIds: ['7'],
+};
 
 const VIDEO_NEGATIVE_PROMPT = '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走';
 
@@ -147,13 +266,18 @@ export const DEFAULT_COMFYUI_CONFIG: ComfyUiToolConfig = {
   startCommand: DEFAULT_COMFYUI_START_COMMAND,
   profiles: [
     imageProfile('image', 'SDXL Turbo', 512, 512),
-    imageProfile('image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 1536, 1536, {
+    // Default to the size the model was trained at; a picked size is upscaled to.
+    imageProfile('image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 1024, 1024, {
       checkpoint: 'lustifyNSFWCheckpoint_apexV8.safetensors',
       steps: 30,
       cfg: 3.5,
       samplerName: 'dpmpp_2m_sde',
       scheduler: 'karras',
+      negativePrompt: PHOTOREAL_NEGATIVE_PROMPT,
+      upscale: true,
     }),
+    structuredClone(Z_IMAGE_PROFILE),
+    structuredClone(QWEN_IMAGE_PROFILE),
     videoProfile('video', '1080p Landscape (1920x1088)', 1920, 1088),
     videoProfile('video-1080p-portrait', '1080p Portrait (1088x1920)', 1088, 1920),
   ],

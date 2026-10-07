@@ -6,6 +6,16 @@ A ComfyUI session is a chat-pane session with no CLI behind it. `ComfyUiSessionH
 
 A ComfyUI tool is configured with an endpoint and a list of **profiles**. A profile is one API workflow graph plus the mappings that say which node inputs take the prompt, size, steps and seed. Its `kind` is `image` or `video`.
 
+A profile's default size is the size its model was trained at, and no shipped image profile samples at a picked size directly. Both derive their sizes inside the graph (`EmptyImage` → `ImageScaleToTotalPixels` → `GetImageSize`), so the picker still writes one plain width and height.
+
+| Profile | For | How a picked size is reached |
+|---------|-----|------------------------------|
+| Photoreal · LUSTIFY V8 Apex (SDXL) | People, photographs | First pass at the picked aspect scaled to one megapixel; enlarge and repaint lightly (8 steps, 0.35 denoise), capped near FHD; plain resize to the exact size |
+| Graphics · Z-Image Turbo | Signs, icons, game assets, anything with text | Sampled at the picked aspect scaled to one megapixel, then a plain resize |
+| Detail · Qwen-Image 2.1 (slow) | Best detail when minutes per picture are acceptable | Same as Graphics. Its model and text encoder do not fit a 16 GB card together, so every new prompt swaps them |
+
+SDXL warps anatomy when sampled far above one megapixel, and both models stop fitting a 16 GB card at large sizes: a step that takes a second at one megapixel takes minutes at 4K. The Graphics profile ships the int8 model with the fp8 text encoder because that pair fits in VRAM together.
+
 Only the safe selector data leaves the main process: `id`, `name`, `kind` and `supportsImageSize`. The workflow graphs stay in desktop config. That selector data is on the session as `comfyUiProfiles` and `comfyUiImageSizes`, which is what the chat pane's pickers and `session_get` / `session_list` both read.
 
 ## Who can ask
