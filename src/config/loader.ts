@@ -608,10 +608,10 @@ export class ConfigLoader {
     if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.configDir))) {
       this.cliTypeStore.load();
     }
-    // Add the packaged ComfyUI tool defaults to existing installs once. Custom
-    // ConfigLoader directories (including test fixtures) remain user-owned.
+    // Merge ComfyUI presets only into tools a user already configured. Fresh
+    // installs remain free of optional ComfyUI tool entries.
     if (path.resolve(this.configDir) === path.resolve(DEFAULT_CONFIG_DIR)
-      && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.configDir, path.join(sourceConfigDir, 'cli-types.yaml')))) {
+      && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.configDir))) {
       this.cliTypeStore.load();
     }
     this.migrateLegacyBindings();
@@ -1366,6 +1366,7 @@ export class ConfigLoader {
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
     if (options?.noPromptCache === true) tool.noPromptCache = true;
+    else if (options?.comfyUi) tool.noPromptCache = options.noPromptCache ?? true;
     if (options?.keepWarmPrompt) tool.keepWarmPrompt = options.keepWarmPrompt;
     if (options?.mouseTracking === true) tool.mouseTracking = true;
     if (options?.bindingProfileId) tool.bindingProfileId = options.bindingProfileId;
@@ -1459,8 +1460,11 @@ export class ConfigLoader {
         else existing[field] = val;
       }
       if (options.noPromptCache !== undefined) {
-        if (options.noPromptCache) existing.noPromptCache = true;
-        else delete existing.noPromptCache;  // omit default from YAML
+        const hasComfyUi = options.comfyUi === null ? false : options.comfyUi !== undefined ? Boolean(options.comfyUi) : Boolean(existing.comfyUi);
+        if (options.noPromptCache || hasComfyUi) existing.noPromptCache = options.noPromptCache;
+        else delete existing.noPromptCache; // omit the CLI default from YAML
+      } else if (options.comfyUi && existing.noPromptCache === undefined) {
+        existing.noPromptCache = true;
       }
       if (options.mouseTracking !== undefined) {
         if (options.mouseTracking === false) {

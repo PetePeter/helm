@@ -51,6 +51,16 @@ class ChatStoreTest {
     }
 
     @Test
+    fun `ComfyUI profile and size selections survive a restart`() {
+        repository().sending("s1", "portrait", at = 7, comfyProfileId = "lustify", comfyImageSizeId = "4k-portrait")
+
+        val restored = repository().thread("s1").single()
+
+        assertEquals("lustify", restored.comfyProfileId)
+        assertEquals("4k-portrait", restored.comfyImageSizeId)
+    }
+
+    @Test
     fun `restored rows get fresh distinct keys`() {
         repository().apply { receive(DESK, chat("a", seq = 1)); receive(DESK, chat("b", seq = 2)) }
 

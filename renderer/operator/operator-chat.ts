@@ -45,7 +45,7 @@ export interface OperatorChatEntry {
 export interface OperatorChatClient {
   voiceOperatorHistory(sessionId?: string): Promise<OperatorChatEntry[]>;
   onVoiceOperatorChat(callback: (entry: OperatorChatEntry) => void): () => void;
-  voiceAsk(text: string, filePath?: string, sessionId?: string, comfyProfileId?: string): Promise<{ ok: true } | Fail>;
+  voiceAsk(text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string): Promise<{ ok: true } | Fail>;
   voiceTranscribe(audio: Uint8Array, mimeType: string): Promise<{ ok: true; text: string } | Fail>;
 }
 
@@ -143,13 +143,13 @@ export function createOperatorChat(deps: OperatorChatDeps) {
     unsubscribe = null;
   }
 
-  async function send(comfyProfileId?: string): Promise<void> {
+  async function send(comfyProfileId?: string, comfyImageSizeId?: string): Promise<void> {
     const text = draft.value.trim();
     if (!text || sending.value) return;
     sending.value = true;
     error.value = null;
     try {
-      const result = await deps.client.voiceAsk(text, attachment.value ?? undefined, deps.sessionId, comfyProfileId);
+      const result = await deps.client.voiceAsk(text, attachment.value ?? undefined, deps.sessionId, comfyProfileId, comfyImageSizeId);
       if (result.ok) {
         // The bubble arrives from the journal feed, like a phone turn does.
         draft.value = '';

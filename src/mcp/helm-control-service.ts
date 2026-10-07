@@ -158,7 +158,8 @@ export interface SessionSummary {
   /** An API-tool session (Helm-hosted agent loop). */
   apiTool?: boolean;
   comfyUiTool?: boolean;
-  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyUiImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
   /** A subagent: the session whose Agent call spawned it. Clients hide these rows. */
   subagentOf?: string;
   /** Subagents this session is waiting on — clients show a 🔥 count. */

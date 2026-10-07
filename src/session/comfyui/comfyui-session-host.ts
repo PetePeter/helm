@@ -9,7 +9,13 @@ import type { PtyProcess } from '../pty-manager.js';
 import type { ChatAttachmentRef } from '../chat/chat-bridge.js';
 import { logger } from '../../utils/logger.js';
 import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
-import { applyComfyUiProfile, validateComfyUiConfig } from './comfyui-config.js';
+import {
+  applyComfyUiProfile,
+  COMFYUI_IMAGE_SIZE_OPTIONS,
+  comfyUiChatProfiles,
+  comfyUiImageSizes,
+  validateComfyUiConfig,
+} from './comfyui-config.js';
 import { cancelComfyPrompt, runComfyPrompt } from './comfyui-api.js';
 import { acquireComfyGpuLease } from './gpu-coordination.js';
 
@@ -27,7 +33,8 @@ export interface ComfyUiSessionHostDeps {
 
 export interface ComfyUiSessionProcess extends PtyProcess {
   comfyUiTool: true;
-  profiles: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
+  profiles: ReturnType<typeof comfyUiChatProfiles>;
+  imageSizes: ReturnType<typeof comfyUiImageSizes>;
 }
 
 interface Job {
@@ -35,6 +42,7 @@ interface Job {
   sessionId: string;
   endpoint: string;
   profileId: string;
+  imageSizeId?: string;
   prompt: string;
   controller: AbortController;
   promptId?: string;
@@ -63,7 +71,7 @@ export class ComfyUiSessionHost {
     return process;
   }
 
-  submit(sessionId: string, prompt: string, profileId?: string): { jobId: string; profileId: string } {
+  submit(sessionId: string, prompt: string, profileId?: string, imageSizeId?: string): { jobId: string; profileId: string } {
     const process = this.sessions.get(sessionId);
     if (!process) throw new Error('ComfyUI session is not running');
     const trimmed = prompt.trim();
@@ -71,11 +79,14 @@ export class ComfyUiSessionHost {
     const profile = process.config.profiles.find(item => item.id === profileId)
       ?? (profileId ? undefined : process.config.profiles[0]);
     if (!profile) throw new Error(`Unknown ComfyUI profile: ${profileId}`);
+    if (imageSizeId !== undefined) applyComfyUiProfile(profile, trimmed, 1, imageSizeId);
+    const imageSize = COMFYUI_IMAGE_SIZE_OPTIONS.find(option => option.id === imageSizeId);
     const job: Job = {
       id: randomUUID(),
       sessionId,
       endpoint: process.config.endpoint,
       profileId: profile.id,
+      ...(imageSizeId ? { imageSizeId } : {}),
       prompt: trimmed,
       controller: new AbortController(),
       submitting: false,
@@ -85,8 +96,8 @@ export class ComfyUiSessionHost {
       executing: false,
     };
     this.jobs.set(job.id, job);
-    process.writeStatus(`Queued · ${profile.name}`);
-    void this.deps.postChat(sessionId, `Queued for ${profile.name}.`).catch(() => undefined);
+    process.writeStatus(`Queued · ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}`);
+    void this.deps.postChat(sessionId, `Queued for ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}.`).catch(() => undefined);
     this.queue = this.queue.then(() => this.run(job, process, profile)).catch(() => undefined);
     return { jobId: job.id, profileId: profile.id };
   }
@@ -131,7 +142,7 @@ export class ComfyUiSessionHost {
       tempDir = mkdtempSync(join(this.deps.tempDir, 'comfy-media-'));
       const files = await runComfyPrompt({
         endpoint,
-        workflow: applyComfyUiProfile(profile, job.prompt),
+        workflow: applyComfyUiProfile(profile, job.prompt, undefined, job.imageSizeId),
         profile,
         prompt: job.prompt,
         tempDir,
@@ -217,11 +228,13 @@ class SessionProcess extends EventEmitter implements ComfyUiSessionProcess {
   readonly pid = 0;
   readonly comfyUiTool = true as const;
   readonly profiles: ComfyUiSessionProcess['profiles'];
+  readonly imageSizes: ComfyUiSessionProcess['imageSizes'];
   private exited = false;
 
   constructor(readonly sessionId: string, private readonly host: ComfyUiSessionHost, readonly config: ComfyUiToolConfig) {
     super();
-    this.profiles = config.profiles.map(({ id, name, kind }) => ({ id, name, kind }));
+    this.profiles = comfyUiChatProfiles(config);
+    this.imageSizes = comfyUiImageSizes(config);
   }
 
   write(data: string): void {

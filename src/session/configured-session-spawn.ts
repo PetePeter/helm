@@ -123,6 +123,7 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     ...(comfyUiProcess ? {
       comfyUiTool: true,
       comfyUiProfiles: comfyUiProcess.profiles,
+      comfyUiImageSizes: comfyUiProcess.imageSizes,
     } : {}),
     ...(apiProcess && getApiSessionHost().parentOf(sessionId) ? { subagentOf: getApiSessionHost().parentOf(sessionId) } : {}),
   };

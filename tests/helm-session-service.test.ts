@@ -58,6 +58,21 @@ describe('HelmSessionService.listSessions', () => {
     expect(service.listSessions()[0]).toMatchObject({ noPromptCache: true });
   });
 
+  it('includes ComfyUI model and size choices in the session summary', () => {
+    const sessionManager = makeSessionManager([{
+      id: 's1', name: 'Comfy image', cliType: 'comfy', comfyUiTool: true,
+      comfyUiProfiles: [{ id: 'flux', name: 'FLUX', kind: 'image', supportsImageSize: true }],
+      comfyUiImageSizes: [{ id: 'qhd-portrait', name: 'QHD Portrait', width: 1440, height: 2560 }],
+    } as any]);
+    const service = new HelmSessionService(sessionManager as any, makePtyManager() as any, makeConfigLoader() as any, makePlanManager() as any);
+
+    expect(service.getSession('s1')).toMatchObject({
+      comfyUiTool: true,
+      comfyUiProfiles: [{ id: 'flux', name: 'FLUX', kind: 'image', supportsImageSize: true }],
+      comfyUiImageSizes: [{ id: 'qhd-portrait', name: 'QHD Portrait', width: 1440, height: 2560 }],
+    });
+  });
+
   it('returns all sessions when no filter is provided', () => {
     const sessionManager = makeSessionManager([
       { id: 's1', name: 'A', cliType: 'claude-code', workingDir: '/repo/main' },

@@ -510,6 +510,7 @@ describe('ConfigLoader', () => {
       const comfyUi = cloneDefaultComfyUiConfigForKind('image');
       loader.addCliType('comfy-tool', 'ComfyUI Image', [], 0, { comfyUi });
       expect(loader.getCliTypeEntry('comfy-tool')!.comfyUi).toEqual(comfyUi);
+      expect(loader.getCliTypeEntry('comfy-tool')!.noPromptCache).toBe(true);
 
       const saved = new ConfigLoader(TEST_DIR);
       saved.load();
@@ -521,6 +522,17 @@ describe('ConfigLoader', () => {
       const fresh = new ConfigLoader(TEST_DIR);
       fresh.load();
       expect(fresh.getCliTypeEntry('comfy-tool')!.comfyUi).toBeUndefined();
+    });
+
+    it('persists an explicit no-prompt-cache opt-out for ComfyUI tools', () => {
+      loader.load();
+      const comfyUi = cloneDefaultComfyUiConfigForKind('image');
+      loader.addCliType('comfy-opt-out', 'ComfyUI opt out', [], 0, { comfyUi, noPromptCache: false });
+
+      expect(loader.getCliTypeEntry('comfy-opt-out')!.noPromptCache).toBe(false);
+      const saved = new ConfigLoader(TEST_DIR);
+      saved.load();
+      expect(saved.getCliTypeEntry('comfy-opt-out')!.noPromptCache).toBe(false);
     });
 
     it('addCliType omits helmActions entirely when all fields blank', () => {

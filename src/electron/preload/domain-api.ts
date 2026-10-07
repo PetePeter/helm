@@ -1750,8 +1750,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Deliver the user's words — and optionally a local file — to the operator, or to a chat-pane
    *  session (an API tool) when `sessionId` is given (and echo them to the phone). */
-  voiceAsk: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('voice:ask', text, filePath, sessionId, comfyProfileId),
+  voiceAsk: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text, filePath, sessionId, comfyProfileId, comfyImageSizeId),
 
   /** A chat-pane session's journaled conversation (default: the operator's), oldest first. */
   voiceOperatorHistory: (sessionId?: string): Promise<OperatorChatEntry[]> =>

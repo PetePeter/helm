@@ -1306,7 +1306,7 @@ export function registerIPCHandlers(
       const target = sessionId ?? operatorSessionManager.getOperatorId();
       return target && isChatPaneSession(target) ? mobileChatJournal.sessionEntries(target) : [];
     },
-    ask: async (text, filePath, sessionId, comfyProfileId) => {
+    ask: async (text, filePath, sessionId, comfyProfileId, comfyImageSizeId) => {
       if (sessionId && !isChatPaneSession(sessionId)) return { ok: false, error: 'That session has no chat view' };
       const operatorId = sessionId ?? operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
@@ -1319,7 +1319,7 @@ export function registerIPCHandlers(
         } else {
           mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
           try {
-            getComfyUiSessionHost().submit(operatorId, text, comfyProfileId);
+            getComfyUiSessionHost().submit(operatorId, text, comfyProfileId, comfyImageSizeId);
           } catch (error) {
             return { ok: false, error: error instanceof Error ? error.message : String(error) };
           }

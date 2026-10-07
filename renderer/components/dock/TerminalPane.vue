@@ -79,6 +79,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
         :title="isOperator ? 'Helm operator' : appStore.activeSession.name"
         :is-operator="isOperator"
         :comfy-profiles="appStore.activeSession.comfyUiProfiles ?? []"
+        :comfy-image-sizes="appStore.activeSession.comfyUiImageSizes ?? []"
       />
       <button
         v-else-if="isChatPane"

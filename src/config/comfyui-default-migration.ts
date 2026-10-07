@@ -1,12 +1,29 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { randomUUID } from 'node:crypto';
 import * as YAML from 'yaml';
+import { cloneDefaultComfyUiConfigForKind } from '../session/comfyui/comfyui-config.js';
 import logger from '../utils/logger.js';
 
-const MIGRATION_ID = 'comfyui-tool-profiles-v1';
-const PROFILE_SIZE_FIELDS = ['width', 'height', 'fps'] as const;
+const MIGRATION_ID = 'comfyui-tool-profiles-v4';
+const DEFAULT_COMFYUI_TYPES = [
+  {
+    id: '3cef90de-c638-49b5-942c-aa7c198fc294',
+    name: 'ComfyUI Image',
+    displayName: 'ComfyUI Image',
+    comfyUi: cloneDefaultComfyUiConfigForKind('image'),
+  },
+  {
+    id: '36ccf04a-e326-4f05-b525-3d1150fa8497',
+    name: 'ComfyUI Video',
+    displayName: 'ComfyUI Video',
+    comfyUi: cloneDefaultComfyUiConfigForKind('video'),
+  },
+];
+const PREVIOUS_DEFAULT_CHECKPOINTS: Record<string, string> = {
+  'image-lustify-v8-apex': 'lustifySDXLNSFW_apexV8.safetensors',
+};
 const PREVIOUS_DEFAULT_PROFILE_NAMES: Record<string, string> = {
+  image: '512x512',
   video: '1080p Landscape',
   'video-1080p-portrait': '1080p Portrait',
 };
@@ -14,7 +31,6 @@ const PREVIOUS_DEFAULT_PROFILE_NAMES: Record<string, string> = {
 export interface ComfyUiDefaultMigrationFiles {
   cliTypesFile: string;
   migrationStateFile: string;
-  shippedCliTypesFile: string;
 }
 
 interface ReadResult {
@@ -55,10 +71,7 @@ function findTargetId(
 ): string | null {
   if (Object.hasOwn(cliTypes, defaultId)) {
     const current = cliTypes[defaultId];
-    if (isRecord(current) && (isRecord(current.comfyUi)
-      || String(current.displayName ?? current.name ?? '').trim().toLowerCase()
-        === String(defaultType.displayName ?? defaultType.name ?? '').trim().toLowerCase())) return defaultId;
-    return null;
+    if (isRecord(current) && isRecord(current.comfyUi)) return defaultId;
   }
 
   const name = String(defaultType.displayName ?? defaultType.name ?? '').trim().toLowerCase();
@@ -78,20 +91,36 @@ function mergeProfile(existing: Record<string, any>, defaults: Record<string, an
     merged.name = defaults.name;
   }
 
-  // A profile id names a shipped preset. Keep its graph and user tuning, while
-  // moving only mapped size/fps inputs to the new preset values.
+  // Fill missing size/fps defaults without replacing user values, then correct
+  // the previous LUSTIFY filename only when it is still unchanged.
   const mappings = isRecord(existing.mappings) ? existing.mappings : {};
   const nextDefaults = { ...(isRecord(existing.defaults) ? existing.defaults : {}) };
   let defaultsChanged = false;
-  for (const field of PROFILE_SIZE_FIELDS) {
+  for (const field of ['width', 'height', 'fps'] as const) {
     const value = defaults.defaults?.[field];
-    if (typeof value !== 'number' || !isRecord(defaults.mappings?.[field]) || !isRecord(mappings[field])) continue;
-    if (nextDefaults[field] !== value) {
-      nextDefaults[field] = value;
-      defaultsChanged = true;
-    }
+    if (nextDefaults[field] !== undefined || typeof value !== 'number'
+      || !isRecord(defaults.mappings?.[field]) || !isRecord(mappings[field])) continue;
+    nextDefaults[field] = value;
+    defaultsChanged = true;
   }
   if (defaultsChanged) merged.defaults = nextDefaults;
+
+  const previousCheckpoint = PREVIOUS_DEFAULT_CHECKPOINTS[defaults.id];
+  const existingWorkflow = isRecord(existing.workflow) ? existing.workflow : undefined;
+  const existingLoader = existingWorkflow && isRecord(existingWorkflow['1']) ? existingWorkflow['1'] : undefined;
+  const existingLoaderInputs = existingLoader && isRecord(existingLoader.inputs) ? existingLoader.inputs : undefined;
+  const defaultWorkflow = isRecord(defaults.workflow) ? defaults.workflow : undefined;
+  const defaultLoader = defaultWorkflow && isRecord(defaultWorkflow['1']) ? defaultWorkflow['1'] : undefined;
+  const defaultLoaderInputs = defaultLoader && isRecord(defaultLoader.inputs) ? defaultLoader.inputs : undefined;
+  if (previousCheckpoint
+    && existingLoader?.class_type === 'CheckpointLoaderSimple'
+    && defaultLoader?.class_type === 'CheckpointLoaderSimple'
+    && existingLoaderInputs?.ckpt_name === previousCheckpoint
+    && typeof defaultLoaderInputs?.ckpt_name === 'string') {
+    merged.workflow = structuredClone(existing.workflow);
+    merged.workflow['1'].inputs.ckpt_name = defaultLoaderInputs.ckpt_name;
+  }
+
   return merged;
 }
 
@@ -126,7 +155,7 @@ function mergeComfyUiConfig(current: unknown, defaults: Record<string, any>): { 
   return { value: merged, changed };
 }
 
-/** Add the shipped Image/Video tools to an existing install once, preserving custom config. */
+/** Add shipped presets only to ComfyUI tools a user already configured. */
 export function migrateComfyUiToolDefaults(files: ComfyUiDefaultMigrationFiles): boolean {
   const stateResult = readYaml(files.migrationStateFile);
   if (!stateResult.ok) return false;
@@ -134,41 +163,43 @@ export function migrateComfyUiToolDefaults(files: ComfyUiDefaultMigrationFiles):
   const applied = Array.isArray(state.applied) ? state.applied.filter((item: unknown) => typeof item === 'string') : [];
   if (applied.includes(MIGRATION_ID)) return false;
 
-  const shippedResult = readYaml(files.shippedCliTypesFile);
   const currentResult = readYaml(files.cliTypesFile);
-  if (!shippedResult.ok || !currentResult.ok || !isRecord(shippedResult.value)) return false;
-
-  const shippedTypes = shippedResult.value;
-  const defaults = Object.entries(shippedTypes)
-    .filter(([, config]) => isRecord(config) && isRecord(config.comfyUi) && Array.isArray(config.comfyUi.profiles))
-    .map(([id, config]) => ({ id, config: config as Record<string, any> }));
-  if (defaults.length !== 2) {
-    logger.warn(`[Config] ComfyUI defaults migration: expected two shipped ComfyUI tools, found ${defaults.length}`);
-    return false;
-  }
+  if (!currentResult.ok) return false;
 
   const currentTypes = isRecord(currentResult.value) ? currentResult.value : {};
   const nextTypes = { ...currentTypes };
   let cliTypesChanged = false;
-  for (const { id, config: defaultType } of defaults) {
-    const targetId = findTargetId(nextTypes, id, defaultType);
-    if (!targetId) {
-      // A shipped UUID may already belong to an unrelated CLI entry. Preserve
-      // it and allocate one stable replacement; name matching finds this entry
-      // on later starts if migration state could not be written.
-      const newId = Object.hasOwn(nextTypes, id) ? randomUUID() : id;
-      nextTypes[newId] = { ...structuredClone(defaultType), id: newId };
+  let foundConfiguredTool = false;
+  for (const [id, currentType] of Object.entries(nextTypes)) {
+    if (!isRecord(currentType) || !isRecord(currentType.comfyUi)) continue;
+    foundConfiguredTool = true;
+    if (currentType.noPromptCache === undefined) {
+      nextTypes[id] = { ...currentType, noPromptCache: true };
       cliTypesChanged = true;
-      continue;
     }
+  }
+
+  for (const defaultType of DEFAULT_COMFYUI_TYPES) {
+    const targetId = findTargetId(nextTypes, defaultType.id, defaultType);
+    if (!targetId) continue;
 
     const currentType = nextTypes[targetId];
     if (!isRecord(currentType)) continue;
     const comfyUi = mergeComfyUiConfig(currentType.comfyUi, defaultType.comfyUi);
-    if (!comfyUi.changed) continue;
-    nextTypes[targetId] = { ...currentType, comfyUi: comfyUi.value };
+    const nextType = { ...currentType };
+    let typeChanged = false;
+    if (comfyUi.changed) {
+      nextType.comfyUi = comfyUi.value;
+      typeChanged = true;
+    }
+    if (!typeChanged) continue;
+    nextTypes[targetId] = nextType;
     cliTypesChanged = true;
   }
+
+  // Clean installs do not opt into ComfyUI. Leave migration unapplied so a
+  // later locally configured ComfyUI tool can still receive these presets.
+  if (!foundConfiguredTool) return false;
 
   try {
     if (cliTypesChanged) writeYamlAtomically(files.cliTypesFile, nextTypes);
@@ -188,10 +219,9 @@ export function migrateComfyUiToolDefaults(files: ComfyUiDefaultMigrationFiles):
   return cliTypesChanged;
 }
 
-export function defaultComfyUiMigrationFiles(configDir: string, shippedCliTypesFile: string): ComfyUiDefaultMigrationFiles {
+export function defaultComfyUiMigrationFiles(configDir: string): ComfyUiDefaultMigrationFiles {
   return {
     cliTypesFile: path.join(configDir, 'cli-types.yaml'),
     migrationStateFile: path.join(configDir, 'config-migrations.yaml'),
-    shippedCliTypesFile,
   };
 }

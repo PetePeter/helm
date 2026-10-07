@@ -400,7 +400,7 @@ const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   name: '', env: [], initialPromptDelay: 2000,
   spawnCommand: '', resumeCommand: '', continueCommand: '',
   renameCommand: '', helmPreambleForInterSession: true,
-  largeTextAsTempFile: false, messReminders: true, mouseTracking: false, noPromptCache: false,
+  largeTextAsTempFile: false, messReminders: true, mouseTracking: false,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
   api: null,
   comfyUi: null,

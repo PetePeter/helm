@@ -53,6 +53,7 @@ data class HelmSession(
     /** Helm hosts ComfyUI generation and routes this session through chat. */
     val comfyUiTool: Boolean = false,
     val comfyUiProfiles: List<ComfyUiProfile> = emptyList(),
+    val comfyUiImageSizes: List<ComfyUiImageSize> = emptyList(),
     /** Set on a subagent: the session whose Agent call spawned it. Such rows are never listed. */
     val subagentOf: String? = null,
     /** Subagents this session is waiting on right now — drawn as a 🔥 count. */
@@ -115,7 +116,8 @@ data class HelmSession(
 
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
-data class ComfyUiProfile(val id: String, val name: String, val kind: String)
+data class ComfyUiProfile(val id: String, val name: String, val kind: String, val supportsImageSize: Boolean = false)
+data class ComfyUiImageSize(val id: String, val name: String, val width: Int, val height: Int)
 
 /**
  * The `session_list` result, read off the wire.
@@ -175,7 +177,17 @@ object SessionWire {
                     val profileId = profile.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
                     val kind = profile.optString("kind").takeIf { it == "image" || it == "video" } ?: return@mapNotNull null
                     val label = profile.optString("name").takeIf { it.isNotBlank() } ?: profileId
-                    ComfyUiProfile(profileId, label, kind)
+                    ComfyUiProfile(profileId, label, kind, profile.opt("supportsImageSize") == true)
+                }
+            } ?: emptyList()),
+            comfyUiImageSizes = (summary.optJSONArray("comfyUiImageSizes")?.let { sizes ->
+                (0 until sizes.length()).mapNotNull { index ->
+                    val size = sizes.optJSONObject(index) ?: return@mapNotNull null
+                    val sizeId = size.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val name = size.optString("name").takeIf { it.isNotBlank() } ?: sizeId
+                    val width = (size.opt("width") as? Number)?.toInt()?.takeIf { it > 0 } ?: return@mapNotNull null
+                    val height = (size.opt("height") as? Number)?.toInt()?.takeIf { it > 0 } ?: return@mapNotNull null
+                    ComfyUiImageSize(sizeId, name, width, height)
                 }
             } ?: emptyList()),
             subagentOf = (summary.opt("subagentOf") as? String)?.takeIf { it.isNotBlank() },

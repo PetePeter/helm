@@ -13,12 +13,10 @@ import * as yaml from 'yaml';
 
 import { CliTypeStore } from '../src/config/cli-type-store.js';
 import type { CliTypeConfig } from '../src/config/loader.js';
-import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
-
 const SHIPPED_PATH = path.join(process.cwd(), 'src', 'config', 'cli-types.yaml');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HELM_INIT_SEQUENCE = 'Call session_info to get Helm MCP initial information.{Enter}';
-const EXPECTED_NAMES = ['Claude Code', 'Codex', 'GitHub Copilot CLI', 'cmd', 'ComfyUI Image', 'ComfyUI Video'];
+const EXPECTED_NAMES = ['Claude Code', 'Codex', 'GitHub Copilot CLI', 'cmd'];
 
 const shippedRaw = fs.readFileSync(SHIPPED_PATH, 'utf8');
 const shipped = yaml.parse(shippedRaw) as Record<string, CliTypeConfig>;
@@ -40,22 +38,16 @@ describe('shipped cli-types.yaml', () => {
     }
   });
 
-  it('ships the four default CLI types and exactly one Image and Video tool', () => {
+  it('ships the four default CLI types and leaves optional ComfyUI tools unconfigured', () => {
     expect(entries.map(([, c]) => c.displayName)).toEqual(EXPECTED_NAMES);
     const comfyTypes = entries.filter(([, config]) => config.comfyUi);
-    expect(comfyTypes.map(([, config]) => config.displayName)).toEqual(['ComfyUI Image', 'ComfyUI Video']);
-    expect(comfyTypes.map(([, config]) => config.comfyUi!.profiles.map(profile => profile.kind))).toEqual([
-      ['image', 'image', 'image', 'image', 'image'],
-      ['video', 'video'],
-    ]);
-    expect(comfyTypes[0][1].comfyUi).toEqual(cloneDefaultComfyUiConfigForKind('image'));
-    expect(comfyTypes[1][1].comfyUi).toEqual(cloneDefaultComfyUiConfigForKind('video'));
+    expect(comfyTypes).toEqual([]);
   });
 
   it('maps each agent type to its provider up front — the shell stays unmapped', () => {
     // Shipped WITH the provider field so the load-time auto-migration has
     // nothing to stamp and the file stays byte-pristine on first load.
-    expect(entries.map(([, c]) => c.provider)).toEqual(['claude', 'codex', 'copilot', undefined, undefined, undefined]);
+    expect(entries.map(([, c]) => c.provider)).toEqual(['claude', 'codex', 'copilot', undefined]);
   });
 
   it('ships the same shell deletion guardrail for Claude, Codex, and Copilot', () => {

@@ -582,6 +582,7 @@ export async function callMcpTool(
             text: asString(args.text, 'text is required'),
             senderSessionId,
             ...(typeof args.comfyProfileId === 'string' ? { comfyProfileId: args.comfyProfileId } : {}),
+            ...(typeof args.comfyImageSizeId === 'string' ? { comfyImageSizeId: args.comfyImageSizeId } : {}),
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
           });
         }
@@ -595,6 +596,7 @@ export async function callMcpTool(
             senderSessionName,
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
             ...(typeof args.comfyProfileId === 'string' ? { comfyProfileId: args.comfyProfileId } : {}),
+            ...(typeof args.comfyImageSizeId === 'string' ? { comfyImageSizeId: args.comfyImageSizeId } : {}),
             ...(isMobileSessionId(authContext.sessionId) || isMobileSenderSessionId(senderSessionId)
               ? { userPromptSource: 'phone' as const }
               : {}),

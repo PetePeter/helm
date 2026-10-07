@@ -116,6 +116,8 @@ const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
 const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
 const noPromptCache = ref(false);
+type ToolKind = 'cli' | 'api' | 'comfyui';
+const noPromptCacheByKind = ref<Record<ToolKind, boolean>>({ cli: false, api: false, comfyui: true });
 const keepWarmPrompt = ref('');
 const bindingProfileId = ref('');
 const submitSuffix = ref<SubmitSuffixOption>('\\r');
@@ -124,7 +126,9 @@ const helmActionCompact = ref('');
 const helmActionExport = ref('');
 
 // API tool: Helm runs the agent loop itself; no spawn/resume commands apply.
-const toolKind = ref<'cli' | 'api' | 'comfyui'>('cli');
+const toolKind = ref<ToolKind>('cli');
+watch(noPromptCache, value => { noPromptCacheByKind.value[toolKind.value] = value; });
+watch(toolKind, kind => { noPromptCache.value = noPromptCacheByKind.value[kind]; });
 const apiBaseUrl = ref(DEFAULT_API_BASE_URL);
 const apiModel = ref('');
 const apiKeyEnv = ref('');
@@ -276,6 +280,7 @@ function handleButton(button: string): boolean {
 
 function initForm(): void {
   const d = props.initialData;
+  const kind: ToolKind = d.comfyUi ? 'comfyui' : d.api ? 'api' : 'cli';
   name.value = d.name ?? '';
   nameError.value = null;
   envItems.value = Array.isArray(d.env)
@@ -298,14 +303,19 @@ function initForm(): void {
   cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
   cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
-  noPromptCache.value = Boolean(d.noPromptCache);
+  noPromptCacheByKind.value = {
+    cli: kind === 'cli' && Boolean(d.noPromptCache),
+    api: kind === 'api' && Boolean(d.noPromptCache),
+    comfyui: kind === 'comfyui' ? d.noPromptCache ?? true : true,
+  };
+  noPromptCache.value = noPromptCacheByKind.value[kind];
   keepWarmPrompt.value = d.keepWarmPrompt ?? '';
   bindingProfileId.value = d.bindingProfileId ?? '';
   submitSuffix.value = normalizeSubmitSuffix(d.submitSuffix);
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
   helmActionExport.value = d.helmActions?.export ?? '';
-  toolKind.value = d.comfyUi ? 'comfyui' : d.api ? 'api' : 'cli';
+  toolKind.value = kind;
   apiBaseUrl.value = d.api?.baseUrl || DEFAULT_API_BASE_URL;
   apiModel.value = d.api?.model ?? '';
   apiKeyEnv.value = d.api?.apiKeyEnv ?? '';
@@ -603,7 +613,7 @@ defineExpose({ handleButton });
             <label class="te-checkbox-row"><input v-model="messReminders" type="checkbox" /><span>Allow Mess reminders</span></label>
             <p class="te-section__hint">When enabled (default), a session of this type is nudged about unread Mess posts once it falls quiet. Turn off for CLIs that are not an LLM — the nudge is prose typed into stdin.</p>
             <label class="te-checkbox-row"><input v-model="mouseTracking" type="checkbox" /><span>Mouse tracking (app captures mouse; Shift+drag to select)</span></label>
-            <label class="te-checkbox-row"><input v-model="noPromptCache" type="checkbox" /><span>No prompt cache (local model)</span></label>
+            <label class="te-checkbox-row"><input :checked="noPromptCache" type="checkbox" @change="noPromptCache = ($event.target as HTMLInputElement).checked" /><span>No prompt cache (local model)</span></label>
             <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</p>

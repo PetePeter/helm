@@ -378,6 +378,7 @@ export class HelmSessionService {
       ...(session.apiTool ? { apiTool: true } : {}),
       ...(session.comfyUiTool ? { comfyUiTool: true } : {}),
       ...(session.comfyUiProfiles ? { comfyUiProfiles: session.comfyUiProfiles } : {}),
+      ...(session.comfyUiImageSizes ? { comfyUiImageSizes: session.comfyUiImageSizes } : {}),
       ...(session.subagentOf ? { subagentOf: session.subagentOf } : {}),
       ...(session.pendingSubagents ? { pendingSubagents: session.pendingSubagents } : {}),
     };

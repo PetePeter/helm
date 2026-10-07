@@ -61,6 +61,8 @@ data class ChatMessage(
     val thoughtCount: Int? = null,
     /** Selected ComfyUI profile for a retryable phone send. */
     val comfyProfileId: String? = null,
+    /** Selected ComfyUI image size for a retryable phone send. */
+    val comfyImageSizeId: String? = null,
 )
 
 /**
@@ -383,15 +385,19 @@ class ChatRepository(
      * only appears after a BLE round trip reads as a dropped keystroke.
      */
     @Synchronized
-    fun sending(sessionId: String, text: String, at: Long, comfyProfileId: String? = null): String {
+    fun sending(sessionId: String, text: String, at: Long, comfyProfileId: String? = null, comfyImageSizeId: String? = null): String {
         val key = nextKey()
-        append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending, comfyProfileId = comfyProfileId))
+        append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending, comfyProfileId = comfyProfileId, comfyImageSizeId = comfyImageSizeId))
         return key
     }
 
     @Synchronized
     fun comfyProfileId(sessionId: String, key: String): String? =
         _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyProfileId
+
+    @Synchronized
+    fun comfyImageSizeId(sessionId: String, key: String): String? =
+        _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyImageSizeId
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */
     @Synchronized
@@ -457,7 +463,7 @@ class ChatRepository(
         val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
         if (failed.delivery != Delivery.Failed && failed.delivery != Delivery.Frozen) return null
         remove(sessionId, key)
-        return sending(sessionId, failed.text, at, failed.comfyProfileId)
+        return sending(sessionId, failed.text, at, failed.comfyProfileId, failed.comfyImageSizeId)
     }
 
     // -------------------------------------------------------------------------

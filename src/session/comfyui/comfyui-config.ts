@@ -2,6 +2,41 @@ import type { ComfyUiProfileConfig, ComfyUiToolConfig } from '../../config/loade
 
 export const DEFAULT_COMFYUI_ENDPOINT = 'http://127.0.0.1:8188';
 
+export const COMFYUI_IMAGE_SIZE_OPTIONS = [
+  { id: 'vga-landscape', name: 'VGA Landscape', width: 640, height: 480 },
+  { id: 'vga-portrait', name: 'VGA Portrait', width: 480, height: 640 },
+  { id: 'fhd-landscape', name: 'FHD Landscape', width: 1920, height: 1080 },
+  { id: 'fhd-portrait', name: 'FHD Portrait', width: 1080, height: 1920 },
+  { id: 'qhd-landscape', name: 'QHD Landscape', width: 2560, height: 1440 },
+  { id: 'qhd-portrait', name: 'QHD Portrait', width: 1440, height: 2560 },
+  { id: '4k-landscape', name: '4K UHD Landscape', width: 3840, height: 2160 },
+  { id: '4k-portrait', name: '4K UHD Portrait', width: 2160, height: 3840 },
+] as const;
+
+export type ComfyUiImageSizeId = typeof COMFYUI_IMAGE_SIZE_OPTIONS[number]['id'];
+export type ComfyUiChatProfile = { id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean };
+
+const LEGACY_IMAGE_SIZE_PROFILE_IDS = new Set([
+  'image-1080p-portrait', 'image-1080p-landscape', 'image-4k-portrait', 'image-4k-landscape',
+]);
+
+export function comfyUiChatProfiles(config: ComfyUiToolConfig): ComfyUiChatProfile[] {
+  return config.profiles
+    .filter(profile => !LEGACY_IMAGE_SIZE_PROFILE_IDS.has(profile.id))
+    .map(profile => ({
+      id: profile.id,
+      name: profile.name,
+      kind: profile.kind,
+      supportsImageSize: profile.kind === 'image' && Boolean(profile.mappings.width && profile.mappings.height),
+    }));
+}
+
+export function comfyUiImageSizes(config: ComfyUiToolConfig): typeof COMFYUI_IMAGE_SIZE_OPTIONS[number][] {
+  return config.profiles.some(profile => profile.kind === 'image' && profile.mappings.width && profile.mappings.height)
+    ? [...COMFYUI_IMAGE_SIZE_OPTIONS]
+    : [];
+}
+
 const IMAGE_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
   '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'sd_xl_turbo_1.0_fp16.safetensors' } },
   '2': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['1', 1] } },
@@ -11,6 +46,14 @@ const IMAGE_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
   '6': { class_type: 'VAEDecode', inputs: { samples: ['4', 0], vae: ['1', 2] } },
   '7': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['6', 0] } },
 };
+
+interface ImageProfileOptions {
+  checkpoint?: string;
+  steps?: number;
+  cfg?: number;
+  samplerName?: string;
+  scheduler?: string;
+}
 
 const IMAGE_MAPPINGS: ComfyUiProfileConfig['mappings'] = {
   prompt: { nodeId: '2', input: 'text' },
@@ -22,19 +65,68 @@ const IMAGE_MAPPINGS: ComfyUiProfileConfig['mappings'] = {
   seed: { nodeId: '4', input: 'seed' },
 };
 
-function imageProfile(id: string, name: string, width: number, height: number): ComfyUiProfileConfig {
+function imageProfile(
+  id: string,
+  name: string,
+  width: number,
+  height: number,
+  options: ImageProfileOptions = {},
+): ComfyUiProfileConfig {
   const workflow = structuredClone(IMAGE_WORKFLOW);
+  const checkpoint = workflow['1'] as { inputs: Record<string, unknown> };
   const latent = workflow['3'] as { inputs: Record<string, unknown> };
+  const sampler = workflow['4'] as { inputs: Record<string, unknown> };
+  const steps = options.steps ?? 4;
+  const cfg = options.cfg ?? 1;
+  checkpoint.inputs.ckpt_name = options.checkpoint ?? 'sd_xl_turbo_1.0_fp16.safetensors';
   latent.inputs.width = width;
   latent.inputs.height = height;
+  sampler.inputs.steps = steps;
+  sampler.inputs.cfg = cfg;
+  if (options.samplerName) sampler.inputs.sampler_name = options.samplerName;
+  if (options.scheduler) sampler.inputs.scheduler = options.scheduler;
   return {
     id,
     name,
     kind: 'image',
     workflow,
     mappings: structuredClone(IMAGE_MAPPINGS),
-    defaults: { negativePrompt: '', width, height, steps: 4, cfg: 1, seed: 0 },
+    defaults: { negativePrompt: '', width, height, steps, cfg, seed: 0 },
     outputNodeIds: ['7'],
+  };
+}
+
+function fluxImageProfile(): ComfyUiProfileConfig {
+  return {
+    id: 'image-flux-dev-fp8',
+    name: 'FLUX.1-dev FP8',
+    kind: 'image',
+    workflow: {
+      '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'flux1-dev-fp8.safetensors' } },
+      '2': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['1', 1] } },
+      '3': { class_type: 'FluxGuidance', inputs: { conditioning: ['2', 0], guidance: 3.5 } },
+      '4': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['3', 0] } },
+      '5': { class_type: 'EmptySD3LatentImage', inputs: { width: 1024, height: 1024, batch_size: 1 } },
+      '6': {
+        class_type: 'KSampler',
+        inputs: {
+          seed: 0, steps: 20, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1,
+          model: ['1', 0], positive: ['3', 0], negative: ['4', 0], latent_image: ['5', 0],
+        },
+      },
+      '7': { class_type: 'VAEDecode', inputs: { samples: ['6', 0], vae: ['1', 2] } },
+      '8': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['7', 0] } },
+    },
+    mappings: {
+      prompt: { nodeId: '2', input: 'text' },
+      width: { nodeId: '5', input: 'width' },
+      height: { nodeId: '5', input: 'height' },
+      steps: { nodeId: '6', input: 'steps' },
+      cfg: { nodeId: '6', input: 'cfg' },
+      seed: { nodeId: '6', input: 'seed' },
+    },
+    defaults: { width: 1024, height: 1024, steps: 20, cfg: 1, seed: 0 },
+    outputNodeIds: ['8'],
   };
 }
 
@@ -85,11 +177,15 @@ function videoProfile(id: string, name: string, width: number, height: number): 
 export const DEFAULT_COMFYUI_CONFIG: ComfyUiToolConfig = {
   endpoint: DEFAULT_COMFYUI_ENDPOINT,
   profiles: [
-    imageProfile('image', '512x512', 512, 512),
-    imageProfile('image-1080p-portrait', '1080p Portrait', 1080, 1920),
-    imageProfile('image-1080p-landscape', '1080p Landscape', 1920, 1080),
-    imageProfile('image-4k-portrait', '4K Portrait', 2160, 3840),
-    imageProfile('image-4k-landscape', '4K Landscape', 3840, 2160),
+    imageProfile('image', 'SDXL Turbo', 512, 512),
+    imageProfile('image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 1536, 1536, {
+      checkpoint: 'lustifyNSFWCheckpoint_apexV8.safetensors',
+      steps: 30,
+      cfg: 3.5,
+      samplerName: 'dpmpp_2m_sde',
+      scheduler: 'karras',
+    }),
+    fluxImageProfile(),
     videoProfile('video', '1080p Landscape (1920x1088)', 1920, 1088),
     videoProfile('video-1080p-portrait', '1080p Portrait (1088x1920)', 1088, 1920),
   ],
@@ -143,11 +239,27 @@ export function validateComfyUiConfig(value: unknown): ComfyUiToolConfig {
   return { endpoint: url.toString().replace(/\/$/, ''), profiles };
 }
 
-export function applyComfyUiProfile(profile: ComfyUiProfileConfig, prompt: string, randomSeed?: number): Record<string, unknown> {
+export function applyComfyUiProfile(
+  profile: ComfyUiProfileConfig,
+  prompt: string,
+  randomSeed?: number,
+  imageSizeId?: string,
+): Record<string, unknown> {
   const workflow = structuredClone(profile.workflow) as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
   for (const [field, binding] of Object.entries(profile.mappings)) {
     const value = field === 'prompt' ? prompt : profile.defaults?.[field as keyof NonNullable<ComfyUiProfileConfig['defaults']>];
     if (value !== undefined) workflow[binding!.nodeId].inputs[binding!.input] = value;
+  }
+  if (imageSizeId !== undefined) {
+    const size = COMFYUI_IMAGE_SIZE_OPTIONS.find(option => option.id === imageSizeId);
+    if (!size) throw new Error(`Unknown ComfyUI image size: ${imageSizeId}`);
+    const width = profile.mappings.width;
+    const height = profile.mappings.height;
+    if (profile.kind !== 'image' || !width || !height) {
+      throw new Error(`Profile ${profile.name} does not support image size selection`);
+    }
+    workflow[width.nodeId].inputs[width.input] = size.width;
+    workflow[height.nodeId].inputs[height.input] = size.height;
   }
   // Zero is the shipped "random per generation" default; a nonzero configured
   // seed remains pinned so users can reproduce a result.

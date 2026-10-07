@@ -6,8 +6,10 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
+import { markRaw } from 'vue';
 import { useModalStack } from '../../../renderer/composables/useModalStack.js';
 import ToolEditorModal from '../../../renderer/components/modals/ToolEditorModal.vue';
+import { cloneDefaultComfyUiConfig } from '../../../src/session/comfyui/comfyui-config.js';
 
 const GLOBAL_STUBS = { teleport: true } as const;
 
@@ -22,6 +24,8 @@ interface ToolEditorData {
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
   messReminders?: boolean;
+  noPromptCache?: boolean;
+  comfyUi?: ReturnType<typeof cloneDefaultComfyUiConfig> | null;
   submitSuffix: string;
   initialPrompt: Array<{ label: string; sequence: string }>;
 }
@@ -221,6 +225,60 @@ describe('ToolEditorModal.vue', () => {
     await saveBtn.trigger('click');
     await flushPromises();
     expect((w.emitted('save')![1][0] as Record<string, unknown>).messReminders).toBe(false);
+    w.unmount();
+  });
+
+  it('defaults a newly selected ComfyUI type to no prompt cache and lets me turn it off', async () => {
+    const w = factory();
+    await w.find('#te-kind').setValue('comfyui');
+    await flushPromises();
+    const checkbox = w.findAll('.te-checkbox-row').find(row => row.text().includes('No prompt cache'))!.find('input');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true);
+
+    await checkbox.setValue(false);
+    const save = w.findAll('button').find(button => button.text() === 'Save')!;
+    await save.trigger('click');
+    await flushPromises();
+    expect((w.emitted('save')![0][0] as Record<string, unknown>).noPromptCache).toBe(false);
+    w.unmount();
+  });
+
+  it('does not carry the ComfyUI no-cache default into a new CLI type', async () => {
+    const w = factory();
+    const kind = w.find('#te-kind');
+    await kind.setValue('comfyui');
+    await flushPromises();
+    await kind.setValue('cli');
+    await flushPromises();
+
+    const checkbox = w.findAll('.te-checkbox-row').find(row => row.text().includes('No prompt cache'))!.find('input');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
+    await w.findAll('button').find(button => button.text() === 'Save')!.trigger('click');
+    await flushPromises();
+    expect((w.emitted('save')![0][0] as Record<string, unknown>).noPromptCache).toBe(false);
+    w.unmount();
+  });
+
+  it('restores the existing CLI no-cache choice after switching through ComfyUI', async () => {
+    const w = factory({ mode: 'edit', initialData: { ...DEFAULT_DATA, noPromptCache: true } });
+    const kind = w.find('#te-kind');
+    await kind.setValue('comfyui');
+    await flushPromises();
+    await kind.setValue('cli');
+    await flushPromises();
+
+    const checkbox = w.findAll('.te-checkbox-row').find(row => row.text().includes('No prompt cache'))!.find('input');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(true);
+    w.unmount();
+  });
+
+  it('preserves an explicit no-cache opt-out when editing a ComfyUI type', () => {
+    const w = factory({
+      mode: 'edit',
+      initialData: { ...DEFAULT_DATA, comfyUi: markRaw(cloneDefaultComfyUiConfig()), noPromptCache: false },
+    });
+    const checkbox = w.findAll('.te-checkbox-row').find(row => row.text().includes('No prompt cache'))!.find('input');
+    expect((checkbox.element as HTMLInputElement).checked).toBe(false);
     w.unmount();
   });
 

@@ -8,7 +8,7 @@ import { composerKeyAction, createOperatorChat, usageBadge, type OperatorChatEnt
 
 function fakes(history: OperatorChatEntry[] = []) {
   let push: ((entry: OperatorChatEntry) => void) | null = null;
-  const asked: Array<{ text: string; filePath?: string; sessionId?: string }> = [];
+  const asked: Array<{ text: string; filePath?: string; sessionId?: string; comfyProfileId?: string; comfyImageSizeId?: string }> = [];
   const historyFor: Array<string | undefined> = [];
   let askResult: { ok: true } | { ok: false; error: string } = { ok: true };
   let heard: { ok: true; text: string } | { ok: false; error: string } = { ok: true, text: 'dictated words' };
@@ -16,7 +16,10 @@ function fakes(history: OperatorChatEntry[] = []) {
   const client = {
     voiceOperatorHistory: async (sessionId?: string) => { historyFor.push(sessionId); return history; },
     onVoiceOperatorChat: (cb: (entry: OperatorChatEntry) => void) => { push = cb; return () => { push = null; }; },
-    voiceAsk: async (text: string, filePath?: string, sessionId?: string) => { asked.push({ text, filePath, sessionId }); return askResult; },
+    voiceAsk: async (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string) => {
+      asked.push({ text, filePath, sessionId, comfyProfileId, comfyImageSizeId });
+      return askResult;
+    },
     voiceTranscribe: async () => heard,
   };
   const recorder = { start: async () => {}, stop: async () => clip };
@@ -81,6 +84,17 @@ describe('createOperatorChat', () => {
     expect(f.asked).toEqual([{ text: 'send this log', filePath: 'C:\\logs\\crash.log', sessionId: 'op' }]);
     expect(f.chat.draft.value).toBe('');
     expect(f.chat.attachment.value).toBeNull();
+  });
+
+  it('sends the selected ComfyUI model and image size with the chat request', async () => {
+    const f = fakes();
+    f.chat.draft.value = 'a portrait';
+    await f.chat.send('lustify', '4k-portrait');
+
+    expect(f.asked).toEqual([{
+      text: 'a portrait', filePath: undefined, sessionId: 'op',
+      comfyProfileId: 'lustify', comfyImageSizeId: '4k-portrait',
+    }]);
   });
 
   it('never sends an empty draft, and keeps the draft when the send is refused', async () => {

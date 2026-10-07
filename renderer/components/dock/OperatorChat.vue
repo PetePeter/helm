@@ -19,7 +19,8 @@ const props = defineProps<{
   title: string;
   /** Only the operator takes calls. */
   isOperator: boolean;
-  comfyProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
+  comfyProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
 }>();
 
 const chat = useOperatorChat(props.sessionId);
@@ -31,6 +32,9 @@ const attachmentName = computed(() => attachment.value?.split(/[\\/]/).pop() ?? 
 const pttLabel = computed(() => pttKey.value.toUpperCase());
 const isComfyUi = computed(() => (props.comfyProfiles?.length ?? 0) > 0);
 const profileId = ref(props.comfyProfiles?.[0]?.id ?? '');
+const selectedProfile = computed(() => props.comfyProfiles?.find(profile => profile.id === profileId.value));
+const supportsImageSize = computed(() => selectedProfile.value?.supportsImageSize === true && (props.comfyImageSizes?.length ?? 0) > 0);
+const imageSizeId = ref(props.comfyImageSizes?.[0]?.id ?? '');
 const chatHint = computed(() => isComfyUi.value
   ? 'Enter to generate · Type /cancel to stop'
   : `Enter to send · Shift/Ctrl+Enter for a new line · Hold 🎤 or ${pttLabel.value} to talk`);
@@ -38,6 +42,16 @@ const previewUrl = (path: string) => `helm-img://f/?p=${encodeURIComponent(path)
 watch(() => props.comfyProfiles, profiles => {
   if (!profiles?.some(profile => profile.id === profileId.value)) profileId.value = profiles?.[0]?.id ?? '';
 }, { deep: true });
+watch(() => props.comfyImageSizes, sizes => {
+  if (!sizes?.some(size => size.id === imageSizeId.value)) imageSizeId.value = sizes?.[0]?.id ?? '';
+}, { deep: true });
+
+function sendPrompt(): void {
+  void chat.send(
+    isComfyUi.value ? profileId.value : undefined,
+    supportsImageSize.value ? imageSizeId.value : undefined,
+  );
+}
 
 function onCallClick(): void {
   if (inCall.value && !handsFree.value) hangUp();
@@ -48,7 +62,7 @@ function onComposerKey(event: KeyboardEvent): void {
   const action = composerKeyAction(event);
   if (action !== 'send') return; // newline: the textarea's default
   event.preventDefault();
-  void chat.send(isComfyUi.value ? profileId.value : undefined);
+  sendPrompt();
 }
 
 async function pickAttachment(): Promise<void> {
@@ -116,9 +130,15 @@ onBeforeUnmount(() => {
     <div class="operator-chat__header">
       <span class="operator-chat__title">{{ title }}</span>
       <label v-if="isComfyUi" class="operator-chat__profile">
-        <span>Mode</span>
-        <select v-model="profileId" class="focusable" aria-label="ComfyUI profile">
+        <span>{{ selectedProfile?.kind === 'video' ? 'Workflow' : 'Model' }}</span>
+        <select v-model="profileId" class="focusable" aria-label="ComfyUI model or workflow">
           <option v-for="profile in comfyProfiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+        </select>
+      </label>
+      <label v-if="supportsImageSize" class="operator-chat__profile">
+        <span>Size</span>
+        <select v-model="imageSizeId" class="focusable" aria-label="Image size and orientation">
+          <option v-for="size in comfyImageSizes" :key="size.id" :value="size.id">{{ size.name }} ({{ size.width }}×{{ size.height }})</option>
         </select>
       </label>
       <button v-if="isComfyUi" class="btn btn--sm btn--secondary focusable" type="button" :disabled="sending" @click="cancelGeneration">Cancel generation</button>
@@ -193,7 +213,7 @@ onBeforeUnmount(() => {
         class="btn btn--sm btn--primary focusable"
         type="button"
         :disabled="sending || !draft.trim()"
-        @click="chat.send(isComfyUi ? profileId : undefined)"
+        @click="sendPrompt"
       >Send</button>
     </div>
     <div class="operator-chat__hint">{{ chatHint }}</div>

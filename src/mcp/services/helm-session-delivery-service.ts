@@ -225,7 +225,7 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string },
+    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string },
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -251,7 +251,7 @@ export class HelmSessionDeliveryService {
         const cancelled = await getComfyUiSessionHost().cancel(session.id);
         if (!cancelled) throw new Error('This ComfyUI session has no active generation to cancel');
       } else {
-        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId);
+        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId, options.comfyImageSizeId);
       }
       const submittedAt = Date.now();
       this.sessionManager.updateSession(session.id, {

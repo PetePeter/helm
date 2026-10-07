@@ -716,6 +716,15 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a ComfyUI chat call carries model and image size ids`() {
+        client.sendChat("s1", "a landscape", comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape")
+
+        val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
+        assertEquals("flux", params.getString("comfyProfileId"))
+        assertEquals("qhd-landscape", params.getString("comfyImageSizeId"))
+    }
+
+    @Test
     fun `a snapshot falls back to the cleaned tail when screen mode is unsupported`() {
         assertTrue(client.readTerminal("s1", 200))
         client.onInbound(errorFor(lastCallId(), "mode must be one of raw, stripped, or both"))

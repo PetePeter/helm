@@ -134,7 +134,8 @@ export interface SessionInfo {
   /** A first-party ComfyUI chat session hosted by this Helm desktop. */
   comfyUiTool?: boolean;
   /** Safe profile selector data; workflow graphs remain in desktop config. */
-  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyUiImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
   /** Set on a subagent session: the session whose Agent call spawned it. Such rows
    *  are hidden from session pickers — the parent shows a 🔥 count instead.
    *  Ephemeral: subagents close when they answer, and are never resumed. */

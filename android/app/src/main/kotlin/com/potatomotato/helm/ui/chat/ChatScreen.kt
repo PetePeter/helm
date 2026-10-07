@@ -4,6 +4,7 @@ import com.potatomotato.helm.ui.call.CallPanel
 import com.potatomotato.helm.data.CacheStage
 import com.potatomotato.helm.data.HelmSession
 import com.potatomotato.helm.data.ComfyUiProfile
+import com.potatomotato.helm.data.ComfyUiImageSize
 import com.potatomotato.helm.voice.CallPhase
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.ui.sessions.SessionRows
@@ -128,7 +129,7 @@ fun ChatScreen(
     sessionId: String,
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
-    onSendWithProfile: ((String, String?) -> Unit)? = null,
+    onSendWithProfile: ((String, String?, String?) -> Unit)? = null,
     onRetry: (key: String, text: String) -> Unit,
     /** Delete rows by key: one (a failed send's cross) or a whole selection. */
     onDelete: (keys: Set<String>) -> Unit,
@@ -245,6 +246,15 @@ fun ChatScreen(
             comfyProfileId = session.comfyUiProfiles.firstOrNull()?.id.orEmpty()
         }
     }
+    var comfyImageSizeId by rememberSaveable(sessionId) {
+        mutableStateOf(session?.comfyUiImageSizes?.firstOrNull()?.id.orEmpty())
+    }
+    LaunchedEffect(sessionId, session?.comfyUiImageSizes) {
+        if (session?.comfyUiImageSizes?.none { it.id == comfyImageSizeId } == true) {
+            comfyImageSizeId = session.comfyUiImageSizes.firstOrNull()?.id.orEmpty()
+        }
+    }
+    val selectedComfyProfile = session?.comfyUiProfiles?.firstOrNull { it.id == comfyProfileId }
 
     // Selection mode: long-press a bubble to start, tap to toggle. Keyed on the
     // session like the draft: a selection never follows the user into another
@@ -378,8 +388,12 @@ fun ChatScreen(
                   profiles = session.comfyUiProfiles,
                   selectedId = comfyProfileId,
                   onSelect = { comfyProfileId = it },
+                  imageSizes = session.comfyUiImageSizes,
+                  selectedImageSizeId = comfyImageSizeId,
+                  onSelectImageSize = { comfyImageSizeId = it },
+                  showImageSize = selectedComfyProfile?.supportsImageSize == true,
                   onCancel = {
-                      onSendWithProfile?.invoke("/cancel", comfyProfileId) ?: onSend("/cancel")
+                      onSendWithProfile?.invoke("/cancel", comfyProfileId, null) ?: onSend("/cancel")
                   },
               )
           }
@@ -408,7 +422,7 @@ fun ChatScreen(
                 val text = submitted.trim()
                 if (text.isNotEmpty()) {
                     if (session?.comfyUiTool == true && onSendWithProfile != null) {
-                        onSendWithProfile(text, comfyProfileId)
+                        onSendWithProfile(text, comfyProfileId, comfyImageSizeId.takeIf { selectedComfyProfile?.supportsImageSize == true })
                     } else onSend(text)
                     draft = TextFieldValue()
                     drafts.clear(sessionId)
@@ -424,38 +438,66 @@ private fun ComfyProfilePicker(
     profiles: List<ComfyUiProfile>,
     selectedId: String,
     onSelect: (String) -> Unit,
+    imageSizes: List<ComfyUiImageSize>,
+    selectedImageSizeId: String,
+    onSelectImageSize: (String) -> Unit,
+    showImageSize: Boolean,
     onCancel: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var sizeExpanded by remember { mutableStateOf(false) }
     val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.first()
-    Row(
+    val selectedSize = imageSizes.firstOrNull { it.id == selectedImageSizeId } ?: imageSizes.firstOrNull()
+    Column(
         modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Mode", color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium)
-        Box {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (selected.kind == "video") "Workflow" else "Model", color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium)
+            Box {
+                Text(
+                    text = "${selected.name} ▾",
+                    color = HelmColors.Accent,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.clickable { expanded = true }.padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
+                )
+                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    profiles.forEach { profile ->
+                        DropdownMenuItem(
+                            text = { Text(profile.name) },
+                            onClick = { onSelect(profile.id); expanded = false },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
             Text(
-                text = "${selected.name} ▾",
-                color = HelmColors.Accent,
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier.clickable { expanded = true }.padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
+                text = "Cancel generation",
+                color = HelmColors.Danger,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(onClick = onCancel).padding(HelmSpacing.Xs),
             )
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                profiles.forEach { profile ->
-                    DropdownMenuItem(
-                        text = { Text(profile.name) },
-                        onClick = { onSelect(profile.id); expanded = false },
+        }
+        if (showImageSize && selectedSize != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Size", color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium)
+                Box {
+                    Text(
+                        text = "${selectedSize.name} ▾",
+                        color = HelmColors.Accent,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.clickable { sizeExpanded = true }.padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
                     )
+                    DropdownMenu(expanded = sizeExpanded, onDismissRequest = { sizeExpanded = false }) {
+                        imageSizes.forEach { size ->
+                            DropdownMenuItem(
+                                text = { Text("${size.name} (${size.width}×${size.height})") },
+                                onClick = { onSelectImageSize(size.id); sizeExpanded = false },
+                            )
+                        }
+                    }
                 }
             }
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = "Cancel generation",
-            color = HelmColors.Danger,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.clickable(onClick = onCancel).padding(HelmSpacing.Xs),
-        )
     }
 }
 

@@ -15,7 +15,7 @@ export interface VoiceHandlerDeps {
   voiceService: Pick<VoiceService, 'transcribe' | 'speak'>;
   /** Deliver the user's words (and optionally a local file) to the operator,
    *  or to the named chat-capable session (an API tool). */
-  ask: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string) => Promise<VoiceResult>;
+  ask: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string) => Promise<VoiceResult>;
   /** The operator's newest persisted reply, so the sidebar survives a restart. */
   lastReply: () => string | null;
   /** A chat session's whole journaled conversation (default: the operator's), for the desktop chat view. */
@@ -40,11 +40,11 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
   ipcMain.handle('voice:operatorHistory', (_event, sessionId?: unknown) =>
     deps.history(typeof sessionId === 'string' ? sessionId : undefined));
 
-  ipcMain.handle('voice:ask', async (_event, text: unknown, filePath?: unknown, sessionId?: unknown, comfyProfileId?: unknown) => {
+  ipcMain.handle('voice:ask', async (_event, text: unknown, filePath?: unknown, sessionId?: unknown, comfyProfileId?: unknown, comfyImageSizeId?: unknown) => {
     if (typeof text !== 'string' || text.trim() === '') return { ok: false, error: 'Nothing to send' };
     if (filePath !== undefined && typeof filePath !== 'string') return { ok: false, error: 'Invalid attachment' };
     try {
-      return await deps.ask(text.trim(), filePath || undefined, typeof sessionId === 'string' ? sessionId : undefined, typeof comfyProfileId === 'string' ? comfyProfileId : undefined);
+      return await deps.ask(text.trim(), filePath || undefined, typeof sessionId === 'string' ? sessionId : undefined, typeof comfyProfileId === 'string' ? comfyProfileId : undefined, typeof comfyImageSizeId === 'string' ? comfyImageSizeId : undefined);
     } catch (error) {
       logger.error(`[IPC] voice:ask failed: ${error}`);
       return { ok: false, error: String(error) };

@@ -322,5 +322,30 @@ class SessionRepositoryTest {
         assertNull(parsed[1].subagentOf)
     }
 
+    @Test
+    fun `ComfyUI session choices parse image workflow capability and dimensions`() {
+        val row = JSONObject()
+            .put("id", "s1")
+            .put("comfyUiTool", true)
+            .put("comfyUiProfiles", JSONArray().put(JSONObject()
+                .put("id", "flux")
+                .put("name", "FLUX")
+                .put("kind", "image")
+                .put("supportsImageSize", true)))
+            .put("comfyUiImageSizes", JSONArray().put(JSONObject()
+                .put("id", "qhd-portrait")
+                .put("name", "QHD Portrait")
+                .put("width", 1440)
+                .put("height", 2560)))
+
+        val session = SessionWire.parseList(JSONArray().put(row))!!.single()
+
+        assertEquals(true, session.comfyUiTool)
+        assertEquals(true, session.comfyUiProfiles.single().supportsImageSize)
+        assertEquals("qhd-portrait", session.comfyUiImageSizes.single().id)
+        assertEquals(1440, session.comfyUiImageSizes.single().width)
+        assertEquals(2560, session.comfyUiImageSizes.single().height)
+    }
+
     private fun List<JSONObject>.toJsonArray(): JSONArray = JSONArray().also { array -> forEach(array::put) }
 }
