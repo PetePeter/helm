@@ -24,27 +24,25 @@ const props = defineProps<{
 }>();
 
 const chat = useOperatorChat(props.sessionId);
-const { bubbles, draft, attachment, sending, recording, transcribing, error } = chat;
+// The picked model and size live on the per-session chat, so they outlive this pane's remounts.
+const { bubbles, draft, attachment, sending, recording, transcribing, error, comfyProfileId: profileId, comfyImageSizeId: imageSizeId } = chat;
 const { inCall, handsFree, toggleCall, hangUp } = useVoiceCall();
 
 const thread = ref<HTMLElement | null>(null);
 const attachmentName = computed(() => attachment.value?.split(/[\\/]/).pop() ?? '');
 const pttLabel = computed(() => pttKey.value.toUpperCase());
 const isComfyUi = computed(() => (props.comfyProfiles?.length ?? 0) > 0);
-const profileId = ref(props.comfyProfiles?.[0]?.id ?? '');
 const selectedProfile = computed(() => props.comfyProfiles?.find(profile => profile.id === profileId.value));
 const supportsImageSize = computed(() => selectedProfile.value?.supportsImageSize === true && (props.comfyImageSizes?.length ?? 0) > 0);
-const imageSizeId = ref(props.comfyImageSizes?.[0]?.id ?? '');
 const chatHint = computed(() => isComfyUi.value
   ? 'Enter to generate · Type /cancel to stop'
   : `Enter to send · Shift/Ctrl+Enter for a new line · Hold 🎤 or ${pttLabel.value} to talk`);
 const previewUrl = (path: string) => `helm-img://f/?p=${encodeURIComponent(path)}`;
-watch(() => props.comfyProfiles, profiles => {
-  if (!profiles?.some(profile => profile.id === profileId.value)) profileId.value = profiles?.[0]?.id ?? '';
-}, { deep: true });
-watch(() => props.comfyImageSizes, sizes => {
-  if (!sizes?.some(size => size.id === imageSizeId.value)) imageSizeId.value = sizes?.[0]?.id ?? '';
-}, { deep: true });
+watch(
+  () => [props.comfyProfiles, props.comfyImageSizes],
+  () => chat.syncComfyOptions(props.comfyProfiles, props.comfyImageSizes),
+  { deep: true, immediate: true },
+);
 
 function sendPrompt(): void {
   void chat.send(

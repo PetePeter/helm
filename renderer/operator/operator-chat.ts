@@ -117,7 +117,15 @@ export function createOperatorChat(deps: OperatorChatDeps) {
   const recording = ref(false);
   const transcribing = ref(false);
   const error = ref<string | null>(null);
+  const comfyProfileId = ref('');
+  const comfyImageSizeId = ref('');
   let unsubscribe: (() => void) | null = null;
+
+  /** Keep the picked model and size while the session still offers them; else fall back to the first. */
+  function syncComfyOptions(profiles: ReadonlyArray<{ id: string }> = [], sizes: ReadonlyArray<{ id: string }> = []): void {
+    if (!profiles.some(profile => profile.id === comfyProfileId.value)) comfyProfileId.value = profiles[0]?.id ?? '';
+    if (!sizes.some(size => size.id === comfyImageSizeId.value)) comfyImageSizeId.value = sizes[0]?.id ?? '';
+  }
 
   /** Append in seq order, ignoring an entry already shown (backlog/live overlap). */
   function add(entry: OperatorChatEntry): void {
@@ -194,7 +202,10 @@ export function createOperatorChat(deps: OperatorChatDeps) {
     }
   }
 
-  return { bubbles, draft, attachment, sending, recording, transcribing, error, open, close, send, pttStart, pttStop };
+  return {
+    bubbles, draft, attachment, sending, recording, transcribing, error, comfyProfileId, comfyImageSizeId,
+    open, close, send, syncComfyOptions, pttStart, pttStop,
+  };
 }
 
 export type OperatorChat = ReturnType<typeof createOperatorChat>;

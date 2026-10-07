@@ -97,6 +97,23 @@ describe('createOperatorChat', () => {
     }]);
   });
 
+  it('keeps the picked ComfyUI model and size when the pane re-offers them, and falls back when one is gone', () => {
+    const f = fakes();
+    const profiles = [{ id: 'turbo' }, { id: 'lustify' }];
+    const sizes = [{ id: 'vga-landscape' }, { id: '4k-portrait' }];
+    f.chat.syncComfyOptions(profiles, sizes);
+    expect([f.chat.comfyProfileId.value, f.chat.comfyImageSizeId.value]).toEqual(['turbo', 'vga-landscape']);
+
+    f.chat.comfyProfileId.value = 'lustify';
+    f.chat.comfyImageSizeId.value = '4k-portrait';
+    // Returning to the chat remounts the pane, which offers the same options again.
+    f.chat.syncComfyOptions(profiles, sizes);
+    expect([f.chat.comfyProfileId.value, f.chat.comfyImageSizeId.value]).toEqual(['lustify', '4k-portrait']);
+
+    f.chat.syncComfyOptions([{ id: 'turbo' }], []);
+    expect([f.chat.comfyProfileId.value, f.chat.comfyImageSizeId.value]).toEqual(['turbo', '']);
+  });
+
   it('never sends an empty draft, and keeps the draft when the send is refused', async () => {
     const f = fakes();
     f.chat.draft.value = '   ';

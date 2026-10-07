@@ -203,9 +203,12 @@ export class ComfyUiSessionHost {
     }
 
     if (failure) {
-      const message = job.cancelled || job.controller.signal.aborted
+      const cancelled = job.cancelled || job.controller.signal.aborted;
+      const message = cancelled
         ? 'Generation cancelled.'
         : `Generation failed: ${failure instanceof Error ? failure.message : String(failure)}`;
+      // The chat line is the only other trace, and it expires with the session.
+      if (!cancelled) logger.warn(`[ComfyUI] ${profile.name} on ${endpoint} (session ${job.sessionId}): ${message}`);
       if (this.sessions.get(job.sessionId) === process) {
         process.writeStatus(message);
         await this.deps.postChat(job.sessionId, message).catch(() => undefined);
