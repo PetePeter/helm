@@ -17,6 +17,7 @@ import {
   validateComfyUiConfig,
 } from './comfyui-config.js';
 import { cancelComfyPrompt, runComfyPrompt } from './comfyui-api.js';
+import { ensureComfyServer, isLocalEndpoint } from './comfyui-server.js';
 import { acquireComfyGpuLease } from './gpu-coordination.js';
 
 export interface ComfyUiArtifacts {
@@ -149,6 +150,10 @@ export class ComfyUiSessionHost {
       job.executing = true;
       process.writeStatus(`Generating · ${profile.name}`);
       await this.deps.postChat(job.sessionId, `Generating with ${profile.name}…`);
+      await ensureComfyServer(endpoint, process.config.startCommand, job.controller.signal, () => {
+        process.writeStatus('Starting ComfyUI…');
+        void this.deps.postChat(job.sessionId, 'ComfyUI is not running. Starting it…').catch(() => undefined);
+      });
       leaseRelease = await acquireComfyGpuLease(isLocalEndpoint(endpoint));
       if (job.controller.signal.aborted) throw new Error('Generation cancelled');
       tempDir = mkdtempSync(join(this.deps.tempDir, 'comfy-media-'));
@@ -296,11 +301,6 @@ class SessionProcess extends EventEmitter implements ComfyUiSessionProcess {
   }
   onData(callback: (data: string) => void): void { this.on('data', callback); }
   onExit(callback: (exitCode: { exitCode: number; signal?: number }) => void): void { this.on('exit', callback); }
-}
-
-function isLocalEndpoint(endpoint: string): boolean {
-  const hostname = new URL(endpoint).hostname.toLowerCase();
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
 }
 
 async function freeComfyMemory(endpoint: string): Promise<void> {

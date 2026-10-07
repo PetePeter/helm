@@ -50,6 +50,8 @@ The files live in the ComfyUI session's "Chat files" artifact and are removed wh
 
 ## One GPU, one job
 
+Before a job takes the GPU, Helm probes `/system_stats`. If a **local** endpoint is down and the tool has a `startCommand`, Helm runs it through the shell, waits up to two minutes for the server to answer, then carries on (`comfyui-server.ts`). The shipped default runs the launcher the media helper installs; clear the field to opt out. A remote endpoint is never started — a down server there fails the job with "ComfyUI server is not running at …".
+
 Jobs from every ComfyUI session run through one serialized queue. Each job takes the GPU lease (`gpu-coordination.ts`) first: a cross-process mutex shared with Helm's other media helper, and, for a local endpoint, a hand-off that unloads the LM Studio model and restores it afterwards. ComfyUI's memory is freed after each job.
 
 `/cancel` as the prompt text cancels the session's running job, or its next queued one.

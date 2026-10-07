@@ -1,6 +1,8 @@
 import type { ComfyUiProfileConfig, ComfyUiToolConfig } from '../../config/loader.js';
 
 export const DEFAULT_COMFYUI_ENDPOINT = 'http://127.0.0.1:8188';
+/** The launcher Helm's media helper installs; the shell expands the variable. */
+export const DEFAULT_COMFYUI_START_COMMAND = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%LOCALAPPDATA%\\Helm\\tools\\comfyui\\Start-ComfyUI.ps1"';
 
 export const COMFYUI_IMAGE_SIZE_OPTIONS = [
   { id: 'vga-landscape', name: 'VGA Landscape', width: 640, height: 480 },
@@ -142,6 +144,7 @@ function videoProfile(id: string, name: string, width: number, height: number): 
 
 export const DEFAULT_COMFYUI_CONFIG: ComfyUiToolConfig = {
   endpoint: DEFAULT_COMFYUI_ENDPOINT,
+  startCommand: DEFAULT_COMFYUI_START_COMMAND,
   profiles: [
     imageProfile('image', 'SDXL Turbo', 512, 512),
     imageProfile('image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 1536, 1536, {
@@ -174,6 +177,8 @@ export function validateComfyUiConfig(value: unknown): ComfyUiToolConfig {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
     throw new Error('ComfyUI endpoint must be an HTTP or HTTPS URL without embedded credentials');
   }
+  if (config.startCommand !== undefined && typeof config.startCommand !== 'string') throw new Error('ComfyUI start command must be text');
+  const startCommand = config.startCommand?.trim();
   if (!Array.isArray(config.profiles) || config.profiles.length < 1) throw new Error('Add at least one ComfyUI profile');
   const ids = new Set<string>();
   const profiles = config.profiles.map((candidate): ComfyUiProfileConfig => {
@@ -201,7 +206,7 @@ export function validateComfyUiConfig(value: unknown): ComfyUiToolConfig {
     }
     return structuredClone({ ...profile, id, name: profile.name.trim() });
   });
-  return { endpoint: url.toString().replace(/\/$/, ''), profiles };
+  return { endpoint: url.toString().replace(/\/$/, ''), ...(startCommand ? { startCommand } : {}), profiles };
 }
 
 export function applyComfyUiProfile(

@@ -473,6 +473,10 @@ defineExpose({ handleButton });
               <label for="te-comfy-endpoint">Server endpoint</label>
               <input id="te-comfy-endpoint" v-model="comfyUi.endpoint" type="url" placeholder="http://127.0.0.1:8188" class="te-input te-input--mono focusable" />
             </div>
+            <div class="te-field">
+              <label for="te-comfy-start">Start command</label>
+              <input id="te-comfy-start" v-model="comfyUi.startCommand" type="text" placeholder="Run when a local server is down; empty = never start it" class="te-input te-input--mono focusable" />
+            </div>
             <div class="te-grid-2col">
               <div class="te-field">
                 <label for="te-comfy-profile">Profile</label>

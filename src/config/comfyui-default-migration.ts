@@ -4,7 +4,7 @@ import * as YAML from 'yaml';
 import { cloneDefaultComfyUiConfigForKind } from '../session/comfyui/comfyui-config.js';
 import logger from '../utils/logger.js';
 
-const MIGRATION_ID = 'comfyui-tool-profiles-v5';
+const MIGRATION_ID = 'comfyui-tool-profiles-v6';
 const DEFAULT_COMFYUI_TYPES = [
   {
     id: '3cef90de-c638-49b5-942c-aa7c198fc294',
@@ -134,6 +134,11 @@ function mergeComfyUiConfig(current: unknown, defaults: Record<string, any>): { 
   let changed = false;
   if (typeof merged.endpoint !== 'string' || !merged.endpoint.trim()) {
     merged.endpoint = defaults.endpoint;
+    changed = true;
+  }
+  // Absent only: a tool saved with the command cleared has opted out of auto-start.
+  if (merged.startCommand === undefined && typeof defaults.startCommand === 'string') {
+    merged.startCommand = defaults.startCommand;
     changed = true;
   }
 

@@ -111,7 +111,7 @@ describe('ComfyUI profile migration', () => {
     expect(migrated.profiles.find((profile: any) => profile.id === 'image').workflow['7'].inputs.filename_prefix)
       .toBe('MyImages');
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v5');
+      .toContain('comfyui-tool-profiles-v6');
   });
 
   it('preserves custom endpoints and graphs while merging missing presets once', () => {
@@ -215,7 +215,7 @@ describe('ComfyUI profile migration', () => {
     writeTypes({ [IMAGE_ID]: defaultType(IMAGE_ID) });
     expect(migrateComfyUiToolDefaults(files)).toBe(true);
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v5');
+      .toContain('comfyui-tool-profiles-v6');
     const types = readTypes();
     types[IMAGE_ID].comfyUi.profiles = types[IMAGE_ID].comfyUi.profiles
       .filter((profile: any) => profile.id !== 'image-lustify-v8-apex');

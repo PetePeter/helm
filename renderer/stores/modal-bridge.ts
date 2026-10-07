@@ -359,6 +359,7 @@ export interface ToolEditorApiConfig {
 
 export interface ToolEditorComfyUiConfig {
   endpoint: string;
+  startCommand?: string;
   profiles: Array<{
     id: string;
     name: string;

@@ -81,6 +81,8 @@ export interface ComfyUiProfileConfig {
 
 export interface ComfyUiToolConfig {
   endpoint: string;
+  /** Shell command that launches a local server found down; absent = never auto-start. */
+  startCommand?: string;
   profiles: ComfyUiProfileConfig[];
 }
 
