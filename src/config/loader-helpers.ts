@@ -60,9 +60,35 @@ export interface ApiToolConfig {
   handshake?: boolean;
 }
 
+export interface ComfyUiInputBinding {
+  nodeId: string;
+  input: string;
+}
+
+export interface ComfyUiProfileConfig {
+  id: string;
+  name: string;
+  kind: 'image' | 'video';
+  /** ComfyUI Save (API Format) prompt object. */
+  workflow: Record<string, unknown>;
+  /** Explicit node/input destinations for the fields exposed in chat. */
+  mappings: Partial<Record<'prompt' | 'negativePrompt' | 'width' | 'height' | 'steps' | 'cfg' | 'seed' | 'length' | 'fps', ComfyUiInputBinding>>;
+  /** Values for mapped inputs which are configured rather than typed per prompt. */
+  defaults?: Partial<Record<'negativePrompt' | 'width' | 'height' | 'steps' | 'cfg' | 'seed' | 'length' | 'fps', string | number>>;
+  /** Node ids whose saved files are returned as this job's results. */
+  outputNodeIds: string[];
+}
+
+export interface ComfyUiToolConfig {
+  endpoint: string;
+  profiles: ComfyUiProfileConfig[];
+}
+
 export type CliTypeOptions = {
   /** API tool block; null clears it on update. */
   api?: ApiToolConfig | null;
+  /** ComfyUI chat session block; null clears it on update. */
+  comfyUi?: ComfyUiToolConfig | null;
   env?: EnvVarEntry[];
   renameCommand?: string;
   spawnCommand?: string;

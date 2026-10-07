@@ -9,10 +9,6 @@
  * privileged scheme with the Helm preload attached would be a security risk.
  */
 
-import { readFile } from 'fs/promises';
-import { extname } from 'path';
-import type { Protocol } from 'electron';
-
 // ---------------------------------------------------------------------------
 // URL encoding/decoding helpers
 // ---------------------------------------------------------------------------
@@ -110,6 +106,9 @@ const EXT_TO_MIME: Record<string, string> = {
   '.webp': 'image/webp',
   '.bmp': 'image/bmp',
   '.avif': 'image/avif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
 };
 
 /**
@@ -120,49 +119,30 @@ const EXT_TO_MIME: Record<string, string> = {
  * 'application/octet-stream'.
  */
 export function mimeForPath(filePath: string): string | null {
-  const ext = extname(filePath).toLowerCase();
+  const leaf = filePath.slice(Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\')) + 1);
+  const dot = leaf.lastIndexOf('.');
+  const ext = dot >= 0 ? leaf.slice(dot).toLowerCase() : '';
   if (ext === '.svg') return null;
   return EXT_TO_MIME[ext] ?? 'application/octet-stream';
 }
 
-// ---------------------------------------------------------------------------
-// Protocol handler (thin Electron adapter — not unit-tested directly)
-// ---------------------------------------------------------------------------
+export interface ByteRange {
+  start: number;
+  end: number;
+}
 
-/**
- * Registers the helm-img:// protocol handler with Electron.
- *
- * Must be called AFTER app is ready. The handler decodes the URL, reads the
- * local file, and returns a Response with the correct Content-Type.
- * SVG and missing/unreadable files return a 404 Response — no crash or throw.
- *
- * Call protocol.registerSchemesAsPrivileged() BEFORE app is ready (in main.ts)
- * with { standard:true, secure:true, supportFetchAPI:true }.
- *
- * The protocol adapter is injected so this module's URL helpers remain safe to
- * import from the renderer without a runtime Electron dependency.
- */
-export function registerHelmImgProtocol(protocol: Pick<Protocol, 'handle'>): void {
-  protocol.handle('helm-img', async (request) => {
-    const absPath = decodeHelmImgUrl(request.url);
-    if (absPath === '') {
-      // Missing `p` query param — nothing to serve
-      return new Response('Missing image path', { status: 404 });
-    }
-
-    const mime = mimeForPath(absPath);
-    if (mime === null) {
-      // SVG intentionally refused
-      return new Response('SVG not served via helm-img://', { status: 404 });
-    }
-
-    try {
-      const bytes = await readFile(absPath);
-      return new Response(bytes, {
-        headers: { 'Content-Type': mime },
-      });
-    } catch {
-      return new Response('File not found', { status: 404 });
-    }
-  });
+/** Parse one byte range; null means unsatisfiable or unsupported. */
+export function parseByteRange(value: string, size: number): ByteRange | null {
+  if (size <= 0 || value.includes(',')) return null;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start >= size || requestedEnd < start) return null;
+  return { start, end: Math.min(requestedEnd, size - 1) };
 }

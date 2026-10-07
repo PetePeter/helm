@@ -1,0 +1,264 @@
+import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import type { ComfyUiToolConfig } from '../../config/loader.js';
+import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
+import type { Artifact } from '../../types/artifact.js';
+import type { PtyProcess } from '../pty-manager.js';
+import type { ChatAttachmentRef } from '../chat/chat-bridge.js';
+import { logger } from '../../utils/logger.js';
+import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
+import { applyComfyUiProfile, validateComfyUiConfig } from './comfyui-config.js';
+import { cancelComfyPrompt, runComfyPrompt } from './comfyui-api.js';
+import { acquireComfyGpuLease } from './gpu-coordination.js';
+
+export interface ComfyUiArtifacts {
+  getForSession(sessionId: string): Artifact[];
+  create(sessionId: string, title: string, kind: 'markdown', content: string, source: 'manual'): Artifact;
+}
+
+export interface ComfyUiSessionHostDeps {
+  tempDir: string;
+  artifacts: ComfyUiArtifacts;
+  attachments: Pick<ArtifactAttachmentManager, 'addGeneratedMediaFromFile' | 'getPath'>;
+  postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
+}
+
+export interface ComfyUiSessionProcess extends PtyProcess {
+  comfyUiTool: true;
+  profiles: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
+}
+
+interface Job {
+  id: string;
+  sessionId: string;
+  endpoint: string;
+  profileId: string;
+  prompt: string;
+  controller: AbortController;
+  promptId?: string;
+  submitting: boolean;
+  submissionSettled: Promise<void>;
+  finishSubmission: () => void;
+  cancelled: boolean;
+  executing: boolean;
+}
+
+const CHAT_FILES_TITLE = 'Chat files';
+const CHAT_FILES_BODY = 'Files generated in this ComfyUI session. They remain until the session expires.\n';
+
+/** ComfyUI sessions share one serialized GPU queue and the existing chat journal. */
+export class ComfyUiSessionHost {
+  private readonly sessions = new Map<string, SessionProcess>();
+  private readonly jobs = new Map<string, Job>();
+  private queue: Promise<void> = Promise.resolve();
+
+  constructor(private readonly deps: ComfyUiSessionHostDeps) {}
+
+  create(sessionId: string, configValue: ComfyUiToolConfig): ComfyUiSessionProcess {
+    const config = validateComfyUiConfig(configValue);
+    const process = new SessionProcess(sessionId, this, config);
+    this.sessions.set(sessionId, process);
+    return process;
+  }
+
+  submit(sessionId: string, prompt: string, profileId?: string): { jobId: string; profileId: string } {
+    const process = this.sessions.get(sessionId);
+    if (!process) throw new Error('ComfyUI session is not running');
+    const trimmed = prompt.trim();
+    if (!trimmed) throw new Error('Prompt is empty');
+    const profile = process.config.profiles.find(item => item.id === profileId)
+      ?? (profileId ? undefined : process.config.profiles[0]);
+    if (!profile) throw new Error(`Unknown ComfyUI profile: ${profileId}`);
+    const job: Job = {
+      id: randomUUID(),
+      sessionId,
+      endpoint: process.config.endpoint,
+      profileId: profile.id,
+      prompt: trimmed,
+      controller: new AbortController(),
+      submitting: false,
+      submissionSettled: Promise.resolve(),
+      finishSubmission: () => undefined,
+      cancelled: false,
+      executing: false,
+    };
+    this.jobs.set(job.id, job);
+    process.writeStatus(`Queued · ${profile.name}`);
+    void this.deps.postChat(sessionId, `Queued for ${profile.name}.`).catch(() => undefined);
+    this.queue = this.queue.then(() => this.run(job, process, profile)).catch(() => undefined);
+    return { jobId: job.id, profileId: profile.id };
+  }
+
+  async cancel(sessionId: string): Promise<boolean> {
+    const sessionJobs = [...this.jobs.values()].filter(job => job.sessionId === sessionId);
+    const job = sessionJobs.find(candidate => candidate.executing) ?? sessionJobs[0];
+    if (!job) return false;
+    return this.cancelJob(job);
+  }
+
+  remove(sessionId: string): void {
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId) {
+        void this.cancelJob(job).catch(error => logger.warn(`[ComfyUI] Could not cancel expired session job ${job.id}: ${error}`));
+      }
+    }
+    this.sessions.delete(sessionId);
+  }
+
+  private async cancelJob(job: Job): Promise<boolean> {
+    if (job.submitting) await job.submissionSettled;
+    if (job.promptId && !(await cancelComfyPrompt(job.endpoint, job.promptId))) return false;
+    job.cancelled = true;
+    job.controller.abort();
+    return true;
+  }
+
+  private async run(job: Job, process: SessionProcess, profile: ComfyUiToolConfig['profiles'][number]): Promise<void> {
+    let tempDir: string | undefined;
+    let leaseRelease: (() => Promise<void>) | undefined;
+    let failure: unknown;
+    let cleanupWarning: unknown;
+    const endpoint = process.config.endpoint;
+    try {
+      if (job.controller.signal.aborted) throw new Error('Generation cancelled');
+      job.executing = true;
+      process.writeStatus(`Generating · ${profile.name}`);
+      await this.deps.postChat(job.sessionId, `Generating with ${profile.name}…`);
+      leaseRelease = await acquireComfyGpuLease(isLocalEndpoint(endpoint));
+      if (job.controller.signal.aborted) throw new Error('Generation cancelled');
+      tempDir = mkdtempSync(join(this.deps.tempDir, 'comfy-media-'));
+      const files = await runComfyPrompt({
+        endpoint,
+        workflow: applyComfyUiProfile(profile, job.prompt),
+        profile,
+        prompt: job.prompt,
+        tempDir,
+        signal: job.controller.signal,
+        onSubmitting: () => {
+          job.submitting = true;
+          job.submissionSettled = new Promise(resolve => { job.finishSubmission = resolve; });
+        },
+        onSubmitted: id => {
+          job.promptId = id;
+          job.submitting = false;
+          job.finishSubmission();
+        },
+        onSubmitFailed: () => {
+          job.submitting = false;
+          job.finishSubmission();
+        },
+        onProgress: message => {
+          process.writeStatus(message);
+          void this.deps.postChat(job.sessionId, message).catch(() => undefined);
+        },
+      });
+      for (const [index, file] of files.entries()) {
+        if (job.controller.signal.aborted || this.sessions.get(job.sessionId) !== process) break;
+        const artifact = this.chatFilesArtifact(job.sessionId);
+        const stored = await this.deps.attachments.addGeneratedMediaFromFile(artifact.id, {
+          filePath: file.filePath,
+          filename: file.filename,
+          contentType: file.mimeType,
+        });
+        if (stored.sizeBytes > MAX_GENERATED_MEDIA_BYTES || !stored.sha256) throw new Error('Generated media failed its storage integrity check');
+        const attachment: ChatAttachmentRef = {
+          artifactId: stored.artifactId,
+          attachmentId: stored.id,
+          filename: stored.filename,
+          mimeType: stored.contentType ?? file.mimeType,
+          sizeBytes: stored.sizeBytes,
+          sha256: stored.sha256,
+          generatedMedia: true,
+          filePath: this.deps.attachments.getPath(stored.artifactId, stored.id),
+        };
+        const label = profile.kind === 'video' ? 'Generated video' : 'Generated image';
+        await this.deps.postChat(job.sessionId, files.length > 1 ? `${label} ${index + 1} of ${files.length}.` : `${label}.`, attachment);
+      }
+      process.writeStatus('Generation complete');
+    } catch (error) {
+      failure = error;
+    } finally {
+      job.executing = false;
+      try {
+        if (job.promptId) await freeComfyMemory(endpoint);
+      } catch { /* best-effort server cleanup */ }
+      try { await leaseRelease?.(); } catch (error) {
+        cleanupWarning = error;
+        logger.warn(`[ComfyUI] Generation finished but GPU handoff cleanup failed: ${error}`);
+      }
+      if (tempDir) rmSync(tempDir, { recursive: true, force: true });
+    }
+
+    if (failure) {
+      const message = job.cancelled || job.controller.signal.aborted
+        ? 'Generation cancelled.'
+        : `Generation failed: ${failure instanceof Error ? failure.message : String(failure)}`;
+      if (this.sessions.get(job.sessionId) === process) {
+        process.writeStatus(message);
+        await this.deps.postChat(job.sessionId, message).catch(() => undefined);
+      }
+    } else if (cleanupWarning && this.sessions.get(job.sessionId) === process) {
+      const message = `Generation finished, but GPU handoff cleanup failed: ${cleanupWarning instanceof Error ? cleanupWarning.message : String(cleanupWarning)}`;
+      process.writeStatus(message);
+      await this.deps.postChat(job.sessionId, message).catch(() => undefined);
+    }
+    this.jobs.delete(job.id);
+  }
+
+  private chatFilesArtifact(sessionId: string): Artifact {
+    return this.deps.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE)
+      ?? this.deps.artifacts.create(sessionId, CHAT_FILES_TITLE, 'markdown', CHAT_FILES_BODY, 'manual');
+  }
+}
+
+class SessionProcess extends EventEmitter implements ComfyUiSessionProcess {
+  readonly pid = 0;
+  readonly comfyUiTool = true as const;
+  readonly profiles: ComfyUiSessionProcess['profiles'];
+  private exited = false;
+
+  constructor(readonly sessionId: string, private readonly host: ComfyUiSessionHost, readonly config: ComfyUiToolConfig) {
+    super();
+    this.profiles = config.profiles.map(({ id, name, kind }) => ({ id, name, kind }));
+  }
+
+  write(data: string): void {
+    // PTY writes include reminders, keep-warm pings, setup prompts and terminal
+    // keys. Only the explicit chat dispatch path may submit a generation job.
+    void data;
+  }
+
+  writeStatus(message: string): void { this.emit('data', `${message}\r\n`); }
+  resize(): void { /* chat sessions have no terminal dimensions */ }
+  kill(): void {
+    if (this.exited) return;
+    this.exited = true;
+    this.host.remove(this.sessionId);
+    this.emit('exit', { exitCode: 0 });
+  }
+  onData(callback: (data: string) => void): void { this.on('data', callback); }
+  onExit(callback: (exitCode: { exitCode: number; signal?: number }) => void): void { this.on('exit', callback); }
+}
+
+function isLocalEndpoint(endpoint: string): boolean {
+  const hostname = new URL(endpoint).hostname.toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+}
+
+async function freeComfyMemory(endpoint: string): Promise<void> {
+  await fetch(`${endpoint}/free`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ unload_models: true, free_memory: true }), signal: AbortSignal.timeout(10_000),
+  });
+}
+
+let registered: ComfyUiSessionHost | null = null;
+
+export function registerComfyUiSessionHost(host: ComfyUiSessionHost | null): void { registered = host; }
+
+export function getComfyUiSessionHost(): ComfyUiSessionHost {
+  if (!registered) throw new Error('ComfyUI session host has not been initialized');
+  return registered;
+}

@@ -38,7 +38,7 @@ const pane = useHelmPaneContext();
 const appStore = useAppStore();
 const isOperator = computed(() => appStore.activeSession?.role === 'operator');
 /** Chat-pane sessions: the operator and API tools render their journal as a chat thread. */
-const isChatPane = computed(() => isOperator.value || appStore.activeSession?.apiTool === true);
+const isChatPane = computed(() => isOperator.value || appStore.activeSession?.apiTool === true || appStore.activeSession?.comfyUiTool === true);
 
 function setContainer(el: unknown): void {
   pane.terminalContainerRef.value = (el as HTMLElement | null) ?? null;
@@ -78,6 +78,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
         :session-id="appStore.activeSession.id"
         :title="isOperator ? 'Helm operator' : appStore.activeSession.name"
         :is-operator="isOperator"
+        :comfy-profiles="appStore.activeSession.comfyUiProfiles ?? []"
       />
       <button
         v-else-if="isChatPane"

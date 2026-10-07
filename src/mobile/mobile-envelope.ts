@@ -132,6 +132,8 @@ export interface MobileChatRecord {
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
+  sha256?: string;
+  generatedMedia?: boolean;
   /**
    * The message's place in the hub's global chat journal — what a phone's
    * catch-up cursor is measured against. Present on every JOURNALED message;
@@ -219,6 +221,8 @@ export interface ChatRecordInput {
   filename?: string;
   mimeType?: string;
   sizeBytes?: number;
+  sha256?: string;
+  generatedMedia?: boolean;
   seq?: number;
   originId?: string;
   replay?: boolean;
@@ -268,6 +272,8 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.filename !== undefined) record.filename = input.filename;
   if (input.mimeType !== undefined) record.mimeType = input.mimeType;
   if (input.sizeBytes !== undefined) record.sizeBytes = input.sizeBytes;
+  if (input.sha256 !== undefined) record.sha256 = input.sha256;
+  if (input.generatedMedia !== undefined) record.generatedMedia = input.generatedMedia;
   // Last, always: these postdate every committed vector, and emitting any of
   // them in an earlier slot would reorder the bytes an older phone build
   // already expects. Order among themselves: seq, originId, replay.

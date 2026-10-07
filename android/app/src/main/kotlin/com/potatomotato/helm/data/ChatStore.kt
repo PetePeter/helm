@@ -129,6 +129,7 @@ internal object ChatSnapshotJson {
         message.toolCalls?.let { put("toolCalls", it) }
         message.contextWindow?.let { put("contextWindow", it) }
         message.thoughtCount?.let { put("thoughtCount", it) }
+        message.comfyProfileId?.let { put("comfyProfileId", it) }
         message.attachment?.let {
             put("attachment", JSONObject().apply {
                 put("artifactId", it.artifactId)
@@ -182,5 +183,6 @@ internal object ChatSnapshotJson {
         toolCalls = if (row.has("toolCalls")) row.getInt("toolCalls") else null,
         contextWindow = if (row.has("contextWindow")) row.getLong("contextWindow") else null,
         thoughtCount = if (row.has("thoughtCount")) row.getInt("thoughtCount") else null,
+        comfyProfileId = if (row.has("comfyProfileId")) row.getString("comfyProfileId") else null,
     )
 }

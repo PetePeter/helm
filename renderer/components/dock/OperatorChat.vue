@@ -10,7 +10,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { operatorPttKey as pttKey, operatorView, useOperatorChat } from '../../composables/useOperatorChat.js';
 import { useVoiceCall } from '../../composables/useVoiceCall.js';
 import { composerKeyAction } from '../../operator/operator-chat.js';
-import { configClient, dialogClient } from '../../ipc/clients.js';
+import { artifactsClient, configClient, dialogClient } from '../../ipc/clients.js';
 import { registerKeyHandler } from '../../keyboard/router.js';
 
 const props = defineProps<{
@@ -19,6 +19,7 @@ const props = defineProps<{
   title: string;
   /** Only the operator takes calls. */
   isOperator: boolean;
+  comfyProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
 }>();
 
 const chat = useOperatorChat(props.sessionId);
@@ -28,6 +29,15 @@ const { inCall, handsFree, toggleCall, hangUp } = useVoiceCall();
 const thread = ref<HTMLElement | null>(null);
 const attachmentName = computed(() => attachment.value?.split(/[\\/]/).pop() ?? '');
 const pttLabel = computed(() => pttKey.value.toUpperCase());
+const isComfyUi = computed(() => (props.comfyProfiles?.length ?? 0) > 0);
+const profileId = ref(props.comfyProfiles?.[0]?.id ?? '');
+const chatHint = computed(() => isComfyUi.value
+  ? 'Enter to generate · Type /cancel to stop'
+  : `Enter to send · Shift/Ctrl+Enter for a new line · Hold 🎤 or ${pttLabel.value} to talk`);
+const previewUrl = (path: string) => `helm-img://f/?p=${encodeURIComponent(path)}`;
+watch(() => props.comfyProfiles, profiles => {
+  if (!profiles?.some(profile => profile.id === profileId.value)) profileId.value = profiles?.[0]?.id ?? '';
+}, { deep: true });
 
 function onCallClick(): void {
   if (inCall.value && !handsFree.value) hangUp();
@@ -38,12 +48,17 @@ function onComposerKey(event: KeyboardEvent): void {
   const action = composerKeyAction(event);
   if (action !== 'send') return; // newline: the textarea's default
   event.preventDefault();
-  void chat.send();
+  void chat.send(isComfyUi.value ? profileId.value : undefined);
 }
 
 async function pickAttachment(): Promise<void> {
   const selected = await dialogClient.dialogShowOpenFile?.([{ name: 'All Files', extensions: ['*'] }]);
   if (selected) attachment.value = selected;
+}
+
+function cancelGeneration(): void {
+  draft.value = '/cancel';
+  void chat.send(profileId.value);
 }
 
 function time(at: number): string {
@@ -100,6 +115,13 @@ onBeforeUnmount(() => {
   <div class="operator-chat">
     <div class="operator-chat__header">
       <span class="operator-chat__title">{{ title }}</span>
+      <label v-if="isComfyUi" class="operator-chat__profile">
+        <span>Mode</span>
+        <select v-model="profileId" class="focusable" aria-label="ComfyUI profile">
+          <option v-for="profile in comfyProfiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+        </select>
+      </label>
+      <button v-if="isComfyUi" class="btn btn--sm btn--secondary focusable" type="button" :disabled="sending" @click="cancelGeneration">Cancel generation</button>
       <button
         v-if="isOperator"
         class="btn btn--sm focusable"
@@ -119,6 +141,22 @@ onBeforeUnmount(() => {
         :class="`operator-chat__bubble--${bubble.from}`"
       >
         <div class="operator-chat__text">{{ bubble.text }}</div>
+        <div v-if="bubble.attachment?.filePath" class="operator-chat__media">
+          <img v-if="bubble.attachment.mimeType?.startsWith('image/')" :src="previewUrl(bubble.attachment.filePath)" :alt="bubble.attachment.filename" />
+          <video v-else-if="bubble.attachment.mimeType?.startsWith('video/')" :src="previewUrl(bubble.attachment.filePath)" controls preload="metadata" />
+          <button
+            v-if="bubble.attachment.artifactId && bubble.attachment.attachmentId"
+            class="btn btn--sm btn--secondary focusable"
+            type="button"
+            @click="artifactsClient.artifactOpenAttachment(bubble.attachment.artifactId!, bubble.attachment.attachmentId!)"
+          >Open</button>
+          <button
+            v-if="bubble.attachment.artifactId && bubble.attachment.attachmentId"
+            class="btn btn--sm btn--secondary focusable"
+            type="button"
+            @click="artifactsClient.artifactSaveAttachment(bubble.attachment.artifactId!, bubble.attachment.attachmentId!)"
+          >Save as</button>
+        </div>
         <div v-if="bubble.badge" class="operator-chat__badge">{{ bubble.badge }}</div>
         <div class="operator-chat__time">{{ time(bubble.at) }}</div>
       </div>
@@ -127,7 +165,7 @@ onBeforeUnmount(() => {
     <div v-if="error" class="operator-chat__error" role="alert">{{ error }}</div>
 
     <div class="operator-chat__composer">
-      <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
+      <button v-if="!isComfyUi" class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
       <div class="operator-chat__input-wrap">
         <div v-if="attachment" class="operator-chat__attachment">
           📎 {{ attachmentName }}
@@ -137,11 +175,12 @@ onBeforeUnmount(() => {
           v-model="draft"
           class="operator-chat__input"
           rows="2"
-          placeholder="Message the operator…"
+          :placeholder="isComfyUi ? 'Describe what to generate…' : 'Message the operator…'"
           @keydown="onComposerKey"
         />
       </div>
       <button
+        v-if="!isComfyUi"
         class="operator-chat__ptt focusable"
         :class="{ 'operator-chat__ptt--live': recording }"
         type="button"
@@ -154,10 +193,10 @@ onBeforeUnmount(() => {
         class="btn btn--sm btn--primary focusable"
         type="button"
         :disabled="sending || !draft.trim()"
-        @click="chat.send()"
+        @click="chat.send(isComfyUi ? profileId : undefined)"
       >Send</button>
     </div>
-    <div class="operator-chat__hint">Enter to send · Shift/Ctrl+Enter for a new line · Hold 🎤 or {{ pttLabel }} to talk</div>
+    <div class="operator-chat__hint">{{ chatHint }}</div>
   </div>
 </template>
 
@@ -286,6 +325,11 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   cursor: pointer;
 }
+
+.operator-chat__profile { display: flex; flex-direction: column; gap: 2px; font-size: var(--font-size-xs); color: var(--text-dim); }
+.operator-chat__profile select { max-width: 150px; padding: 5px 8px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.operator-chat__media { display: flex; flex-direction: column; gap: var(--spacing-xs); margin-top: var(--spacing-xs); }
+.operator-chat__media img, .operator-chat__media video { max-width: min(560px, 70vw); max-height: 420px; border-radius: var(--radius-sm); object-fit: contain; background: #000; }
 
 .operator-chat__ptt {
   width: 40px;

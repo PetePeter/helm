@@ -274,6 +274,7 @@ export const PRELOAD_API_DOMAINS = {
     'artifactDiscardDraft',
     'artifactSetIntent',
     'artifactOpenAttachment',
+    'artifactSaveAttachment',
     'artifactAttachmentList',
     'artifactAttachmentAdd',
     'artifactAttachmentDelete',

@@ -21,6 +21,8 @@ data class PullTarget(
     val filename: String,
     val mimeType: String,
     val sizeBytes: Long,
+    val sha256: String? = null,
+    val generatedMedia: Boolean = false,
 )
 
 /**
@@ -52,6 +54,11 @@ fun artifactAttachmentKey(artifactId: String, attachmentId: String): String =
  */
 class AttachmentPulls {
 
+    companion object {
+        const val MAX_ATTACHMENT_BYTES = 10L * 1024 * 1024
+        const val MAX_GENERATED_MEDIA_BYTES = 64L * 1024 * 1024
+    }
+
     private val _pulls = MutableStateFlow<Map<String, PullState>>(emptyMap())
 
     /** Per-transfer fetch state, keyed by [PullTarget.key]. */
@@ -66,9 +73,24 @@ class AttachmentPulls {
      * double tap cannot start two loops writing into one buffer. A resumed fetch
      * keeps what already arrived: the rewind is to the gap, not to zero.
      */
-    fun pullStarted(key: String, sizeBytes: Long): Boolean {
+    fun pullStarted(key: String, sizeBytes: Long, sha256: String? = null, generatedMedia: Boolean = false): Boolean {
         if (_pulls.value[key] is PullState.Pulling) return false
-        val transfer = transfers.getOrPut(key) { AttachmentTransfer(sizeBytes) }
+        val maximum = if (generatedMedia) MAX_GENERATED_MEDIA_BYTES else MAX_ATTACHMENT_BYTES
+        if (sizeBytes !in 1..maximum) {
+            transfers.remove(key)
+            setPull(key, PullState.Failed("File exceeds the ${maximum / (1024 * 1024)} MiB transfer limit"))
+            return false
+        }
+        val expectedHash = sha256?.lowercase()?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+        if (sha256 != null && expectedHash == null) {
+            transfers.remove(key)
+            setPull(key, PullState.Failed("File integrity metadata is invalid"))
+            return false
+        }
+        val current = transfers[key]
+        val transfer = if (current == null || current.total != sizeBytes || current.expectedSha256 != expectedHash) {
+            AttachmentTransfer(sizeBytes, expectedHash).also { transfers[key] = it }
+        } else current
         // A retry rewinds to the gap: answers to the asks that died with the
         // last attempt are refused rather than double-counted.
         transfer.forgetAsks()
@@ -99,7 +121,13 @@ class AttachmentPulls {
             setPull(key, transfer.state())
             return null
         }
-        return transfer.bytes()
+        return try {
+            transfer.bytes()
+        } catch (error: Exception) {
+            transfers.remove(key)
+            setPull(key, PullState.Failed(error.message ?: "File integrity check failed"))
+            null
+        }
     }
 
     /**

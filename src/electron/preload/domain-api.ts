@@ -1342,6 +1342,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   artifactOpenAttachment: (artifactId: string, attachmentId: string): Promise<boolean> =>
     ipcRenderer.invoke('artifact:openAttachment', artifactId, attachmentId),
 
+  /** Save an attachment to a location chosen by the user. */
+  artifactSaveAttachment: (artifactId: string, attachmentId: string): Promise<string | null> =>
+    ipcRenderer.invoke('artifact:saveAttachment', artifactId, attachmentId),
+
   /** List an artifact's attachments (metadata only, no bytes) */
   artifactAttachmentList: (artifactId: string): Promise<ArtifactAttachment[]> =>
     ipcRenderer.invoke('artifact:attachmentList', artifactId),
@@ -1746,8 +1750,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Deliver the user's words — and optionally a local file — to the operator, or to a chat-pane
    *  session (an API tool) when `sessionId` is given (and echo them to the phone). */
-  voiceAsk: (text: string, filePath?: string, sessionId?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('voice:ask', text, filePath, sessionId),
+  voiceAsk: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text, filePath, sessionId, comfyProfileId),
 
   /** A chat-pane session's journaled conversation (default: the operator's), oldest first. */
   voiceOperatorHistory: (sessionId?: string): Promise<OperatorChatEntry[]> =>

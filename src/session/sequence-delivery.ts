@@ -134,6 +134,9 @@ export async function deliverPromptSequenceToSession(input: {
   const session = sessionManager.getSession(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
   assertSessionWritable(session);
+  if (session.comfyUiTool) {
+    throw new Error('ComfyUI sessions accept prompts through chat; terminal and automated prompt delivery is disabled.');
+  }
 
   const cliEntry = configLoader.getCliTypeEntry(session.cliType);
   const submitSuffix = parseSubmitSuffix(cliEntry?.submitSuffix);

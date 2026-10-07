@@ -284,6 +284,7 @@ export function useSettingsController(options: {
         ? value.initialPrompt.map((i: any) => ({ label: i.label || '', sequence: i.sequence || '' }))
         : [],
       api: value?.api ?? null,
+      comfyUi: value?.comfyUi ?? null,
     };
   }
 

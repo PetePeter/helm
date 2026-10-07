@@ -54,6 +54,10 @@ export interface ChatAttachmentRef {
   filename: string;
   mimeType: string;
   sizeBytes: number;
+  sha256?: string;
+  generatedMedia?: boolean;
+  /** Local path for desktop preview; phones always use the attachment ids. */
+  filePath?: string;
 }
 
 /** What one bridge reports about one send. Never throws out of a broker. */

@@ -157,6 +157,8 @@ export interface SessionSummary {
   role?: 'operator';
   /** An API-tool session (Helm-hosted agent loop). */
   apiTool?: boolean;
+  comfyUiTool?: boolean;
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
   /** A subagent: the session whose Agent call spawned it. Clients hide these rows. */
   subagentOf?: string;
   /** Subagents this session is waiting on — clients show a 🔥 count. */
@@ -167,6 +169,7 @@ export interface CliSummary {
   cliType: string;
   name: string;
   command: string;
+  kind?: 'cli' | 'api' | 'comfyui';
   supportsResume: boolean;
   supportedDirPaths: string[];
 }
@@ -1301,8 +1304,8 @@ export class HelmControlService extends EventEmitter {
       return {
         cliType,
         name: entry.name,
-        // 'api' = Helm hosts the agent loop (no CLI); its history file makes it resumable.
-        kind: entry.api ? 'api' as const : 'cli' as const,
+        // Helm-hosted tools have no CLI process; ComfyUI sessions use the local media host.
+        kind: entry.api ? 'api' as const : entry.comfyUi ? 'comfyui' as const : 'cli' as const,
         ...(entry.api ? { model: entry.api.model } : {}),
         command: entry.spawnCommand ?? '',
         supportsResume: Boolean(entry.api || entry.spawnCommand || entry.resumeCommand || entry.continueCommand),

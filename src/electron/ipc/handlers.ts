@@ -47,6 +47,7 @@ import { ConfigLoader } from '../../config/loader.js';
 import { keyboard } from '../../output/keyboard.js';
 import { logger } from '../../utils/logger.js';
 import { ApiSessionHost, registerApiSessionHost } from '../../session/api/api-session-host.js';
+import { ComfyUiSessionHost, getComfyUiSessionHost, registerComfyUiSessionHost } from '../../session/comfyui/comfyui-session-host.js';
 import { formatManifestoContext } from '../../session/artifact-context.js';
 /** Skill type whose reviews collect request_tool wishes from API-tool sessions. */
 const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
@@ -609,9 +610,11 @@ export function registerIPCHandlers(
   // Created here (not in the mobile block far below) so the recycle bin's
   // purge paths can prune it — the journal's retention is the session's
   // lifetime, and a purged session's replay dies with it.
-  /** Sessions whose pane is a chat thread over the journal: the operator and API tools. */
+  /** Sessions whose pane is a chat thread over the journal. */
   const isChatPaneSession = (sessionId: string): boolean =>
-    sessionId === operatorSessionManager.getOperatorId() || sessionManager.getSession(sessionId)?.apiTool === true;
+    sessionId === operatorSessionManager.getOperatorId()
+    || sessionManager.getSession(sessionId)?.apiTool === true
+    || sessionManager.getSession(sessionId)?.comfyUiTool === true;
   const mobileChatJournal = new MobileChatJournal({
     persist: saveMobileChatJournal,
     // The desktop chat pane (operator + API tools) renders the same conversation the phone does.
@@ -689,6 +692,7 @@ export function registerIPCHandlers(
       helmControlService,
       sessionId => ptyManager.has(sessionId),
       sessionId => {
+        if (sessionManager.getSession(sessionId)?.comfyUiTool) return false;
         // An unresolved CLI type is not an opt-out: only an explicit false silences.
         const cliType = sessionManager.getSession(sessionId)?.cliType;
         const entry = configLoader.getCliTypeEntry(cliType ?? '');
@@ -1242,6 +1246,19 @@ export function registerIPCHandlers(
     },
     journal: mobileChatJournal,
   });
+  registerComfyUiSessionHost(new ComfyUiSessionHost({
+    tempDir: getTempDir(dirname ?? process.cwd()),
+    artifacts: artifactManager,
+    attachments: artifactAttachmentManager,
+    postChat: async (sessionId, text, attachment) => {
+      await mobileChatBridge.sendToSession({
+        sessionId,
+        text,
+        ...(attachment?.filePath ? { filePath: attachment.filePath } : {}),
+        ...(attachment ? { attachment } : {}),
+      });
+    },
+  }));
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
   helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
@@ -1289,10 +1306,27 @@ export function registerIPCHandlers(
       const target = sessionId ?? operatorSessionManager.getOperatorId();
       return target && isChatPaneSession(target) ? mobileChatJournal.sessionEntries(target) : [];
     },
-    ask: async (text, filePath, sessionId) => {
+    ask: async (text, filePath, sessionId, comfyProfileId) => {
       if (sessionId && !isChatPaneSession(sessionId)) return { ok: false, error: 'That session has no chat view' };
       const operatorId = sessionId ?? operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
+      const target = sessionManager.getSession(operatorId);
+      if (target?.comfyUiTool) {
+        if (filePath) return { ok: false, error: 'ComfyUI prompts currently accept text only' };
+        if (text.trim() === '/cancel') {
+          if (!await getComfyUiSessionHost().cancel(operatorId)) return { ok: false, error: 'No ComfyUI generation is running' };
+          mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
+        } else {
+          mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
+          try {
+            getComfyUiSessionHost().submit(operatorId, text, comfyProfileId);
+          } catch (error) {
+            return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          }
+        }
+        sessionManager.updateSession(operatorId, { lastPromptAt: Date.now() });
+        return { ok: true };
+      }
       // The operator is a local CLI: a desktop path is directly readable by it.
       const withFile = filePath ? `${text}
 

@@ -44,6 +44,10 @@ export interface ArtifactAttachment {
   contentType?: string;
   /** File size in bytes. */
   sizeBytes: number;
+  /** Whole-file integrity hash, used for generated media transfers. */
+  sha256?: string;
+  /** Uses the generated-media cap, never the ordinary chat attachment cap. */
+  generatedMedia?: boolean;
   /** Relative path from the attachments root: {artifactId}/{uuid}{ext}. */
   relativePath: string;
   /** Epoch ms when the attachment was created. */

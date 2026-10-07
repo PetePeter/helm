@@ -376,6 +376,8 @@ export class HelmSessionService {
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.role ? { role: session.role } : {}),
       ...(session.apiTool ? { apiTool: true } : {}),
+      ...(session.comfyUiTool ? { comfyUiTool: true } : {}),
+      ...(session.comfyUiProfiles ? { comfyUiProfiles: session.comfyUiProfiles } : {}),
       ...(session.subagentOf ? { subagentOf: session.subagentOf } : {}),
       ...(session.pendingSubagents ? { pendingSubagents: session.pendingSubagents } : {}),
     };

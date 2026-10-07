@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.MessageDigest
 
 /**
  * The GENERALIZED driver — the one a chat tile and an artifact attachment row now
@@ -153,6 +154,41 @@ class AttachmentPullsTest {
         assertTrue(pulls.pullStarted(key, 300L))
 
         assertFalse(pulls.pullStarted(key, 300L))
+    }
+
+    @Test
+    fun `normal files keep the smaller limit while generated media may use the larger limit`() {
+        assertFalse(pulls.pullStarted(key, AttachmentPulls.MAX_ATTACHMENT_BYTES + 1))
+        assertTrue(pulls.pullState(key) is PullState.Failed)
+
+        assertTrue(pulls.pullStarted(key, AttachmentPulls.MAX_ATTACHMENT_BYTES + 1, generatedMedia = true))
+    }
+
+    @Test
+    fun `a generated file larger than the generated media limit is rejected`() {
+        assertFalse(pulls.pullStarted(key, AttachmentPulls.MAX_GENERATED_MEDIA_BYTES + 1, generatedMedia = true))
+        assertTrue(pulls.pullState(key) is PullState.Failed)
+    }
+
+    @Test
+    fun `a generated transfer verifies its SHA-256 before exposing bytes`() {
+        val content = byteArrayOf(1, 2, 3)
+        val digest = MessageDigest.getInstance("SHA-256").digest(content)
+            .joinToString("") { "%02x".format(it) }
+        assertTrue(pulls.pullStarted(key, content.size.toLong(), digest, generatedMedia = true))
+        assertEquals(0L, askAll(slice = content.size).first())
+
+        assertTrue(content.contentEquals(pulls.sliceArrived(key, 0, content, eof = true)))
+    }
+
+    @Test
+    fun `a generated transfer with a wrong SHA-256 is discarded`() {
+        val content = byteArrayOf(1, 2, 3)
+        assertTrue(pulls.pullStarted(key, content.size.toLong(), "0".repeat(64), generatedMedia = true))
+        askAll(slice = content.size)
+
+        assertNull(pulls.sliceArrived(key, 0, content, eof = true))
+        assertEquals(PullState.Failed("File integrity check failed"), pulls.pullState(key))
     }
 
     @Test

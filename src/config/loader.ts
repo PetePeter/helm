@@ -12,6 +12,8 @@ import {
   normalizeMobileLanPort,
   parseCommandTemplate,
   type ApiToolConfig,
+  type ComfyUiToolConfig,
+  type ComfyUiProfileConfig,
   type CliTypeOptions,
   type EnvVarEntry,
   type HelmActionMap,
@@ -22,6 +24,7 @@ import { BindingStore, type BindingProfileSummary } from './binding-store.js';
 import { InputConfigStore } from './input-config-store.js';
 import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
+import { defaultComfyUiMigrationFiles, migrateComfyUiToolDefaults } from './comfyui-default-migration.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
 import type { ProjectStore } from '../session/project-store.js';
 import {
@@ -42,7 +45,7 @@ import {
 import { DEFAULT_MAX_AUTO_CONTINUES, type LoopConfig } from '../session/hooks/loop-driver.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
-export type { ApiToolConfig, CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
+export type { ApiToolConfig, ComfyUiToolConfig, ComfyUiProfileConfig, CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
 export { AmbiguousCliTypeError } from './cli-type-store.js';
 export type { ResolvedCliType } from './cli-type-store.js';
 
@@ -247,6 +250,8 @@ export interface CliTypeConfig {
   hooks?: CliHooksIntegration;
   /** Present = an API tool: Helm hosts the agent loop in-process, no CLI is spawned. */
   api?: ApiToolConfig;
+  /** Present = a ComfyUI tool: Helm hosts the generation client in-process. */
+  comfyUi?: ComfyUiToolConfig;
 }
 
 export interface ButtonBindings {
@@ -601,6 +606,12 @@ export class ConfigLoader {
     // types it just imported are covered too; rewrites the file directly, hence
     // the reload.
     if (migrateCliTypeIds(defaultCliTypeMigrationFiles(this.configDir))) {
+      this.cliTypeStore.load();
+    }
+    // Add the packaged ComfyUI tool defaults to existing installs once. Custom
+    // ConfigLoader directories (including test fixtures) remain user-owned.
+    if (path.resolve(this.configDir) === path.resolve(DEFAULT_CONFIG_DIR)
+      && migrateComfyUiToolDefaults(defaultComfyUiMigrationFiles(this.configDir, path.join(sourceConfigDir, 'cli-types.yaml')))) {
       this.cliTypeStore.load();
     }
     this.migrateLegacyBindings();
@@ -1361,6 +1372,7 @@ export class ConfigLoader {
     const helmActions = this.cleanHelmActions(options?.helmActions);
     if (helmActions) tool.helmActions = helmActions;
     if (options?.api) tool.api = options.api;
+    if (options?.comfyUi) tool.comfyUi = options.comfyUi;
     this.cliTypeStore.add(id, tool);
     return id;
   }
@@ -1460,6 +1472,10 @@ export class ConfigLoader {
       if (options.api !== undefined) {
         if (options.api) existing.api = options.api;
         else delete existing.api;
+      }
+      if (options.comfyUi !== undefined) {
+        if (options.comfyUi) existing.comfyUi = options.comfyUi;
+        else delete existing.comfyUi;
       }
       if (options.helmActions !== undefined) {
         // undefined = preserve; provided = replace with the cleaned map (empty fields drop, empty map clears).

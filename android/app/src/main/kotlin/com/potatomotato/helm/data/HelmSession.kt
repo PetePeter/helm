@@ -50,6 +50,9 @@ data class HelmSession(
     val machineName: String? = null,
     /** An API-tool session: Helm hosts the agent loop itself (no CLI). */
     val apiTool: Boolean = false,
+    /** Helm hosts ComfyUI generation and routes this session through chat. */
+    val comfyUiTool: Boolean = false,
+    val comfyUiProfiles: List<ComfyUiProfile> = emptyList(),
     /** Set on a subagent: the session whose Agent call spawned it. Such rows are never listed. */
     val subagentOf: String? = null,
     /** Subagents this session is waiting on right now — drawn as a 🔥 count. */
@@ -112,6 +115,8 @@ data class HelmSession(
 
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
+data class ComfyUiProfile(val id: String, val name: String, val kind: String)
+
 /**
  * The `session_list` result, read off the wire.
  *
@@ -163,6 +168,16 @@ object SessionWire {
             machineName = ((summary.opt("remote") as? JSONObject)?.opt("machineName") as? String)
                 ?.takeIf { it.isNotBlank() },
             apiTool = summary.opt("apiTool") == true,
+            comfyUiTool = summary.opt("comfyUiTool") == true,
+            comfyUiProfiles = (summary.optJSONArray("comfyUiProfiles")?.let { profiles ->
+                (0 until profiles.length()).mapNotNull { index ->
+                    val profile = profiles.optJSONObject(index) ?: return@mapNotNull null
+                    val profileId = profile.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val kind = profile.optString("kind").takeIf { it == "image" || it == "video" } ?: return@mapNotNull null
+                    val label = profile.optString("name").takeIf { it.isNotBlank() } ?: profileId
+                    ComfyUiProfile(profileId, label, kind)
+                }
+            } ?: emptyList()),
             subagentOf = (summary.opt("subagentOf") as? String)?.takeIf { it.isNotBlank() },
             pendingSubagents = ((summary.opt("pendingSubagents") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
             frozen = summary.opt("frozen") == true,

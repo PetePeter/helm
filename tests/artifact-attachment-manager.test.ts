@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 // Use a real temp directory for each test run
 let testDir: string;
@@ -50,6 +50,31 @@ describe('ArtifactAttachmentManager', () => {
     expect(() => {
       manager.add('artifact-1', { filename: 'big.bin', content: bigContent });
     }).toThrow('exceeds 10MB');
+  });
+
+  it('stores generated media with its copied size and SHA-256, then deletes it with the artifact', async () => {
+    const sourcePath = join(testDir, 'generated.png');
+    const bytes = Buffer.from('generated image bytes');
+    writeFileSync(sourcePath, bytes);
+
+    const attachment = await manager.addGeneratedMediaFromFile('session-chat', {
+      filePath: sourcePath,
+      filename: 'result.png',
+      contentType: 'image/png',
+    });
+
+    expect(attachment).toMatchObject({
+      artifactId: 'session-chat',
+      filename: 'result.png',
+      contentType: 'image/png',
+      sizeBytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      generatedMedia: true,
+    });
+    expect(readFileSync(manager.getPath('session-chat', attachment.id))).toEqual(bytes);
+
+    expect(manager.deleteForArtifact('session-chat')).toBe(1);
+    expect(manager.get('session-chat', attachment.id)).toBeNull();
   });
 
   it('deletes all attachments for an artifact', () => {

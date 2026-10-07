@@ -581,6 +581,7 @@ export async function callMcpTool(
             sessionId: peerTarget.sessionId,
             text: asString(args.text, 'text is required'),
             senderSessionId,
+            ...(typeof args.comfyProfileId === 'string' ? { comfyProfileId: args.comfyProfileId } : {}),
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
           });
         }
@@ -593,6 +594,7 @@ export async function callMcpTool(
             senderSessionId,
             senderSessionName,
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
+            ...(typeof args.comfyProfileId === 'string' ? { comfyProfileId: args.comfyProfileId } : {}),
             ...(isMobileSessionId(authContext.sessionId) || isMobileSenderSessionId(senderSessionId)
               ? { userPromptSource: 'phone' as const }
               : {}),

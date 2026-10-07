@@ -11,7 +11,8 @@ import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useFocusTrap } from '../../composables/useFocusTrap.js';
 import PromptTextarea from '../common/PromptTextarea.vue';
 import { toolsClient } from '../../ipc/clients.js';
-import type { ToolEditorApiConfig } from '../../stores/modal-bridge.js';
+import type { ToolEditorApiConfig, ToolEditorComfyUiConfig } from '../../stores/modal-bridge.js';
+import { cloneDefaultComfyUiConfig } from '../../../src/session/comfyui/comfyui-config.js';
 
 const MODAL_ID = 'tool-editor-modal';
 const HELM_AUTOFILLED_ENV_ITEMS = [
@@ -38,6 +39,7 @@ function normalizeSubmitSuffix(value?: string): SubmitSuffixOption {
 
 export interface ToolEditorData {
   api?: ToolEditorApiConfig | null;
+  comfyUi?: ToolEditorComfyUiConfig | null;
   name: string;
   env: Array<{ name: string; value: string; mode?: 'replace' | 'append' | 'prepend' }>;
   initialPromptDelay: number;
@@ -92,6 +94,7 @@ const emit = defineEmits<{
     helmActions: { clear: string; compact: string; export: string };
     _promptItems: Array<{ label: string; sequence: string }>;
     api: ToolEditorApiConfig | null;
+    comfyUi: ToolEditorComfyUiConfig | null;
   }): void;
   (e: 'cancel'): void;
   (e: 'update:visible', value: boolean): void;
@@ -121,7 +124,7 @@ const helmActionCompact = ref('');
 const helmActionExport = ref('');
 
 // API tool: Helm runs the agent loop itself; no spawn/resume commands apply.
-const toolKind = ref<'cli' | 'api'>('cli');
+const toolKind = ref<'cli' | 'api' | 'comfyui'>('cli');
 const apiBaseUrl = ref(DEFAULT_API_BASE_URL);
 const apiModel = ref('');
 const apiKeyEnv = ref('');
@@ -134,6 +137,83 @@ const apiCatalogGroups = computed(() => ([
   { source: 'native' as const, label: 'Native', tools: apiCatalog.value.filter(t => t.source === 'native') },
   { source: 'helm' as const, label: 'Helm', tools: apiCatalog.value.filter(t => t.source === 'helm') },
 ]));
+const comfyUi = ref<ToolEditorComfyUiConfig>(cloneDefaultComfyUiConfig());
+const comfyProfileId = ref('image');
+const comfyProfileName = ref('Image');
+const comfyProfileKind = ref<'image' | 'video'>('image');
+const comfyWorkflowJson = ref('');
+const comfyMappingsJson = ref('');
+const comfyDefaultsJson = ref('');
+const comfyOutputNodeIds = ref('');
+const comfyError = ref('');
+
+function loadComfyProfile(profileId = comfyProfileId.value): void {
+  const profile = comfyUi.value.profiles.find(item => item.id === profileId);
+  if (!profile) return;
+  comfyProfileId.value = profile.id;
+  comfyProfileName.value = profile.name;
+  comfyProfileKind.value = profile.kind;
+  comfyWorkflowJson.value = JSON.stringify(profile.workflow, null, 2);
+  comfyMappingsJson.value = JSON.stringify(profile.mappings, null, 2);
+  comfyDefaultsJson.value = JSON.stringify(profile.defaults ?? {}, null, 2);
+  comfyOutputNodeIds.value = profile.outputNodeIds.join(', ');
+  comfyError.value = '';
+}
+
+function commitComfyProfile(): boolean {
+  try {
+    const workflow = JSON.parse(comfyWorkflowJson.value) as Record<string, unknown>;
+    const mappings = JSON.parse(comfyMappingsJson.value) as Record<string, { nodeId: string; input: string }>;
+    const defaults = JSON.parse(comfyDefaultsJson.value) as Record<string, string | number>;
+    if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) throw new Error('Workflow must be an object');
+    if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) throw new Error('Mappings must be an object');
+    if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) throw new Error('Defaults must be an object');
+    const profile = {
+      id: comfyProfileId.value,
+      name: comfyProfileName.value.trim(),
+      kind: comfyProfileKind.value,
+      workflow,
+      mappings,
+      defaults,
+      outputNodeIds: comfyOutputNodeIds.value.split(',').map(id => id.trim()).filter(Boolean),
+    };
+    if (!profile.name) throw new Error('Profile name is required');
+    comfyUi.value = {
+      ...comfyUi.value,
+      endpoint: comfyUi.value.endpoint.trim(),
+      profiles: comfyUi.value.profiles.map(item => item.id === profile.id ? profile : item),
+    };
+    comfyError.value = '';
+    return true;
+  } catch (error) {
+    comfyError.value = error instanceof Error ? error.message : String(error);
+    return false;
+  }
+}
+
+function selectComfyProfile(event: Event): void {
+  if (!commitComfyProfile()) return;
+  loadComfyProfile((event.target as HTMLSelectElement).value);
+}
+
+function addComfyProfile(): void {
+  if (!commitComfyProfile()) return;
+  const id = `custom-${Date.now()}`;
+  comfyUi.value.profiles.push({ id, name: 'Custom profile', kind: 'image', workflow: {}, mappings: {}, outputNodeIds: [] });
+  loadComfyProfile(id);
+}
+
+function importComfyWorkflow(): void {
+  try {
+    const parsed = JSON.parse(comfyWorkflowJson.value) as Record<string, unknown>;
+    const graph = parsed.prompt && typeof parsed.prompt === 'object' ? parsed.prompt : parsed;
+    if (!graph || typeof graph !== 'object' || Array.isArray(graph)) throw new Error('Expected a ComfyUI API workflow object');
+    comfyWorkflowJson.value = JSON.stringify(graph, null, 2);
+    comfyError.value = '';
+  } catch (error) {
+    comfyError.value = error instanceof Error ? error.message : String(error);
+  }
+}
 
 async function loadApiCatalog(): Promise<void> {
   try {
@@ -225,7 +305,7 @@ function initForm(): void {
   helmActionClear.value = d.helmActions?.clear ?? '';
   helmActionCompact.value = d.helmActions?.compact ?? '';
   helmActionExport.value = d.helmActions?.export ?? '';
-  toolKind.value = d.api ? 'api' : 'cli';
+  toolKind.value = d.comfyUi ? 'comfyui' : d.api ? 'api' : 'cli';
   apiBaseUrl.value = d.api?.baseUrl || DEFAULT_API_BASE_URL;
   apiModel.value = d.api?.model ?? '';
   apiKeyEnv.value = d.api?.apiKeyEnv ?? '';
@@ -233,6 +313,9 @@ function initForm(): void {
   apiSlots.value = d.api?.slots ?? 1;
   apiSystemPrompt.value = d.api?.systemPrompt ?? '';
   apiAllowed.value = new Set(d.api?.allowedTools ?? []);
+  comfyUi.value = structuredClone(d.comfyUi ?? cloneDefaultComfyUiConfig());
+  comfyProfileId.value = comfyUi.value.profiles[0]?.id ?? '';
+  loadComfyProfile();
   promptItems.value = Array.isArray(d.initialPrompt)
     ? d.initialPrompt.map(item => ({
         label: typeof item?.label === 'string' ? item.label : '',
@@ -271,6 +354,16 @@ function onSave(): void {
   // name has to stop here or the user loses the form and never sees why.
   nameError.value = props.validateName?.(name.value) ?? null;
   if (nameError.value) return;
+  if (toolKind.value === 'comfyui') {
+    if (!commitComfyProfile()) return;
+    try {
+      const endpoint = new URL(comfyUi.value.endpoint);
+      if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password) throw new Error('Use an HTTP or HTTPS endpoint without embedded credentials');
+    } catch (error) {
+      comfyError.value = error instanceof Error ? error.message : 'Invalid ComfyUI endpoint';
+      return;
+    }
+  }
 
   emit('save', {
     name: name.value,
@@ -315,6 +408,7 @@ function onSave(): void {
           slots: apiSlots.value,
         }
       : null,
+    comfyUi: toolKind.value === 'comfyui' ? comfyUi.value : null,
   });
   emit('update:visible', false);
 }
@@ -357,9 +451,51 @@ defineExpose({ handleButton });
               <select id="te-kind" v-model="toolKind" class="te-select focusable">
                 <option value="cli">CLI (spawned in a terminal)</option>
                 <option value="api">API tool (Helm runs the model)</option>
+                <option value="comfyui">ComfyUI (image and video generation)</option>
               </select>
-              <p class="te-section__hint">An API tool talks to an OpenAI-compatible endpoint directly. Helm runs the agent loop, the ticked tools and the chat reply itself.</p>
+              <p v-if="toolKind === 'api'" class="te-section__hint">An API tool talks to an OpenAI-compatible endpoint directly. Helm runs the agent loop, the ticked tools and the chat reply itself.</p>
             </div>
+          </fieldset>
+
+          <fieldset v-if="toolKind === 'comfyui'" class="te-section">
+            <legend class="te-section__legend">ComfyUI</legend>
+            <div class="te-field">
+              <label for="te-comfy-endpoint">Server endpoint</label>
+              <input id="te-comfy-endpoint" v-model="comfyUi.endpoint" type="url" placeholder="http://127.0.0.1:8188" class="te-input te-input--mono focusable" />
+            </div>
+            <div class="te-grid-2col">
+              <div class="te-field">
+                <label for="te-comfy-profile">Profile</label>
+                <select id="te-comfy-profile" :value="comfyProfileId" class="te-select focusable" @change="selectComfyProfile">
+                  <option v-for="profile in comfyUi.profiles" :key="profile.id" :value="profile.id">{{ profile.name }} · {{ profile.kind }}</option>
+                </select>
+              </div>
+              <div class="te-field"><label for="te-comfy-name">Profile name</label><input id="te-comfy-name" v-model="comfyProfileName" class="te-input focusable" /></div>
+              <div class="te-field">
+                <label for="te-comfy-kind">Media kind</label>
+                <select id="te-comfy-kind" v-model="comfyProfileKind" class="te-select focusable"><option value="image">Image</option><option value="video">Video</option></select>
+              </div>
+              <div class="te-field te-comfy-actions">
+                <span>API workflow</span>
+                <button type="button" class="btn btn--sm btn--secondary focusable" @click="importComfyWorkflow">Import pasted JSON</button>
+                <button type="button" class="btn btn--sm btn--secondary focusable" @click="addComfyProfile">Add profile</button>
+              </div>
+            </div>
+            <p class="te-section__hint">Paste a ComfyUI “Save (API Format)” graph, then map the prompt and output nodes below. Graph editing stays in ComfyUI.</p>
+            <div class="te-field">
+              <label for="te-comfy-workflow">API workflow JSON</label>
+              <textarea id="te-comfy-workflow" v-model="comfyWorkflowJson" rows="10" class="te-input te-input--mono focusable"></textarea>
+            </div>
+            <div class="te-field">
+              <label for="te-comfy-mappings">Input mappings JSON</label>
+              <textarea id="te-comfy-mappings" v-model="comfyMappingsJson" rows="4" class="te-input te-input--mono focusable" placeholder="{ &quot;prompt&quot;: { &quot;nodeId&quot;: &quot;2&quot;, &quot;input&quot;: &quot;text&quot; } }"></textarea>
+              <p class="te-section__hint">Map prompt, negativePrompt, width, height, steps, cfg, seed, length and fps to { nodeId, input }.</p>
+            </div>
+            <div class="te-grid-2col">
+              <div class="te-field"><label for="te-comfy-defaults">Mapped defaults JSON</label><textarea id="te-comfy-defaults" v-model="comfyDefaultsJson" rows="3" class="te-input te-input--mono focusable" placeholder="{ &quot;width&quot;: 512, &quot;height&quot;: 512 }"></textarea></div>
+              <div class="te-field"><label for="te-comfy-outputs">Output node IDs</label><input id="te-comfy-outputs" v-model="comfyOutputNodeIds" class="te-input te-input--mono focusable" placeholder="7, 11" /></div>
+            </div>
+            <p v-if="comfyError" class="te-error" role="alert">{{ comfyError }}</p>
           </fieldset>
 
           <fieldset v-if="toolKind === 'api'" class="te-section">

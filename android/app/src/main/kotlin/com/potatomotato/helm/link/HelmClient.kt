@@ -269,8 +269,10 @@ class HelmClient(
      * the call comes back, so the user can see the difference between "sent" and
      * "the desktop never answered".
      */
-    fun sendChat(sessionId: String, text: String): Boolean =
-        issueText(sessionId, text, key = chats.sending(sessionId, text, now()))
+    fun sendChat(sessionId: String, text: String, comfyProfileId: String? = null): Boolean {
+        val key = chats.sending(sessionId, text, now(), comfyProfileId)
+        return issueText(sessionId, text, key, comfyProfileId)
+    }
 
     /**
      * Send a FAILED message again — the ↻ under the bubble.
@@ -283,8 +285,9 @@ class HelmClient(
      * remains the authority on whether the attempt really failed.
      */
     fun resendChat(sessionId: String, key: String, text: String): Boolean {
+        val comfyProfileId = chats.comfyProfileId(sessionId, key)
         val newKey = chats.retry(sessionId, key, now()) ?: return false
-        return issueText(sessionId, text, key = newKey)
+        return issueText(sessionId, text, key = newKey, comfyProfileId = comfyProfileId)
     }
 
     /**
@@ -314,8 +317,9 @@ class HelmClient(
         ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
 
     /** One `session_send_text` ask, settling the optimistic row named by [key]. */
-    private fun issueText(sessionId: String, text: String, key: String): Boolean {
-        val params = linkedMapOf("sessionId" to sessionId, "text" to text)
+    private fun issueText(sessionId: String, text: String, key: String, comfyProfileId: String? = null): Boolean {
+        val params = linkedMapOf<String, Any>("sessionId" to sessionId, "text" to text)
+        comfyProfileId?.let { params["comfyProfileId"] = it }
         // The call id is chosen HERE rather than inside [call] because the
         // desktop derives the echo's originId from it — this end must know it to
         // recognise its own words when the journal replays them back.
@@ -1188,6 +1192,8 @@ class HelmClient(
             // with no type still saves, as the generic one.
             mimeType = attachment.contentType?.takeIf { it.isNotBlank() } ?: DEFAULT_MIME,
             sizeBytes = attachment.sizeBytes,
+            sha256 = attachment.sha256,
+            generatedMedia = attachment.generatedMedia,
         ),
     )
 
@@ -1226,6 +1232,8 @@ class HelmClient(
                 filename = attachment.filename,
                 mimeType = attachment.mimeType,
                 sizeBytes = attachment.sizeBytes,
+                sha256 = attachment.sha256,
+                generatedMedia = attachment.generatedMedia,
             ),
         )
 
@@ -1239,7 +1247,7 @@ class HelmClient(
      * get them wrong.
      */
     fun pullAttachment(sessionId: String, pulls: AttachmentPulls, target: PullTarget): Boolean {
-        if (!pulls.pullStarted(target.key, target.sizeBytes)) return false
+        if (!pulls.pullStarted(target.key, target.sizeBytes, target.sha256, target.generatedMedia)) return false
         return fillPipeline(sessionId, pulls, target)
     }
 

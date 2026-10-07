@@ -51,6 +51,7 @@ export class KeepWarmer {
   async tick(): Promise<void> {
     const now = this.now();
     for (const session of this.sessionManager.getAllSessions()) {
+      if (session.comfyUiTool) continue;
       if (session.keepWarmUntil === undefined) continue;
       if (now > session.keepWarmUntil) {
         logger.info(`[KeepWarmer] Keep-warm on ${session.name} (${session.id}) expired`);

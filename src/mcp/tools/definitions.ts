@@ -889,6 +889,7 @@ export const MCP_TOOLS: McpTool[] = [
         },
         text: { type: 'string' },
         expectsResponse: { type: 'boolean', default: false },
+        comfyProfileId: { type: 'string', description: 'Optional configured ComfyUI Image or Video profile id.' },
         task: { type: 'string', description: 'OPERATOR ONLY, when the hand-off needs following up: a short title for a new follow-up task, or the P-id of your open task for this work. Helm records the builder and prompts a check when it finishes (a slow repeating timer is the safety net); the result echoes taskId. Omit for a one-off note.' },
       },
       required: ['text', 'sessionId'],

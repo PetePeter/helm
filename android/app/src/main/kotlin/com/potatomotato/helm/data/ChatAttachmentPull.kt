@@ -1,5 +1,7 @@
 package com.potatomotato.helm.data
 
+import java.security.MessageDigest
+
 /**
  * A file attached to a chat message, as the phone knows it before fetching it.
  *
@@ -15,6 +17,8 @@ data class ChatAttachment(
     val filename: String,
     val mimeType: String,
     val sizeBytes: Long,
+    val sha256: String? = null,
+    val generatedMedia: Boolean = false,
 )
 
 /** Where one attachment's fetch has got to. Per message, not per session. */
@@ -53,7 +57,7 @@ sealed interface PullState {
  *  - A failure keeps what arrived, so a retry resumes rather than restarting.
  *    On BLE that is the difference between a lost minute and a lost transfer.
  */
-class AttachmentTransfer(val total: Long) {
+class AttachmentTransfer(val total: Long, val expectedSha256: String? = null) {
     private val parts = mutableListOf<ByteArray>()
 
     /** Slices that arrived ahead of the gap, keyed by where they start. */
@@ -160,6 +164,10 @@ class AttachmentTransfer(val total: Long) {
         for (part in parts) {
             part.copyInto(out, at)
             at += part.size
+        }
+        expectedSha256?.let { expected ->
+            val actual = MessageDigest.getInstance("SHA-256").digest(out).joinToString("") { "%02x".format(it) }
+            check(MessageDigest.isEqual(actual.toByteArray(), expected.toByteArray())) { "File integrity check failed" }
         }
         return out
     }

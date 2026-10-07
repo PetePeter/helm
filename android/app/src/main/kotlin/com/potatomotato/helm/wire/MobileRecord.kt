@@ -127,6 +127,10 @@ sealed interface MobileRecord {
         val filename: String? = null,
         val mimeType: String? = null,
         val sizeBytes: Long? = null,
+        /** Whole-file hash for generated media integrity checking. */
+        val sha256: String? = null,
+        /** Generated media may use the bounded video-capable pull limit. */
+        val generatedMedia: Boolean = false,
 
         /**
          * This message's place in the desktop's global chat journal — what this

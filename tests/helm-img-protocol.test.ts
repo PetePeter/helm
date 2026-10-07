@@ -1,10 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   encodeHelmImgUrl,
   decodeHelmImgUrl,
   mimeForPath,
-  registerHelmImgProtocol,
+  parseByteRange,
 } from '../src/electron/helm-img-protocol.js';
+import { registerHelmImgProtocol } from '../src/electron/helm-img-protocol-handler.js';
 
 describe('encodeHelmImgUrl / decodeHelmImgUrl', () => {
   const roundTrip = (p: string) => decodeHelmImgUrl(encodeHelmImgUrl(p));
@@ -87,6 +91,12 @@ describe('mimeForPath', () => {
     expect(mimeForPath('photo.avif')).toBe('image/avif');
   });
 
+  it('returns browser video MIME types for generated media', () => {
+    expect(mimeForPath('movie.mp4')).toBe('video/mp4');
+    expect(mimeForPath('movie.webm')).toBe('video/webm');
+    expect(mimeForPath('movie.mov')).toBe('video/quicktime');
+  });
+
   it('returns null for .svg (intentionally refused)', () => {
     expect(mimeForPath('icon.svg')).toBeNull();
   });
@@ -107,6 +117,20 @@ describe('mimeForPath', () => {
   });
 });
 
+describe('parseByteRange', () => {
+  it('supports bounded, open-ended and suffix ranges', () => {
+    expect(parseByteRange('bytes=2-5', 10)).toEqual({ start: 2, end: 5 });
+    expect(parseByteRange('bytes=8-', 10)).toEqual({ start: 8, end: 9 });
+    expect(parseByteRange('bytes=-3', 10)).toEqual({ start: 7, end: 9 });
+  });
+
+  it('rejects out-of-bounds and multi-range requests', () => {
+    expect(parseByteRange('bytes=10-', 10)).toBeNull();
+    expect(parseByteRange('bytes=5-2', 10)).toBeNull();
+    expect(parseByteRange('bytes=0-1,4-5', 10)).toBeNull();
+  });
+});
+
 describe('registerHelmImgProtocol', () => {
   it('registers through the injected Electron protocol adapter', () => {
     const handle = vi.fn();
@@ -115,5 +139,27 @@ describe('registerHelmImgProtocol', () => {
 
     expect(handle).toHaveBeenCalledOnce();
     expect(handle).toHaveBeenCalledWith('helm-img', expect.any(Function));
+  });
+
+  it('serves video byte ranges for seeking', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-video-range-'));
+    const path = join(dir, 'clip.mp4');
+    writeFileSync(path, Buffer.from('0123456789'));
+    const handle = vi.fn();
+    try {
+      registerHelmImgProtocol({ handle });
+      const handler = handle.mock.calls[0][1] as (request: unknown) => Promise<Response>;
+      const response = await handler({
+        url: encodeHelmImgUrl(path),
+        method: 'GET',
+        headers: new Headers({ range: 'bytes=2-5' }),
+      });
+      expect(response.status).toBe(206);
+      expect(response.headers.get('content-type')).toBe('video/mp4');
+      expect(response.headers.get('content-range')).toBe('bytes 2-5/10');
+      expect(Buffer.from(await response.arrayBuffer()).toString()).toBe('2345');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

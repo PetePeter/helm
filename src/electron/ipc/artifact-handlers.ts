@@ -10,7 +10,7 @@
  */
 
 import { ipcMain, dialog, BrowserWindow, shell } from 'electron';
-import { readFile, stat, writeFile as fsWriteFile } from 'node:fs/promises';
+import { copyFile, readFile, stat, writeFile as fsWriteFile } from 'node:fs/promises';
 import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
@@ -277,6 +277,29 @@ export function setupArtifactHandlers(
     } catch (err) {
       logger.error(`[artifact:openAttachment] Failed to open ${attachmentId}: ${err}`);
       return false;
+    }
+  });
+
+  /** Save an attachment to a user-chosen location. */
+  ipcMain.handle('artifact:saveAttachment', async (_event, artifactId: string, attachmentId: string): Promise<string | null> => {
+    const attachment = attachmentManager.get(artifactId, attachmentId);
+    if (!attachment) return null;
+    const focusedWindow = windowManager?.getMainWindow() ?? BrowserWindow.getFocusedWindow();
+    const options: Electron.SaveDialogOptions = {
+      title: 'Save generated media',
+      defaultPath: sanitizeFilename(attachment.filename),
+      filters: [{ name: 'All Files', extensions: ['*'] }],
+    };
+    const result = focusedWindow
+      ? await dialog.showSaveDialog(focusedWindow, options)
+      : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return null;
+    try {
+      await copyFile(attachmentManager.getPath(artifactId, attachmentId), result.filePath);
+      return result.filePath;
+    } catch (err) {
+      logger.error(`[artifact:saveAttachment] Failed to save ${attachmentId}: ${err}`);
+      throw err;
     }
   });
 

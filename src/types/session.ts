@@ -131,6 +131,10 @@ export interface SessionInfo {
    *  defaults to the chat view. Ephemeral — re-derived from the CLI type at
    *  every (resume) spawn, so never persisted. */
   apiTool?: boolean;
+  /** A first-party ComfyUI chat session hosted by this Helm desktop. */
+  comfyUiTool?: boolean;
+  /** Safe profile selector data; workflow graphs remain in desktop config. */
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video' }>;
   /** Set on a subagent session: the session whose Agent call spawned it. Such rows
    *  are hidden from session pickers — the parent shows a 🔥 count instead.
    *  Ephemeral: subagents close when they answer, and are never resumed. */

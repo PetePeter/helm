@@ -59,6 +59,8 @@ data class ChatMessage(
     val toolCalls: Int? = null,
     val contextWindow: Long? = null,
     val thoughtCount: Int? = null,
+    /** Selected ComfyUI profile for a retryable phone send. */
+    val comfyProfileId: String? = null,
 )
 
 /**
@@ -381,11 +383,15 @@ class ChatRepository(
      * only appears after a BLE round trip reads as a dropped keystroke.
      */
     @Synchronized
-    fun sending(sessionId: String, text: String, at: Long): String {
+    fun sending(sessionId: String, text: String, at: Long, comfyProfileId: String? = null): String {
         val key = nextKey()
-        append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending))
+        append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending, comfyProfileId = comfyProfileId))
         return key
     }
+
+    @Synchronized
+    fun comfyProfileId(sessionId: String, key: String): String? =
+        _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyProfileId
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */
     @Synchronized
@@ -451,7 +457,7 @@ class ChatRepository(
         val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
         if (failed.delivery != Delivery.Failed && failed.delivery != Delivery.Frozen) return null
         remove(sessionId, key)
-        return sending(sessionId, failed.text, at)
+        return sending(sessionId, failed.text, at, failed.comfyProfileId)
     }
 
     // -------------------------------------------------------------------------
@@ -476,7 +482,7 @@ class ChatRepository(
 
     /** Begin (or resume) a fetch of the file hanging off one message. */
     fun pullStarted(key: String, attachment: ChatAttachment): Boolean =
-        attachmentPulls.pullStarted(key, attachment.sizeBytes)
+        attachmentPulls.pullStarted(key, attachment.sizeBytes, attachment.sha256, attachment.generatedMedia)
 
     fun nextAsk(key: String, sliceBytes: Int): Long? = attachmentPulls.nextAsk(key, sliceBytes)
 
@@ -505,6 +511,8 @@ class ChatRepository(
             filename = record.filename ?: attachmentId,
             mimeType = record.mimeType ?: "application/octet-stream",
             sizeBytes = record.sizeBytes ?: 0L,
+            sha256 = record.sha256,
+            generatedMedia = record.generatedMedia,
         )
     }
 

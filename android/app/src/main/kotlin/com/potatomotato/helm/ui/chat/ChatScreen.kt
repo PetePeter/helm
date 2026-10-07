@@ -3,12 +3,15 @@ package com.potatomotato.helm.ui.chat
 import com.potatomotato.helm.ui.call.CallPanel
 import com.potatomotato.helm.data.CacheStage
 import com.potatomotato.helm.data.HelmSession
+import com.potatomotato.helm.data.ComfyUiProfile
 import com.potatomotato.helm.voice.CallPhase
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.ui.sessions.SessionRows
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.widget.MediaController
+import android.widget.VideoView
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
@@ -58,6 +61,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +92,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ChatMessage
@@ -123,6 +128,7 @@ fun ChatScreen(
     sessionId: String,
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
+    onSendWithProfile: ((String, String?) -> Unit)? = null,
     onRetry: (key: String, text: String) -> Unit,
     /** Delete rows by key: one (a failed send's cross) or a whole selection. */
     onDelete: (keys: Set<String>) -> Unit,
@@ -229,6 +235,14 @@ fun ChatScreen(
                     }
                 },
             )
+        }
+    }
+    var comfyProfileId by rememberSaveable(sessionId) {
+        mutableStateOf(session?.comfyUiProfiles?.firstOrNull()?.id.orEmpty())
+    }
+    LaunchedEffect(sessionId, session?.comfyUiProfiles) {
+        if (session?.comfyUiProfiles?.none { it.id == comfyProfileId } == true) {
+            comfyProfileId = session.comfyUiProfiles.firstOrNull()?.id.orEmpty()
         }
     }
 
@@ -358,7 +372,18 @@ fun ChatScreen(
             }
         }
 
-        if (call == null || call.state.phase == CallPhase.Ended) Composer(
+        if (call == null || call.state.phase == CallPhase.Ended) {
+          if (session?.comfyUiTool == true && session.comfyUiProfiles.isNotEmpty()) {
+              ComfyProfilePicker(
+                  profiles = session.comfyUiProfiles,
+                  selectedId = comfyProfileId,
+                  onSelect = { comfyProfileId = it },
+                  onCancel = {
+                      onSendWithProfile?.invoke("/cancel", comfyProfileId) ?: onSend("/cancel")
+                  },
+              )
+          }
+          Composer(
             draft = draft,
             onDraft = { next ->
                 draft = next
@@ -369,7 +394,7 @@ fun ChatScreen(
             },
             onTerminal = onTerminal,
             onCall = onCall,
-            onAttach = onAttach?.let { attach ->
+            onAttach = if (session?.comfyUiTool == true) null else onAttach?.let { attach ->
                 {
                     attach { path ->
                         val lead = draft.text.trimEnd().let { if (it.isEmpty()) it else "$it " }
@@ -382,11 +407,54 @@ fun ChatScreen(
             onSend = { submitted ->
                 val text = submitted.trim()
                 if (text.isNotEmpty()) {
-                    onSend(text)
+                    if (session?.comfyUiTool == true && onSendWithProfile != null) {
+                        onSendWithProfile(text, comfyProfileId)
+                    } else onSend(text)
                     draft = TextFieldValue()
                     drafts.clear(sessionId)
                 }
             },
+          )
+        }
+    }
+}
+
+@Composable
+private fun ComfyProfilePicker(
+    profiles: List<ComfyUiProfile>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.first()
+    Row(
+        modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Mode", color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium)
+        Box {
+            Text(
+                text = "${selected.name} ▾",
+                color = HelmColors.Accent,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.clickable { expanded = true }.padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs),
+            )
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                profiles.forEach { profile ->
+                    DropdownMenuItem(
+                        text = { Text(profile.name) },
+                        onClick = { onSelect(profile.id); expanded = false },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = "Cancel generation",
+            color = HelmColors.Danger,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.clickable(onClick = onCancel).padding(HelmSpacing.Xs),
         )
     }
 }
@@ -631,6 +699,8 @@ private fun AttachmentTile(
         // then has to go hunting for in Downloads is only half delivered.
         if (state is PullState.Ready && attachment.mimeType.startsWith("image/")) {
             AttachmentPreview(state.uri, attachment.filename)
+        } else if (state is PullState.Ready && attachment.mimeType.startsWith("video/")) {
+            AttachmentVideoPreview(state.uri)
         }
         Text(
             text = attachment.filename,
@@ -673,6 +743,27 @@ private fun AttachmentTile(
             }
         }
     }
+}
+
+@Composable
+private fun AttachmentVideoPreview(uri: String) {
+    val context = LocalContext.current
+    val videoView = remember(uri) { VideoView(context) }
+    DisposableEffect(videoView) {
+        onDispose { videoView.stopPlayback() }
+    }
+    AndroidView(
+        factory = {
+            videoView.apply {
+                setMediaController(MediaController(context).also { it.setAnchorView(this) })
+                setVideoURI(Uri.parse(uri))
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 180.dp, max = 300.dp)
+            .clip(RoundedCornerShape(HelmRadius.Sm)),
+    )
 }
 
 /**

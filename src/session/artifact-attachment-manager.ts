@@ -10,10 +10,11 @@
  * files (non-image) are presented as metadata cards with a shell-open action.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   closeSync,
   copyFileSync,
+  createReadStream,
   existsSync,
   mkdirSync,
   openSync,
@@ -31,6 +32,7 @@ import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES, resolveSliceWindow } from './artif
 import type { SliceWindow } from './artifact-download.js';
 import { getConfigDir } from '../utils/app-paths.js';
 import { logger } from '../utils/logger.js';
+import { MAX_GENERATED_MEDIA_BYTES } from './generated-media-policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -100,6 +102,53 @@ export class ArtifactAttachmentManager {
     return attachment;
   }
 
+  /** Store a generated result without buffering the whole file in memory. */
+  async addGeneratedMediaFromFile(
+    artifactId: string,
+    input: { filePath: string; filename: string; contentType: string },
+  ): Promise<ArtifactAttachment> {
+    const source = statSync(input.filePath);
+    if (!source.isFile()) throw new Error('Generated media result is not a file');
+    if (source.size <= 0 || source.size > MAX_GENERATED_MEDIA_BYTES) {
+      throw new Error(`Generated media must be between 1 byte and ${MAX_GENERATED_MEDIA_BYTES} bytes`);
+    }
+    const safeFilename = sanitizeFilename(input.filename);
+    const id = randomUUID();
+    const storageDir = this.artifactStorageDir(artifactId);
+    mkdirSync(storageDir, { recursive: true });
+    const storedFilename = `${id}${extname(safeFilename)}`;
+    const storagePath = join(storageDir, storedFilename);
+    this.assertInside(this.rootDir, storagePath);
+    try {
+      copyFileSync(input.filePath, storagePath);
+      const copied = statSync(storagePath);
+      if (!copied.isFile() || copied.size <= 0 || copied.size > MAX_GENERATED_MEDIA_BYTES) {
+        throw new Error(`Generated media must be between 1 byte and ${MAX_GENERATED_MEDIA_BYTES} bytes`);
+      }
+      const hash = createHash('sha256');
+      for await (const chunk of createReadStream(storagePath)) hash.update(chunk);
+      const attachment: ArtifactAttachment = {
+        id,
+        artifactId,
+        filename: safeFilename,
+        contentType: input.contentType,
+        sizeBytes: copied.size,
+        sha256: hash.digest('hex'),
+        generatedMedia: true,
+        relativePath: `${artifactId}/${storedFilename}`,
+        createdAt: Date.now(),
+      };
+      const index = this.loadIndex();
+      index.attachments.push(attachment);
+      this.saveIndex(index);
+      logger.info(`[ArtifactAttachmentManager] Added generated media ${id} to artifact ${artifactId}`);
+      return attachment;
+    } catch (error) {
+      if (existsSync(storagePath)) unlinkSync(storagePath);
+      throw error;
+    }
+  }
+
   /** Get a single attachment's metadata. Returns null if not found. */
   get(artifactId: string, attachmentId: string): ArtifactAttachment | null {
     return this.loadIndex().attachments.find(
@@ -157,6 +206,9 @@ export class ArtifactAttachmentManager {
   ): { bytes: Buffer; window: SliceWindow; total: number } {
     const path = this.getPath(artifactId, attachmentId);
     const total = statSync(path).size;
+    const attachment = this.get(artifactId, attachmentId);
+    const sizeLimit = attachment?.generatedMedia ? MAX_GENERATED_MEDIA_BYTES : MAX_ATTACHMENT_BYTES;
+    if (total > sizeLimit) throw new Error(`Attachment exceeds its ${sizeLimit}-byte download limit`);
     const window = resolveSliceWindow(total, offset, length);
     if (window.length === 0) return { bytes: Buffer.alloc(0), window, total };
 

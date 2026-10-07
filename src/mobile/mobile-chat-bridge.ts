@@ -169,6 +169,9 @@ export class MobileChatBridge implements ChatBridge {
             filename: message.attachment.filename,
             mimeType: message.attachment.mimeType,
             sizeBytes: message.attachment.sizeBytes,
+            ...(message.attachment.sha256 ? { sha256: message.attachment.sha256 } : {}),
+            ...(message.attachment.generatedMedia ? { generatedMedia: true } : {}),
+            ...(message.attachment.filePath ? { filePath: message.attachment.filePath } : {}),
           }
         : {}),
       ...message.usage,

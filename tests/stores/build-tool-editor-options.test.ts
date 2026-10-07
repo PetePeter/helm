@@ -128,6 +128,7 @@ describe('buildToolEditorOptions', () => {
       submitSuffix: '\\r',
       helmActions: { clear: '', compact: '', export: '' },
       api: null,
+      comfyUi: null,
     });
   });
 

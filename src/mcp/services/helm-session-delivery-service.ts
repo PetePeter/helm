@@ -11,6 +11,7 @@ import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { formatSenderTag } from '../../session/api/api-prompt.js';
 import { getApiSessionHost } from '../../session/api/api-session-host.js';
+import { getComfyUiSessionHost } from '../../session/comfyui/comfyui-session-host.js';
 import type { DeliveryVerificationResult } from '../../session/delivery-verification.js';
 import {
   MESSAGE_FLIGHT_REPLY_WINDOW_MS,
@@ -192,9 +193,9 @@ export class HelmSessionDeliveryService {
     if (!this.messageFlightSink) return;
     const senderSessionId = options.senderSessionId!;
     const now = Date.now();
-    const reverseAt = this.lastDirectionAt.get(`${session.id} ${senderSessionId}`) ?? Number.NEGATIVE_INFINITY;
+    const reverseAt = this.lastDirectionAt.get(`${session.id}\u0000${senderSessionId}`) ?? Number.NEGATIVE_INFINITY;
     const isReply = now - reverseAt <= MESSAGE_FLIGHT_REPLY_WINDOW_MS;
-    this.lastDirectionAt.set(`${senderSessionId} ${session.id}`, now);
+    this.lastDirectionAt.set(`${senderSessionId}\u0000${session.id}`, now);
 
     const flight: SessionMessageFlight = {
       flightId: randomUUID(),
@@ -224,7 +225,7 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource },
+    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string },
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -242,6 +243,22 @@ export class HelmSessionDeliveryService {
     assertSessionWritable(session);
     if (isEmptyMessage(text)) {
       throw new Error('text is empty — session_send_text delivers a message; use session_send_input for bare keys like {Enter}');
+    }
+
+    if (session.comfyUiTool) {
+      await this.runMessageFlight(session, options);
+      if (text.trim() === '/cancel') {
+        const cancelled = await getComfyUiSessionHost().cancel(session.id);
+        if (!cancelled) throw new Error('This ComfyUI session has no active generation to cancel');
+      } else {
+        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId);
+      }
+      const submittedAt = Date.now();
+      this.sessionManager.updateSession(session.id, {
+        lastPromptAt: submittedAt,
+        ...(options.userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: options.userPromptSource } : {}),
+      });
+      return { ok: true, preambleUsed: false, verified: true, deliveryStatus: 'accepted', retryCount: 0, ...reportTargetBusy(session, true) };
     }
 
     // Determine if recipient wants the Helm preamble
@@ -380,6 +397,9 @@ export class HelmSessionDeliveryService {
     }
     if (session.id === options.senderSessionId) {
       throw new Error('Cannot send input from a session to itself — sender and receiver must be different sessions');
+    }
+    if (session.comfyUiTool) {
+      throw new Error('ComfyUI sessions accept prompts through chat; terminal input is disabled.');
     }
 
     logger.debug(`[HelmSessionDelivery] session_send_input from "${options.senderSessionName}" to "${session.name}" (${session.id}): ${sequence.slice(0, 80)}`);
@@ -538,6 +558,7 @@ export class HelmSessionDeliveryService {
         note: 'API history quick compacted; the next turn can read the saved transcript.',
       };
     }
+
     const transcriptFile = writeStrippedTranscript(session);
     // Compacting a frozen session is an explicit ask to bring it back: the
     // /clear and the resume prompt both have to reach it.

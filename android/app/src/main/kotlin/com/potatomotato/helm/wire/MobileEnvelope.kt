@@ -271,6 +271,8 @@ object MobileEnvelope {
             // only drives a progress bar, and a wrong total there reads as a
             // stalled transfer.
             sizeBytes = (record.opt("sizeBytes") as? Number)?.toLong(),
+            sha256 = record.string("sha256"),
+            generatedMedia = record.opt("generatedMedia") == true,
             seq = (record.opt("seq") as? Number)?.toLong(),
             // Same non-coercion rule as every additive key: originId is only ever
             // a string, replay only ever a boolean. Anything else decodes as its

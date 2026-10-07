@@ -35,6 +35,8 @@ data class HelmArtifactAttachment(
     val contentType: String?,
     val sizeBytes: Long,
     val createdAtEpochMs: Long,
+    val sha256: String? = null,
+    val generatedMedia: Boolean = false,
 )
 
 /**
@@ -438,6 +440,8 @@ class ArtifactRepository {
                 contentType = meta.opt("contentType") as? String,
                 sizeBytes = (meta.opt("sizeBytes") as? Number)?.toLong() ?: 0L,
                 createdAtEpochMs = (meta.opt("createdAt") as? Number)?.toLong() ?: 0L,
+                sha256 = meta.opt("sha256") as? String,
+                generatedMedia = meta.opt("generatedMedia") == true,
             )
         }
     }

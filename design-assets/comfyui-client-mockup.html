@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ComfyUI sessions · Helm mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050506;
+      --surface: #0e0e10;
+      --surface-2: #151518;
+      --line: #303036;
+      --separator: #222226;
+      --text: #f5f5f7;
+      --dim: #9999a2;
+      --faint: #64646e;
+      --accent: #ccff00;
+      --on-accent: #101500;
+      --green: #4ade80;
+      --blue: #91bfff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 34px 22px 54px;
+      background: radial-gradient(ellipse at 50% -12%, #18191a 0, var(--bg) 56%);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1180px; margin: 0 auto; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 8px; font-size: clamp(28px, 4vw, 38px); line-height: 1.1; letter-spacing: -.04em; }
+    h2 { margin-bottom: 4px; font-size: 18px; letter-spacing: -.02em; }
+    h3 { margin-bottom: 4px; font-size: 14px; }
+    .eyebrow { color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: .15em; text-transform: uppercase; }
+    .intro { max-width: 780px; margin: 0; color: var(--dim); }
+    .section-title { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 30px 0 12px; }
+    .section-title p { margin: 0; color: var(--dim); font-size: 12px; }
+    .panel { border: 1px solid var(--line); border-radius: 16px; background: #09090a; box-shadow: 0 18px 55px #0008; }
+    .settings { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr); gap: 14px; }
+    .settings-main, .settings-side { padding: 18px; }
+    .panel-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+    .muted { color: var(--dim); font-size: 12px; }
+    .status { display: inline-flex; align-items: center; gap: 7px; color: #b9f6cd; font-size: 11px; white-space: nowrap; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px #4ade8066; }
+    .field-label { display: block; margin-bottom: 6px; color: #c8c8ce; font-size: 11px; font-weight: 650; }
+    .endpoint { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .fake-input, .select {
+      display: flex; min-width: 0; align-items: center; min-height: 39px; padding: 8px 11px;
+      border: 1px solid #38383e; border-radius: 9px; background: #111113; color: #dedee3;
+      font: 12px ui-monospace, Consolas, monospace;
+    }
+    .button { display: inline-flex; align-items: center; justify-content: center; min-height: 34px; padding: 7px 11px; border: 1px solid #44444b; border-radius: 9px; background: #18181b; color: var(--text); font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .button.primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+    .host-note { margin: 7px 0 16px; color: var(--faint); font-size: 11px; }
+    .profiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    .profile { padding: 12px; border: 1px solid #36363c; border-radius: 11px; background: var(--surface); }
+    .profile-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .profile-name { display: flex; align-items: center; gap: 8px; font-weight: 750; }
+    .glyph { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid #414148; border-radius: 7px; color: var(--accent); font-size: 12px; }
+    .tag { padding: 3px 6px; border: 1px solid #3b3b42; border-radius: 99px; color: #bcbcc4; font-size: 9px; }
+    .profile p { margin: 0; color: var(--dim); font-size: 11px; }
+    .profile-foot { display: flex; gap: 7px; margin-top: 9px; color: var(--faint); font-size: 10px; }
+    .custom { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--separator); }
+    .custom-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .custom p { max-width: 490px; margin: 4px 0 0; color: var(--dim); font-size: 11px; }
+    .mapping { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 13px; }
+    .map-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 9px; border: 1px solid #29292e; border-radius: 8px; background: #0c0c0e; font-size: 10px; }
+    .map-row span { color: var(--dim); }
+    .map-row code { color: #dedee3; font: 10px ui-monospace, Consolas, monospace; }
+    .steps { display: grid; gap: 10px; margin-top: 7px; }
+    .step { display: grid; grid-template-columns: 23px 1fr; gap: 9px; align-items: start; }
+    .step-num { display: grid; width: 22px; height: 22px; place-items: center; border: 1px solid #414148; border-radius: 50%; color: var(--accent); font: 700 10px ui-monospace, Consolas, monospace; }
+    .step strong { display: block; margin: 1px 0 2px; font-size: 11px; }
+    .step span:last-child { color: var(--dim); font-size: 10px; }
+    .retention { margin-top: 14px; padding: 11px 12px; border: 1px solid #38383e; border-radius: 10px; background: #111113; }
+    .retention strong { display: block; margin-bottom: 3px; font-size: 11px; }
+    .retention p { margin: 0; color: var(--dim); font-size: 10px; }
+    .footer-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--separator); }
+    .footer-row small { color: var(--faint); font-size: 10px; }
+    .previews { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); gap: 16px; align-items: start; }
+    .preview-card { overflow: hidden; }
+    .preview-heading { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; border-bottom: 1px solid var(--separator); }
+    .preview-heading strong { font-size: 12px; }
+    .preview-heading span { color: var(--faint); font-size: 10px; }
+    .desktop { display: grid; min-height: 565px; grid-template-columns: 184px 1fr; background: #070708; }
+    .rail { padding: 14px 9px; border-right: 1px solid var(--separator); background: #09090a; }
+    .brand { display: flex; align-items: center; gap: 8px; margin: 1px 6px 20px; font-size: 12px; font-weight: 800; }
+    .brand-mark { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 6px; background: var(--accent); color: #111500; font-size: 12px; }
+    .rail-label { margin: 13px 7px 6px; color: var(--faint); font-size: 9px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .nav-row { display: flex; align-items: center; gap: 8px; padding: 8px 9px; border-radius: 8px; color: #b4b4bc; font-size: 10px; }
+    .nav-row.active { border: 1px solid #3d4624; background: #191d0e; color: var(--text); }
+    .nav-icon { width: 14px; color: var(--accent); text-align: center; }
+    .sess { margin: 4px 0; padding: 7px 9px 7px 13px; border-left: 2px solid transparent; color: var(--dim); font-size: 10px; }
+    .sess.selected { border-color: var(--accent); color: #f2f2f4; }
+    .main-chat { display: flex; min-width: 0; flex-direction: column; }
+    .chat-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 15px; border-bottom: 1px solid var(--separator); }
+    .chat-top strong { display: block; font-size: 12px; }
+    .chat-top small { color: var(--dim); font-size: 9px; }
+    .thread { display: flex; min-height: 490px; flex: 1; flex-direction: column; gap: 13px; padding: 16px; }
+    .bubble { max-width: 82%; padding: 10px 12px; border: 1px solid #303036; border-radius: 12px; background: var(--surface-2); color: #dedee3; font-size: 11px; }
+    .bubble.user { align-self: end; border-color: transparent; background: var(--accent); color: var(--on-accent); }
+    .bubble small { display: block; margin-top: 6px; color: #83838c; font-size: 9px; }
+    .bubble.user small { color: #4e571d; text-align: right; }
+    .result { width: min(100%, 455px); overflow: hidden; border: 1px solid #34343a; border-radius: 12px; background: #101012; }
+    .result-meta { display: flex; justify-content: space-between; gap: 9px; padding: 9px 11px; color: #d7d7dc; font-size: 10px; }
+    .result-meta small { color: var(--dim); font-size: 9px; }
+    .artwork { position: relative; height: 180px; overflow: hidden; background: linear-gradient(180deg, #182033 0%, #554459 47%, #f19155 100%); }
+    .artwork::before { position: absolute; right: -8%; bottom: -45%; left: -8%; height: 94%; border-radius: 50% 50% 0 0; background: linear-gradient(165deg, #27313d 0 36%, #172029 37% 67%, #0c1318 68%); content: ""; transform: rotate(-4deg); }
+    .artwork::after { position: absolute; right: 12%; bottom: 0; width: 22%; height: 75%; border: 5px solid #211d24; border-bottom: 0; background: repeating-linear-gradient(90deg, #d38d52 0 8px, #48313b 8px 12px); box-shadow: -122px 35px 0 -20px #362d36, 79px 21px 0 -15px #29252d; content: ""; opacity: .82; }
+    .video-art { position: relative; height: 96px; overflow: hidden; background: linear-gradient(160deg, #26384a, #9d8d62 54%, #303f39); }
+    .video-art::before { position: absolute; right: 0; bottom: -52px; left: -7%; height: 116px; border-radius: 50% 50% 0 0; background: linear-gradient(160deg, #889574, #34473d 65%); content: ""; }
+    .play { position: absolute; z-index: 1; top: 50%; left: 50%; display: grid; width: 37px; height: 37px; place-items: center; border: 1px solid #ffffff90; border-radius: 50%; background: #090a0bb0; color: white; transform: translate(-50%, -50%); }
+    .result-actions { display: flex; align-items: center; gap: 7px; padding: 9px 10px; }
+    .result-actions .button { min-height: 27px; padding: 5px 8px; font-size: 9px; }
+    .saved { margin-left: auto; color: var(--faint); font-size: 9px; }
+    .composer { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; margin: 0 12px 13px; padding: 8px; border: 1px solid #333339; border-radius: 11px; background: #101012; }
+    .composer .select { min-height: 29px; padding: 5px 8px; font: 10px system-ui, sans-serif; }
+    .composer .prompt { padding: 0 3px; color: var(--faint); font-size: 10px; }
+    .composer .button { min-height: 29px; padding: 5px 9px; }
+    .mobile-wrap { display: flex; justify-content: center; padding: 16px; }
+    .phone { width: min(100%, 355px); min-height: 570px; overflow: hidden; border: 1px solid #29292f; border-radius: 27px; background: #050506; box-shadow: 0 18px 46px #000b; }
+    .phone-status { display: flex; justify-content: space-between; padding: 10px 17px 5px; color: var(--dim); font-size: 9px; }
+    .phone-top { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--separator); }
+    .back { color: var(--accent); font-size: 21px; line-height: 1; }
+    .phone-title { min-width: 0; flex: 1; }
+    .phone-title strong { display: block; font-size: 12px; }
+    .phone-title small { color: var(--dim); font-size: 9px; }
+    .phone-thread { display: flex; min-height: 440px; flex-direction: column; gap: 15px; padding: 17px 13px; }
+    .phone-bubble { max-width: 86%; padding: 10px 11px; border-radius: 13px; background: var(--surface-2); font-size: 11px; }
+    .phone-bubble.user { align-self: end; background: var(--accent); color: var(--on-accent); }
+    .phone-bubble small { display: block; margin-top: 6px; color: var(--faint); font-size: 9px; text-align: right; }
+    .phone-result { width: 90%; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: #101012; }
+    .phone-result .artwork { height: 153px; }
+    .phone-result .result-meta { padding: 8px 9px; font-size: 9px; }
+    .phone-result .result-actions { padding: 8px; }
+    .phone-composer { display: flex; align-items: center; gap: 8px; margin: 0 11px 13px; padding: 10px; border: 1px solid #303036; border-radius: 12px; color: var(--faint); font-size: 10px; }
+    .phone-composer .send { margin-left: auto; color: var(--accent); font-size: 15px; }
+    .note { margin: 0 12px 12px; color: var(--faint); font-size: 9px; text-align: center; }
+    .scope-note { margin-top: 15px; padding: 12px 14px; border: 1px solid #303036; border-radius: 11px; background: #0b0b0c; color: var(--dim); font-size: 11px; }
+    .scope-note strong { color: var(--text); }
+    @media (max-width: 900px) {
+      body { padding: 25px 14px 38px; }
+      .settings, .previews { grid-template-columns: 1fr; }
+      .settings-side { min-height: auto; }
+    }
+    @media (max-width: 560px) {
+      .profiles { grid-template-columns: 1fr; }
+      .mapping { grid-template-columns: 1fr; }
+      .desktop { grid-template-columns: 112px 1fr; min-height: 520px; }
+      .rail { padding: 11px 5px; }
+      .brand { margin-left: 4px; font-size: 10px; }
+      .nav-row, .sess { padding-left: 6px; font-size: 9px; }
+      .thread { padding: 11px 9px; }
+      .bubble { max-width: 96%; }
+      .artwork { height: 145px; }
+      .chat-top { padding: 10px; }
+      .saved { display: none; }
+      .section-title { align-items: start; flex-direction: column; gap: 4px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Helm · ComfyUI session concept</div>
+      <h1>A generation session that feels like chat</h1>
+      <p class="intro">Configure ComfyUI once, then use the same prompt history and generated files on desktop and Android. ComfyUI runs on the paired Helm desktop; the phone talks through its existing session connection.</p>
+    </header>
+
+    <div class="section-title">
+      <div><h2>Tool Config</h2><p>One endpoint, named generation profiles, and imported API graphs.</p></div>
+      <span class="status"><i class="dot"></i> ComfyUI connected</span>
+    </div>
+    <section class="settings" aria-label="ComfyUI tool configuration">
+      <article class="panel settings-main">
+        <div class="panel-head">
+          <div><h3>Connection</h3><div class="muted">Runs on this Helm desktop</div></div>
+          <span class="tag">Local service</span>
+        </div>
+        <label class="field-label">ComfyUI server URL</label>
+        <div class="endpoint"><div class="fake-input">http://127.0.0.1:8188</div><button class="button">Test connection</button></div>
+        <p class="host-note">Android prompts are sent to this desktop session; ComfyUI does not need to be exposed to the phone.</p>
+
+        <h3>Profiles</h3>
+        <div class="profiles">
+          <div class="profile">
+            <div class="profile-top"><div class="profile-name"><span class="glyph">▧</span>Image</div><span class="tag">Default</span></div>
+            <p>SDXL Turbo · square or portrait · PNG</p>
+            <div class="profile-foot"><span>512 × 512</span><span>·</span><span>4 steps</span></div>
+          </div>
+          <div class="profile">
+            <div class="profile-top"><div class="profile-name"><span class="glyph">▶</span>Video</div><span class="tag">Wan 2.2</span></div>
+            <p>832 × 480 · 24 FPS · 49 frames</p>
+            <div class="profile-foot"><span>Optional start image</span><span>·</span><span>MP4</span></div>
+          </div>
+        </div>
+        <div class="custom">
+          <div class="custom-row"><div><h3>Custom graph</h3><p>Import a ComfyUI API-format JSON, then map its prompt, settings, and output nodes.</p></div><button class="button">＋ Import JSON</button></div>
+          <div class="mapping" aria-label="Example node mappings">
+            <div class="map-row"><span>Prompt</span><code>CLIP Text Encode · 6</code></div>
+            <div class="map-row"><span>Seed</span><code>KSampler · 3</code></div>
+            <div class="map-row"><span>Size</span><code>Empty Latent · 5</code></div>
+            <div class="map-row"><span>Output</span><code>Save Image · 9</code></div>
+          </div>
+        </div>
+        <div class="footer-row"><small>Build the graph in ComfyUI, export “Save (API Format)”, and import it here.</small><button class="button primary">Save Tool Config</button></div>
+      </article>
+
+      <aside class="panel settings-side">
+        <div class="panel-head"><div><h3>How custom graphs work</h3><div class="muted">ComfyUI remains the graph editor.</div></div><span class="glyph">↗</span></div>
+        <div class="steps">
+          <div class="step"><span class="step-num">1</span><span><strong>Build and test in ComfyUI</strong><span>Use its web interface to create the graph and verify the result.</span></span></div>
+          <div class="step"><span class="step-num">2</span><span><strong>Export API JSON</strong><span>Choose “Save (API Format)” from ComfyUI.</span></span></div>
+          <div class="step"><span class="step-num">3</span><span><strong>Import and map fields</strong><span>Tell Helm which nodes hold prompt inputs and generated outputs.</span></span></div>
+        </div>
+        <div class="retention"><strong>Generated files</strong><p>Helm writes each result to its temp area, attaches it to this session’s Chat files, and removes it when the session expires.</p></div>
+        <div class="scope-note"><strong>V1 boundary:</strong> Image and Video profiles, custom API JSON import, and prompt history. No graph canvas in Helm.</div>
+      </aside>
+    </section>
+
+    <div class="section-title">
+      <div><h2>One conversation on both screens</h2><p>Prompts, progress, previews, and downloads stay with the ComfyUI session.</p></div>
+      <span class="muted">Desktop + Android</span>
+    </div>
+    <section class="previews" aria-label="Desktop and Android ComfyUI session previews">
+      <article class="panel preview-card">
+        <div class="preview-heading"><strong>Desktop session</strong><span>ComfyUI · Connected</span></div>
+        <div class="desktop">
+          <nav class="rail" aria-label="Helm navigation">
+            <div class="brand"><span class="brand-mark">H</span>Helm</div>
+            <div class="nav-row"><span class="nav-icon">◫</span>Sessions</div>
+            <div class="nav-row active"><span class="nav-icon">✦</span>ComfyUI</div>
+            <div class="rail-label">Recent</div>
+            <div class="sess selected">Kyoto at night</div>
+            <div class="sess">Forest motion test</div>
+            <div class="sess">CLI · Wonder Wheels</div>
+            <div class="sess">API · Strata</div>
+          </nav>
+          <div class="main-chat">
+            <div class="chat-top"><div><strong>Kyoto at night</strong><small><i class="dot" style="display:inline-block;vertical-align:0"></i> Image profile · local ComfyUI</small></div><button class="button">⋯</button></div>
+            <div class="thread">
+              <div class="bubble user">Rainy Kyoto street at night, warm lanterns reflected on wet stone, cinematic 35mm photo.<small>Image · Today 4:21 pm</small></div>
+              <div class="bubble">Generated with SDXL Turbo · 768 × 768 · 4 steps<small>Completed in 13 seconds</small></div>
+              <div class="result">
+                <div class="result-meta"><span>kyoto-night-001.png</span><small>PNG · 2.4 MB</small></div>
+                <div class="artwork" role="img" aria-label="Stylized preview of a rainy city street at sunset"></div>
+                <div class="result-actions"><button class="button">Preview</button><button class="button">Download</button><span class="saved">Stored with this session</span></div>
+              </div>
+              <div class="bubble user">Now make a short clip with the lanterns moving in the rain.<small>Video · Today 4:24 pm</small></div>
+              <div class="result">
+                <div class="result-meta"><span>lantern-rain-001.mp4</span><small>MP4 · 18.6 MB</small></div>
+                <div class="video-art"><span class="play">▶</span></div>
+                <div class="result-actions"><button class="button">Preview video</button><button class="button">Download</button><span class="saved">Helm temp → Chat files</span></div>
+              </div>
+            </div>
+            <div class="composer"><div class="select">Image ▾</div><div class="prompt">Describe an image or video…</div><button class="button primary">Generate</button></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel preview-card">
+        <div class="preview-heading"><strong>Android session</strong><span>Same history</span></div>
+        <div class="mobile-wrap">
+          <div class="phone">
+            <div class="phone-status"><span>9:41</span><span>●●● &nbsp; Wi-Fi &nbsp; 87%</span></div>
+            <div class="phone-top"><span class="back">‹</span><div class="phone-title"><strong>Kyoto at night</strong><small><i class="dot" style="display:inline-block;vertical-align:0"></i> ComfyUI · Image</small></div><span>⋮</span></div>
+            <div class="phone-thread">
+              <div class="phone-bubble user">Rainy Kyoto street at night, warm lanterns reflected on wet stone, cinematic 35mm photo.<small>4:21 pm</small></div>
+              <div class="phone-bubble">Generated with SDXL Turbo · 768 × 768<small>Completed · 13 sec</small></div>
+              <div class="phone-result">
+                <div class="result-meta"><span>kyoto-night-001.png</span><small>2.4 MB</small></div>
+                <div class="artwork" role="img" aria-label="Stylized image preview"></div>
+                <div class="result-actions"><button class="button">Preview</button><button class="button">Download</button></div>
+              </div>
+            </div>
+            <div class="phone-composer"><span class="select">Image ▾</span><span>Describe a scene…</span><span class="send">➤</span></div>
+            <p class="note">Result is available in this session until it expires.</p>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

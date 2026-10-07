@@ -357,9 +357,23 @@ export interface ToolEditorApiConfig {
   slots?: number;
 }
 
+export interface ToolEditorComfyUiConfig {
+  endpoint: string;
+  profiles: Array<{
+    id: string;
+    name: string;
+    kind: 'image' | 'video';
+    workflow: Record<string, unknown>;
+    mappings: Record<string, { nodeId: string; input: string }>;
+    defaults?: Record<string, string | number>;
+    outputNodeIds: string[];
+  }>;
+}
+
 export interface ToolEditorBridgeData {
   /** Present = API tool; null/absent = a CLI spawned in a PTY. */
   api?: ToolEditorApiConfig | null;
+  comfyUi?: ToolEditorComfyUiConfig | null;
   name: string;
   env: Array<ToolEditorEnvEntry>;
   initialPromptDelay: number;
@@ -389,6 +403,7 @@ const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
   largeTextAsTempFile: false, messReminders: true, mouseTracking: false, noPromptCache: false,
   submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
   api: null,
+  comfyUi: null,
 };
 
 export const toolEditor = reactive({
@@ -442,6 +457,7 @@ export function buildApiToolPayload(api: unknown): ToolEditorApiConfig | null {
 
 export function buildToolEditorOptions(values: Record<string, any>): {
   api?: ToolEditorApiConfig | null;
+  comfyUi?: ToolEditorComfyUiConfig | null;
   env?: ToolEditorEnvEntry[];
   renameCommand?: string;
   spawnCommand?: string;
@@ -494,6 +510,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',
     helmActions,
     api: buildApiToolPayload(values.api),
+    comfyUi: values.comfyUi && typeof values.comfyUi === 'object' ? structuredClone(values.comfyUi) : null,
   };
 }
 

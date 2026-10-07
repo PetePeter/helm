@@ -12,6 +12,7 @@ import { logger } from '../utils/logger.js';
 import { toHeaderSafeName } from '../utils/header-safe-name.js';
 import { normalizeProjectPath } from './project-identity.js';
 import { getApiSessionHost } from './api/api-session-host.js';
+import { getComfyUiSessionHost } from './comfyui/comfyui-session-host.js';
 
 /** Pause before writing the submit suffix so bracketed/paste-aware CLIs can settle. */
 const SUBMIT_DELAY_MS = 200;
@@ -80,6 +81,7 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     ? params.resumeThreadId ?? params.sessionManager.getSession(sessionId)?.cliThreadId
     : undefined;
   const normalizedCwd = params.cwd ? normalizeProjectPath(params.cwd) : undefined;
+  if (cfg?.api && cfg?.comfyUi) throw new Error('A tool type cannot be both API and ComfyUI');
 
   // An API tool has no CLI: Helm hosts the agent loop and adopts it like a Remote row.
   const apiProcess = cfg?.api
@@ -89,8 +91,14 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
       env: resolveConfiguredSpawnEnv(params.configLoader, params.cliType),
     })
     : null;
+  const comfyUiProcess = cfg?.comfyUi
+    ? getComfyUiSessionHost().create(sessionId, cfg.comfyUi)
+    : null;
   let launched: { pty: PtyProcess; rawCommand?: string; command?: string; args?: string[] };
-  if (apiProcess) {
+  if (comfyUiProcess) {
+    params.ptyManager.adopt(sessionId, comfyUiProcess, API_SESSION_SIZE);
+    launched = { pty: comfyUiProcess };
+  } else if (apiProcess) {
     params.ptyManager.adopt(sessionId, apiProcess, API_SESSION_SIZE);
     launched = { pty: apiProcess };
   } else {
@@ -112,6 +120,10 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
     ...(params.role ? { role: params.role } : {}),
     ...(params.locked ? { locked: true } : {}),
     ...(apiProcess ? { apiTool: true } : {}),
+    ...(comfyUiProcess ? {
+      comfyUiTool: true,
+      comfyUiProfiles: comfyUiProcess.profiles,
+    } : {}),
     ...(apiProcess && getApiSessionHost().parentOf(sessionId) ? { subagentOf: getApiSessionHost().parentOf(sessionId) } : {}),
   };
 

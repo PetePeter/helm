@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import { ConfigLoader, DEFAULT_BINDING_PROFILE_ID } from '../src/config/loader.js';
 import { stickVirtualButtonName, STICK_VIRTUAL_BUTTONS } from '../src/config/loader.js';
+import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as YAML from 'yaml';
@@ -502,6 +503,24 @@ describe('ConfigLoader', () => {
       expect(entry!.helmActions).toEqual({ clear: '/clear{Enter}', export: '/export $path{Enter}' });
       const onDisk = readCliTypesBySlug();
       expect(onDisk['worker'].helmActions).toEqual({ clear: '/clear{Enter}', export: '/export $path{Enter}' });
+    });
+
+    it('persists ComfyUI tool config on add and update, including clearing it', () => {
+      loader.load();
+      const comfyUi = cloneDefaultComfyUiConfigForKind('image');
+      loader.addCliType('comfy-tool', 'ComfyUI Image', [], 0, { comfyUi });
+      expect(loader.getCliTypeEntry('comfy-tool')!.comfyUi).toEqual(comfyUi);
+
+      const saved = new ConfigLoader(TEST_DIR);
+      saved.load();
+      expect(saved.getCliTypeEntry('comfy-tool')!.comfyUi).toEqual(comfyUi);
+
+      loader.updateCliType('comfy-tool', 'ComfyUI Image', [], 0, { comfyUi: null });
+      expect(loader.getCliTypeEntry('comfy-tool')!.comfyUi).toBeUndefined();
+
+      const fresh = new ConfigLoader(TEST_DIR);
+      fresh.load();
+      expect(fresh.getCliTypeEntry('comfy-tool')!.comfyUi).toBeUndefined();
     });
 
     it('addCliType omits helmActions entirely when all fields blank', () => {

@@ -22,7 +22,7 @@ import { configureElectronAppIdentity } from './app-identity.js';
 import { ConfigLoader } from '../config/loader.js';
 import { logger } from '../utils/logger.js';
 import { getRendererHtmlPath, isPackaged, seedConfigIfNeeded, getConfigDir, migrateLegacyUserDataIfNeeded } from '../utils/app-paths.js';
-import { registerHelmImgProtocol } from './helm-img-protocol.js';
+import { registerHelmImgProtocol } from './helm-img-protocol-handler.js';
 import { registerHelmArtifactProtocol } from './helm-artifact-protocol.js';
 
 // Register the custom schemes as privileged BEFORE app is ready.
