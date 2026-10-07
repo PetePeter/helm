@@ -1334,7 +1334,31 @@ describe('MobileLinkManager keepalive', () => {
     expect(h.offline).toEqual([PHONE]);
   });
 
-  it('with the default clock, drops a dead link after 30s of silence and not before', async () => {
+  /**
+   * The battery rule: every probe wakes the phone's radio to answer, so an idle
+   * link is probed once per 30s and no more. It was once every 5s, around the
+   * clock, on a phone doing nothing.
+   */
+  it('with the default clock, probes an idle healthy link once per 30s and no more', async () => {
+    const h = makeHarness({ [ADDR]: PHONE });
+    pair(h, PHONE);
+    await h.manager.start();
+    await offer(h, new FakeLink(ADDR));
+    const channel = h.channels[0];
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(channel.pings).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(channel.pings).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(270_000);
+    expect(channel.pings).toBe(10);
+    expect(h.manager.isOnline(PHONE)).toBe(true);
+    expect(h.offline).toEqual([]);
+  });
+
+  it('with the default clock, drops a dead link after 90s of silence and not before', async () => {
     const h = makeHarness({ [ADDR]: PHONE });
     pair(h, PHONE);
     await h.manager.start();
@@ -1342,10 +1366,9 @@ describe('MobileLinkManager keepalive', () => {
     const channel = h.channels[0];
     channel.answerPings = false;
 
-    await vi.advanceTimersByTimeAsync(29_000);
+    await vi.advanceTimersByTimeAsync(89_000);
     expect(h.manager.isOnline(PHONE)).toBe(true);
-    // Probed every 5s tick once the link went quiet.
-    expect(channel.pings).toBeGreaterThanOrEqual(5);
+    expect(channel.pings).toBe(2);
 
     await vi.advanceTimersByTimeAsync(1_000);
     expect(channel.closed).toBe(true);
@@ -1353,12 +1376,13 @@ describe('MobileLinkManager keepalive', () => {
   });
 
   /**
-   * The phone's LAN socket gives up after 45s without hearing from Helm. A
-   * phone that talks constantly resets OUR silence clock, so without a refresh
-   * rule Helm would never ping it — and a quiet desktop would get its healthy
-   * link killed from the phone's end.
+   * The phone's LAN socket gives up when it hears nothing from Helm — after
+   * 45s on APKs older than the 30s keepalive, 100s since. A phone that talks
+   * constantly resets OUR silence clock, so a probe sent only on silence would
+   * never reach it — and a quiet desktop would get its healthy link killed
+   * from the phone's end. Probing every tick regardless is what prevents that.
    */
-  it('pings a phone that never goes quiet often enough for its 45s read timeout', async () => {
+  it('pings a phone that never goes quiet often enough for an old APK\'s 45s read timeout', async () => {
     const h = makeHarness({ [ADDR]: PHONE });
     pair(h, PHONE);
     await h.manager.start();
@@ -1373,7 +1397,7 @@ describe('MobileLinkManager keepalive', () => {
       await vi.advanceTimersByTimeAsync(1_000);
     }
 
-    expect(pingTimes.length).toBeGreaterThanOrEqual(4);
+    expect(pingTimes.length).toBe(4);
     const gaps = pingTimes.slice(1).map((at, index) => at - pingTimes[index]);
     expect(Math.max(...gaps)).toBeLessThan(45_000);
     expect(h.manager.isOnline(PHONE)).toBe(true);

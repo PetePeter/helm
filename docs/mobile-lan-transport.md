@@ -347,11 +347,11 @@ flowchart LR
     RETRY[backoff 15-60s] -->|LAN not owner| D
     D -->|connected| LAN[LAN owns link]
     D -->|failed| RETRY
-    LAN -->|EOF / reset / 45s read timeout| RETRY
+    LAN -->|EOF / reset / 100s read timeout| RETRY
 ```
 
-**Dead-socket detection.** The phone sets a 45s socket read timeout (the desktop
-pings at least every ~25s, and every 5s once the link is quiet) plus TCP keepalive. A silently dead link — an AP
+**Dead-socket detection.** The phone sets a 100s socket read timeout (the desktop
+pings every 30s) plus TCP keepalive. A silently dead link — an AP
 that stopped forwarding, a desktop gone without a FIN — throws
 `SocketTimeoutException`, which the pump treats as a clean close; the rank drops
 and Bluetooth resumes at once. Without it the phone stayed "Linked" until TCP

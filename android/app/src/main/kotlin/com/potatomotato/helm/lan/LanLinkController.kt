@@ -383,11 +383,11 @@ private fun LanLinkState.toLinkState(): LinkState = when (this) {
 fun tcpDialer(
     connectTimeoutMs: Int = 1_500,
     /**
-     * More than twice the desktop's 15s ping interval: a link that has heard
+     * Three of the desktop's 30s pings and a margin: a link that has heard
      * nothing for this long is dead, and must drop to Bluetooth now rather than
      * when TCP gives up ten-plus minutes later.
      */
-    readTimeoutMs: Int = 45_000,
+    readTimeoutMs: Int = 100_000,
 ): LanLinkSession.Dialer =
     LanLinkSession.Dialer { host, port ->
         val socket = Socket()

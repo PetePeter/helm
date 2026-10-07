@@ -66,36 +66,31 @@ const DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS = 5_000;
 const DEFAULT_BLE_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 /**
- * How long a registered link may hear nothing from the phone before the manager
- * probes it with a PING.
+ * The tick of the keepalive clock: every registered link is probed with a PING
+ * this often, and checked for silence at the same moment.
  *
  * noble can lose a phone without ever emitting 'disconnect' — the observed
  * wedged-radio-stack case — and a quiet link would then look online forever,
  * until a send burned its 10s write deadline. The probe forces traffic: the
- * peer answers PONG, which is inbound, which resets the clock.
+ * peer answers PONG, which is inbound, which resets the silence clock.
  *
- * Also the tick of the keepalive clock: every link is checked this often, so a
- * dead link is dropped at most one tick after its silence budget runs out
- * (was 15s ticks, ~45s worst case).
+ * WHY 30s: every probe wakes the phone's radio to answer, around the clock, on
+ * a phone that is doing nothing. At 5s that was the link's standing battery
+ * cost; a dead link being noticed later is the accepted price.
+ *
+ * WHY every tick and not only on silence: the phone's LAN socket gives up when
+ * it hears nothing from US, and a phone that talks constantly would otherwise
+ * never be probed. One PING per tick keeps the gap at 30s — inside the 45s read
+ * timeout of APKs that predate this interval, and the 100s of those that don't.
  */
-const DEFAULT_KEEPALIVE_INTERVAL_MS = 5_000;
+const DEFAULT_KEEPALIVE_INTERVAL_MS = 30_000;
 
 /**
- * Silent probe intervals that make a link dead: 6 x 5s = 30s of silence, i.e.
- * five probes went out and not one came back — not merely a link between
- * messages, which is what a healthy idle phone looks like.
+ * Silent intervals that make a link dead: 3 x 30s = 90s of silence, i.e. two
+ * probes went out and not one came back — not merely a link between messages,
+ * which is what a healthy idle phone looks like.
  */
-const DEFAULT_KEEPALIVE_MISS_LIMIT = 6;
-
-/**
- * Probe intervals after which a link is pinged even if the phone is talking.
- *
- * Inbound traffic resets the silence clock, so a phone that talks constantly
- * would never be probed — and the phone's own side (the LAN socket's 45s read
- * timeout) needs to hear from US. 4 x 5s = 20s bounds the gap between desktop
- * pings at ~25s including tick granularity, well inside 45s.
- */
-const DEFAULT_KEEPALIVE_REFRESH_INTERVALS = 4;
+const DEFAULT_KEEPALIVE_MISS_LIMIT = 3;
 
 
 /**
@@ -202,7 +197,7 @@ export interface MobileLinkManagerOptions {
    * Omitted, the per-transport defaults apply; see DEFAULT_LAN_HANDSHAKE_TIMEOUT_MS.
    */
   handshakeTimeoutMs?: number;
-  /** Silence before an idle link is probed; see DEFAULT_KEEPALIVE_INTERVAL_MS. */
+  /** How often every link is probed; see DEFAULT_KEEPALIVE_INTERVAL_MS. */
   keepaliveIntervalMs?: number;
   /** Silent probe intervals that make a link dead; see DEFAULT_KEEPALIVE_MISS_LIMIT. */
   keepaliveMissLimit?: number;
@@ -265,8 +260,6 @@ export class MobileLinkManager extends EventEmitter {
    * one phone cannot shield a different, dead link from being dropped.
    */
   private readonly handshaking = new Set<MobileLink>();
-  /** When each occupancy was last pinged; see DEFAULT_KEEPALIVE_REFRESH_INTERVALS. */
-  private readonly lastProbeAt = new WeakMap<ActiveLink, number>();
   private readonly links = new Map<string, ActiveLink>();
   /**
    * How many identification attempts have been made since the last success.
@@ -525,8 +518,8 @@ export class MobileLinkManager extends EventEmitter {
   // ----------------------------------------------------------------- keepalive
 
   /**
-   * One self-rescheduling clock for every link. A link that has been silent for
-   * an interval is probed with a PING; one silent for the miss limit is dead —
+   * One self-rescheduling clock for every link. Each tick probes every link
+   * with a PING; one silent for the miss limit is dead —
    * noble never told us, so the drop → offline → reject → rescan chain is the
    * only recovery path that exists.
    *
@@ -576,26 +569,12 @@ export class MobileLinkManager extends EventEmitter {
         this.dropGeneration(active.machineId, active.generation, `keepalive: no inbound traffic for ${silentFor}ms`);
         continue;
       }
-      if (!this.probeDue(active, silentFor)) continue;
-      this.lastProbeAt.set(active, this.now());
       try {
         active.channel.sendPing?.();
       } catch (error) {
         this.log(`keepalive probe to ${active.machineId} failed`, error);
       }
     }
-  }
-
-  /**
-   * Probe a link that has gone quiet, and — whatever the phone is saying —
-   * one we have not pinged in a while, so the phone's side of the link never
-   * goes long without hearing from us.
-   */
-  private probeDue(active: ActiveLink, silentFor: number): boolean {
-    if (silentFor >= this.keepaliveIntervalMs) return true;
-    if (!this.lastProbeAt.has(active)) this.lastProbeAt.set(active, this.now());
-    const sinceProbe = this.now() - this.lastProbeAt.get(active)!;
-    return sinceProbe >= this.keepaliveIntervalMs * DEFAULT_KEEPALIVE_REFRESH_INTERVALS;
   }
 
   /** ANY inbound byte — pong, ping, or application message — resets the probe. */
