@@ -1260,10 +1260,16 @@ export function registerIPCHandlers(
     },
     recordPrompt: (sessionId, text) => mobileChatBridge.recordDesktopTurn(sessionId, text, randomUUID()),
     notifyRequester: async (requesterSessionId, comfySessionId, text) => {
-      await helmControlService.sendTextToSession(requesterSessionId, text, {
+      const sender = {
         senderSessionId: comfySessionId,
         senderSessionName: sessionManager.getSession(comfySessionId)?.name ?? 'ComfyUI',
-      });
+      };
+      await helmControlService.sendTextToSession(requesterSessionId, text, sender);
+      // A Codex composer can swallow the submit that follows a multi-line paste
+      // and still verify as delivered. A session sender is told to follow up
+      // with Enter; this sender is Helm, so it does that itself. On a composer
+      // that already submitted, a bare Enter is a no-op.
+      await helmControlService.sendInputToSession(requesterSessionId, '{Enter}', { ...sender, verify: false });
     },
   }));
   mobileChatBridge.start();
