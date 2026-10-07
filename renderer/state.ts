@@ -53,6 +53,10 @@ export interface Session {
   role?: 'operator';
   /** An API-tool session (Helm-hosted agent loop); its pane defaults to chat. */
   apiTool?: boolean;
+  /** A ComfyUI session; its pane defaults to chat, with these composer choices. */
+  comfyUiTool?: boolean;
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyUiImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
   /** A subagent session: hidden from the lists; its parent shows a 🔥 count. */
   subagentOf?: string;
   /** Subagents this session is waiting on (the 🔥 badge). */

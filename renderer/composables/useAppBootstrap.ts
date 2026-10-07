@@ -173,8 +173,11 @@ export async function refreshSessions(): Promise<void> {
     const terminalSession = tm?.getSession(managed.id);
     const workingDir = terminalSession?.cwd || managed.workingDir || '';
     const resolvedProject = managed.projectPath ? undefined : findProjectForPath(workingDir);
+    // Spread, never an allow-list: a field-by-field copy silently dropped each
+    // new session field (lock, mission, role, chat-pane flags) on every refresh.
+    // Only the fields the live terminal or the project lookup refine are listed.
     nextSessions.push({
-      id: managed.id,
+      ...managed,
       name: terminalSession?.name || managed.name || managed.cliType,
       cliType: terminalSession?.cliType || managed.cliType,
       processId: managed.processId ?? 0,
@@ -182,37 +185,7 @@ export async function refreshSessions(): Promise<void> {
       projectId: managed.projectId || resolvedProject?.id,
       projectPath: managed.projectPath || resolvedProject?.canonicalPath,
       title: terminalSession?.title || managed.title,
-      cliSessionName: managed.cliSessionName,
-      windowId: managed.windowId,
-      state: managed.state,
-      aiagentState: managed.aiagentState,
-      questionPending: managed.questionPending,
-      currentPlanId: managed.currentPlanId,
-      lastOutputAt: managed.lastOutputAt,
-      createdAt: managed.createdAt,
-      lastActiveAt: managed.lastActiveAt,
-      // The row timer counts from it; dropped here it would reset on every refresh.
-      lastPromptAt: managed.lastPromptAt,
-      lastUserPromptAt: managed.lastUserPromptAt,
-      lastUserPromptSource: managed.lastUserPromptSource,
-      keepWarmUntil: managed.keepWarmUntil,
-      createdByPeerId: managed.createdByPeerId,
-      remote: managed.remote,
-      // Without this the card falls back to "unlocked" on every refresh, and
-      // its toggle can then only ever ask to lock.
-      locked: managed.locked,
-      frozen: managed.frozen,
-      // Same trap for the mission bar: this refresh runs on every plan change.
-      mission: managed.mission,
-      missionBarHeight: managed.missionBarHeight,
-      // Allow-list again: without it the operator badge blanks on refresh.
-      role: managed.role,
-      // And the API-tool flag, or its pane falls back to a bare terminal.
-      apiTool: managed.apiTool,
-      pendingSubagents: managed.pendingSubagents,
-      // And the loop badge's count, which this allow-list had been dropping.
-      loopContinues: managed.loopContinues,
-    } as Session);
+    });
 
     const displayState = managed.aiagentState ?? managed.state;
     if (displayState) {

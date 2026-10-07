@@ -327,6 +327,26 @@ describe('useAppBootstrap session hydration', () => {
     mod.teardown();
   });
 
+  // A ComfyUI chat opened as a bare terminal after launch: the refresh dropped
+  // the flag that makes its pane a chat, until the first session:updated.
+  it('carries the ComfyUI chat fields through a refresh', async () => {
+    const mod = await initBootstrap();
+    const comfyUiProfiles = [{ id: 'flux', name: 'Flux', kind: 'image' as const, supportsImageSize: true }];
+    const comfyUiImageSizes = [{ id: 'square', name: 'Square', width: 1024, height: 1024 }];
+    mockTerminalManager.hydrateFromStore.mockResolvedValueOnce([
+      { id: 'sess-comfy', name: 'art', cliType: 'comfyui', processId: 0, workingDir: '/tmp', comfyUiTool: true, comfyUiProfiles, comfyUiImageSizes },
+    ] as never);
+
+    await mod.refreshSessions();
+
+    const session = state.sessions.find(s => s.id === 'sess-comfy');
+    expect(session?.comfyUiTool).toBe(true);
+    expect(session?.comfyUiProfiles).toEqual(comfyUiProfiles);
+    expect(session?.comfyUiImageSizes).toEqual(comfyUiImageSizes);
+
+    mod.teardown();
+  });
+
   it('leaves an unlocked session unlocked', async () => {
     const mod = await initBootstrap();
     mockTerminalManager.hydrateFromStore.mockResolvedValueOnce([
