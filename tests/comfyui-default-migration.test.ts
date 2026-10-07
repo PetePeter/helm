@@ -64,7 +64,7 @@ describe('ComfyUI profile migration', () => {
     const types = readTypes();
     expect(types.existing.spawnCommand).toBe('existing');
     expect(types[IMAGE_ID].comfyUi.profiles.map((profile: any) => profile.name)).toEqual([
-      'SDXL Turbo', 'Photoreal · LUSTIFY V8 Apex', 'FLUX.1-dev FP8',
+      'SDXL Turbo', 'Photoreal · LUSTIFY V8 Apex',
     ]);
     expect(types[IMAGE_ID].noPromptCache).toBe(true);
     expect(types[VIDEO_ID].comfyUi.profiles.map((profile: any) => profile.name)).toEqual([
@@ -95,8 +95,8 @@ describe('ComfyUI profile migration', () => {
 
   it('adds missing presets after an earlier migration while preserving user tuning', () => {
     const image = defaultType(IMAGE_ID);
-    image.comfyUi.profiles = image.comfyUi.profiles.filter((profile: any) =>
-      !['image-lustify-v8-apex', 'image-flux-dev-fp8'].includes(profile.id));
+    image.comfyUi.profiles = image.comfyUi.profiles.filter((profile: any) => profile.id !== 'image-lustify-v8-apex');
+    image.comfyUi.profiles.push({ ...structuredClone(image.comfyUi.profiles[0]), id: 'image-flux-dev-fp8', name: 'FLUX.1-dev FP8' });
     image.comfyUi.profiles[0].defaults.steps = 11;
     image.comfyUi.profiles[0].workflow['7'].inputs.filename_prefix = 'MyImages';
     writeTypes({ [IMAGE_ID]: image });
@@ -106,12 +106,12 @@ describe('ComfyUI profile migration', () => {
 
     const migrated = readTypes()[IMAGE_ID].comfyUi;
     expect(migrated.profiles.map((profile: any) => profile.id)).toContain('image-lustify-v8-apex');
-    expect(migrated.profiles.map((profile: any) => profile.id)).toContain('image-flux-dev-fp8');
+    expect(migrated.profiles.map((profile: any) => profile.id)).not.toContain('image-flux-dev-fp8');
     expect(migrated.profiles.find((profile: any) => profile.id === 'image').defaults.steps).toBe(11);
     expect(migrated.profiles.find((profile: any) => profile.id === 'image').workflow['7'].inputs.filename_prefix)
       .toBe('MyImages');
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v4');
+      .toContain('comfyui-tool-profiles-v5');
   });
 
   it('preserves custom endpoints and graphs while merging missing presets once', () => {
@@ -215,10 +215,10 @@ describe('ComfyUI profile migration', () => {
     writeTypes({ [IMAGE_ID]: defaultType(IMAGE_ID) });
     expect(migrateComfyUiToolDefaults(files)).toBe(true);
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v4');
+      .toContain('comfyui-tool-profiles-v5');
     const types = readTypes();
     types[IMAGE_ID].comfyUi.profiles = types[IMAGE_ID].comfyUi.profiles
-      .filter((profile: any) => profile.id !== 'image-flux-dev-fp8');
+      .filter((profile: any) => profile.id !== 'image-lustify-v8-apex');
     writeTypes(types);
     const userEditedConfig = fs.readFileSync(files.cliTypesFile, 'utf8');
 

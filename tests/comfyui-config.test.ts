@@ -16,7 +16,6 @@ describe('ComfyUI configuration', () => {
     expect(config.profiles.map(({ id, name, kind }) => [id, name, kind])).toEqual([
       ['image', 'SDXL Turbo', 'image'],
       ['image-lustify-v8-apex', 'Photoreal · LUSTIFY V8 Apex', 'image'],
-      ['image-flux-dev-fp8', 'FLUX.1-dev FP8', 'image'],
       ['video', '1080p Landscape (1920x1088)', 'video'],
       ['video-1080p-portrait', '1080p Portrait (1088x1920)', 'video'],
     ]);
@@ -41,7 +40,7 @@ describe('ComfyUI configuration', () => {
       return [graph['7'].inputs.width, graph['7'].inputs.height, graph['10'].inputs.fps, graph['7'].inputs.length];
     });
 
-    expect(imageSizes).toEqual([[512, 512], [1536, 1536], [1024, 1024]]);
+    expect(imageSizes).toEqual([[512, 512], [1536, 1536]]);
     expect(videoSettings).toEqual([
       [1920, 1088, 30, 49], [1088, 1920, 30, 49],
     ]);
@@ -103,7 +102,7 @@ describe('ComfyUI configuration', () => {
     );
 
     expect(comfyUiChatProfiles(config).map(profile => profile.id)).toEqual([
-      'image', 'image-lustify-v8-apex', 'image-flux-dev-fp8', 'video', 'video-1080p-portrait',
+      'image', 'image-lustify-v8-apex', 'video', 'video-1080p-portrait',
     ]);
   });
 
@@ -119,7 +118,7 @@ describe('ComfyUI configuration', () => {
       .toThrow('does not support image size selection');
   });
 
-  it('ships photoreal LUSTIFY and FLUX FP8 image workflows with their model-specific settings', () => {
+  it('ships the photoreal LUSTIFY image workflow with its model-specific settings', () => {
     const profiles = cloneDefaultComfyUiConfig().profiles;
     const lustify = profiles.find(profile => profile.id === 'image-lustify-v8-apex')!;
     const lustifyGraph = applyComfyUiProfile(lustify, 'a realistic portrait');
@@ -127,14 +126,6 @@ describe('ComfyUI configuration', () => {
     expect(lustifyGraph['3'].inputs).toMatchObject({ width: 1536, height: 1536 });
     expect(lustifyGraph['4'].inputs).toMatchObject({ steps: 30, cfg: 3.5, sampler_name: 'dpmpp_2m_sde', scheduler: 'karras' });
 
-    const flux = profiles.find(profile => profile.id === 'image-flux-dev-fp8')!;
-    const fluxGraph = applyComfyUiProfile(flux, 'a realistic portrait');
-    expect(fluxGraph['1'].inputs.ckpt_name).toBe('flux1-dev-fp8.safetensors');
-    expect(fluxGraph['2'].inputs.text).toBe('a realistic portrait');
-    expect(fluxGraph['3'].inputs.guidance).toBe(3.5);
-    expect(fluxGraph['5'].inputs).toMatchObject({ width: 1024, height: 1024 });
-    expect(fluxGraph['6'].inputs).toMatchObject({ steps: 20, cfg: 1, sampler_name: 'euler', scheduler: 'simple' });
-    expect(flux.mappings.negativePrompt).toBeUndefined();
   });
 
   it('randomizes the shipped zero seed while preserving a pinned seed', () => {

@@ -4,7 +4,7 @@ import * as YAML from 'yaml';
 import { cloneDefaultComfyUiConfigForKind } from '../session/comfyui/comfyui-config.js';
 import logger from '../utils/logger.js';
 
-const MIGRATION_ID = 'comfyui-tool-profiles-v4';
+const MIGRATION_ID = 'comfyui-tool-profiles-v5';
 const DEFAULT_COMFYUI_TYPES = [
   {
     id: '3cef90de-c638-49b5-942c-aa7c198fc294',
@@ -22,6 +22,9 @@ const DEFAULT_COMFYUI_TYPES = [
 const PREVIOUS_DEFAULT_CHECKPOINTS: Record<string, string> = {
   'image-lustify-v8-apex': 'lustifySDXLNSFW_apexV8.safetensors',
 };
+// Presets that shipped once and were withdrawn: FLUX FP8 decodes to NaN noise
+// on ROCm, so the migration takes it back out of tools that received it.
+const RETIRED_PROFILE_IDS = new Set(['image-flux-dev-fp8']);
 const PREVIOUS_DEFAULT_PROFILE_NAMES: Record<string, string> = {
   image: '512x512',
   video: '1080p Landscape',
@@ -134,8 +137,9 @@ function mergeComfyUiConfig(current: unknown, defaults: Record<string, any>): { 
     changed = true;
   }
 
-  const profiles: unknown[] = Array.isArray(merged.profiles) ? [...merged.profiles] : [];
-  if (!Array.isArray(merged.profiles)) changed = true;
+  const currentProfiles: unknown[] = Array.isArray(merged.profiles) ? merged.profiles : [];
+  const profiles = currentProfiles.filter(profile => !isRecord(profile) || !RETIRED_PROFILE_IDS.has(profile.id));
+  if (!Array.isArray(merged.profiles) || profiles.length !== currentProfiles.length) changed = true;
   for (const defaultProfile of defaults.profiles as Record<string, any>[]) {
     const index = profiles.findIndex(profile => isRecord(profile) && profile.id === defaultProfile.id);
     if (index < 0) {

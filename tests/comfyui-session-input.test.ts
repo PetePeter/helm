@@ -36,9 +36,9 @@ describe('ComfyUI session input', () => {
     const process = host.create('session-2', cloneDefaultComfyUiConfigForKind('image'));
 
     expect(process.profiles.map(profile => profile.id)).toEqual([
-      'image', 'image-lustify-v8-apex', 'image-flux-dev-fp8',
+      'image', 'image-lustify-v8-apex',
     ]);
-    expect(process.profiles.map(profile => profile.supportsImageSize)).toEqual([true, true, true]);
+    expect(process.profiles.map(profile => profile.supportsImageSize)).toEqual([true, true]);
     expect(process.imageSizes).toEqual(COMFYUI_IMAGE_SIZE_OPTIONS);
     process.kill();
   });

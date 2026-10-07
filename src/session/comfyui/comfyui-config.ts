@@ -96,40 +96,6 @@ function imageProfile(
   };
 }
 
-function fluxImageProfile(): ComfyUiProfileConfig {
-  return {
-    id: 'image-flux-dev-fp8',
-    name: 'FLUX.1-dev FP8',
-    kind: 'image',
-    workflow: {
-      '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'flux1-dev-fp8.safetensors' } },
-      '2': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['1', 1] } },
-      '3': { class_type: 'FluxGuidance', inputs: { conditioning: ['2', 0], guidance: 3.5 } },
-      '4': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['3', 0] } },
-      '5': { class_type: 'EmptySD3LatentImage', inputs: { width: 1024, height: 1024, batch_size: 1 } },
-      '6': {
-        class_type: 'KSampler',
-        inputs: {
-          seed: 0, steps: 20, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1,
-          model: ['1', 0], positive: ['3', 0], negative: ['4', 0], latent_image: ['5', 0],
-        },
-      },
-      '7': { class_type: 'VAEDecode', inputs: { samples: ['6', 0], vae: ['1', 2] } },
-      '8': { class_type: 'SaveImage', inputs: { filename_prefix: 'Helm', images: ['7', 0] } },
-    },
-    mappings: {
-      prompt: { nodeId: '2', input: 'text' },
-      width: { nodeId: '5', input: 'width' },
-      height: { nodeId: '5', input: 'height' },
-      steps: { nodeId: '6', input: 'steps' },
-      cfg: { nodeId: '6', input: 'cfg' },
-      seed: { nodeId: '6', input: 'seed' },
-    },
-    defaults: { width: 1024, height: 1024, steps: 20, cfg: 1, seed: 0 },
-    outputNodeIds: ['8'],
-  };
-}
-
 const VIDEO_NEGATIVE_PROMPT = '色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走';
 
 const VIDEO_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
@@ -185,7 +151,6 @@ export const DEFAULT_COMFYUI_CONFIG: ComfyUiToolConfig = {
       samplerName: 'dpmpp_2m_sde',
       scheduler: 'karras',
     }),
-    fluxImageProfile(),
     videoProfile('video', '1080p Landscape (1920x1088)', 1920, 1088),
     videoProfile('video-1080p-portrait', '1080p Portrait (1088x1920)', 1088, 1920),
   ],
