@@ -1258,6 +1258,7 @@ export function registerIPCHandlers(
         ...(attachment ? { attachment } : {}),
       });
     },
+    recordPrompt: (sessionId, text) => mobileChatBridge.recordDesktopTurn(sessionId, text, randomUUID()),
     notifyRequester: async (requesterSessionId, comfySessionId, text) => {
       await helmControlService.sendTextToSession(requesterSessionId, text, {
         senderSessionId: comfySessionId,

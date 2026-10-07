@@ -31,6 +31,7 @@ interface Notification { requesterSessionId: string; comfySessionId: string; tex
 describe('ComfyUI requester reply', () => {
   let rootDir: string;
   let notifications: Notification[];
+  let recordedPrompts: Array<{ sessionId: string; text: string }>;
   let notifyRequester: (requesterSessionId: string, comfySessionId: string, text: string) => Promise<void>;
   let host: ComfyUiSessionHost;
   let history: () => History;
@@ -46,6 +47,7 @@ describe('ComfyUI requester reply', () => {
   beforeEach(() => {
     rootDir = mkdtempSync(join(tmpdir(), 'helm-comfy-host-test-'));
     notifications = [];
+    recordedPrompts = [];
     notifyRequester = async (requesterSessionId, comfySessionId, text) => {
       notifications.push({ requesterSessionId, comfySessionId, text });
     };
@@ -79,6 +81,7 @@ describe('ComfyUI requester reply', () => {
       },
       attachments: new ArtifactAttachmentManager(rootDir),
       postChat: async () => undefined,
+      recordPrompt: (sessionId, text) => { recordedPrompts.push({ sessionId, text }); },
       notifyRequester: (...args) => notifyRequester(...args),
     });
     host.create(COMFY_SESSION, config);
@@ -148,6 +151,8 @@ describe('ComfyUI requester reply', () => {
 
     await waitForNotifications(1);
     expect(promptsSubmitted).toBe(2);
+    // The pane records what is typed into it; only the session's prompt needs adding to the chat.
+    expect(recordedPrompts).toEqual([{ sessionId: COMFY_SESSION, text: 'asked by a session' }]);
   }, JOB_TIMEOUT_MS * 2);
 
   it('keeps the queue moving when the requester cannot be reached', async () => {

@@ -30,6 +30,8 @@ export interface ComfyUiSessionHostDeps {
   artifacts: ComfyUiArtifacts;
   attachments: Pick<ArtifactAttachmentManager, 'addGeneratedMediaFromFile' | 'getPath'>;
   postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
+  /** Put a prompt another session sent into the chat; the chat pane and a phone record their own. */
+  recordPrompt: (sessionId: string, text: string) => void;
   /** Tell the session that asked for a generation how its job ended. */
   notifyRequester: (requesterSessionId: string, comfySessionId: string, text: string) => Promise<void>;
 }
@@ -108,6 +110,7 @@ export class ComfyUiSessionHost {
       executing: false,
     };
     this.jobs.set(job.id, job);
+    if (requesterSessionId) this.deps.recordPrompt(sessionId, trimmed);
     process.writeStatus(`Queued · ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}`);
     void this.deps.postChat(sessionId, `Queued for ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}.`).catch(() => undefined);
     this.queue = this.queue.then(() => this.run(job, process, profile)).catch(() => undefined);
