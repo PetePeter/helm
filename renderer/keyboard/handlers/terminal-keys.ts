@@ -19,7 +19,6 @@
 
 import { comboToPtyEscape, keyToPtyEscape } from '../../bindings.js';
 import { PANE_TERMINAL } from '../../dock-types.js';
-import { shouldAllowNativeCopy, type SelectionInfo } from '../../paste-handler.js';
 import type { KeyContext, KeyHandler } from '../router.js';
 
 /** Keys that name a modifier rather than a character — never relayed. */
@@ -41,8 +40,6 @@ export interface TerminalKeyDeps {
    * once it is up the router gates these handlers out on `scope === 'modal'`.
    */
   openEscProtection: (sessionId: string) => void;
-  /** Live DOM selection, for the artifact-document copy carve-out. */
-  readSelection?: () => SelectionInfo;
   /** Absent in snap-out windows, which do not own the session list. */
   renameSession?: (sessionId: string) => void;
   /** Absent in snap-out windows. */
@@ -143,9 +140,6 @@ export function createTerminalKeyHandlers(deps: TerminalKeyDeps): KeyHandler[] {
           // Ctrl+N belongs to the app (new plan / new session). Relaying it
           // would also send \x0e to the CLI behind the dialog.
           if (event.key.toLowerCase() === 'n') return false;
-          // Let the browser copy a real selection out of an artifact document,
-          // mirroring xterm's own Ctrl+C-with-selection carve-out.
-          if (deps.readSelection && shouldAllowNativeCopy(event, deps.readSelection())) return false;
           deps.writePty(sessionId, comboToPtyEscape(['Ctrl', event.key]));
           return true;
         }

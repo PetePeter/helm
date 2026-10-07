@@ -10,7 +10,7 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 import { createTerminalKeyHandlers } from '../keyboard/handlers/terminal-keys.js';
 import { registerKeyHandler } from '../keyboard/router.js';
-import { deliverBulkText, readSelectionInfo } from '../paste-handler.js';
+import { deliverBulkText } from '../paste-handler.js';
 import { showEditorPopup } from '../editor/editor-popup.js';
 import { deliverPromptSequence } from '../sequence-delivery.js';
 import { terminalClient } from '../ipc/clients.js';
@@ -56,7 +56,6 @@ export function useTerminalKeys(options: TerminalKeysOptions): void {
       writePty,
       deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
       readClipboardText: () => navigator.clipboard.readText(),
-      readSelection: readSelectionInfo,
       openPromptEditor: (sessionId) => {
         // Re-entrancy guard: the popup is modal, so a second Ctrl+G while it is
         // opening must not stack a second one behind it.

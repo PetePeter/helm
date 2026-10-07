@@ -1,11 +1,13 @@
 /**
- * build-artifact-document — wrap an AI-authored HTML artifact into a complete
- * document to be served over helm-artifact://.
+ * build-artifact-document — wrap an AI-authored artifact (HTML or markdown)
+ * into a complete document to be served over helm-artifact://.
  *
- * Unlike the markdown path, nothing here strips tags. HTML artifacts keep their
- * <style>, inline styles, classes, SVG and scripts; containment comes from the
- * opaque origin and the CSP response header set by the protocol handler (see
- * src/electron/helm-artifact-protocol.ts), plus the iframe sandbox attribute.
+ * Containment for both kinds comes from the opaque origin and the CSP response
+ * header set by the protocol handler (see src/electron/helm-artifact-protocol.ts),
+ * plus the iframe sandbox attribute. HTML artifacts are therefore left intact:
+ * they keep their <style>, inline styles, classes, SVG and scripts. Markdown is
+ * additionally sanitized (render-artifact.ts) because prose has no business
+ * running script.
  *
  * This runs in the renderer because that is where DOMParser lives. Parsing is
  * inert — DOMParser neither executes scripts nor fetches resources — and it
@@ -19,6 +21,7 @@
 import { resolveImageSrc } from '../../src/electron/helm-img-protocol.js';
 import { MERMAID_ASSET_URL } from '../../src/electron/helm-artifact-protocol.js';
 import { ARTIFACT_BASE_CSS } from './artifact-base-css.js';
+import { renderArtifact } from './render-artifact.js';
 
 /**
  * Message type the frame posts to the parent when a link is clicked.
@@ -38,8 +41,8 @@ export const READY_MESSAGE = 'helm-artifact-ready';
 /**
  * Links inside the frame are inert by design — the sandbox blocks navigation
  * and `default-src 'none'` blocks loads — so without this they would silently
- * do nothing, unlike the markdown path which routes https? through
- * shell.openExternal. The parent validates the URL; this side only reports it.
+ * do nothing. The parent decides what a reported URL may do (open https
+ * externally, open an attachment); this side only reports it.
  */
 const LINK_BRIDGE_SCRIPT = `
 document.addEventListener('click', function (e) {
@@ -103,6 +106,55 @@ function rewriteMermaidScripts(doc: Document): void {
 }
 
 /**
+ * Turns the `<pre class="mermaid">` markers of a markdown document into
+ * diagrams, one at a time, each under its own id.
+ *
+ * Why not mermaid.run(): it names diagrams `mermaid-<Date.now()>`, so two
+ * rendered in the same millisecond share an id. Mermaid scopes each diagram's
+ * styles by that id (edges `fill:none`, label colours), so the duplicate draws
+ * arrows as filled triangles and text dark-on-dark. A diagram that does not
+ * parse keeps its source and says so, rather than passing for code.
+ */
+export const MERMAID_RENDER_SCRIPT = `
+(async function () {
+  mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
+  var nodes = document.querySelectorAll('pre.mermaid');
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    try {
+      node.innerHTML = (await mermaid.render('helm-mermaid-' + (i + 1), node.textContent || '')).svg;
+    } catch (err) {
+      console.error('[mermaid] render failed', err);
+      node.classList.add('mermaid-failed');
+      var note = document.createElement('div');
+      note.className = 'mermaid-fail-note';
+      note.textContent = '\\u26A0 Diagram could not be rendered \\u2014 see source above';
+      node.append(note);
+    }
+  }
+})();
+`.trim();
+
+function appendScript(doc: Document, init: { src?: string; text?: string }): void {
+  const script = doc.createElement('script');
+  if (init.src) script.setAttribute('src', init.src);
+  if (init.text) script.textContent = init.text;
+  doc.body.append(script);
+}
+
+function injectBaseCss(doc: Document): void {
+  const style = doc.createElement('style');
+  style.textContent = ARTIFACT_BASE_CSS;
+  doc.head.prepend(style);
+}
+
+/** The link bridge goes last, so its ready ping means the document is alive. */
+function serialize(doc: Document): string {
+  appendScript(doc, { text: LINK_BRIDGE_SCRIPT });
+  return `<!doctype html>${doc.documentElement.outerHTML}`;
+}
+
+/**
  * Build the full document to serve for an HTML artifact.
  *
  * @param html Raw (untrusted) artifact body — a fragment or a full document.
@@ -113,16 +165,32 @@ export function buildArtifactDocument(html: string): string {
 
   rewriteImages(doc);
   rewriteMermaidScripts(doc);
+  if (!hasAuthorStyling(doc)) injectBaseCss(doc);
 
-  if (!hasAuthorStyling(doc)) {
-    const style = doc.createElement('style');
-    style.textContent = ARTIFACT_BASE_CSS;
-    doc.head.prepend(style);
+  return serialize(doc);
+}
+
+/**
+ * Build the full document to serve for a MARKDOWN artifact.
+ *
+ * Markdown is served through the same isolated frame as HTML, but it is prose:
+ * the body is still sanitized against the document allow-list, so the only
+ * scripts in the document are the ones injected here. It cannot style itself
+ * either, so the base stylesheet is unconditional.
+ *
+ * @param markdown Raw (untrusted) artifact body.
+ * @param preserveLineBreaks Treat single newlines as line breaks (manual notes).
+ * @returns A complete `<!doctype html>` string.
+ */
+export function buildMarkdownDocument(markdown: string, preserveLineBreaks = false): string {
+  const body = renderArtifact('markdown', markdown, preserveLineBreaks);
+  const doc = new DOMParser().parseFromString(body, 'text/html');
+
+  injectBaseCss(doc);
+  if (doc.querySelector('pre.mermaid')) {
+    appendScript(doc, { src: MERMAID_ASSET_URL });
+    appendScript(doc, { text: MERMAID_RENDER_SCRIPT });
   }
 
-  const bridge = doc.createElement('script');
-  bridge.textContent = LINK_BRIDGE_SCRIPT;
-  doc.body.append(bridge);
-
-  return `<!doctype html>${doc.documentElement.outerHTML}`;
+  return serialize(doc);
 }

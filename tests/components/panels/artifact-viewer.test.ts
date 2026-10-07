@@ -92,6 +92,11 @@ beforeEach(() => {
   systemOpenExternalUrl.mockResolvedValue(true);
 });
 
+/** The document most recently staged for the artifact frame. */
+function lastPreparedDocument(): string {
+  return String(artifactPrepareRender.mock.calls.at(-1)?.[0] ?? '');
+}
+
 describe('ArtifactViewer — html vs markdown render path', () => {
   const htmlArtifact = () => makeArtifact({
     kind: 'html',
@@ -105,15 +110,17 @@ describe('ArtifactViewer — html vs markdown render path', () => {
     expect(frame.exists()).toBe(true);
     expect(frame.attributes('sandbox')).toBe('allow-scripts');
     expect(frame.attributes('src')).toContain('helm-artifact://');
-    expect(w.find('.ap-doc').exists()).toBe(false);
   });
 
-  it('leaves the markdown path rendering inline', async () => {
+  // Markdown is AI-authored too: it must never be injected into the app DOM.
+  it('renders a markdown artifact in the same sandboxed frame, not inline', async () => {
     const { w } = await mountWith([makeArtifact()]);
 
-    expect(w.find('.ap-doc').exists()).toBe(true);
-    expect(w.find('iframe.ap-frame').exists()).toBe(false);
-    expect(artifactPrepareRender).not.toHaveBeenCalled();
+    const frame = w.find('iframe.ap-frame');
+    expect(frame.attributes('sandbox')).toBe('allow-scripts');
+    expect(frame.attributes('src')).toContain('helm-artifact://');
+    expect(lastPreparedDocument()).toContain('Newest content');
+    expect(w.text()).not.toContain('Newest content');
   });
 });
 
@@ -292,8 +299,8 @@ describe('ArtifactViewer', () => {
 
     // Newest (a1, updatedAt = now) is auto-selected.
     expect(w.find('.ap-item--active .ap-it-title').text()).toBe('Auth Flow Audit');
-    // Latest version (v3) markdown is rendered and sanitized into the doc.
-    expect(w.find('.ap-doc').html()).toContain('Newest content');
+    // Latest version (v3) markdown is what gets staged for the frame.
+    expect(lastPreparedDocument()).toContain('Newest content');
     // No "viewing older" banner when on latest.
     expect(w.find('.ap-v-old').exists()).toBe(false);
   });
@@ -307,13 +314,13 @@ describe('ArtifactViewer', () => {
     await flushPromises();
 
     expect(w.find('.ap-v-old').exists()).toBe(true);
-    expect(w.find('.ap-doc').html()).toContain('v2 body');
+    expect(lastPreparedDocument()).toContain('v2 body');
 
     // Jump to latest clears the banner and restores v3.
     await w.find('.ap-restore').trigger('click');
     await flushPromises();
     expect(w.find('.ap-v-old').exists()).toBe(false);
-    expect(w.find('.ap-doc').html()).toContain('Newest content');
+    expect(lastPreparedDocument()).toContain('Newest content');
   });
 
   function footBtn(w: ReturnType<typeof mount>, text: string) {

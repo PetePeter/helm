@@ -39,6 +39,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
 import ArtifactViewer from '../../../renderer/components/panels/ArtifactViewer.vue';
 import { useArtifactViewer } from '../../../renderer/composables/useArtifactViewer.js';
 import { buildAttachmentHref } from '../../../src/types/artifact-attachment.js';
+import { OPEN_URL_MESSAGE } from '../../../renderer/artifacts/build-artifact-document.js';
 
 function makeArtifact(over: Partial<Artifact> = {}): Artifact {
   const now = Date.now();
@@ -138,7 +139,14 @@ describe('ArtifactViewer — attachment link', () => {
       { version: 1, content: `📎 [Open in system viewer](${href})`, createdAt: Date.now() },
     ] })]);
 
-    await w.find('.ap-doc a').trigger('click');
+    // The link lives in the isolated frame, which reports the click; jsdom
+    // never loads the frame, so stand in for its window and its report.
+    const frameWindow = {};
+    Object.defineProperty(w.find('iframe.ap-frame').element, 'contentWindow', { value: frameWindow });
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: OPEN_URL_MESSAGE, url: href },
+      source: frameWindow as MessageEventSource,
+    }));
     await flushPromises();
 
     expect(artifactOpenAttachment).toHaveBeenCalledWith('a1', 'att-1');

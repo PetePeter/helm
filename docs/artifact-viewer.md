@@ -68,7 +68,7 @@ instead of their notes.
 not a filesystem path — the markdown sanitizer's href allowlist is
 https/mailto, so an absolute path is stripped and the link was dead on click
 however valid the stored file was. The scheme is allowed on `<a href>` only
-(never navigated), and `ArtifactViewer.onDocClick` turns it into
+(never navigated); the frame reports the click and `openArtifactLink` turns it into
 `artifact:openAttachment`, which shell-opens the real stored file. Build and
 parse it with the helpers in `src/types/artifact-attachment.ts`.
 
@@ -184,10 +184,11 @@ window's session, so artifacts travel with the terminal and never render in two
 windows at once.
 
 **Mermaid:** ```mermaid fenced blocks are emitted as `<pre class="mermaid">` (the
-only class the sanitizer keeps, and only on `<pre>`); after the HTML is in the DOM,
-`ArtifactViewer` lazy-loads mermaid and renders those nodes to SVG
-(`theme: dark`, `securityLevel: strict`). The heavy mermaid bundle loads only when
-a diagram is actually present.
+only class the sanitizer keeps, and only on `<pre>`). The served document then
+loads the local mermaid bundle and renders those nodes to SVG **inside the
+frame** (`theme: dark`, `securityLevel: strict`) — see
+[Mermaid](#mermaid). The heavy bundle is referenced only when a diagram is
+actually present.
 
 ## Images
 
@@ -213,31 +214,44 @@ The DOMPurify `uponSanitizeAttribute` hook (`render-artifact.ts`, line 131) conf
 graph LR
     AI["AI writes<br/>![alt](C:/path/img.png)"] --> RA["resolveImageSrc()<br/>render-artifact.ts:56"]
     RA -->|"helm-img://f/?p=..."| DP["DOMPurify.sanitize<br/>uponSanitizeAttribute hook"]
-    DP -->|"safe <img src>"| DOM["ArtifactViewer DOM<br/>(.ap-doc)"]
+    DP -->|"safe <img src>"| DOM["artifact frame<br/>(isolated document)"]
     DOM -->|"browser requests helm-img://"| PH["helm-img:// protocol handler<br/>helm-img-protocol.ts:86"]
     PH -->|"readFile(absPath)"| FS[("local filesystem")]
     FS -->|"bytes + Content-Type"| DOM
 ```
 
-## HTML rendering
+## Isolated rendering
 
-`kind: 'html'` artifacts do **not** go through the markdown sanitizer. Passing
-them through it discarded every visual decision the author made — `<style>` is
-not in the allowlist, `style` is in `FORBID_ATTR`, `class` is stripped except
-the `mermaid` marker, and `<svg>` is refused — so HTML reports arrived as
-unstyled prose. They are instead served as their own **isolated document** with
-full CSS/SVG/JS fidelity, contained by origin isolation and a CSP rather than by
-tag-stripping.
+Every artifact — markdown **and** HTML — is served as its own **isolated
+document** in a sandboxed frame. AI-authored content never enters the app DOM;
+containment comes from origin isolation and a CSP.
+
+The two kinds differ only in how the document is built:
+
+- **HTML** is left intact. Passing it through the markdown sanitizer discarded
+  every visual decision the author made (`<style>`, `style`, `class`, `<svg>`),
+  so HTML reports arrived as unstyled prose. It keeps full CSS/SVG/JS fidelity.
+- **Markdown** is prose, so it is additionally sanitized against a document
+  allowlist before it is wrapped: the only scripts in a markdown document are
+  the ones Helm injects (link bridge, mermaid renderer).
 
 ```mermaid
 graph TB
     A[Artifact content] --> K{kind}
-    K -->|markdown| M[marked GFM] --> S[DOMPurify allowlist] --> V["v-html into .ap-doc<br/>app DOM · mermaid pass"]
-    K -->|html| B["buildArtifactDocument()<br/>renderer · DOMParser<br/>img rewrite + fallback CSS"]
-    B -->|"IPC artifact:prepareRender"| N["main: single-slot store<br/>nonce → html"]
+    K -->|markdown| M[marked GFM] --> S[DOMPurify allowlist] --> MD["buildMarkdownDocument()<br/>base CSS + mermaid renderer"]
+    K -->|html| B["buildArtifactDocument()<br/>img rewrite + fallback CSS"]
+    MD --> BR[link bridge + ready ping]
+    B --> BR
+    BR -->|"IPC artifact:prepareRender"| N["main: bounded store<br/>nonce → html"]
     N --> P["helm-artifact:// handler<br/>Response + CSP header"]
     P --> I["iframe src<br/>origin 'null' · sandbox=allow-scripts"]
 ```
+
+Markdown used to be bound into the app DOM, with mermaid run in the app
+window. Mermaid sanitizes its SVG with the **same DOMPurify instance** the
+markdown sanitizer hooks, so that hook stripped every `class` from the diagram
+and its scoped CSS never matched (default fills, filled "bowtie" edges).
+Rendering inside the frame gives mermaid its own realm.
 
 ### Why not `<iframe srcdoc>`
 
@@ -261,14 +275,14 @@ iframes origin `"null"` ([electron#40663]) — the opaque origin, for free.
 
 | Stage | Where |
 |---|---|
-| Parse (inert), rewrite `<img src>` via `resolveImageSrc`, inject fallback CSS + link bridge | `renderer/artifacts/build-artifact-document.ts` |
+| Build the document: HTML — parse (inert), rewrite `<img src>` via `resolveImageSrc`, fallback CSS; markdown — sanitize, base CSS, mermaid renderer; both — link bridge | `renderer/artifacts/build-artifact-document.ts` |
 | Stage the document, mint a nonce | `artifact:prepareRender` → `src/electron/helm-artifact-protocol.ts` |
 | Serve with `text/html` + CSP header | `helm-artifact://doc/?k=<nonce>` handler |
 | Display | `<iframe sandbox="allow-scripts" referrerpolicy="no-referrer">` in `ArtifactViewer.vue` |
 
-The store is a **single slot**: only the document currently on screen is
-reachable, so nothing accumulates and a stale frame cannot re-read an old
-document.
+The store is a small, **bounded** insertion-ordered cache
+(`MAX_PENDING_DOCUMENTS`), so rapid selection changes cannot evict a frame
+whose navigation has not started, and stale documents cannot accumulate.
 
 ### Policy
 
@@ -290,20 +304,23 @@ network egress** — no CDN, no fetch, no web fonts, no remote images.
 
 ### Styling
 
-Artifact decides, app provides fallback. `ARTIFACT_BASE_CSS`
-(`renderer/artifacts/artifact-base-css.ts`) is injected **only** when the
-document has no `<style>`, no stylesheet `<link>` and no inline `style`
-attribute, so an unstyled HTML artifact looks like the markdown one. CSS custom
-properties do not cross the document boundary, so those values are inlined
-literals mirroring `renderer/styles/main.css`.
+Markdown always gets `ARTIFACT_BASE_CSS`
+(`renderer/artifacts/artifact-base-css.ts`). For HTML the rule is "artifact
+decides, app provides fallback": it is injected **only** when the document has
+no `<style>`, no stylesheet `<link>` and no inline `style` attribute, so an
+unstyled HTML artifact looks like a markdown one. CSS custom properties do not
+cross the document boundary, so the values are inlined literals mirroring
+`renderer/styles/main.css`.
 
 ### Links
 
 Links in the frame are inert by design, so an injected capture listener posts
-`{ type: 'helm-artifact-open-url', url }` to the parent, which opens `http(s)`
-URLs via the same `shell.openExternal` route the markdown path uses. The parent
-gates on **`event.source === frame.contentWindow`** — the frame's opaque origin
-makes `event.origin` the useless string `"null"`.
+`{ type: 'helm-artifact-open-url', url }` to the parent. The parent
+(`openArtifactLink`) allows exactly two things: a `helm-attachment:` id opens
+the stored attachment, and an `http(s)` URL opens via `shell.openExternal`.
+Everything else is ignored. The parent gates on
+**`event.source === frame.contentWindow`** — the frame's opaque origin makes
+`event.origin` the useless string `"null"`.
 
 ### When the frame renders nothing
 
@@ -318,19 +335,24 @@ same handler as the footer button. Selecting another artifact resets the watch.
 Without this the user sees a blank panel and a footer button whose relevance is
 not obvious; the same document usually renders fine in a real browser.
 
-### Mermaid in HTML artifacts
+### Mermaid
 
 The one script the frame may load is mermaid itself: the build copies
 `node_modules/mermaid/dist/mermaid.min.js` to `dist-electron/assets/` and the
 protocol serves it at `helm-artifact://asset/mermaid.js` (`script-src
-helm-artifact:` above). Because AI-authored HTML almost always pulls mermaid
-from a CDN — which the zero-egress CSP refuses with the classic *"violates
-script-src 'unsafe-inline'"* console error — `buildArtifactDocument` rewrites
-any `http(s)` `<script src>` whose last path segment starts with `mermaid` to
-the local URL. Every other remote script stays untouched and stays blocked.
+helm-artifact:` above).
 
-A ` ```mermaid ` fence that fails to parse now leaves a visible ⚠ note under
-the kept source instead of looking like styled code.
+- **Markdown:** when the body has a ` ```mermaid ` fence, the document loads the
+  bundle and `MERMAID_RENDER_SCRIPT` renders each marker in turn under its own
+  id. It does not use `mermaid.run()`, which names diagrams
+  `mermaid-<Date.now()>` — two in the same millisecond share an id and one
+  loses its id-scoped styles. A fence that fails to parse leaves a visible ⚠
+  note under the kept source instead of looking like styled code.
+- **HTML:** the author brings their own mermaid `<script>`. Because AI-authored
+  HTML almost always pulls it from a CDN — which the zero-egress CSP refuses —
+  `buildArtifactDocument` rewrites any `http(s)` `<script src>` whose last path
+  segment starts with `mermaid` to the local URL. Every other remote script
+  stays untouched and stays blocked.
 
 ### Limitations
 
@@ -339,22 +361,25 @@ the kept source instead of looking like styled code.
 
 ## Selection & copy
 
-Artifact text is fully selectable. Ctrl+C or Ctrl+X with a text selection inside the `.ap-doc` container performs a **native browser copy** — the keyboard relay does not forward the event to the PTY as a SIGINT or escape code.
+Artifact text is fully selectable. The selection lives inside the frame, and
+key events in a frame never reach the app's keyboard router, so Ctrl+C / Ctrl+X
+there is a plain **native browser copy** — nothing is forwarded to the PTY.
 
-The carve-out is the `shouldAllowNativeCopy()` predicate (`renderer/paste-handler.ts`, line 282). It returns `true` when all three conditions hold:
+## Security
 
-1. `ctrlKey` is set.
-2. The key is `c` or `x`.
-3. The DOM selection is non-collapsed (`!sel.collapsed`) and its anchor lives inside an `.ap-doc` element (`sel.inArtifactDoc`).
+Artifact bodies are AI-authored (untrusted):
 
-If no text is selected, the predicate returns `false` and the existing PTY behaviour applies (Ctrl+C → SIGINT escape sequence). This mirrors the analogous carve-out in `TerminalView` for xterm selections.
-
-**Security:** artifact bodies are AI-authored (untrusted). The two kinds are
-contained by **different mechanisms** — see [HTML rendering](#html-rendering)
-for why. Markdown renders via `v-html` inside the *privileged* Electron window,
-so its defence is layered:
-- `renderArtifact()` compiles markdown with a synchronous `marked` instance, then runs **`DOMPurify.sanitize`** against a strict **document allowlist** — prose/lists/tables/code/links/images only. Forms, controls, inline `style` (no `position:fixed` overlay spoofing), `target`, and non-`http(s)`/`mailto` URLs are stripped. `<img src>` is rewritten by the `uponSanitizeAttribute` hook before DOMPurify evaluates it.
-- Link clicks inside the rendered doc are intercepted (`onDocClick`) and `http(s)` links open in the OS browser via `shell.openExternal`; they never navigate the app.
+- Both kinds render in the opaque-origin sandboxed frame described in
+  [Isolated rendering](#isolated-rendering): no app DOM, no preload bridge, no
+  network.
+- Markdown gets a second layer: `renderArtifact()` compiles it with a
+  synchronous `marked` instance, then runs **`DOMPurify.sanitize`** against a
+  strict **document allowlist** — prose/lists/tables/code/links/images only.
+  Scripts, forms, controls, inline `style`, `target`, and non-`http(s)`/`mailto`
+  URLs are stripped. `<img src>` is rewritten by the `uponSanitizeAttribute`
+  hook before DOMPurify evaluates it.
+- Link clicks are reported by the frame and gated by the parent (see
+  [Links](#links)); they never navigate the app.
 - `system:openExternalUrl` re-validates the scheme (http/https/mailto only).
 - An app-wide navigation policy (`src/electron/navigation-policy.ts`) is applied to every privileged window (main, snap-out, planner pop-out): `will-navigate` to non-`file:` targets is denied (web URLs go to `shell.openExternal`) and `setWindowOpenHandler` blocks all in-app window opens.
 
@@ -374,7 +399,7 @@ graph TB
     subgraph "Renderer"
         COMP["useArtifactViewer<br/>(module-singleton state)"]
         VIEW["ArtifactViewer.vue<br/>master/detail + versions"]
-        RENDER["renderArtifact()<br/>marked → DOMPurify"]
+        RENDER["build-artifact-document<br/>→ helm-artifact:// frame"]
         MAIN["MainWindowApp / SnapOutWindow<br/>dock or edge reveal · Ctrl+Shift+A"]
     end
 
@@ -404,9 +429,11 @@ graph TB
 | `src/mcp/tools/{definitions,dispatcher,validation}.ts` | 7 MCP tools, caller-session scoping, ownership check |
 | `src/mcp/helm-control-service.ts` | Service methods + `requireOwnedArtifact` guard |
 | `src/mcp/guides/session-info-guide.ts` | `artifact_viewer` advert in `session_info` |
-| `renderer/artifacts/render-artifact.ts` | marked + DOMPurify strict-allowlist sanitized render; `resolveImageSrc()` rewrites local paths to `helm-img://`; ```mermaid → `<pre class="mermaid">` marker |
+| `renderer/artifacts/render-artifact.ts` | marked + DOMPurify strict-allowlist sanitized markdown body; `resolveImageSrc()` rewrites local paths to `helm-img://`; ```mermaid → `<pre class="mermaid">` marker |
 | `src/electron/helm-img-protocol.ts` | `helm-img://` privileged protocol handler — serves local image bytes; `mimeForPath()` allowlist (png/jpeg/gif/webp/bmp/avif); SVG refused |
-| `renderer/paste-handler.ts` | `shouldAllowNativeCopy()` — Ctrl+C/X carve-out for `.ap-doc` text selections |
+| `renderer/artifacts/build-artifact-document.ts` | `buildArtifactDocument()` / `buildMarkdownDocument()` — the complete document served to the frame; link bridge, ready ping, mermaid renderer |
+| `renderer/artifacts/artifact-base-css.ts` | Stylesheet for markdown documents and unstyled HTML ones |
+| `src/electron/helm-artifact-protocol.ts` | `helm-artifact://` handler — serves staged documents under the artifact CSP, plus the local mermaid bundle |
 | `src/electron/navigation-policy.ts` | App-wide privileged-window navigation guard (deny remote nav / window opens) |
 | `renderer/composables/useArtifactViewer.ts` | Module-singleton reactive state + event subscription |
 | `renderer/components/panels/ArtifactViewer.vue` | Master/detail panel |

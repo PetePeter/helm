@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { buildArtifactDocument, READY_MESSAGE } from '../renderer/artifacts/build-artifact-document.js';
+import {
+  buildArtifactDocument,
+  buildMarkdownDocument,
+  MERMAID_RENDER_SCRIPT,
+  READY_MESSAGE,
+} from '../renderer/artifacts/build-artifact-document.js';
 import { ARTIFACT_BASE_CSS } from '../renderer/artifacts/artifact-base-css.js';
 
 /** A marker unique enough that a substring match proves the base CSS was injected. */
@@ -118,6 +123,56 @@ describe('buildArtifactDocument — document shape', () => {
   // and offers Open externally instead, so the ping must always be emitted.
   it('injects the ready ping the viewer waits for', () => {
     const out = buildArtifactDocument('<p>hello</p>');
+    expect(out).toContain(READY_MESSAGE);
+  });
+});
+
+describe('buildMarkdownDocument', () => {
+  const MERMAID_SCRIPT = 'src="helm-artifact://asset/mermaid.js"';
+
+  it('turns a mermaid fence into a marker and loads the local mermaid bundle', () => {
+    const out = buildMarkdownDocument('```mermaid\ngraph LR\n  A --> B\n```');
+    expect(out).toContain('<pre class="mermaid">');
+    expect(out).toContain('A --&gt; B');
+    expect(out).toContain(MERMAID_SCRIPT);
+    expect(out).toContain(MERMAID_RENDER_SCRIPT);
+  });
+
+  // The bundle is ~3.5MB; a document without a diagram must not pay for it.
+  it('does not load mermaid when the markdown has no diagram', () => {
+    const out = buildMarkdownDocument('# Title\n\n```js\nconst a = 1;\n```');
+    expect(out).not.toContain(MERMAID_SCRIPT);
+    expect(out).not.toContain(MERMAID_RENDER_SCRIPT);
+  });
+
+  // Markdown is prose: unlike an HTML artifact it never gets to run its own
+  // script, sandbox or not. The only scripts in the document are Helm's.
+  it('strips author scripts and inline handlers', () => {
+    const out = buildMarkdownDocument('<script>window.pwned=1</script>\n\n<p onclick="pwn()">hi</p>');
+    expect(out).not.toContain('pwned');
+    expect(out).not.toContain('onclick');
+    expect(out).toContain('hi');
+  });
+
+  it('rewrites a local image path to helm-img://', () => {
+    const out = buildMarkdownDocument('![shot](C:/x/a.png)');
+    expect(out).toContain('src="helm-img://');
+  });
+
+  // Markdown cannot style itself, so there is no "artifact decides" case.
+  it('always carries the base stylesheet', () => {
+    expect(buildMarkdownDocument('plain')).toContain(BASE_CSS_MARKER);
+  });
+
+  it('keeps single line breaks only when asked to', () => {
+    expect(buildMarkdownDocument('one\ntwo', true)).toContain('<br>');
+    expect(buildMarkdownDocument('one\ntwo')).not.toContain('<br>');
+  });
+
+  it('keeps attachment links and injects the bridge that reports them', () => {
+    const out = buildMarkdownDocument('[file](helm-attachment://art-1/att-1)');
+    expect(out).toContain('href="helm-attachment://art-1/att-1"');
+    expect(out).toContain('helm-artifact-open-url');
     expect(out).toContain(READY_MESSAGE);
   });
 });

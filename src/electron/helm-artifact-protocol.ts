@@ -1,6 +1,6 @@
 /**
- * helm-artifact:// Custom Protocol — serves one AI-authored HTML artifact
- * document to an isolated iframe.
+ * helm-artifact:// Custom Protocol — serves one AI-authored artifact document
+ * (HTML or markdown) to an isolated iframe.
  *
  * WHY A CUSTOM SCHEME RATHER THAN `<iframe srcdoc>`:
  * Documents with a *local scheme* (about:srcdoc, about:blank, blob:, data:)
@@ -16,8 +16,8 @@
  * "null" (electron#40663) — the opaque origin we want, for free.
  *
  * Containment therefore comes from origin isolation + the CSP below + the
- * iframe sandbox attribute, rather than from the DOMPurify tag allow-list that
- * still guards the markdown path (renderer/artifacts/render-artifact.ts).
+ * iframe sandbox attribute. Markdown bodies are additionally held to the
+ * DOMPurify tag allow-list (renderer/artifacts/render-artifact.ts).
  */
 
 import { randomUUID } from 'node:crypto';

@@ -89,7 +89,7 @@ vi.mock('../renderer/composables/useEscProtection.js', () => ({
   }),
 }));
 
-import { deliverBulkText, parseSubmitSuffix, readSelectionInfo } from '../renderer/paste-handler';
+import { deliverBulkText, parseSubmitSuffix } from '../renderer/paste-handler';
 import { createTerminalKeyHandlers } from '../renderer/keyboard/handlers/terminal-keys.js';
 import { installKeyRouter, registerKeyHandler, resetKeyHandlers } from '../renderer/keyboard/router.js';
 import { PANE_ARTIFACTS, PANE_TERMINAL } from '../renderer/dock-types.js';
@@ -119,7 +119,6 @@ describe('terminal keys', () => {
       writePty: (sessionId, data) => { void (window as any).gamepadCli.ptyWrite(sessionId, data); },
       deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
       readClipboardText: () => navigator.clipboard.readText(),
-      readSelection: readSelectionInfo,
       openPromptEditor: (sessionId) => { void mockShowEditorPopup(sessionId); },
       isEscProtectionArmed: () => false,
       openEscProtection: () => {},

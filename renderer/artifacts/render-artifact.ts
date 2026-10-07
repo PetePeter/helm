@@ -1,19 +1,16 @@
 /**
- * render-artifact — turn MARKDOWN artifact content into safe HTML for v-html.
+ * render-artifact — turn MARKDOWN artifact content into a sanitized HTML body.
  *
- * This is the markdown path only. HTML artifacts are served as their own
- * isolated document over helm-artifact:// (see build-artifact-document.ts and
- * src/electron/helm-artifact-protocol.ts) so their CSS, SVG and scripts survive
- * intact; containment there comes from an opaque origin + CSP rather than from
- * the tag allow-list below.
- *
- * Markdown output is bound with v-html inside the PRIVILEGED window, so it is
- * untrusted content in a trusted DOM and must still be sanitized:
+ * Both artifact kinds are served as their own isolated document over
+ * helm-artifact:// (see build-artifact-document.ts and
+ * src/electron/helm-artifact-protocol.ts), contained by an opaque origin + CSP.
+ * HTML artifacts rely on that alone, so their CSS, SVG and scripts survive
+ * intact. Markdown is prose and gets this second layer on top:
  *   markdown → marked (GFM) → DOMPurify.sanitize
  *
  * ```mermaid fenced code blocks are emitted as <pre class="mermaid"> carrying the
- * escaped diagram source; ArtifactViewer runs mermaid over those nodes after the
- * HTML is in the DOM (mermaid renders + sanitizes the SVG itself).
+ * escaped diagram source; the served document loads the local mermaid bundle
+ * and renders those nodes inside the frame.
  *
  * Image rendering:
  *   - Local absolute paths (Windows C:\... or POSIX /...) and file: URIs are
@@ -55,7 +52,7 @@ const md = new Marked({
   gfm: true,
   breaks: false,
   renderer: {
-    // ```mermaid → a marker node mermaid.run() later turns into SVG. All other
+    // ```mermaid → a marker node the served document turns into SVG. All other
     // code blocks fall through to marked's default rendering.
     code({ text, lang }) {
       if ((lang ?? '').trim().toLowerCase() === 'mermaid') {
@@ -135,14 +132,12 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 // Sanitizer config
 // ---------------------------------------------------------------------------
 
-// Artifacts are AI-authored and rendered via v-html inside the PRIVILEGED Electron
-// window, so blocking <script> is not enough: a plain <a>/<form> could navigate the
-// app to an attacker page (preload bridge still attached), and inline styles like
-// `position:fixed;inset:0` could overlay/spoof the real UI. We therefore restrict
-// output to a document allowlist — prose, lists, tables, code, links, images —
-// and forbid forms/controls, inline styles, and any target attribute.
-// Links keep their href but navigation is intercepted in ArtifactViewer and routed
-// through shell.openExternal; the URI allowlist blocks js:/data:/file: on <a>.
+// Markdown is AI-authored prose. The frame it is served in already keeps it away
+// from the app DOM and the preload bridge; this allowlist is the second layer,
+// holding the body to what prose needs — lists, tables, code, links, images —
+// with no scripts, forms/controls, inline styles or target attributes.
+// Links keep their href; the frame reports clicks to ArtifactViewer, which
+// decides what opens. The URI allowlist blocks js:/data:/file: on <a>.
 // For <img src>, the uponSanitizeAttribute hook above applies the resolveImageSrc
 // filter BEFORE DOMPurify sees the value, so helm-img: and safe data: pass through.
 const SANITIZE_OPTIONS = {

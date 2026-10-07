@@ -138,7 +138,7 @@ describe('ArtifactViewer — in-situ edit', () => {
     await flushPromises();
 
     expect(artifactUpdate).not.toHaveBeenCalled();
-    expect(w.find('.ap-doc').exists()).toBe(true);
+    expect(w.find('iframe.ap-frame').exists()).toBe(true);
   });
 
   it('disables Edit while an older version is on screen', async () => {

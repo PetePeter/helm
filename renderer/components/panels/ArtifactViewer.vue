@@ -3,8 +3,8 @@
  * ArtifactViewer.vue — right-docked master/detail artifact panel.
  *
  * Master: a collapsible index rail (search + sort + Today/Earlier groups,
- * unread dots, hover-delete). Detail: the selected artifact rendered to
- * sanitized HTML with a version bar (‹ › + dropdown + older-version banner).
+ * unread dots, hover-delete). Detail: the selected artifact rendered in an
+ * isolated frame with a version bar (‹ › + dropdown + older-version banner).
  * Footer: Edit / Open externally / Export… / Copy reference / Delete. Editing
  * is in-situ over the raw source and saves as a NEW version, so it is offered
  * on the latest version only.
@@ -18,12 +18,10 @@
  * useArtifactViewer composable is told which session is active so a snap-out
  * window can render its own instance without cross-talk.
  */
-import { computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useArtifactViewer } from '../../composables/useArtifactViewer.js';
 import { useToast } from '../../composables/useToast.js';
-import { renderArtifact } from '../../artifacts/render-artifact.js';
-import { renderMermaidNodes } from '../../artifacts/render-mermaid.js';
-import { buildArtifactDocument, OPEN_URL_MESSAGE, READY_MESSAGE } from '../../artifacts/build-artifact-document.js';
+import { buildArtifactDocument, buildMarkdownDocument, OPEN_URL_MESSAGE, READY_MESSAGE } from '../../artifacts/build-artifact-document.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { artifactsClient, systemClient } from '../../ipc/clients.js';
 import { clipboardFileInput } from '../../artifacts/clipboard-file.js';
@@ -80,24 +78,14 @@ const isViewingOlder = computed(() =>
   !!shownVersion.value && shownVersion.value.version !== latestVersionNumber.value,
 );
 
-/** HTML artifacts render as their own isolated document, not inline. */
-const isHtml = computed(() => selected.value?.kind === 'html');
+// ── Isolated document ───────────────────────────────────────────────────────
 
-// Markdown only: sanitized inline HTML for v-html. Empty for HTML artifacts,
-// which keeps the mermaid watcher below correct without a second condition.
-const renderedHtml = computed(() => {
-  const a = selected.value;
-  const v = shownVersion.value;
-  if (!a || !v || isHtml.value) return '';
-  return renderArtifact(a.kind, v.content, a.source === 'manual');
-});
-
-// ── HTML artifacts: isolated document ───────────────────────────────────────
-
-// Built in the renderer (DOMParser lives here), staged in main, then loaded by
-// URL. It must be a real scheme rather than srcdoc: a local-scheme document
-// inherits the embedder's CSP, and this window's `script-src 'self'` would
-// silently stop the artifact's own scripts from ever running.
+// Every artifact, markdown or HTML, renders as its own opaque-origin document —
+// AI-authored content never enters this window's DOM. Built in the renderer
+// (DOMParser lives here), staged in main, then loaded by URL. It must be a real
+// scheme rather than srcdoc: a local-scheme document inherits the embedder's
+// CSP, and this window's `script-src 'self'` would silently stop the document's
+// scripts (the artifact's own, or the mermaid renderer) from ever running.
 const frameSrc = ref('');
 const frameRef = ref<HTMLIFrameElement | null>(null);
 let frameRequest = 0;
@@ -126,11 +114,11 @@ function startReadyWatch(): void {
 watch(() => {
   const artifact = selected.value;
   const version = shownVersion.value;
-  if (!artifact || artifact.kind !== 'html' || !version) return null;
+  if (!artifact || !version) return null;
   // Refresh replaces artifact/version objects even when the selected document
   // is unchanged. Watch stable content identity so a background list refresh
   // does not reload an interactive frame or reset its scroll position.
-  return [artifact.id, version.version, version.content] as const;
+  return [artifact.id, version.version, version.content, artifact.kind, artifact.source] as const;
 }, async (documentIdentity) => {
   const request = ++frameRequest;
   if (!documentIdentity) {
@@ -139,7 +127,10 @@ watch(() => {
     frameSrc.value = '';
     return;
   }
-  const doc = buildArtifactDocument(documentIdentity[2]);
+  const [, , content, kind, source] = documentIdentity;
+  const doc = kind === 'html'
+    ? buildArtifactDocument(content)
+    : buildMarkdownDocument(content, source === 'manual');
   const nonce = await artifactsClient.artifactPrepareRender(doc);
   if (request !== frameRequest) return;
   frameSrc.value = `helm-artifact://doc/?k=${encodeURIComponent(nonce)}`;
@@ -148,8 +139,8 @@ watch(() => {
 
 /**
  * Links inside the frame are inert (sandbox blocks navigation, CSP blocks
- * loads), so the frame reports clicks here instead — same external-open
- * behaviour as the markdown path.
+ * loads), so the frame reports clicks here instead and this window decides
+ * what, if anything, a link opens.
  *
  * The frame has an opaque origin, so `event.origin` is the string "null" and is
  * useless as a gate; identity of the sending window is the real check.
@@ -162,29 +153,8 @@ function onFrameMessage(e: MessageEvent): void {
     frameFailed.value = false;
     return;
   }
-  if (data?.type !== OPEN_URL_MESSAGE) return;
-  const url = data.url ?? '';
-  if (/^https?:\/\//i.test(url)) void systemClient.systemOpenExternalUrl(url);
+  if (data?.type === OPEN_URL_MESSAGE) openArtifactLink(data.url ?? '');
 }
-
-// ── Mermaid diagrams ────────────────────────────────────────────────────────
-const docRef = ref<HTMLElement | null>(null);
-let mermaidReady = false;
-
-async function renderMermaid(): Promise<void> {
-  const root = docRef.value;
-  if (!root) return;
-  const nodes = Array.from(root.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])'));
-  if (nodes.length === 0) return;
-  const mermaid = (await import('mermaid')).default;
-  if (!mermaidReady) {
-    mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
-    mermaidReady = true;
-  }
-  await renderMermaidNodes(nodes, (id, source) => mermaid.render(id, source));
-}
-
-watch(renderedHtml, () => { void nextTick(renderMermaid); });
 
 function stepVersion(delta: number): void {
   const a = selected.value;
@@ -319,16 +289,11 @@ async function onCopyRef(): Promise<void> {
 }
 
 /**
- * Intercept clicks on links inside the rendered artifact. The content is
- * AI-authored (untrusted) and lives in the privileged window, so we never
- * let a link navigate the app itself.
+ * Act on a link the artifact frame reported. The content is AI-authored
+ * (untrusted): an attachment id or an external https? URL are the only two
+ * things a link may open — nothing ever navigates the app itself.
  */
-function onDocClick(e: MouseEvent): void {
-  const anchor = (e.target as HTMLElement | null)?.closest('a');
-  if (!anchor) return;
-  e.preventDefault();
-  const href = anchor.getAttribute('href') ?? '';
-
+function openArtifactLink(href: string): void {
   // Attachment links are app-internal ids, not URLs — open the stored file.
   const attachment = parseAttachmentHref(href);
   if (attachment) {
@@ -636,7 +601,6 @@ function onCancelEdit(): void {
 onMounted(() => {
   viewer.ensureSubscribed();
   void viewer.setActiveSession(props.sessionId);
-  void nextTick(renderMermaid);
   window.addEventListener('message', onFrameMessage);
 });
 
@@ -803,7 +767,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
             <button class="ap-restore" @click="viewer.jumpToLatest()">Jump to latest ›</button>
           </div>
 
-          <div class="ap-body" :class="{ 'ap-body--frame': isHtml && !isEditing, 'ap-body--edit': isEditing }">
+          <div class="ap-body" :class="{ 'ap-body--frame': !isEditing, 'ap-body--edit': isEditing }">
             <!-- In-situ edit: raw source of the shown version; Save appends a version. -->
             <textarea
               v-if="isEditing"
@@ -813,9 +777,9 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
               @keydown.escape="onCancelEdit"
             ></textarea>
 
-            <!-- HTML artifacts: opaque-origin document, sandboxed on top. Scripts
-                 run but cannot reach the app DOM, the preload bridge, or the network. -->
-            <template v-else-if="isHtml">
+            <!-- Opaque-origin document, sandboxed on top. Scripts run but cannot
+                 reach the app DOM, the preload bridge, or the network. -->
+            <template v-else>
               <iframe
                 ref="frameRef"
                 class="ap-frame"
@@ -834,8 +798,6 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
                 </div>
               </div>
             </template>
-
-            <div v-else class="ap-doc" ref="docRef" v-html="renderedHtml" @click="onDocClick"></div>
           </div>
 
           <!-- Attachments: a side store on the artifact; the body keeps its own links. -->
@@ -988,9 +950,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-restore { margin-left: auto; font-size: var(--font-size-xs); color: var(--accent); border: 1px solid var(--accent); border-radius: var(--radius-sm); padding: var(--spacing-xs) var(--spacing-sm); background: none; }
 
 .ap-body { flex: 1; overflow: auto; padding: var(--spacing-md); }
-/* HTML artifacts own their whole viewport and scroll inside the frame. */
-.ap-body--frame { overflow: hidden; padding: 0; }
-.ap-body--frame { position: relative; }
+/* The artifact document owns its whole viewport and scrolls inside the frame. */
+.ap-body--frame { overflow: hidden; padding: 0; position: relative; }
 /* in-situ editor fills the body, like the creation editor does */
 .ap-body--edit { overflow: hidden; padding: 0; display: flex; }
 .ap-frame { width: 100%; height: 100%; border: 0; display: block; background: var(--bg-primary); }
@@ -1025,26 +986,6 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-drop-icon { font-size: var(--font-size-2xl); }
 .ap-drop-label { font-size: var(--font-size-md); color: var(--accent); font-weight: 600; }
 .ap-drop-sub { font-size: var(--font-size-sm); color: var(--text-secondary); }
-
-/* rendered document */
-.ap-doc :deep(h1), .ap-doc :deep(h2) { font-size: var(--font-size-xl); margin: 0 0 var(--spacing-sm); border-bottom: 1px solid var(--border); padding-bottom: var(--spacing-xs); }
-.ap-doc :deep(h3) { font-size: var(--font-size-md); margin: var(--spacing-md) 0 var(--spacing-xs); color: var(--accent); }
-.ap-doc :deep(p) { font-size: var(--font-size-sm); line-height: 1.6; color: var(--text-primary); margin: var(--spacing-xs) 0; }
-.ap-doc :deep(ul), .ap-doc :deep(ol) { margin: var(--spacing-xs) 0; padding-left: var(--spacing-md); }
-.ap-doc :deep(li) { font-size: var(--font-size-sm); line-height: 1.55; color: var(--text-primary); margin: var(--spacing-xs) 0; }
-.ap-doc :deep(code) { background: var(--bg-tertiary); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); font-family: Consolas, monospace; font-size: var(--font-size-sm); color: var(--accent); }
-.ap-doc :deep(pre) { background: var(--bg-tertiary); padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-md); overflow: auto; }
-.ap-doc :deep(pre code) { background: none; padding: 0; }
-.ap-doc :deep(pre.mermaid) { background: transparent; padding: var(--spacing-sm) 0; text-align: center; overflow-x: auto; }
-.ap-doc :deep(pre.mermaid svg) { max-width: 100%; height: auto; }
-.ap-doc :deep(pre.mermaid-failed) { border: 1px dashed var(--danger-border); border-radius: var(--radius-sm); padding: var(--spacing-sm); text-align: left; }
-.ap-doc :deep(.mermaid-fail-note) { font-size: var(--font-size-xs); color: var(--danger); margin-top: var(--spacing-xs); }
-.ap-doc :deep(table) { border-collapse: collapse; width: 100%; margin: var(--spacing-sm) 0; font-size: var(--font-size-sm); }
-.ap-doc :deep(th), .ap-doc :deep(td) { border: 1px solid var(--border); padding: var(--spacing-xs) var(--spacing-sm); text-align: left; }
-.ap-doc :deep(th) { background: var(--bg-tertiary); color: var(--text-secondary); }
-.ap-doc :deep(a) { color: var(--info); }
-.ap-doc :deep(a:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ap-doc :deep(img) { max-width: 100%; border-radius: var(--radius-md); border: 1px solid var(--border); }
 
 /* attachments on the selected artifact */
 .ap-att { border-top: 1px solid var(--border); background: var(--bg-secondary); padding: var(--spacing-sm) var(--spacing-md); display: flex; flex-direction: column; gap: var(--spacing-xs); }
