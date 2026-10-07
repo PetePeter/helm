@@ -57,6 +57,18 @@ describe('artifact-persistence', () => {
     expect(loaded).toEqual(data);
   });
 
+  // An unsaved draft is the user's work: it has to outlive a restart.
+  it('keeps an unsaved draft across save -> load', () => {
+    const data = { s1: [makeArtifact({ draft: { content: 'half-written', updatedAt: 200 } })] };
+    saveArtifacts(data);
+    expect(loadArtifacts()).toEqual(data);
+  });
+
+  it('drops a malformed draft but keeps the artifact', () => {
+    saveArtifacts({ s1: [makeArtifact({ draft: { content: 42 } as unknown as Artifact['draft'] })] });
+    expect(loadArtifacts()).toEqual({ s1: [makeArtifact()] });
+  });
+
   it('returns {} when the file does not exist', () => {
     expect(loadArtifacts()).toEqual({});
   });

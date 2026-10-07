@@ -273,7 +273,7 @@ function onConfirmDelete(): void {
 watch(selectedId, () => {
   confirmDelete.value = false;
   openError.value = null;
-  isEditing.value = false;
+  leaveEditKeepingDraft();
   isRenaming.value = false;
 });
 
@@ -560,22 +560,70 @@ const isEditing = ref(false);
 const editContent = ref('');
 const canEdit = computed(() => Boolean(selected.value) && !isViewingOlder.value);
 
+// While the user types, the text is autosaved into the artifact's DRAFT — never
+// a version — so a pause, a switch to another artifact or a restart loses
+// nothing. Save commits it as one new version; Cancel throws it away.
+const AUTOSAVE_DEBOUNCE_MS = 500;
+const draftStatus = ref<'clean' | 'unsaved' | 'saving' | 'saved'>('clean');
+const draftStatusText = computed(() =>
+  ({ clean: '', unsaved: '● Unsaved', saving: '◑ Saving…', saved: '✓ Draft saved' })[draftStatus.value]);
+/** The artifact the open editor belongs to — selection can move on before it closes. */
+let editingId: string | null = null;
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cancelAutosave(): void {
+  if (autosaveTimer !== null) clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+}
+
+function closeEditor(): void {
+  cancelAutosave();
+  editingId = null;
+  isEditing.value = false;
+  editContent.value = '';
+  draftStatus.value = 'clean';
+}
+
 function onStartEdit(): void {
+  const artifact = selected.value;
   const version = shownVersion.value;
-  if (!version || !canEdit.value) return;
-  editContent.value = version.content;
+  if (!artifact || !version || !canEdit.value) return;
+  editContent.value = artifact.draft?.content ?? version.content;
+  editingId = artifact.id;
+  draftStatus.value = 'clean';
   isEditing.value = true;
 }
 
+function onEditInput(): void {
+  draftStatus.value = 'unsaved';
+  cancelAutosave();
+  autosaveTimer = setTimeout(() => { void autosaveDraft(); }, AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function autosaveDraft(): Promise<void> {
+  cancelAutosave();
+  if (!editingId || draftStatus.value !== 'unsaved') return;
+  draftStatus.value = 'saving';
+  const stored = await viewer.saveDraft(editingId, editContent.value);
+  // Typing during the save already moved the status on and scheduled the next one.
+  if (draftStatus.value === 'saving') draftStatus.value = stored ? 'saved' : 'unsaved';
+}
+
+/** Leave edit mode without the user having chosen Save or Cancel. */
+function leaveEditKeepingDraft(): void {
+  if (editingId && draftStatus.value === 'unsaved') void viewer.saveDraft(editingId, editContent.value);
+  closeEditor();
+}
+
 async function onSaveEdit(): Promise<void> {
-  const id = selectedId.value;
+  const id = editingId;
   if (!id || !editContent.value.trim()) return;
+  cancelAutosave();
   if (!await viewer.updateArtifact(id, editContent.value)) {
     addToast({ message: 'Save failed', type: 'error' });
     return;
   }
-  isEditing.value = false;
-  editContent.value = '';
+  closeEditor();
   addToast({ message: 'Saved as a new version', type: 'success' });
 }
 
@@ -592,8 +640,9 @@ async function onSetArtifactIntent(event: Event): Promise<void> {
 }
 
 function onCancelEdit(): void {
-  isEditing.value = false;
-  editContent.value = '';
+  const id = editingId;
+  closeEditor();
+  if (id) void viewer.discardDraft(id);
 }
 
 // ── Session binding / lifecycle ────────────────────────────────────────────
@@ -607,6 +656,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('message', onFrameMessage);
   stopReadyWatch();
+  leaveEditKeepingDraft();
 });
 
 watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
@@ -683,6 +733,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
                   <span class="ap-dot" aria-hidden="true"></span>
                   <span class="ap-it-title">{{ row.artifact!.title }}</span>
                   <span v-if="row.artifact!.intent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
+                  <span v-if="row.artifact!.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft">Draft</span>
                 </template>
                 <template #meta>
                   <span class="ap-it-meta">
@@ -739,6 +790,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
               <span class="ap-d-name ap-d-name--renameable" title="Double-click to rename" @dblclick="onStartRename">{{ selected.title }}</span>
               <button class="ap-v-step ap-rename-btn" title="Rename" @click="onStartRename">✎</button>
               <span v-if="selectedIntent === 'manifesto'" class="ap-intent-badge">Manifesto</span>
+              <span v-if="selected.draft" class="ap-intent-badge ap-draft-badge" title="Unsaved draft — Resume draft to continue">Draft</span>
               <label class="ap-selected-intent-label" title="Manifesto artifacts are added to context after session resets">
                 <span>Intent</span>
                 <select class="ap-selected-intent" :value="selectedIntent" :disabled="settingIntent" aria-label="Artifact intent" @change="onSetArtifactIntent">
@@ -774,6 +826,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
               v-model="editContent"
               class="ap-create-body"
               aria-label="Artifact content"
+              @input="onEditInput"
               @keydown.escape="onCancelEdit"
             ></textarea>
 
@@ -830,9 +883,10 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 
         <!-- Footer -->
         <div v-if="isEditing" class="ap-foot">
-          <span class="ap-foot-note">Saving adds a new version — earlier ones are kept.</span>
+          <span class="ap-foot-note">Autosaved as a draft — Save adds a new version.</span>
+          <span class="ap-foot-note ap-draft-status" aria-live="polite">{{ draftStatusText }}</span>
           <span class="ap-grow"></span>
-          <button class="ap-btn" @click="onCancelEdit">Cancel</button>
+          <button class="ap-btn" title="Discard this draft" @click="onCancelEdit">Cancel</button>
           <button class="ap-btn ap-btn--primary" :disabled="!editContent.trim()" @click="onSaveEdit">💾 Save</button>
         </div>
         <div v-else-if="!isCreatingText" class="ap-foot">
@@ -841,7 +895,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
             :title="canEdit ? 'Edit content — saves as a new version' : 'Jump to the latest version to edit'"
             :disabled="!canEdit"
             @click="onStartEdit"
-          >✎ Edit</button>
+          >✎ {{ selected?.draft ? 'Resume draft' : 'Edit' }}</button>
           <button class="ap-btn" title="Open this version in your default app" :disabled="!selected" @click="onOpenExternal">⧉ Open externally</button>
           <button class="ap-btn" title="Save to a location you pick" :disabled="!selected" @click="onExport">⭳ Export…</button>
           <button class="ap-btn" title="Copy a reference an AI can resolve" :disabled="!selected" @click="onCopyRef">📋 Copy reference</button>
@@ -929,6 +983,8 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-item--unread .ap-dot { background: var(--accent); }
 .ap-it-title { color: var(--text-primary); }
 .ap-intent-badge { display: inline-flex; align-items: center; border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border)); border-radius: 999px; padding: 1px var(--spacing-xs); color: var(--accent); font-size: var(--font-size-xs); line-height: 1.3; white-space: nowrap; }
+/* An unsaved draft is the user's own pending work, not an AI-set intent. */
+.ap-draft-badge { border-color: color-mix(in srgb, var(--info) 55%, var(--border)); color: var(--info); }
 .ap-it-meta { display: inline-flex; gap: var(--spacing-sm); align-items: center; margin-top: 0; }
 .ap-vcount { color: var(--text-dim); }
 .ap-src { color: var(--text-dim); font-style: italic; }
@@ -1011,6 +1067,7 @@ watch(() => props.sessionId, (id) => { void viewer.setActiveSession(id); });
 .ap-foot-confirm { font-size: var(--font-size-sm); color: var(--text-primary); }
 .ap-foot-error { font-size: var(--font-size-sm); color: var(--danger); }
 .ap-foot-note { font-size: var(--font-size-sm); color: var(--text-dim); }
+.ap-draft-status { color: var(--text-secondary); }
 .ap-rename-btn { font-size: var(--font-size-sm); }
 .ap-grow { flex: 1; }
 </style>

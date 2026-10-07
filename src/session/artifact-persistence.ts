@@ -27,12 +27,21 @@ function isArtifact(value: unknown): value is Artifact {
     && (value.intent === undefined || typeof value.intent === 'string');
 }
 
+/** A damaged draft costs the user that draft, never the artifact it sits on. */
+function withValidDraft(artifact: Artifact): Artifact {
+  const draft: unknown = artifact.draft;
+  if (draft === undefined) return artifact;
+  if (isRecord(draft) && isAnyString(draft.content) && isNumber(draft.updatedAt)) return artifact;
+  const { draft: _dropped, ...rest } = artifact;
+  return rest;
+}
+
 function sanitizeArtifacts(value: unknown): Record<string, Artifact[]> {
   if (!isRecord(value)) return {};
   const result: Record<string, Artifact[]> = {};
   for (const [sessionId, artifacts] of Object.entries(value)) {
     if (!Array.isArray(artifacts)) continue;
-    const valid = artifacts.filter(isArtifact).map(artifact => {
+    const valid = artifacts.filter(isArtifact).map(withValidDraft).map(artifact => {
       if (artifact.intent !== undefined && artifact.intent !== 'normal' && artifact.intent !== 'manifesto') {
         return { ...artifact, intent: 'normal' as const };
       }

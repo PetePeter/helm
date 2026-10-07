@@ -12,6 +12,83 @@ function makeClock(start = 1000, step = 10): () => number {
   };
 }
 
+describe('ArtifactManager — drafts', () => {
+  let manager: ArtifactManager;
+  let persisted: Record<string, Artifact[]> | null;
+  let changed: Array<{ sessionId: string; ids: string[] }>;
+  let revealed: string[];
+
+  beforeEach(() => {
+    persisted = null;
+    changed = [];
+    revealed = [];
+    manager = new ArtifactManager((all) => { persisted = all; }, makeClock());
+    manager.on('artifact:changed', (sessionId: string, ids: string[]) => changed.push({ sessionId, ids }));
+    manager.on('artifact:reveal', (_sessionId: string, id: string) => revealed.push(id));
+  });
+
+  // A draft is the user typing, not content anyone was told about: it must not
+  // pop the artifact forward, reorder the list, or arm the phone's "artifact
+  // changed" notice (which keys off the changed ids).
+  it('stores a draft as a quiet change', () => {
+    const art = manager.create('s1', 'Report', 'markdown', 'v1');
+    const updatedAt = art.updatedAt;
+    changed = [];
+    revealed = [];
+
+    expect(manager.setDraft(art.id, 'typing')).toBe(true);
+
+    expect(manager.get(art.id)!.draft?.content).toBe('typing');
+    expect(manager.get(art.id)!.versions).toHaveLength(1);
+    expect(manager.get(art.id)!.updatedAt).toBe(updatedAt);
+    expect(revealed).toEqual([]);
+    expect(changed).toEqual([{ sessionId: 's1', ids: [] }]);
+    expect(persisted!.s1[0].draft?.content).toBe('typing');
+  });
+
+  it('commits a draft as exactly one version and clears it', () => {
+    const art = manager.create('s1', 'Report', 'markdown', 'v1');
+    manager.setDraft(art.id, 'typing');
+    revealed = [];
+
+    const committed = manager.commitDraft(art.id, 'final');
+
+    expect(committed?.versions.map(v => v.content)).toEqual(['v1', 'final']);
+    expect(committed?.draft).toBeUndefined();
+    expect(revealed).toEqual([art.id]);
+    expect(persisted!.s1[0].draft).toBeUndefined();
+  });
+
+  // The agent appending a version must not eat what the user is still typing.
+  it('keeps the draft when a version is appended by someone else', () => {
+    const art = manager.create('s1', 'Report', 'markdown', 'v1');
+    manager.setDraft(art.id, 'typing');
+
+    manager.update(art.id, 'agent v2');
+
+    expect(manager.get(art.id)!.draft?.content).toBe('typing');
+  });
+
+  it('discards a draft without touching versions, and is a no-op without one', () => {
+    const art = manager.create('s1', 'Report', 'markdown', 'v1');
+    manager.setDraft(art.id, 'typing');
+
+    expect(manager.discardDraft(art.id)).toBe(true);
+    expect(manager.get(art.id)!.draft).toBeUndefined();
+    expect(manager.get(art.id)!.versions).toHaveLength(1);
+
+    changed = [];
+    expect(manager.discardDraft(art.id)).toBe(true);
+    expect(changed).toEqual([]);
+  });
+
+  it('reports an unknown artifact', () => {
+    expect(manager.setDraft('nope', 'x')).toBe(false);
+    expect(manager.discardDraft('nope')).toBe(false);
+    expect(manager.commitDraft('nope', 'x')).toBeNull();
+  });
+});
+
 describe('ArtifactManager', () => {
   let persisted: Record<string, Artifact[]> | null;
   let persistCalls: number;

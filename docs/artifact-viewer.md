@@ -130,6 +130,34 @@ button is disabled ("Jump to the latest version to edit"). Blank content is
 refused in the main process rather than stored, so a stray Save can never blank
 an artifact. Markdown and HTML both edit as source.
 
+**Draft autosave.** While the user types, the text is autosaved 500 ms after
+they pause into the artifact's **draft** (`artifact:setDraft`) — the editor
+stays open and the footer shows *Unsaved / Saving… / Draft saved*. A draft is
+not a version:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Viewing
+    Viewing --> Editing: Edit / Resume draft
+    Editing --> Editing: typing → autosave into draft
+    Editing --> Viewing: Save → commit ONE new version, draft spent
+    Editing --> Viewing: Cancel → draft discarded
+    Editing --> Viewing: switch artifact / close → draft kept
+```
+
+- **Save** (`artifact:update` → `ArtifactManager.commitDraft`) appends one
+  version and clears the draft. **Cancel** (`artifact:discardDraft`) throws the
+  draft away.
+- Leaving any other way — selecting another artifact, closing the panel,
+  restarting Helm — keeps the draft (it is persisted on the artifact). The
+  artifact shows a **Draft** badge and the button reads **Resume draft**.
+- A draft is the user's typing, not content anyone was told about, so saving
+  one is a *quiet* change: no reveal, `updatedAt` untouched, and
+  `artifact:changed` carries no artifact ids, which keeps the phone's
+  artifact notice unarmed. MCP and mobile surfaces only expose versions.
+- A version appended by someone else (`ArtifactManager.update`, the AI's path)
+  leaves the draft alone; the user's next Save lands on top of it.
+
 **Open externally** writes the version *currently on screen* to a read-only temp
 file under `<appData>/Helm/tmp` (`helm-artifact-<sessionId>--<title>-<stamp>.md|.html`)
 and hands it to the OS default app via `shell.openPath`. It is `chmod 0o444` because

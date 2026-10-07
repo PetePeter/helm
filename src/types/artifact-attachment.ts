@@ -12,8 +12,8 @@
  *
  * It is an app-internal identifier, never a filesystem path and never
  * navigable: main writes it into the artifact markdown, the renderer's
- * sanitizer allows it on <a href> only, and ArtifactViewer intercepts the
- * click and routes it to artifact:openAttachment. Absolute paths cannot be
+ * sanitizer allows it on <a href> only, and ArtifactViewer receives the click
+ * from the artifact frame and routes it to artifact:openAttachment. Absolute paths cannot be
  * used here — the sanitizer strips them, which is why the original link was
  * dead on click.
  */

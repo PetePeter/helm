@@ -1326,6 +1326,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   artifactUpdate: (artifactId: string, content: string): Promise<Artifact | null> =>
     ipcRenderer.invoke('artifact:update', artifactId, content),
 
+  /** Autosave the in-progress edit of an artifact (not a version) */
+  artifactSetDraft: (artifactId: string, content: string): Promise<boolean> =>
+    ipcRenderer.invoke('artifact:setDraft', artifactId, content),
+
+  /** Discard the in-progress edit of an artifact */
+  artifactDiscardDraft: (artifactId: string): Promise<boolean> =>
+    ipcRenderer.invoke('artifact:discardDraft', artifactId),
+
   /** Change an artifact's context intent without adding a content version. */
   artifactSetIntent: (artifactId: string, intent: ArtifactIntent): Promise<boolean> =>
     ipcRenderer.invoke('artifact:setIntent', artifactId, intent),

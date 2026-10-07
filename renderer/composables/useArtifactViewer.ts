@@ -245,6 +245,22 @@ async function updateArtifact(id: string, content: string): Promise<boolean> {
   } catch { return false; }
 }
 
+/** Autosave the in-progress edit. Returns true once it is stored. */
+async function saveDraft(id: string, content: string): Promise<boolean> {
+  try {
+    const stored = await artifactsClient.artifactSetDraft(id, content);
+    if (stored) void refresh();
+    return stored;
+  } catch { return false; }
+}
+
+/** Throw the in-progress edit away. */
+async function discardDraft(id: string): Promise<void> {
+  try {
+    if (await artifactsClient.artifactDiscardDraft(id)) void refresh();
+  } catch { /* nothing to undo: the draft simply stays for the next edit */ }
+}
+
 /** Change metadata without creating a content version. */
 async function setArtifactIntent(id: string, intent: ArtifactIntent): Promise<boolean> {
   try {
@@ -374,6 +390,8 @@ export function useArtifactViewer() {
     attachFile,
     renameArtifact,
     updateArtifact,
+    saveDraft,
+    discardDraft,
     setArtifactIntent,
     openAttachment,
     // attachments on the selected artifact

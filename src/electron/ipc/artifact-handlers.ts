@@ -242,13 +242,25 @@ export function setupArtifactHandlers(
   });
 
   /**
-   * Save an edited body as a NEW version (history is never rewritten). Blank
-   * content is refused rather than stored — an empty save is always a mistake,
-   * and it would otherwise leave the artifact showing nothing.
+   * Save the user's edit as a NEW version (history is never rewritten) and
+   * spend the draft it was autosaved into. Blank content is refused rather than
+   * stored — an empty save is always a mistake, and it would otherwise leave
+   * the artifact showing nothing.
    */
   ipcMain.handle('artifact:update', (_event, artifactId: string, content: string) => {
     if (typeof content !== 'string' || content.trim() === '') return null;
-    return artifactManager.update(artifactId, content);
+    return artifactManager.commitDraft(artifactId, content);
+  });
+
+  /** Autosave the in-progress edit. Never a version — see ArtifactManager.setDraft. */
+  ipcMain.handle('artifact:setDraft', (_event, artifactId: string, content: string) => {
+    if (typeof content !== 'string') return false;
+    return artifactManager.setDraft(artifactId, content);
+  });
+
+  /** Throw the in-progress edit away. */
+  ipcMain.handle('artifact:discardDraft', (_event, artifactId: string) => {
+    return artifactManager.discardDraft(artifactId);
   });
 
   /** Change context intent without adding a content version. */

@@ -270,6 +270,8 @@ export const PRELOAD_API_DOMAINS = {
     'artifactPickAndReadFile',
     'artifactRename',
     'artifactUpdate',
+    'artifactSetDraft',
+    'artifactDiscardDraft',
     'artifactSetIntent',
     'artifactOpenAttachment',
     'artifactAttachmentList',

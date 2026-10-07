@@ -23,6 +23,17 @@ export interface ArtifactVersion {
   createdAt: number;
 }
 
+/**
+ * The user's in-progress edit of an artifact: autosaved while they type and
+ * turned into the next version when they save. It is not a version — nothing
+ * but the desktop editor reads it.
+ */
+export interface ArtifactDraft {
+  content: string;
+  /** Epoch ms of the last autosave. */
+  updatedAt: number;
+}
+
 /** A versioned artifact owned by a session. */
 export interface Artifact {
   /** Unique artifact identifier (UUID v4). */
@@ -43,4 +54,6 @@ export interface Artifact {
   source?: ArtifactSource;
   /** Omitted by legacy persisted artifacts, which are treated as normal. */
   intent?: ArtifactIntent;
+  /** Present only while the user has an uncommitted edit. */
+  draft?: ArtifactDraft;
 }

@@ -1,8 +1,8 @@
 /**
  * ArtifactViewer — in-situ editing and the blank-frame escape hatch.
  *
- * Editing saves a NEW version through artifact:update and is offered on the
- * latest version only. HTML artifacts that never report themselves ready get a
+ * Editing autosaves into a draft while the user types, saves a NEW version
+ * through artifact:update, and is offered on the latest version only. HTML artifacts that never report themselves ready get a
  * prominent Open-externally card where the content should have been.
  *
  * @vitest-environment jsdom
@@ -13,6 +13,8 @@ import type { Artifact } from '../../../src/types/artifact.js';
 
 const artifactList = vi.fn();
 const artifactUpdate = vi.fn();
+const artifactSetDraft = vi.fn();
+const artifactDiscardDraft = vi.fn();
 const artifactSetIntent = vi.fn();
 const artifactRename = vi.fn();
 const artifactOpenExternal = vi.fn();
@@ -22,6 +24,8 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   artifactsClient: {
     artifactList: (...a: unknown[]) => artifactList(...a),
     artifactUpdate: (...a: unknown[]) => artifactUpdate(...a),
+    artifactSetDraft: (...a: unknown[]) => artifactSetDraft(...a),
+    artifactDiscardDraft: (...a: unknown[]) => artifactDiscardDraft(...a),
     artifactSetIntent: (...a: unknown[]) => artifactSetIntent(...a),
     artifactRename: (...a: unknown[]) => artifactRename(...a),
     artifactOpenExternal: (...a: unknown[]) => artifactOpenExternal(...a),
@@ -92,6 +96,8 @@ beforeEach(() => {
   artifactUpdate.mockImplementation(async (_id: string, content: string) =>
     makeArtifact({ versions: [{ version: 3, content, createdAt: Date.now() }] }));
   artifactSetIntent.mockResolvedValue(true);
+  artifactSetDraft.mockResolvedValue(true);
+  artifactDiscardDraft.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -138,7 +144,73 @@ describe('ArtifactViewer — in-situ edit', () => {
     await flushPromises();
 
     expect(artifactUpdate).not.toHaveBeenCalled();
+    expect(artifactDiscardDraft).toHaveBeenCalledWith('a1');
     expect(w.find('iframe.ap-frame').exists()).toBe(true);
+  });
+
+  describe('draft autosave', () => {
+    const AUTOSAVE_MS = 500;
+    const editor = (w: ReturnType<typeof mount>) => w.find('textarea.ap-create-body');
+
+    it('autosaves into the draft once typing pauses, and stays in edit mode', async () => {
+      const { w } = await mountWith([makeArtifact()]);
+      await footButton(w, 'Edit').trigger('click');
+      vi.useFakeTimers();
+
+      await editor(w).setValue('# half');
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS - 1);
+      expect(artifactSetDraft).not.toHaveBeenCalled();
+
+      await editor(w).setValue('# half written');
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+
+      // One save, of the text as it stood when the typing stopped.
+      expect(artifactSetDraft).toHaveBeenCalledTimes(1);
+      expect(artifactSetDraft).toHaveBeenCalledWith('a1', '# half written');
+      expect(artifactUpdate).not.toHaveBeenCalled();
+      expect(editor(w).exists()).toBe(true);
+      expect(w.find('.ap-foot').text()).toContain('Draft saved');
+    });
+
+    // Save commits what is on screen; a stale autosave landing afterwards would
+    // resurrect the draft the commit just spent.
+    it('Save commits the text on screen and cancels the pending autosave', async () => {
+      const { w } = await mountWith([makeArtifact()]);
+      await footButton(w, 'Edit').trigger('click');
+      vi.useFakeTimers();
+
+      await editor(w).setValue('# final');
+      await footButton(w, 'Save').trigger('click');
+      await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
+
+      expect(artifactUpdate).toHaveBeenCalledWith('a1', '# final');
+      expect(artifactSetDraft).not.toHaveBeenCalled();
+    });
+
+    it('resumes an unsaved draft instead of the committed version', async () => {
+      const { w } = await mountWith([makeArtifact({ draft: { content: '# left unfinished', updatedAt: Date.now() } })]);
+
+      expect(w.find('.ap-draft-badge').exists()).toBe(true);
+      await footButton(w, 'Resume draft').trigger('click');
+
+      expect((editor(w).element as HTMLTextAreaElement).value).toBe('# left unfinished');
+    });
+
+    // Walking away is not Cancel: what was typed must reach the draft even if
+    // the pause that triggers an autosave never came.
+    it('keeps unsaved typing as a draft when another artifact is selected', async () => {
+      const other = makeArtifact({ id: 'b1', title: 'Other', updatedAt: Date.now() - 5000 });
+      const { w, viewer } = await mountWith([makeArtifact(), other]);
+      await footButton(w, 'Edit').trigger('click');
+      await editor(w).setValue('# mid-thought');
+
+      viewer.select('b1');
+      await flushPromises();
+
+      expect(artifactSetDraft).toHaveBeenCalledWith('a1', '# mid-thought');
+      expect(artifactDiscardDraft).not.toHaveBeenCalled();
+      expect(editor(w).exists()).toBe(false);
+    });
   });
 
   it('disables Edit while an older version is on screen', async () => {

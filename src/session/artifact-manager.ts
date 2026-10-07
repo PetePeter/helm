@@ -76,17 +76,55 @@ export class ArtifactManager extends EventEmitter {
    * unknown. Emits 'artifact:reveal' so the UI brings it forward.
    */
   update(artifactId: string, content: string, intent?: ArtifactIntent): Artifact | null {
-    for (const [sessionId, artifacts] of this.artifacts) {
-      const artifact = artifacts.find(a => a.id === artifactId);
-      if (artifact) {
-        this.appendVersion(artifact, content);
-        if (intent !== undefined) artifact.intent = intent;
-        this.markChanged(sessionId, [artifact.id]);
-        this.emitReveal(sessionId, artifact.id);
-        return artifact;
-      }
+    const found = this.find(artifactId);
+    if (!found) return null;
+    const { sessionId, artifact } = found;
+    this.appendVersion(artifact, content);
+    if (intent !== undefined) artifact.intent = intent;
+    this.markChanged(sessionId, [artifact.id]);
+    this.emitReveal(sessionId, artifact.id);
+    return artifact;
+  }
+
+  /**
+   * Autosave the user's in-progress edit. A draft is not content anyone was
+   * told about, so this is a quiet change: no version, no reveal, `updatedAt`
+   * untouched, and 'artifact:changed' carries NO artifact ids — listeners that
+   * key off the ids (the phone's "artifact changed" notice) stay unarmed while
+   * the renderer still refreshes.
+   */
+  setDraft(artifactId: string, content: string): boolean {
+    const found = this.find(artifactId);
+    if (!found) return false;
+    found.artifact.draft = { content, updatedAt: this.now() };
+    this.markChanged(found.sessionId, []);
+    return true;
+  }
+
+  /** Throw the in-progress edit away. True when the artifact exists. */
+  discardDraft(artifactId: string): boolean {
+    const found = this.find(artifactId);
+    if (!found) return false;
+    if (found.artifact.draft) {
+      delete found.artifact.draft;
+      this.markChanged(found.sessionId, []);
     }
-    return null;
+    return true;
+  }
+
+  /**
+   * The user saving their edit: append `content` as the next version and spend
+   * the draft it came from. Unlike `update()` — which other writers use and
+   * which must leave a draft the user is still typing alone.
+   */
+  commitDraft(artifactId: string, content: string): Artifact | null {
+    const found = this.find(artifactId);
+    if (!found) return null;
+    this.appendVersion(found.artifact, content);
+    delete found.artifact.draft;
+    this.markChanged(found.sessionId, [artifactId]);
+    this.emitReveal(found.sessionId, artifactId);
+    return found.artifact;
   }
 
   /** Change metadata without creating a new content version. */
@@ -240,6 +278,14 @@ export class ArtifactManager extends EventEmitter {
       }
     }
     logger.info(`[ArtifactManager] Imported artifacts for ${Object.keys(data).length} session(s)`);
+  }
+
+  private find(artifactId: string): { sessionId: string; artifact: Artifact } | null {
+    for (const [sessionId, artifacts] of this.artifacts) {
+      const artifact = artifacts.find(a => a.id === artifactId);
+      if (artifact) return { sessionId, artifact };
+    }
+    return null;
   }
 
   /** Append the next version and advance updatedAt. Mutates the artifact in place. */
