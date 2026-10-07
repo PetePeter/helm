@@ -879,7 +879,8 @@ export const MCP_TOOLS: McpTool[] = [
       'Text is always submitted atomically (Enter is appended automatically). ' +
       'After every inter-LLM send, call session_read_terminal on the recipient and verify the terminal tail shows the first words of the sent text, a new prompt, or a response starting; warn the user if no receipt evidence is visible. ' +
       'Optional expectsResponse marks HELM inter-LLM envelopes that expect a reply. ' +
-      'RECEIVING RESPONSES: When the target session replies, Helm pastes a [HELM_MSG] envelope directly into the sender session\'s chatbox as a new user message — there is no polling or callback; the reply arrives as an inbound chat turn in your own session.',
+      'RECEIVING RESPONSES: When the target session replies, Helm pastes a [HELM_MSG] envelope directly into the sender session\'s chatbox as a new user message — there is no polling or callback; the reply arrives as an inbound chat turn in your own session. ' +
+      'COMFYUI: sent to a ComfyUI session (comfyUiTool in session_get), text is the generation prompt, or /cancel. Pick comfyProfileId from that session\'s comfyUiProfiles and comfyImageSizeId from its comfyUiImageSizes. When the job ends Helm messages you the absolute path of each generated file, or the failure — always, whatever expectsResponse says.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -889,7 +890,7 @@ export const MCP_TOOLS: McpTool[] = [
         },
         text: { type: 'string' },
         expectsResponse: { type: 'boolean', default: false },
-        comfyProfileId: { type: 'string', description: 'Optional configured ComfyUI Image or Video profile id.' },
+        comfyProfileId: { type: 'string', description: 'Optional configured ComfyUI Image or Video profile id; omit for the session\'s first profile.' },
         comfyImageSizeId: { type: 'string', description: 'Optional ComfyUI Image size option id from the session summary.' },
         task: { type: 'string', description: 'OPERATOR ONLY, when the hand-off needs following up: a short title for a new follow-up task, or the P-id of your open task for this work. Helm records the builder and prompts a check when it finishes (a slow repeating timer is the safety net); the result echoes taskId. Omit for a one-off note.' },
       },

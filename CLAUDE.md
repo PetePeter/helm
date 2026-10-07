@@ -145,6 +145,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/keyboard-routing.md](docs/keyboard-routing.md) | Keyboard router — one listener, declared precedence, per-screen handlers, focused-vs-visible ownership |
 | [docs/terminal-architecture.md](docs/terminal-architecture.md) | PTY stack, input/output routing, activity dots, key modules |
 | [docs/api-tools.md](docs/api-tools.md) | API tools — Helm-hosted agent loop over an OpenAI-compatible endpoint, ticked tools, cache-first prompt, auto chat reply |
+| [docs/comfyui.md](docs/comfyui.md) | ComfyUI sessions — profiles and sizes, the serialized GPU queue, and the reply an LLM gets when it asks for an image or video |
 | [docs/pattern-matcher.md](docs/pattern-matcher.md) | Per-CLI regex rules over PTY output — send-text and wait-until schedules |
 
 **Session features**

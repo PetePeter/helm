@@ -251,7 +251,9 @@ export class HelmSessionDeliveryService {
         const cancelled = await getComfyUiSessionHost().cancel(session.id);
         if (!cancelled) throw new Error('This ComfyUI session has no active generation to cancel');
       } else {
-        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId, options.comfyImageSizeId);
+        // Only a local session needs telling: a phone already sees the chat.
+        const requesterSessionId = this.sessionManager.getSession(options.senderSessionId) ? options.senderSessionId : undefined;
+        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId, options.comfyImageSizeId, requesterSessionId);
       }
       const submittedAt = Date.now();
       this.sessionManager.updateSession(session.id, {

@@ -1258,6 +1258,12 @@ export function registerIPCHandlers(
         ...(attachment ? { attachment } : {}),
       });
     },
+    notifyRequester: async (requesterSessionId, comfySessionId, text) => {
+      await helmControlService.sendTextToSession(requesterSessionId, text, {
+        senderSessionId: comfySessionId,
+        senderSessionName: sessionManager.getSession(comfySessionId)?.name ?? 'ComfyUI',
+      });
+    },
   }));
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);

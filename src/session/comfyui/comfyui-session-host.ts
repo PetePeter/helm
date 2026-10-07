@@ -29,6 +29,8 @@ export interface ComfyUiSessionHostDeps {
   artifacts: ComfyUiArtifacts;
   attachments: Pick<ArtifactAttachmentManager, 'addGeneratedMediaFromFile' | 'getPath'>;
   postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
+  /** Tell the session that asked for a generation how its job ended. */
+  notifyRequester: (requesterSessionId: string, comfySessionId: string, text: string) => Promise<void>;
 }
 
 export interface ComfyUiSessionProcess extends PtyProcess {
@@ -40,6 +42,8 @@ export interface ComfyUiSessionProcess extends PtyProcess {
 interface Job {
   id: string;
   sessionId: string;
+  /** The session that sent the prompt; chat prompts have none. */
+  requesterSessionId?: string;
   endpoint: string;
   profileId: string;
   imageSizeId?: string;
@@ -71,7 +75,13 @@ export class ComfyUiSessionHost {
     return process;
   }
 
-  submit(sessionId: string, prompt: string, profileId?: string, imageSizeId?: string): { jobId: string; profileId: string } {
+  submit(
+    sessionId: string,
+    prompt: string,
+    profileId?: string,
+    imageSizeId?: string,
+    requesterSessionId?: string,
+  ): { jobId: string; profileId: string } {
     const process = this.sessions.get(sessionId);
     if (!process) throw new Error('ComfyUI session is not running');
     const trimmed = prompt.trim();
@@ -84,6 +94,7 @@ export class ComfyUiSessionHost {
     const job: Job = {
       id: randomUUID(),
       sessionId,
+      ...(requesterSessionId ? { requesterSessionId } : {}),
       endpoint: process.config.endpoint,
       profileId: profile.id,
       ...(imageSizeId ? { imageSizeId } : {}),
@@ -131,6 +142,7 @@ export class ComfyUiSessionHost {
     let leaseRelease: (() => Promise<void>) | undefined;
     let failure: unknown;
     let cleanupWarning: unknown;
+    const storedPaths: string[] = [];
     const endpoint = process.config.endpoint;
     try {
       if (job.controller.signal.aborted) throw new Error('Generation cancelled');
@@ -174,6 +186,7 @@ export class ComfyUiSessionHost {
           contentType: file.mimeType,
         });
         if (stored.sizeBytes > MAX_GENERATED_MEDIA_BYTES || !stored.sha256) throw new Error('Generated media failed its storage integrity check');
+        const storedPath = this.deps.attachments.getPath(stored.artifactId, stored.id);
         const attachment: ChatAttachmentRef = {
           artifactId: stored.artifactId,
           attachmentId: stored.id,
@@ -182,8 +195,9 @@ export class ComfyUiSessionHost {
           sizeBytes: stored.sizeBytes,
           sha256: stored.sha256,
           generatedMedia: true,
-          filePath: this.deps.attachments.getPath(stored.artifactId, stored.id),
+          filePath: storedPath,
         };
+        storedPaths.push(storedPath);
         const label = profile.kind === 'video' ? 'Generated video' : 'Generated image';
         await this.deps.postChat(job.sessionId, files.length > 1 ? `${label} ${index + 1} of ${files.length}.` : `${label}.`, attachment);
       }
@@ -202,16 +216,17 @@ export class ComfyUiSessionHost {
       if (tempDir) rmSync(tempDir, { recursive: true, force: true });
     }
 
+    let failureMessage: string | undefined;
     if (failure) {
       const cancelled = job.cancelled || job.controller.signal.aborted;
-      const message = cancelled
+      failureMessage = cancelled
         ? 'Generation cancelled.'
         : `Generation failed: ${failure instanceof Error ? failure.message : String(failure)}`;
       // The chat line is the only other trace, and it expires with the session.
-      if (!cancelled) logger.warn(`[ComfyUI] ${profile.name} on ${endpoint} (session ${job.sessionId}): ${message}`);
+      if (!cancelled) logger.warn(`[ComfyUI] ${profile.name} on ${endpoint} (session ${job.sessionId}): ${failureMessage}`);
       if (this.sessions.get(job.sessionId) === process) {
-        process.writeStatus(message);
-        await this.deps.postChat(job.sessionId, message).catch(() => undefined);
+        process.writeStatus(failureMessage);
+        await this.deps.postChat(job.sessionId, failureMessage).catch(() => undefined);
       }
     } else if (cleanupWarning && this.sessions.get(job.sessionId) === process) {
       const message = `Generation finished, but GPU handoff cleanup failed: ${cleanupWarning instanceof Error ? cleanupWarning.message : String(cleanupWarning)}`;
@@ -219,6 +234,31 @@ export class ComfyUiSessionHost {
       await this.deps.postChat(job.sessionId, message).catch(() => undefined);
     }
     this.jobs.delete(job.id);
+    // Not awaited: delivery to a busy session is slow and must not hold the GPU queue.
+    void this.notifyRequester(job, profile, storedPaths, failureMessage);
+  }
+
+  /** The requester is another session: it never sees this session's chat. */
+  private async notifyRequester(
+    job: Job,
+    profile: ComfyUiToolConfig['profiles'][number],
+    storedPaths: string[],
+    failureMessage: string | undefined,
+  ): Promise<void> {
+    if (!job.requesterSessionId) return;
+    const text = failureMessage
+      ?? (storedPaths.length === 0
+        ? 'Generation ended without a result: the ComfyUI session closed.'
+        : [
+          `Generated ${profile.kind} from ${profile.name}:`,
+          ...storedPaths,
+          'Kept until the ComfyUI session expires; copy it to keep it longer.',
+        ].join('\n'));
+    try {
+      await this.deps.notifyRequester(job.requesterSessionId, job.sessionId, text);
+    } catch (error) {
+      logger.warn(`[ComfyUI] Could not tell session ${job.requesterSessionId} how job ${job.id} ended: ${error}`);
+    }
   }
 
   private chatFilesArtifact(sessionId: string): Artifact {

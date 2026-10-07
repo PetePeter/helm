@@ -5,6 +5,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HelmSessionDeliveryService } from '../src/mcp/services/helm-session-delivery-service.js';
 import { buildHelmMsgDirective } from '../src/session/intersession-directive.js';
+import { ComfyUiSessionHost, registerComfyUiSessionHost } from '../src/session/comfyui/comfyui-session-host.js';
+import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -713,6 +715,64 @@ describe('HelmSessionDeliveryService', () => {
       expect(result.ok).toBe(true);
       expect(result.verified).toBeDefined();
     });
+  });
+
+  describe('ComfyUI requester', () => {
+    // The endpoint is unreachable, so each job ends with a failure line: enough
+    // to see who the host answers. Not local, or the GPU lease touches LM Studio.
+    const config = { ...cloneDefaultComfyUiConfigForKind('image'), endpoint: 'http://comfy.test:8188' };
+    const JOB_TIMEOUT_MS = 30_000;
+    let chatLines: string[];
+    let notified: string[];
+
+    function makeComfyDeps() {
+      const deps = makeDeps();
+      (deps.receiver as { comfyUiTool?: boolean }).comfyUiTool = true;
+      const host = new ComfyUiSessionHost({
+        tempDir: tmpdir(),
+        artifacts: { getForSession: () => [], create: () => ({}) as never },
+        attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' },
+        postChat: async (_sessionId, text) => { chatLines.push(text); },
+        notifyRequester: async requesterSessionId => { notified.push(requesterSessionId); },
+      });
+      host.create(deps.receiver.id, config);
+      registerComfyUiSessionHost(host);
+      return deps;
+    }
+
+    const waitForJobEnd = () => vi.waitFor(
+      () => expect(chatLines.some(line => line.startsWith('Generation failed'))).toBe(true),
+      { timeout: JOB_TIMEOUT_MS, interval: 100 },
+    );
+
+    beforeEach(() => {
+      chatLines = [];
+      notified = [];
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ComfyUI is offline'); }));
+    });
+
+    afterEach(() => {
+      registerComfyUiSessionHost(null);
+      vi.unstubAllGlobals();
+    });
+
+    it('answers the session that sent the prompt', async () => {
+      const { service, receiver, sender } = makeComfyDeps();
+
+      await service.sendTextToSession(receiver.id, 'a quiet lake', { senderSessionId: sender.id, senderSessionName: sender.name });
+
+      await waitForJobEnd();
+      expect(notified).toEqual([sender.id]);
+    }, JOB_TIMEOUT_MS);
+
+    it('does not answer a paired phone, which already sees the chat', async () => {
+      const { service, receiver } = makeComfyDeps();
+
+      await service.sendTextToSession(receiver.id, 'a quiet lake', { senderSessionId: 'mobile:device-1', senderSessionName: 'Phone' });
+
+      await waitForJobEnd();
+      expect(notified).toEqual([]);
+    }, JOB_TIMEOUT_MS);
   });
 });
 
