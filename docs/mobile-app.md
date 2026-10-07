@@ -625,6 +625,14 @@ decision or a known gap at the time of writing.
   were built to committed vectors and to unit tests over fakes. The first live
   pairing, the notification look, lock-screen truncation, the cold-start deep
   link and voice quality are all still unjudged.
+- **A phone that gave up searching is unreachable until it is re-armed.** After
+  15 minutes with no link both radios stand down
+  ([mobile-lan-transport.md](mobile-lan-transport.md), *link energy policy*).
+  Opening the app, a network appearing, or Retry on the notification starts the
+  search again; walking up to a Bluetooth-only desk does not. Losing a LAN link
+  also costs a few seconds offline while Bluetooth is found again, because it is
+  no longer kept connected as a spare. None of this has been measured or judged
+  on a device — the policy is unit-tested, the battery saving is not quantified.
 - **Call Helm has not been judged on a device.** Audio routing, screen-off
   survival and Bluetooth switching are framework behaviour the JVM suite cannot
   reach; see [voice-operator.md](voice-operator.md#limitations).

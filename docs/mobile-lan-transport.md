@@ -323,17 +323,20 @@ every other trigger a no-op:
 1. **A Bluetooth link came up.** The phone knows which desktop it is talking to
    and has somewhere to reach it.
 2. **A fresh address list arrived** over the authenticated channel.
-3. **A Wi-Fi/Ethernet network became available** or changed addresses
+3. **A Wi-Fi, Ethernet or VPN network became available** or changed addresses
    (`NetworkWatcher`, a `ConnectivityManager.NetworkCallback`). Debounced 2s:
    the system reports available-then-link-properties in a burst, which must be
-   one socket, not several.
-4. **The link service (re)started** (`LanLinkController.resume`). Independent of
-   the Bluetooth preference and state — a restarted service with Bluetooth off
-   by preference previously made zero LAN attempts for six hours.
-5. **The redial backoff** (15s doubling to 60s), whenever LAN does not itself
-   own the link — **including while Bluetooth owns it**. It used to pause under
-   Bluetooth, and since trigger 1 usually fires before wifi has an address, the
-   phone stayed on Bluetooth indefinitely. It pauses only while LAN owns the link.
+   one socket, not several. This is what moves a phone that linked over
+   Bluetooth before Wi-Fi had an address onto LAN.
+4. **A search started** (`LanLinkController.resume`, called by
+   `LinkEnergyPolicy`): at startup, when the link service restarts, when a link
+   is lost, and on every re-arm. Independent of the Bluetooth preference and
+   state — a restarted service with Bluetooth off by preference previously made
+   zero LAN attempts for six hours.
+5. **The redial backoff** (15s doubling to 60s) — **only while a search is on**.
+   It used to run whenever LAN was not the owner, forever, which away from home
+   was a dial a minute into a network that was not there. It is now bounded by
+   the 15-minute search window and silent while Bluetooth carries the link.
 
 The TCP connect timeout is 1.5s: away from home every address is unreachable and
 the user is already on Bluetooth.
@@ -342,19 +345,70 @@ the user is already on Bluetooth.
 flowchart LR
     BLE[BLE link up] --> D{dial}
     PUSH[address push] --> D
-    NET[wifi available<br/>debounced 2s] --> D
-    SVC[service start] --> D
-    RETRY[backoff 15-60s] -->|LAN not owner| D
+    NET[network available<br/>debounced 2s] --> D
+    SEARCH[search started] --> D
+    RETRY[backoff 15-60s] -->|still searching| D
     D -->|connected| LAN[LAN owns link]
     D -->|failed| RETRY
-    LAN -->|EOF / reset / 100s read timeout| RETRY
+    LAN -->|EOF / reset / 100s read timeout| SEARCH
 ```
+
+### Which radios are powered: the link energy policy
+
+`LinkEnergyPolicy` (`android/.../link/LinkEnergyPolicy.kt`) decides which
+transports are worth energising. Before it, a LAN link kept a Bluetooth
+connection up beside it as a spare, the dialler above redialled forever, and an
+unlinked phone advertised all day.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Searching
+    Searching --> OnLan: authenticated over LAN
+    Searching --> OnBluetooth: authenticated over Bluetooth
+    Searching --> GaveUp: 15 minutes, nothing answered
+    OnLan --> Searching: link lost
+    OnBluetooth --> Searching: link lost
+    GaveUp --> Searching: re-arm
+```
+
+| Phase | Bluetooth peripheral | LAN redial loop |
+|-------|----------------------|-----------------|
+| **Searching** | advertising, fast and at high power | running |
+| **OnLan** | **off entirely** — no advert, no GATT link | off (the link is up) |
+| **OnBluetooth** | holds the link | off |
+| **GaveUp** | off | off |
+
+- **"Linked" means authenticated.** Bluetooth is stood down only once a LAN
+  handshake has finished; a socket that is merely open proves nothing.
+- **A re-arm** restarts the search with a fresh 15 minutes: the app being
+  opened (`MainActivity.onStart`), a Wi-Fi/Ethernet/VPN network *appearing*
+  (not every link-property change — some networks re-announce every few
+  minutes, and a search re-armed by that would never give up), the link
+  service restarting, a pairing request, or **Retry** on the notification.
+  While a link is up a re-arm does nothing.
+- **Giving up is visible.** The ongoing notification reads "Not connected. Open
+  Helm or tap Retry." with a Retry action. It otherwise reports the state of the
+  *link* — whichever transport carries it — not of the Bluetooth radio.
+- **The give-up timer is an alarm** (`AlarmLinkScheduler`,
+  `setAndAllowWhileIdle`), not a coroutine delay: it is what turns the
+  advertiser off, and a delay does not count down on a sleeping phone.
+- The policy drives two gates that already existed for the user's transport
+  preference — `BleRadioRecovery.onTransportAllowed` and the dialler's retry —
+  and each ANDs the two, so "LAN only" and "Bluetooth only" are never
+  overridden.
+
+**What it costs.** Losing a LAN link is no longer an instant handover: Bluetooth
+has to advertise and be found, so the phone is offline for a few seconds. A
+phone that gave up is unreachable until something re-arms it — arriving at a
+desk that is Bluetooth-only, with no network change, means opening the app.
+And overnight, if Android's Doze cuts the LAN socket, the phone falls back to
+Bluetooth and stays there until a network appears or the app is opened.
 
 **Dead-socket detection.** The phone sets a 100s socket read timeout (the desktop
 pings every 30s) plus TCP keepalive. A silently dead link — an AP
 that stopped forwarding, a desktop gone without a FIN — throws
 `SocketTimeoutException`, which the pump treats as a clean close; the rank drops
-and Bluetooth resumes at once. Without it the phone stayed "Linked" until TCP
+and a new search starts, Bluetooth included. Without it the phone stayed "Linked" until TCP
 gave up, ten-plus minutes. Every close logs `reason=eof|reset|timeout|closed`
 and the link's lifetime.
 
@@ -375,14 +429,16 @@ the network callback). Without INTERNET a dial raises
 A single holder handles the upgrade fine and gets the downgrade badly wrong: when
 LAN drops the holder empties, and Bluetooth does not resume because it attached
 once at startup and nothing re-attaches it. The phone would sit dead until the
-BLE service happened to cycle. With a map, Bluetooth stays registered the whole
-time, so LAN dropping is an **instant handover** with no restore path to write —
-and therefore none to forget to call.
+BLE service happened to cycle. With a map, Bluetooth's rank stays registered the
+whole time, so when LAN drops the next rank down is already in place — there is
+no restore path to write, and therefore none to forget to call.
 
-Note the asymmetry with the desktop: **the desktop's recovery is a reconnect**
-(scan, connect, handshake — seconds), because it is the central. **The phone's is
-not a reconnect at all**, because it is the peripheral and its Bluetooth link was
-never dropped.
+The rank being registered is not the radio being on. Under the link energy
+policy above, the Bluetooth peripheral is **off** while LAN carries the link, so
+its rank sits there reporting Disconnected. When LAN drops, the policy starts a
+search, the peripheral advertises, and the desktop reconnects — seconds, where
+it used to be an instant handover to a Bluetooth link kept up as a spare. That
+spare was the price; the user chose the battery.
 
 Link state is **derived from whichever transport owns the link**, not written by
 whoever spoke last — otherwise Bluetooth reporting "Advertising" while LAN is

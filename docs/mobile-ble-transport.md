@@ -363,8 +363,13 @@ Three things that shape the Kotlin:
   backoff, and `BOOT_COMPLETED` restarts the foreground service so a reboot
   doesn't leave the peripheral dead until the app is opened.
 
-Advertising is `ADVERTISE_MODE_BALANCED`, never `LOW_LATENCY` — this advertises
-all day. The 31-byte advertisement carries only the 128-bit service UUID; the
+Advertising is `ADVERTISE_MODE_LOW_LATENCY` at high TX power. That used to be
+ruled out because the peripheral advertised all day; it no longer does. The
+link energy policy ([mobile-lan-transport.md](mobile-lan-transport.md)) only
+brings the peripheral up while the phone is **searching**, which ends after 15
+minutes, and takes it down entirely while LAN carries the link — so being found
+quickly is affordable. (Android lets an app choose the power of an *advert*
+only; the power of a live connection is the controller's.) The 31-byte advertisement carries only the 128-bit service UUID; the
 device name rides in the scan response, and is dropped entirely if the user's
 device name overflows it. Nothing identifying is advertised, because identity is
 established by the handshake, not by the advert.

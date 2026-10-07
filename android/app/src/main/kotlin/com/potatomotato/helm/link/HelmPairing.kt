@@ -2,10 +2,12 @@ package com.potatomotato.helm.link
 
 import android.content.Context
 import com.potatomotato.helm.ble.HelmLink
+import com.potatomotato.helm.ble.LinkScheduler
 import com.potatomotato.helm.ble.LinkState
 import com.potatomotato.helm.ble.RANK_BLE
 import com.potatomotato.helm.lan.AndroidNetworkWatcher
 import com.potatomotato.helm.lan.LanLinkController
+import com.potatomotato.helm.lan.NetworkWatcher
 import com.potatomotato.helm.data.DeviceKeyStore
 import com.potatomotato.helm.data.FileChatStore
 import com.potatomotato.helm.data.LanAddressStore
@@ -91,6 +93,20 @@ object HelmPairing {
      */
     val client = HelmClient(send = ::send, scheduler = CoroutineScheduler(scope))
 
+    /** Where [energy]'s timer really runs; needs a Context, so [init] supplies it. */
+    private var energyTimer: LinkScheduler = LinkScheduler { _, _ -> }
+
+    /**
+     * Which radios are worth powering right now. Built with the object rather
+     * than in [init] so the link service can read its phase whenever it starts;
+     * until [init] starts it, it reports searching — both radios, the behaviour
+     * of a build without a policy.
+     */
+    val energy = LinkEnergyPolicy(
+        scheduler = { delayMs, action -> energyTimer.schedule(delayMs, action) },
+        log = { message -> HelmLog.i(HelmLog.WIRE, message) },
+    )
+
     /** What the pairing screen renders. Idle until the first link comes up. */
     val state: StateFlow<PairingState>
         get() = requireController().state
@@ -144,13 +160,39 @@ object HelmPairing {
         // The user's transport choice, adopted before anything dials so a
         // Bluetooth-only phone never makes one attempt it was told not to.
         TransportPreferences.bind(PrefsTransportPreferenceStore(context))
+        // The policy's one timer is an alarm, because it is what turns the
+        // advertiser off and must fire on a sleeping phone; see AlarmLinkScheduler.
+        energyTimer = AlarmLinkScheduler(context)
+        val policy = energy
+        val watcher = AndroidNetworkWatcher(context.applicationContext)
         lan = LanLinkController(
             addresses = addresses,
             allowDial = { TransportPreferences.preference.value.allowsLan },
-            // Wi-Fi coming up is when a dial can first succeed; see NetworkWatcher.
-            network = AndroidNetworkWatcher(context.applicationContext),
+            allowRetry = { policy.phase.value.lanRetry },
+            // A network appearing is when a dial can first succeed, and a
+            // reason to search again for a phone that had given up. Only its
+            // APPEARING re-arms: see NetworkWatcher for why not every change.
+            network = object : NetworkWatcher {
+                override fun start(onChange: () -> Unit, onAppeared: () -> Unit) {
+                    watcher.start(onChange) {
+                        policy.rearm("a network appeared")
+                        onAppeared()
+                    }
+                }
+
+                override fun stop() {
+                    watcher.stop()
+                }
+            },
             log = { message -> HelmLog.i(HelmLog.WIRE, message) },
         )
+        // A search dials every paired desktop once, at once; the controller's
+        // own backoff carries it for as long as the search lasts. This is also
+        // the startup dial for a phone whose only path is the network (the VPN
+        // case), which never sees a Bluetooth link-up to trigger one.
+        policy.onSearchStarted = {
+            scope.launch(Dispatchers.IO) { lan?.resume(chosenFirst(keys.pairedMachineIds())) }
+        }
         // A change has to reach the live socket: gating the next dial alone
         // would leave a LAN link running for hours after it was switched off.
         scope.launch {
@@ -225,14 +267,23 @@ object HelmPairing {
         // pairing, a dropped link and a revocation all land here as one update.
         scope.launch { requireController().state.collect { refreshDesktops() } }
 
-        // A phone whose only path to the desktop is the network — the VPN case
-        // — never sees the Bluetooth link-up that triggers a dial, so startup
-        // dials paired desktops until one links (one LAN session) and the controller's own
-        // backoff carries it from there.
-        scope.launch(Dispatchers.IO) {
-            for (desktopId in chosenFirst(keys.pairedMachineIds())) if (lan?.tryConnect(desktopId) == true) break
+        // The policy follows the AUTHENTICATED link, not the transport: Bluetooth
+        // is only stood down once a LAN handshake has actually finished.
+        scope.launch {
+            combine(requireController().state, HelmLink.owner) { pairing, owner ->
+                if (pairing is PairingState.Linked) owner else null
+            }
+                .distinctUntilChanged()
+                .collect { owner -> policy.onLink(owner) }
         }
+        policy.start()
     }
+
+    /**
+     * Something makes trying worthwhile again: the app was opened, the user
+     * tapped retry, pairing was asked for. Nothing while a link is up.
+     */
+    fun rearm(why: String) = energy.rearm(why)
 
     /**
      * Drop the LAN link on purpose — the quit path only. The controller is NOT
@@ -241,15 +292,13 @@ object HelmPairing {
      * holds the process open after finish() if nobody closes the socket.
      */
     /**
-     * The link service (re)started. LAN is dialled here INDEPENDENT of the
-     * Bluetooth preference or state: a restarted service with Bluetooth off by
-     * preference otherwise made zero LAN attempts for hours (process-lifetime
-     * init had already run, and nothing Bluetooth-side would ever fire).
+     * The link service (re)started. That is a reason to search: a restarted
+     * service with Bluetooth off by preference otherwise made zero LAN attempts
+     * for hours (process-lifetime init had already run, and nothing
+     * Bluetooth-side would ever fire). The search dials LAN whatever the
+     * Bluetooth preference or state.
      */
-    fun onLinkServiceStarted() {
-        val keys = store ?: return
-        scope.launch(Dispatchers.IO) { lan?.resume(chosenFirst(keys.pairedMachineIds())) }
-    }
+    fun onLinkServiceStarted() = rearm("the link service started")
 
     fun stopLan() {
         lan?.stop()

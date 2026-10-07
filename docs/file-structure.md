@@ -299,6 +299,8 @@ android/
     │   │   │   ├── HelmClient.kt        # The ONE call-id correlation point; upload + download chains
     │   │   │   ├── PairingController.kt # PSK choice, screen state, persist-on-confirm. No Android types
     │   │   │   ├── HelmLinkPipe.kt      # HelmLink as a BytePipe + the timeout's coroutine clock
+    │   │   │   ├── LinkEnergyPolicy.kt  # Which radios are powered: one at a time when linked, 15 min search, then give up. No Android types
+    │   │   │   ├── AlarmLinkScheduler.kt # The policy's give-up timer as an alarm, so it fires on a sleeping phone
     │   │   │   └── HelmPairing.kt       # Process-scoped wiring: link up → handshake
     │   │   ├── lan/                   # LanLinkController/Session — the LAN transport half
     │   │   ├── wire/                  # MobileEnvelope/MobileRecord — the protocol, with cross-language vectors

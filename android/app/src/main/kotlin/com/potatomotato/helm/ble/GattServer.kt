@@ -103,10 +103,12 @@ class GattServer(
         }
 
         val settings = AdvertiseSettings.Builder()
-            // BALANCED, never LOW_LATENCY: this advertises all day and
-            // LOW_LATENCY is a battery fire.
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+            // Fast and loud, which used to be a battery fire because this
+            // advertised all day. It no longer does: LinkEnergyPolicy only
+            // lets the peripheral up while SEARCHING, which ends after fifteen
+            // minutes, so the desktop finding the phone quickly is worth it.
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .setConnectable(true)
             .setTimeout(0)
             .build()

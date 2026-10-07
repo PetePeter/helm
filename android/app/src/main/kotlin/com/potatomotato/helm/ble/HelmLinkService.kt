@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -21,13 +22,14 @@ import com.potatomotato.helm.MainActivity
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.TransportPreferences
 import com.potatomotato.helm.link.HelmPairing
+import com.potatomotato.helm.link.LinkEnergyPolicy
 import com.potatomotato.helm.log.HelmLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -49,6 +51,7 @@ class HelmLinkService : Service() {
         private const val CHANNEL_ID = "helm_link"
         private const val NOTIFICATION_ID = 1
         private const val ACTION_FORCE_PAIRING = "com.potatomotato.helm.FORCE_PAIRING"
+        private const val ACTION_RETRY = "com.potatomotato.helm.RETRY_LINK"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, HelmLinkService::class.java))
@@ -97,17 +100,14 @@ class HelmLinkService : Service() {
         super.onCreate()
         HelmLog.i(TAG, "the link service is starting")
         createNotificationChannel()
-        startForegroundWith(LinkState.Disconnected)
+        startForegroundWith(LinkState.Disconnected, HelmPairing.energy.phase.value)
 
         val server = GattServer(this, HelmLog.port(TAG))
         val link = BleLinkSession(
             peripheral = server,
             scheduler = { delayMs, action -> handler.postDelayed(action, delayMs) },
             onMessage = { message -> HelmLink.publishInbound(RANK_BLE, message) },
-            onStateChange = { state ->
-                HelmLink.publishState(RANK_BLE, state)
-                startForegroundWith(state)
-            },
+            onStateChange = { state -> HelmLink.publishState(RANK_BLE, state) },
             log = HelmLog.port(TAG),
         )
         server.session = link
@@ -147,23 +147,44 @@ class HelmLinkService : Service() {
 
         registerReceiver(radioReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
         recovery.onBluetoothState(isBluetoothOn())
-        // The user's choice is a SECOND gate on the peripheral, alongside the
-        // radio's own state — LAN-only means stop advertising, which is where
-        // the battery saving actually comes from. Applied before the first
-        // attempt so a LAN-only phone never advertises once on the way up.
-        recovery.onTransportAllowed(TransportPreferences.preference.value.allowsBluetooth)
+        // TWO more gates on the peripheral, alongside the radio's own state: the
+        // user's choice (LAN-only means never advertise) and the energy policy
+        // (Bluetooth is down while LAN carries the link, and after a search
+        // nothing answered). Applied before the first attempt so a phone that
+        // should stay quiet never advertises once on the way up.
+        // The restart is a reason to search, said FIRST so the gate read below
+        // already reflects it.
+        HelmPairing.onLinkServiceStarted()
+        recovery.onTransportAllowed(
+            TransportPreferences.preference.value.allowsBluetooth && HelmPairing.energy.phase.value.bluetooth,
+        )
         recovery.start()
         serviceScope.launch {
-            TransportPreferences.preference
-                .map { it.allowsBluetooth }
+            combine(TransportPreferences.preference, HelmPairing.energy.phase) { preference, phase ->
+                preference.allowsBluetooth && phase.bluetooth
+            }
                 .distinctUntilChanged()
                 .collect { allowed -> recovery.onTransportAllowed(allowed) }
         }
-        HelmPairing.onLinkServiceStarted()
+        // The notification tells the truth about the LINK — whichever transport
+        // carries it — rather than about this service's own radio, which is
+        // deliberately off whenever LAN has the link.
+        serviceScope.launch {
+            combine(HelmLink.state, HelmPairing.energy.phase) { state, phase -> state to phase }
+                .distinctUntilChanged()
+                .collect { (state, phase) -> startForegroundWith(state, phase) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_FORCE_PAIRING) session?.forcePairingMode()
+        when (intent?.action) {
+            // Pairing needs the peripheral up whatever the policy last decided.
+            ACTION_FORCE_PAIRING -> {
+                HelmPairing.rearm("pairing was asked for")
+                session?.forcePairingMode()
+            }
+            ACTION_RETRY -> HelmPairing.rearm("retry was tapped")
+        }
         return START_STICKY
     }
 
@@ -188,8 +209,8 @@ class HelmLinkService : Service() {
     private fun isBluetoothOn(): Boolean =
         getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
 
-    private fun startForegroundWith(state: LinkState) {
-        val notification = buildNotification(state)
+    private fun startForegroundWith(state: LinkState, phase: LinkEnergyPolicy.Phase) {
+        val notification = buildNotification(state, phase)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -201,7 +222,7 @@ class HelmLinkService : Service() {
         }
     }
 
-    private fun buildNotification(state: LinkState): Notification {
+    private fun buildNotification(state: LinkState, phase: LinkEnergyPolicy.Phase): Notification {
         val open = PendingIntent.getActivity(
             this,
             0,
@@ -209,20 +230,43 @@ class HelmLinkService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val text = when (state) {
-            LinkState.Linked -> getString(R.string.link_state_linked)
-            LinkState.Connecting -> getString(R.string.link_state_connecting)
-            LinkState.Advertising -> getString(R.string.link_state_advertising)
-            LinkState.Disconnected -> getString(R.string.link_state_disconnected)
+        // Giving up is said in its own words: "Link off" would read as a
+        // setting, and this is a phone that stopped trying and can be asked to
+        // try again. A link that is up outranks it — the phase lags the link by
+        // a moment on the way in.
+        val gaveUp = phase == LinkEnergyPolicy.Phase.GaveUp && state != LinkState.Linked
+        val text = when {
+            gaveUp -> getString(R.string.link_state_gave_up)
+            state == LinkState.Linked -> getString(R.string.link_state_linked)
+            state == LinkState.Connecting -> getString(R.string.link_state_connecting)
+            // Searching with the peripheral down is the LAN dialler trying alone.
+            state == LinkState.Advertising || phase == LinkEnergyPolicy.Phase.Searching ->
+                getString(R.string.link_state_advertising)
+            else -> getString(R.string.link_state_disconnected)
         }
 
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_notification_helm)
             .setContentIntent(open)
             .setOngoing(true)
-            .build()
+        if (gaveUp) {
+            val retry = PendingIntent.getService(
+                this,
+                1,
+                Intent(this, HelmLinkService::class.java).setAction(ACTION_RETRY),
+                PendingIntent.FLAG_IMMUTABLE,
+            )
+            builder.addAction(
+                Notification.Action.Builder(
+                    Icon.createWithResource(this, R.drawable.ic_notification_helm),
+                    getString(R.string.link_retry),
+                    retry,
+                ).build(),
+            )
+        }
+        return builder.build()
     }
 
     private fun createNotificationChannel() {

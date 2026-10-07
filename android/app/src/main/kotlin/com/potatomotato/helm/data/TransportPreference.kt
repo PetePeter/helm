@@ -7,10 +7,10 @@ package com.potatomotato.helm.data
  * is a fact about the two pipes, and [Auto] is that fact left alone. What this
  * adds is the ability to say "only this one", which is a different question:
  *
- *  - [LanOnly] stops the Bluetooth peripheral advertising. That is the battery
- *    win, and it is the ONLY version of the setting that has one — a preference
- *    that leaves both radios running saves nothing and merely hides which is in
- *    use. The cost is real and deliberate: off the desktop's network there is no
+ *  - [LanOnly] stops the Bluetooth peripheral advertising, ever. Under [Auto]
+ *    the link energy policy already powers Bluetooth down while LAN carries the
+ *    link; this goes further and never searches over it either. The cost is
+ *    real and deliberate: off the desktop's network there is no
  *    link at all, because the advertised address is private to that network.
  *  - [BluetoothOnly] stops the phone dialling. For when the network is there but
  *    not worth trusting, or is dropping the socket repeatedly.
