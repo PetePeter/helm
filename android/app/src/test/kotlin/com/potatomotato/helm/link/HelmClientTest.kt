@@ -647,6 +647,164 @@ class HelmClientTest {
         assertEquals(listOf("__chat_cursor__", "session_list", "session_list"), methods)
     }
 
+    // ---- the session change feed: what replaced the two-second poll ----------
+
+    private fun sessionListCalls(): List<JSONObject> = sent
+        .map { JSONObject(String(it, Charsets.UTF_8)) }
+        .filter { it.getString("method") == "session_list" }
+
+    private fun changesNotice(seq: Long, kind: String = "sessions"): ByteArray =
+        """{"v":1,"t":"changes","kind":"$kind","seq":$seq}""".toByteArray(Charsets.UTF_8)
+
+    private fun delta(seq: Long, sessions: String = "[]", removed: String = "[]", full: Boolean = false): String =
+        """{"epoch":"e1","seq":$seq,"full":$full,"sessions":$sessions,"removed":$removed}"""
+
+    /** Watch, and answer the first fetch with a whole list at [seq]. */
+    private fun watchAndLoad(seq: Long, sessions: String) {
+        client.watchSessions(true)
+        client.onInbound(resultFor(lastCallId(), delta(seq, sessions, full = true)))
+    }
+
+    @Test
+    fun `watching sessions fetches the whole list once and then asks for nothing`() {
+        client.watchSessions(true)
+
+        val first = sessionListCalls().single()
+        assertEquals(0L, first.getJSONObject("params").getLong("since"))
+        assertFalse(first.getJSONObject("params").has("epoch"))
+
+        client.onInbound(resultFor(lastCallId(), delta(4, """[{"id":"s1","name":"work"}]""", full = true)))
+        repeat(30) { client.refreshStaleSessions() }
+
+        // The poll this replaced would have sent thirty more.
+        assertEquals(1, sessionListCalls().size)
+        assertEquals(listOf("s1"), client.sessions.sessions.value.map { it.id })
+    }
+
+    @Test
+    fun `a change notice makes a watched list fetch only what moved since its cursor`() {
+        watchAndLoad(4, """[{"id":"s1","name":"work"},{"id":"s2","name":"play"}]""")
+
+        client.onInbound(changesNotice(5))
+
+        val params = sessionListCalls().last().getJSONObject("params")
+        assertEquals(4L, params.getLong("since"))
+        assertEquals("e1", params.getString("epoch"))
+
+        client.onInbound(resultFor(lastCallId(), delta(5, """[{"id":"s2","name":"renamed"}]""")))
+
+        // s1 was not in the reply and is untouched; s2 took its new value.
+        assertEquals(listOf("renamed", "work"), client.sessions.sessions.value.map { it.name })
+    }
+
+    @Test
+    fun `a delta removes the sessions it names`() {
+        watchAndLoad(4, """[{"id":"s1","name":"work"},{"id":"s2","name":"play"}]""")
+        client.onInbound(changesNotice(5))
+
+        client.onInbound(resultFor(lastCallId(), delta(5, removed = """["s1"]""")))
+
+        assertEquals(listOf("s2"), client.sessions.sessions.value.map { it.id })
+    }
+
+    @Test
+    fun `a notice that arrives while nobody is looking waits for the screen`() {
+        watchAndLoad(4, """[{"id":"s1","name":"work"}]""")
+        client.watchSessions(false)
+
+        client.onInbound(changesNotice(5))
+        repeat(10) { client.refreshStaleSessions() }
+        assertEquals(1, sessionListCalls().size)
+
+        client.watchSessions(true)
+        assertEquals(2, sessionListCalls().size)
+    }
+
+    @Test
+    fun `a notice for a seq this phone already holds is not news`() {
+        watchAndLoad(4, """[{"id":"s1","name":"work"}]""")
+
+        client.onInbound(changesNotice(4))
+        client.onInbound(changesNotice(3))
+
+        assertEquals(1, sessionListCalls().size)
+    }
+
+    @Test
+    fun `a notice of a kind this build does not mirror is ignored`() {
+        watchAndLoad(4, "[]")
+
+        client.onInbound(changesNotice(9, kind = "plans"))
+
+        assertEquals(1, sessionListCalls().size)
+    }
+
+    @Test
+    fun `a fetch the link could not carry is made as soon as it can`() {
+        linked = false
+        client.watchSessions(true)
+        client.refreshStaleSessions()
+        assertTrue(sent.isEmpty())
+
+        linked = true
+        client.refreshStaleSessions()
+
+        assertEquals(1, sessionListCalls().size)
+    }
+
+    @Test
+    fun `a refused list is not asked for again and again`() {
+        client.watchSessions(true)
+        client.onInbound(errorFor(lastCallId(), HelmClient.MOBILE_DENY_MESSAGE))
+
+        repeat(10) { client.refreshStaleSessions() }
+
+        assertEquals(1, sessionListCalls().size)
+        assertEquals(Reach.Denied, client.sessions.reach.value)
+    }
+
+    @Test
+    fun `a new link is asked afresh — its Helm may have restarted and owes no notice`() {
+        watchAndLoad(4, """[{"id":"s1","name":"work"}]""")
+
+        client.onLinkLost()
+        client.onLinkUp()
+
+        // The cursor still rides along: a Helm that did NOT restart answers a delta.
+        val params = sessionListCalls().last().getJSONObject("params")
+        assertEquals(2, sessionListCalls().size)
+        assertEquals(4L, params.getLong("since"))
+    }
+
+    @Test
+    fun `a cursor from before a Helm restart is answered whole and replaces the list`() {
+        watchAndLoad(40, """[{"id":"old","name":"old"}]""")
+        client.onInbound(changesNotice(41))
+
+        client.onInbound(
+            resultFor(lastCallId(), """{"epoch":"e2","seq":1,"full":true,"sessions":[{"id":"new","name":"new"}],"removed":[]}"""),
+        )
+
+        assertEquals(listOf("new"), client.sessions.sessions.value.map { it.id })
+        // seq 2 of the NEW epoch is news even though it is far below the old cursor.
+        client.onInbound(changesNotice(2))
+        assertEquals("e2", sessionListCalls().last().getJSONObject("params").getString("epoch"))
+    }
+
+    @Test
+    fun `the watching pass re-reports a chat cursor the link never heard`() {
+        watchAndLoad(4, "[]")
+        client.onInbound(resultFor(firstCallId(), "null"))
+        // The link goes and comes back without the link-up hook firing at all.
+        client.onLinkLost()
+        sent.clear()
+
+        client.refreshStaleSessions()
+
+        val methods = sent.map { JSONObject(String(it, Charsets.UTF_8)).getString("method") }
+        assertEquals(listOf("__chat_cursor__", "session_list"), methods)
+    }
+
     @Test
     fun `an answer that arrives after the link dropped is not applied twice`() {
         client.sendChat("s1", "carry on")

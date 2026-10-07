@@ -22,6 +22,7 @@ import {
   encodeChat,
   encodeError,
   encodeBlobResult,
+  encodeChanges,
   encodeLan,
   encodeResult,
   type MobileBlobResult,
@@ -162,6 +163,7 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     // An empty list is a MEANINGFUL record — "stop dialling" — so it is pinned
     // rather than left to each side to guess at.
     vector('lan with no addresses', 'helm-to-phone', encodeLan([])),
+    vector('session feed moved', 'helm-to-phone', encodeChanges('sessions', 42)),
   ];
 
   // Deterministic bodies, chosen to be hostile to a JSON-shaped reader: byte 0x00
@@ -260,6 +262,8 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
     reject('chat with no text', '{"v":1,"t":"chat","sessionId":"s","sessionName":"n","at":1}', 'text is required on a chat record'),
     reject('lan with no addresses field', '{"v":1,"t":"lan"}', 'addresses is required on a lan record'),
     reject('lan addresses holding a non-string', '{"v":1,"t":"lan","addresses":["a",7]}', 'every address must be a string'),
+    reject('changes with no seq', '{"v":1,"t":"changes","kind":"sessions"}', 'seq is required on a changes record'),
+    reject('changes with a numeric kind', '{"v":1,"t":"changes","kind":7,"seq":1}', 'kind must be a string'),
   ];
 
   return {
@@ -267,7 +271,7 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
       version: MOBILE_ENVELOPE_VERSION,
       encoding: 'utf8-json',
       maxEnvelopeBytes: MAX_ENVELOPE_BYTES,
-      recordTypes: ['call', 'result', 'error', 'chat', 'lan', 'blob'],
+      recordTypes: ['call', 'result', 'error', 'chat', 'lan', 'blob', 'changes'],
     },
     cases,
     blobs,

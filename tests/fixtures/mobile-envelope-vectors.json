@@ -9,7 +9,8 @@
       "error",
       "chat",
       "lan",
-      "blob"
+      "blob",
+      "changes"
     ]
   },
   "cases": [
@@ -90,6 +91,12 @@
       "direction": "helm-to-phone",
       "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b5d7d",
       "json": "{\"v\":1,\"t\":\"lan\",\"addresses\":[]}"
+    },
+    {
+      "name": "session feed moved",
+      "direction": "helm-to-phone",
+      "bytesHex": "7b2276223a312c2274223a226368616e676573222c226b696e64223a2273657373696f6e73222c22736571223a34327d",
+      "json": "{\"v\":1,\"t\":\"changes\",\"kind\":\"sessions\",\"seq\":42}"
     }
   ],
   "blobs": [
@@ -218,6 +225,16 @@
       "name": "lan addresses holding a non-string",
       "bytesHex": "7b2276223a312c2274223a226c616e222c22616464726573736573223a5b2261222c375d7d",
       "reason": "every address must be a string"
+    },
+    {
+      "name": "changes with no seq",
+      "bytesHex": "7b2276223a312c2274223a226368616e676573222c226b696e64223a2273657373696f6e73227d",
+      "reason": "seq is required on a changes record"
+    },
+    {
+      "name": "changes with a numeric kind",
+      "bytesHex": "7b2276223a312c2274223a226368616e676573222c226b696e64223a372c22736571223a317d",
+      "reason": "kind must be a string"
     }
   ]
 }

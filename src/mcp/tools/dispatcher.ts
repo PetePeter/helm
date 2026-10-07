@@ -4,6 +4,7 @@ import type { AuthContext } from './types.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { parsePlanTask } from '../../session/operator-tasks.js';
+import { parseSessionFeedCursor } from '../../session/session-change-feed.js';
 import { requireOperatorTask, trackOperatorTask } from '../../session/operator-delegation.js';
 import {
   asAiagentState,
@@ -552,11 +553,15 @@ export async function callMcpTool(
         );
       case 'session_group_close':
         return service.closeSessionGroup(asString(args.groupId, 'groupId is required'));
-      case 'session_list':
-        return service.listSessions(
-          typeof args.dirPath === 'string' ? args.dirPath : undefined,
-          typeof args.projectId === 'string' ? args.projectId : undefined,
-        );
+      case 'session_list': {
+        const dirPath = typeof args.dirPath === 'string' ? args.dirPath : undefined;
+        const projectId = typeof args.projectId === 'string' ? args.projectId : undefined;
+        // `since` present — even unreadable — asks for the delta shape; absent
+        // keeps the plain array every existing caller expects.
+        return args.since === undefined
+          ? service.listSessions(dirPath, projectId)
+          : service.listSessionChanges(parseSessionFeedCursor(args.epoch, args.since), dirPath, projectId);
+      }
       case 'session_get':
         return requireResult(
           service.getSession(asString(args.sessionId ?? args.name, 'sessionId or name is required')),

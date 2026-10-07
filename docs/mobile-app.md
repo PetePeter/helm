@@ -24,7 +24,7 @@ not restate what already has a home:
 ```mermaid
 graph TB
     subgraph "Phone — Kotlin + Compose"
-        UI[Compose screens<br/>HelmHome owns navigation + the poll]
+        UI[Compose screens<br/>HelmHome owns navigation + session watching]
         REPO[data/<br/>SessionRepository · ChatRepository · ArtifactRepository<br/>ControlRepository · CapabilityCache<br/>AttachmentPulls — every sliced fetch]
         HC[link/HelmClient<br/>the ONE call-id correlation point]
         PC[link/PairingController]
@@ -88,8 +88,8 @@ removes.
   switching tabs swaps only the body. A freshly opened session starts on Chat.
   Under the session name the bar shows the session's **mission** (`session_list`
   `mission.text`) on one ellipsized line in `HelmColors.Terminal`; no mission, no
-  line. It refreshes with the session list, which an open session polls every 10 s
-  (paused while an attachment is being pulled).
+  line. It refreshes with the session list, which an open session watches like
+  the list screen does (paused while an attachment is being pulled).
 - **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
   Threads survive an app restart (saved with their catch-up cursor; a send still
   `Sending` when the app died comes back `Failed`), so only newer messages are
@@ -128,11 +128,16 @@ removes.
   from the tile deletes Helm's copy too. See
   [chat-fan-out.md](chat-fan-out.md) for why the file is an artifact attachment
   rather than bytes on the wire.
-- **The session list poll runs only while the list is on screen.** It used to run
-  behind every screen, which put a `session_list` call between every slice of a
-  transfer — two round trips per slice, on a link where the round trip is most of
-  the cost. The trade is that an open session's row data stops refreshing while
-  the user is inside it; alerts and chat still arrive as pushes.
+- **The session list is pushed, not polled.** The app fetches the list once when
+  a screen showing sessions appears, and again only when Helm sends a `changes`
+  notice saying it moved — and then it asks for just the rows that changed. It
+  used to call `session_list` every two seconds, the whole list each time, which
+  was the app's largest standing cost on a Bluetooth link. A notice that arrives
+  while no such screen is visible only marks the list stale; nothing is fetched
+  until one is. Never mid-transfer either: a `session_list` between the slices
+  of an attachment pull made every slice two round trips. See **Session change
+  feed** in [chat-fan-out.md](chat-fan-out.md). The app therefore needs a Helm
+  that speaks protocol 5 and refuses an older one by name.
 - **Artifacts** (tab) — the session's artifact list, re-pulled on every arrival.
   Opening a row pushes the artifact **detail**, which hangs off the tab and
   carries its own bar.

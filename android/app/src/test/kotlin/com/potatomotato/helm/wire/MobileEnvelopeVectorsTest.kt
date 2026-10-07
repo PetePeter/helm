@@ -81,6 +81,11 @@ class MobileEnvelopeVectorsTest {
                         assertEquals(name, addresses.getString(index), record.addresses[index])
                     }
                 }
+
+                is MobileRecord.Changes -> {
+                    assertEquals(name, expected.getString("kind"), record.kind)
+                    assertEquals(name, expected.getLong("seq"), record.seq)
+                }
             }
         }
     }

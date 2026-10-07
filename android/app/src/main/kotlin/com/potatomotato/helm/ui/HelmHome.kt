@@ -314,19 +314,15 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     var openSequenceId by rememberSaveable { mutableStateOf<String?>(null) }
     var openContextId by rememberSaveable { mutableStateOf<String?>(null) }
 
-    // ONLY while the session list is actually on screen. The poll used to run
-    // whenever the app was started, which put a session_list call between every
-    // slice of an attachment transfer — two round trips per slice instead of
-    // one. Everything else that matters arrives as a push.
-    //
-    // An OPEN session polls too, slower and never mid-transfer, so its app bar
-    // (the mission line) follows the desktop without taxing a pull's slices.
+    // ONLY while sessions are actually on screen: the list, or an OPEN session
+    // whose app bar (the mission line) follows the desktop. Never mid-transfer —
+    // a session_list between the slices of an attachment pull made every slice
+    // two round trips instead of one.
     val onList = openSessionId == null && where == Destination.Thread && homeTab == HomeTab.Sessions
     val transferring = (pulls.values + artifactPulls.values).any { it is PullState.Pulling }
-    PollSessions(
+    WatchSessions(
         client,
         active = onList || (openSessionId != null && where == Destination.Thread && !transferring),
-        intervalMs = if (onList) POLL_INTERVAL_MS else OPEN_SESSION_POLL_INTERVAL_MS,
     )
 
     // A notification tap lands in that session's THREAD — or, for an artifact
@@ -499,9 +495,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // A spawn Helm confirmed names the session it made, and that id is how the
     // new thread opens. The opening WAITS until the row is actually in the
     // list: jumping straight there would trip the went-away fallback above (the
-    // next 2s poll has not shown the session yet) and dump the user back on the
-    // list. A session that never appears gives up quietly — the notice bar has
-    // already said the spawn succeeded, and the list is one poll away.
+    // refreshed list has not arrived yet) and dump the user back on the list.
+    // A session that never appears gives up quietly — the notice bar has
+    // already said the spawn succeeded, and the list is one refresh away.
     // A transferred call takes the user along: whoever was looking at the chat
     // the call left lands on the chat it moved to. Waits for the row like a
     // fresh spawn does, so the went-away fallback does not fire first.
@@ -511,10 +507,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         val from = lastCallTarget
         lastCallTarget = to
         if (to == null || from == null || to == from || openSessionId != from) return@LaunchedEffect
-        var polls = 0
-        while (client.sessions.sessions.value.none { it.id == to } && polls < CREATED_SESSION_POLLS) {
-            delay(POLL_INTERVAL_MS)
-            polls++
+        var waits = 0
+        while (client.sessions.sessions.value.none { it.id == to } && waits < CREATED_SESSION_WAITS) {
+            delay(SESSION_WAIT_STEP_MS)
+            waits++
         }
         if (openSessionId == from) {
             openSessionId = to
@@ -524,13 +520,13 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
 
     LaunchedEffect(createdSessionId) {
         val id = createdSessionId ?: return@LaunchedEffect
-        var polls = 0
-        // No refreshSessions() here on purpose: PollSessions below is already
-        // polling every 2s while this screen is visible; a second caller would
-        // just double the wire traffic for the same list.
-        while (client.sessions.sessions.value.none { it.id == id } && polls < CREATED_SESSION_POLLS) {
-            delay(POLL_INTERVAL_MS)
-            polls++
+        var waits = 0
+        // No refreshSessions() here on purpose: the spawn's own answer already
+        // refreshed the list, and Helm announces the new row besides. This only
+        // watches what is held.
+        while (client.sessions.sessions.value.none { it.id == id } && waits < CREATED_SESSION_WAITS) {
+            delay(SESSION_WAIT_STEP_MS)
+            waits++
         }
         client.control.clearCreatedSession(id)
         if (client.sessions.sessions.value.any { it.id == id }) {
@@ -1793,32 +1789,33 @@ private fun sessionHeaderDetails(session: HelmSession): String {
 }
 
 /**
- * Keep the list fresh while the user can see it — and ONLY while they can.
+ * Tell the client whether the user can see sessions — and ONLY while they can.
  *
- * TWO conditions, and the second was learned the hard way. The lifecycle scope
- * (STARTED) keeps a phone in a pocket from spending the desktop's per-device
- * budget, which was sized for a visible screen. [active] adds the screen
- * itself: the poll used to run behind every other screen too, so a
- * `session_list` landed between every slice of an attachment transfer — two
- * round trips per slice instead of one, on a link where a round trip is most of
- * the cost. Nothing else needs it; alerts and chat arrive as pushes.
+ * This is not a poll. The client fetches the list once when it is watched, and
+ * again only when Helm says it moved (a `changes` record). TWO conditions gate
+ * the watching: the lifecycle scope (STARTED), so a phone in a pocket asks for
+ * nothing, and [active], so a fetch never lands between the slices of an
+ * attachment transfer.
  *
- * An OPEN session polls at a slower [intervalMs] and pauses while an attachment
- * is being pulled, so its header stays current without taxing a transfer.
- *
- * Keyed on [active], so returning to the list polls immediately rather than
- * waiting out an interval.
+ * The loop is the retry for a fetch that could not be made — the link was not
+ * usable yet, or the request timed out. While the list is fresh each pass does
+ * nothing at all, and with no link it puts nothing on the air.
  */
 @Composable
-private fun PollSessions(client: HelmClient, active: Boolean, intervalMs: Long) {
+private fun WatchSessions(client: HelmClient, active: Boolean) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(lifecycle, active, intervalMs) {
+    LaunchedEffect(lifecycle, active) {
         if (!active) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                client.refreshSessions()
-                delay(intervalMs)
+            client.watchSessions(true)
+            try {
+                while (true) {
+                    delay(STALE_SESSIONS_RETRY_MS)
+                    client.refreshStaleSessions()
+                }
+            } finally {
+                client.watchSessions(false)
             }
         }
     }
@@ -1848,21 +1845,28 @@ private fun ReportVisibility(client: HelmClient) {
     }
 }
 
-/** Half the per-device budget, leaving room for whatever the user is doing. */
 private const val SESSION_SWITCH_MS = 220
 private const val EDGE_BOUNCE_DISTANCE_DP = 10
 private const val EDGE_BOUNCE_PULL_MS = 90
 private const val EDGE_BOUNCE_DAMPING = 0.62f
 private const val EDGE_BOUNCE_STIFFNESS = 720f
-private const val POLL_INTERVAL_MS = 2_000L
-private const val OPEN_SESSION_POLL_INTERVAL_MS = 10_000L
+
+/**
+ * How often a watched list that is STALE is retried. Not a poll interval: a
+ * fresh list is never asked for, so this only paces the wait for a usable link.
+ */
+private const val STALE_SESSIONS_RETRY_MS = 2_000L
+
+/** How often a screen waiting for a session to appear looks at the held list. */
+private const val SESSION_WAIT_STEP_MS = 500L
 
 /**
  * How long a confirmed spawn waits for its session to show in the list before
- * giving up on opening the thread. The desktop records the session before it
- * answers, so one poll is normally enough — this is the rope, not the path.
+ * giving up on opening the thread: [CREATED_SESSION_WAITS] looks, one every
+ * [SESSION_WAIT_STEP_MS]. The spawn's own refresh normally brings the row at
+ * once — this is the rope, not the path.
  */
-private const val CREATED_SESSION_POLLS = 10
+private const val CREATED_SESSION_WAITS = 40
 
 /** The sink threw with no message of its own; the row still needs a reason. */
 private const val CANNOT_WRITE_FILE = "The phone could not write the file"

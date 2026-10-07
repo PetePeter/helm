@@ -24,6 +24,11 @@
  * from a REGISTERED machine is dropped silently: answering would tell a stranger
  * their bytes were understood.
  *
+ * CHANGE NOTICES. A phone that fetched the session list as a delta is owed ONE
+ * `changes` record the next time the list moves — and then nothing until it
+ * fetches again. That is what replaced the phone's two-second poll; see
+ * `armSessionNotice` and docs/chat-fan-out.md.
+ *
  * If no gate is wired the bridge denies rather than degrading — a missing
  * boundary must never become an open one.
  *
@@ -37,7 +42,7 @@ import type { ChatJournalEntry } from './mobile-chat-journal.js';
 import {
   BLOB_UPLOAD_MIN_PROTOCOL,
 } from './protocol-version.js';
-import { decodeBlobResult, decodeRecord, encodeBlobResult, encodeChat, encodeError, encodeResult, isBlobPayload } from './mobile-envelope.js';
+import { decodeBlobResult, decodeRecord, encodeBlobResult, encodeChanges, encodeChat, encodeError, encodeResult, isBlobPayload } from './mobile-envelope.js';
 import type { ChatRecordInput, MobileCallRecord, MobileChatKind } from './mobile-envelope.js';
 import type { MobileArtifactUploadService } from './mobile-artifact-upload.js';
 import { isArtifactDownloadBinary } from '../session/artifact-download.js';
@@ -56,7 +61,28 @@ export const MOBILE_CHAT_PROVIDER = 'mobile';
  */
 const SESSION_SEND_TEXT_METHOD = 'session_send_text';
 
+/** The tool whose delta form arms a change notice. */
+const SESSION_LIST_METHOD = 'session_list';
+
+/** The `changes` record kind for the session list. Mirrored in the phone app. */
+export const SESSIONS_CHANGE_KIND = 'sessions';
+
+/**
+ * The least time between two notices to one phone. A visible phone refetches
+ * the moment it is told, which re-arms it — so without a floor a session whose
+ * dot flickers would turn the feed into a stream. One second is still faster
+ * than the two-second poll it replaced, and each refetch is a delta.
+ */
+export const SESSION_NOTICE_MIN_GAP_MS = 1_000;
+
 const JSONRPC_SERVER_ERROR = -32000;
+
+/** The slice of SessionChangeFeed this bridge announces. */
+export interface MobileSessionFeed {
+  readonly seq: number;
+  on(event: 'moved', handler: () => void): unknown;
+  off(event: 'moved', handler: () => void): unknown;
+}
 
 /** The slice of MobileLinkManager this bridge drives. Narrow by design: no BLE. */
 export interface MobileMessageLinks {
@@ -99,6 +125,11 @@ export interface MobileChatBridgeDeps {
    * protocol from pushing bytes at a reassembler its handshake never agreed to.
    */
   negotiatedProtocol?: (machineId: string) => number;
+  /**
+   * The session list's change feed. ABSENT means no phone is ever told the
+   * list moved — the delta fetch still works, it is just never prompted.
+   */
+  sessionFeed?: MobileSessionFeed;
   /** Told which journaled messages a user deleted — an API tool drops them from its history. */
   onMessagesDeleted?: (sessionId: string, removed: ChatJournalEntry[]) => void;
   now?: () => number;
@@ -118,6 +149,17 @@ export class MobileChatBridge implements ChatBridge {
     });
   };
   private listening = false;
+  /**
+   * Phones owed a session-list notice, with the seq each one already holds.
+   * A phone is here from its delta fetch until its one notice goes out.
+   */
+  private readonly sessionNoticeOwed = new Map<string, number>();
+  /** Notices waiting out the gap, so a burst of moves schedules one send. */
+  private readonly sessionNoticeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly sessionNoticeSentAt = new Map<string, number>();
+  private readonly onSessionsMoved = () => {
+    for (const machineId of this.sessionNoticeOwed.keys()) this.scheduleSessionNotice(machineId);
+  };
 
   constructor(deps: MobileChatBridgeDeps) {
     this.deps = deps;
@@ -129,6 +171,7 @@ export class MobileChatBridge implements ChatBridge {
     if (this.listening) return;
     this.listening = true;
     this.deps.links.on('message', this.onMessage);
+    this.deps.sessionFeed?.on('moved', this.onSessionsMoved);
   }
 
   /** Stop accepting inbound records. Idempotent. */
@@ -136,6 +179,10 @@ export class MobileChatBridge implements ChatBridge {
     if (!this.listening) return;
     this.listening = false;
     this.deps.links.off?.('message', this.onMessage);
+    this.deps.sessionFeed?.off('moved', this.onSessionsMoved);
+    for (const timer of this.sessionNoticeTimers.values()) clearTimeout(timer);
+    this.sessionNoticeTimers.clear();
+    this.sessionNoticeOwed.clear();
   }
 
   /**
@@ -393,6 +440,10 @@ export class MobileChatBridge implements ChatBridge {
         const request = chatDeleteIn(record.params);
         if (request) this.deleteMessages(request.sessionId, request.items);
       }
+      // A delta fetch the gate ALLOWED is the phone saying "tell me when this
+      // moves". Armed only here, after the gate, so a device that may not list
+      // sessions is never told that they changed either.
+      if (record.method === SESSION_LIST_METHOD) this.armSessionNotice(machineId, result);
       // An ACCEPTED reply from a phone is part of the conversation the journal
       // exists to preserve — without this, a refetch after an app restart would
       // restore only the agent's half of every thread. Journaled ONLY: nothing
@@ -486,6 +537,53 @@ export class MobileChatBridge implements ChatBridge {
       at: this.now(),
       originId: `${machineId}:${record.id}`,
     });
+  }
+
+  /**
+   * Owe `machineId` one notice for the next move past the seq it was just
+   * given. A reply without a seq is the plain-array form an older phone asks
+   * for; that phone polls, and is owed nothing.
+   *
+   * The seq matters: the list may have moved between the reply being built and
+   * this line, and a phone armed without it would wait for a change that
+   * already happened.
+   */
+  private armSessionNotice(machineId: string, result: unknown): void {
+    const feed = this.deps.sessionFeed;
+    const heldSeq = result && typeof result === 'object' ? (result as { seq?: unknown }).seq : undefined;
+    if (!feed || typeof heldSeq !== 'number') return;
+    this.sessionNoticeOwed.set(machineId, heldSeq);
+    if (feed.seq > heldSeq) this.scheduleSessionNotice(machineId);
+  }
+
+  /** Send the owed notice now, or once the gap since the last one has passed. */
+  private scheduleSessionNotice(machineId: string): void {
+    if (this.sessionNoticeTimers.has(machineId)) return;
+    const wait = (this.sessionNoticeSentAt.get(machineId) ?? -Infinity) + SESSION_NOTICE_MIN_GAP_MS - this.now();
+    this.sessionNoticeTimers.set(machineId, setTimeout(() => {
+      this.sessionNoticeTimers.delete(machineId);
+      this.sendSessionNotice(machineId);
+    }, Math.max(0, wait)));
+  }
+
+  /**
+   * ONE notice, then silence until the phone fetches again. A phone in a pocket
+   * therefore costs one small record however busy the desktop gets.
+   *
+   * A phone that has since gone offline or been disabled is simply no longer
+   * owed: it refetches when it next links up, which re-arms it. Nothing is
+   * retried for the same reason.
+   */
+  private sendSessionNotice(machineId: string): void {
+    const feed = this.deps.sessionFeed;
+    const heldSeq = this.sessionNoticeOwed.get(machineId);
+    if (!feed || heldSeq === undefined || feed.seq <= heldSeq) return;
+    this.sessionNoticeOwed.delete(machineId);
+    if (!this.linkedMachines().includes(machineId)) return;
+    this.sessionNoticeSentAt.set(machineId, this.now());
+    if (!this.deps.links.send(machineId, encodeChanges(SESSIONS_CHANGE_KIND, feed.seq))) {
+      logger.warn(`[MobileChat] Could not tell ${machineId} the session list moved; the link is gone`);
+    }
   }
 
   private answer(machineId: string, payload: Buffer): void {

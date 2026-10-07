@@ -131,11 +131,12 @@ const RATE_LIMIT_MESSAGE = 'Rate limit exceeded';
 const JSONRPC_SERVER_ERROR = -32000;
 
 /**
- * Per-device bucket: ~120 calls/min with a burst of 120. The phone's session
- * poll alone spends 30/min of this shared bucket (one session_list every 2s
- * while the app is visible), so 60 left too little for a user acting on top of
- * it; 120 keeps the poll and the actions in one bucket with room for both.
- * Still roomier than the fleet's 30 because a phone UI is interactive.
+ * Per-device bucket: ~120 calls/min with a burst of 120. Sized for the worst
+ * phone still in the field: one that predates the session change feed polls
+ * session_list every 2s while visible (30/min), and a current one refetches a
+ * delta at most once a second while the list is moving (60/min). Either way
+ * 120 leaves room for the user acting on top. Still roomier than the fleet's
+ * 30 because a phone UI is interactive.
  */
 export const DEFAULT_MOBILE_RATE_CAPACITY = 120;
 export const DEFAULT_MOBILE_RATE_REFILL_PER_MS = 120 / 60000;

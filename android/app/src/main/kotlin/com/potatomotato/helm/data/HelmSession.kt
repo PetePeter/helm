@@ -113,6 +113,24 @@ data class HelmSession(
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
 /**
+ * Where this phone has got to in Helm's session change feed. [epoch] names one
+ * run of Helm: a cursor from another run is answered with the whole list.
+ */
+data class SessionCursor(val epoch: String, val seq: Long)
+
+/**
+ * One `session_list` answer. [full] means [sessions] is the whole list and
+ * replaces what is held; otherwise [sessions] are only the rows that changed
+ * and [removed] the ids that went away.
+ */
+data class SessionChanges(
+    val cursor: SessionCursor?,
+    val full: Boolean,
+    val sessions: List<HelmSession>,
+    val removed: List<String> = emptyList(),
+)
+
+/**
  * The `session_list` result, read off the wire.
  *
  * Tolerant by design and in one direction only: a field the desktop stops
@@ -131,6 +149,38 @@ object SessionWire {
         val array = result as? JSONArray
             ?: return WireShape.undecodable("a session_list result", "a JSON array", result)
         return visible((0 until array.length()).mapNotNull { parse(array.optJSONObject(it)) })
+    }
+
+    /**
+     * The `session_list` DELTA reply — `{epoch, seq, full, sessions, removed}` —
+     * which is what Helm answers when the call carries `since`.
+     *
+     * A bare array is still read, as a whole list with no cursor: it is what a
+     * call without `since` gets, and reading it costs nothing.
+     *
+     * A row that is a subagent is reported as REMOVED rather than dropped: in a
+     * delta, "not listed" means "unchanged", so a session that became one would
+     * otherwise stay on screen.
+     */
+    fun parseChanges(result: Any?): SessionChanges? {
+        if (result is JSONArray) return parseList(result)?.let { SessionChanges(cursor = null, full = true, sessions = it) }
+        val reply = result as? JSONObject
+            ?: return WireShape.undecodable("a session_list result", "a JSON object or array", result)
+        val rows = reply.opt("sessions") as? JSONArray
+            ?: return WireShape.undecodable("a session_list result", "a sessions array", result)
+        val epoch = reply.opt("epoch") as? String
+        val seq = (reply.opt("seq") as? Number)?.toLong()
+        val parsed = (0 until rows.length()).mapNotNull { parse(rows.optJSONObject(it)) }
+        val gone = reply.opt("removed") as? JSONArray
+        return SessionChanges(
+            // A reply that cannot say where it got to is still a list; it just
+            // cannot be resumed from, so the next fetch asks for everything.
+            cursor = if (epoch != null && seq != null) SessionCursor(epoch, seq) else null,
+            full = reply.opt("full") != false,
+            sessions = visible(parsed),
+            removed = (0 until (gone?.length() ?: 0)).mapNotNull { gone?.opt(it) as? String } +
+                parsed.filter { it.subagentOf != null }.map { it.id },
+        )
     }
 
     /**

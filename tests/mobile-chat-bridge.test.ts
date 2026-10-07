@@ -9,7 +9,8 @@
  * real MobileDeviceStore. Only the radio is faked.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { SessionChangeFeed } from '../src/session/session-change-feed';
 import { EventEmitter } from 'node:events';
 import { MobileChatBridge } from '../src/mobile/mobile-chat-bridge';
 import { MobileChatJournal } from '../src/mobile/mobile-chat-journal';
@@ -760,5 +761,168 @@ describe('deleting chat messages', () => {
     await bridge.sendToSession({ sessionId: 's1', text: 'done', usage: { contextTokens: 60000, contextWindow: 200000 } });
     expect(links.records()[0]).toMatchObject({ contextTokens: 60000, contextWindow: 200000 });
     expect(links.records()[0]).not.toHaveProperty('toolCalls');
+  });
+});
+
+/**
+ * The session list's change notices — what replaced the phone polling the
+ * whole list every two seconds. Real bridge, real gate, real SessionChangeFeed.
+ */
+describe('MobileChatBridge session change notices', () => {
+  let feed: SessionChangeFeed;
+  let noticing: MobileChatBridge;
+  let clock: number;
+
+  const bridgeOver = (listing: MobileGate) => new MobileChatBridge({
+    links, deviceStore, gate: () => listing, journal, now: () => clock, sessionFeed: feed,
+    sessions: { getSession: (id: string) => SESSIONS.get(id) ?? null, updateSession: () => {} },
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    clock = NOW;
+    feed = new SessionChangeFeed({ epoch: 'e1' });
+    const listing = new MobileGate({
+      deviceStore,
+      // The delta reply as the real service shapes it: the cursor is the feed's.
+      dispatch: async (_method, params) => (params as { since?: unknown } | undefined)?.since === undefined
+        ? []
+        : { epoch: feed.epoch, seq: feed.seq, full: true, sessions: [], removed: [] },
+      rateLimiter: createDefaultMobileRateLimiter(),
+    });
+    bridge.stop();
+    noticing = bridgeOver(listing);
+    noticing.start();
+    links.online.add('phone-machine');
+  });
+
+  afterEach(() => {
+    noticing.stop();
+    vi.useRealTimers();
+  });
+
+  const advance = async (ms: number) => {
+    clock += ms;
+    await vi.advanceTimersByTimeAsync(ms);
+  };
+  const fetchDelta = async (id: string) => {
+    links.receive('phone-machine', encodeCall(id, 'session_list', { since: '0' }));
+    await advance(0);
+  };
+  const notices = () => links.records().filter((r: any) => r?.t === 'changes');
+
+  it('says nothing to a phone that has never fetched the list as a delta', async () => {
+    feed.touch('s1');
+    await advance(5_000);
+    expect(notices()).toEqual([]);
+  });
+
+  it('owes nothing to a phone that asked for the plain list — that phone polls', async () => {
+    links.receive('phone-machine', encodeCall('p1', 'session_list'));
+    await advance(0);
+    feed.touch('s1');
+    await advance(5_000);
+    expect(notices()).toEqual([]);
+  });
+
+  it('tells a phone that fetched a delta when the list next moves, naming the new seq', async () => {
+    await fetchDelta('d1');
+    expect(notices()).toEqual([]);
+
+    feed.touch('s1');
+    await advance(0);
+
+    expect(notices()).toEqual([{ v: 1, t: 'changes', kind: 'sessions', seq: 1 }]);
+  });
+
+  it('sends ONE notice and then stays silent until the phone fetches again', async () => {
+    await fetchDelta('d1');
+    feed.touch('s1');
+    await advance(0);
+
+    // The phone is in a pocket: the desktop keeps moving, nothing more is sent.
+    for (let i = 0; i < 20; i += 1) feed.touch('s1');
+    await advance(60_000);
+    expect(notices()).toHaveLength(1);
+
+    // It looks again; the next move is announced.
+    await fetchDelta('d2');
+    feed.touch('s1');
+    await advance(0);
+    expect(notices()).toHaveLength(2);
+  });
+
+  it('holds a second notice until a second has passed since the first', async () => {
+    await fetchDelta('d1');
+    feed.touch('s1');
+    await advance(0);
+    expect(notices()).toHaveLength(1);
+
+    // A visible phone refetches at once, and the list moves again straight away.
+    await fetchDelta('d2');
+    feed.touch('s1');
+    await advance(900);
+    expect(notices()).toHaveLength(1);
+
+    await advance(100);
+    expect(notices()).toHaveLength(2);
+  });
+
+  it('tells a phone about a move that landed between its reply and the arming', async () => {
+    // The reply carries seq 0, but by the time the phone is armed the feed is at 1.
+    const racing = new MobileGate({
+      deviceStore,
+      dispatch: async () => {
+        const reply = { epoch: feed.epoch, seq: feed.seq, full: true, sessions: [], removed: [] };
+        feed.touch('s1');
+        return reply;
+      },
+      rateLimiter: createDefaultMobileRateLimiter(),
+    });
+    noticing.stop();
+    noticing = bridgeOver(racing);
+    noticing.start();
+
+    await fetchDelta('d1');
+
+    expect(notices()).toEqual([{ v: 1, t: 'changes', kind: 'sessions', seq: 1 }]);
+  });
+
+  it('never tells a device that may not list sessions that they changed', async () => {
+    deviceStore.update(phone.id, { allow: ['session_send_text'] });
+    await fetchDelta('d1');
+    feed.touch('s1');
+    await advance(5_000);
+    expect(notices()).toEqual([]);
+  });
+
+  it('sends nothing to a phone that went offline, and owes it nothing afterwards', async () => {
+    await fetchDelta('d1');
+    links.online.delete('phone-machine');
+    feed.touch('s1');
+    await advance(5_000);
+
+    // Back online without having fetched: it is not chased with the old debt.
+    links.online.add('phone-machine');
+    feed.touch('s1');
+    await advance(5_000);
+
+    expect(notices()).toEqual([]);
+  });
+
+  it('sends nothing to a device disabled after it was armed', async () => {
+    await fetchDelta('d1');
+    deviceStore.update(phone.id, { enabled: false });
+    feed.touch('s1');
+    await advance(5_000);
+    expect(notices()).toEqual([]);
+  });
+
+  it('stops announcing once stopped', async () => {
+    await fetchDelta('d1');
+    noticing.stop();
+    feed.touch('s1');
+    await advance(5_000);
+    expect(notices()).toEqual([]);
   });
 });

@@ -845,12 +845,14 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_list',
     title: 'List Sessions',
-    description: 'List currently known Helm sessions, optionally filtered to one working directory or project. Call this before sending text so you can target an existing session instead of spawning blindly.',
+    description: 'List currently known Helm sessions, optionally filtered to one working directory or project. Call this before sending text so you can target an existing session instead of spawning blindly. Pass since (and the epoch a previous reply returned) to get only what changed: the reply is then {epoch, seq, full, sessions, removed} — merge sessions by id and drop removed, or replace everything when full is true.',
     inputSchema: {
       type: 'object',
       properties: {
         dirPath: { type: 'string' },
         projectId: { type: 'string' },
+        since: { anyOf: [{ type: 'number' }, { type: 'string' }], description: 'The seq of the last reply you hold. Its presence selects the delta reply shape.' },
+        epoch: { type: 'string', description: 'The epoch that seq came from. Omit on a first fetch.' },
       },
       additionalProperties: false,
     },

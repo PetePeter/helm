@@ -206,5 +206,16 @@ sealed interface MobileRecord {
      * hammering a port that is no longer open.
      */
     data class Lan(val addresses: List<String>) : MobileRecord
+
+    /**
+     * Helm -> phone. A feed moved: "something of this [kind] changed, come and
+     * fetch it". Unsolicited, and it carries NO data — only which feed and how
+     * far it has got ([seq]). The phone answers with an ordinary gated call, so
+     * a notice can never deliver anything the allow-list would have refused.
+     *
+     * Helm sends ONE per fetch: after it, nothing more arrives until the phone
+     * fetches again. A [kind] this build does not know is ignored.
+     */
+    data class Changes(val kind: String, val seq: Long) : MobileRecord
 }
 

@@ -155,8 +155,16 @@ object MobileEnvelope {
             "error" -> decodeFailure(record)
             "chat" -> decodeChat(record)
             "lan" -> decodeLan(record)
+            "changes" -> decodeChanges(record)
             else -> null
         }
+    }
+
+    /** Type-checked like every other key: a numeric kind or a missing seq is malformed. */
+    private fun decodeChanges(record: JSONObject): MobileRecord.Changes? {
+        val kind = record.string("kind") ?: return null
+        val seq = record.opt("seq") as? Number ?: return null
+        return MobileRecord.Changes(kind, seq.toLong())
     }
 
     /**

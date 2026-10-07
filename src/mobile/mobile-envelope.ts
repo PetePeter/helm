@@ -8,7 +8,7 @@
  * vectors at `tests/fixtures/mobile-envelope-vectors.json`. Changing a field
  * name, a key order or a type is a WIRE BREAK.
  *
- * There are exactly four record kinds, and the split is a security boundary as
+ * The record kinds are a closed set, and the split is a security boundary as
  * much as a protocol one:
  *
  *   call   phone → Helm. A tool invocation. EVERY inbound record is one of
@@ -32,6 +32,10 @@
  *          Carries no id: it answers nothing. See MobileAddressAdvertiser — it
  *          rides the ALREADY AUTHENTICATED channel, which is the only reason a
  *          phone may believe an address at all.
+ *   changes Helm → phone. "Something of this kind moved; come and fetch it."
+ *          Carries no id and NO DATA — only which feed moved and how far. The
+ *          phone answers by making an ordinary gated call, so a notice can
+ *          never hand a device anything its allow-list would have refused.
  *
  * Decoding NEVER throws. A malformed record from a paired-but-buggy phone must
  * be dropped and logged, not propagated into the session layer.
@@ -198,12 +202,28 @@ export interface MobileLanRecord {
   addresses: string[];
 }
 
+/**
+ * A feed moved (the CouchDB `_changes` idea, long-poll style).
+ *
+ * `kind` names the feed so one record type serves every list a phone mirrors;
+ * `'sessions'` is the first. `seq` is where that feed has got to — a phone
+ * already holding it has nothing to fetch. A phone that does not know a kind
+ * ignores the record.
+ */
+export interface MobileChangesRecord {
+  v: number;
+  t: 'changes';
+  kind: string;
+  seq: number;
+}
+
 export type MobileRecord =
   | MobileCallRecord
   | MobileResultRecord
   | MobileErrorRecord
   | MobileChatRecord
-  | MobileLanRecord;
+  | MobileLanRecord
+  | MobileChangesRecord;
 
 export interface ChatRecordInput {
   sessionId: string;
@@ -409,6 +429,10 @@ export function encodeLan(addresses: string[]): Buffer {
   return encode({ v: MOBILE_ENVELOPE_VERSION, t: 'lan', addresses });
 }
 
+export function encodeChanges(kind: string, seq: number): Buffer {
+  return encode({ v: MOBILE_ENVELOPE_VERSION, t: 'changes', kind, seq });
+}
+
 function encode(record: MobileRecord): Buffer {
   return Buffer.from(JSON.stringify(record), 'utf8');
 }
@@ -460,6 +484,10 @@ export function decodeRecord(payload: Buffer): MobileRecord | null {
       // or an array holding anything but strings, is malformed.
       return Array.isArray(record.addresses) && record.addresses.every(isString)
         ? ({ ...record } as unknown as MobileLanRecord)
+        : null;
+    case 'changes':
+      return isString(record.kind) && typeof record.seq === 'number'
+        ? ({ ...record } as unknown as MobileChangesRecord)
         : null;
     default:
       return null;

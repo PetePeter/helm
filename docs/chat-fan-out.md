@@ -89,7 +89,7 @@ on `machineId`) and the gate (keyed on the local `MobileDevice` record id).
 
 ## The mobile wire records
 
-`src/mobile/mobile-envelope.ts` defines four UTF-8 JSON records carried inside a
+`src/mobile/mobile-envelope.ts` defines the UTF-8 JSON records carried inside a
 `SecureChannel` message. Key order is fixed and optional keys are omitted rather
 than emitted as null, so two encoders in two languages produce identical bytes.
 
@@ -99,8 +99,72 @@ than emitted as null, so two encoders in two languages produce identical bytes.
 | `result` | Helm → phone | The gate's return value for one call id. |
 | `error` | Helm → phone | JSON-RPC-shaped failure; deny messages stay uniform. |
 | `chat` | Helm → phone | An unsolicited agent message for a session — or, with `kind`, an alert. Messages carry the journal `seq`; alerts never do. Replayed journal records add `replay: true`; a phone's own echoed reply adds `originId` (see below). Optionally carries an attachment's ids (see below). |
+| `lan` | Helm → phone | Where this desktop can be dialled; see [mobile-lan-transport.md](mobile-lan-transport.md). |
+| `changes` | Helm → phone | A feed moved — `{kind, seq}`, no data. The phone fetches what changed with an ordinary gated call. See **Session change feed** below. |
 
 Decoding never throws — a malformed record is dropped and logged.
+
+### Session change feed
+
+The phone mirrors the session list, and it used to do that by calling
+`session_list` every two seconds while the list was on screen — the whole list,
+every time, to notice one dot turning green. That poll is gone. The list is now
+kept current the way CouchDB's `_changes` feed works: **one update channel that
+says something moved, plus a retrieval call that returns only what did.**
+
+```mermaid
+sequenceDiagram
+    participant P as Phone (HelmClient)
+    participant B as MobileChatBridge
+    participant F as SessionChangeFeed
+    participant S as SessionManager
+
+    P->>B: call session_list {since: 0}
+    B->>P: result {epoch, seq: 12, full: true, sessions: [all]}
+    Note over B: phone is now OWED one notice past seq 12
+    S->>F: session:updated (a dot turned green)
+    F->>B: moved (seq 13)
+    B->>P: changes {kind: sessions, seq: 13}
+    Note over B: owed nothing more until the phone fetches
+    S->>F: session:updated ×20
+    Note over B,P: silence
+    P->>B: call session_list {since: 12, epoch}
+    B->>P: result {seq: 33, full: false, sessions: [changed rows], removed: []}
+```
+
+- **`SessionChangeFeed`** (`src/session/session-change-feed.ts`) gives every
+  session add / update / remove the next number in one sequence and remembers,
+  per session, the number it last changed at. Closed sessions leave a tombstone.
+  It records *that* a session changed, never what — rows are built by the same
+  code `session_list` always used.
+- **Retrieval** is `session_list` itself with an optional `since` (and the
+  `epoch` a previous reply returned). With `since` the reply is
+  `{epoch, seq, full, sessions, removed}`; without it, the plain array every
+  other caller expects. Same tool, same allow-list entry, same gate.
+- **In memory, deliberately.** Chat is history, so its journal is persisted;
+  sessions are state, and the list is always there to be read again. A restart
+  starts a new `epoch`, and a cursor from another epoch — or one older than a
+  tombstone the feed has dropped — is answered with the whole list and
+  `full: true`.
+- **One notice per fetch.** A delta fetch the gate allowed arms the phone for
+  exactly one `changes` record. After it is sent the bridge says nothing more to
+  that phone until it fetches again, so a phone in a pocket costs one small
+  record however busy the desktop gets. Two notices to one phone are at least a
+  second apart, so a flickering dot cannot become a stream.
+- **A notice carries no data**, only `kind` and `seq`. What the phone learns
+  still comes through a gated call, so a device whose allow-list excludes
+  `session_list` is never armed and never told.
+- **The phone fetches only while a screen showing sessions is visible**
+  (`HelmClient.watchSessions`). A notice that arrives otherwise marks the list
+  stale, and it is fetched when the screen next appears.
+
+What still refreshes on its own schedule: a row's git branch and a keep-warm
+window expiring are not session events, so they update with the next change to
+that row, or the next whole fetch.
+
+`kind` names the feed so the same record can announce other lists later; only
+`sessions` exists. Protocol 5 marks the feature — see
+[mobile-secure-channel.md](mobile-secure-channel.md).
 
 ### `kind` — the field that splits a message from an alert
 
@@ -157,9 +221,11 @@ via a second reserved in-gate meta-method, `__chat_cursor__` (the
 `__mobile_tools__` precedent: answered in the gate, never dispatched, so a
 disabled device cannot pull the journal), and Helm streams everything after
 that seq over the same link, oldest first. The phone reports the cursor on its
-link-up hook AND from its session poll whenever the current link has
+link-up hook AND from its session-watching pass (`refreshStaleSessions`, which
+runs every two seconds while a session screen is visible and sends nothing when
+there is nothing to say) whenever the current link has
 not heard it — a relink that comes up without the hook firing (observed after a
-failed handshake retry) still catches up within one poll instead of leaving the
+failed handshake retry) still catches up within one pass instead of leaving the
 threads empty for the process lifetime. One global sequence means the hub
 tracks nothing per phone — a fourth paired phone needs no new hub state.
 
@@ -172,7 +238,7 @@ flag standing, and that reconnect came back with permanently empty threads.
 Re-reporting costs nothing: Helm replays from the same seq and the phone
 dedupes. The report also goes STALE after five minutes — a replay streamed
 over BLE can outrun a link that drops mid-stream, and the desktop, having
-answered once, never sends the rest; saying the cursor again on a later poll
+answered once, never sends the rest; saying the cursor again on a later pass
 heals that hole without waiting for a reconnect.
 
 The cursor persists ONLY together with the threads: `ChatStore` writes one
@@ -301,7 +367,7 @@ themselves would hold the link for minutes.
 
 The first measurement of this path is worth keeping: 754KB took ~15s, and the
 cause was not base64 (a flat +33%) but round trips — 64KiB slices, strictly
-serial, with the phone's `session_list` poll landing between every one of them.
+serial, with the phone's then-two-second `session_list` poll landing between every one of them.
 Slice size and pipelining are second-order; **round trips are the cost**.
 
 That measurement is why the reply is now **binary**. A download answers with a
