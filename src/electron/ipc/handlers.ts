@@ -892,6 +892,16 @@ export function registerIPCHandlers(
     }
   });
   sessionManager.on('session:removed', (event) => {
+    // ComfyUI references and results expire on close, even when the rest of the
+    // session is recoverable from the recycle bin.
+    if (event.session?.comfyUiTool === true) {
+      try {
+        getComfyUiSessionHost().closeSession(event.sessionId);
+      } catch (error) {
+        logger.error(`[IPC] Failed to clean ComfyUI images for closed session ${event.sessionId}: ${error}`);
+      }
+    }
+
     // Recoverable (has a cliSessionName) closed sessions go to the recycle bin,
     // and their directory is auto-bookmarked so the group header persists. Tag
     // the bin entry with the session's runtime group (if any) so restore can
@@ -1254,6 +1264,8 @@ export function registerIPCHandlers(
     tempDir: getTempDir(dirname ?? process.cwd()),
     artifacts: artifactManager,
     attachments: artifactAttachmentManager,
+    onAttachmentDeleted: (sessionId, artifactId, attachmentId) =>
+      mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId),
     postChat: async (sessionId, text, attachment) => {
       await mobileChatBridge.sendToSession({
         sessionId,

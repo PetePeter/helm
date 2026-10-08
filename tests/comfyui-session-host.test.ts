@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
@@ -36,6 +36,9 @@ describe('ComfyUI requester reply', () => {
   let host: ComfyUiSessionHost;
   let history: () => History;
   let promptsSubmitted: number;
+  let artifacts: Artifact[];
+  let attachments: ArtifactAttachmentManager;
+  let deletedAttachments: Array<{ sessionId: string; artifactId: string; attachmentId: string }>;
 
   const config = { ...cloneDefaultComfyUiConfigForKind('image'), endpoint: ENDPOINT };
   const profile = config.profiles[0];
@@ -53,6 +56,9 @@ describe('ComfyUI requester reply', () => {
     };
     history = () => completedWith('result.png');
     promptsSubmitted = 0;
+    artifacts = [];
+    attachments = new ArtifactAttachmentManager(rootDir);
+    deletedAttachments = [];
 
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -61,6 +67,7 @@ describe('ComfyUI requester reply', () => {
         promptsSubmitted += 1;
         return new Response(JSON.stringify({ prompt_id: 'prompt-1' }));
       }
+      if (url.pathname === '/upload/image') return new Response(JSON.stringify({ name: 'reference.png', subfolder: '' }));
       if (url.pathname === '/history/prompt-1') return new Response(JSON.stringify({ 'prompt-1': history() }));
       if (url.pathname === '/view') return new Response(Buffer.from([137, 80, 78, 71]));
       if (url.pathname === '/api/jobs/prompt-1/cancel') return new Response(JSON.stringify({ cancelled: true }));
@@ -68,7 +75,6 @@ describe('ComfyUI requester reply', () => {
       throw new Error(`Unexpected ComfyUI request: ${url.pathname}`);
     }));
 
-    const artifacts: Artifact[] = [];
     host = new ComfyUiSessionHost({
       tempDir: rootDir,
       artifacts: {
@@ -79,7 +85,10 @@ describe('ComfyUI requester reply', () => {
           return artifact;
         },
       },
-      attachments: new ArtifactAttachmentManager(rootDir),
+      attachments,
+      onAttachmentDeleted: (sessionId, artifactId, attachmentId) => {
+        deletedAttachments.push({ sessionId, artifactId, attachmentId });
+      },
       postChat: async () => undefined,
       recordPrompt: (sessionId, text) => { recordedPrompts.push({ sessionId, text }); },
       notifyRequester: (...args) => notifyRequester(...args),
@@ -168,4 +177,73 @@ describe('ComfyUI requester reply', () => {
     expect(notifications[0].requesterSessionId).toBe(REQUESTER);
     expect(pathsIn(notifications[0].text)).toHaveLength(1);
   }, JOB_TIMEOUT_MS * 2);
+
+  it('deletes stored images and their chat references on session close, preserving other files', async () => {
+    const referencePath = join(rootDir, 'reference.png');
+    writeFileSync(referencePath, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]));
+    host.submit(COMFY_SESSION, 'use this reference', undefined, undefined, REQUESTER, referencePath);
+
+    await waitForNotifications(1);
+    const artifact = artifacts.find(item => item.sessionId === COMFY_SESSION)!;
+    const images = attachments.list(artifact.id).filter(item => item.contentType?.startsWith('image/'));
+    expect(images).toHaveLength(2); // Uploaded reference plus generated result.
+    const imagePaths = images.map(item => attachments.getPath(artifact.id, item.id));
+    const document = attachments.add(artifact.id, {
+      filename: 'notes.txt', content: Buffer.from('keep'), contentType: 'text/plain',
+    });
+
+    // PTY removal alone also happens during app shutdown; storage expires only
+    // when SessionManager confirms that the session itself has closed.
+    host.remove(COMFY_SESSION);
+    expect(imagePaths.every(path => existsSync(path))).toBe(true);
+
+    host.closeSession(COMFY_SESSION);
+    expect(imagePaths.every(path => !existsSync(path))).toBe(true);
+    expect(attachments.list(artifact.id).map(item => item.id)).toEqual([document.id]);
+    expect(deletedAttachments).toEqual(images.map(item => ({
+      sessionId: COMFY_SESSION, artifactId: artifact.id, attachmentId: item.id,
+    })));
+  }, JOB_TIMEOUT_MS);
+
+  it('removes a generated image that finishes storing after session close', async () => {
+    let signalStorageStarted!: () => void;
+    let releaseStorage!: () => void;
+    let signalStorageFinished!: () => void;
+    let storageOutcome: { ok: true } | { ok: false; error: string } | undefined;
+    const storageStarted = new Promise<void>(resolve => { signalStorageStarted = resolve; });
+    const storageFinished = new Promise<void>(resolve => { signalStorageFinished = resolve; });
+    const storageGate = new Promise<void>(resolve => { releaseStorage = resolve; });
+    const store = attachments.addGeneratedMediaFromFile.bind(attachments);
+    vi.spyOn(attachments, 'addGeneratedMediaFromFile').mockImplementation(async (artifactId, input) => {
+      signalStorageStarted();
+      await storageGate;
+      try {
+        const stored = await store(artifactId, input);
+        storageOutcome = { ok: true };
+        return stored;
+      } catch (error) {
+        storageOutcome = { ok: false, error: String(error) };
+        throw error;
+      } finally {
+        signalStorageFinished();
+      }
+    });
+
+    host.submit(COMFY_SESSION, 'a closing session', undefined, undefined, REQUESTER);
+    await storageStarted;
+    const artifact = artifacts.find(item => item.sessionId === COMFY_SESSION)!;
+    host.closeSession(COMFY_SESSION);
+    releaseStorage();
+
+    await vi.waitFor(() => expect(storageOutcome).toBeDefined(), { timeout: 5000, interval: 20 });
+    await storageFinished;
+    await waitForNotifications(1);
+    expect(storageOutcome).toEqual({ ok: true });
+    expect(attachments.list(artifact.id).filter(item => item.contentType?.startsWith('image/'))).toHaveLength(0);
+    expect(deletedAttachments).toEqual([{
+      sessionId: COMFY_SESSION,
+      artifactId: artifact.id,
+      attachmentId: expect.any(String),
+    }]); // Cleanup also covers the late result even though it was never posted.
+  }, JOB_TIMEOUT_MS);
 });

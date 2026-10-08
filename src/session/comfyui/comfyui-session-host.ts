@@ -30,7 +30,8 @@ export interface ComfyUiArtifacts {
 export interface ComfyUiSessionHostDeps {
   tempDir: string;
   artifacts: ComfyUiArtifacts;
-  attachments: Pick<ArtifactAttachmentManager, 'add' | 'addGeneratedMediaFromFile' | 'get' | 'getPath'>;
+  attachments: Pick<ArtifactAttachmentManager, 'add' | 'addGeneratedMediaFromFile' | 'get' | 'getPath' | 'list' | 'delete'>;
+  onAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
   /** Put a prompt another session sent into the chat; the chat pane and a phone record their own. */
   recordPrompt: (sessionId: string, text: string) => void;
@@ -64,7 +65,7 @@ interface Job {
 }
 
 const CHAT_FILES_TITLE = 'Chat files';
-const CHAT_FILES_BODY = 'Files generated in this ComfyUI session. They remain until the session expires.\n';
+const CHAT_FILES_BODY = 'Files generated or shared in this ComfyUI session. Stored images are removed when the session closes.\n';
 
 /** ComfyUI sessions share one serialized GPU queue and the existing chat journal. */
 export class ComfyUiSessionHost {
@@ -155,12 +156,37 @@ export class ComfyUiSessionHost {
   }
 
   remove(sessionId: string): void {
-    for (const job of this.jobs.values()) {
-      if (job.sessionId === sessionId) {
-        void this.cancelJob(job).catch(error => logger.warn(`[ComfyUI] Could not cancel expired session job ${job.id}: ${error}`));
+    if (this.sessions.delete(sessionId)) {
+      for (const job of this.jobs.values()) {
+        if (job.sessionId === sessionId) {
+          void this.cancelJob(job).catch(error => logger.warn(`[ComfyUI] Could not cancel closed session job ${job.id}: ${error}`));
+        }
       }
     }
-    this.sessions.delete(sessionId);
+  }
+
+  /** Permanently expire stored images after SessionManager removes this session. */
+  closeSession(sessionId: string): void {
+    this.remove(sessionId);
+    this.deleteStoredImages(sessionId);
+  }
+
+  private deleteStoredImages(sessionId: string): void {
+    for (const artifact of this.deps.artifacts.getForSession(sessionId).filter(item => item.title === CHAT_FILES_TITLE)) {
+      for (const attachment of this.deps.attachments.list(artifact.id)) {
+        if (!attachment.contentType?.toLowerCase().startsWith('image/')) continue;
+        try {
+          if (!this.deps.attachments.delete(artifact.id, attachment.id)) continue;
+          try {
+            this.deps.onAttachmentDeleted?.(sessionId, artifact.id, attachment.id);
+          } catch (error) {
+            logger.warn(`[ComfyUI] Deleted image ${attachment.id}, but chat-history cleanup failed: ${error}`);
+          }
+        } catch (error) {
+          logger.warn(`[ComfyUI] Could not delete stored image ${attachment.id} for closed session ${sessionId}: ${error}`);
+        }
+      }
+    }
   }
 
   private async cancelJob(job: Job): Promise<boolean> {
@@ -227,6 +253,19 @@ export class ComfyUiSessionHost {
           contentType: file.mimeType,
         });
         if (stored.sizeBytes > MAX_GENERATED_MEDIA_BYTES || !stored.sha256) throw new Error('Generated media failed its storage integrity check');
+        // Close can race the async copy/hash in addGeneratedMediaFromFile. The
+        // session removal pass may have run before the row reached the index;
+        // remove this late result instead of leaving it behind after close.
+        if (this.sessions.get(job.sessionId) !== process) {
+          if (this.deps.attachments.delete(stored.artifactId, stored.id)) {
+            try {
+              this.deps.onAttachmentDeleted?.(job.sessionId, stored.artifactId, stored.id);
+            } catch (error) {
+              logger.warn(`[ComfyUI] Deleted late image ${stored.id}, but chat-history cleanup failed: ${error}`);
+            }
+          }
+          break;
+        }
         const storedPath = this.deps.attachments.getPath(stored.artifactId, stored.id);
         const attachment: ChatAttachmentRef = {
           artifactId: stored.artifactId,
@@ -293,7 +332,7 @@ export class ComfyUiSessionHost {
         : [
           `Generated ${profile.kind} from ${profile.name}:`,
           ...storedPaths,
-          'Kept until the ComfyUI session expires; copy it to keep it longer.',
+          'Stored until the ComfyUI session closes; copy it to keep it longer.',
         ].join('\n'));
     try {
       await this.deps.notifyRequester(job.requesterSessionId, job.sessionId, text);
