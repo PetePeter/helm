@@ -39,6 +39,13 @@ export const DEFAULT_PEER_PORT = 47474;
 /** Default connect budget — a pairing dial should fail fast and visibly. */
 const DEFAULT_CONNECT_TIMEOUT_MS = 8000;
 
+/**
+ * Per-address budget when a peer offers several. A multi-homed peer advertises
+ * adapters that are unreachable from here (vEthernet, host-only), and each dead
+ * one costs its full timeout before the next is tried.
+ */
+const CANDIDATE_CONNECT_TIMEOUT_MS = 3000;
+
 /** Identity announcement: who is calling. Tamper-evident via the SAS transcript. */
 export interface PairingHello {
   t: 'hello';
@@ -188,9 +195,25 @@ export async function connectPairingSocket(opts: ConnectPairingSocketOptions): P
   return new PairingSocket(ws, peerCertFpFromSocket(capturedTls));
 }
 
+/** The half of a pairing a transport drives: frames in, teardown on disconnect. */
+interface SocketDrivenPairing {
+  handleMessage(msg: PairingMessage): void;
+  cancel(reason?: string): void;
+}
+
+/**
+ * Route a socket into its pairing. The `closed` half is what makes cancel and
+ * reject reliable: the side that aborts closes its socket, and this turns that
+ * into an immediate failure here rather than a session that waits out its TTL.
+ */
+export function bindPairingSocket(socket: PairingSocket, pairing: SocketDrivenPairing): void {
+  socket.on('message', (msg: PairingMessage) => pairing.handleMessage(msg));
+  socket.once('closed', () => pairing.cancel('peer-disconnected'));
+}
+
 export interface OutboundPairingChannelOptions {
-  /** Mutated in place with the observed cert fingerprint once TLS is up. */
-  peer: { machineId: string; alias: string; certFp: string; address: string };
+  /** Mutated in place: cert fingerprint and the address that actually answered. */
+  peer: { machineId: string; alias: string; certFp: string; address: string; candidateAddresses?: string[] };
   sessionId: string;
   self: { machineId: string; alias: string; port: number };
   connect: (opts: ConnectPairingSocketOptions) => Promise<PairingSocket>;
@@ -212,14 +235,15 @@ export class OutboundPairingChannel implements PairingChannel {
   private socket: PairingSocket | null = null;
   private queue: PairingMessage[] = [];
   private failed = false;
-  private pairing: { handleMessage(msg: PairingMessage): void; cancel(reason?: string): void } | null = null;
+  private closed = false;
+  private pairing: SocketDrivenPairing | null = null;
 
   constructor(private readonly opts: OutboundPairingChannelOptions) {
     void this.open();
   }
 
   /** Route inbound frames into the pairing once it exists (built after us). */
-  attach(pairing: { handleMessage(msg: PairingMessage): void; cancel(reason?: string): void }): void {
+  attach(pairing: SocketDrivenPairing): void {
     this.pairing = pairing;
     if (this.failed) pairing.cancel('connect-failed');
   }
@@ -230,16 +254,42 @@ export class OutboundPairingChannel implements PairingChannel {
     else this.queue.push(msg);
   }
 
+  /** Safe mid-dial: the socket is closed the moment it opens, and no further address is tried. */
   close(): void {
+    this.closed = true;
     this.socket?.close();
+  }
+
+  /** Dial each candidate in order; the first that answers wins. */
+  private async dial(): Promise<PairingSocket> {
+    const { peer } = this.opts;
+    const candidates = peer.candidateAddresses?.length ? peer.candidateAddresses : [peer.address];
+    let lastError: unknown = new Error('no address to dial');
+    for (const address of candidates) {
+      if (this.closed) break;
+      try {
+        const socket = await this.opts.connect({
+          address,
+          getCertKey: this.opts.getCertKey,
+          connectTimeoutMs: candidates.length > 1 ? CANDIDATE_CONNECT_TIMEOUT_MS : undefined,
+        });
+        peer.address = address;
+        return socket;
+      } catch (err) {
+        lastError = err;
+        logger.warn(`[PairingChannel] Could not reach ${address}: ${(err as Error).message}`);
+      }
+    }
+    throw lastError;
   }
 
   private async open(): Promise<void> {
     try {
-      const socket = await this.opts.connect({
-        address: this.opts.peer.address,
-        getCertKey: this.opts.getCertKey,
-      });
+      const socket = await this.dial();
+      if (this.closed) {
+        socket.close();
+        return;
+      }
       // Bind the SAS to the certificate actually presented on this connection.
       this.opts.peer.certFp = socket.peerCertFp;
       // A peer added by typed-in address has no known machineId (mDNS is how we
@@ -253,8 +303,10 @@ export class OutboundPairingChannel implements PairingChannel {
           this.opts.onPeerIdentified?.(hello);
         }
       });
-      socket.on('message', (msg: PairingMessage) => this.pairing?.handleMessage(msg));
-      socket.once('closed', () => this.pairing?.cancel('peer-disconnected'));
+      bindPairingSocket(socket, {
+        handleMessage: (msg) => this.pairing?.handleMessage(msg),
+        cancel: (reason) => this.pairing?.cancel(reason),
+      });
       socket.sendHello({
         sessionId: this.opts.sessionId,
         machineId: this.opts.self.machineId,
@@ -263,10 +315,9 @@ export class OutboundPairingChannel implements PairingChannel {
       });
       this.socket = socket;
       for (const queued of this.queue.splice(0)) socket.send(queued);
-    } catch (err) {
+    } catch {
       this.failed = true;
       this.queue = [];
-      logger.warn(`[PairingChannel] Could not reach ${this.opts.peer.address}: ${(err as Error).message}`);
       this.pairing?.cancel('connect-failed');
     }
   }

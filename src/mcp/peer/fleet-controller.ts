@@ -24,6 +24,7 @@ import { PeerPairing, type PairingPeerInfo, type PairingChannel } from './peer-p
 import {
   OutboundPairingChannel,
   connectPairingSocket,
+  bindPairingSocket,
   type PairingSocket,
   type PairingHello,
   type ConnectPairingSocketOptions,
@@ -373,8 +374,7 @@ export class FleetController {
           alias,
           port: cfg.port,
         });
-        socket.on('message', (msg) => pairing.handleMessage(msg));
-        socket.once('closed', () => pairing.cancel('peer-disconnected'));
+        bindPairingSocket(socket, pairing);
         wireEvents(pairing, hello.sessionId);
         // Tell the renderers to surface the confirm dialog — without this the
         // remote user has nothing to accept and pairing stalls forever.

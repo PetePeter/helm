@@ -30,6 +30,9 @@ class Wire implements PairingChannel {
     const out = this.intercept ? this.intercept(msg) : msg;
     if (out) queueMicrotask(() => this.peer.handleMessage(out));
   }
+
+  closed = 0;
+  close(): void { this.closed++; }
 }
 
 interface Side {
@@ -223,6 +226,50 @@ describe('PeerPairing abort paths persist NOTHING', () => {
     expect(responder.peers.list()).toHaveLength(0);
     expect(responder.pins.list()).toHaveLength(0);
     expect(responder.secrets.exportAll()).toEqual({});
+  });
+});
+
+// Closing the channel is the ONLY signal the other machine gets that a pairing
+// ended. Without it a cancelled pairing left the peer's dialog up for the full TTL.
+describe('PeerPairing closes its channel on every terminal state', () => {
+  async function atSas() {
+    const sides = pair();
+    sides.initiator.pairing.begin();
+    await flush();
+    return sides;
+  }
+
+  it('reject() closes the channel', async () => {
+    const { initiator } = await atSas();
+    initiator.pairing.reject();
+    expect(initiator.wire.closed).toBe(1);
+  });
+
+  it('cancel() closes the channel, and only once however often it is called', async () => {
+    const { initiator } = await atSas();
+    initiator.pairing.cancel('cancelled');
+    initiator.pairing.cancel('peer-disconnected');
+    expect(initiator.wire.closed).toBe(1);
+  });
+
+  it('a protocol abort closes the channel', async () => {
+    const { initiator, responder } = pair();
+    initiator.wire.intercept = (m) =>
+      (m.step === 'reveal' ? { ...m, nonce: Buffer.alloc(32, 0xff).toString('base64') } : m);
+    initiator.pairing.begin();
+    await flush();
+    expect(responder.failed).toHaveLength(1);
+    expect(responder.wire.closed).toBe(1);
+  });
+
+  it('a successful pairing closes the channel on both sides', async () => {
+    const { initiator, responder } = await atSas();
+    initiator.pairing.accept();
+    responder.pairing.accept();
+    await flush();
+    expect(initiator.paired).toHaveLength(1);
+    expect(initiator.wire.closed).toBe(1);
+    expect(responder.wire.closed).toBe(1);
   });
 });
 

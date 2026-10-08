@@ -13,6 +13,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { isIPv4 } from 'node:net';
 import { Bonjour } from 'bonjour-service';
 import { logger } from '../../utils/logger.js';
 
@@ -23,8 +24,14 @@ export const HELM_SERVICE_TYPE = 'helm';
 export interface DiscoveredPeer {
   machineId: string;
   alias: string;
-  /** host:port, taken from the service's referer/host + port. */
+  /** host:port — the best candidate, i.e. `addresses[0]`. */
   address: string;
+  /**
+   * Every host:port the peer may answer on, best first. A peer with several
+   * adapters advertises them all and not every one is routable from here, so the
+   * dialler needs the whole list rather than a single guess.
+   */
+  addresses: string[];
 }
 
 export interface AdvertiseOptions {
@@ -132,19 +139,25 @@ function parseService(service: unknown): DiscoveredPeer | null {
   if (!machineId) return null;
   const alias = typeof txt.alias === 'string' ? txt.alias : machineId;
 
-  const host = pickHost(s);
+  const hosts = pickHosts(s);
   const port = typeof s.port === 'number' ? s.port : Number(s.port) || 0;
-  if (!host || !port) return null;
+  if (hosts.length === 0 || !port) return null;
 
-  return { machineId, alias, address: `${host}:${port}` };
+  const addresses = hosts.map((host) => `${host}:${port}`);
+  return { machineId, alias, address: addresses[0], addresses };
 }
 
-/** Prefer the referer address, then first IPv4 address, then host. */
-function pickHost(s: Record<string, any>): string {
-  if (s.referer && typeof s.referer.address === 'string') return s.referer.address;
-  if (Array.isArray(s.addresses) && typeof s.addresses[0] === 'string') return s.addresses[0];
-  if (typeof s.host === 'string') return s.host;
-  return '';
+/**
+ * Candidate hosts, best first. The referer is where the announcement actually
+ * came FROM, so it is the one address proven to reach us; the rest are whatever
+ * else the peer advertises. IPv6 is dropped — link-local needs a scope suffix
+ * that does not survive as a bare host. The mDNS hostname is the last resort.
+ */
+function pickHosts(s: Record<string, any>): string[] {
+  const advertised: unknown[] = [s.referer?.address, ...(Array.isArray(s.addresses) ? s.addresses : [])];
+  const ipv4 = advertised.filter((host): host is string => typeof host === 'string' && isIPv4(host));
+  if (ipv4.length > 0) return [...new Set(ipv4)];
+  return typeof s.host === 'string' && s.host ? [s.host] : [];
 }
 
 function readTxtMachineId(service: unknown): string {

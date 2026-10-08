@@ -70,6 +70,12 @@ export interface PairingMessage {
 /** The transport this pairing writes to. Inbound frames arrive via handleMessage. */
 export interface PairingChannel {
   send(msg: PairingMessage): void;
+  /**
+   * Tear the transport down. Called on EVERY terminal state: closing is how the
+   * other machine learns a pairing was rejected or cancelled, instead of sitting
+   * on a dead session until its own expiry.
+   */
+  close(): void;
 }
 
 export interface PairingIdentity {
@@ -82,6 +88,12 @@ export interface PairingPeerInfo {
   certFp: string;
   alias: string;
   address: string;
+  /**
+   * Every `host:port` the peer may be reachable on, best first. A multi-homed
+   * peer advertises one per adapter and only some are routable from here; the
+   * initiator dials them in order and records the one that answered in `address`.
+   */
+  candidateAddresses?: string[];
 }
 
 export interface PeerPairingOptions {
@@ -351,6 +363,7 @@ export class PeerPairing extends EventEmitter {
       // 'finalized' is terminal — zero the raw DH secret + transcript now so they
       // do not linger in the heap. The PSK is safely in the SecretStore already.
       this.zeroEphemeral();
+      this.closeChannel();
     } catch (err) {
       // ROLLBACK — undo everything THIS pairing wrote so no usable config remains.
       try { if (wroteSecret) this.opts.secretStore.remove(pskRef); } catch { /* ignore */ }
@@ -392,6 +405,11 @@ export class PeerPairing extends EventEmitter {
     this.zeroEphemeral();
     logger.warn(`[PeerPairing] Aborted (${reason})`);
     this.emit('failed', { reason });
+    this.closeChannel();
+  }
+
+  private closeChannel(): void {
+    try { this.opts.channel.close(); } catch { /* already gone */ }
   }
 
   private zeroEphemeral(): void {

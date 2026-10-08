@@ -9,9 +9,13 @@
  * which drives `pairing.status`. The session is time-boxed (~180s) on the main
  * process; cancelling on unmount aborts it.
  *
+ * A failed pairing has no decision left to make, so it offers a single Close.
+ * Every exit works without a session id — a refused start never gets one, and
+ * that used to leave a dialog nothing could dismiss.
+ *
  * Gamepad: A confirm, B cancel/reject. Keyboard: Enter confirm, Esc reject.
  */
-import { computed, onUnmounted, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { usePeers } from '../../composables/usePeers.js';
 
@@ -38,6 +42,10 @@ const sasCells = computed<string[]>(() => {
 });
 
 const canConfirm = computed(() => status.value === 'awaiting-sas' && Boolean(sas.value));
+const failed = computed(() => status.value === 'failed');
+
+/** Focused on open so Esc/Enter reach the dialog without a click first. */
+const overlay = ref<HTMLElement | null>(null);
 
 async function onConfirm(): Promise<void> {
   if (!canConfirm.value) return;
@@ -66,6 +74,7 @@ function onOverlayKeydown(event: KeyboardEvent): void {
 watch(visible, (v) => {
   if (v) {
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
+    void nextTick(() => overlay.value?.focus());
   } else {
     modalStack.pop(MODAL_ID);
   }
@@ -86,6 +95,7 @@ defineExpose({ handleButton });
   <Teleport to="body">
     <div
       v-if="visible"
+      ref="overlay"
       class="modal-overlay modal--visible"
       role="dialog"
       aria-label="Confirm peer pairing"
@@ -98,14 +108,14 @@ defineExpose({ handleButton });
         </div>
 
         <div class="pp-body">
-          <p v-if="status !== 'paired'" class="pp-instruction">
+          <p v-if="status !== 'paired' && !failed" class="pp-instruction">
             Do these codes match on <strong>both</strong> machines?
           </p>
-          <p v-if="incoming" class="pp-instruction pp-instruction--incoming">
+          <p v-if="incoming && !failed" class="pp-instruction pp-instruction--incoming">
             This request came from another machine. Only confirm if you started it there.
           </p>
 
-          <template v-if="status !== 'paired'">
+          <template v-if="status !== 'paired' && !failed">
             <div v-if="canConfirm || sas" class="pp-sas" aria-label="Short authentication string">
               <span v-for="(cell, i) in sasCells" :key="i" class="pp-sas-cell">{{ cell }}</span>
             </div>
@@ -114,11 +124,14 @@ defineExpose({ handleButton });
             <p class="pp-timebox">This request expires after about 3 minutes.</p>
           </template>
 
-          <p v-if="status === 'failed' && errorMessage" class="pp-error">{{ errorMessage }}</p>
+          <p v-if="failed" class="pp-error">{{ errorMessage || 'Pairing failed' }}</p>
           <p v-else-if="status === 'paired'" class="pp-success">Paired successfully.</p>
         </div>
 
-        <div v-if="status !== 'paired'" class="pp-footer">
+        <div v-if="failed" class="pp-footer">
+          <button class="btn pp-close" type="button" @click="onCancel">Close</button>
+        </div>
+        <div v-else-if="status !== 'paired'" class="pp-footer">
           <button
             class="btn btn--primary pp-confirm"
             type="button"

@@ -208,7 +208,9 @@ function ensureSubscribed(): void {
     void refresh();
   });
   eventsClient.onPeerFailed?.(({ sessionId, reason }) => {
-    if (pairing.value.sessionId && pairing.value.sessionId !== sessionId) return;
+    // Exact match only: cancelling emits a failure for the session just closed,
+    // and a loose match would pin that stale error onto the next attempt.
+    if (pairing.value.sessionId !== sessionId) return;
     pairing.value = { ...pairing.value, status: 'failed', error: reason || 'Pairing failed' };
   });
 
@@ -247,7 +249,12 @@ async function beginPairing(
 
 async function confirmPairing(accepted: boolean): Promise<void> {
   const sessionId = pairing.value.sessionId;
-  if (!sessionId) return;
+  if (!sessionId) {
+    // No session to decide on (the start was refused, or has not answered yet).
+    // A rejection must still get the user out of the dialog.
+    if (!accepted) await cancelPairing();
+    return;
+  }
   pairing.value = { ...pairing.value, status: accepted ? 'confirmed' : 'failed' };
   try {
     await peersClient.peerConfirmPairing(sessionId, accepted);

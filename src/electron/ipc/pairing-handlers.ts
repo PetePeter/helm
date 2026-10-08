@@ -51,7 +51,11 @@ export function setupPairingHandlers(deps: PairingHandlerDeps): () => void {
     const peer = runtime.discovered.get(machineId);
     if (!peer) return { ok: false, reason: 'peer not currently discovered' };
     const info: PairingPeerInfo = {
-      machineId: peer.machineId, alias: peer.alias, address: peer.address, certFp: '',
+      machineId: peer.machineId,
+      alias: peer.alias,
+      address: peer.address,
+      candidateAddresses: peer.addresses,
+      certFp: '',
     };
     return runtime.coordinator.start(info);
   });

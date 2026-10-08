@@ -12,13 +12,21 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createServer } from 'node:net';
 import { getOrCreateSelfSignedCert } from '../src/mcp/peer/peer-crypto.js';
 import { PinnedCertStore } from '../src/mcp/peer/pinned-cert-store.js';
 import { SecretStore } from '../src/mcp/peer/secret-store.js';
 import { PeerConfigManager } from '../src/session/peer-config-manager.js';
 import { RemoteLinkServer } from '../src/mcp/peer/remote-link-server.js';
-import { connectPairingSocket, type PairingSocket, type PairingHello } from '../src/mcp/peer/pairing-socket.js';
-import { PeerPairing } from '../src/mcp/peer/peer-pairing.js';
+import {
+  connectPairingSocket,
+  bindPairingSocket,
+  OutboundPairingChannel,
+  type ConnectPairingSocketOptions,
+  type PairingSocket,
+  type PairingHello,
+} from '../src/mcp/peer/pairing-socket.js';
+import { PeerPairing, type PairingPeerInfo } from '../src/mcp/peer/peer-pairing.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -66,6 +74,13 @@ async function listenForPairing(
   machine: Machine,
   onPairing: (socket: PairingSocket, hello: PairingHello) => void,
 ): Promise<number> {
+  return listenForPairingSocket(machine, (socket) => {
+    socket.once('hello', (hello: PairingHello) => onPairing(socket, hello));
+  });
+}
+
+/** As listenForPairing, but hands over the raw socket before any hello. */
+async function listenForPairingSocket(machine: Machine, onSocket: (socket: PairingSocket) => void): Promise<number> {
   const server = new RemoteLinkServer({
     host: '127.0.0.1',
     port: 0,
@@ -75,9 +90,7 @@ async function listenForPairing(
     pinnedCertStore: machine.pins,
     onCall: async () => 'unused',
     onLink: () => {},
-    onPairingConnection: (socket) => {
-      socket.once('hello', (hello: PairingHello) => onPairing(socket, hello));
-    },
+    onPairingConnection: onSocket,
   });
   await server.start();
   disposers.push(() => server.stop());
@@ -101,7 +114,7 @@ function responderFor(machine: Machine, socket: PairingSocket, hello: PairingHel
       address: '127.0.0.1:0',
     },
   });
-  socket.on('message', (msg) => pairing.handleMessage(msg));
+  bindPairingSocket(socket, pairing);
   return pairing;
 }
 
@@ -152,7 +165,7 @@ async function pairMachines(opts: {
       address: `127.0.0.1:${port}`,
     },
   });
-  socket.on('message', (msg) => initiatorPairing.handleMessage(msg));
+  bindPairingSocket(socket, initiatorPairing);
 
   socket.sendHello({ sessionId, machineId: opts.initiator.machineId, alias: opts.initiator.alias, port: 47474 });
   const responder = await responderReady;
@@ -257,5 +270,170 @@ describe('SAS pairing over a real pairing socket', () => {
       socket.once('closed', () => reject(new Error('closed')));
       setTimeout(() => reject(new Error('closed')), 1000);
     })).rejects.toThrow('closed');
+  });
+});
+
+/** Resolve with the reason a pairing failed, or fail loudly rather than hang. */
+function failureOf(pairing: PeerPairing, label: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    pairing.once('failed', (info: { reason: string }) => resolve(info.reason));
+    setTimeout(() => reject(new Error(`${label} never failed`)), 2000);
+  });
+}
+
+// The bug: a cancel or reject stopped only the machine it was clicked on. The
+// other kept its dialog and its one pairing slot until a 3-minute expiry.
+describe('ending a pairing reaches the other machine', () => {
+  it('initiator rejecting fails the responder at once', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Laptop');
+    const { initiator, responder } = await pairMachines({ initiator: a, responder: b });
+
+    const reason = failureOf(responder, 'responder');
+    initiator.reject();
+
+    expect(await reason).toBe('peer-disconnected');
+  });
+
+  it('responder rejecting fails the initiator at once', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Laptop');
+    const { initiator, responder } = await pairMachines({ initiator: a, responder: b });
+
+    const reason = failureOf(initiator, 'initiator');
+    responder.reject();
+
+    expect(await reason).toBe('peer-disconnected');
+  });
+
+  it('cancelling the initiator fails the responder at once', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Laptop');
+    const { initiator, responder } = await pairMachines({ initiator: a, responder: b });
+
+    const reason = failureOf(responder, 'responder');
+    initiator.cancel('cancelled');
+
+    expect(await reason).toBe('peer-disconnected');
+  });
+});
+
+/** A loopback port with nothing listening — dialling it is refused immediately. */
+async function deadAddress(): Promise<string> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  await new Promise((resolve) => server.close(resolve));
+  return `127.0.0.1:${port}`;
+}
+
+type Connect = (opts: ConnectPairingSocketOptions) => Promise<PairingSocket>;
+
+/** The production initiator: an OutboundPairingChannel dialling `peer`. */
+function dialOut(initiator: Machine, peer: PairingPeerInfo, connect: Connect = connectPairingSocket): PeerPairing {
+  const sessionId = 'session-under-test';
+  const channel = new OutboundPairingChannel({
+    peer,
+    sessionId,
+    self: { machineId: initiator.machineId, alias: initiator.alias, port: 47474 },
+    connect,
+    getCertKey: initiator.getCertKey,
+  });
+  disposers.push(() => channel.close());
+  const pairing = new PeerPairing({
+    role: 'initiator',
+    sessionId,
+    channel,
+    pinnedCertStore: initiator.pins,
+    secretStore: initiator.secrets,
+    peerConfigManager: initiator.peers,
+    self: { machineId: initiator.machineId, certFp: initiator.certFp },
+    peer,
+  });
+  channel.attach(pairing);
+  return pairing;
+}
+
+const peerOf = (machine: Machine, addresses: string[]): PairingPeerInfo => ({
+  machineId: machine.machineId,
+  alias: machine.alias,
+  certFp: '',
+  address: addresses[0],
+  candidateAddresses: addresses,
+});
+
+// The bug: a machine with two adapters advertises both, the initiator dialled
+// only the first, and the pairing died whenever that one was not routable.
+describe('dialling a peer with several addresses', () => {
+  it('falls through a dead address to the one that answers, and pairs on it', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Tower');
+    let responder!: PeerPairing;
+    const port = await listenForPairing(b, (socket, hello) => { responder = responderFor(b, socket, hello); });
+    const live = `127.0.0.1:${port}`;
+    const peer = peerOf(b, [await deadAddress(), live]);
+
+    const initiator = dialOut(a, peer);
+    initiator.begin();
+    const initiatorSas = await sasOf(initiator, 'initiator');
+
+    expect(responder.getSas()).toBe(initiatorSas);
+    // The address that answered is the one a later link must dial.
+    expect(peer.address).toBe(live);
+    expect(peer.certFp).toBe(b.certFp);
+  });
+
+  it('fails with connect-failed when no address answers', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Tower');
+
+    const initiator = dialOut(a, peerOf(b, [await deadAddress(), await deadAddress()]));
+    const reason = failureOf(initiator, 'initiator');
+    initiator.begin();
+
+    expect(await reason).toBe('connect-failed');
+  });
+
+  it('a cancel mid-dial stops trying the remaining addresses', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Tower');
+    let reached = false;
+    const port = await listenForPairing(b, () => { reached = true; });
+    const dialled: string[] = [];
+
+    const initiator: PeerPairing = dialOut(a, peerOf(b, [await deadAddress(), `127.0.0.1:${port}`]), (opts) => {
+      dialled.push(opts.address);
+      // Deferred: the channel dials from its constructor, before `initiator` exists.
+      queueMicrotask(() => initiator.cancel('cancelled'));
+      return connectPairingSocket(opts);
+    });
+    initiator.begin();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    expect(dialled).toHaveLength(1);
+    expect(reached).toBe(false);
+  });
+
+  it('a cancel while the dial is in flight closes the socket as soon as it opens', async () => {
+    const a = await makeMachine('machine-a', 'Studio');
+    const b = await makeMachine('machine-b', 'Tower');
+    let helloSeen = false;
+    let resolveClosed!: () => void;
+    const responderClosed = new Promise<void>((resolve) => { resolveClosed = resolve; });
+    const port = await listenForPairingSocket(b, (socket) => {
+      socket.once('hello', () => { helloSeen = true; });
+      socket.once('closed', resolveClosed);
+    });
+
+    const initiator: PeerPairing = dialOut(a, peerOf(b, [`127.0.0.1:${port}`]), (opts) => {
+      queueMicrotask(() => initiator.cancel('cancelled'));
+      return connectPairingSocket(opts);
+    });
+
+    await Promise.race([
+      responderClosed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('responder socket was left open')), 2000)),
+    ]);
+    expect(helloSeen).toBe(false);
   });
 });

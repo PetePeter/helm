@@ -1,18 +1,19 @@
 /**
  * PairingCoordinator — the global UX/safety gatekeeper around PeerPairing.
  *
- * INVARIANTS (all with an INJECTABLE clock so tests are deterministic):
+ * INVARIANTS:
  *  - EXACTLY ONE active pairing session globally. Starting another while one is
  *    live is rejected (unless the prior expired/was cancelled/succeeded).
- *  - 180-second session expiry. An expired session is reaped (cancelled) lazily
- *    on the next start/confirm/list.
+ *  - 180-second session expiry, enforced by a timer so a session nobody touches
+ *    still ends on time and frees the slot.
  *  - EXACTLY ONE accept/reject decision per session (idempotent; the coordinator
  *    consumes the session on the first decision path).
  *  - Every attempt is a FRESH PeerPairing (fresh keys/nonce/sessionId/SAS) — this
  *    coordinator never reuses one.
- *  - RATE CAPS (guarding spoofed ids): max 3 failed/rejected/expired sessions per
- *    source-key per 10 min → then a 15-min cooldown for that source; PLUS a global
- *    cap of 10 starts per 10 min. source-key = peer machineId (MVP).
+ *
+ * There is deliberately NO rate limiting: a failure cooldown locked the user out
+ * of their own machines after a few cancelled attempts, and one-at-a-time plus the
+ * SAS comparison already bound what a hostile LAN peer can do.
  *
  * The PeerPairing factory is injected so this logic is unit-testable with a fake.
  * A successful pairing consumes the active session immediately.
@@ -25,15 +26,6 @@ import type { PairingPeerInfo } from './peer-pairing.js';
 /** 180-second pairing-session time-to-live. */
 export const PAIRING_SESSION_TTL_MS = 180_000;
 
-/** Per-source failure window + cap + cooldown. */
-const FAILURE_WINDOW_MS = 10 * 60_000;
-const MAX_FAILURES_PER_SOURCE = 3;
-const SOURCE_COOLDOWN_MS = 15 * 60_000;
-
-/** Global start cap (guards a flood of spoofed source ids). */
-const GLOBAL_WINDOW_MS = 10 * 60_000;
-const MAX_GLOBAL_STARTS = 10;
-
 /** The minimal PeerPairing surface the coordinator drives. */
 export interface CoordinatedPairing {
   begin(): void;
@@ -45,7 +37,6 @@ export interface CoordinatedPairing {
 }
 
 export interface PairingCoordinatorOptions {
-  now?: () => number;
   /** Injected factory — one FRESH pairing per start (real one wired in prod). */
   createPairing: (sessionId: string, peer: PairingPeerInfo) => CoordinatedPairing;
 }
@@ -69,60 +60,36 @@ interface ActiveSession {
   pairing: CoordinatedPairing;
   startedAt: number;
   decided: boolean;
-  settled: boolean;
+  expiry: ReturnType<typeof setTimeout>;
 }
 
+const ALREADY_ACTIVE: StartResult = { ok: false, reason: 'a pairing session is already active' };
+
 export class PairingCoordinator {
-  private readonly now: () => number;
   private readonly createPairing: PairingCoordinatorOptions['createPairing'];
 
   private active: ActiveSession | null = null;
-  /** Per-source failure timestamps (pruned to the window). */
-  private readonly failures = new Map<string, number[]>();
-  /** Global start timestamps (pruned to the window). */
-  private globalStarts: number[] = [];
 
   constructor(opts: PairingCoordinatorOptions) {
-    this.now = opts.now ?? Date.now;
     this.createPairing = opts.createPairing;
   }
 
   /** Attempt to start a pairing session with `peer`. */
   start(peer: PairingPeerInfo): StartResult {
-    this.reapExpired();
-
-    if (this.active) {
-      return { ok: false, reason: 'a pairing session is already active' };
-    }
-
-    const source = peer.machineId;
-    if (this.inCooldown(source)) {
-      return { ok: false, reason: 'source in cooldown after repeated failures (rate)' };
-    }
-    if (this.globalCapReached()) {
-      return { ok: false, reason: 'global pairing rate cap reached (rate)' };
-    }
+    if (this.active) return ALREADY_ACTIVE;
 
     const sessionId = randomUUID();
     const pairing = this.createPairing(sessionId, peer);
-    const session: ActiveSession = {
-      sessionId, peer, pairing, startedAt: this.now(), decided: false, settled: false,
-    };
-    this.active = session;
-    this.globalStarts.push(session.startedAt);
-
-    pairing.on('paired', () => this.onSettled(session, 'paired'));
-    pairing.on('failed', () => this.onSettled(session, 'failed'));
+    this.adopt(sessionId, peer, pairing);
 
     pairing.begin();
-    logger.info(`[PairingCoordinator] Started pairing ${sessionId} with ${source}`);
+    logger.info(`[PairingCoordinator] Started pairing ${sessionId} with ${peer.machineId}`);
     return { ok: true, sessionId };
   }
 
   /**
-   * Adopt an INBOUND pairing a peer initiated. Identical guards to start() — one
-   * session at a time, per-source cooldown, global cap — so a hostile peer cannot
-   * use the inbound path to bypass the rate limits the outbound path enforces.
+   * Adopt an INBOUND pairing a peer initiated, under the same one-at-a-time rule
+   * as start().
    *
    * The sessionId comes FROM THE WIRE (PeerPairing filters frames on it, so both
    * ends must agree). It is untrusted: it is only ever used as a correlation key,
@@ -130,20 +97,9 @@ export class PairingCoordinator {
    * the code the users compare.
    */
   startInbound(peer: PairingPeerInfo, sessionId: string, pairing: CoordinatedPairing): StartResult {
-    this.reapExpired();
+    if (this.active) return ALREADY_ACTIVE;
 
-    if (this.active) return { ok: false, reason: 'a pairing session is already active' };
-    if (this.inCooldown(peer.machineId)) return { ok: false, reason: 'source in cooldown after repeated failures (rate)' };
-    if (this.globalCapReached()) return { ok: false, reason: 'global pairing rate cap reached (rate)' };
-
-    const session: ActiveSession = {
-      sessionId, peer, pairing, startedAt: this.now(), decided: false, settled: false,
-    };
-    this.active = session;
-    this.globalStarts.push(session.startedAt);
-
-    pairing.on('paired', () => this.onSettled(session, 'paired'));
-    pairing.on('failed', () => this.onSettled(session, 'failed'));
+    this.adopt(sessionId, peer, pairing);
 
     // No begin() — the responder answers the initiator's commit, it never leads.
     logger.info(`[PairingCoordinator] Adopted inbound pairing ${sessionId} from ${peer.machineId}`);
@@ -155,7 +111,6 @@ export class PairingCoordinator {
    * (or an unknown session) is ignored.
    */
   confirm(sessionId: string, accepted: boolean): void {
-    this.reapExpired();
     const session = this.active;
     if (!session || session.sessionId !== sessionId || session.decided) return;
     session.decided = true;
@@ -165,16 +120,11 @@ export class PairingCoordinator {
 
   /** Cancel the active session (user abort / shutdown). */
   cancel(): void {
-    if (!this.active) return;
-    const session = this.active;
-    session.pairing.cancel('cancelled');
-    // onSettled('failed') from cancel() clears active; guard if the fake doesn't emit.
-    if (this.active === session) this.clear(session);
+    this.end(this.active, 'cancelled');
   }
 
-  /** Snapshot of the active session (empty when idle / after reaping). */
+  /** Snapshot of the active session (empty when idle). */
   listActive(): ActiveSessionInfo[] {
-    this.reapExpired();
     if (!this.active) return [];
     return [{
       sessionId: this.active.sessionId,
@@ -186,54 +136,35 @@ export class PairingCoordinator {
 
   // ---------------------------------------------------------------- internals
 
-  private onSettled(session: ActiveSession, kind: 'paired' | 'failed'): void {
-    if (session.settled) return;
-    session.settled = true;
-    if (kind === 'failed') this.recordFailure(session.peer.machineId);
+  private adopt(sessionId: string, peer: PairingPeerInfo, pairing: CoordinatedPairing): void {
+    const session: ActiveSession = {
+      sessionId,
+      peer,
+      pairing,
+      startedAt: Date.now(),
+      decided: false,
+      expiry: setTimeout(() => {
+        logger.info(`[PairingCoordinator] Session ${sessionId} expired`);
+        this.end(session, 'expired');
+      }, PAIRING_SESSION_TTL_MS),
+    };
+    // A pending expiry must never hold the app open at quit.
+    session.expiry.unref?.();
+    this.active = session;
+
+    pairing.on('paired', () => this.release(session));
+    pairing.on('failed', () => this.release(session));
+  }
+
+  /** Abort `session` and free the slot, even if the pairing never reports back. */
+  private end(session: ActiveSession | null, reason: string): void {
+    if (!session || this.active !== session) return;
+    session.pairing.cancel(reason);
+    this.release(session);
+  }
+
+  private release(session: ActiveSession): void {
+    clearTimeout(session.expiry);
     if (this.active === session) this.active = null;
-  }
-
-  private clear(session: ActiveSession): void {
-    if (!session.settled) {
-      session.settled = true;
-      this.recordFailure(session.peer.machineId);
-    }
-    if (this.active === session) this.active = null;
-  }
-
-  /** Reap the active session if it has outlived the TTL. */
-  private reapExpired(): void {
-    if (!this.active) return;
-    if (this.now() - this.active.startedAt >= PAIRING_SESSION_TTL_MS) {
-      const expired = this.active;
-      logger.info(`[PairingCoordinator] Session ${expired.sessionId} expired`);
-      // cancel() emits 'failed' → onSettled records the failure + clears active.
-      expired.pairing.cancel('expired');
-      if (this.active === expired) this.clear(expired);
-    }
-  }
-
-  private recordFailure(source: string): void {
-    const now = this.now();
-    const list = (this.failures.get(source) ?? []).filter(t => now - t < FAILURE_WINDOW_MS);
-    list.push(now);
-    this.failures.set(source, list);
-  }
-
-  private inCooldown(source: string): boolean {
-    const now = this.now();
-    const list = (this.failures.get(source) ?? []).filter(t => now - t < SOURCE_COOLDOWN_MS);
-    this.failures.set(source, list);
-    // Cooldown applies once the source hit the cap within the failure window and
-    // the most recent failure is still inside the 15-min cooldown.
-    const recentInWindow = list.filter(t => now - t < FAILURE_WINDOW_MS);
-    if (recentInWindow.length >= MAX_FAILURES_PER_SOURCE) return true;
-    return false;
-  }
-
-  private globalCapReached(): boolean {
-    const now = this.now();
-    this.globalStarts = this.globalStarts.filter(t => now - t < GLOBAL_WINDOW_MS);
-    return this.globalStarts.length >= MAX_GLOBAL_STARTS;
   }
 }

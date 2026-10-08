@@ -90,6 +90,75 @@ describe('PeerPairingDialog', () => {
     w.unmount();
   });
 
+  // Regression: a refused start has no session id, and Reject silently did nothing
+  // without one — the dialog could not be dismissed with the mouse at all.
+  it('a refused start shows the reason and a Close button that dismisses it', async () => {
+    peerStartPairing.mockResolvedValueOnce({ ok: false, reason: 'a pairing session is already active' } as any);
+    const w = mount(PeerPairingDialog);
+    const peers = usePeers();
+    peers.ensureSubscribed();
+    await peers.startPairing({ machineId: 'mac-2', alias: 'the PC', address: '10.0.0.6:47474' });
+    await flushPromises();
+
+    expect(document.querySelector('.pp-error')?.textContent).toBe('a pairing session is already active');
+    expect(document.querySelector('.pp-confirm')).toBeNull();
+
+    (document.querySelector('.pp-close') as HTMLButtonElement).click();
+    await flushPromises();
+    expect(document.querySelector('.peer-pairing-modal')).toBeNull();
+
+    w.unmount();
+  });
+
+  it('Reject before a session id exists still cancels and closes', async () => {
+    const w = mount(PeerPairingDialog);
+    const peers = usePeers();
+    peers.ensureSubscribed();
+    peerStartPairing.mockReturnValueOnce(new Promise(() => {}) as any); // start never answers
+    void peers.startPairing({ machineId: 'mac-2', alias: 'the PC', address: '10.0.0.6:47474' });
+    await flushPromises();
+
+    (document.querySelector('.pp-reject') as HTMLButtonElement).click();
+    await flushPromises();
+
+    expect(peerCancelPairing).toHaveBeenCalled();
+    expect(document.querySelector('.peer-pairing-modal')).toBeNull();
+
+    w.unmount();
+  });
+
+  it('Esc cancels without the user having to click the dialog first', async () => {
+    const w = mount(PeerPairingDialog);
+    await startAndShowSas(w, '112233');
+
+    const overlay = document.querySelector('.modal-overlay') as HTMLElement;
+    expect(document.activeElement).toBe(overlay);
+    (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flushPromises();
+
+    expect(peerCancelPairing).toHaveBeenCalled();
+    expect(document.querySelector('.peer-pairing-modal')).toBeNull();
+
+    w.unmount();
+  });
+
+  it('a late failure from a cancelled session does not fail the next attempt', async () => {
+    const w = mount(PeerPairingDialog);
+    await startAndShowSas(w, '112233');
+    const peers = usePeers();
+    await peers.cancelPairing();
+
+    peerStartPairing.mockResolvedValueOnce({ ok: true, sessionId: 's-43' });
+    await peers.startPairing({ machineId: 'mac-2', alias: 'the PC', address: '10.0.0.6:47474' });
+    handlers['failed']?.({ sessionId: 's-42', reason: 'cancelled' });
+    await flushPromises();
+
+    expect(peers.pairing.value.status).toBe('awaiting-sas');
+    expect(document.querySelector('.pp-error')).toBeNull();
+
+    w.unmount();
+  });
+
   it('is hidden until pairing becomes active', async () => {
     const w = mount(PeerPairingDialog);
     await flushPromises();

@@ -45,7 +45,7 @@ graph TB
     subgraph Discovery
         PD["PeerDiscovery<br/>mDNS _helm._tcp"]
         PP["PeerPairing<br/>SAS state machine"]
-        PCO["PairingCoordinator<br/>1-at-a-time · rate caps"]
+        PCO["PairingCoordinator<br/>1-at-a-time · 180s timer"]
     end
     subgraph UI
         PT["PeersTab.vue"]
@@ -188,6 +188,43 @@ the responder's own `hello` and folded into the SAS — a wrong address surfaces
 mismatched code, never a silent mispairing. A `machineId` already known from mDNS is
 **never** overwritten, so a responder cannot redirect a pairing aimed at a specific machine.
 
+## Ending a pairing
+
+Closing the pairing socket **is** the signal. Every terminal state — reject, cancel,
+expiry, protocol abort, and success — closes the channel, and the other machine treats a
+closed socket as `peer-disconnected` and fails its own session at once. There is no
+abort frame: a frame can be lost, a closed socket cannot be missed.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UA as User A
+    participant A as Machine A
+    participant B as Machine B
+    participant UB as User B
+    UA->>A: Cancel / Reject
+    A->>A: PeerPairing.abort → channel.close()
+    A--xB: socket closed
+    B->>B: bindPairingSocket → cancel('peer-disconnected')
+    B->>B: coordinator slot freed
+    B-->>UB: dialog shows failure + Close
+```
+
+**Why it matters:** this used to stop only the machine it was clicked on. The other kept
+its dialog and its single pairing slot until a 180s expiry that was itself only checked
+lazily, so every retry was refused as "already active". Expiry is now a real timer in
+`PairingCoordinator`, and a dialog in the failed state offers one **Close** that works
+with or without a session id (a refused start never gets one).
+
+## Peers with several addresses
+
+A machine on Ethernet + Wi-Fi (or with WSL/Hyper-V adapters) advertises one address per
+adapter, and only some are routable from the other machine. `PeerDiscovery` keeps them
+all — the address the announcement actually came **from** first, then the rest, IPv4
+only — and `OutboundPairingChannel` dials them in order (3s each when there are several)
+until one answers. The address that answered is the one persisted for the steady-state
+link. Pair-by-address still dials exactly the address typed.
+
 ## Status reporting
 
 `FleetController.status()` returns `{ enabled, running, error, addresses, allInterfaces }`,
@@ -320,8 +357,8 @@ Fleet delegates tool calls; **Remote** rides the same link to stream a peer's PT
 
 ## Known limitations / deferred
 
-- **Pairing rate-limit key is spoofable.** `PairingCoordinator`'s per-source rate cap keys on the peer mDNS `machineId` (MVP), which an attacker on the LAN can spoof. The **real backstop is the GLOBAL cap of 10 pairing starts per 10 minutes**, which no spoofing bypasses. (The per-source cap adds a 3-fail → 15-min cooldown on top for honest sources.)
-- **Two-machine physical run is still manual.** SAS pairing now runs over a real socket and is covered end-to-end against real mTLS loopback (`tests/pairing-socket-e2e.test.ts`): matching codes, mutual trust, identical derived PSKs, tampered-hello divergence, and reject-persists-nothing. What automation cannot cover is the physical network — firewalls, subnets, Wi-Fi isolation — so a run between two real machines (one Windows, one macOS) remains a manual check.
+- **Pairing is not rate limited.** A per-peer failure cooldown (3 fails → 15 min) and a global start cap used to exist; both were removed because a few cancelled attempts locked the user out of their own machine. What bounds a hostile LAN peer is one-session-at-a-time plus the SAS comparison: it can raise one dialog at a time, and can never pair without the local user accepting a matching code.
+- **Two-machine physical run is still manual.** SAS pairing now runs over a real socket and is covered end-to-end against real mTLS loopback (`tests/pairing-socket-e2e.test.ts`): matching codes, mutual trust, identical derived PSKs, tampered-hello divergence, and reject-persists-nothing, reject/cancel reaching the other machine, and dialling past a dead address. What automation cannot cover is the physical network — firewalls, subnets, Wi-Fi isolation — so a run between two real machines (one Windows, one macOS) remains a manual check.
 
 ## Config files
 

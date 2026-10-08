@@ -91,7 +91,40 @@ describe('PeerDiscovery browse', () => {
       machineId: 'peer-1',
       alias: 'The Laptop',
       address: '10.0.0.9:47474',
+      addresses: ['10.0.0.9:47474'],
     });
+  });
+
+  // A multi-homed peer advertises every adapter; only some are routable from here.
+  it('keeps every IPv4 address of a multi-homed peer, the one it reached us on first', () => {
+    const { backend, discovery } = setup('me');
+    const seen: any[] = [];
+    discovery.on('peer-discovered', (p) => seen.push(p));
+    discovery.start();
+
+    backend.browsers[0].emit('up', {
+      ...makeService('peer-1', 'Tower'),
+      addresses: ['172.23.128.1', 'fe80::1c2d:3e4f', '192.168.1.20', '10.0.0.9'],
+      referer: { address: '192.168.1.20', family: 'IPv4', port: 5353 },
+    });
+
+    expect(seen[0].addresses).toEqual(['192.168.1.20:47474', '172.23.128.1:47474', '10.0.0.9:47474']);
+    expect(seen[0].address).toBe('192.168.1.20:47474');
+  });
+
+  it('falls back to the mDNS hostname when no IPv4 address is advertised', () => {
+    const { backend, discovery } = setup('me');
+    const seen: any[] = [];
+    discovery.on('peer-discovered', (p) => seen.push(p));
+    discovery.start();
+
+    backend.browsers[0].emit('up', {
+      ...makeService('peer-1', 'Tower', 'tower.local'),
+      addresses: ['fe80::1'],
+      referer: { address: 'fe80::1', family: 'IPv6', port: 5353 },
+    });
+
+    expect(seen[0].addresses).toEqual(['tower.local:47474']);
   });
 
   it('IGNORES our own advertised service (no self-pairing)', () => {
