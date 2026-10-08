@@ -263,6 +263,7 @@ export function registerIPCHandlers(
   const helmControlService = new HelmControlService(planManager, sessionManager, ptyManager, configLoader, undefined, contextManager, scheduledTaskManager, projectStore, skillManager, skillAnalyticsManager);
   helmControlService.setNotificationManager(notificationManager);
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
+  helmControlService.sessionChangeFeed.attach(sessionManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
@@ -1233,6 +1234,9 @@ export function registerIPCHandlers(
     gate: () => getMobileGate(),
     uploads: artifactUploadService,
     negotiatedProtocol: (machineId) => mobileLinkManager.negotiatedProtocol(machineId),
+    // The same feed `session_list` answers deltas from: a phone that fetched
+    // one is told once when the list next moves, instead of polling for it.
+    sessionFeed: helmControlService.sessionChangeFeed,
     sessions: {
       getSession: (sessionId) => {
         const session = sessionManager.getSession(sessionId);

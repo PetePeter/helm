@@ -16,31 +16,47 @@ import android.net.NetworkRequest
  * controller's policy stays testable on the JVM with a hand-fired fake.
  */
 interface NetworkWatcher {
-    /** Begin reporting. [onChange] may fire from any thread, in bursts. */
-    fun start(onChange: () -> Unit)
+    /**
+     * Begin reporting. Both may fire from any thread, in bursts.
+     *
+     * [onChange] is every event a dial could be waiting on, an address arriving
+     * included. [onAppeared] is only a NETWORK appearing — the narrower event
+     * that is worth restarting a whole search for. They are kept apart because
+     * some networks re-announce their properties every few minutes, and a
+     * search re-armed by that would never be allowed to give up.
+     */
+    fun start(onChange: () -> Unit, onAppeared: () -> Unit = {})
 
     /** Stop reporting. Idempotent. */
     fun stop()
 }
 
 /**
- * The real watcher: Wi-Fi and Ethernet only, the transports a desktop on the
- * home network can be reached over. Cellular changes never make LAN reachable.
+ * The real watcher: Wi-Fi, Ethernet and VPN — the transports a desktop can be
+ * reached over. Cellular changes alone never make it reachable; a VPN coming
+ * up over cellular does, which is why VPN is watched in its own right.
  * ACCESS_NETWORK_STATE is a normal permission, granted at install.
  */
 class AndroidNetworkWatcher(context: Context) : NetworkWatcher {
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
     private var callback: ConnectivityManager.NetworkCallback? = null
 
-    override fun start(onChange: () -> Unit) {
+    override fun start(onChange: () -> Unit, onAppeared: () -> Unit) {
         val manager = connectivity ?: return
         if (callback != null) return
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+            .addTransportType(NetworkCapabilities.TRANSPORT_VPN)
+            // A request asks for NOT_VPN unless told otherwise, which would
+            // hide every VPN network from the transport just added.
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
         val registered = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) = onChange()
+            override fun onAvailable(network: Network) {
+                onAppeared()
+                onChange()
+            }
 
             // An address arriving after onAvailable (DHCP) is when a dial can work.
             override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) = onChange()

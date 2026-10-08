@@ -9,6 +9,10 @@
     <string name="link_state_connecting">Connecting…</string>
     <string name="link_state_linked">Linked</string>
     <string name="link_state_disconnected">Link off</string>
+    <!-- The search ran its fifteen minutes and nothing answered. Both radios are
+         down until the app is opened, the network changes, or Retry is tapped. -->
+    <string name="link_state_gave_up">Not connected. Open Helm or tap Retry.</string>
+    <string name="link_retry">Retry</string>
     <!-- LAN-only with nothing reached yet: the dialler is retrying, so this is a
          wait, not an off switch. Same promise as link_state_advertising. -->
     <string name="link_state_waiting_lan">Waiting for Helm</string>

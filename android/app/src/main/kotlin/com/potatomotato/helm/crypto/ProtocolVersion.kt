@@ -21,18 +21,23 @@ object ProtocolVersion {
      * 2 in range would let this app link to one and then silently drop every
      * download — a failure that looks like success, which is what this
      * negotiation exists to prevent.
+     *
+     * Moved to 5 for the same reason. This app no longer polls the session
+     * list: it fetches a delta and waits to be told the list moved. A Helm
+     * older than protocol 5 never tells it, so the list would load once and
+     * then sit still while looking fine. Refusing by name is the honest answer.
      */
-    const val MIN = 3
+    const val MIN = 5
 
     /**
      * Newest wire protocol this build speaks.
      *
-     * MIN stays at 3: nothing about protocol 3 records changed at 4 — the blob
-     * frame turned AROUND, from a download reply to an upload slice too. A
-     * protocol-3 Helm still links, and both sides independently gate the upload
-     * feature on the NEGOTIATED version reaching 4.
+     * 5 — the session change feed: `session_list` answers a delta when given
+     * `since`, and Helm pushes a `changes` record when the list moves. Helm
+     * itself keeps its minimum at 3 (an older app still polls and still works);
+     * only this side raised its floor.
      */
-    const val MAX = 4
+    const val MAX = 5
 
     /** A version beyond this is corruption, not a future build. */
     private const val ABSURD = 4096

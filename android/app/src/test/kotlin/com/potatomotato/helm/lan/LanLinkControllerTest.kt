@@ -376,11 +376,63 @@ class LanLinkControllerTest {
         assertEquals(before, dialer.attempts.size)
     }
 
+    @Test
+    fun `no redial is scheduled when the phone is not searching`() {
+        // Linked over Bluetooth, or given up: the timer that used to dial a
+        // minute apart forever, into a network that was not there, stays quiet.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(emptyMap())
+        val schedule = ManualSchedule()
+
+        LanLinkController(store, dialer, DeferredPump(), schedule = schedule, allowRetry = { false })
+            .tryConnect("desk")
+
+        // The dial that was ASKED for still ran; only the loop is gated.
+        assertEquals(1, dialer.attempts.size)
+        assertTrue(schedule.delays.isEmpty())
+    }
+
+    @Test
+    fun `a redial queued during a search does not fire once the search has ended`() {
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(emptyMap())
+        val schedule = ManualSchedule()
+        var searching = true
+        LanLinkController(store, dialer, DeferredPump(), schedule = schedule, allowRetry = { searching })
+            .tryConnect("desk")
+        assertEquals(listOf(15_000L), schedule.delays)
+
+        searching = false
+        schedule.runNext()
+
+        assertEquals(1, dialer.attempts.size)
+        // And the loop is over: nothing re-queued itself.
+        assertEquals(listOf(15_000L), schedule.delays)
+    }
+
+    @Test
+    fun `a network change still dials when the redial loop is not allowed`() {
+        // Home on Bluetooth, Wi-Fi comes up: the event is what moves the phone
+        // to LAN now that the timer no longer does.
+        val store = MemoryAddresses(mutableMapOf("desk" to listOf("192.168.1.20:47475")))
+        val dialer = FakeDialer(emptyMap())
+        val schedule = ManualSchedule()
+        val network = FakeNetworkWatcher()
+        LanLinkController(store, dialer, DeferredPump(), schedule = schedule, allowRetry = { false }, network = network)
+            .tryConnect("desk")
+        val before = dialer.attempts.size
+
+        network.fire()
+        schedule.runNext()
+
+        assertEquals(before + 1, dialer.attempts.size)
+    }
+
     /** Hands the controller's network callback to the test. */
     private class FakeNetworkWatcher : NetworkWatcher {
         var onChange: (() -> Unit)? = null
         var stopped = false
-        override fun start(onChange: () -> Unit) { this.onChange = onChange }
+        override fun start(onChange: () -> Unit, onAppeared: () -> Unit) { this.onChange = onChange }
         override fun stop() { stopped = true }
         fun fire() = onChange!!.invoke()
     }

@@ -170,21 +170,31 @@ class HelmClient(
     private var sessionRefreshInFlight = false
     private var sessionRefreshQueued = false
 
+    /** Whether a screen showing sessions is visible right now. See [watchSessions]. */
+    private var sessionsWatched = false
+
+    /**
+     * Whether the held list may be behind Helm's. True until a fetch is issued,
+     * and again whenever Helm says the list moved, a fetch fails, or the link
+     * changes — a new link is a Helm that may have restarted.
+     */
+    private var sessionsStale = true
+
     /**
      * Whether the chat cursor has been reported on THIS link. The report rides
      * the link-up hook first, but the hook is not guaranteed: after a failed
      * handshake attempt the relink that follows can come up usable without
      * `onLinked` ever firing (observed on real hardware — `__mobile_tools__`
      * crosses, `__chat_cursor__` never does), and the threads stay empty for
-     * the whole process. The session poll is the one request that demonstrably
-     * runs whenever the link is usable, so an unreported cursor re-sends there
-     * within one interval. A duplicate report is harmless: the desktop replays
-     * from the same seq and [ChatRepository] dedupes by seq.
+     * the whole process. [refreshStaleSessions] is the one pass that
+     * demonstrably runs whenever a screen is up, so an unreported cursor
+     * re-sends there within one interval. A duplicate report is harmless: the
+     * desktop replays from the same seq and [ChatRepository] dedupes by seq.
      *
      * The report also goes STALE after [CURSOR_REPORT_FRESH_MS]: a journal
      * replay streamed over BLE can outrun a link that drops mid-stream, and the
      * desktop — having answered the report — never sends the rest. Saying the
-     * cursor again after five minutes heals that hole on the next poll instead
+     * cursor again after five minutes heals that hole on the next pass instead
      * of at the next app restart, for the cost of a replay [ChatRepository]
      * dedupes to nothing.
      */
@@ -224,8 +234,37 @@ class HelmClient(
     }
 
     /**
-     * Ask for the session list. At most one request crosses the link at a time;
-     * callers that arrive while it waits ask for one reconciliation afterward.
+     * A screen showing sessions came into view, or left it.
+     *
+     * This is what replaced the two-second poll. The list is fetched when it is
+     * [sessionsStale] AND someone is looking; Helm then says once when it moves
+     * (a `changes` record), which makes it stale again. A phone in a pocket
+     * therefore hears at most one notice and asks for nothing.
+     */
+    fun watchSessions(watching: Boolean) {
+        sessionsWatched = watching
+        refreshStaleSessions()
+    }
+
+    /**
+     * Fetch the list if it is stale and on screen. Safe to call on a timer: it
+     * puts nothing on the wire while the list is fresh, and nothing while there
+     * is no usable link. That is how a fetch the link refused gets retried
+     * without any hook having to fire.
+     */
+    fun refreshStaleSessions() {
+        if (!sessionsWatched) return
+        // The chat cursor used to ride the session poll, which is gone. This
+        // pass is its heir: a no-op while the report is fresh, and the one
+        // request that still runs whenever a screen is up and the link usable.
+        reportChatCursorIfNeeded()
+        if (sessionsStale) refreshSessions()
+    }
+
+    /**
+     * Ask for the session list — everything on a first fetch, only what moved
+     * after that. At most one request crosses the link at a time; callers that
+     * arrive while it waits ask for one reconciliation afterward.
      */
     fun refreshSessions(): Boolean {
         reportChatCursorIfNeeded()
@@ -234,34 +273,62 @@ class HelmClient(
             return true
         }
         sessionRefreshInFlight = true
-        return call(METHOD_SESSION_LIST) { outcome ->
+        // Fresh from the moment the request is ISSUED, not answered: a notice
+        // that lands while it is in flight must be able to mark it stale again.
+        sessionsStale = false
+        return call(METHOD_SESSION_LIST, sessionListParams()) { outcome ->
             sessionRefreshInFlight = false
             try {
                 // A failed refresh leaves the previous list standing: stale data
                 // is more useful than an empty lie.
                 if (outcome !is Outcome.Ok) {
+                    // A denial is an ANSWER, and asking again gets the same one;
+                    // only a new link can change it. Everything else — no link,
+                    // a timeout — is a fetch that still has to happen.
                     if ((outcome as Outcome.Failed).message == MOBILE_DENY_MESSAGE) sessions.denied()
+                    else sessionsStale = true
                     return@call
                 }
-                val parsed = SessionWire.parseList(outcome.result)
-                if (parsed == null) {
+                val changes = SessionWire.parseChanges(outcome.result)
+                if (changes == null) {
                     HelmLog.w(HelmLog.CLIENT, "session_list answered ok but did not decode; the list is unchanged")
                     sessions.undecodable()
                     return@call
                 }
                 HelmLog.i(
                     HelmLog.CLIENT,
-                    "session_list decoded ${parsed.size} sessions; " +
-                        "the list held ${sessions.sessions.value.size} before the merge",
+                    "session_list decoded ${changes.sessions.size} sessions, ${changes.removed.size} removed, " +
+                        "full=${changes.full}; the list held ${sessions.sessions.value.size} before the merge",
                 )
-                sessions.applySnapshot(parsed)
-                chats.retainSessions(parsed.mapTo(HashSet()) { it.id })
+                sessions.applyChanges(changes)
+                chats.retainSessions(sessions.sessions.value.mapTo(HashSet()) { it.id })
                 HelmLog.i(HelmLog.CLIENT, "the list holds ${sessions.sessions.value.size} after the merge")
             } finally {
-                // A queued poll is reconciliation, not a retry of only success.
+                // A queued refresh is reconciliation, not a retry of only success.
                 refreshQueuedSessions()
             }
         }
+    }
+
+    /**
+     * `since` is ALWAYS sent: its presence is what selects the delta reply and
+     * tells Helm this phone wants to be told when the list moves. With no
+     * cursor it is 0 and no epoch, which Helm answers with the whole list.
+     */
+    private fun sessionListParams(): Map<String, Any> {
+        val cursor = sessions.cursor ?: return linkedMapOf("since" to 0L)
+        return linkedMapOf("since" to cursor.seq, "epoch" to cursor.epoch)
+    }
+
+    /**
+     * Helm says a feed moved. Only the session list is mirrored this way so far.
+     * A seq this phone already holds is its own fetch echoing back, not news.
+     */
+    private fun onChanges(record: MobileRecord.Changes) {
+        if (record.kind != SESSIONS_CHANGE_KIND) return
+        if (record.seq <= (sessions.cursor?.seq ?: -1L)) return
+        sessionsStale = true
+        refreshStaleSessions()
     }
 
     /**
@@ -1841,6 +1908,8 @@ class HelmClient(
             // off reaches a phone that is connected right now.
             is MobileRecord.Lan -> onLanAddresses(record.addresses)
 
+            is MobileRecord.Changes -> onChanges(record)
+
             // A `call` inbound is Helm asking the PHONE to do something, which it
             // never does — the phone has no gate of its own to answer through.
             // Dropped, but no longer in silence: silence is what this plan exists
@@ -1885,6 +1954,9 @@ class HelmClient(
         }
         sessionRefreshInFlight = false
         sessionRefreshQueued = false
+        // Whatever Helm owed this phone by way of a change notice went with the
+        // link, so the list is stale until the next link is asked.
+        sessionsStale = true
         // The cursor belongs to the link: the next usable link must hear it
         // again, whether it arrives via the link-up hook or the session poll.
         // This is the TRANSPORT-loss half only; [onLinkUp] clears it per
@@ -1922,7 +1994,11 @@ class HelmClient(
      */
     fun onLinkUp(): Boolean {
         chatCursorReported = false
-        return reportChatCursorIfNeeded()
+        val reported = reportChatCursorIfNeeded()
+        // A new channel may be a restarted Helm that owes this phone no notice.
+        sessionsStale = true
+        refreshStaleSessions()
+        return reported
     }
 
     /**
@@ -2104,6 +2180,8 @@ class HelmClient(
         private const val METHOD_RESTART_HELM = "__restart_helm__"
         private const val METHOD_RING_ANSWERED = "__ring_answered__"
         private const val METHOD_TIMESHEET = "__timesheet__"
+        /** The `changes` record kind for the session list; `SESSIONS_CHANGE_KIND` on the desktop. */
+        private const val SESSIONS_CHANGE_KIND = "sessions"
         private const val RING_KIND = "ring"
         private const val TRANSFER_KIND = "transfer"
         private const val METHOD_DIRECTORY_LIST = "directory_list"

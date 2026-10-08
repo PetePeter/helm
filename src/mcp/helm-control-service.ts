@@ -4,6 +4,7 @@ import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, t
 import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
+import { SessionChangeFeed, type SessionFeedCursor } from '../session/session-change-feed.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
 import type { PlanFilter, PlanItem, PlanSequence, PlanStatus, PlanTask, PlanType } from '../types/plan.js';
@@ -98,6 +99,20 @@ const SKILL_FEEDBACK_FOOTER = [
   'Do not be polite — inflated ratings make every rating worthless.',
   'Put the concrete failure or missing step in `improvement`.',
 ].join('\n');
+
+/** `session_list` answered as a delta; see HelmControlService.listSessionChanges. */
+export interface SessionListChanges {
+  /** Identifies the sequence `seq` belongs to; changes when Helm restarts. */
+  epoch: string;
+  /** The cursor to pass as `since` next time. */
+  seq: number;
+  /** True when `sessions` is the whole list and the caller must replace, not merge. */
+  full: boolean;
+  /** The rows that changed — or every row, when `full`. */
+  sessions: SessionSummary[];
+  /** Ids that went away since the cursor. Always empty when `full`. */
+  removed: string[];
+}
 
 export interface SessionSummary {
   id: string;
@@ -253,6 +268,12 @@ export class HelmControlService extends EventEmitter {
   // Composed services
   private readonly sessionDelivery: HelmSessionDeliveryService;
   private readonly sessionService: HelmSessionService;
+  /**
+   * What changed in the session list, for `session_list` callers that pass a
+   * cursor. The orchestrator attaches it to the session manager and hands the
+   * same instance to the phone bridge, which announces its moves.
+   */
+  readonly sessionChangeFeed = new SessionChangeFeed();
   private readonly planService: HelmPlanService;
   private readonly planSequenceService: HelmPlanSequenceService;
   private readonly contextService: HelmContextService;
@@ -1357,6 +1378,27 @@ export class HelmControlService extends EventEmitter {
 
   listSessions(dirPath?: string, projectId?: string) {
     return this.nameRemoteMachines(this.sessionService.listSessions(dirPath, projectId));
+  }
+
+  /**
+   * The session list as a DELTA: only the rows that moved after `cursor`, plus
+   * the ids that went away. A cursor the feed cannot honour is answered with
+   * the whole list and `full: true`, which tells the caller to replace rather
+   * than merge. See SessionChangeFeed.
+   */
+  listSessionChanges(cursor: SessionFeedCursor | null, dirPath?: string, projectId?: string): SessionListChanges {
+    const feed = this.sessionChangeFeed;
+    const delta = feed.since(cursor);
+    const sessions = this.listSessions(dirPath, projectId);
+    if (delta.full) return { epoch: feed.epoch, seq: feed.seq, full: true, sessions, removed: [] };
+    const changed = new Set(delta.changed);
+    return {
+      epoch: feed.epoch,
+      seq: feed.seq,
+      full: false,
+      sessions: sessions.filter((session) => changed.has(session.id)),
+      removed: delta.removed,
+    };
   }
 
   /**

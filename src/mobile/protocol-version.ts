@@ -38,8 +38,15 @@ export const PROTOCOL_MIN = 3;
  * peer never sends one, and Helm refuses any inbound blob whose link did not
  * negotiate 4 — so the old rule "every inbound record is a JSON call" holds for
  * every link that did not explicitly outgrow it.
+ *
+ * 5 — the session change feed: `session_list` answers a delta when given
+ * `since`, and Helm pushes a `changes` record when the list moves. Additive on
+ * the wire, so `PROTOCOL_MIN` stays at 3 and an older phone keeps polling the
+ * plain list. The bump exists for the OTHER direction: a phone built for the
+ * feed has no poll left, so it sets its own minimum to 5 and refuses an older
+ * Helm by name instead of showing a list that silently never updates.
  */
-export const PROTOCOL_MAX = 4;
+export const PROTOCOL_MAX = 5;
 
 /** The protocol a link must have negotiated before an inbound blob is accepted. */
 export const BLOB_UPLOAD_MIN_PROTOCOL = 4;

@@ -79,6 +79,15 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Opening the app is the user asking for the link: a phone that gave up
+     * searching (LinkEnergyPolicy) starts again. Nothing while a link is up.
+     */
+    override fun onStart() {
+        super.onStart()
+        HelmPairing.rearm("the app was opened")
+    }
+
+    /**
      * Only an answered ring earns the lock-screen pass, and only while visible:
      * once the activity is left, Helm is back behind the keyguard like any app.
      */

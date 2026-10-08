@@ -7,20 +7,18 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * SessionRepository — the phone's picture of what Helm is running.
  *
- * Snapshots arrive by POLLING `session_list` while the list screen is visible.
- * That is deliberate, not a shortcut: the envelope has exactly four record types
- * and only `chat` travels Helm-to-phone unprompted, so there is no push channel
- * to subscribe to and adding one would be a wire break. The desktop's per-device
- * rate limit was sized around exactly this (120/min, leaving room for a user
- * acting on top of the 2s poll that the visible screen runs).
+ * It is kept current by Helm's session change feed, not by polling: the first
+ * `session_list` returns the whole list and a [cursor], Helm then sends one
+ * `changes` notice when the list moves, and the fetch that follows asks only
+ * for what changed since that cursor. See [applyChanges] and HelmClient.
  *
- * What makes the updates INCREMENTAL is here rather than on the wire: a snapshot
- * is merged BY ID, and an entry that has not changed keeps the instance it
- * already had. Compose then skips every row the poll did not actually touch, so
- * a list of thirty sessions where one dot went green recomposes one row.
+ * Whole lists are still merged BY ID, and an entry that has not changed keeps
+ * the instance it already had. Compose then skips every row a refresh did not
+ * actually touch, so a list of thirty sessions where one dot went green
+ * recomposes one row.
  *
  * Ordering is imposed here too, so the list cannot flicker when Helm happens to
- * enumerate sessions in a different order between two polls.
+ * enumerate sessions in a different order between two fetches.
  */
 class SessionRepository {
     private val _sessions = MutableStateFlow<List<HelmSession>>(emptyList())
@@ -54,6 +52,34 @@ class SessionRepository {
         // An empty snapshot is an ANSWER, and the only thing that earns the
         // right to tell the user no sessions are running.
         _reach.value = Reach.Delivered
+    }
+
+    /**
+     * Where the held list has got to in Helm's change feed — what the next
+     * fetch passes as `since`. Null until a reply names one, which makes that
+     * fetch ask for everything.
+     */
+    var cursor: SessionCursor? = null
+        private set
+
+    /**
+     * Take one `session_list` answer: the whole list, or only what moved.
+     *
+     * A delta is merged BY ID over what is held, so the instance-preserving
+     * property [applySnapshot] documents holds here for free — an untouched row
+     * is not in the reply at all.
+     */
+    fun applyChanges(changes: SessionChanges) {
+        if (changes.full) {
+            applySnapshot(changes.sessions)
+        } else {
+            val gone = changes.removed.toSet()
+            val moved = changes.sessions.associateBy { it.id }
+            val kept = _sessions.value.filter { it.id !in gone && it.id !in moved }
+            _sessions.value = (kept + changes.sessions).sortedWith(ORDER)
+            _reach.value = Reach.Delivered
+        }
+        cursor = changes.cursor
     }
 
     /**

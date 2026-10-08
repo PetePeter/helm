@@ -21,15 +21,18 @@ import java.util.concurrent.Executors
  * (the address push rides the authenticated channel — see
  * MobileAddressAdvertiser). Dialling at any other time would be guessing.
  *
- * It ALSO retries on a backoff whenever LAN does not itself own the link,
- * Bluetooth-owned or offline alike (see [scheduleRetry]). Pausing while
- * Bluetooth held the link stranded phones on Bluetooth for hours: the one
- * Bluetooth-triggered dial usually ran before wifi was up. The backoff caps at
- * a minute, which is the whole battery cost of that.
+ * It ALSO retries on a backoff ([scheduleRetry]) — but only while the phone is
+ * searching for a link at all ([allowRetry], driven by LinkEnergyPolicy). The
+ * loop used to run forever whenever LAN was not the owner, which away from home
+ * meant a dial a minute into a network that was not there. It is now bounded by
+ * the search window, and silent while Bluetooth carries the link.
  *
- * It also dials when a Wi-Fi/Ethernet network appears ([NetworkWatcher]),
- * debounced so a burst of callbacks makes one attempt, and on link-service
- * start ([resume]) whatever the Bluetooth preference.
+ * What moves a Bluetooth-linked phone onto LAN is therefore an EVENT, not the
+ * timer: a Wi-Fi, Ethernet or VPN network appearing ([NetworkWatcher]),
+ * debounced so a burst of callbacks makes one attempt. That is the fix for the
+ * phone stranded on Bluetooth because its one Bluetooth-triggered dial ran
+ * before Wi-Fi was up. It also dials when a search starts ([resume]), whatever
+ * the Bluetooth preference.
  *
  * The Bluetooth link is NOT torn down on success. It stays attached at its lower
  * rank so that LAN dropping is an instant handover rather than a reconnect —
@@ -61,6 +64,16 @@ class LanLinkController(
      * Defaults to true: a build that never wires the setting dials as before.
      */
     private val allowDial: () -> Boolean = { true },
+    /**
+     * Whether the redial loop may run at all — true only while the phone is
+     * SEARCHING for a link (see LinkEnergyPolicy). Read when a retry is
+     * scheduled AND when it fires, so a loop already queued dies the moment
+     * the search ends. It gates only the timer: a dial something asked for
+     * (a network change, a Bluetooth link coming up, the user) always runs.
+     *
+     * Defaults to true: a build that never wires the policy redials as before.
+     */
+    private val allowRetry: () -> Boolean = { true },
     /** Connectivity callbacks; null in tests that are not about them. */
     private val network: NetworkWatcher? = null,
     private val log: (String) -> Unit = {},
@@ -234,20 +247,19 @@ class LanLinkController(
     }
 
     /**
-     * Redial later, and only when it can matter. While another transport
-     * carries the link the attempt is postponed rather than made: Bluetooth
-     * being up means the next address push dials better than a timer would,
-     * and away from home a quiet timer is the whole cost.
+     * Redial later — while a search is on ([allowRetry]) and never otherwise.
+     * A loop queued before the search ended checks again when it fires, so it
+     * ends with the search rather than one dial after it.
      */
     private fun scheduleRetry() {
         if (lastMachineId == null) return
-        if (retryPending || stopped) return
+        if (retryPending || stopped || !allowRetry()) return
         retryPending = true
         val delay = retryDelayMs
         retryDelayMs = minOf(retryDelayMs * 2, RETRY_MAX_MS)
         schedule(delay) {
             retryPending = false
-            if (stopped) return@schedule
+            if (stopped || !allowRetry()) return@schedule
             // Read at fire time: a later dial may have linked another desktop.
             val machineId = lastMachineId ?: return@schedule
             dropIfOrphaned()
@@ -383,11 +395,11 @@ private fun LanLinkState.toLinkState(): LinkState = when (this) {
 fun tcpDialer(
     connectTimeoutMs: Int = 1_500,
     /**
-     * More than twice the desktop's 15s ping interval: a link that has heard
+     * Three of the desktop's 30s pings and a margin: a link that has heard
      * nothing for this long is dead, and must drop to Bluetooth now rather than
      * when TCP gives up ten-plus minutes later.
      */
-    readTimeoutMs: Int = 45_000,
+    readTimeoutMs: Int = 100_000,
 ): LanLinkSession.Dialer =
     LanLinkSession.Dialer { host, port ->
         val socket = Socket()

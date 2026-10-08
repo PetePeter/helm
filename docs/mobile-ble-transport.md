@@ -257,14 +257,17 @@ we stopped caring is its own defect.
 
 A radio can die without emitting `disconnect` (the wedged-stack class), and a
 quiet link would otherwise look online forever. The manager therefore probes:
-the keepalive clock ticks every **5s**; a registered link silent for 5s gets a
-**PING** (protocol v2 frame; the phone answers PONG), and one silent for **30s**
-(6 ticks) is dropped, `offline` is emitted, and the normal rescan recovers it —
-at most one tick late, so ~30-35s worst case (was 15s x 2 checked every 15s,
-~45s). Any inbound traffic — application data, pong, anything — resets the
-silence clock. A link is also pinged if it has not been pinged for 20s even
-while the phone is talking, so the phone always hears from Helm at least every
-~25s — inside the Android LAN socket's 45s read timeout on a healthy link.
+the keepalive clock ticks every **30s**; each tick sends every registered link
+a **PING** (protocol v2 frame; the phone answers PONG), and a link silent for
+**90s** (3 ticks) is dropped, `offline` is emitted, and the normal rescan
+recovers it. Any inbound traffic — application data, pong, anything — resets
+the silence clock. The interval is a battery decision: every probe wakes the
+phone's radio to answer, and at the previous 5s that was the standing cost of
+an idle link; noticing a dead link at 90s instead of 30s is the accepted price
+(a send to a dead link still fails on its own 10s write deadline). The probe
+goes out every tick whether or not the phone is talking, so the phone always
+hears from Helm every 30s — inside the Android LAN socket's read timeout (100s;
+45s on APKs that predate this interval).
 Only a link that is *itself* mid-handshake is skipped; another link's handshake
 (an identification, a failover, or a pairing attempt held open for its whole
 TTL) no longer pauses the keepalive for everyone. Both probing and the
@@ -360,8 +363,13 @@ Three things that shape the Kotlin:
   backoff, and `BOOT_COMPLETED` restarts the foreground service so a reboot
   doesn't leave the peripheral dead until the app is opened.
 
-Advertising is `ADVERTISE_MODE_BALANCED`, never `LOW_LATENCY` — this advertises
-all day. The 31-byte advertisement carries only the 128-bit service UUID; the
+Advertising is `ADVERTISE_MODE_LOW_LATENCY` at high TX power. That used to be
+ruled out because the peripheral advertised all day; it no longer does. The
+link energy policy ([mobile-lan-transport.md](mobile-lan-transport.md)) only
+brings the peripheral up while the phone is **searching**, which ends after 15
+minutes, and takes it down entirely while LAN carries the link — so being found
+quickly is affordable. (Android lets an app choose the power of an *advert*
+only; the power of a live connection is the controller's.) The 31-byte advertisement carries only the 128-bit service UUID; the
 device name rides in the scan response, and is dropped entirely if the user's
 device name overflows it. Nothing identifying is advertised, because identity is
 established by the handshake, not by the advert.
