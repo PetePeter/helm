@@ -45,6 +45,25 @@ describe('ComfyUI image inputs', () => {
     }
   });
 
+  it('batches several references through standard image workflows', () => {
+    const profiles = cloneDefaultComfyUiConfig().profiles.filter(profile => profile.kind === 'image' && !profile.referenceImages);
+    for (const profile of profiles) {
+      const base = applyComfyUiProfile(profile, 'update each reference');
+      const graph = applyComfyInputImages(profile, base, ['first.png', 'second.png']) as Record<string, { class_type: string; inputs: Record<string, unknown> }>;
+      const loads = Object.values(graph).filter(node => node.class_type === 'LoadImage');
+      const batches = Object.values(graph).filter(node => node.class_type === 'ImageBatch');
+      const sampler = graph[profile.mappings.seed!.nodeId];
+      const encodeLink = sampler.inputs.latent_image as [string, number];
+      const encoder = graph[encodeLink[0]];
+
+      expect(loads.map(node => node.inputs.image)).toEqual(['first.png', 'second.png']);
+      expect(batches).toHaveLength(1);
+      expect(encoder.class_type).toBe('VAEEncode');
+      expect(graph[(encoder.inputs.pixels as [string, number])[0]].class_type).toBe('ImageBatch');
+      expect(sampler.inputs.denoise).toBe(0.65);
+    }
+  });
+
   it('adds the uploaded image as the start frame for each configured video profile', () => {
     const profiles = cloneDefaultComfyUiConfig().profiles.filter(profile => profile.kind === 'video');
     for (const profile of profiles) {

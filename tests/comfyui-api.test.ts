@@ -202,6 +202,65 @@ describe('ComfyUI generation', () => {
     }
   });
 
+  it('uploads every selected reference and batches them for standard image profiles', async () => {
+    const config = cloneDefaultComfyUiConfig();
+    const profile = config.profiles.find(item => item.id === 'image-z-image-turbo')!;
+    const tempDir = mkdtempSync(join(tmpdir(), 'helm-comfy-api-batched-ref-test-'));
+    const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+    const paths = [1, 2].map((tag, index) => {
+      const path = join(tempDir, `source-${index + 1}.png`);
+      writeFileSync(path, Buffer.from([...signature, tag]));
+      return path;
+    });
+    let uploads = 0;
+    let promptGraph: Record<string, { class_type: string; inputs: Record<string, unknown> }> | undefined;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/system_stats') return new Response('{}');
+      if (url.pathname === '/upload/image') {
+        const form = init?.body as FormData;
+        const file = form.get('image') as File;
+        expect(Buffer.from(await file.arrayBuffer())).toEqual(readFileSync(paths[uploads]));
+        uploads++;
+        return new Response(JSON.stringify({ name: `reference-${uploads}.png`, subfolder: '' }));
+      }
+      if (url.pathname === '/prompt') {
+        promptGraph = (JSON.parse(String(init?.body)) as { prompt: typeof promptGraph }).prompt;
+        return new Response(JSON.stringify({ prompt_id: 'batched-ref-prompt' }));
+      }
+      if (url.pathname === '/history/batched-ref-prompt') {
+        return new Response(JSON.stringify({ 'batched-ref-prompt': {
+          status: { completed: true },
+          outputs: { [profile.outputNodeIds[0]]: { images: [{ filename: 'first.png', type: 'output' }, { filename: 'second.png', type: 'output' }] } },
+        } }));
+      }
+      if (url.pathname === '/view') return new Response(Buffer.from([137, 80, 78, 71]));
+      throw new Error(`Unexpected ComfyUI request: ${url.pathname}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const results = await runComfyPrompt({
+        endpoint: config.endpoint,
+        workflow: applyComfyUiProfile(profile, 'update both references'),
+        profile,
+        prompt: 'update both references',
+        inputImagePaths: paths,
+        tempDir,
+        signal: new AbortController().signal,
+        onProgress: () => undefined,
+      });
+
+      expect(results.map(result => result.filename)).toEqual(['first.png', 'second.png']);
+      expect(uploads).toBe(2);
+      expect(Object.values(promptGraph!).filter(node => node.class_type === 'ImageBatch')).toHaveLength(1);
+      expect(Object.values(promptGraph!).filter(node => node.class_type === 'LoadImage').map(node => node.inputs.image))
+        .toEqual(['reference-1.png', 'reference-2.png']);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('continues polling beyond the former 30-minute generation limit', async () => {
     vi.useFakeTimers();
     const profile = cloneDefaultComfyUiConfig().profiles[0];

@@ -4,6 +4,7 @@ import { basename, extname, join } from 'node:path';
 import type { ComfyUiProfileConfig } from '../../config/loader.js';
 import { mimeForPath } from '../../electron/helm-img-protocol.js';
 import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
+import { comfyUiMaxReferenceImages } from './comfyui-config.js';
 import { applyComfyInputImages, hasMatchingComfyImageSignature } from './comfyui-image-input.js';
 
 interface ComfyFile { filename: string; subfolder?: string; type?: string }
@@ -110,11 +111,9 @@ export async function runComfyPrompt(input: {
     if (input.signal.aborted) throw new Error('Generation cancelled');
     let workflow = input.workflow;
     const imagePaths = [...new Set([...(input.inputImagePaths ?? []), ...(input.inputImagePath ? [input.inputImagePath] : [])])];
-    if (imagePaths.length > input.profile.referenceImages?.maxImages && input.profile.referenceImages) {
-      throw new Error(`Profile ${input.profile.name} accepts at most ${input.profile.referenceImages.maxImages} reference images`);
-    }
-    if (!input.profile.referenceImages && imagePaths.length > 1) {
-      throw new Error(`Profile ${input.profile.name} accepts one reference image; select one image`);
+    const maxReferences = comfyUiMaxReferenceImages(input.profile);
+    if (imagePaths.length > maxReferences) {
+      throw new Error(`Profile ${input.profile.name} accepts at most ${maxReferences} reference images`);
     }
     if (imagePaths.length > 0) {
       const totalBytes = imagePaths.reduce((total, path) => total + statSync(path).size, 0);

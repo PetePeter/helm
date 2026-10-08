@@ -113,6 +113,10 @@ describe('ComfyUI configuration', () => {
     expect(comfyUiChatProfiles(config).map(profile => profile.id)).toEqual([
       'image', 'image-lustify-v8-apex', 'image-z-image-turbo', 'image-qwen-image-2-1', 'video', 'video-1080p-portrait',
     ]);
+    expect(comfyUiChatProfiles(config).map(profile => [profile.id, profile.maxReferenceImages])).toEqual([
+      ['image', 2], ['image-lustify-v8-apex', 2], ['image-z-image-turbo', 2],
+      ['image-qwen-image-2-1', 16], ['video', 1], ['video-1080p-portrait', 1],
+    ]);
   });
 
   it('rejects size overrides on video or workflows without both dimension mappings', () => {

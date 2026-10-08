@@ -18,6 +18,13 @@ export const COMFYUI_IMAGE_SIZE_OPTIONS = [
 export type ComfyUiImageSizeId = typeof COMFYUI_IMAGE_SIZE_OPTIONS[number]['id'];
 export type ComfyUiChatProfile = { id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean; maxReferenceImages: number };
 
+/** Bound the batch memory cost while still supporting multi-image requests. */
+export const MAX_BATCHED_IMAGE_REFERENCES = 2;
+
+export function comfyUiMaxReferenceImages(profile: ComfyUiProfileConfig): number {
+  return profile.referenceImages?.maxImages ?? (profile.kind === 'image' ? MAX_BATCHED_IMAGE_REFERENCES : 1);
+}
+
 const LEGACY_IMAGE_SIZE_PROFILE_IDS = new Set([
   'image-1080p-portrait', 'image-1080p-landscape', 'image-4k-portrait', 'image-4k-landscape',
 ]);
@@ -30,7 +37,7 @@ export function comfyUiChatProfiles(config: ComfyUiToolConfig): ComfyUiChatProfi
       name: profile.name,
       kind: profile.kind,
       supportsImageSize: profile.kind === 'image' && Boolean(profile.mappings.width && profile.mappings.height),
-      maxReferenceImages: profile.referenceImages?.maxImages ?? 1,
+      maxReferenceImages: comfyUiMaxReferenceImages(profile),
     }));
 }
 

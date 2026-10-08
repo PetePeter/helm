@@ -14,6 +14,7 @@ import {
   COMFYUI_IMAGE_SIZE_OPTIONS,
   comfyUiChatProfiles,
   comfyUiImageSizes,
+  comfyUiMaxReferenceImages,
   validateComfyUiConfig,
 } from './comfyui-config.js';
 import { cancelComfyPrompt, runComfyPrompt } from './comfyui-api.js';
@@ -97,7 +98,7 @@ export class ComfyUiSessionHost {
     if (!profile) throw new Error(`Unknown ComfyUI profile: ${profileId}`);
     const attachmentIds = [...new Set(inputAttachmentIds)];
     const referenceCount = attachmentIds.length + (inputImagePath ? 1 : 0);
-    const maxReferences = profile.referenceImages?.maxImages ?? 1;
+    const maxReferences = comfyUiMaxReferenceImages(profile);
     if (!trimmed && referenceCount === 0) throw new Error('Enter a prompt or attach a reference image');
     if (referenceCount > maxReferences) {
       throw new Error(`Profile ${profile.name} accepts at most ${maxReferences} reference image${maxReferences === 1 ? '' : 's'}`);

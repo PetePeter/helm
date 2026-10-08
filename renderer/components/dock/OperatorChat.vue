@@ -217,7 +217,7 @@ onBeforeUnmount(() => {
     <div v-if="isComfyUi && comfyGallery.length" class="operator-chat__gallery" aria-label="Session reference images">
       <div v-for="bubble in comfyGallery" :key="`${bubble.attachment?.artifactId}:${bubble.attachment?.attachmentId}`" class="operator-chat__gallery-item">
         <button class="operator-chat__gallery-preview" type="button" :aria-label="`View ${bubble.attachment?.filename} full size`" @click="galleryImage = bubble.attachment ?? null">
-          <img v-if="bubble.attachment?.filePath" :src="previewUrl(bubble.attachment.filePath)" :alt="bubble.attachment.filename" />
+          <img v-if="bubble.attachment?.filePath" :src="previewUrl(bubble.attachment.filePath)" :alt="bubble.attachment.filename" loading="eager" decoding="async" />
           <span v-else>{{ bubble.attachment?.filename }}</span>
         </button>
         <label class="operator-chat__gallery-include">

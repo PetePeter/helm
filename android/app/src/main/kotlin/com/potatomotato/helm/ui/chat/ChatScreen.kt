@@ -1029,6 +1029,9 @@ private fun ComfyGalleryTile(
     onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     var previewOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
+    LaunchedEffect(attachment.artifactId, attachment.attachmentId, state) {
+        if (state is PullState.Idle && attachment.mimeType.startsWith("image/")) onPreview()
+    }
     Column(
         modifier = Modifier.width(116.dp).clip(RoundedCornerShape(HelmRadius.Md))
             .background(HelmColors.Bg).padding(HelmSpacing.Xs),
