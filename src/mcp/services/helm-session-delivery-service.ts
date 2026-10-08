@@ -9,6 +9,7 @@ import { deliverPromptSequenceToSession } from '../../session/sequence-delivery.
 import { buildHelmMsgDirective } from '../../session/intersession-directive.js';
 import type { ReminderDeliveryFn } from '../../session/reminder-delivery.js';
 import { isMobileSessionId } from '../../mobile/mobile-identity.js';
+import { resolveMobileShareInputPath } from '../../mobile/mobile-share-inbox.js';
 import { formatSenderTag } from '../../session/api/api-prompt.js';
 import { getApiSessionHost } from '../../session/api/api-session-host.js';
 import { getComfyUiSessionHost } from '../../session/comfyui/comfyui-session-host.js';
@@ -225,7 +226,7 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string },
+    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[] },
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -241,11 +242,37 @@ export class HelmSessionDeliveryService {
       throw new Error('Cannot send a message from a session to itself — sender and receiver must be different sessions');
     }
     assertSessionWritable(session);
-    if (isEmptyMessage(text)) {
+    const hasComfyImageInput = Boolean(options?.comfyInputImagePath || options?.comfyInputAttachmentIds?.length);
+    if (isEmptyMessage(text) && !(session.comfyUiTool && hasComfyImageInput)) {
       throw new Error('text is empty — session_send_text delivers a message; use session_send_input for bare keys like {Enter}');
     }
 
+    if (options?.comfyInputImagePath && !session.comfyUiTool) {
+      throw new Error('comfyInputImagePath is only valid for a ComfyUI session');
+    }
+    if (options?.comfyInputAttachmentIds && !session.comfyUiTool) {
+      throw new Error('comfyInputAttachmentIds is only valid for a ComfyUI session');
+    }
+
     if (session.comfyUiTool) {
+      let comfyInputImagePath: string | undefined;
+      const comfyInputAttachmentIds = options?.comfyInputAttachmentIds ?? [];
+      if (comfyInputAttachmentIds.some(id => typeof id !== 'string' || !id.trim())) {
+        throw new Error('ComfyUI reference image ids must be non-empty strings');
+      }
+      if (options?.comfyInputImagePath) {
+        if (!isMobileSessionId(options.senderSessionId)) {
+          throw new Error('ComfyUI image paths from session_send_text are accepted only from a paired phone');
+        }
+        if (text.trim() === '/cancel') throw new Error('Do not attach an image to a ComfyUI cancellation request');
+        comfyInputImagePath = resolveMobileShareInputPath(options.comfyInputImagePath);
+      }
+      if (text.trim() === '/cancel' && (comfyInputImagePath || comfyInputAttachmentIds.length > 0)) {
+        throw new Error('Do not attach images to a ComfyUI cancellation request');
+      }
+      if (!text.trim() && !comfyInputImagePath && comfyInputAttachmentIds.length === 0) {
+        throw new Error('Enter a prompt or attach a reference image');
+      }
       await this.runMessageFlight(session, options);
       if (text.trim() === '/cancel') {
         const cancelled = await getComfyUiSessionHost().cancel(session.id);
@@ -253,7 +280,9 @@ export class HelmSessionDeliveryService {
       } else {
         // Only a local session needs telling: a phone already sees the chat.
         const requesterSessionId = this.sessionManager.getSession(options.senderSessionId) ? options.senderSessionId : undefined;
-        getComfyUiSessionHost().submit(session.id, text, options.comfyProfileId, options.comfyImageSizeId, requesterSessionId);
+        getComfyUiSessionHost().submit(
+          session.id, text, options.comfyProfileId, options.comfyImageSizeId, requesterSessionId, comfyInputImagePath, comfyInputAttachmentIds,
+        );
       }
       const submittedAt = Date.now();
       this.sessionManager.updateSession(session.id, {

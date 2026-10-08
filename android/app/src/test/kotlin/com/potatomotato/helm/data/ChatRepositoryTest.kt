@@ -138,8 +138,12 @@ class ChatRepositoryTest {
     }
 
     @Test
-    fun `a failed generation retry keeps its model and image size`() {
-        val failed = repository.sending("s1", "a landscape", at = 10, comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape")
+    fun `a failed generation retry keeps its model size and input image`() {
+        val inputImage = "C:\\Helm\\tmp\\inbox\\one\\source.png"
+        val failed = repository.sending(
+            "s1", "a landscape", at = 10, comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape",
+            comfyInputImagePath = inputImage,
+        )
         repository.settle("s1", failed, delivered = false)
 
         val retried = repository.retry("s1", failed, at = 20)
@@ -148,6 +152,7 @@ class ChatRepositoryTest {
         assertEquals(retried, message.key)
         assertEquals("flux", message.comfyProfileId)
         assertEquals("qhd-landscape", message.comfyImageSizeId)
+        assertEquals(inputImage, message.comfyInputImagePath)
     }
 
     @Test

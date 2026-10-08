@@ -582,6 +582,9 @@ export async function callMcpTool(
         );
         const peerTarget = resolvePeerSendTarget(service, args.sessionId);
         if (peerTarget) {
+          if (typeof args.comfyInputImagePath === 'string') {
+            throw new Error('ComfyUI image inputs must target a session running on this desktop');
+          }
           return service.peerCall(peerTarget.peerId, 'session_send_text', {
             sessionId: peerTarget.sessionId,
             text: asString(args.text, 'text is required'),
@@ -602,6 +605,8 @@ export async function callMcpTool(
             ...(typeof args.expectsResponse === 'boolean' ? { expectsResponse: args.expectsResponse } : {}),
             ...(typeof args.comfyProfileId === 'string' ? { comfyProfileId: args.comfyProfileId } : {}),
             ...(typeof args.comfyImageSizeId === 'string' ? { comfyImageSizeId: args.comfyImageSizeId } : {}),
+            ...(typeof args.comfyInputImagePath === 'string' ? { comfyInputImagePath: args.comfyInputImagePath } : {}),
+            ...(Array.isArray(args.comfyInputAttachmentIds) ? { comfyInputAttachmentIds: args.comfyInputAttachmentIds.filter((id): id is string => typeof id === 'string') } : {}),
             ...(isMobileSessionId(authContext.sessionId) || isMobileSenderSessionId(senderSessionId)
               ? { userPromptSource: 'phone' as const }
               : {}),

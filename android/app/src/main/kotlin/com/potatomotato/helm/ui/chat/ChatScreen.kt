@@ -47,7 +47,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -59,8 +61,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -96,6 +101,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ChatAttachment
+import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.ChatMessage
 import com.potatomotato.helm.data.Draft
 import com.potatomotato.helm.data.PrefsDraftStore
@@ -129,7 +135,7 @@ fun ChatScreen(
     sessionId: String,
     messages: List<ChatMessage>,
     onSend: (String) -> Unit,
-    onSendWithProfile: ((String, String?, String?) -> Unit)? = null,
+    onSendWithProfile: ((String, String?, String?, String?, List<String>) -> Unit)? = null,
     onRetry: (key: String, text: String) -> Unit,
     /** Delete rows by key: one (a failed send's cross) or a whole selection. */
     onDelete: (keys: Set<String>) -> Unit,
@@ -160,6 +166,12 @@ fun ChatScreen(
     swipeOffset: Animatable<Float, AnimationVector1D>,
     earlierUnreadSessions: Int = 0,
     laterUnreadSessions: Int = 0,
+    comfyGallery: List<ChatAttachment> = emptyList(),
+    excludedComfyReferenceIds: Set<String> = emptySet(),
+    comfyGalleryPulls: Map<String, PullState> = emptyMap(),
+    onComfyReferenceSelection: (knownIds: Set<String>, includedIds: Set<String>) -> Unit = { _, _ -> },
+    onGalleryDownload: (ChatAttachment) -> Unit = {},
+    onRefreshComfyGallery: () -> Unit = {},
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
     // but must NEVER follow the user into a different session's thread. It also
@@ -254,7 +266,22 @@ fun ChatScreen(
             comfyImageSizeId = session.comfyUiImageSizes.firstOrNull()?.id.orEmpty()
         }
     }
+    var comfyInputImagePath by rememberSaveable(sessionId) { mutableStateOf<String?>(null) }
     val selectedComfyProfile = session?.comfyUiProfiles?.firstOrNull { it.id == comfyProfileId }
+    val comfyMaxReferences = selectedComfyProfile?.maxReferenceImages?.coerceIn(1, 16) ?: 1
+    val comfyMaxGalleryReferences = (comfyMaxReferences - if (comfyInputImagePath != null) 1 else 0).coerceAtLeast(0)
+    val knownGalleryIds = comfyGallery.map { it.attachmentId }.toSet()
+    val includedGalleryIds = knownGalleryIds - excludedComfyReferenceIds
+    LaunchedEffect(sessionId, session?.comfyUiTool) {
+        if (session?.comfyUiTool == true) onRefreshComfyGallery()
+    }
+    LaunchedEffect(knownGalleryIds, includedGalleryIds, comfyMaxGalleryReferences) {
+        if (includedGalleryIds.size > comfyMaxGalleryReferences) {
+            val latestAllowed = comfyGallery.asSequence().map { it.attachmentId }
+                .filter { it in includedGalleryIds }.toList().takeLast(comfyMaxGalleryReferences).toSet()
+            onComfyReferenceSelection(knownGalleryIds, latestAllowed)
+        }
+    }
 
     // Selection mode: long-press a bubble to start, tap to toggle. Keyed on the
     // session like the draft: a selection never follows the user into another
@@ -352,6 +379,7 @@ fun ChatScreen(
                                 items(messages, key = { it.key }) {
                                     Bubble(
                                         message = it,
+                                        comfyUi = session?.comfyUiTool == true,
                                         selected = it.key in selected,
                                         onTap = if (selecting) ({ toggle(it.key) }) else null,
                                         onLongPress = { toggle(it.key) },
@@ -393,9 +421,36 @@ fun ChatScreen(
                   onSelectImageSize = { comfyImageSizeId = it },
                   showImageSize = selectedComfyProfile?.supportsImageSize == true,
                   onCancel = {
-                      onSendWithProfile?.invoke("/cancel", comfyProfileId, null) ?: onSend("/cancel")
+                      onSendWithProfile?.invoke("/cancel", comfyProfileId, null, null, emptyList()) ?: onSend("/cancel")
                   },
               )
+          }
+          if (session?.comfyUiTool == true && comfyGallery.isNotEmpty()) {
+              ComfyGalleryStrip(
+                  items = comfyGallery,
+                  includedIds = includedGalleryIds,
+                  maxReferences = comfyMaxGalleryReferences,
+                  pulls = comfyGalleryPulls,
+                  onToggle = { attachment, included ->
+                      val next = if (!included) includedGalleryIds - attachment.attachmentId
+                      else if (includedGalleryIds.size < comfyMaxGalleryReferences) includedGalleryIds + attachment.attachmentId
+                      else includedGalleryIds
+                      onComfyReferenceSelection(knownGalleryIds, next)
+                  },
+                  onDownload = onGalleryDownload,
+                  onOpen = onOpenAttachment,
+              )
+          }
+          if (session?.comfyUiTool == true) {
+              comfyInputImagePath?.let { path ->
+                  Row(
+                      modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Xs),
+                      verticalAlignment = Alignment.CenterVertically,
+                  ) {
+                      Text("🖼 ${inputImageName(path)}", color = HelmColors.Dim, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                      Text("✕", color = HelmColors.Dim, style = MaterialTheme.typography.labelLarge, modifier = Modifier.clickable { comfyInputImagePath = null }.padding(horizontal = HelmSpacing.Sm, vertical = HelmSpacing.Xs))
+                  }
+              }
           }
           Composer(
             draft = draft,
@@ -408,26 +463,41 @@ fun ChatScreen(
             },
             onTerminal = onTerminal,
             onCall = onCall,
-            onAttach = if (session?.comfyUiTool == true) null else onAttach?.let { attach ->
+            onAttach = onAttach?.let { attach ->
                 {
                     attach { path ->
-                        val lead = draft.text.trimEnd().let { if (it.isEmpty()) it else "$it " }
-                        val text = "$lead[file] $path "
-                        draft = TextFieldValue(text, TextRange(text.length))
-                        drafts.save(sessionId, Draft(text, text.length))
+                        if (session?.comfyUiTool == true) {
+                            comfyInputImagePath = path
+                        } else {
+                            val lead = draft.text.trimEnd().let { if (it.isEmpty()) it else "$it " }
+                            val text = "$lead[file] $path "
+                            draft = TextFieldValue(text, TextRange(text.length))
+                            drafts.save(sessionId, Draft(text, text.length))
+                        }
                     }
                 }
             },
             onSend = { submitted ->
                 val text = submitted.trim()
-                if (text.isNotEmpty()) {
+                val selectedIds = comfyGallery.asSequence().map { it.attachmentId }
+                    .filter { it in includedGalleryIds }.toList().takeLast(comfyMaxGalleryReferences)
+                val hasComfyInput = comfyInputImagePath != null || selectedIds.isNotEmpty()
+                if (text.isNotEmpty() || (session?.comfyUiTool == true && hasComfyInput)) {
                     if (session?.comfyUiTool == true && onSendWithProfile != null) {
-                        onSendWithProfile(text, comfyProfileId, comfyImageSizeId.takeIf { selectedComfyProfile?.supportsImageSize == true })
+                        onSendWithProfile(
+                            text, comfyProfileId,
+                            comfyImageSizeId.takeIf { selectedComfyProfile?.supportsImageSize == true },
+                            comfyInputImagePath,
+                            selectedIds,
+                        )
                     } else onSend(text)
                     draft = TextFieldValue()
+                    comfyInputImagePath = null
                     drafts.clear(sessionId)
                 }
             },
+            allowEmpty = session?.comfyUiTool == true &&
+                (comfyInputImagePath != null || includedGalleryIds.isNotEmpty()),
           )
         }
     }
@@ -556,6 +626,7 @@ private fun SelectionBar(
 @Composable
 private fun Bubble(
     message: ChatMessage,
+    comfyUi: Boolean,
     selected: Boolean,
     /** Non-null while selecting: a tap toggles this row. */
     onTap: (() -> Unit)?,
@@ -631,7 +702,15 @@ private fun Bubble(
                             ),
                         )
                     }
-                    message.attachment?.let { attachment ->
+                    message.comfyInputImagePath?.let { path ->
+                        Text(
+                            text = "🖼 ${inputImageName(path)}",
+                            color = if (fromPhone) HelmColors.OnAccent.copy(alpha = 0.72f) else HelmColors.Dim,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(top = HelmSpacing.Xs),
+                        )
+                    }
+                    message.attachment?.takeUnless { comfyUi && it.mimeType.startsWith("image/") }?.let { attachment ->
                         AttachmentTile(
                             attachment = attachment,
                             state = pulls[message.key] ?: PullState.Idle,
@@ -817,7 +896,12 @@ private fun AttachmentVideoPreview(uri: String) {
  * the file and still opens it, so a preview is a bonus, never the only route.
  */
 @Composable
-private fun AttachmentPreview(uri: String, filename: String) {
+private fun AttachmentPreview(
+    uri: String,
+    filename: String,
+    maxPx: Int = PREVIEW_MAX_PX,
+    fullScreen: Boolean = false,
+) {
     val context = LocalContext.current
     var preview by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
 
@@ -828,7 +912,7 @@ private fun AttachmentPreview(uri: String, filename: String) {
                 context.contentResolver.openInputStream(Uri.parse(uri))
                     ?.use { BitmapFactory.decodeStream(it, null, bounds) }
                 val options = BitmapFactory.Options().apply {
-                    inSampleSize = sampleSizeFor(bounds.outWidth, PREVIEW_MAX_PX)
+                    inSampleSize = sampleSizeFor(bounds.outWidth, maxPx)
                 }
                 context.contentResolver.openInputStream(Uri.parse(uri))
                     ?.use { BitmapFactory.decodeStream(it, null, options) }
@@ -844,7 +928,7 @@ private fun AttachmentPreview(uri: String, filename: String) {
         Image(
             bitmap = bitmap,
             contentDescription = filename,
-            contentScale = ContentScale.FillWidth,
+            contentScale = if (fullScreen) ContentScale.Fit else ContentScale.FillWidth,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(HelmRadius.Sm))
@@ -868,6 +952,137 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
     else -> "$bytes B"
 }
+
+@Composable
+private fun ComfyGalleryStrip(
+    items: List<ChatAttachment>,
+    includedIds: Set<String>,
+    maxReferences: Int,
+    pulls: Map<String, PullState>,
+    onToggle: (ChatAttachment, Boolean) -> Unit,
+    onDownload: (ChatAttachment) -> Unit,
+    onOpen: (uri: String, mimeType: String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().background(HelmColors.Surface).padding(vertical = HelmSpacing.Xs),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = HelmSpacing.Gutter),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.comfy_gallery_title), color = HelmColors.Txt, style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.weight(1f))
+            Text(
+                stringResource(R.string.comfy_gallery_ref_count, includedIds.size, maxReferences),
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = HelmSpacing.Gutter),
+            horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+        ) {
+            items(items, key = { it.attachmentId }) { attachment ->
+                val included = attachment.attachmentId in includedIds
+                val key = artifactAttachmentKey(attachment.artifactId, attachment.attachmentId)
+                val state = pulls[key] ?: PullState.Idle
+                ComfyGalleryTile(
+                    attachment = attachment,
+                    included = included,
+                    state = state,
+                    onToggle = { onToggle(attachment, it) },
+                    onDownload = { onDownload(attachment) },
+                    onOpen = onOpen,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComfyGalleryTile(
+    attachment: ChatAttachment,
+    included: Boolean,
+    state: PullState,
+    onToggle: (Boolean) -> Unit,
+    onDownload: () -> Unit,
+    onOpen: (uri: String, mimeType: String) -> Unit,
+) {
+    var previewOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier.width(116.dp).clip(RoundedCornerShape(HelmRadius.Md))
+            .background(HelmColors.Bg).padding(HelmSpacing.Xs),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp, max = 76.dp)
+                .clip(RoundedCornerShape(HelmRadius.Sm))
+                .background(HelmColors.Surface2)
+                .clickable { previewOpen = true },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (state is PullState.Ready && attachment.mimeType.startsWith("image/")) {
+                AttachmentPreview(state.uri, attachment.filename)
+            } else {
+                Text(
+                    stringResource(if (state is PullState.Pulling) R.string.comfy_gallery_loading else R.string.comfy_gallery_tap_view),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        Checkbox(checked = included, onCheckedChange = onToggle)
+        Text(
+            attachment.filename,
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
+    }
+
+    if (previewOpen) {
+        Dialog(
+            onDismissRequest = { previewOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize().background(HelmColors.Bg).padding(HelmSpacing.Md),
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(attachment.filename, color = HelmColors.Txt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    Text(stringResource(R.string.comfy_gallery_close), color = HelmColors.Accent, modifier = Modifier.clickable { previewOpen = false }.padding(HelmSpacing.Sm))
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (state is PullState.Ready && attachment.mimeType.startsWith("image/")) {
+                        AttachmentPreview(state.uri, attachment.filename, maxPx = 2400, fullScreen = true)
+                    } else {
+                        Text(
+                            when (state) {
+                                is PullState.Pulling -> stringResource(R.string.comfy_gallery_saving, formatBytes(state.received), formatBytes(state.total))
+                                is PullState.Failed -> state.message
+                                PullState.Idle -> stringResource(R.string.comfy_gallery_save_to_preview)
+                                is PullState.Ready -> stringResource(R.string.comfy_gallery_preview_unavailable)
+                            },
+                            color = HelmColors.Dim,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
+                    when (state) {
+                        is PullState.Ready -> {
+                            Text(state.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text("Open", color = HelmColors.Accent, modifier = Modifier.clickable { onOpen(state.uri, attachment.mimeType) }.padding(HelmSpacing.Sm))
+                        }
+                        is PullState.Pulling -> Text("Saving…", color = HelmColors.Dim)
+                        else -> Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable(onClick = onDownload).padding(HelmSpacing.Sm))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun inputImageName(path: String): String = path.substringAfterLast('/').substringAfterLast('\\')
 
 /**
  * The prompt-cache line above the thread: orange past the short cache, red
@@ -935,6 +1150,7 @@ private fun Composer(
     onCall: (() -> Unit)?,
     onAttach: (() -> Unit)?,
     onSend: (String) -> Unit,
+    allowEmpty: Boolean = false,
 ) {
     Hairline()
     val dictation = rememberDictation(draft = draft, onDraft = onDraft, onSubmit = onSend)
@@ -967,7 +1183,7 @@ private fun Composer(
         ) {
             ComposerTerminal(onTerminal)
             ComposerVoice(dictation = dictation, onCall = onCall)
-            ComposerSend(hasText = draft.text.isNotBlank(), onSend = { onSend(draft.text) }, onAttach = onAttach)
+            ComposerSend(hasText = draft.text.isNotBlank(), allowEmpty = allowEmpty, onSend = { onSend(draft.text) }, onAttach = onAttach)
         }
     }
 }
@@ -1217,7 +1433,7 @@ private fun ComposerPhone(onCall: (() -> Unit)?, onLongPress: () -> Unit) {
 // Attach (📎, tap to pick a file). Typed text always wins — with words in the
 // box the button sends, so attach mode can never swallow a message.
 @Composable
-private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> Unit)?) {
+private fun ComposerSend(hasText: Boolean, allowEmpty: Boolean, onSend: () -> Unit, onAttach: (() -> Unit)?) {
     val context = LocalContext.current
     val prefs = remember { context.applicationContext.getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE) }
     var attachMode by remember { mutableStateOf(prefs.getBoolean(ATTACH_MODE_KEY, false)) }
@@ -1227,8 +1443,8 @@ private fun ComposerSend(hasText: Boolean, onSend: () -> Unit, onAttach: (() -> 
         choosing = false
         prefs.edit().putBoolean(ATTACH_MODE_KEY, next).apply()
     }
-    val attaching = attachMode && !hasText && onAttach != null
-    val enabled = hasText || attaching
+    val attaching = attachMode && !hasText && !allowEmpty && onAttach != null
+    val enabled = hasText || allowEmpty || attaching
     val currentSend by rememberUpdatedState(onSend)
     val currentAttach by rememberUpdatedState(onAttach)
     val currentAttaching by rememberUpdatedState(attaching)

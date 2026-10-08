@@ -42,13 +42,16 @@ export function parseLoadedModelsOutput(raw: string): LoadedModel[] | null {
 }
 
 /** Match the existing Helm media helper's GPU handoff and cross-process mutex. */
-export async function acquireComfyGpuLease(localComfyEndpoint: boolean): Promise<() => Promise<void>> {
-  const mutex = process.platform === 'win32' ? await acquireNamedMutex() : null;
+export async function acquireComfyGpuLease(localComfyEndpoint: boolean, signal: AbortSignal): Promise<() => Promise<void>> {
+  throwIfAborted(signal);
+  const mutex = process.platform === 'win32' ? await acquireNamedMutex(signal) : null;
   let restoreIdentifier: string | undefined;
   let restoreNeeded = false;
   try {
+    throwIfAborted(signal);
     if (localComfyEndpoint) {
       const models = await readModels();
+      throwIfAborted(signal);
       if (models === null) {
         logger.warn('[ComfyUI] LM Studio CLI is unavailable; continuing without LM Studio GPU checks.');
       } else if (models.length > 0) {
@@ -61,6 +64,7 @@ export async function acquireComfyGpuLease(localComfyEndpoint: boolean): Promise
         restoreNeeded = true;
         let unloaded = false;
         for (let attempt = 0; attempt < 60; attempt++) {
+          throwIfAborted(signal);
           const currentModels = await readModels();
           if (currentModels === null || !currentModels.some(model => model.modelKey === QWEN_MODEL_KEY)) { unloaded = true; break; }
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -68,6 +72,7 @@ export async function acquireComfyGpuLease(localComfyEndpoint: boolean): Promise
         if (!unloaded) throw new Error('LM Studio did not release GPU memory within 60 seconds.');
       }
     }
+    throwIfAborted(signal);
   } catch (error) {
     try {
       if (restoreIdentifier && restoreNeeded) await restoreLoadedModel(restoreIdentifier);
@@ -104,9 +109,10 @@ async function restoreLoadedModel(identifier: string): Promise<void> {
   }
 }
 
-function acquireNamedMutex(): Promise<{ release(): Promise<void> }> {
+function acquireNamedMutex(signal: AbortSignal): Promise<{ release(): Promise<void> }> {
   return new Promise((resolve, reject) => {
-    const script = `$ErrorActionPreference='Stop'; $m=[System.Threading.Mutex]::new($false, '${MUTEX_NAME}'); $held=$false; try { try { $held=$m.WaitOne([TimeSpan]::FromMinutes(30)) } catch [System.Threading.AbandonedMutexException] { $held=$true }; if(-not $held){ exit 3 }; [Console]::Out.WriteLine('HELM_LOCKED'); [Console]::Out.Flush(); [Console]::In.ReadLine() | Out-Null; $m.ReleaseMutex() } finally { $m.Dispose() }`;
+    if (signal.aborted) return reject(new Error('Generation cancelled'));
+    const script = `$ErrorActionPreference='Stop'; $m=[System.Threading.Mutex]::new($false, '${MUTEX_NAME}'); $held=$false; try { try { $m.WaitOne() | Out-Null; $held=$true } catch [System.Threading.AbandonedMutexException] { $held=$true }; [Console]::Out.WriteLine('HELM_LOCKED'); [Console]::Out.Flush(); [Console]::In.ReadLine() | Out-Null; $m.ReleaseMutex() } finally { $m.Dispose() }`;
     const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -114,17 +120,21 @@ function acquireNamedMutex(): Promise<{ release(): Promise<void> }> {
     let stdout = '';
     let stderr = '';
     let settled = false;
-    const timeout = setTimeout(() => {
+    const removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+    const onAbort = () => {
       if (settled) return;
       settled = true;
+      removeAbortListener();
       child.kill();
-      reject(new Error('Timed out waiting for another ComfyUI GPU job to finish.'));
-    }, 30 * 60 * 1000);
+      reject(new Error('Generation cancelled'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
       stdout += chunk;
       if (!settled && stdout.includes('HELM_LOCKED')) {
         settled = true;
-        clearTimeout(timeout);
+        removeAbortListener();
         resolve({ release: () => new Promise((done, fail) => {
           child.once('error', fail);
           child.once('close', code => code === 0 ? done() : fail(new Error(`GPU lock helper exited ${code}: ${stderr}`)));
@@ -135,12 +145,16 @@ function acquireNamedMutex(): Promise<{ release(): Promise<void> }> {
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => { stderr += chunk; });
     child.once('error', error => {
       if (settled) return;
-      settled = true; clearTimeout(timeout); reject(error);
+      settled = true; removeAbortListener(); reject(error);
     });
     child.once('close', code => {
       if (settled) return;
-      settled = true; clearTimeout(timeout);
+      settled = true; removeAbortListener();
       reject(new Error(stderr.trim() || `GPU lock helper exited ${code}`));
     });
   });
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new Error('Generation cancelled');
 }

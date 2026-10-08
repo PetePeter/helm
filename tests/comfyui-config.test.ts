@@ -9,7 +9,7 @@ import {
 } from '../src/session/comfyui/comfyui-config.js';
 
 describe('ComfyUI configuration', () => {
-  it('starts with distinct image workflows and unchanged video profiles', () => {
+  it('starts with distinct image workflows and schema-compatible video profiles', () => {
     const config = cloneDefaultComfyUiConfig();
 
     expect(config.endpoint).toBe(DEFAULT_COMFYUI_ENDPOINT);
@@ -41,6 +41,13 @@ describe('ComfyUI configuration', () => {
       const graph = applyComfyUiProfile(profile, 'a red kite');
       return [graph['7'].inputs.width, graph['7'].inputs.height, graph['10'].inputs.fps, graph['7'].inputs.length];
     });
+
+    for (const profile of config.profiles.filter(profile => profile.kind === 'video')) {
+      const graph = applyComfyUiProfile(profile, 'a red kite');
+      expect(graph['7'].inputs).not.toHaveProperty('positive');
+      expect(graph['7'].inputs).not.toHaveProperty('negative');
+      expect(graph['8'].inputs).toMatchObject({ positive: ['5', 0], negative: ['6', 0] });
+    }
 
     expect(imageSizes).toEqual([[512, 512], [1024, 1024], [1024, 1024], [1024, 1024]]);
     expect(videoSettings).toEqual([

@@ -82,6 +82,36 @@ describe('ComfyUI profile migration', () => {
     expect(readTypes()[IMAGE_ID].noPromptCache).toBe(false);
   });
 
+  it('removes unsupported conditioning inputs from saved Wan video profiles only', () => {
+    const video = defaultType(VIDEO_ID);
+    const landscape = video.comfyUi.profiles.find((profile: any) => profile.id === 'video');
+    const portrait = video.comfyUi.profiles.find((profile: any) => profile.id === 'video-1080p-portrait');
+    for (const profile of [landscape, portrait]) {
+      profile.workflow['7'].inputs.positive = ['5', 0];
+      profile.workflow['7'].inputs.negative = ['6', 0];
+      profile.workflow['7'].inputs.vae = ['3', 0];
+      profile.workflow['8'].inputs.positive = ['5', 0];
+      profile.workflow['8'].inputs.negative = ['6', 0];
+      profile.workflow['11'].inputs.filename_prefix = 'MyVideos';
+    }
+    writeTypes({ [VIDEO_ID]: video });
+    fs.writeFileSync(files.migrationStateFile, YAML.stringify({ applied: ['comfyui-tool-profiles-v8'] }));
+
+    expect(migrateComfyUiToolDefaults(files)).toBe(true);
+
+    const migrated = readTypes()[VIDEO_ID].comfyUi.profiles;
+    for (const profile of migrated) {
+      expect(profile.workflow['7'].inputs).not.toHaveProperty('positive');
+      expect(profile.workflow['7'].inputs).not.toHaveProperty('negative');
+      expect(profile.workflow['7'].inputs.vae).toEqual(['3', 0]);
+      expect(profile.workflow['8'].inputs).toMatchObject({ positive: ['5', 0], negative: ['6', 0] });
+      expect(profile.workflow['11'].inputs.filename_prefix).toBe('MyVideos');
+    }
+    expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
+      .toContain('comfyui-tool-profiles-v9');
+    expect(migrateComfyUiToolDefaults(files)).toBe(false);
+  });
+
   it('defaults no-prompt-cache for existing ComfyUI tools with custom ids and names', () => {
     const custom = defaultType(IMAGE_ID);
     delete custom.noPromptCache;
@@ -111,7 +141,7 @@ describe('ComfyUI profile migration', () => {
     expect(migrated.profiles.find((profile: any) => profile.id === 'image').workflow['7'].inputs.filename_prefix)
       .toBe('MyImages');
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v8');
+      .toContain('comfyui-tool-profiles-v9');
   });
 
   it('preserves custom endpoints and graphs while merging missing presets once', () => {
@@ -245,7 +275,7 @@ describe('ComfyUI profile migration', () => {
     writeTypes({ [IMAGE_ID]: defaultType(IMAGE_ID) });
     expect(migrateComfyUiToolDefaults(files)).toBe(true);
     expect(YAML.parse(fs.readFileSync(files.migrationStateFile, 'utf8')).applied)
-      .toContain('comfyui-tool-profiles-v8');
+      .toContain('comfyui-tool-profiles-v9');
     const types = readTypes();
     types[IMAGE_ID].comfyUi.profiles = types[IMAGE_ID].comfyUi.profiles
       .filter((profile: any) => profile.id !== 'image-lustify-v8-apex');

@@ -63,6 +63,10 @@ data class ChatMessage(
     val comfyProfileId: String? = null,
     /** Selected ComfyUI image size for a retryable phone send. */
     val comfyImageSizeId: String? = null,
+    /** Desktop path uploaded from the phone for a retryable ComfyUI input image. */
+    val comfyInputImagePath: String? = null,
+    /** Gallery references used by a retryable ComfyUI send. */
+    val comfyInputAttachmentIds: List<String> = emptyList(),
 )
 
 /**
@@ -148,6 +152,8 @@ class ChatRepository(
 
     /** The catch-up cursors: the highest seq held per desktop, saved only beside its threads. */
     private var cursors: Map<String, Long> = emptyMap()
+    private val _excludedComfyReferenceIds = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val excludedComfyReferenceIds: StateFlow<Map<String, Set<String>>> = _excludedComfyReferenceIds.asStateFlow()
 
     /** The session whose thread is on screen, when there is one. */
     private var readingSessionId: String? = null
@@ -176,6 +182,7 @@ class ChatRepository(
         if (cursors.isNotEmpty() || _threads.value.isNotEmpty()) return
         val saved = chatStore.load() ?: return
         cursors = saved.cursors
+        _excludedComfyReferenceIds.value = saved.excludedComfyReferenceIds.mapValues { it.value.toSet() }
         saved.sentIds.forEach { sentIds[it] = Unit }
         _threads.value = saved.threads.mapValues { (_, thread) ->
             thread.takeLast(MAX_THREAD).map { row ->
@@ -198,7 +205,10 @@ class ChatRepository(
         val keep = _threads.value.filter { (id, thread) ->
             id in liveIds || (thread.lastOrNull()?.at ?: 0L) > now - JOURNAL_WINDOW_MS
         }
-        if (keep.size == _threads.value.size) return
+        val retainIds = liveIds + keep.keys
+        val nextExcluded = _excludedComfyReferenceIds.value.filterKeys { it in retainIds }
+        if (keep.size == _threads.value.size && nextExcluded.size == _excludedComfyReferenceIds.value.size) return
+        _excludedComfyReferenceIds.value = nextExcluded
         setThreads(keep)
     }
 
@@ -385,9 +395,22 @@ class ChatRepository(
      * only appears after a BLE round trip reads as a dropped keystroke.
      */
     @Synchronized
-    fun sending(sessionId: String, text: String, at: Long, comfyProfileId: String? = null, comfyImageSizeId: String? = null): String {
+    fun sending(
+        sessionId: String,
+        text: String,
+        at: Long,
+        comfyProfileId: String? = null,
+        comfyImageSizeId: String? = null,
+        comfyInputImagePath: String? = null,
+        comfyInputAttachmentIds: List<String> = emptyList(),
+    ): String {
         val key = nextKey()
-        append(sessionId, ChatMessage(key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending, comfyProfileId = comfyProfileId, comfyImageSizeId = comfyImageSizeId))
+        append(sessionId, ChatMessage(
+            key = key, text = text, at = at, fromPhone = true, delivery = Delivery.Sending,
+            comfyProfileId = comfyProfileId, comfyImageSizeId = comfyImageSizeId,
+            comfyInputImagePath = comfyInputImagePath,
+            comfyInputAttachmentIds = comfyInputAttachmentIds,
+        ))
         return key
     }
 
@@ -398,6 +421,28 @@ class ChatRepository(
     @Synchronized
     fun comfyImageSizeId(sessionId: String, key: String): String? =
         _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyImageSizeId
+
+    @Synchronized
+    fun comfyInputImagePath(sessionId: String, key: String): String? =
+        _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyInputImagePath
+
+    @Synchronized
+    fun comfyInputAttachmentIds(sessionId: String, key: String): List<String> =
+        _threads.value[sessionId]?.firstOrNull { it.key == key }?.comfyInputAttachmentIds.orEmpty()
+
+    @Synchronized
+    fun isComfyReferenceIncluded(sessionId: String, attachmentId: String): Boolean =
+        attachmentId !in _excludedComfyReferenceIds.value[sessionId].orEmpty()
+
+    /** Persist one session's checkbox state without coupling it to the capped message thread. */
+    @Synchronized
+    fun setComfyReferenceSelection(sessionId: String, knownIds: Set<String>, includedIds: Set<String>) {
+        val previous = _excludedComfyReferenceIds.value
+        val excluded = (previous[sessionId].orEmpty() - knownIds) + (knownIds - includedIds)
+        _excludedComfyReferenceIds.value = if (excluded.isEmpty()) previous - sessionId
+        else previous + (sessionId to excluded)
+        persist()
+    }
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */
     @Synchronized
@@ -463,7 +508,7 @@ class ChatRepository(
         val failed = _threads.value[sessionId]?.find { it.key == key } ?: return null
         if (failed.delivery != Delivery.Failed && failed.delivery != Delivery.Frozen) return null
         remove(sessionId, key)
-        return sending(sessionId, failed.text, at, failed.comfyProfileId, failed.comfyImageSizeId)
+        return sending(sessionId, failed.text, at, failed.comfyProfileId, failed.comfyImageSizeId, failed.comfyInputImagePath, failed.comfyInputAttachmentIds)
     }
 
     // -------------------------------------------------------------------------
@@ -533,7 +578,10 @@ class ChatRepository(
         persist()
     }
 
-    private fun persist() = store.save(ChatSnapshot(_threads.value, cursors, sentIds.keys.toList()))
+    private fun persist() = store.save(ChatSnapshot(
+        _threads.value, cursors, sentIds.keys.toList(),
+        _excludedComfyReferenceIds.value.mapValues { (_, ids) -> ids.toList() },
+    ))
 
     /** One write, to the flow the screens read and the store the app restarts from. */
     private fun setUnread(sessionId: String, count: Int) {

@@ -73,6 +73,8 @@ export interface ComfyUiProfileConfig {
   workflow: Record<string, unknown>;
   /** Explicit node/input destinations for the fields exposed in chat. */
   mappings: Partial<Record<'prompt' | 'negativePrompt' | 'width' | 'height' | 'steps' | 'cfg' | 'seed' | 'length' | 'fps', ComfyUiInputBinding>>;
+  /** Optional autogrow image inputs used by multi-reference workflows. */
+  referenceImages?: { nodeId: string; inputPrefix: string; maxImages: number };
   /** Values for mapped inputs which are configured rather than typed per prompt. */
   defaults?: Partial<Record<'negativePrompt' | 'width' | 'height' | 'steps' | 'cfg' | 'seed' | 'length' | 'fps', string | number>>;
   /** Node ids whose saved files are returned as this job's results. */

@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { basename, extname, join } from 'node:path';
 import type { ComfyUiToolConfig } from '../../config/loader.js';
-import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
+import { MAX_ATTACHMENT_BYTES, type ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
 import type { Artifact } from '../../types/artifact.js';
 import type { PtyProcess } from '../pty-manager.js';
 import type { ChatAttachmentRef } from '../chat/chat-bridge.js';
@@ -17,6 +17,7 @@ import {
   validateComfyUiConfig,
 } from './comfyui-config.js';
 import { cancelComfyPrompt, runComfyPrompt } from './comfyui-api.js';
+import { hasMatchingComfyImageSignature } from './comfyui-image-input.js';
 import { ensureComfyServer, isLocalEndpoint } from './comfyui-server.js';
 import { acquireComfyGpuLease } from './gpu-coordination.js';
 
@@ -28,7 +29,7 @@ export interface ComfyUiArtifacts {
 export interface ComfyUiSessionHostDeps {
   tempDir: string;
   artifacts: ComfyUiArtifacts;
-  attachments: Pick<ArtifactAttachmentManager, 'addGeneratedMediaFromFile' | 'getPath'>;
+  attachments: Pick<ArtifactAttachmentManager, 'add' | 'addGeneratedMediaFromFile' | 'get' | 'getPath'>;
   postChat: (sessionId: string, text: string, attachment?: ChatAttachmentRef) => Promise<void>;
   /** Put a prompt another session sent into the chat; the chat pane and a phone record their own. */
   recordPrompt: (sessionId: string, text: string) => void;
@@ -51,6 +52,7 @@ interface Job {
   profileId: string;
   imageSizeId?: string;
   prompt: string;
+  inputImagePaths: string[];
   controller: AbortController;
   promptId?: string;
   submitting: boolean;
@@ -84,16 +86,41 @@ export class ComfyUiSessionHost {
     profileId?: string,
     imageSizeId?: string,
     requesterSessionId?: string,
+    inputImagePath?: string,
+    inputAttachmentIds: string[] = [],
   ): { jobId: string; profileId: string } {
     const process = this.sessions.get(sessionId);
     if (!process) throw new Error('ComfyUI session is not running');
     const trimmed = prompt.trim();
-    if (!trimmed) throw new Error('Prompt is empty');
     const profile = process.config.profiles.find(item => item.id === profileId)
       ?? (profileId ? undefined : process.config.profiles[0]);
     if (!profile) throw new Error(`Unknown ComfyUI profile: ${profileId}`);
+    const attachmentIds = [...new Set(inputAttachmentIds)];
+    const referenceCount = attachmentIds.length + (inputImagePath ? 1 : 0);
+    const maxReferences = profile.referenceImages?.maxImages ?? 1;
+    if (!trimmed && referenceCount === 0) throw new Error('Enter a prompt or attach a reference image');
+    if (referenceCount > maxReferences) {
+      throw new Error(`Profile ${profile.name} accepts at most ${maxReferences} reference image${maxReferences === 1 ? '' : 's'}`);
+    }
     if (imageSizeId !== undefined) applyComfyUiProfile(profile, trimmed, 1, imageSizeId);
     const imageSize = COMFYUI_IMAGE_SIZE_OPTIONS.find(option => option.id === imageSizeId);
+    const referencePaths: string[] = [];
+    if (attachmentIds.length > 0) {
+      const filesArtifact = this.deps.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE);
+      if (!filesArtifact) throw new Error('A selected reference image is no longer available in this session');
+      for (const attachmentId of attachmentIds) {
+        const attachment = this.deps.attachments.get(filesArtifact.id, attachmentId);
+        if (!attachment || !attachment.contentType?.toLowerCase().startsWith('image/')) {
+          throw new Error('A selected reference image is no longer available in this session');
+        }
+        referencePaths.push(this.deps.attachments.getPath(filesArtifact.id, attachment.id));
+      }
+    }
+    if (inputImagePath) {
+      const imported = this.importReferenceImage(sessionId, inputImagePath);
+      referencePaths.unshift(imported.filePath);
+      void this.deps.postChat(sessionId, 'Reference image added to this session.', imported.attachment).catch(() => undefined);
+    }
     const job: Job = {
       id: randomUUID(),
       sessionId,
@@ -102,6 +129,7 @@ export class ComfyUiSessionHost {
       profileId: profile.id,
       ...(imageSizeId ? { imageSizeId } : {}),
       prompt: trimmed,
+      inputImagePaths: referencePaths,
       controller: new AbortController(),
       submitting: false,
       submissionSettled: Promise.resolve(),
@@ -110,9 +138,10 @@ export class ComfyUiSessionHost {
       executing: false,
     };
     this.jobs.set(job.id, job);
-    if (requesterSessionId) this.deps.recordPrompt(sessionId, trimmed);
-    process.writeStatus(`Queued · ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}`);
-    void this.deps.postChat(sessionId, `Queued for ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}.`).catch(() => undefined);
+    if (requesterSessionId && trimmed) this.deps.recordPrompt(sessionId, trimmed);
+    const inputLabel = referenceCount > 0 ? ` · ${referenceCount} reference image${referenceCount === 1 ? '' : 's'}` : '';
+    process.writeStatus(`Queued · ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}${inputLabel}`);
+    void this.deps.postChat(sessionId, `Queued for ${profile.name}${imageSize ? ` · ${imageSize.name}` : ''}${inputLabel}.`).catch(() => undefined);
     this.queue = this.queue.then(() => this.run(job, process, profile)).catch(() => undefined);
     return { jobId: job.id, profileId: profile.id };
   }
@@ -157,7 +186,9 @@ export class ComfyUiSessionHost {
         process.writeStatus('Starting ComfyUI…');
         void this.deps.postChat(job.sessionId, 'ComfyUI is not running. Starting it…').catch(() => undefined);
       });
-      leaseRelease = await acquireComfyGpuLease(isLocalEndpoint(endpoint));
+      process.writeStatus('Waiting for GPU…');
+      void this.deps.postChat(job.sessionId, 'Waiting for the GPU to become available…').catch(() => undefined);
+      leaseRelease = await acquireComfyGpuLease(isLocalEndpoint(endpoint), job.controller.signal);
       if (job.controller.signal.aborted) throw new Error('Generation cancelled');
       tempDir = mkdtempSync(join(this.deps.tempDir, 'comfy-media-'));
       const files = await runComfyPrompt({
@@ -165,6 +196,7 @@ export class ComfyUiSessionHost {
         workflow: applyComfyUiProfile(profile, job.prompt, undefined, job.imageSizeId),
         profile,
         prompt: job.prompt,
+        ...(job.inputImagePaths.length > 0 ? { inputImagePaths: job.inputImagePaths } : {}),
         tempDir,
         signal: job.controller.signal,
         onSubmitting: () => {
@@ -272,6 +304,46 @@ export class ComfyUiSessionHost {
   private chatFilesArtifact(sessionId: string): Artifact {
     return this.deps.artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE)
       ?? this.deps.artifacts.create(sessionId, CHAT_FILES_TITLE, 'markdown', CHAT_FILES_BODY, 'manual');
+  }
+
+  private importReferenceImage(sessionId: string, filePath: string): { filePath: string; attachment: ChatAttachmentRef } {
+    const stat = statSync(filePath);
+    if (!stat.isFile()) throw new Error('ComfyUI image input must be a file');
+    if (stat.size <= 0 || stat.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`ComfyUI image input must be between 1 byte and ${MAX_ATTACHMENT_BYTES} bytes`);
+    }
+    const mimeType = mimeForImagePath(filePath);
+    if (!mimeType) throw new Error('ComfyUI image input must be a PNG, JPEG, or WebP image');
+    const content = readFileSync(filePath);
+    if (!hasMatchingComfyImageSignature(content, mimeType)) {
+      throw new Error('ComfyUI image input content does not match its file type');
+    }
+    const artifact = this.chatFilesArtifact(sessionId);
+    const stored = this.deps.attachments.add(artifact.id, {
+      filename: basename(filePath), content, contentType: mimeType,
+    });
+    const storedPath = this.deps.attachments.getPath(stored.artifactId, stored.id);
+    return {
+      filePath: storedPath,
+      attachment: {
+        artifactId: stored.artifactId,
+        attachmentId: stored.id,
+        filename: stored.filename,
+        mimeType,
+        sizeBytes: stored.sizeBytes,
+        filePath: storedPath,
+      },
+    };
+  }
+}
+
+function mimeForImagePath(filePath: string): string | undefined {
+  switch (extname(filePath).toLowerCase()) {
+    case '.png': return 'image/png';
+    case '.jpg':
+    case '.jpeg': return 'image/jpeg';
+    case '.webp': return 'image/webp';
+    default: return undefined;
   }
 }
 

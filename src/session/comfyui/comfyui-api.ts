@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import type { ComfyUiProfileConfig } from '../../config/loader.js';
 import { mimeForPath } from '../../electron/helm-img-protocol.js';
 import { MAX_GENERATED_MEDIA_BYTES } from '../generated-media-policy.js';
+import { applyComfyInputImages, hasMatchingComfyImageSignature } from './comfyui-image-input.js';
 
 interface ComfyFile { filename: string; subfolder?: string; type?: string }
 interface ComfyHistory { status?: { completed?: boolean; status_str?: string; messages?: unknown[] }; outputs?: Record<string, Record<string, unknown>> }
@@ -86,6 +87,9 @@ export async function runComfyPrompt(input: {
   workflow: Record<string, unknown>;
   profile: ComfyUiProfileConfig;
   prompt: string;
+  inputImagePaths?: string[];
+  /** Backwards-compatible single-file input for callers not yet using the gallery. */
+  inputImagePath?: string;
   tempDir: string;
   signal: AbortSignal;
   onProgress: (message: string) => void;
@@ -104,13 +108,33 @@ export async function runComfyPrompt(input: {
   try {
     await checkComfyConnection(input.endpoint, input.signal);
     if (input.signal.aborted) throw new Error('Generation cancelled');
+    let workflow = input.workflow;
+    const imagePaths = [...new Set([...(input.inputImagePaths ?? []), ...(input.inputImagePath ? [input.inputImagePath] : [])])];
+    if (imagePaths.length > input.profile.referenceImages?.maxImages && input.profile.referenceImages) {
+      throw new Error(`Profile ${input.profile.name} accepts at most ${input.profile.referenceImages.maxImages} reference images`);
+    }
+    if (!input.profile.referenceImages && imagePaths.length > 1) {
+      throw new Error(`Profile ${input.profile.name} accepts one reference image; select one image`);
+    }
+    if (imagePaths.length > 0) {
+      const totalBytes = imagePaths.reduce((total, path) => total + statSync(path).size, 0);
+      if (totalBytes > MAX_GENERATED_MEDIA_BYTES) {
+        throw new Error(`ComfyUI reference images exceed the ${MAX_GENERATED_MEDIA_BYTES}-byte total limit`);
+      }
+      const uploadedNames: string[] = [];
+      for (const [index, imagePath] of imagePaths.entries()) {
+        input.onProgress(`Uploading reference image ${index + 1} of ${imagePaths.length}`);
+        uploadedNames.push(await uploadInputImage(input.endpoint, imagePath, input.signal));
+      }
+      workflow = applyComfyInputImages(input.profile, workflow, uploadedNames);
+    }
     const clientId = randomUUID();
     input.onSubmitting?.();
     let submitted: { prompt_id?: string; node_errors?: unknown };
     try {
       submitted = await requestJson<{ prompt_id?: string; node_errors?: unknown }>(input.endpoint, '/prompt', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt: input.workflow, client_id: clientId }),
+        body: JSON.stringify({ prompt: workflow, client_id: clientId }),
         signal: input.signal,
       }, 30_000);
     } catch (error) {
@@ -129,10 +153,10 @@ export async function runComfyPrompt(input: {
     }
     if (!promptId) throw new Error('ComfyUI did not return a prompt id');
 
-    const deadline = Date.now() + 30 * 60 * 1000;
+    const startedAt = Date.now();
     let lastProgressAt = Date.now();
     input.onProgress(`${input.profile.kind === 'video' ? 'Video' : 'Image'} queued in ComfyUI`);
-    while (Date.now() < deadline) {
+    while (true) {
       await sleep(2000, input.signal);
       const history = await requestJson<Record<string, ComfyHistory>>(input.endpoint, `/history/${encodeURIComponent(promptId)}`, { signal: input.signal });
       const job = history[promptId];
@@ -142,16 +166,15 @@ export async function runComfyPrompt(input: {
         return await downloadOutputs(input, job.outputs ?? {});
       }
       if (Date.now() - lastProgressAt >= 20_000) {
-        input.onProgress(`Still generating (${Math.floor((Date.now() - (deadline - 30 * 60 * 1000)) / 1000)}s)`);
+        input.onProgress(`Still generating (${Math.floor((Date.now() - startedAt) / 1000)}s)`);
         lastProgressAt = Date.now();
       }
     }
-    throw new Error('ComfyUI generation exceeded the 30 minute limit');
   } catch (error) {
     submitFailed();
     if (promptId && !generationFinished) {
       try {
-        // A history error, abort or timeout must stop the server job before the
+        // A history error or abort must stop the server job before the
         // caller releases the shared GPU lease.
         await cancelComfyPrompt(input.endpoint, promptId);
       } catch (cancelError) {
@@ -162,6 +185,49 @@ export async function runComfyPrompt(input: {
     }
     throw error;
   }
+}
+
+async function uploadInputImage(endpoint: string, imagePath: string, signal: AbortSignal): Promise<string> {
+  const stat = statSync(imagePath);
+  if (!stat.isFile()) throw new Error('ComfyUI image input must be a file');
+  if (stat.size > MAX_GENERATED_MEDIA_BYTES) {
+    throw new Error(`ComfyUI image input exceeds the ${MAX_GENERATED_MEDIA_BYTES}-byte limit`);
+  }
+  const mimeType = mimeForPath(imagePath);
+  const extension = extname(imagePath).toLowerCase();
+  if (!mimeType || !['image/png', 'image/jpeg', 'image/webp'].includes(mimeType)) {
+    throw new Error('ComfyUI image input must be a PNG, JPEG, or WebP image');
+  }
+  const bytes = readFileSync(imagePath);
+  if (!hasMatchingComfyImageSignature(bytes, mimeType)) {
+    throw new Error('ComfyUI image input content does not match its file type');
+  }
+  if (signal.aborted) throw new Error('Generation cancelled');
+
+  // A content-addressed name lets ComfyUI reuse an existing input when a user
+  // iterates on the same image; its upload endpoint deduplicates identical bytes.
+  const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 32);
+  const canonicalExtension = mimeType === 'image/jpeg' ? '.jpg' : extension;
+  const filename = `helm-${hash}${canonicalExtension}`;
+  const form = new FormData();
+  const blobBytes = Uint8Array.from(bytes);
+  form.set('image', new Blob([blobBytes.buffer as ArrayBuffer], { type: mimeType }), filename);
+  form.set('type', 'input');
+  form.set('overwrite', 'false');
+  const response = await fetch(`${endpoint}/upload/image`, {
+    method: 'POST',
+    body: form,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+  });
+  if (!response.ok) throw new Error(`ComfyUI image upload returned HTTP ${response.status}`);
+  const uploaded = await response.json() as { name?: unknown; filename?: unknown; subfolder?: unknown };
+  const name = typeof uploaded.name === 'string' ? uploaded.name : uploaded.filename;
+  if (typeof name !== 'string' || !name || name.includes('..') || name.includes('\\')) {
+    throw new Error('ComfyUI did not return a valid uploaded image name');
+  }
+  const subfolder = typeof uploaded.subfolder === 'string' ? uploaded.subfolder.replace(/^\/+|\/+$/g, '') : '';
+  if (subfolder.split('/').some(part => part === '..')) throw new Error('ComfyUI returned an invalid image subfolder');
+  return subfolder ? `${subfolder}/${name}` : name;
 }
 
 async function downloadOutputs(

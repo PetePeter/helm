@@ -24,6 +24,7 @@ import { logger } from '../utils/logger.js';
 import { getRendererHtmlPath, isPackaged, seedConfigIfNeeded, getConfigDir, migrateLegacyUserDataIfNeeded } from '../utils/app-paths.js';
 import { registerHelmImgProtocol } from './helm-img-protocol-handler.js';
 import { registerHelmArtifactProtocol } from './helm-artifact-protocol.js';
+import { installComfyUiTools } from './comfyui-tool-installer.js';
 
 // Register the custom schemes as privileged BEFORE app is ready.
 // standard+secure makes them behave like https for CSP/CORS; supportFetchAPI
@@ -331,6 +332,21 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   logger.info('[Main] App ready');
   logger.info(`[Main] Crash dumps directory: ${app.getPath('crashDumps')}`);
+
+  try {
+    const installedTools = installComfyUiTools({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      localAppData: process.env.LOCALAPPDATA,
+    });
+    if (installedTools.length > 0) {
+      logger.info(`[Main] Installed ComfyUI tools: ${installedTools.join(', ')}`);
+    }
+  } catch (error) {
+    logger.error(`[Main] Could not install bundled ComfyUI tools: ${error}`);
+  }
 
   // Migrate user data folder from old name to new name (packaged builds only)
   migrateUserDataFolder(process.env.APPDATA || process.env.HOME || '.', app.isPackaged);

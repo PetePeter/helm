@@ -19,13 +19,14 @@ const props = defineProps<{
   title: string;
   /** Only the operator takes calls. */
   isOperator: boolean;
-  comfyProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean; maxReferenceImages: number }>;
   comfyImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
 }>();
 
 const chat = useOperatorChat(props.sessionId);
 // The picked model and size live on the per-session chat, so they outlive this pane's remounts.
-const { bubbles, draft, attachment, sending, recording, transcribing, error, comfyProfileId: profileId, comfyImageSizeId: imageSizeId } = chat;
+const { bubbles, draft, attachment, sending, recording, transcribing, error, comfyProfileId: profileId, comfyImageSizeId: imageSizeId,
+  comfyGallery, includedReferenceIds, selectedComfyAttachmentIds } = chat;
 const { inCall, handsFree, toggleCall, hangUp } = useVoiceCall();
 
 const thread = ref<HTMLElement | null>(null);
@@ -34,8 +35,16 @@ const pttLabel = computed(() => pttKey.value.toUpperCase());
 const isComfyUi = computed(() => (props.comfyProfiles?.length ?? 0) > 0);
 const selectedProfile = computed(() => props.comfyProfiles?.find(profile => profile.id === profileId.value));
 const supportsImageSize = computed(() => selectedProfile.value?.supportsImageSize === true && (props.comfyImageSizes?.length ?? 0) > 0);
+const maxReferenceImages = computed(() => selectedProfile.value?.maxReferenceImages ?? 1);
+const galleryImage = ref<NonNullable<(typeof comfyGallery.value)[number]['attachment']> | null>(null);
+const canSend = computed(() => {
+  if (sending.value) return false;
+  if (!isComfyUi.value) return Boolean(draft.value.trim());
+  const count = selectedComfyAttachmentIds.value.length + (attachment.value ? 1 : 0);
+  return (Boolean(draft.value.trim()) || count > 0) && count <= maxReferenceImages.value;
+});
 const chatHint = computed(() => isComfyUi.value
-  ? 'Enter to generate · Type /cancel to stop'
+  ? `Enter to generate · ${maxReferenceImages.value} reference image${maxReferenceImages.value === 1 ? '' : 's'} max · Type /cancel to stop`
   : `Enter to send · Shift/Ctrl+Enter for a new line · Hold 🎤 or ${pttLabel.value} to talk`);
 const previewUrl = (path: string) => `helm-img://f/?p=${encodeURIComponent(path)}`;
 watch(
@@ -43,12 +52,34 @@ watch(
   () => chat.syncComfyOptions(props.comfyProfiles, props.comfyImageSizes),
   { deep: true, immediate: true },
 );
+watch(() => [comfyGallery.value.length, maxReferenceImages.value], () => {
+  if (isComfyUi.value) chat.limitReferences(maxReferenceImages.value);
+});
 
 function sendPrompt(): void {
   void chat.send(
     isComfyUi.value ? profileId.value : undefined,
     supportsImageSize.value ? imageSizeId.value : undefined,
+    isComfyUi.value ? maxReferenceImages.value : undefined,
   );
+}
+
+function setGalleryIncluded(bubble: (typeof comfyGallery.value)[number], included: boolean): void {
+  const selectedCount = selectedComfyAttachmentIds.value.length + (attachment.value ? 1 : 0);
+  if (included && selectedCount >= maxReferenceImages.value) {
+    error.value = `This profile accepts at most ${maxReferenceImages.value} reference image${maxReferenceImages.value === 1 ? '' : 's'}`;
+    return;
+  }
+  error.value = null;
+  chat.setReferenceIncluded(bubble, included, maxReferenceImages.value);
+}
+
+function galleryIncluded(bubble: (typeof comfyGallery.value)[number]): boolean {
+  return includedReferenceIds.value.has(`${bubble.attachment?.artifactId}:${bubble.attachment?.attachmentId}`);
+}
+
+function saveGalleryImage(image: NonNullable<(typeof comfyGallery.value)[number]['attachment']>): void {
+  if (image.artifactId && image.attachmentId) void artifactsClient.artifactSaveAttachment(image.artifactId, image.attachmentId);
 }
 
 function onCallClick(): void {
@@ -64,7 +95,10 @@ function onComposerKey(event: KeyboardEvent): void {
 }
 
 async function pickAttachment(): Promise<void> {
-  const selected = await dialogClient.dialogShowOpenFile?.([{ name: 'All Files', extensions: ['*'] }]);
+  const filters = isComfyUi.value
+    ? [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+    : [{ name: 'All Files', extensions: ['*'] }];
+  const selected = await dialogClient.dialogShowOpenFile?.(filters);
   if (selected) attachment.value = selected;
 }
 
@@ -159,7 +193,7 @@ onBeforeUnmount(() => {
         :class="`operator-chat__bubble--${bubble.from}`"
       >
         <div class="operator-chat__text">{{ bubble.text }}</div>
-        <div v-if="bubble.attachment?.filePath" class="operator-chat__media">
+        <div v-if="bubble.attachment?.filePath && !(isComfyUi && bubble.attachment.mimeType?.startsWith('image/'))" class="operator-chat__media">
           <img v-if="bubble.attachment.mimeType?.startsWith('image/')" :src="previewUrl(bubble.attachment.filePath)" :alt="bubble.attachment.filename" />
           <video v-else-if="bubble.attachment.mimeType?.startsWith('video/')" :src="previewUrl(bubble.attachment.filePath)" controls preload="metadata" />
           <button
@@ -180,20 +214,40 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div v-if="isComfyUi && comfyGallery.length" class="operator-chat__gallery" aria-label="Session reference images">
+      <div v-for="bubble in comfyGallery" :key="`${bubble.attachment?.artifactId}:${bubble.attachment?.attachmentId}`" class="operator-chat__gallery-item">
+        <button class="operator-chat__gallery-preview" type="button" :aria-label="`View ${bubble.attachment?.filename} full size`" @click="galleryImage = bubble.attachment ?? null">
+          <img v-if="bubble.attachment?.filePath" :src="previewUrl(bubble.attachment.filePath)" :alt="bubble.attachment.filename" />
+          <span v-else>{{ bubble.attachment?.filename }}</span>
+        </button>
+        <label class="operator-chat__gallery-include">
+          <input type="checkbox" :checked="galleryIncluded(bubble)" @change="setGalleryIncluded(bubble, ($event.target as HTMLInputElement).checked)" />
+          Use later
+        </label>
+        <button v-if="bubble.attachment?.artifactId && bubble.attachment.attachmentId" class="operator-chat__gallery-save" type="button" @click="saveGalleryImage(bubble.attachment)">Save</button>
+      </div>
+    </div>
+
+    <div v-if="galleryImage" class="operator-chat__viewer" role="dialog" aria-modal="true" :aria-label="galleryImage.filename" @click.self="galleryImage = null">
+      <button class="operator-chat__viewer-close" type="button" aria-label="Close image" @click="galleryImage = null">×</button>
+      <img v-if="galleryImage.filePath" :src="previewUrl(galleryImage.filePath)" :alt="galleryImage.filename" />
+      <button v-if="galleryImage.artifactId && galleryImage.attachmentId" class="btn btn--sm btn--secondary" type="button" @click="saveGalleryImage(galleryImage)">Save image</button>
+    </div>
+
     <div v-if="error" class="operator-chat__error" role="alert">{{ error }}</div>
 
     <div class="operator-chat__composer">
-      <button v-if="!isComfyUi" class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
+      <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
       <div class="operator-chat__input-wrap">
         <div v-if="attachment" class="operator-chat__attachment">
           📎 {{ attachmentName }}
-          <button type="button" class="operator-chat__attachment-clear" title="Remove attachment" @click="attachment = null">✕</button>
+        <button type="button" class="operator-chat__attachment-clear" title="Remove attachment" @click="attachment = null">✕</button>
         </div>
         <textarea
           v-model="draft"
           class="operator-chat__input"
           rows="2"
-          :placeholder="isComfyUi ? 'Describe what to generate…' : 'Message the operator…'"
+          :placeholder="isComfyUi ? 'Describe what to generate… or send images alone' : 'Message the operator…'"
           @keydown="onComposerKey"
         />
       </div>
@@ -210,7 +264,7 @@ onBeforeUnmount(() => {
       <button
         class="btn btn--sm btn--primary focusable"
         type="button"
-        :disabled="sending || !draft.trim()"
+        :disabled="!canSend"
         @click="sendPrompt"
       >Send</button>
     </div>
@@ -348,6 +402,93 @@ onBeforeUnmount(() => {
 .operator-chat__profile select { max-width: 150px; padding: 5px 8px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .operator-chat__media { display: flex; flex-direction: column; gap: var(--spacing-xs); margin-top: var(--spacing-xs); }
 .operator-chat__media img, .operator-chat__media video { max-width: min(560px, 70vw); max-height: 420px; border-radius: var(--radius-sm); object-fit: contain; background: #000; }
+
+.operator-chat__gallery {
+  display: flex;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.operator-chat__gallery-item {
+  display: flex;
+  flex: 0 0 112px;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+
+.operator-chat__gallery-preview {
+  display: grid;
+  width: 112px;
+  height: 88px;
+  place-items: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #000;
+  color: var(--text-secondary);
+  cursor: zoom-in;
+}
+
+.operator-chat__gallery-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.operator-chat__gallery-include {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-xs);
+}
+
+.operator-chat__gallery-save {
+  align-self: flex-start;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.operator-chat__viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: 48px;
+  background: rgb(0 0 0 / 88%);
+}
+
+.operator-chat__viewer img {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+}
+
+.operator-chat__viewer-close {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 28px;
+  cursor: pointer;
+}
 
 .operator-chat__ptt {
   width: 40px;

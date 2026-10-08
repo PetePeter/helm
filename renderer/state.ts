@@ -55,7 +55,7 @@ export interface Session {
   apiTool?: boolean;
   /** A ComfyUI session; its pane defaults to chat, with these composer choices. */
   comfyUiTool?: boolean;
-  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean }>;
+  comfyUiProfiles?: Array<{ id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean; maxReferenceImages: number }>;
   comfyUiImageSizes?: Array<{ id: string; name: string; width: number; height: number }>;
   /** A subagent session: hidden from the lists; its parent shows a 🔥 count. */
   subagentOf?: string;

@@ -53,6 +53,14 @@
           "icon.png",
           "user-guide.html"
         ]
+      },
+      {
+        "from": "tools/comfyui",
+        "to": "tools/comfyui",
+        "filter": [
+          "Generate-ComfyMedia.ps1",
+          "Start-ComfyUI.ps1"
+        ]
       }
     ],
     "mac": {

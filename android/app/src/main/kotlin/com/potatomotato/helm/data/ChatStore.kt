@@ -19,6 +19,8 @@ data class ChatSnapshot(
     val cursors: Map<String, Long>,
     /** This phone's recent originIds, so a replayed echo of its own words still drops. */
     val sentIds: List<String> = emptyList(),
+    /** Attachment ids unchecked in each ComfyUI session gallery. */
+    val excludedComfyReferenceIds: Map<String, List<String>> = emptyMap(),
 )
 
 /**
@@ -102,13 +104,18 @@ internal object ChatSnapshotJson {
      * 3: one cursor per desktop. A version 2 file's single cursor cannot be
      * attributed to any one desktop, so it loads with no cursors — each desktop
      * replays its journal once, deduped the same way.
+     * 4: session gallery checkbox state. Older snapshots start with all images
+     * included, matching the first-use default.
      */
-    private const val VERSION = 3
+    private const val VERSION = 4
 
     fun encode(snapshot: ChatSnapshot): JSONObject = JSONObject().apply {
         put("v", VERSION)
         put("cursors", JSONObject(snapshot.cursors))
         put("sentIds", JSONArray(snapshot.sentIds))
+        put("excludedComfyReferenceIds", JSONObject().apply {
+            for ((sessionId, ids) in snapshot.excludedComfyReferenceIds) put(sessionId, JSONArray(ids))
+        })
         put("threads", JSONObject().apply {
             for ((sessionId, thread) in snapshot.threads) {
                 put(sessionId, JSONArray().apply { thread.forEach { put(encode(it)) } })
@@ -131,6 +138,8 @@ internal object ChatSnapshotJson {
         message.thoughtCount?.let { put("thoughtCount", it) }
         message.comfyProfileId?.let { put("comfyProfileId", it) }
         message.comfyImageSizeId?.let { put("comfyImageSizeId", it) }
+        message.comfyInputImagePath?.let { put("comfyInputImagePath", it) }
+        if (message.comfyInputAttachmentIds.isNotEmpty()) put("comfyInputAttachmentIds", JSONArray(message.comfyInputAttachmentIds))
         message.attachment?.let {
             put("attachment", JSONObject().apply {
                 put("artifactId", it.artifactId)
@@ -138,6 +147,8 @@ internal object ChatSnapshotJson {
                 put("filename", it.filename)
                 put("mimeType", it.mimeType)
                 put("sizeBytes", it.sizeBytes)
+                it.sha256?.let { sha256 -> put("sha256", sha256) }
+                if (it.generatedMedia) put("generatedMedia", true)
             })
         }
     }
@@ -153,13 +164,20 @@ internal object ChatSnapshotJson {
                 val rows = threads.getJSONArray(sessionId)
                 (0 until rows.length()).map { decodeRow(rows.getJSONObject(it)) }
             },
-            cursors = if (version >= VERSION) decodeCursors(json.getJSONObject("cursors")) else emptyMap(),
+            cursors = if (version >= 3) decodeCursors(json.getJSONObject("cursors")) else emptyMap(),
             sentIds = if (sentIds == null) emptyList() else (0 until sentIds.length()).map { sentIds.getString(it) },
+            excludedComfyReferenceIds = if (version >= 4) decodeReferenceIds(json.optJSONObject("excludedComfyReferenceIds")) else emptyMap(),
         )
     }
 
     private fun decodeCursors(json: JSONObject): Map<String, Long> =
         json.keys().asSequence().associateWith { json.getLong(it) }
+
+    private fun decodeReferenceIds(json: JSONObject?): Map<String, List<String>> =
+        json?.keys()?.asSequence()?.associateWith { sessionId ->
+            val ids = json.optJSONArray(sessionId) ?: return@associateWith emptyList()
+            (0 until ids.length()).mapNotNull { ids.optString(it).takeIf(String::isNotBlank) }
+        } ?: emptyMap()
 
     private fun decodeRow(row: JSONObject): ChatMessage = ChatMessage(
         key = "",
@@ -176,6 +194,8 @@ internal object ChatSnapshotJson {
                 filename = it.getString("filename"),
                 mimeType = it.getString("mimeType"),
                 sizeBytes = it.getLong("sizeBytes"),
+                sha256 = it.optString("sha256").takeIf(String::isNotBlank),
+                generatedMedia = it.optBoolean("generatedMedia", false),
             )
         },
         seq = if (row.has("seq")) row.getLong("seq") else null,
@@ -186,5 +206,9 @@ internal object ChatSnapshotJson {
         thoughtCount = if (row.has("thoughtCount")) row.getInt("thoughtCount") else null,
         comfyProfileId = if (row.has("comfyProfileId")) row.getString("comfyProfileId") else null,
         comfyImageSizeId = if (row.has("comfyImageSizeId")) row.getString("comfyImageSizeId") else null,
+        comfyInputImagePath = if (row.has("comfyInputImagePath")) row.getString("comfyInputImagePath") else null,
+        comfyInputAttachmentIds = row.optJSONArray("comfyInputAttachmentIds")?.let { ids ->
+            (0 until ids.length()).mapNotNull { ids.optString(it).takeIf(String::isNotBlank) }
+        } ?: emptyList(),
     )
 }

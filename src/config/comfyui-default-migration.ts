@@ -4,7 +4,7 @@ import * as YAML from 'yaml';
 import { cloneDefaultComfyUiConfigForKind } from '../session/comfyui/comfyui-config.js';
 import logger from '../utils/logger.js';
 
-const MIGRATION_ID = 'comfyui-tool-profiles-v8';
+const MIGRATION_ID = 'comfyui-tool-profiles-v9';
 const DEFAULT_COMFYUI_TYPES = [
   {
     id: '3cef90de-c638-49b5-942c-aa7c198fc294',
@@ -131,6 +131,16 @@ function upgradeToUpscaleGraph(existing: Record<string, any>, defaults: Record<s
 function mergeProfile(current: Record<string, any>, defaults: Record<string, any>): Record<string, any> {
   const existing = upgradeToUpscaleGraph(current, defaults);
   const merged = { ...existing };
+  const videoLatent = isRecord(existing.workflow) && isRecord(existing.workflow['7'])
+    ? existing.workflow['7']
+    : undefined;
+  if (defaults.kind === 'video' && videoLatent?.class_type === 'Wan22ImageToVideoLatent'
+    && isRecord(videoLatent.inputs)
+    && ('positive' in videoLatent.inputs || 'negative' in videoLatent.inputs)) {
+    merged.workflow = structuredClone(existing.workflow);
+    delete merged.workflow['7'].inputs.positive;
+    delete merged.workflow['7'].inputs.negative;
+  }
   const legacyName = defaults.id === 'image' ? 'Image' : defaults.id === 'video' ? 'Video' : undefined;
   if (!existing.name || existing.name === legacyName || existing.name === defaults.name
     || existing.name === PREVIOUS_DEFAULT_PROFILE_NAMES[defaults.id]) {

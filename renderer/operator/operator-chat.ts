@@ -10,7 +10,7 @@
  *
  * Side effects are injected (like voice-call.ts) so the logic runs under test.
  */
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { VoiceRecorder } from '../voice/voice-call.js';
 
 type Fail = { ok: false; error: string };
@@ -35,6 +35,8 @@ export interface OperatorChatRecord {
   attachmentId?: string;
   filename?: string;
   mimeType?: string;
+  sizeBytes?: number;
+  generatedMedia?: boolean;
 }
 
 export interface OperatorChatEntry {
@@ -45,7 +47,7 @@ export interface OperatorChatEntry {
 export interface OperatorChatClient {
   voiceOperatorHistory(sessionId?: string): Promise<OperatorChatEntry[]>;
   onVoiceOperatorChat(callback: (entry: OperatorChatEntry) => void): () => void;
-  voiceAsk(text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string): Promise<{ ok: true } | Fail>;
+  voiceAsk(text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string, comfyInputAttachmentIds?: string[]): Promise<{ ok: true } | Fail>;
   voiceTranscribe(audio: Uint8Array, mimeType: string): Promise<{ ok: true; text: string } | Fail>;
 }
 
@@ -63,7 +65,7 @@ export interface ChatBubble {
   at: number;
   /** "ctx 12.3k · 4 tools" under an API-tool reply; absent elsewhere. */
   badge?: string;
-  attachment?: Pick<OperatorChatRecord, 'filePath' | 'artifactId' | 'attachmentId' | 'filename' | 'mimeType'>;
+  attachment?: Pick<OperatorChatRecord, 'filePath' | 'artifactId' | 'attachmentId' | 'filename' | 'mimeType' | 'sizeBytes' | 'generatedMedia'>;
 }
 
 /** The API-tool reply badge: context size (k above 1000) and, when any, tool calls. */
@@ -119,12 +121,64 @@ export function createOperatorChat(deps: OperatorChatDeps) {
   const error = ref<string | null>(null);
   const comfyProfileId = ref('');
   const comfyImageSizeId = ref('');
+  const referenceStorageKey = `helm.comfyui.references:${deps.sessionId}`;
+  const persisted = readReferenceSelection(referenceStorageKey);
+  const knownReferenceIds = new Set(persisted.known);
+  const includedReferenceIds = ref(new Set(persisted.included));
+  const comfyGallery = computed(() => bubbles.value.filter(bubble =>
+    bubble.attachment?.mimeType?.startsWith('image/')
+      && bubble.attachment.artifactId && bubble.attachment.attachmentId,
+  ));
+  const selectedComfyAttachmentIds = computed(() => comfyGallery.value
+    .filter(bubble => includedReferenceIds.value.has(referenceId(bubble)))
+    .map(bubble => bubble.attachment!.attachmentId!));
   let unsubscribe: (() => void) | null = null;
 
   /** Keep the picked model and size while the session still offers them; else fall back to the first. */
   function syncComfyOptions(profiles: ReadonlyArray<{ id: string }> = [], sizes: ReadonlyArray<{ id: string }> = []): void {
     if (!profiles.some(profile => profile.id === comfyProfileId.value)) comfyProfileId.value = profiles[0]?.id ?? '';
     if (!sizes.some(size => size.id === comfyImageSizeId.value)) comfyImageSizeId.value = sizes[0]?.id ?? '';
+  }
+
+  function persistReferences(): void {
+    try {
+      localStorage.setItem(referenceStorageKey, JSON.stringify({
+        known: [...knownReferenceIds], included: [...includedReferenceIds.value],
+      }));
+    } catch { /* the gallery remains usable for this renderer lifetime */ }
+  }
+
+  function trackReference(bubble: ChatBubble): void {
+    if (!bubble.attachment?.mimeType?.startsWith('image/') || !bubble.attachment.artifactId || !bubble.attachment.attachmentId) return;
+    const id = referenceId(bubble);
+    if (!knownReferenceIds.has(id)) {
+      knownReferenceIds.add(id);
+      includedReferenceIds.value = new Set([...includedReferenceIds.value, id]);
+      persistReferences();
+    }
+  }
+
+  function setReferenceIncluded(bubble: ChatBubble, included: boolean, maxReferenceImages: number): void {
+    const id = referenceId(bubble);
+    const next = new Set(includedReferenceIds.value);
+    if (included) {
+      if (maxReferenceImages === 1) next.clear();
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
+    includedReferenceIds.value = next;
+    knownReferenceIds.add(id);
+    persistReferences();
+  }
+
+  function limitReferences(maxReferenceImages: number): void {
+    const included = comfyGallery.value
+      .map(referenceId)
+      .filter(id => includedReferenceIds.value.has(id))
+      .slice(-Math.max(0, maxReferenceImages));
+    includedReferenceIds.value = new Set(included);
+    persistReferences();
   }
 
   /** Append in seq order, ignoring an entry already shown (backlog/live overlap). */
@@ -138,6 +192,7 @@ export function createOperatorChat(deps: OperatorChatDeps) {
     const bubble = toBubble(entry);
     if (!bubble || bubbles.value.some(b => b.seq === bubble.seq)) return;
     bubbles.value = [...bubbles.value, bubble].sort((a, b) => a.seq - b.seq);
+    trackReference(bubble);
   }
 
   async function open(): Promise<void> {
@@ -151,13 +206,32 @@ export function createOperatorChat(deps: OperatorChatDeps) {
     unsubscribe = null;
   }
 
-  async function send(comfyProfileId?: string, comfyImageSizeId?: string): Promise<void> {
+  async function send(comfyProfileId?: string, comfyImageSizeId?: string, maxReferenceImages?: number): Promise<void> {
     const text = draft.value.trim();
-    if (!text || sending.value) return;
+    const cancelling = text === '/cancel';
+    const filePath = cancelling ? undefined : attachment.value ?? undefined;
+    const referenceIds = cancelling ? [] : selectedComfyAttachmentIds.value;
+    const isComfyUi = maxReferenceImages !== undefined;
+    if (sending.value) return;
+    if (!text && !(isComfyUi && (filePath || referenceIds.length > 0))) {
+      error.value = 'Enter a prompt or attach a reference image';
+      return;
+    }
+    if (isComfyUi && filePath && referenceIds.length + 1 > maxReferenceImages) {
+      error.value = `This profile accepts at most ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}`;
+      return;
+    }
+    if (isComfyUi && referenceIds.length > maxReferenceImages) {
+      error.value = `This profile accepts at most ${maxReferenceImages} reference image${maxReferenceImages === 1 ? '' : 's'}`;
+      return;
+    }
     sending.value = true;
     error.value = null;
     try {
-      const result = await deps.client.voiceAsk(text, attachment.value ?? undefined, deps.sessionId, comfyProfileId, comfyImageSizeId);
+      const result = await deps.client.voiceAsk(
+        text, filePath, deps.sessionId, comfyProfileId, comfyImageSizeId,
+        referenceIds.length > 0 ? referenceIds : undefined,
+      );
       if (result.ok) {
         // The bubble arrives from the journal feed, like a phone turn does.
         draft.value = '';
@@ -204,8 +278,26 @@ export function createOperatorChat(deps: OperatorChatDeps) {
 
   return {
     bubbles, draft, attachment, sending, recording, transcribing, error, comfyProfileId, comfyImageSizeId,
-    open, close, send, syncComfyOptions, pttStart, pttStop,
+    comfyGallery, includedReferenceIds, selectedComfyAttachmentIds,
+    open, close, send, syncComfyOptions, setReferenceIncluded, limitReferences, pttStart, pttStop,
   };
+}
+
+function referenceId(bubble: ChatBubble): string {
+  return `${bubble.attachment?.artifactId}:${bubble.attachment?.attachmentId}`;
+}
+
+function readReferenceSelection(key: string): { known: string[]; included: string[] } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? 'null') as { known?: unknown; included?: unknown } | null;
+    if (saved && Array.isArray(saved.known) && Array.isArray(saved.included)) {
+      return {
+        known: saved.known.filter((id): id is string => typeof id === 'string'),
+        included: saved.included.filter((id): id is string => typeof id === 'string'),
+      };
+    }
+  } catch { /* start with every session image included */ }
+  return { known: [], included: [] };
 }
 
 export type OperatorChat = ReturnType<typeof createOperatorChat>;

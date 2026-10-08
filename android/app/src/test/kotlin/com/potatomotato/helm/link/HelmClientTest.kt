@@ -372,6 +372,18 @@ class HelmClientTest {
     }
 
     @Test
+    fun `a ComfyUI chat send carries its selected reference attachment ids`() {
+        client.sendChat("s1", "", "qwen", null, null, listOf("ref-1", "ref-2"))
+
+        val sentCall = JSONObject(String(sent.last(), Charsets.UTF_8))
+        val params = sentCall.getJSONObject("params")
+        val refs = params.getJSONArray("comfyInputAttachmentIds")
+        assertEquals("", params.getString("text"))
+        assertEquals("qwen", params.getString("comfyProfileId"))
+        assertEquals(listOf("ref-1", "ref-2"), (0 until refs.length()).map { refs.getString(it) })
+    }
+
+    @Test
     fun `a result for an id nobody is waiting on is ignored`() {
         client.onInbound(resultFor("p999", """[{"id":"s1","name":"work"}]"""))
         client.onInbound(ByteArray(0))
@@ -874,12 +886,16 @@ class HelmClientTest {
     }
 
     @Test
-    fun `a ComfyUI chat call carries model and image size ids`() {
-        client.sendChat("s1", "a landscape", comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape")
+    fun `a ComfyUI chat call carries model size and uploaded input image`() {
+        client.sendChat(
+            "s1", "a landscape", comfyProfileId = "flux", comfyImageSizeId = "qhd-landscape",
+            comfyInputImagePath = "C:\\Users\\oscar\\Helm\\tmp\\inbox\\one\\source.png",
+        )
 
         val params = JSONObject(String(sent.single(), Charsets.UTF_8)).getJSONObject("params")
         assertEquals("flux", params.getString("comfyProfileId"))
         assertEquals("qhd-landscape", params.getString("comfyImageSizeId"))
+        assertEquals("C:\\Users\\oscar\\Helm\\tmp\\inbox\\one\\source.png", params.getString("comfyInputImagePath"))
     }
 
     @Test

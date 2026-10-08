@@ -58,6 +58,8 @@ import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.ArtifactRules
 import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
+import com.potatomotato.helm.data.HelmArtifactAttachment
+import com.potatomotato.helm.data.ChatAttachment
 import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
@@ -198,6 +200,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val reach by client.sessions.reach.collectAsState()
     val threads by client.chats.threads.collectAsState()
     val pulls by client.chats.pulls.collectAsState()
+    val excludedComfyReferenceIds by client.chats.excludedComfyReferenceIds.collectAsState()
     val unreadCounts by client.chats.unreadCounts.collectAsState()
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
@@ -845,6 +848,31 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // home tab's operator thread. The terminal shortcut opens the session it
     // belongs to, so it works from either.
     val sessionChat: @Composable (String, ((Int) -> Boolean)?, Int, Int) -> Unit = { sessionId, onSwipeSession, earlierUnread, laterUnread ->
+        val artifactsForChat = when (val listed = artifactList) {
+            is ArtifactList.Ready -> if (listed.sessionId == sessionId) listed.artifacts else client.artifacts.cachedArtifacts(sessionId)
+            is ArtifactList.Refreshing -> if (listed.sessionId == sessionId) listed.cached else client.artifacts.cachedArtifacts(sessionId)
+            else -> client.artifacts.cachedArtifacts(sessionId)
+        }
+        val comfyGallery = buildList {
+            artifactsForChat.filter { it.title == "Chat files" }.forEach { artifact ->
+                artifact.attachments.filter { it.contentType?.startsWith("image/") == true }.forEach { attachment ->
+                    add(attachment.createdAtEpochMs to ChatAttachment(
+                        artifactId = artifact.id,
+                        attachmentId = attachment.id,
+                        filename = attachment.filename,
+                        mimeType = attachment.contentType ?: "image/*",
+                        sizeBytes = attachment.sizeBytes,
+                        sha256 = attachment.sha256,
+                        generatedMedia = attachment.generatedMedia,
+                    ))
+                }
+            }
+            threads[sessionId].orEmpty().forEach { message ->
+                message.attachment?.takeIf { it.mimeType.startsWith("image/") }?.let { add(message.at to it) }
+            }
+        }.distinctBy { (it.second.artifactId to it.second.attachmentId) }
+            .sortedBy { it.first }
+            .map { it.second }
         ChatScreen(
             sessionId = sessionId,
             onSwipeSession = onSwipeSession,
@@ -862,7 +890,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             laterUnreadSessions = laterUnread,
             messages = threads[sessionId].orEmpty(),
             onSend = { text -> client.sendChat(sessionId, text) },
-            onSendWithProfile = { text, profileId, imageSizeId -> client.sendChat(sessionId, text, profileId, imageSizeId) },
+            onSendWithProfile = { text, profileId, imageSizeId, inputImagePath, inputAttachmentIds ->
+                client.sendChat(sessionId, text, profileId, imageSizeId, inputImagePath, inputAttachmentIds)
+            },
             // Retry re-issues over the wire (the repository swaps the dead
             // row). Delete removes the rows here and tells the desktop which of
             // them it holds, so its journal (and an API session's history) drop
@@ -885,6 +915,28 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 client.deleteChatAttachment(sessionId, key, attachment)
             },
             onOpenAttachment = openAttachment,
+            comfyGallery = comfyGallery,
+            excludedComfyReferenceIds = excludedComfyReferenceIds[sessionId].orEmpty(),
+            comfyGalleryPulls = artifactPulls,
+            onComfyReferenceSelection = { known, included ->
+                client.chats.setComfyReferenceSelection(sessionId, known, included)
+            },
+            onGalleryDownload = { attachment ->
+                client.downloadArtifactAttachment(
+                    sessionId,
+                    attachment.artifactId,
+                    HelmArtifactAttachment(
+                        id = attachment.attachmentId,
+                        filename = attachment.filename,
+                        contentType = attachment.mimeType,
+                        sizeBytes = attachment.sizeBytes,
+                        createdAtEpochMs = 0,
+                        sha256 = attachment.sha256,
+                        generatedMedia = attachment.generatedMedia,
+                    ),
+                )
+            },
+            onRefreshComfyGallery = { client.refreshArtifacts(sessionId); Unit },
             call = liveCall?.takeIf { it.targetId == sessionId },
             // One call at a time: while another session is on a call, this one cannot ring.
             onCall = if (liveCall == null) {
@@ -894,8 +946,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             },
             onAttach = { insert ->
                 chatInsert = insert
-                chatAttachSession = sessions.firstOrNull { it.id == sessionId }
-                chatAttachLauncher.launch("*/*")
+                val targetSession = sessions.firstOrNull { it.id == sessionId }
+                chatAttachSession = targetSession
+                chatAttachLauncher.launch(if (targetSession?.comfyUiTool == true) "image/*" else "*/*")
             },
         )
     }

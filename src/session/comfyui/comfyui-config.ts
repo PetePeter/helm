@@ -16,7 +16,7 @@ export const COMFYUI_IMAGE_SIZE_OPTIONS = [
 ] as const;
 
 export type ComfyUiImageSizeId = typeof COMFYUI_IMAGE_SIZE_OPTIONS[number]['id'];
-export type ComfyUiChatProfile = { id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean };
+export type ComfyUiChatProfile = { id: string; name: string; kind: 'image' | 'video'; supportsImageSize: boolean; maxReferenceImages: number };
 
 const LEGACY_IMAGE_SIZE_PROFILE_IDS = new Set([
   'image-1080p-portrait', 'image-1080p-landscape', 'image-4k-portrait', 'image-4k-landscape',
@@ -30,6 +30,7 @@ export function comfyUiChatProfiles(config: ComfyUiToolConfig): ComfyUiChatProfi
       name: profile.name,
       kind: profile.kind,
       supportsImageSize: profile.kind === 'image' && Boolean(profile.mappings.width && profile.mappings.height),
+      maxReferenceImages: profile.referenceImages?.maxImages ?? 1,
     }));
 }
 
@@ -213,6 +214,7 @@ const QWEN_IMAGE_PROFILE: ComfyUiProfileConfig = {
     cfg: { nodeId: '9', input: 'cfg' },
     seed: { nodeId: '9', input: 'seed' },
   },
+  referenceImages: { nodeId: '4', inputPrefix: 'image_', maxImages: 16 },
   defaults: { negativePrompt: '', width: 1024, height: 1024, steps: 25, cfg: 1, seed: 0 },
   outputNodeIds: ['7'],
 };
@@ -226,7 +228,7 @@ const VIDEO_WORKFLOW: ComfyUiProfileConfig['workflow'] = {
   '4': { class_type: 'ModelSamplingSD3', inputs: { model: ['1', 0], shift: 8 } },
   '5': { class_type: 'CLIPTextEncode', inputs: { text: '', clip: ['2', 0] } },
   '6': { class_type: 'CLIPTextEncode', inputs: { text: VIDEO_NEGATIVE_PROMPT, clip: ['2', 0] } },
-  '7': { class_type: 'Wan22ImageToVideoLatent', inputs: { width: 1920, height: 1088, length: 49, batch_size: 1, vae: ['3', 0], positive: ['5', 0], negative: ['6', 0] } },
+  '7': { class_type: 'Wan22ImageToVideoLatent', inputs: { width: 1920, height: 1088, length: 49, batch_size: 1, vae: ['3', 0] } },
   '8': { class_type: 'KSampler', inputs: { seed: 0, steps: 20, cfg: 5, sampler_name: 'uni_pc', scheduler: 'simple', denoise: 1, model: ['4', 0], positive: ['5', 0], negative: ['6', 0], latent_image: ['7', 0] } },
   '9': { class_type: 'VAEDecode', inputs: { samples: ['8', 0], vae: ['3', 0] } },
   '10': { class_type: 'CreateVideo', inputs: { images: ['9', 0], fps: 30 } },
@@ -326,6 +328,16 @@ export function validateComfyUiConfig(value: unknown): ComfyUiToolConfig {
     for (const [field, mapping] of Object.entries(profile.mappings ?? {})) {
       if (!mapping || !nodes[mapping.nodeId] || !(mapping.input in (nodes[mapping.nodeId].inputs as object))) {
         throw new Error(`Profile ${profile.name} maps ${field} to a missing node input`);
+      }
+    }
+    if (profile.referenceImages !== undefined) {
+      const refs = profile.referenceImages;
+      if (profile.kind !== 'image' || !refs || !nodes[refs.nodeId] || typeof refs.inputPrefix !== 'string' || !refs.inputPrefix.trim()
+        || !Number.isInteger(refs.maxImages) || refs.maxImages < 2 || refs.maxImages > 16) {
+        throw new Error(`Profile ${profile.name} has an invalid multi-reference image mapping`);
+      }
+      if (nodes[refs.nodeId].class_type !== 'TextEncodeQwenImage21') {
+        throw new Error(`Profile ${profile.name} multi-reference inputs must target a supported image encoder`);
       }
     }
     return structuredClone({ ...profile, id, name: profile.name.trim() });

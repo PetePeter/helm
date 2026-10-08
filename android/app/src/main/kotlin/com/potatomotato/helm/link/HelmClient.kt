@@ -336,9 +336,16 @@ class HelmClient(
      * the call comes back, so the user can see the difference between "sent" and
      * "the desktop never answered".
      */
-    fun sendChat(sessionId: String, text: String, comfyProfileId: String? = null, comfyImageSizeId: String? = null): Boolean {
-        val key = chats.sending(sessionId, text, now(), comfyProfileId, comfyImageSizeId)
-        return issueText(sessionId, text, key, comfyProfileId, comfyImageSizeId)
+    fun sendChat(
+        sessionId: String,
+        text: String,
+        comfyProfileId: String? = null,
+        comfyImageSizeId: String? = null,
+        comfyInputImagePath: String? = null,
+        comfyInputAttachmentIds: List<String> = emptyList(),
+    ): Boolean {
+        val key = chats.sending(sessionId, text, now(), comfyProfileId, comfyImageSizeId, comfyInputImagePath, comfyInputAttachmentIds)
+        return issueText(sessionId, text, key, comfyProfileId, comfyImageSizeId, comfyInputImagePath, comfyInputAttachmentIds)
     }
 
     /**
@@ -354,8 +361,14 @@ class HelmClient(
     fun resendChat(sessionId: String, key: String, text: String): Boolean {
         val comfyProfileId = chats.comfyProfileId(sessionId, key)
         val comfyImageSizeId = chats.comfyImageSizeId(sessionId, key)
+        val comfyInputImagePath = chats.comfyInputImagePath(sessionId, key)
+        val comfyInputAttachmentIds = chats.comfyInputAttachmentIds(sessionId, key)
         val newKey = chats.retry(sessionId, key, now()) ?: return false
-        return issueText(sessionId, text, key = newKey, comfyProfileId = comfyProfileId, comfyImageSizeId = comfyImageSizeId)
+        return issueText(
+            sessionId, text, key = newKey, comfyProfileId = comfyProfileId,
+            comfyImageSizeId = comfyImageSizeId, comfyInputImagePath = comfyInputImagePath,
+            comfyInputAttachmentIds = comfyInputAttachmentIds,
+        )
     }
 
     /**
@@ -385,10 +398,22 @@ class HelmClient(
         ) { outcome -> if (outcome is Outcome.Ok) refreshSessions() }
 
     /** One `session_send_text` ask, settling the optimistic row named by [key]. */
-    private fun issueText(sessionId: String, text: String, key: String, comfyProfileId: String? = null, comfyImageSizeId: String? = null): Boolean {
+    private fun issueText(
+        sessionId: String,
+        text: String,
+        key: String,
+        comfyProfileId: String? = null,
+        comfyImageSizeId: String? = null,
+        comfyInputImagePath: String? = null,
+        comfyInputAttachmentIds: List<String> = emptyList(),
+    ): Boolean {
         val params = linkedMapOf<String, Any>("sessionId" to sessionId, "text" to text)
         comfyProfileId?.let { params["comfyProfileId"] = it }
         comfyImageSizeId?.let { params["comfyImageSizeId"] = it }
+        comfyInputImagePath?.let { params["comfyInputImagePath"] = it }
+        if (text.trim() != "/cancel" && comfyInputAttachmentIds.isNotEmpty()) {
+            params["comfyInputAttachmentIds"] = comfyInputAttachmentIds
+        }
         // The call id is chosen HERE rather than inside [call] because the
         // desktop derives the echo's originId from it — this end must know it to
         // recognise its own words when the journal replays them back.

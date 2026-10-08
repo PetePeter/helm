@@ -8,7 +8,7 @@ import { composerKeyAction, createOperatorChat, usageBadge, type OperatorChatEnt
 
 function fakes(history: OperatorChatEntry[] = []) {
   let push: ((entry: OperatorChatEntry) => void) | null = null;
-  const asked: Array<{ text: string; filePath?: string; sessionId?: string; comfyProfileId?: string; comfyImageSizeId?: string }> = [];
+  const asked: Array<{ text: string; filePath?: string; sessionId?: string; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputAttachmentIds?: string[] }> = [];
   const historyFor: Array<string | undefined> = [];
   let askResult: { ok: true } | { ok: false; error: string } = { ok: true };
   let heard: { ok: true; text: string } | { ok: false; error: string } = { ok: true, text: 'dictated words' };
@@ -16,8 +16,8 @@ function fakes(history: OperatorChatEntry[] = []) {
   const client = {
     voiceOperatorHistory: async (sessionId?: string) => { historyFor.push(sessionId); return history; },
     onVoiceOperatorChat: (cb: (entry: OperatorChatEntry) => void) => { push = cb; return () => { push = null; }; },
-    voiceAsk: async (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string) => {
-      asked.push({ text, filePath, sessionId, comfyProfileId, comfyImageSizeId });
+    voiceAsk: async (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string, comfyInputAttachmentIds?: string[]) => {
+      asked.push({ text, filePath, sessionId, comfyProfileId, comfyImageSizeId, ...(comfyInputAttachmentIds ? { comfyInputAttachmentIds } : {}) });
       return askResult;
     },
     voiceTranscribe: async () => heard,
@@ -95,6 +95,20 @@ describe('createOperatorChat', () => {
       text: 'a portrait', filePath: undefined, sessionId: 'op',
       comfyProfileId: 'lustify', comfyImageSizeId: '4k-portrait',
     }]);
+  });
+
+  it('includes selected gallery references and supports an image-only request', async () => {
+    const history = [
+      { seq: 1, record: { text: 'old', at: 1, artifactId: 'chat-files', attachmentId: 'a1', filename: 'one.png', mimeType: 'image/png', filePath: 'X:\\one.png' } },
+      { seq: 2, record: { text: 'new', at: 2, artifactId: 'chat-files', attachmentId: 'a2', filename: 'two.png', mimeType: 'image/png', filePath: 'X:\\two.png' } },
+    ] as unknown as OperatorChatEntry[];
+    const f = fakes(history);
+    await f.chat.open();
+    f.chat.draft.value = '';
+    await f.chat.send('qwen', undefined, 16);
+
+    expect(f.asked[0]).toMatchObject({ text: '', comfyProfileId: 'qwen', comfyInputAttachmentIds: ['a1', 'a2'] });
+    f.chat.close();
   });
 
   it('keeps the picked ComfyUI model and size when the pane re-offers them, and falls back when one is gone', () => {

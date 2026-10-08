@@ -7,17 +7,41 @@
  * when the draft goes, the same as any other draft (docs/drafts.md).
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { mkdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { DraftManager } from '../session/draft-manager.js';
 import type { ShareReceipt, ShareSink } from './mobile-artifact-upload.js';
+import { MAX_ATTACHMENT_BYTES } from '../session/artifact-attachment-manager.js';
+import { getTempDir } from '../utils/app-paths.js';
 
 /** The phone's filename is untrusted: no directories, no reserved characters. */
 export function safeShareFilename(filename: string): string {
   const leaf = basename(filename.replace(/\\/g, '/'));
   const cleaned = leaf.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/^[.\s]+|[.\s]+$/g, '');
   return cleaned.slice(0, 120) || 'shared-file';
+}
+
+/** Resolve a phone-supplied image path only when it is a bounded inbox file. */
+export function resolveMobileShareInputPath(candidate: string, inboxDir = join(getTempDir(''), 'inbox')): string {
+  let inbox: string;
+  let file: string;
+  try {
+    inbox = realpathSync(inboxDir);
+    file = realpathSync(candidate);
+  } catch {
+    throw new Error('The uploaded image is no longer available in the mobile share inbox');
+  }
+  const child = relative(inbox, file);
+  if (!child || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child)) {
+    throw new Error('Mobile ComfyUI images must come from the share inbox');
+  }
+  const stat = statSync(file);
+  if (!stat.isFile()) throw new Error('The uploaded image must be a file');
+  if (stat.size > MAX_ATTACHMENT_BYTES) {
+    throw new Error(`ComfyUI image input exceeds the ${MAX_ATTACHMENT_BYTES}-byte limit`);
+  }
+  return file;
 }
 
 export class MobileShareInbox implements ShareSink {

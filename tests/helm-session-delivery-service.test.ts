@@ -7,9 +7,10 @@ import { HelmSessionDeliveryService } from '../src/mcp/services/helm-session-del
 import { buildHelmMsgDirective } from '../src/session/intersession-directive.js';
 import { ComfyUiSessionHost, registerComfyUiSessionHost } from '../src/session/comfyui/comfyui-session-host.js';
 import { cloneDefaultComfyUiConfigForKind } from '../src/session/comfyui/comfyui-config.js';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getTempDir } from '../src/utils/app-paths.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -728,10 +729,23 @@ describe('HelmSessionDeliveryService', () => {
     function makeComfyDeps() {
       const deps = makeDeps();
       (deps.receiver as { comfyUiTool?: boolean }).comfyUiTool = true;
+      const chatFiles = { id: 'comfy-chat-files', sessionId: deps.receiver.id, title: 'Chat files' } as never;
+      const importedImage = {
+        id: 'ref-image', artifactId: 'comfy-chat-files', filename: 'source.png',
+        contentType: 'image/png', sizeBytes: 8, sha256: 'a'.repeat(64), createdAt: Date.now(),
+      };
       const host = new ComfyUiSessionHost({
         tempDir: tmpdir(),
-        artifacts: { getForSession: () => [], create: () => ({}) as never },
-        attachments: { addGeneratedMediaFromFile: async () => ({}) as never, getPath: () => '' },
+        artifacts: {
+          getForSession: () => [chatFiles],
+          create: () => chatFiles,
+        },
+        attachments: {
+          add: () => importedImage,
+          addGeneratedMediaFromFile: async () => ({}) as never,
+          get: () => importedImage as never,
+          getPath: () => join(tmpdir(), 'stored-source.png'),
+        },
         postChat: async (_sessionId, text) => { chatLines.push(text); },
         recordPrompt: () => undefined,
         notifyRequester: async requesterSessionId => { notified.push(requesterSessionId); },
@@ -774,6 +788,34 @@ describe('HelmSessionDeliveryService', () => {
       await waitForJobEnd();
       expect(notified).toEqual([]);
     }, JOB_TIMEOUT_MS);
+
+    it('accepts an image-only request from the paired phone when the image is in the share inbox', async () => {
+      const { service, receiver } = makeComfyDeps();
+      const inbox = join(getTempDir(''), 'inbox');
+      mkdirSync(inbox, { recursive: true });
+      const shareDir = mkdtempSync(join(inbox, 'comfy-input-test-'));
+      const imagePath = join(shareDir, 'source.png');
+      writeFileSync(imagePath, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+
+      try {
+        await service.sendTextToSession(receiver.id, '', {
+          senderSessionId: 'mobile:device-1', senderSessionName: 'Phone', comfyInputImagePath: imagePath,
+        });
+        await waitForJobEnd();
+        expect(chatLines).toContain('Queued for SDXL Turbo · 1 reference image.');
+      } finally {
+        rmSync(shareDir, { recursive: true, force: true });
+      }
+    }, JOB_TIMEOUT_MS);
+
+    it('rejects a ComfyUI image path supplied by a desktop session', async () => {
+      const { service, receiver, sender } = makeComfyDeps();
+
+      await expect(service.sendTextToSession(receiver.id, 'edit this image', {
+        senderSessionId: sender.id, senderSessionName: sender.name, comfyInputImagePath: join(tmpdir(), 'source.png'),
+      })).rejects.toThrow('accepted only from a paired phone');
+      expect(chatLines).toEqual([]);
+    });
   });
 });
 

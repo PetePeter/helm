@@ -116,7 +116,7 @@ data class HelmSession(
 
 enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
-data class ComfyUiProfile(val id: String, val name: String, val kind: String, val supportsImageSize: Boolean = false)
+data class ComfyUiProfile(val id: String, val name: String, val kind: String, val supportsImageSize: Boolean = false, val maxReferenceImages: Int = 1)
 data class ComfyUiImageSize(val id: String, val name: String, val width: Int, val height: Int)
 
 /**
@@ -227,7 +227,10 @@ object SessionWire {
                     val profileId = profile.optString("id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
                     val kind = profile.optString("kind").takeIf { it == "image" || it == "video" } ?: return@mapNotNull null
                     val label = profile.optString("name").takeIf { it.isNotBlank() } ?: profileId
-                    ComfyUiProfile(profileId, label, kind, profile.opt("supportsImageSize") == true)
+                    ComfyUiProfile(
+                        profileId, label, kind, profile.opt("supportsImageSize") == true,
+                        (profile.opt("maxReferenceImages") as? Number)?.toInt()?.coerceIn(1, 16) ?: 1,
+                    )
                 }
             } ?: emptyList()),
             comfyUiImageSizes = (summary.optJSONArray("comfyUiImageSizes")?.let { sizes ->

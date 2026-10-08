@@ -2,7 +2,9 @@ package com.potatomotato.helm.data
 
 import com.potatomotato.helm.wire.MobileRecord
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -51,13 +53,32 @@ class ChatStoreTest {
     }
 
     @Test
-    fun `ComfyUI profile and size selections survive a restart`() {
-        repository().sending("s1", "portrait", at = 7, comfyProfileId = "lustify", comfyImageSizeId = "4k-portrait")
+    fun `ComfyUI profile size and input image survive a restart`() {
+        repository().sending(
+            "s1", "portrait", at = 7, comfyProfileId = "lustify", comfyImageSizeId = "4k-portrait",
+            comfyInputImagePath = "C:\\Users\\oscar\\Helm\\tmp\\inbox\\one\\source.png",
+            comfyInputAttachmentIds = listOf("ref-1", "ref-2"),
+        )
 
         val restored = repository().thread("s1").single()
 
         assertEquals("lustify", restored.comfyProfileId)
         assertEquals("4k-portrait", restored.comfyImageSizeId)
+        assertEquals("C:\\Users\\oscar\\Helm\\tmp\\inbox\\one\\source.png", restored.comfyInputImagePath)
+        assertEquals(listOf("ref-1", "ref-2"), restored.comfyInputAttachmentIds)
+    }
+
+    @Test
+    fun `gallery selections survive a restart and new images default included`() {
+        repository().apply {
+            setComfyReferenceSelection("s1", setOf("old", "new"), setOf("new"))
+        }
+
+        val restarted = repository()
+
+        assertFalse(restarted.isComfyReferenceIncluded("s1", "old"))
+        assertTrue(restarted.isComfyReferenceIncluded("s1", "new"))
+        assertTrue(restarted.isComfyReferenceIncluded("s1", "future"))
     }
 
     @Test
