@@ -1274,6 +1274,7 @@ class HelmClient(
         sessionId: String,
         artifactId: String,
         attachment: HelmArtifactAttachment,
+        previewOnly: Boolean = false,
     ): Boolean = pullAttachment(
         sessionId,
         artifacts.attachmentPulls,
@@ -1288,8 +1289,16 @@ class HelmClient(
             sizeBytes = attachment.sizeBytes,
             sha256 = attachment.sha256,
             generatedMedia = attachment.generatedMedia,
+            previewOnly = previewOnly,
         ),
     )
+
+    /** Load an artifact image for the gallery without adding it to Downloads. */
+    fun previewArtifactAttachment(
+        sessionId: String,
+        artifactId: String,
+        attachment: HelmArtifactAttachment,
+    ): Boolean = downloadArtifactAttachment(sessionId, artifactId, attachment, previewOnly = true)
 
     /**
      * Where a pulled chat attachment is written, and what to call the place it
@@ -1299,6 +1308,11 @@ class HelmClient(
      * tile rather than pretending to have saved something.
      */
     var saveAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
+        throw IllegalStateException(NO_FILE_SINK)
+    }
+
+    /** Temporary image previews use app cache; explicit downloads use [saveAttachment]. */
+    var savePreviewAttachment: (filename: String, mimeType: String, bytes: ByteArray) -> SavedFile = { _, _, _ ->
         throw IllegalStateException(NO_FILE_SINK)
     }
 
@@ -1421,8 +1435,12 @@ class HelmClient(
             // is the name the file was stored under, and the metadata row may be
             // older than a rename.
             val name = blob.filename.takeIf { it.isNotBlank() } ?: target.filename
-            val saved = saveAttachment(name, target.mimeType, whole)
-            pulls.pullSaved(target.key, saved.location, saved.uri)
+            val saved = if (target.previewOnly) {
+                savePreviewAttachment(name, target.mimeType, whole)
+            } else {
+                saveAttachment(name, target.mimeType, whole)
+            }
+            pulls.pullSaved(target.key, saved.location, saved.uri, previewOnly = target.previewOnly)
         } catch (error: Exception) {
             HelmLog.w(HelmLog.CLIENT, "a pulled attachment could not be written to storage")
             pulls.pullFailed(target.key, error.message ?: NO_FILE_SINK)

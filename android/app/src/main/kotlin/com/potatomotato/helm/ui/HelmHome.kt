@@ -60,6 +60,7 @@ import com.potatomotato.helm.data.ActionOutcome
 import com.potatomotato.helm.data.ArtifactList
 import com.potatomotato.helm.data.HelmArtifactAttachment
 import com.potatomotato.helm.data.ChatAttachment
+import com.potatomotato.helm.data.artifactAttachmentKey
 import com.potatomotato.helm.data.ArtifactRead
 import com.potatomotato.helm.data.ArtifactSave
 import com.potatomotato.helm.data.AttachmentUploadState
@@ -630,6 +631,8 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // reads the composition, which a click handler is no longer inside.
     val logFiles = remember { AndroidLogFiles(context) }
     val scope = rememberCoroutineScope()
+    val comfyGallerySaved = stringResource(R.string.comfy_gallery_saved)
+    val comfyGallerySaveFailed = stringResource(R.string.comfy_gallery_save_failed)
     val exportSaved = stringResource(R.string.logs_export_saved)
     val exportEmpty = stringResource(R.string.logs_export_empty)
     val exportFailed = stringResource(R.string.logs_export_failed)
@@ -922,19 +925,34 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                 client.chats.setComfyReferenceSelection(sessionId, known, included)
             },
             onGalleryDownload = { attachment ->
-                client.downloadArtifactAttachment(
-                    sessionId,
-                    attachment.artifactId,
-                    HelmArtifactAttachment(
-                        id = attachment.attachmentId,
-                        filename = attachment.filename,
-                        contentType = attachment.mimeType,
-                        sizeBytes = attachment.sizeBytes,
-                        createdAtEpochMs = 0,
-                        sha256 = attachment.sha256,
-                        generatedMedia = attachment.generatedMedia,
-                    ),
-                )
+                client.downloadArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
+            },
+            onGalleryPreview = { attachment ->
+                client.previewArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
+            },
+            onGallerySavePreview = { attachment, uri ->
+                scope.launch {
+                    try {
+                        val saved = withContext(Dispatchers.IO) {
+                            val bytes = context.contentResolver.openInputStream(Uri.parse(uri))
+                                ?.use { it.readBytes() }
+                                ?: error(CANNOT_WRITE_FILE)
+                            artifactFiles.save(attachment.filename, attachment.mimeType, bytes)
+                        }
+                        client.artifacts.attachmentPulls.pullSaved(
+                            artifactAttachmentKey(attachment.artifactId, attachment.attachmentId),
+                            saved.location,
+                            saved.uri,
+                        )
+                        Toast.makeText(context, comfyGallerySaved.format(saved.location), Toast.LENGTH_LONG).show()
+                    } catch (error: Exception) {
+                        Toast.makeText(
+                            context,
+                            comfyGallerySaveFailed.format(error.message ?: CANNOT_WRITE_FILE),
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
             },
             onRefreshComfyGallery = { client.refreshArtifacts(sessionId); Unit },
             call = liveCall?.takeIf { it.targetId == sessionId },
@@ -1923,6 +1941,16 @@ private const val SESSION_WAIT_STEP_MS = 500L
 private const val CREATED_SESSION_WAITS = 40
 
 /** The sink threw with no message of its own; the row still needs a reason. */
+private fun ChatAttachment.toHelmArtifactAttachment() = HelmArtifactAttachment(
+    id = attachmentId,
+    filename = filename,
+    contentType = mimeType,
+    sizeBytes = sizeBytes,
+    createdAtEpochMs = 0,
+    sha256 = sha256,
+    generatedMedia = generatedMedia,
+)
+
 private const val CANNOT_WRITE_FILE = "The phone could not write the file"
 
 /** Where camera captures wait to become staged attachments (a FileProvider path). */

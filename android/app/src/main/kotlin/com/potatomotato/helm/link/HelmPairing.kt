@@ -24,6 +24,7 @@ import com.potatomotato.helm.notify.AndroidNotifications
 import com.potatomotato.helm.notify.IncomingRing
 import com.potatomotato.helm.voice.VoiceCallService
 import com.potatomotato.helm.save.AndroidArtifactFiles
+import com.potatomotato.helm.save.AndroidAttachmentPreviews
 import com.potatomotato.helm.save.AndroidAttachmentStaging
 import com.potatomotato.helm.notify.FileNotificationSettings
 import kotlinx.coroutines.CoroutineScope
@@ -138,6 +139,7 @@ object HelmPairing {
         // a file the user cannot find in the place they look for files has not
         // really arrived. Attached late for the same Context reason as above.
         client.saveAttachment = AndroidArtifactFiles(context)::save
+        client.savePreviewAttachment = AndroidAttachmentPreviews(context)::save
         // Where the attach toolbar's greying reads the negotiated protocol from.
         // A lookup, not a captured number: the version changes when the transport
         // swaps, and a stale 4 would offer uploads to a desktop that has none.

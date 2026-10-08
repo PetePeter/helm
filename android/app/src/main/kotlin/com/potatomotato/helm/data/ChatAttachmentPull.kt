@@ -33,7 +33,7 @@ sealed interface PullState {
      * The bytes are on the device. [location] is where a person will look for
      * them; [uri] is what a viewer or a decoder needs to open them.
      */
-    data class Ready(val location: String, val uri: String) : PullState
+    data class Ready(val location: String, val uri: String, val previewOnly: Boolean = false) : PullState
 
     /** Nothing was saved. Retryable — the tile offers it. */
     data class Failed(val message: String) : PullState

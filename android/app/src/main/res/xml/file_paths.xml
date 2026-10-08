@@ -3,9 +3,9 @@
   What the FileProvider may hand to another app.
 
   The app's own external Download folder — the pre-API-29 landing place for a
-  pulled attachment — plus the two cache directories the artifact editor's
-  attach half needs: where a camera capture waits to be staged, and the staged
-  copies themselves, which a chip tap opens through a grant instead of a raw
+  pulled attachment — plus the cache directories the artifact editor and
+  ComfyUI gallery use. These expose only camera captures, staged attachment
+  copies, and preview images through a grant instead of a raw
   `file://` uri. Nothing else is listed, so a bug in a uri cannot turn into a
   grant over the app's private data.
 -->
@@ -13,4 +13,5 @@
     <external-files-path name="downloads" path="Download/" />
     <cache-path name="artifact-capture" path="artifact-capture/" />
     <cache-path name="artifact-uploads" path="artifact-uploads/" />
+    <cache-path name="comfy-previews" path="comfy-previews/" />
 </paths>

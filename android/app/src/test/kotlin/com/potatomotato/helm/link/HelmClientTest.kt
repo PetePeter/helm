@@ -1505,6 +1505,26 @@ class HelmClientTest {
     }
 
     @Test
+    fun `opening a gallery preview uses the cache sink and marks it as preview only`() {
+        val source = byteArrayOf(1, 3, 5, 7, 9)
+        var previewBytes: ByteArray? = null
+        client.saveAttachment = { _, _, _ -> error("a preview must not save to Downloads") }
+        client.savePreviewAttachment = { _, _, bytes ->
+            previewBytes = bytes
+            SavedFile("Temporary preview", "content://previews/1")
+        }
+
+        client.previewArtifactAttachment("s1", "a1", attachment(sizeBytes = source.size.toLong()))
+        answerSlice(0, source, ATTACHMENT_SLICE_BYTES_BLE)
+
+        assertTrue(source.contentEquals(previewBytes))
+        assertEquals(
+            PullState.Ready("Temporary preview", "content://previews/1", previewOnly = true),
+            client.artifacts.attachmentPulls.pullState(attachmentKey),
+        )
+    }
+
+    @Test
     fun `a refused attachment download says so on the row it belongs to`() {
         client.downloadArtifactAttachment("s1", "a1", attachment(sizeBytes = 5))
 

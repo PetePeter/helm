@@ -171,6 +171,8 @@ fun ChatScreen(
     comfyGalleryPulls: Map<String, PullState> = emptyMap(),
     onComfyReferenceSelection: (knownIds: Set<String>, includedIds: Set<String>) -> Unit = { _, _ -> },
     onGalleryDownload: (ChatAttachment) -> Unit = {},
+    onGalleryPreview: (ChatAttachment) -> Unit = {},
+    onGallerySavePreview: (ChatAttachment, uri: String) -> Unit = { _, _ -> },
     onRefreshComfyGallery: () -> Unit = {},
 ) {
     // Keyed on the session, and saveable: a half-typed reply survives a rotation
@@ -438,6 +440,8 @@ fun ChatScreen(
                       onComfyReferenceSelection(knownGalleryIds, next)
                   },
                   onDownload = onGalleryDownload,
+                  onPreview = onGalleryPreview,
+                  onSavePreview = onGallerySavePreview,
                   onOpen = onOpenAttachment,
               )
           }
@@ -904,9 +908,10 @@ private fun AttachmentPreview(
 ) {
     val context = LocalContext.current
     var preview by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
+    var loading by remember(uri) { mutableStateOf(true) }
 
     LaunchedEffect(uri) {
-        preview = withContext(Dispatchers.IO) {
+        val decoded = withContext(Dispatchers.IO) {
             try {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(Uri.parse(uri))
@@ -922,9 +927,12 @@ private fun AttachmentPreview(
                 null
             }
         }
+        preview = decoded
+        loading = false
     }
 
-    preview?.let { bitmap ->
+    val bitmap = preview
+    if (bitmap != null) {
         Image(
             bitmap = bitmap,
             contentDescription = filename,
@@ -933,6 +941,12 @@ private fun AttachmentPreview(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(HelmRadius.Sm))
                 .padding(bottom = HelmSpacing.Xs),
+        )
+    } else {
+        Text(
+            stringResource(if (loading) R.string.comfy_gallery_loading else R.string.comfy_gallery_preview_unavailable),
+            color = HelmColors.Dim,
+            style = MaterialTheme.typography.labelMedium,
         )
     }
 }
@@ -961,6 +975,8 @@ private fun ComfyGalleryStrip(
     pulls: Map<String, PullState>,
     onToggle: (ChatAttachment, Boolean) -> Unit,
     onDownload: (ChatAttachment) -> Unit,
+    onPreview: (ChatAttachment) -> Unit,
+    onSavePreview: (ChatAttachment, String) -> Unit,
     onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     Column(
@@ -992,6 +1008,8 @@ private fun ComfyGalleryStrip(
                     state = state,
                     onToggle = { onToggle(attachment, it) },
                     onDownload = { onDownload(attachment) },
+                    onPreview = { onPreview(attachment) },
+                    onSavePreview = { uri -> onSavePreview(attachment, uri) },
                     onOpen = onOpen,
                 )
             }
@@ -1006,6 +1024,8 @@ private fun ComfyGalleryTile(
     state: PullState,
     onToggle: (Boolean) -> Unit,
     onDownload: () -> Unit,
+    onPreview: () -> Unit,
+    onSavePreview: (String) -> Unit,
     onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     var previewOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
@@ -1017,7 +1037,10 @@ private fun ComfyGalleryTile(
             modifier = Modifier.fillMaxWidth().heightIn(min = 76.dp, max = 76.dp)
                 .clip(RoundedCornerShape(HelmRadius.Sm))
                 .background(HelmColors.Surface2)
-                .clickable { previewOpen = true },
+                .clickable {
+                    previewOpen = true
+                    if (state !is PullState.Ready && attachment.mimeType.startsWith("image/")) onPreview()
+                },
             contentAlignment = Alignment.Center,
         ) {
             if (state is PullState.Ready && attachment.mimeType.startsWith("image/")) {
@@ -1060,7 +1083,7 @@ private fun ComfyGalleryTile(
                             when (state) {
                                 is PullState.Pulling -> stringResource(R.string.comfy_gallery_saving, formatBytes(state.received), formatBytes(state.total))
                                 is PullState.Failed -> state.message
-                                PullState.Idle -> stringResource(R.string.comfy_gallery_save_to_preview)
+                            PullState.Idle -> stringResource(R.string.comfy_gallery_save_to_preview)
                                 is PullState.Ready -> stringResource(R.string.comfy_gallery_preview_unavailable)
                             },
                             color = HelmColors.Dim,
@@ -1069,7 +1092,10 @@ private fun ComfyGalleryTile(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
                     when (state) {
-                        is PullState.Ready -> {
+                        is PullState.Ready -> if (state.previewOnly) {
+                            Text(state.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable { onSavePreview(state.uri) }.padding(HelmSpacing.Sm))
+                        } else {
                             Text(state.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
                             Text("Open", color = HelmColors.Accent, modifier = Modifier.clickable { onOpen(state.uri, attachment.mimeType) }.padding(HelmSpacing.Sm))
                         }

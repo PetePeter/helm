@@ -23,6 +23,7 @@ data class PullTarget(
     val sizeBytes: Long,
     val sha256: String? = null,
     val generatedMedia: Boolean = false,
+    val previewOnly: Boolean = false,
 )
 
 /**
@@ -139,9 +140,9 @@ class AttachmentPulls {
     }
 
     /** The bytes reached the device. The row becomes an open button. */
-    fun pullSaved(key: String, location: String, uri: String) {
+    fun pullSaved(key: String, location: String, uri: String, previewOnly: Boolean = false) {
         transfers.remove(key)
-        setPull(key, PullState.Ready(location, uri))
+        setPull(key, PullState.Ready(location, uri, previewOnly))
     }
 
     /** Abandon a fetch and its part-file. Nothing half-written is kept. */
@@ -153,4 +154,5 @@ class AttachmentPulls {
     private fun setPull(key: String, state: PullState) {
         _pulls.value = if (state is PullState.Idle) _pulls.value - key else _pulls.value + (key to state)
     }
+
 }

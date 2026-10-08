@@ -236,10 +236,12 @@
     <string name="comfy_gallery_tap_view">Tap to view</string>
     <string name="comfy_gallery_loading">Loading…</string>
     <string name="comfy_gallery_close">Close</string>
-    <string name="comfy_gallery_save_to_preview">Save this image to preview it at full size.</string>
+    <string name="comfy_gallery_save_to_preview">Loading image preview…</string>
     <string name="comfy_gallery_saving">Saving %1$s of %2$s…</string>
     <string name="comfy_gallery_preview_unavailable">Preview unavailable for this file.</string>
     <string name="comfy_gallery_save">Save image</string>
+    <string name="comfy_gallery_saved">Saved to %1$s</string>
+    <string name="comfy_gallery_save_failed">Could not save image: %1$s</string>
     <!-- Actions under a FAILED outgoing message: send it again, or drop it. -->
     <string name="chat_retry">Send again</string>
     <string name="chat_retry_glyph">↻</string>
