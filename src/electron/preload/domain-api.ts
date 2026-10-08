@@ -1756,6 +1756,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** A chat-pane session's journaled conversation (default: the operator's), oldest first. */
   voiceOperatorHistory: (sessionId?: string): Promise<OperatorChatEntry[]> =>
     ipcRenderer.invoke('voice:operatorHistory', sessionId),
+  voiceDeleteAttachmentMessages: (sessionId: string, artifactId: string, attachmentId: string): Promise<number> =>
+    ipcRenderer.invoke('voice:deleteAttachmentMessages', sessionId, artifactId, attachmentId),
 
   /** Each new journal entry of any chat-pane session (operator, API tools), either direction. Returns an unsubscribe. */
   onVoiceOperatorChat: (callback: (entry: OperatorChatEntry) => void) => {

@@ -82,6 +82,35 @@ class ChatStoreTest {
     }
 
     @Test
+    fun `rapid gallery checks accumulate instead of replacing the previous reference`() {
+        val first = nextComfyReferenceSelection(emptySet(), "ref-1", included = true, maxReferences = 2)
+        val second = nextComfyReferenceSelection(first, "ref-2", included = true, maxReferences = 2)
+
+        assertEquals(setOf("ref-1", "ref-2"), second)
+        assertEquals(second, nextComfyReferenceSelection(second, "ref-3", included = true, maxReferences = 2))
+    }
+
+    @Test
+    fun `deleting a gallery image removes its stored reference from chat rows and retry data`() {
+        val repo = repository()
+        repo.setComfyReferenceSelection("s1", setOf("ref-1", "ref-2"), setOf("ref-2"))
+        repo.receive(DESK, chat("Generated image.", seq = 1).copy(
+            artifactId = "artifact-1",
+            attachmentId = "ref-1",
+            filename = "generated.png",
+            mimeType = "image/png",
+            sizeBytes = 10,
+        ))
+        val retryKey = repo.sending("s1", "revise", at = 2, comfyInputAttachmentIds = listOf("ref-1", "ref-2"))
+
+        repo.removeAttachmentReference("s1", "artifact-1", "ref-1")
+
+        assertNull(repo.thread("s1").first { it.key != retryKey }.attachment)
+        assertEquals(listOf("ref-2"), repo.thread("s1").first { it.key == retryKey }.comfyInputAttachmentIds)
+        assertTrue(repo.isComfyReferenceIncluded("s1", "ref-1"))
+    }
+
+    @Test
     fun `restored rows get fresh distinct keys`() {
         repository().apply { receive(DESK, chat("a", seq = 1)); receive(DESK, chat("b", seq = 2)) }
 

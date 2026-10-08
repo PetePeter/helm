@@ -41,7 +41,7 @@ describe('ComfyUI session input', () => {
     expect(process.profiles.map(profile => profile.supportsImageSize)).toEqual([true, true, true, true]);
     expect(process.imageSizes).toEqual(COMFYUI_IMAGE_SIZE_OPTIONS);
     expect(process.profiles.find(profile => profile.id === 'image-qwen-image-2-1')?.maxReferenceImages).toBe(16);
-    expect(process.profiles.find(profile => profile.id === 'image')?.maxReferenceImages).toBe(1);
+    expect(process.profiles.find(profile => profile.id === 'image')?.maxReferenceImages).toBe(2);
     process.kill();
   });
 
@@ -60,8 +60,8 @@ describe('ComfyUI session input', () => {
     });
     const process = host.create('session-4', cloneDefaultComfyUiConfigForKind('image'));
 
-    expect(() => host.submit('session-4', '', 'image', undefined, undefined, undefined, ['one', 'two']))
-      .toThrow('accepts at most 1 reference image');
+    expect(() => host.submit('session-4', '', 'image', undefined, undefined, undefined, ['one', 'two', 'three']))
+      .toThrow('accepts at most 2 reference images');
     expect(getAttachment).not.toHaveBeenCalled();
     process.kill();
   });

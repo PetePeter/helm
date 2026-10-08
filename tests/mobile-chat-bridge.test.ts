@@ -730,6 +730,19 @@ describe('deleting chat messages', () => {
     expect(links.records().find((r: any) => r.t === 'result')).toMatchObject({ id: 'd1' });
   });
 
+  it('deleting a stored image also tombstones its generated chat message', () => {
+    links.online.add('phone-machine');
+    const { seq } = journal.append({
+      sessionId: 's1', sessionName: 'work', text: 'Generated image.', at: NOW,
+      artifactId: 'chat-files', attachmentId: 'image-1', filename: 'result.png',
+    });
+
+    expect(bridge.deleteAttachmentMessages('s1', 'chat-files', 'image-1')).toBe(1);
+    expect(journal.sessionEntries('s1').some(entry => entry.record.attachmentId === 'image-1')).toBe(false);
+    expect(journal.sessionEntries('s1').at(-1)?.record).toMatchObject({ kind: 'deleted', deletes: seq });
+    expect(links.records().at(-1)).toMatchObject({ t: 'chat', kind: 'deleted', deletes: seq });
+  });
+
   it('never deletes another session\'s message by seq', () => {
     SESSIONS.set('s2', { id: 's2', name: 'other', interactionChannel: 'desktop' });
     const { seq } = journal.append({ sessionId: 's2', sessionName: 'other', text: 'keep me', at: NOW });

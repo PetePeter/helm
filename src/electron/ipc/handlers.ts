@@ -1278,6 +1278,9 @@ export function registerIPCHandlers(
   }));
   mobileChatBridge.start();
   chatBroker.register(mobileChatBridge);
+  helmControlService.setArtifactAttachmentDeletedHandler((sessionId, artifactId, attachmentId) => {
+    mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId);
+  });
   helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
   helmControlService.setCallTransferrer((from, to, line) => mobileChatBridge.sendTransfer(from, to, line));
   helmControlService.setRingRetry(new RingRetry({
@@ -1323,6 +1326,8 @@ export function registerIPCHandlers(
       const target = sessionId ?? operatorSessionManager.getOperatorId();
       return target && isChatPaneSession(target) ? mobileChatJournal.sessionEntries(target) : [];
     },
+    deleteAttachmentMessages: (sessionId, artifactId, attachmentId) =>
+      mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId),
     ask: async (text, filePath, sessionId, comfyProfileId, comfyImageSizeId, comfyInputAttachmentIds) => {
       if (sessionId && !isChatPaneSession(sessionId)) return { ok: false, error: 'That session has no chat view' };
       const operatorId = sessionId ?? operatorSessionManager.getOperatorId();

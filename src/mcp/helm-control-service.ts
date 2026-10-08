@@ -285,6 +285,7 @@ export class HelmControlService extends EventEmitter {
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
+  private artifactAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
   private memoryService?: HelmMemoryService;
   private memoryManager: MemoryManager | null = null;
@@ -486,6 +487,13 @@ export class HelmControlService extends EventEmitter {
         attachmentManager?.copyForArtifact(from, to);
       }
     });
+  }
+
+  /** Wire chat-journal cleanup after an artifact attachment is permanently deleted. */
+  setArtifactAttachmentDeletedHandler(
+    handler: ((sessionId: string, artifactId: string, attachmentId: string) => void) | null,
+  ): void {
+    this.artifactAttachmentDeleted = handler ?? undefined;
   }
 
   /**
@@ -731,6 +739,13 @@ export class HelmControlService extends EventEmitter {
   ): { artifactId: string; attachmentId: string; deleted: boolean } {
     const artifact = this.requireOwnedArtifact(callerSessionId, artifactId);
     const deleted = this.requireArtifactAttachmentManager().delete(artifact.id, attachmentId);
+    if (deleted) {
+      try {
+        this.artifactAttachmentDeleted?.(artifact.sessionId, artifact.id, attachmentId);
+      } catch (error) {
+        logger.warn(`[Artifact] Deleted attachment ${attachmentId}, but chat-history cleanup failed: ${error}`);
+      }
+    }
     return { artifactId: artifact.id, attachmentId, deleted };
   }
 

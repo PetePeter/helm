@@ -107,9 +107,11 @@ import com.potatomotato.helm.data.Draft
 import com.potatomotato.helm.data.PrefsDraftStore
 import com.potatomotato.helm.data.PullState
 import com.potatomotato.helm.data.Delivery
+import com.potatomotato.helm.data.nextComfyReferenceSelection
 import com.potatomotato.helm.data.rangeSelection
 import com.potatomotato.helm.data.replyStats
 import com.potatomotato.helm.log.HelmLog
+import com.potatomotato.helm.ui.components.ConfirmDelete
 import com.potatomotato.helm.ui.components.Hairline
 import com.potatomotato.helm.ui.components.LinkedText
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -170,6 +172,7 @@ fun ChatScreen(
     excludedComfyReferenceIds: Set<String> = emptySet(),
     comfyGalleryPulls: Map<String, PullState> = emptyMap(),
     onComfyReferenceSelection: (knownIds: Set<String>, includedIds: Set<String>) -> Unit = { _, _ -> },
+    onDeleteGalleryAttachment: (ChatAttachment) -> Unit = {},
     onGalleryDownload: (ChatAttachment) -> Unit = {},
     onGalleryPreview: (ChatAttachment) -> Unit = {},
     onGallerySavePreview: (ChatAttachment, uri: String) -> Unit = { _, _ -> },
@@ -273,7 +276,12 @@ fun ChatScreen(
     val comfyMaxReferences = selectedComfyProfile?.maxReferenceImages?.coerceIn(1, 16) ?: 1
     val comfyMaxGalleryReferences = (comfyMaxReferences - if (comfyInputImagePath != null) 1 else 0).coerceAtLeast(0)
     val knownGalleryIds = comfyGallery.map { it.attachmentId }.toSet()
-    val includedGalleryIds = knownGalleryIds - excludedComfyReferenceIds
+    val persistedIncludedGalleryIds = knownGalleryIds - excludedComfyReferenceIds
+    var selectedGalleryIds by remember(sessionId) { mutableStateOf(persistedIncludedGalleryIds) }
+    LaunchedEffect(knownGalleryIds, excludedComfyReferenceIds) {
+        selectedGalleryIds = persistedIncludedGalleryIds
+    }
+    val includedGalleryIds = selectedGalleryIds
     LaunchedEffect(sessionId, session?.comfyUiTool) {
         if (session?.comfyUiTool == true) onRefreshComfyGallery()
     }
@@ -281,6 +289,7 @@ fun ChatScreen(
         if (includedGalleryIds.size > comfyMaxGalleryReferences) {
             val latestAllowed = comfyGallery.asSequence().map { it.attachmentId }
                 .filter { it in includedGalleryIds }.toList().takeLast(comfyMaxGalleryReferences).toSet()
+            selectedGalleryIds = latestAllowed
             onComfyReferenceSelection(knownGalleryIds, latestAllowed)
         }
     }
@@ -434,14 +443,16 @@ fun ChatScreen(
                   maxReferences = comfyMaxGalleryReferences,
                   pulls = comfyGalleryPulls,
                   onToggle = { attachment, included ->
-                      val next = if (!included) includedGalleryIds - attachment.attachmentId
-                      else if (includedGalleryIds.size < comfyMaxGalleryReferences) includedGalleryIds + attachment.attachmentId
-                      else includedGalleryIds
+                      val next = nextComfyReferenceSelection(
+                          selectedGalleryIds, attachment.attachmentId, included, comfyMaxGalleryReferences,
+                      )
+                      selectedGalleryIds = next
                       onComfyReferenceSelection(knownGalleryIds, next)
                   },
                   onDownload = onGalleryDownload,
                   onPreview = onGalleryPreview,
                   onSavePreview = onGallerySavePreview,
+                  onDelete = onDeleteGalleryAttachment,
                   onOpen = onOpenAttachment,
               )
           }
@@ -484,7 +495,7 @@ fun ChatScreen(
             onSend = { submitted ->
                 val text = submitted.trim()
                 val selectedIds = comfyGallery.asSequence().map { it.attachmentId }
-                    .filter { it in includedGalleryIds }.toList().takeLast(comfyMaxGalleryReferences)
+                    .filter { it in selectedGalleryIds }.toList().takeLast(comfyMaxGalleryReferences)
                 val hasComfyInput = comfyInputImagePath != null || selectedIds.isNotEmpty()
                 if (text.isNotEmpty() || (session?.comfyUiTool == true && hasComfyInput)) {
                     if (session?.comfyUiTool == true && onSendWithProfile != null) {
@@ -501,7 +512,7 @@ fun ChatScreen(
                 }
             },
             allowEmpty = session?.comfyUiTool == true &&
-                (comfyInputImagePath != null || includedGalleryIds.isNotEmpty()),
+                (comfyInputImagePath != null || selectedGalleryIds.isNotEmpty()),
           )
         }
     }
@@ -977,6 +988,7 @@ private fun ComfyGalleryStrip(
     onDownload: (ChatAttachment) -> Unit,
     onPreview: (ChatAttachment) -> Unit,
     onSavePreview: (ChatAttachment, String) -> Unit,
+    onDelete: (ChatAttachment) -> Unit,
     onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     Column(
@@ -1010,6 +1022,7 @@ private fun ComfyGalleryStrip(
                     onDownload = { onDownload(attachment) },
                     onPreview = { onPreview(attachment) },
                     onSavePreview = { uri -> onSavePreview(attachment, uri) },
+                    onDelete = { onDelete(attachment) },
                     onOpen = onOpen,
                 )
             }
@@ -1026,9 +1039,11 @@ private fun ComfyGalleryTile(
     onDownload: () -> Unit,
     onPreview: () -> Unit,
     onSavePreview: (String) -> Unit,
+    onDelete: () -> Unit,
     onOpen: (uri: String, mimeType: String) -> Unit,
 ) {
     var previewOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
+    var deleteConfirmationOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
     LaunchedEffect(attachment.artifactId, attachment.attachmentId, state) {
         if (state is PullState.Idle && attachment.mimeType.startsWith("image/")) onPreview()
     }
@@ -1070,10 +1085,20 @@ private fun ComfyGalleryTile(
             onDismissRequest = { previewOpen = false },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            Column(
-                modifier = Modifier.fillMaxSize().background(HelmColors.Bg).padding(HelmSpacing.Md),
-                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-            ) {
+            if (deleteConfirmationOpen) {
+                ConfirmDelete(
+                    message = stringResource(R.string.artifacts_attachment_confirm_delete, attachment.filename),
+                    onConfirm = {
+                        deleteConfirmationOpen = false
+                        previewOpen = false
+                        onDelete()
+                    },
+                    onCancel = { deleteConfirmationOpen = false },
+                )
+            } else Column(
+                    modifier = Modifier.fillMaxSize().background(HelmColors.Bg).padding(HelmSpacing.Md),
+                    verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+                ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(attachment.filename, color = HelmColors.Txt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
                     Text(stringResource(R.string.comfy_gallery_close), color = HelmColors.Accent, modifier = Modifier.clickable { previewOpen = false }.padding(HelmSpacing.Sm))
@@ -1105,6 +1130,11 @@ private fun ComfyGalleryTile(
                         is PullState.Pulling -> Text("Saving…", color = HelmColors.Dim)
                         else -> Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable(onClick = onDownload).padding(HelmSpacing.Sm))
                     }
+                    Text(
+                        stringResource(R.string.artifacts_action_delete),
+                        color = HelmColors.Danger,
+                        modifier = Modifier.clickable { deleteConfirmationOpen = true }.padding(HelmSpacing.Sm),
+                    )
                 }
             }
         }

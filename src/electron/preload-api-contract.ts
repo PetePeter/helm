@@ -361,6 +361,7 @@ export const PRELOAD_API_DOMAINS = {
     'voiceLastOperatorReply',
     'onVoiceOperatorReply',
     'voiceOperatorHistory',
+    'voiceDeleteAttachmentMessages',
     'onVoiceOperatorChat',
   ],
   update: [

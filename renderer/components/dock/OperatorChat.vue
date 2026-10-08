@@ -10,7 +10,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { operatorPttKey as pttKey, operatorView, useOperatorChat } from '../../composables/useOperatorChat.js';
 import { useVoiceCall } from '../../composables/useVoiceCall.js';
 import { composerKeyAction } from '../../operator/operator-chat.js';
-import { artifactsClient, configClient, dialogClient } from '../../ipc/clients.js';
+import { artifactsClient, configClient, dialogClient, voiceClient } from '../../ipc/clients.js';
 import { registerKeyHandler } from '../../keyboard/router.js';
 
 const props = defineProps<{
@@ -37,6 +37,9 @@ const selectedProfile = computed(() => props.comfyProfiles?.find(profile => prof
 const supportsImageSize = computed(() => selectedProfile.value?.supportsImageSize === true && (props.comfyImageSizes?.length ?? 0) > 0);
 const maxReferenceImages = computed(() => selectedProfile.value?.maxReferenceImages ?? 1);
 const galleryImage = ref<NonNullable<(typeof comfyGallery.value)[number]['attachment']> | null>(null);
+const galleryDeleteConfirm = ref(false);
+const galleryDeleteBusy = ref(false);
+const galleryDeleteError = ref<string | null>(null);
 const canSend = computed(() => {
   if (sending.value) return false;
   if (!isComfyUi.value) return Boolean(draft.value.trim());
@@ -80,6 +83,30 @@ function galleryIncluded(bubble: (typeof comfyGallery.value)[number]): boolean {
 
 function saveGalleryImage(image: NonNullable<(typeof comfyGallery.value)[number]['attachment']>): void {
   if (image.artifactId && image.attachmentId) void artifactsClient.artifactSaveAttachment(image.artifactId, image.attachmentId);
+}
+
+function requestGalleryDelete(image: NonNullable<(typeof comfyGallery.value)[number]['attachment']>): void {
+  galleryImage.value = image;
+  galleryDeleteConfirm.value = true;
+  galleryDeleteError.value = null;
+}
+
+async function deleteGalleryImage(): Promise<void> {
+  const image = galleryImage.value;
+  if (!image?.artifactId || !image.attachmentId || galleryDeleteBusy.value) return;
+  galleryDeleteBusy.value = true;
+  galleryDeleteError.value = null;
+  try {
+    const deleted = await artifactsClient.artifactAttachmentDelete(image.artifactId, image.attachmentId);
+    if (!deleted) throw new Error('The stored image could not be deleted');
+    await voiceClient.voiceDeleteAttachmentMessages(props.sessionId, image.artifactId, image.attachmentId);
+    galleryDeleteConfirm.value = false;
+    galleryImage.value = null;
+  } catch (err) {
+    galleryDeleteError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    galleryDeleteBusy.value = false;
+  }
 }
 
 function onCallClick(): void {
@@ -224,14 +251,30 @@ onBeforeUnmount(() => {
           <input type="checkbox" :checked="galleryIncluded(bubble)" @change="setGalleryIncluded(bubble, ($event.target as HTMLInputElement).checked)" />
           Use later
         </label>
-        <button v-if="bubble.attachment?.artifactId && bubble.attachment.attachmentId" class="operator-chat__gallery-save" type="button" @click="saveGalleryImage(bubble.attachment)">Save</button>
+        <div v-if="bubble.attachment?.artifactId && bubble.attachment.attachmentId" class="operator-chat__gallery-actions">
+          <button class="operator-chat__gallery-save" type="button" @click="saveGalleryImage(bubble.attachment)">Save</button>
+          <button class="operator-chat__gallery-save operator-chat__delete" type="button" @click="requestGalleryDelete(bubble.attachment)">Delete</button>
+        </div>
       </div>
     </div>
 
-    <div v-if="galleryImage" class="operator-chat__viewer" role="dialog" aria-modal="true" :aria-label="galleryImage.filename" @click.self="galleryImage = null">
-      <button class="operator-chat__viewer-close" type="button" aria-label="Close image" @click="galleryImage = null">×</button>
+    <div v-if="galleryImage" class="operator-chat__viewer" role="dialog" aria-modal="true" :aria-label="galleryImage.filename" @click.self="galleryImage = null; galleryDeleteConfirm = false">
+      <button class="operator-chat__viewer-close" type="button" aria-label="Close image" @click="galleryImage = null; galleryDeleteConfirm = false">×</button>
       <img v-if="galleryImage.filePath" :src="previewUrl(galleryImage.filePath)" :alt="galleryImage.filename" />
-      <button v-if="galleryImage.artifactId && galleryImage.attachmentId" class="btn btn--sm btn--secondary" type="button" @click="saveGalleryImage(galleryImage)">Save image</button>
+      <div v-if="galleryImage.artifactId && galleryImage.attachmentId" class="operator-chat__viewer-actions">
+        <button class="btn btn--sm btn--secondary" type="button" @click="saveGalleryImage(galleryImage)">Save image</button>
+        <button class="btn btn--sm btn--secondary operator-chat__delete" type="button" @click="galleryDeleteConfirm = true">Delete image</button>
+      </div>
+      <div v-if="galleryDeleteConfirm" class="operator-chat__viewer-confirm" role="alertdialog" aria-label="Confirm image deletion">
+        <span>Delete {{ galleryImage.filename }} from this session and its stored files?</span>
+        <div class="operator-chat__viewer-actions">
+          <button class="btn btn--sm btn--secondary operator-chat__delete" type="button" :disabled="galleryDeleteBusy" @click="deleteGalleryImage">
+            {{ galleryDeleteBusy ? 'Deleting…' : 'Delete' }}
+          </button>
+          <button class="btn btn--sm btn--secondary" type="button" :disabled="galleryDeleteBusy" @click="galleryDeleteConfirm = false">Cancel</button>
+        </div>
+        <span v-if="galleryDeleteError" class="operator-chat__error" role="alert">{{ galleryDeleteError }}</span>
+      </div>
     </div>
 
     <div v-if="error" class="operator-chat__error" role="alert">{{ error }}</div>
@@ -457,6 +500,11 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
+.operator-chat__gallery-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
 .operator-chat__viewer {
   position: fixed;
   inset: 0;
@@ -474,6 +522,30 @@ onBeforeUnmount(() => {
   max-width: 100%;
   max-height: calc(100vh - 120px);
   object-fit: contain;
+}
+
+.operator-chat__viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.operator-chat__delete {
+  color: var(--danger, #e66);
+}
+
+.operator-chat__viewer-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  max-width: min(520px, 100%);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: center;
 }
 
 .operator-chat__viewer-close {

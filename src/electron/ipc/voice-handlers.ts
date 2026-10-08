@@ -20,6 +20,8 @@ export interface VoiceHandlerDeps {
   lastReply: () => string | null;
   /** A chat session's whole journaled conversation (default: the operator's), for the desktop chat view. */
   history: (sessionId?: string) => ChatJournalEntry[];
+  /** Remove journal entries whose image attachment was just deleted from its artifact. */
+  deleteAttachmentMessages?: (sessionId: string, artifactId: string, attachmentId: string) => number;
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
@@ -39,6 +41,11 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
 
   ipcMain.handle('voice:operatorHistory', (_event, sessionId?: unknown) =>
     deps.history(typeof sessionId === 'string' ? sessionId : undefined));
+
+  ipcMain.handle('voice:deleteAttachmentMessages', (_event, sessionId: unknown, artifactId: unknown, attachmentId: unknown) => {
+    if (typeof sessionId !== 'string' || typeof artifactId !== 'string' || typeof attachmentId !== 'string') return 0;
+    return deps.deleteAttachmentMessages?.(sessionId, artifactId, attachmentId) ?? 0;
+  });
 
   ipcMain.handle('voice:ask', async (_event, text: unknown, filePath?: unknown, sessionId?: unknown, comfyProfileId?: unknown, comfyImageSizeId?: unknown, comfyInputAttachmentIds?: unknown) => {
     if (typeof text !== 'string') return { ok: false, error: 'Nothing to send' };

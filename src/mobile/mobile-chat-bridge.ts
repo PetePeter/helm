@@ -279,6 +279,14 @@ export class MobileChatBridge implements ChatBridge {
     return removed.length;
   }
 
+  /** Delete the journaled result bubbles that point at one stored attachment. */
+  deleteAttachmentMessages(sessionId: string, artifactId: string, attachmentId: string): number {
+    const items = this.deps.journal.sessionEntries(sessionId)
+      .filter(({ record }) => record.artifactId === artifactId && record.attachmentId === attachmentId)
+      .map(({ seq }) => ({ seq }));
+    return this.deleteMessages(sessionId, items);
+  }
+
   private journalAndPush(input: ChatRecordInput): ChatSendResult {
     const { seq } = this.deps.journal.append(input);
     const payload = encodeChat({ ...input, seq });

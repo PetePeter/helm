@@ -168,6 +168,24 @@ describe('createOperatorChat', () => {
 });
 
 describe('API-tool chat extras', () => {
+  it('a deleted generated image is removed from the gallery and saved reference selection', async () => {
+    const f = fakes([{
+      seq: 2,
+      record: {
+        text: 'Generated image.', at: 2, artifactId: 'chat-files', attachmentId: 'image-1',
+        filename: 'result.png', mimeType: 'image/png', filePath: 'X:\\result.png',
+      },
+    }]);
+    await f.chat.open();
+    const image = f.chat.comfyGallery.value[0];
+    expect(f.chat.selectedComfyAttachmentIds.value).toEqual(['image-1']);
+
+    f.push({ seq: 3, record: { sessionId: 'op', text: '', at: 3, kind: 'deleted', deletes: 2 } });
+
+    expect(f.chat.comfyGallery.value).toEqual([]);
+    expect(f.chat.includedReferenceIds.value.has(`${image.attachment?.artifactId}:${image.attachment?.attachmentId}`)).toBe(false);
+  });
+
   it('a deleted tombstone removes its bubble and shows nothing itself', async () => {
     const f = fakes([helm(1, 'keep'), helm(2, 'drop me')]);
     await f.chat.open();

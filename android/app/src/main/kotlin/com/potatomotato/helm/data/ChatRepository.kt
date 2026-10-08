@@ -23,6 +23,13 @@ enum class Delivery {
 /** The desktop's refusal for a frozen session (src/session/frozen.ts) — matched by its wording. */
 fun isFrozenRefusal(message: String): Boolean = "is frozen" in message
 
+/** Apply a gallery checkbox event against the latest selection, including rapid taps before redraw. */
+fun nextComfyReferenceSelection(current: Set<String>, attachmentId: String, included: Boolean, maxReferences: Int): Set<String> = when {
+    !included -> current - attachmentId
+    attachmentId in current || current.size >= maxReferences.coerceAtLeast(0) -> current
+    else -> current + attachmentId
+}
+
 /**
  * One line in a session's thread.
  *
@@ -442,6 +449,36 @@ class ChatRepository(
         _excludedComfyReferenceIds.value = if (excluded.isEmpty()) previous - sessionId
         else previous + (sessionId to excluded)
         persist()
+    }
+
+    /** A gallery delete also retires cached chat rows and any retry selection that names the file. */
+    @Synchronized
+    fun removeAttachmentReference(sessionId: String, artifactId: String, attachmentId: String) {
+        val previousExcluded = _excludedComfyReferenceIds.value
+        val nextExcludedForSession = previousExcluded[sessionId].orEmpty() - attachmentId
+        val selectionChanged = nextExcludedForSession != previousExcluded[sessionId].orEmpty()
+        if (selectionChanged) {
+            _excludedComfyReferenceIds.value = if (nextExcludedForSession.isEmpty()) previousExcluded - sessionId
+            else previousExcluded + (sessionId to nextExcludedForSession)
+        }
+
+        val thread = _threads.value[sessionId]
+        val nextThread = thread?.map { message ->
+            val sameAttachment = message.attachment?.let {
+                it.artifactId == artifactId && it.attachmentId == attachmentId
+            } == true
+            val nextReferences = message.comfyInputAttachmentIds - attachmentId
+            if (sameAttachment || nextReferences != message.comfyInputAttachmentIds) {
+                message.copy(
+                    attachment = if (sameAttachment) null else message.attachment,
+                    comfyInputAttachmentIds = nextReferences,
+                )
+            } else message
+        }
+        if (thread != null && nextThread != null && nextThread != thread) {
+            setThreads(_threads.value + (sessionId to nextThread))
+        }
+        else if (selectionChanged) persist()
     }
 
     /** Settle an outgoing message once its call has been answered — or hasn't. */

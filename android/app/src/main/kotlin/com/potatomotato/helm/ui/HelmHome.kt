@@ -924,6 +924,12 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
             onComfyReferenceSelection = { known, included ->
                 client.chats.setComfyReferenceSelection(sessionId, known, included)
             },
+            onDeleteGalleryAttachment = { attachment ->
+                client.deleteArtifactAttachment(sessionId, attachment.artifactId, attachment.attachmentId) {
+                    client.chats.removeAttachmentReference(sessionId, attachment.artifactId, attachment.attachmentId)
+                    client.refreshArtifacts(sessionId)
+                }
+            },
             onGalleryDownload = { attachment ->
                 client.downloadArtifactAttachment(sessionId, attachment.artifactId, attachment.toHelmArtifactAttachment())
             },

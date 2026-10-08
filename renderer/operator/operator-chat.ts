@@ -186,7 +186,19 @@ export function createOperatorChat(deps: OperatorChatDeps) {
     // The live feed carries every chat-pane session; show only this one.
     if (entry.record.sessionId !== undefined && entry.record.sessionId !== deps.sessionId) return;
     if (entry.record.kind === 'deleted') {
+      const removed = bubbles.value.filter(b => b.seq === entry.record.deletes);
       bubbles.value = bubbles.value.filter(b => b.seq !== entry.record.deletes);
+      for (const bubble of removed) {
+        if (!bubble.attachment?.artifactId || !bubble.attachment.attachmentId) continue;
+        const id = referenceId(bubble);
+        knownReferenceIds.delete(id);
+        if (includedReferenceIds.value.has(id)) {
+          const next = new Set(includedReferenceIds.value);
+          next.delete(id);
+          includedReferenceIds.value = next;
+        }
+      }
+      if (removed.length) persistReferences();
       return;
     }
     const bubble = toBubble(entry);

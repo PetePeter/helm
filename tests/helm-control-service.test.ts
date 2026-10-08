@@ -2052,6 +2052,32 @@ describe('parseSubmitSuffix', () => {
 });
 
 describe('HelmControlService artifact session ownership', () => {
+  it('cleans matching chat history after deleting a stored artifact attachment', async () => {
+    const { ArtifactAttachmentManager } = await import('../src/session/artifact-attachment-manager.js');
+    const { service } = makeService();
+    const directory = mkdtempSync(join(tmpdir(), 'helm-delete-chat-image-'));
+    try {
+      const attachments = new ArtifactAttachmentManager(directory);
+      service.setArtifactManager(new ArtifactManager(), attachments);
+      const artifact = service.createArtifact('sessA', 'Chat files', 'markdown', '');
+      const attachment = attachments.add(artifact.id, {
+        filename: 'result.png', content: Buffer.from('image'), contentType: 'image/png',
+      });
+      const deleted = vi.fn();
+      service.setArtifactAttachmentDeletedHandler(deleted);
+
+      expect(service.deleteArtifactAttachment('sessA', artifact.id, attachment.id)).toEqual({
+        artifactId: artifact.id, attachmentId: attachment.id, deleted: true,
+      });
+      expect(attachments.get(artifact.id, attachment.id)).toBeNull();
+      expect(deleted).toHaveBeenCalledWith('sessA', artifact.id, attachment.id);
+      expect(service.deleteArtifactAttachment('sessA', artifact.id, attachment.id).deleted).toBe(false);
+      expect(deleted).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('blocks a session from reading, updating, revealing, or deleting another session\'s artifact', async () => {
     const { ArtifactManager } = await import('../src/session/artifact-manager.js');
     const { service } = makeService();
