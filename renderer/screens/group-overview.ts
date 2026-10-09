@@ -152,7 +152,7 @@ export function getOverviewSessions(): Session[] {
   const group = sessionsState.groups.find(item => item.dirPath === sessionsState.overviewGroup);
   if (!group) {
     return state.sessions.filter(
-      (session) => (session.projectPath ?? session.workingDir) === sessionsState.overviewGroup,
+      (session) => !session.remote && (session.projectPath ?? session.workingDir) === sessionsState.overviewGroup,
     );
   }
   return getVisibleSessions([group], sessionsState.groupPrefs);

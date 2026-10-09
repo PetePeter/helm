@@ -835,7 +835,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* ── Group box: header + its session rows ──────────────────── */
 
-/* Folder and machine groups are neutral grey; a custom group sets
+/* Folder groups are neutral grey; a custom group sets
    --group-color inline from its picked palette colour. */
 .session-group-box {
   --group-color: #5a606b;

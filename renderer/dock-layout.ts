@@ -13,6 +13,7 @@ import {
   isKnownPane,
   isProfilePane,
   listProfilePanes,
+  listStaticProfilePanes,
   OUTER_EDGE_RATIO,
   PANE_ARTIFACTS,
   PANE_PLAN_DIRECTORIES,
@@ -499,6 +500,106 @@ export function closePane(layout: DockWorkspaceLayout, paneId: PaneId): DockWork
   return withRoot(layout, removePane(layout.root, paneId), [...layout.closed, paneId]);
 }
 
+/** Ensure a runtime registered pane is represented, without reopening a closed pane. */
+export function ensurePane(layout: DockWorkspaceLayout, paneId: PaneId): DockWorkspaceLayout {
+  assertKnown(paneId);
+  if (findPaneGroup(layout.root, paneId) || layout.closed.includes(paneId)) return layout;
+  return restorePane({ ...layout, closed: [...layout.closed, paneId] }, paneId);
+}
+
+/** Remove an unpaired pane from both the live tree and the recoverable list. */
+export function forgetPane(layout: DockWorkspaceLayout, paneId: PaneId): DockWorkspaceLayout {
+  return withRoot(layout, normalizeNode(removePane(layout.root, paneId)), layout.closed.filter(id => id !== paneId));
+}
+
+export interface VisibleLayoutProjection {
+  layout: DockWorkspaceLayout;
+  /** Visible split path → original split path and retained source child indexes. */
+  resizePaths: ReadonlyMap<string, { sourcePath: DockNodePath; childIndexes: number[] }>;
+}
+
+/** Project a saved tree onto currently registered pane descriptors. */
+export function projectVisibleLayout(
+  layout: DockWorkspaceLayout,
+  registeredPaneIds: ReadonlySet<PaneId>,
+): VisibleLayoutProjection {
+  const resizePaths = new Map<string, { sourcePath: DockNodePath; childIndexes: number[] }>();
+  const hasVisiblePane = (node: DockNode): boolean => listPanes(node).some(id => registeredPaneIds.has(id));
+  const visit = (node: DockNode, sourcePath: DockNodePath, viewPath: DockNodePath): DockNode | null => {
+    if (node.type === 'empty') return null;
+    if (node.type === 'group') {
+      const tabs = node.tabs.filter(id => registeredPaneIds.has(id));
+      return tabs.length ? { type: 'group', tabs, activeTab: tabs.includes(node.activeTab) ? node.activeTab : tabs[0] } : null;
+    }
+    if (node.type === 'dock') {
+      if (!hasVisiblePane(node.child)) return null;
+      const child = visit(node.child, [...sourcePath, -1], [...viewPath, -1]);
+      return child ? { ...node, child } : null;
+    }
+    const childIndexes = node.children.map((_, index) => index)
+      .filter(index => hasVisiblePane(node.children[index]));
+    if (!childIndexes.length) return null;
+    if (childIndexes.length === 1) {
+      const index = childIndexes[0];
+      return visit(node.children[index], [...sourcePath, index], viewPath);
+    }
+    resizePaths.set(JSON.stringify(viewPath), { sourcePath, childIndexes });
+    const visibleTotal = childIndexes.reduce((sum, index) => sum + node.sizes[index], 0);
+    const children = childIndexes.map((sourceIndex, viewIndex) =>
+      visit(node.children[sourceIndex], [...sourcePath, sourceIndex], [...viewPath, viewIndex]));
+    return {
+      type: 'split',
+      direction: node.direction,
+      sizes: childIndexes.map(index => node.sizes[index] / visibleTotal),
+      children: children.filter((child): child is DockNode => child !== null),
+    };
+  };
+  const root = visit(layout.root, [], []) ?? { type: 'empty' as const };
+  return { layout: { ...layout, root }, resizePaths };
+}
+
+/** Map a visible split resize back while keeping hidden children at their saved shares. */
+export function resizeVisibleSplit(
+  sourceLayout: DockWorkspaceLayout,
+  projection: VisibleLayoutProjection,
+  viewPath: DockNodePath,
+  visibleSizes: number[],
+): { sourcePath: DockNodePath; sizes: number[] } | null {
+  const mapping = projection.resizePaths.get(JSON.stringify(viewPath));
+  if (!mapping) return null;
+  const source = nodeAtPath(sourceLayout.root, mapping.sourcePath);
+  if (source?.type !== 'split' || visibleSizes.length !== mapping.childIndexes.length) return null;
+  const visible = new Set(mapping.childIndexes);
+  const hiddenShare = source.sizes.reduce((sum, size, index) => sum + (visible.has(index) ? 0 : size), 0);
+  const visibleShare = 1 - hiddenShare;
+  const normalizedVisibleSizes = scaleSizes(visibleSizes, mapping.childIndexes.length);
+  const sizes = source.sizes.map((size, index) => {
+    const visibleIndex = mapping.childIndexes.indexOf(index);
+    return visibleIndex < 0 ? size : normalizedVisibleSizes[visibleIndex] * visibleShare;
+  });
+  return { sourcePath: mapping.sourcePath, sizes };
+}
+
+function nodeAtPath(root: DockNode, path: DockNodePath): DockNode | null {
+  let node = root;
+  for (const segment of path) {
+    if (node.type === 'dock' && segment === -1) node = node.child;
+    else if (node.type === 'split' && segment >= 0 && segment < node.children.length) node = node.children[segment];
+    else return null;
+  }
+  return node;
+}
+
+/** Remove unresolved ids once the owning registry has finished loading. */
+export function pruneUnregisteredPanes(
+  layout: DockWorkspaceLayout,
+  registeredPaneIds: ReadonlySet<PaneId>,
+): DockWorkspaceLayout {
+  const closed = layout.closed.filter(id => registeredPaneIds.has(id));
+  const projected = projectVisibleLayout(layout, registeredPaneIds);
+  return { ...projected.layout, root: normalizeNode(projected.layout.root) ?? { type: 'empty' }, closed };
+}
+
 /** Restore a closed pane, to an explicit target or to its default home. */
 export function restorePane(
   layout: DockWorkspaceLayout,
@@ -521,7 +622,10 @@ export function restorePane(
 
   const remaining = layout.closed.filter(id => id !== paneId);
   if (layout.root.type === 'empty') {
-    return withRoot(layout, group([paneId]), remaining);
+    const home = getPaneDescriptor(paneId)?.home ?? 'center';
+    return home === 'center'
+      ? withRoot(layout, group([paneId]), remaining)
+      : withRoot(layout, dock(home, 'pinned', group([paneId])), remaining);
   }
 
   const home = getPaneDescriptor(paneId)?.home ?? 'center';
@@ -637,6 +741,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Namespaced ids may belong to a dynamic descriptor that has not registered yet. */
+function isPendingDynamicPaneId(value: string): boolean {
+  return /^[a-z][a-z0-9-]*:[^/\\\s]+$/i.test(value);
+}
+
 function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): DockNode {
   if (!isRecord(raw)) throw new Error('dock layout: node is not an object');
 
@@ -645,7 +754,9 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
       const { tabs, activeTab } = raw;
       if (!Array.isArray(tabs) || tabs.length === 0) throw new Error('dock layout: group has no tabs');
       for (const tab of tabs) {
-        if (typeof tab !== 'string' || !isProfilePane(profile, tab)) {
+        if (typeof tab !== 'string'
+          || (!isKnownPane(tab) && !isPendingDynamicPaneId(tab))
+          || (isKnownPane(tab) && !isProfilePane(profile, tab))) {
           throw new Error(`dock layout: unknown pane "${String(tab)}"`);
         }
         if (seen.has(tab)) throw new Error(`dock layout: duplicate pane "${tab}"`);
@@ -753,21 +864,25 @@ export function validateLayout(input: unknown, profile: DockProfileId = 'main'):
   const closed = raw.closed;
   if (!Array.isArray(closed)) throw new Error('dock layout: closed must be an array');
   for (const paneId of closed) {
-    if (typeof paneId !== 'string' || !isProfilePane(profile, paneId)) {
+    if (typeof paneId !== 'string'
+      || (!isKnownPane(paneId) && !isPendingDynamicPaneId(paneId))
+      || (isKnownPane(paneId) && !isProfilePane(profile, paneId))) {
       throw new Error(`dock layout: unknown pane "${String(paneId)}"`);
     }
-    if (!getPaneDescriptor(paneId)?.closable) {
+    if (getPaneDescriptor(paneId) && !getPaneDescriptor(paneId)?.closable) {
       throw new Error(`dock layout: pane "${paneId}" is not closable`);
     }
     if (seen.has(paneId)) throw new Error(`dock layout: duplicate pane "${paneId}"`);
     seen.add(paneId);
   }
 
-  const profilePanes = listProfilePanes(profile);
+  const profilePanes = listStaticProfilePanes(profile);
   const missing = profilePanes.filter(p => !seen.has(p.id)).map(p => p.id);
   if (missing.length) throw new Error(`dock layout: missing pane(s) ${missing.join(', ')}`);
 
-  if (emptyRoot && closed.length !== profilePanes.length) {
+  const closedStaticCount = (closed as unknown[]).filter(id =>
+    profilePanes.some(pane => pane.id === id)).length;
+  if (emptyRoot && closedStaticCount !== profilePanes.length) {
     throw new Error('dock layout: empty root requires every pane to be closed');
   }
 

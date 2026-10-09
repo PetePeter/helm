@@ -60,6 +60,7 @@ export async function commitRename(sessionId: string, newName: string): Promise<
 export function updateStatusCounts(): void {
   const totalEl = document.getElementById('statusTotalSessions');
   const activeEl = document.getElementById('statusActiveSessions');
-  if (totalEl) totalEl.textContent = state.sessions.length.toString();
-  if (activeEl) activeEl.textContent = state.sessions.some(s => s.id === state.activeSessionId) ? '1' : '0';
+  const localSessions = state.sessions.filter(session => !session.remote);
+  if (totalEl) totalEl.textContent = localSessions.length.toString();
+  if (activeEl) activeEl.textContent = localSessions.some(s => s.id === state.activeSessionId) ? '1' : '0';
 }

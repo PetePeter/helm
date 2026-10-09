@@ -681,14 +681,11 @@ export function updateSessionsFocus(): void {
   if (sessionsState.activeFocus === 'sessions') {
     try { useNavigationStore().captureCurrentFocus(); } catch { /* store not ready */ }
   }
-  const list = document.getElementById('sessionsList');
-  if (!list) return;
   // Vue owns the visual focused/card-column classes; this helper only keeps the
   // currently focused rendered row visible as navigation state changes.
   if (sessionsState.activeFocus !== 'sessions') return;
-  const focused = list.querySelector<HTMLElement>(
-    `[data-nav-index="${sessionsState.sessionsFocusIndex}"]`,
-  );
+  const focused = Array.from(document.querySelectorAll<HTMLElement>('[data-sessions-nav-index]'))
+    .find(element => element.dataset.navIndex === String(sessionsState.sessionsFocusIndex));
   focused?.scrollIntoView({ block: 'nearest' });
 }
 

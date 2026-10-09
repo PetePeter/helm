@@ -130,32 +130,28 @@ describe('buildSessionGroups', () => {
   });
 });
 
-describe('buildSessionGroups — Remote rows grouped by machine', () => {
+describe('buildSessionGroups — attached remote rows stay out of local groups', () => {
   const remote = (id: string, peerId: string, dir = '/w/proj'): Session =>
     ({ ...makeSession(id, dir), remote: { peerId, sessionId: `${id}-there` } });
-  const names: Record<string, string> = { p1: 'Box', p2: 'Laptop' };
-  const machineName = (peerId: string) => names[peerId] ?? peerId;
-
-  it('M1: Remote rows leave directory groups and sit under their owner machine, after local groups', () => {
+  it('omits Remote rows from local directory and runtime groups', () => {
     const sessions = [makeSession('s1', '/w/proj'), remote('r1', 'p1'), remote('r2', 'p2'), remote('r3', 'p1', '/w/other')];
-    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, [], machineName);
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, []);
 
     expect(groups.map(g => [g.kind, g.displayName, g.sessions.map(s => s.id)])).toEqual([
       ['directory', 'proj', ['s1']],
-      ['machine', 'Box', ['r1', 'r3']],
-      ['machine', 'Laptop', ['r2']],
     ]);
   });
 
-  it('M2: machine groups have their own header key and honour collapse prefs', () => {
+  it('runtime groups cannot claim Remote rows', () => {
     const sessions = [remote('r1', 'p1')];
-    const groups = buildSessionGroups(sessions, makeGetDir(sessions), { order: [], collapsed: ['machine:p1'] }, [], machineName);
-    expect(groups[0]).toMatchObject({ dirPath: 'machine:p1', collapsed: true });
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, [makeRuntimeGroup('g1', 'G', ['r1'])]);
+    expect(groups).toMatchObject([{ kind: 'runtime', groupId: 'g1', sessions: [] }]);
   });
 
-  it('M3: a runtime group still claims a Remote row', () => {
+  it('keeps an attached Remote row in the flat navigation order without a local group', () => {
     const sessions = [remote('r1', 'p1')];
-    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, [makeRuntimeGroup('g1', 'G', ['r1'])], machineName);
-    expect(groups.map(g => g.kind)).toEqual(['runtime']);
+    const groups = buildSessionGroups(sessions, makeGetDir(sessions), emptyPrefs, []);
+    const nav = buildFlatNavList(groups, null, sessions);
+    expect(nav).toEqual([{ type: 'session-card', id: 'r1', groupIndex: -1 }]);
   });
 });

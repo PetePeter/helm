@@ -78,6 +78,7 @@ export const PAIRED_DISMISS_MS = 1500;
 const fleetEnabled = ref(false);
 const fleetConfig = ref<FleetConfig>({ ...DEFAULT_FLEET_CONFIG });
 const configuredPeers = ref<ConfiguredPeer[]>([]);
+const peerConfigLoaded = ref(false);
 const discoveredPeers = ref<DiscoveredPeer[]>([]);
 const audit = ref<PeerAuditEntry[]>([]);
 const pairing = ref<PairingState>(emptyPairing());
@@ -141,8 +142,9 @@ async function refresh(): Promise<void> {
   await loadFleetStatus();
   try {
     configuredPeers.value = (await peersClient.peerList()) ?? [];
+    peerConfigLoaded.value = true;
   } catch {
-    configuredPeers.value = [];
+    // Preserve known peers on a transient IPC failure; they may be offline, not unpaired.
   }
   try {
     discoveredPeers.value = (await peersClient.peerListDiscovered()) ?? [];
@@ -329,7 +331,7 @@ async function spawnOnPeer(peerId: string, cliType: string, dirPath: string): Pr
 }
 
 /** Remote: open a peer's session here as a local row. */
-async function attachPeerSession(peerId: string, sessionId: string): Promise<{ ok: boolean; error?: string }> {
+async function attachPeerSession(peerId: string, sessionId: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
   return peersClient.peerAttach(peerId, sessionId);
 }
 
@@ -342,6 +344,8 @@ export interface PeerSession {
   id: string;
   name: string;
   cliType: string;
+  state?: string;
+  activityLevel?: 'active' | 'inactive' | 'idle';
 }
 
 export function resetPeersStateForTesting(): void {
@@ -351,6 +355,7 @@ export function resetPeersStateForTesting(): void {
   fleetEnabled.value = false;
   fleetConfig.value = { ...DEFAULT_FLEET_CONFIG };
   configuredPeers.value = [];
+  peerConfigLoaded.value = false;
   discoveredPeers.value = [];
   audit.value = [];
   pairing.value = emptyPairing();
@@ -363,6 +368,7 @@ export function usePeers() {
     fleetStatus,
     setFleetConfig,
     configuredPeers,
+    peerConfigLoaded,
     discoveredPeers,
     audit,
     pairing,

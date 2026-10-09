@@ -100,6 +100,7 @@ import { InboundCallGate } from '../../mcp/peer/inbound-call-gate.js';
 import { peerIdFromProxySessionId } from '../../mcp/peer/proxy-identity.js';
 import { FleetAccessSync } from '../../mcp/peer/fleet-access-sync.js';
 import { RemoteService } from '../../session/remote/remote-service.js';
+import { FLEET_SESSIONS_METHOD } from '../../mcp/peer/fleet-sessions.js';
 import { isRemoteMethod } from '../../session/remote/remote-protocol.js';
 import { createDefaultPeerRateLimiter } from '../../mcp/peer/rate-limiter.js';
 import { PeerAuditLog } from '../../mcp/peer/peer-audit-log.js';
@@ -1050,6 +1051,8 @@ export function registerIPCHandlers(
   const remoteService = new RemoteService({
     pty: ptyManager,
     sessions: sessionManager,
+    canSendSessionsToPeer: (peerId) => peerConfigManager.get(peerId)?.enabled !== false
+      && peerConfigManager.isInboundAllowed(peerId),
     cliTypeName: (ref) => {
       // Local ids resolve to the display name the peer can match; unknown refs
       // (including a peer-owned id) are already in the right namespace.
@@ -1065,6 +1068,11 @@ export function registerIPCHandlers(
   const inboundGate = new InboundCallGate({
     peerConfig: peerConfigManager,
     dispatch: async (method, params, ctx) => {
+      const callerPeerId = peerIdFromProxySessionId(ctx.sessionId);
+      if (method === FLEET_SESSIONS_METHOD && callerPeerId) {
+        remoteService.handleSessionsNotification(callerPeerId, params);
+        return { ok: true };
+      }
       const remotePeerId = isRemoteMethod(method) ? peerIdFromProxySessionId(ctx.sessionId) : undefined;
       if (remotePeerId) return remoteService.handleCall(remotePeerId, method, params);
       return localhostMcpServer.dispatchForPeer(method, asRecord(params), ctx);
@@ -1087,7 +1095,9 @@ export function registerIPCHandlers(
   };
   fleetController = new FleetController({
     getConfig: () => configLoader.getFleetConfig(),
-    onCall: (peerId, method, params) => inboundGate.handle(peerId, method, params),
+    onCall: (peerId, method, params) => method === FLEET_SESSIONS_METHOD
+      ? inboundGate.handleNotification(peerId, method, params)
+      : inboundGate.handle(peerId, method, params),
     pinnedCertStore,
     secretStore,
     peerConfigManager,
@@ -1117,6 +1127,7 @@ export function registerIPCHandlers(
     getLinkManager: () => fleetController!.currentLinkManager(),
     attach: (peerId, sessionId) => remoteService.open(peerId, sessionId),
     spawn: (peerId, args) => remoteService.spawn(peerId, args),
+    remoteService,
   });
   // Mobile (BLE) device registry + pairing coordinator. Its own registry and its
   // own secret store, kept separate from the fleet's: a revoked phone must never

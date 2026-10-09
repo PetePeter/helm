@@ -1536,7 +1536,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('peer:unpair', peerId),
 
   /** Remote: the sessions running on a peer (its session_list, via Fleet). */
-  peerSessions: (peerId: string): Promise<Array<{ id: string; name: string; cliType: string }>> =>
+  peerSessions: (peerId: string): Promise<Array<{ id: string; name: string; cliType: string; state?: string; activityLevel?: 'active' | 'inactive' | 'idle' }>> =>
     ipcRenderer.invoke('peer:sessions', peerId),
 
   /** Remote: open a peer's session here as a local row you can drive directly. */
@@ -1620,6 +1620,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('peer-link:status', listener);
     return () => ipcRenderer.removeListener('peer-link:status', listener);
+  },
+
+  /** Subscribe to a peer's pushed session snapshot over the existing Fleet link. */
+  onPeerSessionsChanged: (callback: (data: { peerId: string; sessions: Array<{ id: string; name: string; cliType: string; state?: string; activityLevel?: 'active' | 'inactive' | 'idle' }> }) => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, data: any) => callback(data);
+    ipcRenderer.on('peer:sessions-changed', listener);
+    return () => ipcRenderer.removeListener('peer:sessions-changed', listener);
   },
 
   /** Subscribe to the audit log changing. */

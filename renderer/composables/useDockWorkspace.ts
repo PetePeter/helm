@@ -12,11 +12,14 @@ import {
   closePane,
   canReorderTab,
   createDefaultLayout,
+  ensurePane as ensurePaneInLayout,
+  forgetPane as forgetPaneInLayout,
   dockPaneToEdge,
   findPaneGroup,
   listFocusablePanes,
   listPanes,
   movePane,
+  pruneUnregisteredPanes as prunePanesInLayout,
   reorderTab,
   restorePane,
   resetLayout,
@@ -33,6 +36,7 @@ import {
   type DockStorage,
 } from '../dock-persistence';
 import {
+  dockPaneRegistry,
   getPaneDescriptor,
   listProfilePanes,
   PANE_TERMINAL,
@@ -44,6 +48,7 @@ import {
   type DropTarget,
   type PaneId,
 } from '../dock-types';
+import { paneRegistryRevision } from '../dock-registry-state';
 
 export interface DockWorkspace {
   layout: ComputedRef<DockWorkspaceLayout>;
@@ -72,6 +77,9 @@ export interface DockWorkspace {
   activate: (paneId: PaneId) => void;
   setMode: (paneId: PaneId, mode: DockMode) => void;
   close: (paneId: PaneId) => void;
+  ensurePane: (paneId: PaneId) => void;
+  forgetPane: (paneId: PaneId) => void;
+  pruneUnregisteredPanes: () => void;
   restore: (paneId: PaneId, target?: DropTarget) => void;
   reset: () => void;
   resize: (path: DockNodePath, sizes: number[]) => void;
@@ -116,9 +124,16 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
   // the next launch, so it is deliberately outside the persisted tree.
   const revealedPanes = ref<PaneId[]>([]);
 
-  const paneOrder = computed(() => listPanes(layoutState.value.root));
-  const focusablePaneOrder = computed(() =>
-    listFocusablePanes(layoutState.value.root, revealedPanes.value));
+  const paneOrder = computed(() => {
+    void paneRegistryRevision.value;
+    const registered = new Set(dockPaneRegistry.list(profile).map(pane => pane.id));
+    return listPanes(layoutState.value.root).filter(id => registered.has(id));
+  });
+  const focusablePaneOrder = computed(() => {
+    void paneRegistryRevision.value;
+    const registered = new Set(dockPaneRegistry.list(profile).map(pane => pane.id));
+    return listFocusablePanes(layoutState.value.root, revealedPanes.value).filter(id => registered.has(id));
+  });
   const closedPanes = computed(() => [...layoutState.value.closed]);
   let persistQueue = Promise.resolve();
 
@@ -240,8 +255,28 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     activate: (paneId) => apply(setActiveTab(layoutState.value, paneId)),
     setMode: (paneId, mode) => apply(setDockMode(layoutState.value, paneId, mode)),
     close: (paneId) => apply(closePane(layoutState.value, paneId)),
+    ensurePane: (paneId) => {
+      if (findPaneGroup(layoutState.value.root, paneId) || layoutState.value.closed.includes(paneId)) return;
+      apply(ensurePaneInLayout(layoutState.value, paneId));
+    },
+    forgetPane: (paneId) => {
+      if (!findPaneGroup(layoutState.value.root, paneId) && !layoutState.value.closed.includes(paneId)) return;
+      apply(forgetPaneInLayout(layoutState.value, paneId));
+    },
+    pruneUnregisteredPanes: () => {
+      const registered = new Set(dockPaneRegistry.list(profile).map(pane => pane.id));
+      const containsUnregistered = [...listPanes(layoutState.value.root), ...layoutState.value.closed]
+        .some(id => !registered.has(id));
+      if (containsUnregistered) apply(prunePanesInLayout(layoutState.value, registered));
+    },
     restore: (paneId, target) => apply(restorePane(layoutState.value, paneId, target)),
-    reset: () => apply(resetLayout(profile)),
+    reset: () => {
+      let next = resetLayout(profile);
+      for (const descriptor of listProfilePanes(profile)) {
+        if (descriptor.dynamic) next = ensurePaneInLayout(next, descriptor.id);
+      }
+      apply(next);
+    },
     resize: (path, sizes) => apply(resizeSplit(layoutState.value, path, sizes)),
     load: (raw) => {
       try {
@@ -259,6 +294,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
 
 /** Registry view for the View menu: every pane plus whether it is currently closed. */
 export function listRegisteredPanes(layout: DockWorkspaceLayout, profile: DockProfileId = 'main') {
+  void paneRegistryRevision.value;
   return listProfilePanes(profile).map(descriptor => ({
     ...descriptor,
     closed: layout.closed.includes(descriptor.id),

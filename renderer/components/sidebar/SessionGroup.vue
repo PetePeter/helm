@@ -5,9 +5,8 @@
  * target, so a session can be dropped anywhere on the group, not just its title.
  *
  * Directory groups keep the legacy header (chevron + name + overview drill-in).
- * Runtime groups add always-visible controls (rename ✎ / close ✕; the name opens the overview)
- * and render as a drop target: dropping a session onto a runtime header moves it
- * in; dropping onto its own directory header removes it from its runtime group.
+ * Runtime groups add controls and render as a drop target. Peer groups are a
+ * compact read-only header for a computer's source-parameterized Sessions list.
  */
 
 export interface SessionGroupData {
@@ -17,8 +16,8 @@ export interface SessionGroupData {
   sessionCount: number;
   /** Member activity used to render one dot per session in the header. */
   sessions?: Array<{ id: string; name: string; activityLevel: string }>;
-  /** 'runtime' groups render the extra controls + drop rules; 'machine' holds a peer's Remote rows. */
-  kind?: 'directory' | 'runtime' | 'machine';
+  /** 'peer' groups render read-only controls for a remote Sessions source. */
+  kind?: 'directory' | 'runtime' | 'peer';
   /** Runtime group id (kind === 'runtime'). Equals dirPath for runtime groups. */
   groupId?: string;
   /** Box colour; absent = the neutral grey. */
@@ -50,6 +49,7 @@ const emit = defineEmits<{
 }>();
 
 const isRuntime = computed(() => props.group.kind === 'runtime');
+const isPeer = computed(() => props.group.kind === 'peer');
 
 const activitySummary = computed(() => {
   const sessions = props.group.sessions ?? [];
@@ -89,6 +89,7 @@ function verdictFor(sessionId: string) {
 }
 
 function onDragOver(e: DragEvent): void {
+  if (isPeer.value) return;
   const sid = draggedSessionId.value;
   if (!sid) return;
   const v = verdictFor(sid);
@@ -105,6 +106,7 @@ function onDragLeave(e: DragEvent): void {
 }
 
 function onDrop(e: DragEvent): void {
+  if (isPeer.value) return;
   const sid = draggedSessionId.value;
   dropState.value = null;
   if (!sid) return;
@@ -133,17 +135,18 @@ function onDrop(e: DragEvent): void {
     :class="[{ focused: isFocused, runtime: isRuntime }, flashClass]"
     :data-dir-path="group.dirPath"
     :data-nav-index="navIndex"
-    @click="emit('toggleCollapse', group.dirPath)"
+    :data-sessions-nav-index="navIndex"
+    @click="!isPeer && emit('toggleCollapse', group.dirPath)"
   >
-    <span class="group-chevron">{{ group.collapsed ? '▲' : '▼' }}</span>
+    <span v-if="!isPeer" class="group-chevron">{{ group.collapsed ? '▲' : '▼' }}</span>
     <span v-if="isRuntime" class="group-icon" aria-hidden="true">🗂️</span>
-    <span v-else-if="group.kind === 'machine'" class="group-icon" aria-hidden="true" title="Running on this peer">🖥️</span>
+    <span v-else-if="isPeer" class="group-icon" aria-hidden="true" title="Sessions on this computer">🖥️</span>
 
     <span
       class="group-name"
       style="cursor: pointer"
-      title="Open group overview"
-      @click.stop="emit('showOverview', group.dirPath)"
+      :title="isPeer ? 'Sessions on this computer' : 'Open group overview'"
+      @click.stop="!isPeer && emit('showOverview', group.dirPath)"
     >
       {{ group.displayName }} ({{ group.sessionCount }})
     </span>
@@ -177,7 +180,7 @@ function onDrop(e: DragEvent): void {
           @click.stop="emit('closeGroup', group.groupId ?? group.dirPath)"
         >✕</button>
       </div>
-      <div v-else class="group-header-actions">
+      <div v-else-if="!isPeer" class="group-header-actions">
         <button
           class="group-header-action"
           title="Close all sessions in this folder"

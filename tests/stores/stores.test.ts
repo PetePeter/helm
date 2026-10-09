@@ -120,10 +120,13 @@ describe('useAppStore', () => {
     expect(state.sessions[0].name).toBe('New');
   });
 
-  it('sessionCount reflects state.sessions length', () => {
+  it('sessionCount excludes attached remote views', () => {
     const store = useAppStore();
     expect(store.sessionCount).toBe(0);
-    state.sessions = [{ id: 's1', name: 'A', cliType: 'test', processId: 1 }];
+    state.sessions = [
+      { id: 's1', name: 'A', cliType: 'test', processId: 1 },
+      { id: 'r1', name: 'Remote', cliType: 'test', processId: 2, remote: { peerId: 'peer', sessionId: 'remote' } },
+    ];
     expect(store.sessionCount).toBe(1);
   });
 

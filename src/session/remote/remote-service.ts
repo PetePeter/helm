@@ -14,10 +14,19 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { logger } from '../../utils/logger.js';
 import type { SessionInfo } from '../../types/session.js';
 import type { SessionManager } from '../manager.js';
 import type { PtyManager } from '../pty-manager.js';
+import {
+  FLEET_SESSIONS_METHOD,
+  MAX_FLEET_SESSIONS,
+  MAX_FLEET_SESSION_CLI_TYPE_LENGTH,
+  MAX_FLEET_SESSION_ID_LENGTH,
+  MAX_FLEET_SESSION_NAME_LENGTH,
+  MAX_FLEET_SESSION_STATE_LENGTH,
+} from '../../mcp/peer/fleet-sessions.js';
 import { RemotePtyHost } from './remote-pty-host.js';
 import { RemotePtyProcess } from './remote-pty-process.js';
 import { RemoteMethod, isRemoteMethod, requireString, type RemoteAttachResult } from './remote-protocol.js';
@@ -27,14 +36,17 @@ export interface RemoteLinks {
   peerIdFor(peerRef: string): string | undefined;
   call(peerRef: string, method: string, params: unknown): Promise<unknown>;
   notify(peerRef: string, method: string, params: unknown): boolean;
+  onlinePeerIds(): string[];
   on(event: string, listener: (...args: any[]) => void): unknown;
   off(event: string, listener: (...args: any[]) => void): unknown;
 }
 
 export interface RemoteServiceDeps {
   pty: PtyManager;
-  sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'on' | 'off'>;
+  sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'getAllSessions' | 'on' | 'off'>;
   coalesceMs?: number;
+  /** True only when this peer has an enabled inbound grant from this machine. */
+  canSendSessionsToPeer?: (peerId: string) => boolean;
   /** Resolve a CLI type id owned by THIS machine to its peer-facing display name. */
   cliTypeName?: (ref: string) => string | undefined;
 }
@@ -52,11 +64,13 @@ interface PeerNotification { peerId: string; method: string; params: unknown }
 /** `name` is the last one the peer knows, so only a real rename is forwarded. */
 interface ViewedSession { localId: string; process: RemotePtyProcess; name: string }
 
-export class RemoteService {
+export class RemoteService extends EventEmitter {
   private links: RemoteLinks | null = null;
   private readonly host: RemotePtyHost;
   /** Viewer side: `${peerId}\n${remoteSessionId}` → the adopted local session. */
   private readonly viewed = new Map<string, ViewedSession>();
+  private readonly sessionPushTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly lastSessionSnapshots = new Map<string, string>();
 
   private readonly onNotification = ({ peerId, method, params }: PeerNotification): void => {
     if (method === RemoteMethod.data || method === RemoteMethod.exit) this.onOwnerFrame(peerId, method, params);
@@ -64,12 +78,25 @@ export class RemoteService {
   };
 
   private readonly onOffline = ({ peerId }: { peerId: string }): void => {
+    this.clearSessionPush(peerId);
+    this.lastSessionSnapshots.delete(peerId);
     this.host.detachPeer(peerId);
     for (const view of this.viewsOf(peerId)) view.process.linkLost();
   };
 
   private readonly onOnline = ({ peerId }: { peerId: string }): void => {
     for (const view of this.viewsOf(peerId)) void view.process.repair();
+    this.clearSessionPush(peerId);
+    this.lastSessionSnapshots.delete(peerId);
+    this.pushSessions(peerId);
+  };
+
+  private readonly onSessionAdded = (session: SessionInfo): void => {
+    if (!session.remote) this.pushSessions();
+  };
+
+  private readonly onSessionRemoved = (event: { session?: SessionInfo }): void => {
+    if (!event.session?.remote) this.pushSessions();
   };
 
   /**
@@ -78,7 +105,10 @@ export class RemoteService {
    * the two machines disagree about what the session is called.
    */
   private readonly onSessionUpdated = (session: SessionInfo): void => {
-    if (!session.remote) return;
+    if (!session.remote) {
+      this.pushSessions();
+      return;
+    }
     const view = this.viewed.get(viewKey(session.remote.peerId, session.remote.sessionId));
     if (!view || view.name === session.name) return;
     view.name = session.name;
@@ -88,6 +118,9 @@ export class RemoteService {
   };
 
   constructor(private readonly deps: RemoteServiceDeps) {
+    super();
+    deps.sessions.on('session:added', this.onSessionAdded);
+    deps.sessions.on('session:removed', this.onSessionRemoved);
     deps.sessions.on('session:updated', this.onSessionUpdated);
     this.host = new RemotePtyHost({
       pty: deps.pty,
@@ -107,6 +140,9 @@ export class RemoteService {
       this.links.off('peer-link:offline', this.onOffline);
       this.links.off('peer-link:online', this.onOnline);
     }
+    for (const timer of this.sessionPushTimers.values()) clearTimeout(timer);
+    this.sessionPushTimers.clear();
+    this.lastSessionSnapshots.clear();
     this.links = links;
     if (links) {
       links.on('peer-notification', this.onNotification);
@@ -124,6 +160,29 @@ export class RemoteService {
       throw new Error(`Session not found: ${sessionId}`);
     }
     return this.host.handleCall(peerId, method, params);
+  }
+
+  /** Called only after the shared inbound peer gate accepts fleet.sessions. */
+  handleSessionsNotification(peerId: string, params: unknown): void {
+    if (!params || typeof params !== 'object' || Array.isArray(params)) return;
+    const raw = (params as { sessions?: unknown }).sessions;
+    if (!Array.isArray(raw)) return;
+    const sessions = raw.slice(0, MAX_FLEET_SESSIONS).flatMap((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+      const row = value as Record<string, unknown>;
+      if (typeof row.id !== 'string' || !row.id || row.id.length > MAX_FLEET_SESSION_ID_LENGTH
+        || typeof row.name !== 'string' || typeof row.cliType !== 'string') return [];
+      return [{
+        id: row.id,
+        name: row.name.slice(0, MAX_FLEET_SESSION_NAME_LENGTH),
+        cliType: row.cliType.slice(0, MAX_FLEET_SESSION_CLI_TYPE_LENGTH),
+        ...(typeof row.state === 'string' ? { state: row.state.slice(0, MAX_FLEET_SESSION_STATE_LENGTH) } : {}),
+        ...(row.activityLevel === 'active' || row.activityLevel === 'inactive' || row.activityLevel === 'idle'
+          ? { activityLevel: row.activityLevel }
+          : {}),
+      }];
+    });
+    this.emit('peer-sessions-changed', { peerId, sessions });
   }
 
   /**
@@ -199,6 +258,8 @@ export class RemoteService {
   }
 
   dispose(): void {
+    this.deps.sessions.off('session:added', this.onSessionAdded);
+    this.deps.sessions.off('session:removed', this.onSessionRemoved);
     this.deps.sessions.off('session:updated', this.onSessionUpdated);
     this.setLinks(null);
     this.host.dispose();
@@ -220,6 +281,51 @@ export class RemoteService {
   private viewsOf(peerId: string): ViewedSession[] {
     const prefix = `${peerId}\n`;
     return [...this.viewed].filter(([key]) => key.startsWith(prefix)).map(([, view]) => view);
+  }
+
+  private pushSessions(peerId?: string): void {
+    const links = this.links;
+    if (!links) return;
+    const targets = peerId ? [peerId] : links.onlinePeerIds();
+    for (const target of targets) {
+      if (!this.canSendSessionsToPeer(target)) continue;
+      this.clearSessionPush(target);
+      const timer = setTimeout(() => {
+        this.sessionPushTimers.delete(target);
+        const currentLinks = this.links;
+        if (!currentLinks || !this.canSendSessionsToPeer(target)) return;
+        const sessions = this.localSessionSnapshot();
+        const serialized = JSON.stringify(sessions);
+        if (this.lastSessionSnapshots.get(target) === serialized) return;
+        if (currentLinks.notify(target, FLEET_SESSIONS_METHOD, { sessions })) {
+          this.lastSessionSnapshots.set(target, serialized);
+        }
+      }, this.deps.coalesceMs ?? 50);
+      this.sessionPushTimers.set(target, timer);
+    }
+  }
+
+  private localSessionSnapshot(): Array<Record<string, unknown>> {
+    return this.deps.sessions.getAllSessions()
+      .filter(session => !session.remote)
+      .map(session => ({
+        id: session.id,
+        name: session.name,
+        cliType: session.cliType,
+        ...(session.state ? { state: session.state } : {}),
+        ...(session.activityLevel ? { activityLevel: session.activityLevel } : {}),
+      }));
+  }
+
+  private canSendSessionsToPeer(peerId: string): boolean {
+    try { return this.deps.canSendSessionsToPeer?.(peerId) ?? true; }
+    catch { return false; }
+  }
+
+  private clearSessionPush(peerId: string): void {
+    const timer = this.sessionPushTimers.get(peerId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.sessionPushTimers.delete(peerId);
   }
 
   private requireLinks(): RemoteLinks {

@@ -24,6 +24,7 @@ src/
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
 │       ├── voice-handlers.ts   # voice:transcribe / voice:speak / voice:ask (desktop hold-to-talk to the operator)
+│       ├── peer-management-handlers.ts # Peer settings and peer:sessions / peer:sessions-changed renderer IPC
 │       └── mobile-handlers.ts  # 9 IPC channels (mobile:list/setEnabled/setAllowList/revoke/startPairing/confirmPairing/cancelPairing/pairingState/apkRelease). Secrets never cross this boundary
 ├── input/
 │   └── sequence-parser.ts      # {Enter}, {Ctrl+C}, {Wait 500}, {Mod Down/Up}, {{/}} — used by bindings + initialPrompt
@@ -62,6 +63,8 @@ src/
 ├── config/
 │   └── loader.ts               # Self-contained profile YAML config + CRUD + StickConfig + haptic settings + auto-migration + bookmark CRUD (addBookmarkedDir/removeBookmarkedDir) + ChipbarAction interface + chipActions profile field + getChipbarActions()
 ├── mcp/
+│   ├── peer/
+│   │   └── fleet-sessions.ts  # Shared fleet.sessions name and peer snapshot size limits
 │   ├── guides/
 │   │   ├── mess-guide.ts       # Agent-facing Mess tool rules and local-only/social-coordination constraints
 │   │   └── operator-guide.ts   # Route-only rules + speakable voice style, the operator session's initial prompt
@@ -134,6 +137,9 @@ renderer/
 ├── navigation.ts               # Gamepad navigation setup, event routing. Priority chain: sandwich → dirPicker → bindingEditor → formModal → closeConfirm → quickSpawn → draftEditor → draftAction → draftSubmenu → contextMenu → promptTree → planScreen (within sessions case) → overview → screen routing → configBinding fallback
 ├── gamepad.ts                  # Browser Gamepad API wrapper + repeat engine
 ├── session-groups.ts           # Pure session grouping logic (by working directory) — types, grouping, nav list, reorder, bookmarked dirs; excludes the operator
+├── peer-session-store.ts       # Per-peer snapshots, push updates, offline stale state, and refresh generation guards
+├── peer-session-refresh.ts     # Shared connect/reconnect/manual peer session refresh path
+├── dock-registry-state.ts      # Vue revision signal for runtime dock registry changes
 ├── operator-summary.ts         # operatorSummary / withoutOperator — the sidebar Helm section's selector (twin of Android OperatorSummary.kt)
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
 ├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards + overview grid.
@@ -176,6 +182,7 @@ renderer/
 │   │   ├── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
 │   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
 │   ├── dock/
+│   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
@@ -217,6 +224,7 @@ renderer/
 │   ├── useTerminals.ts         # Terminal create/switch/destroy lifecycle
 │   ├── useNavigation.ts        # Navigation routing: sandwich → modal stack → view → screen → config binding
 │   ├── useMessPane.ts          # Project-following Mess history, filters, append subscription, labels, and bounded backscroll
+│   ├── usePeerSessionPanes.ts  # Dynamic per-peer Sessions pane registration and lifecycle
 │   └── useMobileDevices.ts     # Module-singleton mirror for Settings → Mobile (paired phones, pairing state, APK release). Displays SAS digits — a KDF output; no PSK ever reaches the renderer
 ├── drafts/
 │   ├── draft-strip.ts          # Draft strip above terminal — draft pills (click opens editor) + plan chips + right-aligned chip-bar action buttons (renderActionButtons, invalidateChipActionCache, resolveTemplates)
@@ -355,7 +363,7 @@ config/
 ## Tests (`tests/`)
 
 ```
-tests/                                  # 61 test files
+tests/                                  # 63 test files
 ├── app-paths.test.ts           # Application path resolution tests
 ├── bindings-pty.test.ts        # PTY escape helpers + routing tests
 ├── bindings-target.test.ts     # Voice binding target routing (PTY vs OS)
@@ -373,6 +381,9 @@ tests/                                  # 61 test files
 ├── mess-mcp.test.ts            # Authenticated Mess service validation and compact wire responses
 ├── mess-ipc.test.ts            # Renderer history bounds, project routing, and IPC cleanup
 ├── mess-pane.test.ts           # Pure observer labels, unread projection, and filters
+├── dock-dynamic-registry.test.ts # Runtime descriptor registration and unresolved layout slots
+├── peer-session-store.test.ts   # Peer snapshots, pushes, offline state, and refresh generation guards
+├── use-peer-session-panes.test.ts # Dynamic peer pane lifecycle, subscriptions, fetches, and persisted layout behavior
 ├── draft-strip.test.ts         # Draft strip pill rendering + badge
 ├── draft-submenu.test.ts       # Draft submenu + action picker tests
 ├── gamepad-repeat.test.ts      # D-pad/stick key repeat engine tests

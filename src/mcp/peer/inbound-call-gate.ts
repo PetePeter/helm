@@ -8,7 +8,9 @@
  *   3. rejects calls exceeding the per-peer rate limit,
  *   4. otherwise dispatches through the EXISTING MCP dispatcher UNCHANGED, under
  *      a synthesized PROXY identity (never a real local session),
- * and audits the outcome of every one of those paths.
+ * and audits each call outcome. The separate `handleNotification` path is
+ * limited to coalesced `fleet.sessions` state and deliberately skips tool-call
+ * rate and audit accounting after the same peer access checks.
  *
  * Deny messages are UNIFORM and non-leaky: a hard-deny and a not-allowed deny
  * are indistinguishable, so a remote peer cannot probe which tools exist.
@@ -20,6 +22,7 @@ import { proxyAuthContext } from './proxy-identity.js';
 import { wrapFleetSessionId } from './fleet-session-id.js';
 import type { PeerRateLimiter } from './rate-limiter.js';
 import type { PeerAuditLog, PeerAuditOutcome } from './peer-audit-log.js';
+import { FLEET_SESSIONS_METHOD } from './fleet-sessions.js';
 import { MCP_TOOLS } from '../tools/definitions.js';
 
 /**
@@ -291,6 +294,20 @@ export class InboundCallGate {
       this.record(peerId, method, argSummary, 'error', errorType);
       throw new GateError(JSONRPC_SERVER_ERROR, message);
     }
+  }
+
+  /**
+   * Authorize a state-bearing Fleet notification. It shares the pairing,
+   * enabled-peer, inbound-grant, and proxy-identity checks with calls, but is
+   * intentionally not charged to the tool-call bucket or written to the audit
+   * log: a session list is coalesced state, not a user-invoked tool call.
+   */
+  async handleNotification(peerId: string, method: string, params: unknown): Promise<boolean> {
+    if (method !== FLEET_SESSIONS_METHOD || this.isPeerDisabled(peerId)
+      || !this.peerConfig.isInboundAllowed(peerId)) return false;
+    const safeParams = wrapCallerIdentityOverrides(peerId, params);
+    await this.dispatch(method, safeParams, proxyAuthContext(peerId));
+    return true;
   }
 
   /**

@@ -78,6 +78,10 @@ export interface SessionCardProps {
   previewSource?: ((sessionId: string) => string[]) | null;
   /** True briefly after a message envelope lands on this row. */
   messageLanded?: boolean;
+  readOnly?: boolean;
+  stateReadOnly?: boolean;
+  interactionDisabled?: boolean;
+  stale?: boolean;
 }
 
 // --- Constants ---
@@ -277,6 +281,7 @@ function selectState(s: string): void {
 }
 
 function onCardClick(e: MouseEvent): void {
+  if (props.interactionDisabled) return;
   const sessionId = (e.currentTarget as HTMLElement).getAttribute('data-session-id');
   if (sessionId) {
     emit('click', sessionId);
@@ -289,11 +294,12 @@ function onCardClick(e: MouseEvent): void {
   <div
     ref="cardEl"
     class="session-card"
-    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, frozen: session.frozen }, flashClass]"
+    :class="[{ active: isActive, focused: isFocused, 'snapped-out': isSnappedOut, dragging: isDragging, grouped: !!runtimeGroup, 'peer-created': isPeerCreated, 'message-landed': messageLanded, frozen: session.frozen, 'peer-stale': stale, 'interaction-disabled': interactionDisabled }, flashClass]"
     :title="peerTitle"
     :data-session-id="session.id"
     :data-nav-index="navIndex"
-    :draggable="!isEditing"
+    :data-sessions-nav-index="navIndex"
+    :draggable="!isEditing && !readOnly && !interactionDisabled"
     @click="onCardClick"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
@@ -309,15 +315,17 @@ function onCardClick(e: MouseEvent): void {
       <span v-if="isSnappedOut" class="snap-indicator" title="Snapped out">📤</span>
 
       <button
+        v-if="!readOnly && !stateReadOnly"
         class="session-state-btn"
         :class="colClass(1)"
         @click.stop="showStateDropdown = !showStateDropdown"
       >
         {{ stateLabel }}
       </button>
+      <span v-else class="session-state-btn session-state-btn--readonly">{{ stateLabel }}</span>
 
       <!-- State dropdown -->
-      <div v-if="showStateDropdown" class="session-state-dropdown">
+      <div v-if="!readOnly && showStateDropdown" class="session-state-dropdown">
         <button
           v-for="s in STATES"
           :key="s"
@@ -357,6 +365,15 @@ function onCardClick(e: MouseEvent): void {
 
       <span style="flex: 1" />
 
+      <button
+        v-if="readOnly"
+        class="session-state-btn session-attach-btn"
+        type="button"
+        :disabled="interactionDisabled"
+        :title="stale ? 'Peer offline — this snapshot is stale' : 'Attach this session'"
+        @click.stop="emit('click', session.id)"
+      >{{ interactionDisabled ? 'Offline' : 'Attach' }}</button>
+
       <span class="session-timer session-timer-with-icon" :title="timerTooltip">
         <svg class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
           <circle cx="10" cy="10" r="7.25" />
@@ -392,7 +409,7 @@ function onCardClick(e: MouseEvent): void {
 
       <!-- Kebab: the session's own actions (rename, lock, freeze, keep warm, overview, compact, clone, switch). -->
       <button
-        v-if="!isEditing"
+        v-if="!isEditing && !readOnly"
         class="session-kebab"
         :class="colClass(2)"
         :title="`Actions for ${displayName}`"
@@ -405,6 +422,7 @@ function onCardClick(e: MouseEvent): void {
 
       <!-- Close button -->
       <button
+        v-if="!readOnly"
         class="session-close"
         :class="colClass(3)"
         :title="session.locked ? `${displayName} is locked` : `Close ${displayName}`"
@@ -479,6 +497,8 @@ function onCardClick(e: MouseEvent): void {
 /* Prompt-cache fade — a tint that drains to nothing over the CLI's short cache
    window (cacheWarnMinutes). Behind the content, never catching clicks. */
 .session-card { position: relative; isolation: isolate; }
+.session-card.peer-stale { opacity: 0.72; }
+.session-card.interaction-disabled { cursor: default; }
 .session-prompt-fade {
   position: absolute;
   inset: 0;

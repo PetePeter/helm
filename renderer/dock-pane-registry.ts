@@ -8,7 +8,7 @@
  * entry here — the registry test fails if the two drift apart.
  */
 
-import type { Component } from 'vue';
+import { reactive, type Component } from 'vue';
 import TerminalPane from './components/dock/TerminalPane.vue';
 import PlanScreenPane from './components/dock/PlanScreenPane.vue';
 import MemoriesPane from './components/dock/MemoriesPane.vue';
@@ -30,8 +30,11 @@ import {
   PANE_TERMINAL,
   PANE_MESS,
   PANE_TIMESHEET,
+  dockPaneRegistry,
   type PaneId,
+  type DockPaneDescriptor,
 } from './dock-types.js';
+import { paneRegistryRevision } from './dock-registry-state.js';
 
 export const DOCK_PANE_COMPONENTS: Readonly<Record<PaneId, Component>> = Object.freeze({
   [PANE_TERMINAL]: TerminalPane,
@@ -46,7 +49,26 @@ export const DOCK_PANE_COMPONENTS: Readonly<Record<PaneId, Component>> = Object.
   [PANE_TIMESHEET]: TimesheetPane,
 });
 
+/** Components for runtime panes live beside, but do not mutate, static entries. */
+export const DYNAMIC_DOCK_PANE_COMPONENTS = reactive(new Map<PaneId, Component>());
+
+export function registerDockPane(descriptor: DockPaneDescriptor, component: Component): void {
+  DYNAMIC_DOCK_PANE_COMPONENTS.set(descriptor.id, component);
+  dockPaneRegistry.register({ ...descriptor, dynamic: true });
+}
+
+export function unregisterDockPane(paneId: PaneId): void {
+  DYNAMIC_DOCK_PANE_COMPONENTS.delete(paneId);
+  dockPaneRegistry.unregister(paneId);
+}
+
+export function registeredDockPaneIds(): PaneId[] {
+  // Reading the revision makes callers that derive UI state update on registry changes.
+  void paneRegistryRevision.value;
+  return [...Object.keys(DOCK_PANE_COMPONENTS), ...DYNAMIC_DOCK_PANE_COMPONENTS.keys()];
+}
+
 /** Resolve a registered pane's component; undefined for an unknown id. */
 export function getPaneComponent(paneId: PaneId): Component | undefined {
-  return DOCK_PANE_COMPONENTS[paneId];
+  return DYNAMIC_DOCK_PANE_COMPONENTS.get(paneId) ?? DOCK_PANE_COMPONENTS[paneId];
 }

@@ -179,7 +179,7 @@ function onPair(peer: DiscoveredPeer): void {
           </label>
 
           <button
-            class="btn btn--secondary btn--sm peer-attach-toggle"
+            class="btn btn--secondary btn--sm peer-attach-toggle focusable"
             type="button"
             :disabled="!peer.online"
             title="Drive one of this peer's sessions from here (Remote)"
@@ -195,7 +195,7 @@ function onPair(peer: DiscoveredPeer): void {
             <span class="peer-alias">{{ session.name }}</span>
             <span class="peer-direction">{{ session.cliType }}</span>
             <span class="peer-spacer"></span>
-            <button class="btn btn--primary btn--sm peer-session-attach" type="button" @click="onAttach(peer, session)">Attach</button>
+            <button class="btn btn--primary btn--sm peer-session-attach focusable" type="button" @click="onAttach(peer, session)">Attach</button>
           </div>
         </div>
 

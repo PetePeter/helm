@@ -355,6 +355,42 @@ session tint (`session_create` reads only the proxy identity).
 
 Fleet delegates tool calls; **Remote** rides the same link to stream a peer's PTY into a local row you drive yourself (`peer_attach`, Peers tab → Attach…). `remote.attach` passes this gate like any call; the stream itself uses PeerLink notifications. See [remote.md](remote.md).
 
+## Peer Sessions panes
+
+When Fleet is enabled, the main dock registers one dynamic `sessions:<peerId>`
+pane for each configured peer, including peers currently offline. The pane
+reuses the Sessions list with a peer data source and keeps the same dock close,
+restore, and layout persistence behavior as static panes. Fleet off means no
+peer panes.
+
+The owner sends `fleet.sessions` snapshots through the existing authenticated
+PeerLink notification path whenever local sessions are added, removed, renamed,
+or change state. A short trailing coalesce and per-peer snapshot comparison
+avoid redundant frames. The owner sends only when that peer is enabled and has
+granted this machine inbound access. The receiver uses
+`InboundCallGate.handleNotification` for the same pairing, enabled, and inbound
+grant checks as calls; accepted state pushes use the proxy identity but do not
+consume the tool-call rate bucket or produce audit entries. The renderer also
+fetches `peer:sessions` on connect/reconnect and on manual Refresh. Older peers
+that do not send notifications still show their fetched list without errors.
+Disconnect marks the last snapshot stale and non-attachable; unpairing removes
+the pane.
+
+```mermaid
+sequenceDiagram
+  participant Owner as Owner RemoteService
+  participant Link as PeerLink
+  participant Gate as InboundCallGate
+  participant Viewer as Viewer RemoteService
+  participant UI as peer:sessions-changed IPC
+  Owner->>Link: fleet.sessions notification
+  Link->>Gate: authenticated inbound call
+  Gate->>Viewer: check paired, enabled, and inbound grant
+  Note over Gate: Accepted snapshot is not rate-limited or audited as a tool call
+  Viewer->>UI: publish accepted snapshot
+  UI-->>Viewer: connect/reconnect fetch also uses peer:sessions
+```
+
 ## Known limitations / deferred
 
 - **Pairing is not rate limited.** A per-peer failure cooldown (3 fails → 15 min) and a global start cap used to exist; both were removed because a few cancelled attempts locked the user out of their own machine. What bounds a hostile LAN peer is one-session-at-a-time plus the SAS comparison: it can raise one dialog at a time, and can never pair without the local user accepting a matching code.

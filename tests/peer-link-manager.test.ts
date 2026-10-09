@@ -10,10 +10,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PeerLinkManager } from '../src/mcp/peer/peer-link-manager.js';
 import { PinnedCertStore } from '../src/mcp/peer/pinned-cert-store.js';
+import { InboundCallGate } from '../src/mcp/peer/inbound-call-gate.js';
+import { PeerRateLimiter } from '../src/mcp/peer/rate-limiter.js';
+import { PeerAuditLog } from '../src/mcp/peer/peer-audit-log.js';
+import { FLEET_SESSIONS_METHOD } from '../src/mcp/peer/fleet-sessions.js';
+import { peerIdFromProxySessionId } from '../src/mcp/peer/proxy-identity.js';
+import { RemoteService } from '../src/session/remote/remote-service.js';
+import { PtyManager } from '../src/session/pty-manager.js';
+import { SessionManager } from '../src/session/manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('../src/session/persistence.js', () => ({ saveSessions: vi.fn(), loadSessions: () => [] }));
 
 /** A fake PeerLink good enough for the manager: request + dispose + events. */
 class FakeLink extends EventEmitter {
@@ -116,6 +125,98 @@ describe('PeerLinkManager', () => {
     link.dispose('bye');
     expect(mgr.notify('peerA', 'remote.write', {})).toBe(false);
     await mgr.stop();
+  });
+
+  it('routes allowed fleet snapshots through the real gate without spending call or audit budget', async () => {
+    let inbound = true;
+    const audit = new PeerAuditLog(() => {}, () => 0);
+    audit.importAll([]);
+    const gate = new InboundCallGate({
+      peerConfig: {
+        isInboundAllowed: () => inbound,
+        get: () => ({ enabled: true }),
+      },
+      dispatch: async (method, params, context) => {
+        const peerId = peerIdFromProxySessionId(context.sessionId);
+        if (method === FLEET_SESSIONS_METHOD && peerId) remote.handleSessionsNotification(peerId, params);
+        return { ok: true };
+      },
+      rateLimiter: new PeerRateLimiter({ capacity: 30, refillPerMs: 0, now: () => 0 }),
+      audit,
+    });
+    const remote = new RemoteService({
+      pty: new PtyManager({ spawn: () => { throw new Error('not used'); } }),
+      sessions: new SessionManager(),
+    });
+    const { mgr, created } = makeManager({
+      onCall: (peerId, method, params) => method === FLEET_SESSIONS_METHOD
+        ? gate.handleNotification(peerId, method, params)
+        : gate.handle(peerId, method, params),
+    });
+    const surfaced: unknown[] = [];
+    let applied = 0;
+    remote.on('peer-sessions-changed', () => applied++);
+    mgr.on('peer-notification', event => surfaced.push(event));
+    await mgr.start();
+    const link = new FakeLink();
+    created.clients[0].emitLink(link, 'peerA');
+
+    for (let i = 0; i < 100; i++) link.emit('notification', FLEET_SESSIONS_METHOD, { sessions: [] });
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(applied).toBe(100);
+    expect(surfaced).toEqual([]);
+    expect(audit.list()).toEqual([]);
+
+    for (let i = 0; i < 30; i++) await expect(gate.handle('peerA', 'session_list', {})).resolves.toEqual({ ok: true });
+    await expect(gate.handle('peerA', 'session_list', {})).rejects.toMatchObject({ message: 'Rate limit exceeded' });
+    expect(audit.list()).toHaveLength(31);
+    expect(audit.list().some(entry => entry.method === FLEET_SESSIONS_METHOD)).toBe(false);
+
+    await mgr.stop();
+    remote.dispose();
+  });
+
+  it('does not surface snapshots from an inbound-disabled or disabled peer', async () => {
+    let inbound = false;
+    let enabled = true;
+    const audit = new PeerAuditLog(() => {}, () => 0);
+    audit.importAll([]);
+    const remote = new RemoteService({
+      pty: new PtyManager({ spawn: () => { throw new Error('not used'); } }),
+      sessions: new SessionManager(),
+    });
+    const gate = new InboundCallGate({
+      peerConfig: { isInboundAllowed: () => inbound, get: () => ({ enabled }) },
+      dispatch: async (method, params, context) => {
+        const peerId = peerIdFromProxySessionId(context.sessionId);
+        if (method === FLEET_SESSIONS_METHOD && peerId) remote.handleSessionsNotification(peerId, params);
+        return { ok: true };
+      },
+      rateLimiter: new PeerRateLimiter({ capacity: 30, refillPerMs: 0, now: () => 0 }),
+      audit,
+    });
+    const { mgr, created } = makeManager({
+      onCall: (peerId, method, params) => method === FLEET_SESSIONS_METHOD
+        ? gate.handleNotification(peerId, method, params)
+        : gate.handle(peerId, method, params),
+    });
+    const events: unknown[] = [];
+    remote.on('peer-sessions-changed', event => events.push(event));
+    await mgr.start();
+    const link = new FakeLink();
+    created.clients[0].emitLink(link, 'peerA');
+
+    link.emit('notification', FLEET_SESSIONS_METHOD, { sessions: [] });
+    inbound = true;
+    enabled = false;
+    link.emit('notification', FLEET_SESSIONS_METHOD, { sessions: [] });
+    await new Promise<void>(resolve => setImmediate(resolve));
+
+    expect(events).toEqual([]);
+    expect(audit.list()).toEqual([]);
+    await mgr.stop();
+    remote.dispose();
   });
 
   it('peerIdFor resolves an id or alias to the configured peer id, else undefined', () => {

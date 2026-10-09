@@ -84,6 +84,8 @@ export interface DockPaneDescriptor {
    * group. An edge always exists — the dock is recreated if it is gone.
    */
   home: DockSide | 'center';
+  /** Runtime registered panes are available only in the main workspace. */
+  dynamic?: boolean;
 }
 
 export interface DockWorkspaceLayout {
@@ -161,14 +163,6 @@ export const DOCK_PANES: readonly DockPaneDescriptor[] = Object.freeze([
   Object.freeze({ id: PANE_ARTIFACTS, kind: 'tool', title: 'Artifacts', icon: '📄', hint: 'Ctrl+Shift+A', closable: true, home: 'right' }),
 ]);
 
-export function getPaneDescriptor(paneId: PaneId): DockPaneDescriptor | undefined {
-  return DOCK_PANES.find(p => p.id === paneId);
-}
-
-export function isKnownPane(paneId: PaneId): boolean {
-  return DOCK_PANES.some(p => p.id === paneId);
-}
-
 // ---------------------------------------------------------------------------
 // Pane profiles
 //
@@ -188,12 +182,73 @@ export const DOCK_PROFILE_PANES: Readonly<Record<DockProfileId, readonly PaneId[
   popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS]),
 });
 
+/** Mutable registry for descriptors that exist only while their owner exists. */
+export class DockPaneRegistry {
+  private readonly panes = new Map<PaneId, DockPaneDescriptor>();
+  private readonly listeners = new Set<() => void>();
+
+  constructor(panes: readonly DockPaneDescriptor[]) {
+    for (const pane of panes) this.panes.set(pane.id, pane);
+  }
+
+  get(id: PaneId): DockPaneDescriptor | undefined {
+    return this.panes.get(id);
+  }
+
+  list(profile: DockProfileId = 'main'): DockPaneDescriptor[] {
+    return [...this.panes.values()].filter(pane =>
+      DOCK_PROFILE_PANES[profile].includes(pane.id) || (profile === 'main' && pane.dynamic === true));
+  }
+
+  register(descriptor: DockPaneDescriptor): void {
+    if (!descriptor.id) throw new Error('dock registry: pane id is required');
+    const previous = this.panes.get(descriptor.id);
+    if (previous && !previous.dynamic) throw new Error(`dock registry: pane "${descriptor.id}" is static`);
+    this.panes.set(descriptor.id, Object.freeze({ ...descriptor }));
+    this.changed();
+  }
+
+  unregister(id: PaneId): void {
+    if (!this.panes.get(id)?.dynamic) return;
+    this.panes.delete(id);
+    this.changed();
+  }
+
+  isProfilePane(profile: DockProfileId, id: PaneId): boolean {
+    const descriptor = this.panes.get(id);
+    return !!descriptor && (DOCK_PROFILE_PANES[profile].includes(id) || (profile === 'main' && descriptor.dynamic === true));
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
+  }
+}
+
+export const dockPaneRegistry = new DockPaneRegistry(DOCK_PANES);
+
+/** Static panes define required workspace slots; runtime panes are optional. */
+export function listStaticProfilePanes(profile: DockProfileId): DockPaneDescriptor[] {
+  return DOCK_PANES.filter(pane => DOCK_PROFILE_PANES[profile].includes(pane.id));
+}
+
 /** Descriptors of a profile's panes, in registry order. */
 export function listProfilePanes(profile: DockProfileId): DockPaneDescriptor[] {
-  const allowed = DOCK_PROFILE_PANES[profile];
-  return DOCK_PANES.filter(p => allowed.includes(p.id));
+  return dockPaneRegistry.list(profile);
 }
 
 export function isProfilePane(profile: DockProfileId, paneId: PaneId): boolean {
-  return DOCK_PROFILE_PANES[profile].includes(paneId);
+  return dockPaneRegistry.isProfilePane(profile, paneId);
+}
+
+export function getPaneDescriptor(paneId: PaneId): DockPaneDescriptor | undefined {
+  return dockPaneRegistry.get(paneId);
+}
+
+export function isKnownPane(paneId: PaneId): boolean {
+  return !!dockPaneRegistry.get(paneId);
 }

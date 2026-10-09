@@ -217,11 +217,14 @@ describe('PeersTab', () => {
     const w = mount(PeersTab);
     await flushPromises();
 
-    await w.find('.peer-attach-toggle').trigger('click');
+    const pickerToggle = w.find('.peer-attach-toggle');
+    expect(pickerToggle.classes()).toContain('focusable');
+    await pickerToggle.trigger('click');
     await flushPromises();
     expect(peerSessions).toHaveBeenCalledWith('p1');
     const item = w.find('.peer-session-row');
     expect(item.text()).toContain('builder');
+    expect(item.find('.peer-session-attach').classes()).toContain('focusable');
 
     await item.find('.peer-session-attach').trigger('click');
     await flushPromises();

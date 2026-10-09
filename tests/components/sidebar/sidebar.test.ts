@@ -9,6 +9,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mount, VueWrapper } from '@vue/test-utils';
 import { nextTick } from 'vue';
+import { getActivityColor } from '../../../renderer/state-colors.js';
 
 // ============================================================================
 // SessionCard
@@ -553,6 +554,28 @@ describe('SessionList', () => {
 
     expect(dot.exists()).toBe(true);
     expect(dot.attributes('style')).toContain('rgb(68, 204, 68)');
+  });
+
+  it('uses peer-reported activity for peer row and group dots', () => {
+    const w = mount(SessionList, {
+      props: makeSessionListProps({
+        source: 'peer',
+        groups: [{
+          dirPath: 'peer:p1',
+          displayName: 'Peer',
+          kind: 'peer',
+          collapsed: false,
+          sessions: [{ id: 'remote-1', name: 'Remote', cliType: 'claude-code', activityLevel: 'inactive', state: 'waiting' }],
+        }],
+        navIndexMap: new Map([['remote-1', 1]]),
+      }),
+    });
+    const expected = document.createElement('span');
+    expected.style.backgroundColor = getActivityColor('inactive');
+
+    expect((w.find('.group-activity-dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
+    expect((w.find('.session-activity-dot').element as HTMLElement).style.backgroundColor).toBe(expected.style.backgroundColor);
+    expect(w.find('.session-state-btn--readonly').text()).toContain('Waiting');
   });
 
   it('emits newGroup on New Group segment click', async () => {

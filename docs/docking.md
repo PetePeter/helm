@@ -28,14 +28,18 @@ new position rather than remounted.
 | `renderer/dock-layout.ts` | Pure tree operations — every function takes a layout and returns a new one |
 | `renderer/dock-persistence.ts` | Loads/validates the untrusted persisted layout; legacy migration |
 | `renderer/composables/useDockWorkspace.ts` | Reactive wrapper: focus identity, reveal state, persistence queue |
+| `renderer/dock-pane-registry.ts` | Static pane components plus runtime descriptor/component registration |
+| `renderer/dock-registry-state.ts` | Vue revision signal for runtime registry changes |
 | `renderer/components/dock/*.vue` | Recursive renderer — nodes, tab groups, splitters, rails, drag preview |
 | `renderer/dock-visibility-bridge.ts` | Hands pane visibility to the imperative gamepad nav in `screens/` |
 
 ## The pane registry
 
-`DOCK_PANES` in `dock-types.ts` is the single source of a pane's identity. Adding
-a pane means adding a descriptor and a component in `dock-pane-registry.ts` —
-nothing else in the model knows pane ids.
+`DOCK_PANES` in `dock-types.ts` defines static pane identity. The general
+`dockPaneRegistry` also accepts runtime descriptors and matching components via
+`registerDockPane()` / `unregisterDockPane()`. Dynamic ids use a namespace, such
+as `sessions:<peerId>`; the dock model does not contain fleet-specific cases.
+Static panes keep their existing registry and profile behavior.
 
 | Field | Meaning |
 |-------|---------|
@@ -53,7 +57,7 @@ and the View menu all read one allow-list.
 
 | Profile | Panes | Window |
 |---------|-------|--------|
-| `main` | every registered pane (derived, never re-listed) | `MainWindowApp.vue` |
+| `main` | every registered pane (derived, never re-listed), including runtime panes | `MainWindowApp.vue` |
 | `popout` | terminal, plans, memories, mess, artifacts | `SnapOutWindow.vue` |
 
 The pop-out omits the session list, quick spawn, scheduler and projects: those
@@ -139,6 +143,11 @@ as "it never came back".
 Homes live in the registry, not in the persisted tree, so changing a pane's home
 does not invalidate a saved layout.
 
+Runtime panes use the same close and restore path as static panes. Closing a
+peer's Sessions pane stores its id in `closed`; reconnecting does not reopen it,
+and the main View menu can restore it. The peer registry re-adds a pane only
+when that peer is still paired and Fleet is enabled.
+
 ## Workspace shortcuts and view lifecycle
 
 The dock owns pane selection. Two panes — **Terminal** and **Plans** — also
@@ -202,6 +211,19 @@ The layout is stored by the main process as an opaque value
 so an older build can still load settings written by a newer renderer. The
 renderer validates on load and falls back to the Classic default if the value
 does not satisfy the schema.
+
+A namespaced pane id whose descriptor has not registered yet keeps its saved
+tree slot. The component mounts when the descriptor registers; after the peer
+registry has finished loading, ids that have no owner are pruned. This lets
+saved dynamic panes survive startup ordering without preserving panes for peers
+that were unpaired.
+
+`projectVisibleLayout()` in `renderer/dock-layout.ts` applies that same
+registered-id filter for rendering. It records source paths for visible splits,
+so `resizeVisibleSplit()` can map a drag back to the saved tree while preserving
+the share assigned to hidden children. A split with one visible child collapses
+in the view; an empty dock disappears. `pruneUnregisteredPanes()` uses the same
+projection before normalizing the persisted tree.
 
 The Classic default is one horizontal root split with three tracks: the left
 tool dock (session list over the stacked tool windows), the view group

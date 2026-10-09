@@ -52,22 +52,51 @@ The owner must let the viewer call it: tick **May call me** for that peer in the
 ## Entry points
 
 - **Peers tab:** the **Attach…** button on an online peer lists its sessions, and **Attach** opens the chosen one here.
+- **Controller or keyboard attach:** open Settings → Peers, use the D-pad/arrow keys to focus an online peer's **Attach…** button, then focus the chosen session's **Attach** button and press A/Enter. The same picker remains available when a session is not yet attached and therefore is not in the Sessions navigation order.
 - **New session (Spawn button or Ctrl+Shift+N, desktop):** Quick Spawn shows This PC plus each eligible peer (Left/Right Bumper, keyboard arrows, or mouse). Selecting a machine lists that machine's own tools. Choosing a tool opens its folder picker for the same machine; a peer's folders come from `peer_call(peer, "directory_list")`. Quick Spawn passes the selected peer-owned tool id directly to `peer_spawn`, which creates and attaches the session here. Slow or refusing peers show loading/error states; a peer that goes offline while selected falls back to This PC. With no eligible peers it stays local and shows no machine tabs. Switch CLI and scheduled-task CLI pickers remain local-only.
 - **Phone New session:** a "Runs on" row with the same machines (`peer_list` → `mayCallThem`); the desktop does the spawn and attach, and the phone opens the resulting row. Order is name → Runs on → CLI → folder, each loaded for the chosen machine: its CLIs come from `peer_call(peer, "tool_list")`, and switching machine clears the CLI and folder.
 - **Messages and renames go to the owner.** A Remote row is only a pipe into the peer's PTY, so `session_send_text` to it is forwarded as the peer's own `session_send_text` (like a `fleet:` target). The peer builds the envelope and its gate hands the recipient a `fleet:` reply address that routes back here. An envelope typed into the pipe here would carry a sender id the peer can't answer. Renaming the row (UI, MCP or phone) renames the peer's session too.
 - **CLI type ids are per machine.** Desktop Quick Spawn reads the peer's tools and passes the selected peer-owned id directly to `peer_spawn`. An MCP `peer_spawn` caller may pass one of this machine's ids; `RemoteService.spawn()` translates a locally-owned id to this machine's display name, while unknown refs (including peer-owned ids) go as-is.
 - **MCP:** `peer_attach(peer, sessionId)`. This is how the phone's operator opens a remote session: find it with `peer_call(peer, "session_list", {})`, then attach. Once attached, nothing else is needed; all input and output routes automatically.
 
-## Lists grouped by machine
+## Session lists by computer
 
-A Remote row sits under its owner machine, never under a project folder: its path is the peer's, and means nothing next to this PC's folders. The desktop list adds one 🖥 group per peer after the local groups (`buildSessionGroups`, key `machine:<peerId>`); `session_list` stamps each Remote row with `remote.machineName`, and the phone groups by it the same way. A remote session is attached at most once per peer (`RemoteService.open` is idempotent), and one peer registry entry exists per machineId, so no row shows twice.
+The desktop has one Sessions pane per paired peer, titled `Sessions - <peer
+alias>`. It reuses the local `SessionList` component with a peer source. Remote
+rows appear only in their computer's pane; the local list no longer creates a
+`machine:<peerId>` group. Attached rows map to the local remote-session proxy so
+they can be focused, detached, and controlled. They remain in keyboard and
+gamepad session navigation order, while local directory groups, the group
+overview, local session counts, and group chips exclude them. The phone keeps
+its existing machine grouping for its own session list.
+
+The peer's snapshot is fetched on connect and reconnect. Session add, remove,
+rename, and state changes are pushed as `fleet.sessions` notifications over the
+existing Fleet link notification path. The owner coalesces updates and skips an
+unchanged snapshot per peer; it sends only to enabled peers whose inbound grant
+allows this machine to call them. The receiver checks pairing, peer enablement,
+and inbound grant through `InboundCallGate.handleNotification`. Accepted pushes
+do not consume the tool-call rate bucket or create tool-call audit entries.
+If an older peer does not push, its connect-time snapshot remains available and
+the pane's Refresh action fetches another one. When offline, the pane stays
+visible with stale rows marked offline; those unattached rows cannot be
+attached. Unpairing removes the pane. Closing it persists the closed state in
+the user's dock layout and it remains available in the View menu.
 
 ```mermaid
-graph TD
-  L[Session list] --> P1[📁 gamepad-cli-hub — local]
-  L --> P2[📁 helm — local]
-  L --> M1[🖥 Box — Remote rows]
-  L --> M2[🖥 Laptop — Remote rows]
+sequenceDiagram
+  participant Owner as Owner RemoteService
+  participant Link as Existing PeerLink notification path
+  participant Gate as InboundCallGate
+  participant Viewer as Viewer RemoteService / IPC
+  participant Pane as Peer Sessions pane
+  Owner->>Link: fleet.sessions snapshot on session change
+  Link->>Gate: authenticated inbound notification
+  Gate->>Viewer: authorize paired peer with inbound enabled
+  Viewer->>Pane: peer:sessions-changed
+  Pane->>Viewer: peer:sessions on connect/reconnect or Refresh
+  Viewer->>Link: session_list request to peer
+  Link-->>Pane: snapshot via peer:sessions
 ```
 
 ## Modules

@@ -44,11 +44,13 @@ function fakeLinkManager() {
     dialed,
     calls,
     toolList: [] as Array<{ cliType: string; name: string; kind?: string }>,
+    sessionList: [] as Array<Record<string, unknown>>,
     status: (_id: string) => 'online' as const,
     disposePeer: (peerId: string) => { disposed.push(peerId); },
     addPeer: (peer: PeerConfig) => { dialed.push(peer); },
     call: async (peerId: string, method: string, params: unknown) => {
       calls.push({ peerId, method, params });
+      if (method === 'session_list') return { sessions: manager.sessionList };
       return manager.toolList;
     },
     on: () => {},
@@ -122,6 +124,37 @@ describe('peer-management handlers — remote CLI type listing', () => {
     });
     expect(link.calls).toEqual([{ peerId: 'peer-machine', method: 'tool_list', params: {} }]);
     expect(audit.list()[0]).toMatchObject({ method: 'tool_list', outcome: 'denied' });
+  });
+});
+
+describe('peer-management handlers — peer Sessions snapshot', () => {
+  beforeEach(() => {
+    handleCalls.clear();
+    const cfg = new PeerConfigManager();
+    const link = fakeLinkManager();
+    link.sessionList = [
+      { id: 'a', name: 'Builder', cliType: 'claude-code', state: 'implementing', activityLevel: 'active' },
+      { id: 'b', name: 'Old peer row', cliType: 'codex', activityLevel: 'idle' },
+      { id: 'r', name: 'Remote view', cliType: 'codex', remote: { peerId: 'elsewhere', sessionId: 'x' } },
+    ];
+    setupPeerManagementHandlers({
+      isEnabled: () => true,
+      peerConfigManager: cfg,
+      pinnedCertStore: { removePin: vi.fn() } as any,
+      secretStore: { remove: vi.fn() } as any,
+      audit: new PeerAuditLog(() => {}, () => 0),
+      getLinkManager: () => link as any,
+      attach: async () => ({ id: 'attached' }),
+      spawn: async () => ({ id: 'spawned' }),
+    });
+  });
+
+  it('returns peer-reported activity/state and omits non-attachable remote views', async () => {
+    const result = await getHandler('peer:sessions')({}, 'peer-a');
+    expect(result).toEqual([
+      { id: 'a', name: 'Builder', cliType: 'claude-code', state: 'implementing', activityLevel: 'active' },
+      { id: 'b', name: 'Old peer row', cliType: 'codex', activityLevel: 'idle' },
+    ]);
   });
 });
 

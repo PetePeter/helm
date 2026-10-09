@@ -27,6 +27,7 @@ import type { OnCall, PeerLink } from './peer-link.js';
 import { RemoteLinkServer, type RemoteLinkServerOptions } from './remote-link-server.js';
 import { RemoteLinkClient, type RemoteLinkClientOptions } from './remote-link-client.js';
 import { normalizePeerAddress, splitHostPort } from './peer-address.js';
+import { FLEET_SESSIONS_METHOD } from './fleet-sessions.js';
 
 /** The minimal PeerLink surface the manager depends on (real PeerLink satisfies). */
 export interface ManagedLink {
@@ -359,10 +360,18 @@ export class PeerLinkManager extends EventEmitter {
 
     this.links.set(peerId, { link, origin });
     link.once('offline', () => this.onLinkOffline(peerId, link));
-    // Inbound notifications bypass onCall (the MCP gate) by design: consumers
-    // (the remote PTY host/viewer) authorize them against their own state.
+    // Notifications normally use their owning stream's authorization. The
+    // fleet.sessions snapshot is the state-bearing exception and goes through
+    // the configured gate callback's notification path.
     link.on('notification', (method: string, params: unknown) => {
-      if (this.links.get(peerId)?.link === link) this.emit('peer-notification', { peerId, method, params });
+      if (this.links.get(peerId)?.link !== link) return;
+      // Fleet snapshots must pass pairing, enabled-peer, and inbound-grant
+      // checks. The gate treats them as coalesced state, not tool calls.
+      if (method === FLEET_SESSIONS_METHOD) {
+        void Promise.resolve().then(() => this.onCall(peerId, method, params)).catch(() => undefined);
+        return;
+      }
+      this.emit('peer-notification', { peerId, method, params });
     });
     this.emit('peer-link:online', { peerId });
   }

@@ -1631,9 +1631,14 @@ describe('Sessions Screen', () => {
       Element.prototype.scrollIntoView = scrollIntoView;
 
       const list = document.getElementById('sessionsList')!;
+      const unrelated = document.createElement('div');
+      unrelated.setAttribute('data-nav-index', '2');
+      const unrelatedScroll = vi.fn();
+      unrelated.scrollIntoView = unrelatedScroll;
+      document.body.append(unrelated);
       list.innerHTML = `
-        <div class="group-header" data-nav-index="1"></div>
-        <div class="session-card" data-nav-index="2">
+        <div class="group-header" data-nav-index="1" data-sessions-nav-index="1"></div>
+        <div class="session-card" data-nav-index="2" data-sessions-nav-index="2">
           <button class="session-state-btn"></button>
           <button class="session-rename"></button>
           <button class="session-overview-toggle"></button>
@@ -1650,8 +1655,10 @@ describe('Sessions Screen', () => {
       const card = list.querySelector('.session-card') as HTMLElement;
       const closeBtn = list.querySelector('.session-close') as HTMLElement;
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(unrelatedScroll).not.toHaveBeenCalled();
       expect(card.classList.contains('focused')).toBe(false);
       expect(closeBtn.classList.contains('card-col-focused')).toBe(false);
+      unrelated.remove();
     });
 
     it('does not scroll when sessions are not the active focus zone', () => {

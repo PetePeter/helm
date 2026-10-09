@@ -25,12 +25,11 @@ export interface SessionGroup {
    * Group kind. 'directory' groups bucket sessions by working directory (the
    * legacy default). 'runtime' groups are ad-hoc, user-created groups that cut
    * across directories and persist as visible headers even when empty.
-   * 'machine' groups hold Remote rows, one per peer that runs them.
    */
-  kind?: 'directory' | 'runtime' | 'machine';
+  kind?: 'directory' | 'runtime';
   /** Runtime group id (only set when kind === 'runtime'). */
   groupId?: string;
-  /** Box colour. Runtime groups only; folder and machine groups use the neutral grey. */
+  /** Box colour. Runtime groups only; folder groups use the neutral grey. */
   color?: string;
 }
 
@@ -41,7 +40,7 @@ export interface NavItem {
   type: NavItemType;
   /** For group-header: dirPath. For session-card / operator: session id. */
   id: string;
-  /** Index of the group this item belongs to (in the groups array); -1 for the operator. */
+  /** Index of the group this item belongs to; -1 for operator and peer-owned rows. */
   groupIndex: number;
 }
 
@@ -195,9 +194,8 @@ export function groupSessionsByDirectory(
  * @param prefs          Directory group order/collapse/bookmark prefs.
  * @param runtimeGroups  Runtime groups in display order (array order preserved).
  *
- * Remote rows (views of a peer's session) not claimed by a runtime group go in
- * one 'machine' group per peer, after the local groups: a peer's path means
- * nothing next to this PC's project folders.
+ * Remote rows are kept out of local groups and are added to navigation by the
+ * peer panes that render them.
  *
  * The operator is never grouped: it has its own pinned sidebar section.
  */
@@ -206,9 +204,8 @@ export function buildSessionGroups(
   getDir: (id: string) => string,
   prefs: SessionGroupPrefs,
   runtimeGroups: RuntimeGroup[],
-  machineName: (peerId: string) => string = (peerId) => peerId,
 ): SessionGroup[] {
-  const sessions = withoutOperator(allSessions);
+  const sessions = withoutOperator(allSessions).filter(session => !session.remote);
   // Every session id owned by any runtime group — excluded from directory grouping.
   const claimed = new Set<string>();
   for (const rg of runtimeGroups) {
@@ -237,30 +234,8 @@ export function buildSessionGroups(
   });
 
   const unclaimed = sessions.filter(s => !claimed.has(s.id));
-  const directoryGroups = groupSessionsByDirectory(unclaimed.filter(s => !s.remote), getDir, prefs);
-
-  const byMachine = new Map<string, Session[]>();
-  for (const session of unclaimed) {
-    if (!session.remote) continue;
-    const list = byMachine.get(session.remote.peerId) ?? [];
-    list.push(session);
-    byMachine.set(session.remote.peerId, list);
-  }
-  const collapsedSet = new Set(prefs.collapsed);
-  const machineGroups: SessionGroup[] = [...byMachine].map(([peerId, members]) => ({
-    dirPath: machineGroupKey(peerId),
-    displayName: machineName(peerId),
-    sessions: members,
-    collapsed: collapsedSet.has(machineGroupKey(peerId)),
-    kind: 'machine' as const,
-  }));
-
-  return [...runtimeSessionGroups, ...directoryGroups, ...machineGroups];
-}
-
-/** Header / prefs key of a peer's machine group. */
-export function machineGroupKey(peerId: string): string {
-  return `machine:${peerId}`;
+  const directoryGroups = groupSessionsByDirectory(unclaimed, getDir, prefs);
+  return [...runtimeSessionGroups, ...directoryGroups];
 }
 
 // ============================================================================
@@ -272,7 +247,11 @@ export function machineGroupKey(peerId: string): string {
  * Includes the pinned operator (when there is one), then group headers and
  * (for expanded groups) their session cards.
  */
-export function buildFlatNavList(groups: SessionGroup[], operatorId: string | null = null): NavItem[] {
+export function buildFlatNavList(
+  groups: SessionGroup[],
+  operatorId: string | null = null,
+  navigationOnlySessions: Session[] = [],
+): NavItem[] {
   const items: NavItem[] = operatorId ? [{ type: 'operator', id: operatorId, groupIndex: -1 }] : [];
   for (let gi = 0; gi < groups.length; gi++) {
     const group = groups[gi];
@@ -285,6 +264,9 @@ export function buildFlatNavList(groups: SessionGroup[], operatorId: string | nu
         items.push({ type: 'session-card', id: session.id, groupIndex: gi });
       }
     }
+  }
+  for (const session of navigationOnlySessions) {
+    if (session.remote) items.push({ type: 'session-card', id: session.id, groupIndex: -1 });
   }
   return items;
 }

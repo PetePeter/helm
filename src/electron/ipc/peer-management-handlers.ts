@@ -25,6 +25,7 @@ import type { PeerAuditLog } from '../../mcp/peer/peer-audit-log.js';
 import type { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
 import type { SecretStore } from '../../mcp/peer/secret-store.js';
 import type { RemoteSpawnArgs } from '../../session/remote/remote-service.js';
+import type { RemoteService } from '../../session/remote/remote-service.js';
 
 export interface PeerManagementDeps {
   /** Live fleet-enabled state, read per call (P-0658 in-app toggle). */
@@ -39,6 +40,7 @@ export interface PeerManagementDeps {
   attach: (peerId: string, sessionId: string) => Promise<{ id: string }>;
   /** Remote: start a CLI on the peer and open it here (RemoteService.spawn). */
   spawn: (peerId: string, args: RemoteSpawnArgs) => Promise<{ id: string }>;
+  remoteService?: Pick<RemoteService, 'on' | 'off'>;
 }
 
 /** A spawnable directory on a peer, shaped like the local dir picker's items. */
@@ -61,6 +63,8 @@ export interface PeerSessionItem {
   id: string;
   name: string;
   cliType: string;
+  state?: string;
+  activityLevel?: 'active' | 'inactive' | 'idle';
 }
 
 export interface PeerListItem {
@@ -147,7 +151,15 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     return sessions
       // A peer's own Remote rows are views of someone else — not attachable.
       .filter((s) => typeof s.id === 'string' && !s.remote)
-      .map((s) => ({ id: s.id as string, name: String(s.name ?? s.id), cliType: String(s.cliTypeName ?? s.cliType ?? '') }));
+      .map((s) => ({
+        id: s.id as string,
+        name: String(s.name ?? s.id),
+        cliType: String(s.cliTypeName ?? s.cliType ?? ''),
+        ...(typeof s.state === 'string' ? { state: s.state } : {}),
+        ...(s.activityLevel === 'active' || s.activityLevel === 'inactive' || s.activityLevel === 'idle'
+          ? { activityLevel: s.activityLevel }
+          : {}),
+      }));
   });
 
   ipcMain.handle('peer:attach', async (_e, peerId: string, sessionId: string) => {
@@ -217,9 +229,12 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     broadcast((win) => win.webContents.send('peer-link:status', { peerId: e.peerId, online: true }));
   const onOffline = (e: { peerId: string }) =>
     broadcast((win) => win.webContents.send('peer-link:status', { peerId: e.peerId, online: false }));
+  const onSessionsChanged = (event: unknown) =>
+    broadcast((win) => win.webContents.send('peer:sessions-changed', event));
 
   deps.peerConfigManager.on('peer-config:changed', onConfigChanged);
   deps.audit.on('peer-audit:changed', onAuditChanged);
+  deps.remoteService?.on('peer-sessions-changed', onSessionsChanged);
 
   // The link manager appears/disappears as fleet is toggled (P-0658), so keep
   // polling: attach online/offline forwarding when a new manager appears, and
@@ -256,6 +271,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     ipcMain.removeHandler('peer:spawn');
     deps.peerConfigManager.off('peer-config:changed', onConfigChanged);
     deps.audit.off('peer-audit:changed', onAuditChanged);
+    deps.remoteService?.off('peer-sessions-changed', onSessionsChanged);
     if (linkAttached) {
       linkAttached.off('peer-link:online', onOnline);
       linkAttached.off('peer-link:offline', onOffline);

@@ -415,6 +415,7 @@ export const PRELOAD_API_DOMAINS = {
     'onPeerFailed',
     'onPeerConfigChanged',
     'onPeerLinkStatus',
+    'onPeerSessionsChanged',
     'onPeerAuditChanged',
     'onMobileDevicesChanged',
     'onMobilePairingState',

@@ -129,6 +129,7 @@ import { resolveFocusSlot } from './composables/focus-slot.js';
 import { useLlmNotificationsStore } from './stores/llmNotifications.js';
 import { useFlashAttention } from './composables/useFlashAttention.js';
 import { listRegisteredPanes, useDockWorkspace } from './composables/useDockWorkspace.js';
+import { usePeerSessionPanes } from './composables/usePeerSessionPanes.js';
 import { createDockViewRouting } from './composables/useDockViewRouting.js';
 import DockViewMenu from './components/dock/DockViewMenu.vue';
 import DockWorkspace from './components/dock/DockWorkspace.vue';
@@ -440,6 +441,7 @@ const {
   },
   openBindingEditor: (button, profileId, binding) => onEditBinding(button, profileId, binding),
 });
+const peerSessionPanes = usePeerSessionPanes(dockWorkspace);
 
 const firstRunOnboarding = useFirstRunOnboarding({
   getCompleted: () => configClient.configGetOnboardingCompleted(),
@@ -532,10 +534,10 @@ watch(() => activeView.value, (view) => {
     if (sessionsState.overviewIsGlobal) {
       overviewGroupLabel.value = 'All Sessions';
     } else if (sessionsState.overviewGroup) {
-      // Runtime and machine groups carry their own display name (their key is
-      // not a directory path), so prefer the group's own name when present.
+      // Runtime groups carry their own display name (their key is not a
+      // directory path), so prefer the group's own name when present.
       const grp = sessionsState.groups.find(g => g.dirPath === sessionsState.overviewGroup);
-      overviewGroupLabel.value = grp?.kind === 'runtime' || grp?.kind === 'machine'
+      overviewGroupLabel.value = grp?.kind === 'runtime'
         ? grp.displayName
         : resolveGroupDisplayName(sessionsState.overviewGroup, sessionsState.directories, settingsProjects.value);
     } else {
@@ -923,6 +925,22 @@ provideHelmPaneContext({
 // re-partitions sessions between runtime and directory groups.
 watch(runtimeGroups.groups, () => { refreshSessions(); }, { deep: true });
 
+// Remote rows have no local group, but remain in the global D-pad/keyboard
+// order. When one receives focus, activate its own pane so the row is visible.
+watch(() => {
+  if (sessionsState.activeFocus !== 'sessions') return '';
+  const item = sessionsState.navList[sessionsState.sessionsFocusIndex];
+  if (!item || item.type !== 'session-card') return '';
+  const session = state.sessions.find(candidate => candidate.id === item.id);
+  if (!session?.remote) return '';
+  const paneId = `sessions:${session.remote.peerId}`;
+  return dockWorkspace.paneOrder.value.includes(paneId) ? `${paneId}\n${session.id}` : '';
+}, (focusedPeerSession) => {
+  if (!focusedPeerSession) return;
+  const [paneId, sessionId] = focusedPeerSession.split('\n');
+  dockWorkspace.focusPane(paneId, sessionId);
+}, { flush: 'post' });
+
 onMounted(async () => {
   const dockLoad = await dockWorkspace.loadPersisted();
   if (dockLoad.source === 'persisted') syncViewFromDockLayout();
@@ -933,7 +951,7 @@ onMounted(async () => {
   artifactViewer.ensureSubscribed();
   // Subscribe app-wide, NOT from the Peers tab: an inbound pairing request must
   // raise its dialog even when Settings has never been opened this session.
-  peers.ensureSubscribed();
+  peerSessionPanes.start();
   void artifactViewer.setActiveSession(state.activeSessionId ?? null);
 
   // One listener for the whole window. Workspace keys and the modal bridge
@@ -1095,6 +1113,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  peerSessionPanes.stop();
   for (const cleanup of keyHandlerCleanups.splice(0)) cleanup();
   uninstallKeyRouter?.();
   uninstallKeyRouter = null;
@@ -1145,8 +1164,8 @@ onUnmounted(() => {
     </header>
     <StatusStrip
       :gamepad-count="state.gamepadCount"
-      :total-sessions="state.sessions.length"
-      :active-sessions="state.sessions.filter(s => (state.sessionActivityLevels.get(s.id) ?? 'idle') === 'active').length"
+      :total-sessions="state.sessions.filter(s => !s.remote).length"
+      :active-sessions="state.sessions.filter(s => !s.remote && (state.sessionActivityLevels.get(s.id) ?? 'idle') === 'active').length"
     />
     <div class="app-workspace">
       <div class="app-main-area">

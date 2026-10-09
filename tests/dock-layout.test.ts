@@ -18,6 +18,8 @@ import {
   restorePane,
   normalizeNode,
   resizeSplit,
+  projectVisibleLayout,
+  resizeVisibleSplit,
   validateLayout,
 } from '../renderer/dock-layout';
 import {
@@ -506,6 +508,48 @@ describe('split resizing', () => {
       expect(sizes.sizes.every(size => size > 0)).toBe(true);
       expect(sizes.sizes.reduce((sum, size) => sum + size, 0)).toBeCloseTo(1);
     }
+  });
+});
+
+describe('registered-pane layout projection', () => {
+  it('maps a visible resize back while preserving a hidden middle child share', () => {
+    const layout = layoutOf({
+      type: 'split',
+      direction: 'horizontal',
+      sizes: [0.2, 0.3, 0.5],
+      children: [group(['left']), group(['missing']), group(['right'])],
+    });
+
+    const projection = projectVisibleLayout(layout, new Set(['left', 'right']));
+    expect(projection.layout.root).toMatchObject({
+      type: 'split',
+      children: [group(['left']), group(['right'])],
+    });
+    if (projection.layout.root.type === 'split') {
+      expect(projection.layout.root.sizes[0]).toBeCloseTo(2 / 7);
+      expect(projection.layout.root.sizes[1]).toBeCloseTo(5 / 7);
+    }
+    const resized = resizeVisibleSplit(layout, projection, [], [0.6, 0.4]);
+    expect(resized?.sourcePath).toEqual([]);
+    expect(resized?.sizes[0]).toBeCloseTo(0.42);
+    expect(resized?.sizes[1]).toBeCloseTo(0.3);
+    expect(resized?.sizes[2]).toBeCloseTo(0.28);
+  });
+
+  it('collapses a split with one visible child and removes a fully hidden dock', () => {
+    const splitProjection = projectVisibleLayout(layoutOf({
+      type: 'split',
+      direction: 'vertical',
+      sizes: [0.25, 0.75],
+      children: [group(['kept']), group(['pending'])],
+    }), new Set(['kept']));
+    expect(splitProjection.layout.root).toEqual(group(['kept']));
+    expect(splitProjection.resizePaths.size).toBe(0);
+
+    const dockProjection = projectVisibleLayout(layoutOf({
+      type: 'dock', side: 'right', mode: 'pinned', child: group(['pending']),
+    }), new Set());
+    expect(dockProjection.layout.root).toEqual({ type: 'empty' });
   });
 });
 

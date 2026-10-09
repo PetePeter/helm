@@ -15,7 +15,7 @@ import {
 } from './dock-layout';
 import {
   PANE_ARTIFACTS,
-  listProfilePanes,
+  listStaticProfilePanes,
   type DockDockNode,
   type DockProfileId,
   type DockNode,
@@ -190,7 +190,7 @@ function adoptNewPanes(raw: unknown, profile: DockProfileId): unknown {
   } catch {
     return raw;
   }
-  const added = listProfilePanes(profile).filter(p => p.closable && !present.has(p.id)).map(p => p.id);
+  const added = listStaticProfilePanes(profile).filter(p => p.closable && !present.has(p.id)).map(p => p.id);
   return added.length ? { ...layout, closed: [...layout.closed, ...added] } : raw;
 }
 

@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events';
 import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
 import { SessionManager } from '../src/session/manager.js';
 import { RemoteService, type RemoteLinks } from '../src/session/remote/remote-service.js';
+import { FLEET_SESSIONS_METHOD } from '../src/mcp/peer/fleet-sessions.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -42,6 +43,7 @@ class LoopLinks extends EventEmitter implements RemoteLinks {
   tools: Record<string, (params: any) => unknown> = {};
   constructor(readonly selfId: string, readonly peerId: string, private readonly callee: () => RemoteService) { super(); }
   peerIdFor(ref: string): string | undefined { return ref === this.peerId || ref === 'Host-PC' ? this.peerId : undefined; }
+  onlinePeerIds(): string[] { return this.online ? [this.peerId] : []; }
   async call(_ref: string, method: string, params: unknown): Promise<unknown> {
     if (!this.online) throw new Error('No live link');
     if (this.tools[method]) return this.tools[method](params);
@@ -66,6 +68,7 @@ describe('Remote (host ⇄ viewer loopback)', () => {
   let hostPty: FakePty;
   let hostPtys: PtyManager;
   let viewerPtys: PtyManager;
+  let hostSessions: SessionManager;
   let viewerSessions: SessionManager;
   let host: RemoteService;
   let viewer: RemoteService;
@@ -74,6 +77,7 @@ describe('Remote (host ⇄ viewer loopback)', () => {
   let screen: string;
   let created: Array<Record<string, any>>;
   let spawnOnHost: (args: Record<string, any>) => unknown;
+  let sessionPushAllowed: boolean;
 
   const flush = () => vi.advanceTimersByTime(COALESCE_MS);
 
@@ -83,7 +87,8 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     hostPtys = new PtyManager(factory);
     hostPtys.spawn({ sessionId: 'h1', cols: 100, rows: 40 });
     hostPty.writes = [];
-    const hostSessions = new SessionManager();
+    hostSessions = new SessionManager();
+    sessionPushAllowed = true;
     hostSessions.addSession({ id: 'h1', name: 'builder', cliType: 'claude-code', processId: 42, workingDir: 'C:\\work' });
     created = [];
     spawnOnHost = (args) => {
@@ -96,7 +101,12 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     viewerPtys = new PtyManager({ spawn: () => { throw new Error('viewer never spawns'); } });
     viewerSessions = new SessionManager();
 
-    host = new RemoteService({ pty: hostPtys, sessions: hostSessions, coalesceMs: COALESCE_MS });
+    host = new RemoteService({
+      pty: hostPtys,
+      sessions: hostSessions,
+      coalesceMs: COALESCE_MS,
+      canSendSessionsToPeer: peerId => peerId === 'VIEWER' && sessionPushAllowed,
+    });
     viewer = new RemoteService({ pty: viewerPtys, sessions: viewerSessions, coalesceMs: COALESCE_MS });
     hostLinks = new LoopLinks('HOST', 'VIEWER', () => viewer);
     viewerLinks = new LoopLinks('VIEWER', 'HOST', () => host);
@@ -126,6 +136,87 @@ describe('Remote (host ⇄ viewer loopback)', () => {
     expect(viewerSessions.getSession(session.id)).toBeTruthy();
     expect(viewerPtys.getSize(session.id)).toEqual({ cols: 100, rows: 40 });
     expect(screen).toContain('ready> ');
+  });
+
+  it('pushes local session snapshots when sessions are added, updated, or removed', () => {
+    const pushes: Array<{ method: string; params: any }> = [];
+    viewerLinks.on('peer-notification', (event: { method: string; params: any }) => {
+      if (event.method === FLEET_SESSIONS_METHOD) pushes.push(event);
+    });
+
+    hostSessions.updateSession('h1', { name: 'Builder renamed', activityLevel: 'active', state: 'implementing' });
+    flush();
+    expect(pushes.at(-1)).toMatchObject({
+      method: FLEET_SESSIONS_METHOD,
+      params: { sessions: [{ id: 'h1', name: 'Builder renamed', activityLevel: 'active', state: 'implementing' }] },
+    });
+
+    hostSessions.removeSession('h1', { force: true });
+    flush();
+    expect(pushes.at(-1)).toMatchObject({ method: FLEET_SESSIONS_METHOD, params: { sessions: [] } });
+  });
+
+  it('coalesces to the trailing snapshot, skips equal snapshots, and resets after reconnect', () => {
+    const pushes: Array<{ method: string; params: any }> = [];
+    viewerLinks.on('peer-notification', (event: { method: string; params: any }) => {
+      if (event.method === FLEET_SESSIONS_METHOD) pushes.push(event);
+    });
+
+    hostSessions.updateSession('h1', { name: 'First edit' });
+    hostSessions.updateSession('h1', { name: 'Final name' });
+    flush();
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0].params.sessions[0].name).toBe('Final name');
+
+    hostSessions.updateSession('h1', { name: 'Final name' });
+    flush();
+    expect(pushes).toHaveLength(1);
+
+    hostLinks.setOnline(false);
+    hostLinks.setOnline(true);
+    flush();
+    expect(pushes).toHaveLength(2);
+    expect(pushes[1].params).toEqual(pushes[0].params);
+  });
+
+  it('does not push after the peer inbound grant is revoked', () => {
+    const pushes: unknown[] = [];
+    viewerLinks.on('peer-notification', (event: { method: string }) => {
+      if (event.method === FLEET_SESSIONS_METHOD) pushes.push(event);
+    });
+    sessionPushAllowed = false;
+
+    hostSessions.updateSession('h1', { name: 'private now' });
+    flush();
+
+    expect(pushes).toEqual([]);
+  });
+
+  it('bounds and validates peer snapshots before publishing them', () => {
+    const changes: Array<{ peerId: string; sessions: Array<Record<string, unknown>> }> = [];
+    viewer.on('peer-sessions-changed', event => changes.push(event));
+    const longName = 'N'.repeat(500);
+    viewer.handleSessionsNotification('HOST', {
+      sessions: [
+        null,
+        { id: 'bad-name', name: 3, cliType: 'claude' },
+        { id: 'one', name: longName, cliType: 'claude', activityLevel: 'unknown' },
+        { id: 'two', name: 'Good', cliType: 'claude', activityLevel: 'active' },
+      ],
+    });
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0].sessions).toEqual([
+      { id: 'one', name: 'N'.repeat(200), cliType: 'claude' },
+      { id: 'two', name: 'Good', cliType: 'claude', activityLevel: 'active' },
+    ]);
+    viewer.handleSessionsNotification('HOST', { sessions: 'not a list' });
+    expect(changes).toHaveLength(1);
+
+    viewer.handleSessionsNotification('HOST', {
+      sessions: Array.from({ length: 501 }, (_, index) => ({ id: String(index), name: 'row', cliType: 'cli' })),
+    });
+    expect(changes[1].sessions).toHaveLength(500);
   });
 
   it('keystrokes typed on the viewer reach the host PTY; host output reaches the viewer', async () => {

@@ -44,6 +44,10 @@ interface SessionListGroupSession {
   pendingSubagents?: number;
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;
+  peerSessionId?: string;
+  peerAttached?: boolean;
+  activityLevel?: string;
+  state?: string;
 }
 
 type SessionListFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -53,7 +57,7 @@ interface SessionListGroup {
   displayName: string;
   collapsed: boolean;
   sessions: SessionListGroupSession[];
-  kind?: 'directory' | 'runtime';
+  kind?: 'directory' | 'runtime' | 'peer';
   groupId?: string;
   color?: string;
 }
@@ -87,6 +91,10 @@ const props = defineProps<{
   sessionShortcutMap: Map<string, number>;
   /** PTY preview density. Absent = 'on'. */
   previewMode?: SessionPreviewMode;
+  source?: 'local' | 'peer';
+  listId?: string;
+  peerOffline?: boolean;
+  peerStale?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -107,7 +115,19 @@ const emit = defineEmits<{
   cancelSchedule: [sessionId: string];
   dismissNotification: [notificationId: string];
   dismissSessionNotifications: [sessionId: string];
+  attachPeerSession: [sessionId: string];
 }>();
+
+function onSessionClick(sessionId: string): void {
+  if (props.source === 'peer') {
+    const session = props.groups.flatMap(group => group.sessions).find(row => row.id === sessionId);
+    if (!session?.peerAttached && session?.peerSessionId) {
+      if (!props.peerOffline) emit('attachPeerSession', session.peerSessionId);
+      return;
+    }
+  }
+  emit('sessionClick', sessionId);
+}
 
 function onCommitRename(sessionId: string, newName: string): void {
   emit('commitRename', sessionId, newName);
@@ -193,7 +213,7 @@ function onNewGroupDrop(e: DragEvent): void {
 <template>
   <div class="sessions-list-shell">
     <!-- This toolbar only owns runtime-group creation. -->
-    <div class="runtime-list-actions">
+    <div v-if="source !== 'peer'" class="runtime-list-actions">
       <button
         class="runtime-action"
         :class="{ 'drop-ok': newGroupDropActive }"
@@ -205,14 +225,14 @@ function onNewGroupDrop(e: DragEvent): void {
       >＋ New Group</button>
     </div>
 
-    <div ref="listEl" class="sessions-list" id="sessionsList">
+    <div ref="listEl" class="sessions-list" :id="listId ?? 'sessionsList'" :class="{ 'sessions-list--stale': peerStale }">
       <template v-for="group in groups" :key="group.dirPath">
         <!-- Runtime groups always render (even empty); directory groups only when non-empty. -->
         <template v-if="group.sessions.length > 0 || group.kind === 'runtime'">
           <SessionGroup
             :group="{
               dirPath: group.dirPath,
-              displayName: group.kind === 'runtime' || group.kind === 'machine'
+              displayName: group.kind === 'runtime' || group.kind === 'peer'
                 ? group.displayName
                 : resolveGroupDisplayName(group.dirPath, directories, projects),
               collapsed: group.collapsed,
@@ -220,9 +240,9 @@ function onNewGroupDrop(e: DragEvent): void {
               sessions: group.sessions.map(session => ({
                 id: session.id,
                 name: session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType),
-                activityLevel: sessionActivityLevels.get(session.id) || 'idle',
+                activityLevel: session.activityLevel || sessionActivityLevels.get(session.id) || 'idle',
               })),
-              kind: group.kind,
+              kind: source === 'peer' ? 'peer' : group.kind,
               groupId: group.groupId,
               color: group.color,
             }"
@@ -256,8 +276,8 @@ function onNewGroupDrop(e: DragEvent): void {
               :key="session.id"
               :session="{ id: session.id, name: session.name, cliType: session.cliType, title: session.title, cliSessionName: session.cliSessionName, createdAt: session.createdAt, lastActiveAt: session.lastActiveAt, createdByPeerId: session.createdByPeerId, remote: session.remote, locked: session.locked, frozen: session.frozen, lastPromptAt: session.lastPromptAt, lastUserPromptAt: session.lastUserPromptAt, lastUserPromptSource: session.lastUserPromptSource, keepWarmUntil: session.keepWarmUntil }"
               :nav-index="navIndexMap.get(session.id) ?? -1"
-              :session-state="sessionStates.get(session.id) || 'idle'"
-              :activity-level="sessionActivityLevels.get(session.id) || 'idle'"
+              :session-state="source === 'peer' ? (session.state || 'idle') : (sessionStates.get(session.id) || 'idle')"
+              :activity-level="session.activityLevel || sessionActivityLevels.get(session.id) || 'idle'"
               :display-name="session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType)"
               :draft-count="draftCounts.get(session.id) ?? 0"
               :artifact-count="artifactCounts.get(session.id) ?? 0"
@@ -279,7 +299,11 @@ function onNewGroupDrop(e: DragEvent): void {
               :shortcut-key="sessionShortcutMap.get(session.id) ?? null"
               :preview-source="previewSourceFor(session.id)"
               :message-landed="landedSessionIds.has(session.id)"
-              @click="emit('sessionClick', $event)"
+              :read-only="source === 'peer' && !session.peerAttached"
+              :state-read-only="source === 'peer'"
+              :interaction-disabled="source === 'peer' && peerOffline && !session.peerAttached"
+              :stale="peerStale"
+              @click="onSessionClick($event)"
               @commit-rename="onCommitRename"
               @cancel-rename="emit('cancelRename')"
               @close="onRequestClose"
@@ -295,7 +319,7 @@ function onNewGroupDrop(e: DragEvent): void {
       </template>
 
       <div v-if="!hasSessions" class="sessions-empty">
-        No active sessions
+        {{ source === 'peer' ? 'No sessions on this computer' : 'No active sessions' }}
       </div>
 
       <span

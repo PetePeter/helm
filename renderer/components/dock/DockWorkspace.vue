@@ -2,8 +2,8 @@
 import { computed, markRaw, ref, toRaw, type Component } from 'vue';
 import type { DockMode, DockNodePath, DockSide, DockWorkspaceLayout, DropTarget, PaneId } from '../../dock-types.js';
 import { getPaneDescriptor } from '../../dock-types.js';
-import { canDockPaneToEdge, canDropPane, canReorderTab } from '../../dock-layout.js';
-import { DOCK_PANE_COMPONENTS } from '../../dock-pane-registry.js';
+import { canDockPaneToEdge, canDropPane, canReorderTab, projectVisibleLayout, resizeVisibleSplit } from '../../dock-layout.js';
+import { DOCK_PANE_COMPONENTS, DYNAMIC_DOCK_PANE_COMPONENTS, registeredDockPaneIds } from '../../dock-pane-registry.js';
 import { useDockDrag } from '../../composables/useDockDrag.js';
 import type { DockDragSurface, DockDropResolution, DockRect } from '../../dock-drag.js';
 import DockNode from './DockNode.vue';
@@ -31,12 +31,24 @@ const emit = defineEmits<{
 
 const rootRef = ref<HTMLElement | null>(null);
 
-const resolvedPaneComponents = computed(() => ({
-  ...Object.fromEntries(Object.entries({
+const resolvedPaneComponents = computed(() => {
+  const components = Object.entries({
     ...DOCK_PANE_COMPONENTS,
+    ...Object.fromEntries(DYNAMIC_DOCK_PANE_COMPONENTS),
     ...(props.paneComponents ?? {}),
-  }).map(([paneId, component]) => [paneId, markRaw(toRaw(component))])),
-}));
+  }).filter((entry): entry is [string, Component] => entry[1] !== undefined);
+  return Object.fromEntries(components.map(([paneId, component]) => [paneId, markRaw(toRaw(component))]));
+});
+
+const visibleLayout = computed(() => {
+  const registered = new Set(registeredDockPaneIds());
+  return projectVisibleLayout(props.layout, registered);
+});
+
+function onResizeSplit(viewPath: DockNodePath, visibleSizes: number[]): void {
+  const resized = resizeVisibleSplit(props.layout, visibleLayout.value, viewPath, visibleSizes);
+  if (resized) emit('resize-split', resized.sourcePath, resized.sizes);
+}
 
 function measure(element: Element): DockRect {
   const box = element.getBoundingClientRect();
@@ -96,7 +108,7 @@ const ghostLabel = computed(() => {
 <template>
   <div ref="rootRef" class="dock-workspace" :class="{ 'dock-workspace--dragging': drag.dragging.value }" data-dock-workspace>
     <DockNode
-      :node="layout.root"
+      :node="visibleLayout.layout.root"
       :path="[]"
       :focused-pane-id="focusedPaneId"
       :pane-components="resolvedPaneComponents"
@@ -105,7 +117,7 @@ const ghostLabel = computed(() => {
       @focus-pane="(...args) => emit('focus-pane', ...args)"
       @activate-pane="(paneId) => emit('activate-pane', paneId)"
       @close-pane="(paneId) => emit('close-pane', paneId)"
-      @resize-split="(...args) => emit('resize-split', ...args)"
+      @resize-split="onResizeSplit"
       @reveal-pane="(paneId) => emit('reveal-pane', paneId)"
       @autohide-close="(paneId) => emit('autohide-close', paneId)"
       @set-dock-mode="(...args) => emit('set-dock-mode', ...args)"

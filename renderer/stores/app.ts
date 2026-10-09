@@ -77,7 +77,7 @@ export const useAppStore = defineStore('app', () => {
 
   const activeSessionDir = computed<string | null>(() => getActiveSessionDir());
 
-  const sessionCount = computed(() => state.sessions.length);
+  const sessionCount = computed(() => state.sessions.filter(session => !session.remote).length);
 
   const hasActiveSession = computed(() => state.activeSessionId !== null);
 
