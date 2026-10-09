@@ -2164,7 +2164,7 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: {
         peer: { type: 'string', description: 'The peer id (or alias) from peer_list.' },
-        cliType: { type: 'string' },
+        cliType: { type: 'string', description: 'Accepts the peer\'s tool id or a display name; get them from peer_call(peer, "tool_list", {}).' },
         dirPath: { type: 'string', description: 'A working directory ON THE PEER.' },
         name: { type: 'string' },
         initialPrompt: { type: 'string' },

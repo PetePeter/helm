@@ -53,6 +53,7 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
   };
   const configLoader = {
     getWorkingDirectories: vi.fn(() => [{ name: 'Helm', path: '/work' }]),
+    getCliTypes: vi.fn(() => [] as string[]),
     getCliTypeEntry: vi.fn(() => ({})),
     getCliTypeLabel: vi.fn((ref: string) => ref),
     resolveCliType: vi.fn((ref: string) => {
@@ -88,6 +89,27 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
 
   return { service, ptyManager, sessionManager, configLoader, planManager, schedulerManager };
 }
+
+describe('HelmControlService.listClis', () => {
+  it('returns the configured display name and kind for peer tool discovery', () => {
+    const { service, configLoader } = makeService();
+    configLoader.getCliTypes.mockReturnValue(['peer-cli-id']);
+    configLoader.getCliTypeEntry.mockReturnValue({
+      name: 'Legacy alias',
+      displayName: 'Claude Code',
+      spawnCommand: 'claude',
+    } as any);
+
+    expect(service.listClis()).toEqual([{
+      cliType: 'peer-cli-id',
+      name: 'Claude Code',
+      kind: 'cli',
+      command: 'claude',
+      supportsResume: true,
+      supportedDirPaths: ['/work'],
+    }]);
+  });
+});
 
 describe('HelmControlService.sendTextToSession', () => {
   afterEach(() => {

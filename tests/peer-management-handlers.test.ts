@@ -7,6 +7,8 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { PeerConfig } from '../src/types/peer.js';
+import { InboundCallGate } from '../src/mcp/peer/inbound-call-gate.js';
+import { PeerRateLimiter } from '../src/mcp/peer/rate-limiter.js';
 
 const handleCalls = new Map<string, Function>();
 vi.mock('electron', () => ({
@@ -36,16 +38,92 @@ function getHandler(channel: string): Function {
 function fakeLinkManager() {
   const disposed: string[] = [];
   const dialed: PeerConfig[] = [];
-  return {
+  const calls: Array<{ peerId: string; method: string; params: unknown }> = [];
+  const manager = {
     disposed,
     dialed,
+    calls,
+    toolList: [] as Array<{ cliType: string; name: string; kind?: string }>,
     status: (_id: string) => 'online' as const,
     disposePeer: (peerId: string) => { disposed.push(peerId); },
     addPeer: (peer: PeerConfig) => { dialed.push(peer); },
+    call: async (peerId: string, method: string, params: unknown) => {
+      calls.push({ peerId, method, params });
+      return manager.toolList;
+    },
     on: () => {},
     off: () => {},
   };
+  return manager;
 }
+
+describe('peer-management handlers — remote CLI type listing', () => {
+  let audit: InstanceType<typeof PeerAuditLog>;
+  let link: ReturnType<typeof fakeLinkManager>;
+
+  beforeEach(() => {
+    handleCalls.clear();
+    audit = new PeerAuditLog(() => {}, () => 0);
+    link = fakeLinkManager();
+    setupPeerManagementHandlers({
+      isEnabled: () => true,
+      peerConfigManager: new PeerConfigManager(),
+      pinnedCertStore: { removePin: vi.fn() } as any,
+      secretStore: { remove: vi.fn() } as any,
+      audit,
+      getLinkManager: () => link as any,
+      attach: async () => ({ id: 'attached' }),
+      spawn: async () => ({ id: 'spawned' }),
+    });
+  });
+
+  function gateLink(inbound: boolean | undefined): void {
+    const gate = new InboundCallGate({
+      peerConfig: {
+        isInboundAllowed: (peerId) => peerId === 'viewer' && inbound === true,
+        get: (peerId) => peerId === 'viewer' && inbound !== undefined ? { enabled: true } : undefined,
+      },
+      dispatch: async (method) => method === 'tool_list' ? link.toolList : {},
+      rateLimiter: new PeerRateLimiter({ capacity: 10, refillPerMs: 1, now: () => 0 }),
+      audit,
+      now: () => 0,
+    });
+    link.call = async (peerId, method, params) => {
+      link.calls.push({ peerId, method, params });
+      return gate.handle('viewer', method, params);
+    };
+  }
+
+  it('fetches tool_list through the peer link and returns only peer ids, names, and kinds', async () => {
+    link.toolList = [
+      { cliType: 'peer-claude-id', name: 'Claude Code', kind: 'cli', command: 'claude', supportsResume: true, supportedDirPaths: ['D:/work'] },
+      { cliType: 'peer-api-id', name: 'API Agent', kind: 'api', command: '', supportsResume: true, supportedDirPaths: [] },
+    ];
+    gateLink(true);
+
+    const result = await getHandler('peer:cliTypes')({}, 'peer-machine');
+
+    expect(result).toEqual([
+      { id: 'peer-claude-id', name: 'Claude Code', kind: 'cli' },
+      { id: 'peer-api-id', name: 'API Agent', kind: 'api' },
+    ]);
+    expect(link.calls).toEqual([{ peerId: 'peer-machine', method: 'tool_list', params: {} }]);
+    expect(audit.list()[0]).toMatchObject({ method: 'tool_list', outcome: 'ok' });
+  });
+
+  it.each([
+    ['unpaired', undefined],
+    ['paired but inbound-disabled', false],
+  ] as const)('refuses tool listing when the remote gate sees an %s caller', async (_label, inbound) => {
+    gateLink(inbound);
+
+    await expect(getHandler('peer:cliTypes')({}, 'peer-machine')).rejects.toMatchObject({
+      message: 'Tool not permitted',
+    });
+    expect(link.calls).toEqual([{ peerId: 'peer-machine', method: 'tool_list', params: {} }]);
+    expect(audit.list()[0]).toMatchObject({ method: 'tool_list', outcome: 'denied' });
+  });
+});
 
 describe('peer-management handlers — setEnabled live-transport wiring', () => {
   let cfg: InstanceType<typeof PeerConfigManager>;

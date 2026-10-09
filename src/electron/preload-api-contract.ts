@@ -292,6 +292,7 @@ export const PRELOAD_API_DOMAINS = {
     'peerSessions',
     'peerAttach',
     'peerDirs',
+    'peerCliTypes',
     'peerSpawn',
     'peerGetAudit',
     'peerFleetEnabled',

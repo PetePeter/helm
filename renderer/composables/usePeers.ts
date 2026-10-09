@@ -318,6 +318,11 @@ async function listPeerDirs(peerId: string): Promise<Array<{ name: string; path:
   return (await peersClient.peerDirs(peerId)) ?? [];
 }
 
+/** Remote spawn: the tool ids belong to that peer and cannot be reused locally. */
+async function listPeerCliTypes(peerId: string): Promise<Array<{ id: string; name: string; kind?: 'cli' | 'api' | 'comfyui' }>> {
+  return peersClient.peerCliTypes(peerId);
+}
+
 /** Remote spawn: start a CLI on the peer and open it here. */
 async function spawnOnPeer(peerId: string, cliType: string, dirPath: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
   return peersClient.peerSpawn(peerId, cliType, dirPath);
@@ -376,6 +381,7 @@ export function usePeers() {
     attachPeerSession,
     spawnTargets,
     listPeerDirs,
+    listPeerCliTypes,
     spawnOnPeer,
   };
 }

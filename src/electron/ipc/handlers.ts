@@ -1051,8 +1051,12 @@ export function registerIPCHandlers(
     pty: ptyManager,
     sessions: sessionManager,
     cliTypeName: (ref) => {
-      // Ambiguous or unknown here: not unambiguously mine, so the peer gets it as-is.
-      try { return configLoader.resolveCliType(ref)?.config.displayName || undefined; } catch { return undefined; }
+      // Local ids resolve to the display name the peer can match; unknown refs
+      // (including a peer-owned id) are already in the right namespace.
+      try {
+        const config = configLoader.resolveCliType(ref)?.config;
+        return config?.displayName || config?.name || undefined;
+      } catch { return undefined; }
     },
   });
   helmControlService.setRemoteService(remoteService);

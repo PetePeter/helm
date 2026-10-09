@@ -249,7 +249,7 @@ describe('Remote (host ⇄ viewer loopback)', () => {
       expect(viewerSessions.getAllSessions()).toHaveLength(0);
     });
 
-    it('a CLI type of THIS machine goes to the peer by display name — its ids are local', async () => {
+    it('translates locally-owned ids for MCP callers but preserves peer-owned ids', async () => {
       viewer.dispose();
       viewer = new RemoteService({
         pty: viewerPtys, sessions: viewerSessions, coalesceMs: COALESCE_MS,
@@ -260,7 +260,6 @@ describe('Remote (host ⇄ viewer loopback)', () => {
       spawnOnHost = (args) => { created.push(args); return {}; };
 
       await viewer.spawn('HOST', { cliType: 'local-uuid', dirPath: 'C:\proj' }).catch(() => {});
-      // Not one of mine (e.g. the peer's own id, picked from its catalogue): sent as-is.
       await viewer.spawn('HOST', { cliType: 'peer-uuid', dirPath: 'C:\proj' }).catch(() => {});
 
       expect(created.map((args) => args.cliType)).toEqual(['Claude Code', 'peer-uuid']);

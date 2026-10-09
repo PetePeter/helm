@@ -35,10 +35,7 @@ export interface RemoteServiceDeps {
   pty: PtyManager;
   sessions: Pick<SessionManager, 'addSession' | 'getSession' | 'on' | 'off'>;
   coalesceMs?: number;
-  /**
-   * Display name of one of THIS machine's CLI types, undefined for any other
-   * ref. CLI type ids are per machine; the peer resolves display names too.
-   */
+  /** Resolve a CLI type id owned by THIS machine to its peer-facing display name. */
   cliTypeName?: (ref: string) => string | undefined;
 }
 
@@ -187,6 +184,8 @@ export class RemoteService {
     const links = this.links;
     const peerId = links?.peerIdFor(peerRef);
     if (!links || !peerId) throw new Error(`Unknown or unreachable peer: ${peerRef}`);
+    // MCP callers may pass one of this machine's ids; the peer cannot resolve
+    // it locally. Quick Spawn already passes the peer-owned id, which stays as-is.
     const cliType = this.deps.cliTypeName?.(args.cliType) ?? args.cliType;
     const created = await links.call(peerId, 'session_create', { ...args, cliType }) as { id?: unknown } | null;
     const remoteId = created?.id;

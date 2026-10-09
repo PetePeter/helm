@@ -49,6 +49,13 @@ export interface PeerDirItem {
   projectName?: string;
 }
 
+/** A spawnable CLI type on a peer, whose id is only meaningful on that peer. */
+export interface PeerCliTypeItem {
+  id: string;
+  name: string;
+  kind?: 'cli' | 'api' | 'comfyui';
+}
+
 /** A session on a peer, as offered in the Peers tab's Attach picker. */
 export interface PeerSessionItem {
   id: string;
@@ -169,6 +176,25 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
       }));
   });
 
+  // Remote spawn — each peer owns its CLI type ids. `tool_list` is a normal
+  // inbound-gated MCP call, so a peer that has not granted access cannot expose
+  // its local tool catalogue.
+  ipcMain.handle('peer:cliTypes', async (_e, peerId: string): Promise<PeerCliTypeItem[]> => {
+    if (!deps.isEnabled()) throw new Error('Fleet is off');
+    const link = deps.getLinkManager();
+    if (!link) throw new Error('Fleet is unavailable');
+    const listed = await link.call(peerId, 'tool_list', {});
+    if (!Array.isArray(listed)) throw new Error(`Peer ${peerId} returned an invalid CLI type list`);
+    return listed
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      .filter((item) => typeof item.cliType === 'string' && typeof item.name === 'string')
+      .map((item) => ({
+        id: item.cliType as string,
+        name: item.name as string,
+        ...(item.kind === 'cli' || item.kind === 'api' || item.kind === 'comfyui' ? { kind: item.kind } : {}),
+      }));
+  });
+
   ipcMain.handle('peer:spawn', async (_e, peerId: string, cliType: string, dirPath: string) => {
     if (!deps.isEnabled()) return { ok: false, error: 'Fleet is off' };
     try {
@@ -226,6 +252,7 @@ export function setupPeerManagementHandlers(deps: PeerManagementDeps): () => voi
     ipcMain.removeHandler('peer:sessions');
     ipcMain.removeHandler('peer:attach');
     ipcMain.removeHandler('peer:dirs');
+    ipcMain.removeHandler('peer:cliTypes');
     ipcMain.removeHandler('peer:spawn');
     deps.peerConfigManager.off('peer-config:changed', onConfigChanged);
     deps.audit.off('peer-audit:changed', onAuditChanged);

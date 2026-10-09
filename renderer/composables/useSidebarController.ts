@@ -6,7 +6,8 @@ import { patternsClient, schedulerClient, sessionsClient } from '../ipc/clients.
 import { setDirPickerBridge } from '../screens/sessions-spawn.js';
 import { openDirPicker, dirPicker, closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
 import { usePeers } from './usePeers.js';
-import { logEvent } from '../utils.js';
+import { getCliDisplayName } from '../utils.js';
+import { useToast } from './useToast.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
 import { setSessionState, toggleGroupCollapse } from '../screens/sessions.js';
@@ -32,7 +33,7 @@ export interface SidebarControllerDeps {
 
 
 export function useSidebarController(deps: SidebarControllerDeps) {
-  const { spawnTargets, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
+  const { spawnTargets, listPeerCliTypes, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
   const overviewCollapsedIds = ref<Set<string>>(new Set());
   const overviewGroupLabel = ref('');
   const schedulerPopupVisible = ref(false);
@@ -160,10 +161,34 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   /** `machineId` '' spawns here; a peer id spawns there and opens it here. */
   async function onDirPickerSelect(path: string, selectedCliType = dirPicker.cliType, machineId = ''): Promise<void> {
     if (!machineId) { await deps.doSpawn(selectedCliType, path); return; }
-    const result = await spawnOnPeer(machineId, selectedCliType, path);
-    if (!result.ok || !result.sessionId) { logEvent(`Remote spawn failed: ${result.error ?? 'unknown error'}`); return; }
+
+    let remoteSessionId: string;
+    try {
+      const localName = getCliDisplayName(selectedCliType);
+      const peerCliTypes = await listPeerCliTypes(machineId);
+      const matches = peerCliTypes.filter((cliType) => cliType.name.trim().toLowerCase() === localName.trim().toLowerCase());
+      const peerLabel = spawnTargets.value.find((peer) => peer.id === machineId)?.alias ?? machineId;
+      if (matches.length === 0) throw new Error(`No matching tool "${localName}" is available on ${peerLabel}.`);
+      if (matches.length > 1) throw new Error(`More than one tool named "${localName}" is available on ${peerLabel}.`);
+
+      const result = await spawnOnPeer(machineId, matches[0].id, path);
+      if (!result.ok || !result.sessionId) {
+        throw new Error(result.error ?? 'The peer did not return a session id.');
+      }
+      remoteSessionId = result.sessionId;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      useToast().addToast({
+        message: `Remote spawn failed: ${reason}`,
+        type: 'error',
+        persistent: true,
+        key: 'remote-spawn-error',
+      });
+      return;
+    }
+
     await refreshSessions();
-    await deps.navStore.navigateToSession(result.sessionId);
+    await deps.navStore.navigateToSession(remoteSessionId);
   }
 
   function onSortChange(field: string, direction: 'asc' | 'desc'): void {

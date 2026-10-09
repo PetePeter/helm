@@ -1547,6 +1547,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   peerDirs: (peerId: string): Promise<Array<{ name: string; path: string; projectId?: string; projectName?: string }>> =>
     ipcRenderer.invoke('peer:dirs', peerId),
 
+  /** Remote spawn: list the peer's own CLI type ids and display names. */
+  peerCliTypes: (peerId: string): Promise<Array<{ id: string; name: string; kind?: 'cli' | 'api' | 'comfyui' }>> =>
+    ipcRenderer.invoke('peer:cliTypes', peerId),
+
   /** Remote spawn: start `cliType` in `dirPath` on the peer and open it here. */
   peerSpawn: (peerId: string, cliType: string, dirPath: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> =>
     ipcRenderer.invoke('peer:spawn', peerId, cliType, dirPath),

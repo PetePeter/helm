@@ -62,6 +62,7 @@ describe('IPC channel contract', () => {
     const mainHandleChannels = collect(/(?:ipcMain|ipc)\.handle\(\s*['"]([^'"]+)['"]/g, mainSource);
 
     expect(preloadInvokeChannels).toEqual(mainHandleChannels);
+    expect(preloadInvokeChannels).toContain('peer:cliTypes');
   });
 
   it('has a registered main listener for every preload send channel', () => {

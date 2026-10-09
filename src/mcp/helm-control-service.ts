@@ -1340,7 +1340,7 @@ export class HelmControlService extends EventEmitter {
       const entry = this.configLoader.getCliTypeEntry(cliType)!;
       return {
         cliType,
-        name: entry.name,
+        name: entry.displayName ?? entry.name,
         // Helm-hosted tools have no CLI process; ComfyUI sessions use the local media host.
         kind: entry.api ? 'api' as const : entry.comfyUi ? 'comfyui' as const : 'cli' as const,
         ...(entry.api ? { model: entry.api.model } : {}),
