@@ -22,6 +22,7 @@ import { registerView } from '../main-view/main-view-manager.js';
 import { useNavigationStore } from '../stores/navigation.js';
 import { isPaneVisible } from '../dock-visibility-bridge.js';
 import { PANE_PLAN_DIRECTORIES, PANE_QUICK_SPAWN } from '../dock-types.js';
+import { useQuickSpawnStore } from '../stores/quick-spawn.js';
 
 // Register the terminal view with the main-view manager. mount/unmount are
 // no-ops because sessions-spawn owns the terminal container's display via
@@ -39,9 +40,9 @@ registerView('terminal', {
 // Bridge state (set by main.ts to avoid circular imports)
 // ============================================================================
 
-let dirPickerBridge: ((cliType: string, dirs: Array<{ name: string; path: string; projectId?: string; projectName?: string }>, preselectedPath?: string) => void) | null = null;
+let dirPickerBridge: ((cliType: string, dirs: Array<{ name: string; path: string; projectId?: string; projectName?: string }>, preselectedPath?: string, machineId?: string) => void) | null = null;
 
-export function setDirPickerBridge(fn: (cliType: string, dirs: Array<{ name: string; path: string; projectId?: string; projectName?: string }>, preselectedPath?: string) => void): void {
+export function setDirPickerBridge(fn: (cliType: string, dirs: Array<{ name: string; path: string; projectId?: string; projectName?: string }>, preselectedPath?: string, machineId?: string) => void): void {
   dirPickerBridge = fn;
 }
 
@@ -181,10 +182,14 @@ export function hideTerminalArea(): void {
   if (termContainer) termContainer.style.display = 'none';
 }
 
-export async function spawnNewSession(cliType?: string, preselectedPath?: string): Promise<void> {
+export async function spawnNewSession(cliType?: string, preselectedPath?: string, machineId = ''): Promise<void> {
   const resolvedType = cliType || state.availableSpawnTypes[0] || 'generic-terminal';
 
   try {
+    if (machineId && dirPickerBridge) {
+      dirPickerBridge(resolvedType, [], preselectedPath, machineId);
+      return;
+    }
     if (!configClient.configGetWorkingDirs) {
       logEvent('Spawn failed: gamepadCli not available');
       return;
@@ -298,6 +303,7 @@ export function handleSessionsZone(button: string, dir: string | null): void {
 }
 
 export function handleSpawnZone(button: string, dir: string | null): void {
+  const quickSpawn = useQuickSpawnStore();
   // If spawn is collapsed, redirect to adjacent zones
   if (!isPaneVisible(PANE_QUICK_SPAWN)) {
     if (dir === 'up') {
@@ -313,7 +319,7 @@ export function handleSpawnZone(button: string, dir: string | null): void {
     return;
   }
 
-  const count = sessionsState.cliTypes.length;
+  const count = quickSpawn.tools.length;
   const cols = 2;
 
   if (dir === 'up') {
@@ -342,6 +348,10 @@ export function handleSpawnZone(button: string, dir: string | null): void {
     return;
   }
   if (dir === 'left') {
+    if (quickSpawn.machineTabsFocused && quickSpawn.hasRemoteTargets) {
+      quickSpawn.cycleMachine(-1);
+      return;
+    }
     if (sessionsState.spawnFocusIndex % cols > 0) {
       sessionsState.spawnFocusIndex--;
       updateSpawnFocus();
@@ -349,6 +359,10 @@ export function handleSpawnZone(button: string, dir: string | null): void {
     return;
   }
   if (dir === 'right') {
+    if (quickSpawn.machineTabsFocused && quickSpawn.hasRemoteTargets) {
+      quickSpawn.cycleMachine(1);
+      return;
+    }
     if (sessionsState.spawnFocusIndex % cols < cols - 1 && sessionsState.spawnFocusIndex + 1 < count) {
       sessionsState.spawnFocusIndex++;
       updateSpawnFocus();
@@ -358,12 +372,19 @@ export function handleSpawnZone(button: string, dir: string | null): void {
 }
 
 export function handleSpawnZoneButton(button: string): boolean {
+  const quickSpawn = useQuickSpawnStore();
   switch (button) {
     case 'A': {
-      const cliType = sessionsState.cliTypes[sessionsState.spawnFocusIndex];
-      if (cliType) spawnNewSession(cliType);
+      const tool = quickSpawn.tools[sessionsState.spawnFocusIndex];
+      if (tool) void spawnNewSession(tool.cliType, undefined, tool.machineId);
       return true;
     }
+    case 'LeftBumper':
+      if (quickSpawn.hasRemoteTargets) quickSpawn.cycleMachine(-1);
+      return quickSpawn.hasRemoteTargets;
+    case 'RightBumper':
+      if (quickSpawn.hasRemoteTargets) quickSpawn.cycleMachine(1);
+      return quickSpawn.hasRemoteTargets;
     case 'B':
       sessionsState.activeFocus = 'sessions';
       updateAllFocus();

@@ -10,6 +10,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { nextTick, ref, type Ref } from 'vue';
 
 import TerminalPane from '../../../renderer/components/dock/TerminalPane.vue';
@@ -100,7 +101,7 @@ function makeContext(): Fake {
 function mountPane(component: unknown, context: HelmPaneContext) {
   return mount(component as any, {
     shallow: true,
-    global: { provide: { [HELM_PANE_CONTEXT as symbol]: context } },
+    global: { plugins: [createPinia()], provide: { [HELM_PANE_CONTEXT as symbol]: context } },
   });
 }
 

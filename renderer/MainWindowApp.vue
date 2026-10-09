@@ -601,7 +601,7 @@ const workspaceKeyHandlers = createWorkspaceKeyHandlers({
   },
   spawnSession: () => {
     setPendingContextText(null);
-    openQuickSpawn((cliType) => { void onSpawn(cliType); });
+    openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
   },
   closeActiveSession: () => {
     if (state.activeSessionId) confirmCloseSessionById(state.activeSessionId);
@@ -686,15 +686,11 @@ function onContextMenuAction(action: ContextMenuAction): void {
       break;
     case 'new-session':
       setPendingContextText(null);
-      openQuickSpawn((cliType) => {
-        onSpawn(cliType);
-      });
+      openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
       break;
     case 'new-session-with-selection': {
       setPendingContextText(action.selectedText || null);
-      openQuickSpawn((cliType) => {
-        onSpawn(cliType);
-      });
+      openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
       break;
     }
     case 'prompts':

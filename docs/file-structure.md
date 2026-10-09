@@ -141,6 +141,8 @@ renderer/
 │   ├── index.ts                # Barrel export of all Vue SFC components
 │   ├── sort-control.ts         # Reusable sort dropdown + direction toggle widget
 │   ├── chip-bar.ts             # Thin wrapper composing draft-strip + plan-chips
+│   ├── common/
+│   │   └── QuickSpawnMachineTabs.vue # Shared machine tabs and tool loading/error state for Quick Spawn surfaces
 │   ├── modals/
 │   │   ├── index.ts
 │   │   ├── CloseConfirmModal.vue
@@ -188,6 +190,7 @@ renderer/
 │   ├── index.ts                # Barrel export of all Pinia stores
 │   ├── app.ts                  # useAppStore — currentScreen, gamepadCount, eventLog, activeProfile
 │   ├── sessions-screen.ts      # useSessionsScreenStore — zone, focusIndex, cardColumn, overviewGroup
+│   ├── quick-spawn.ts           # useQuickSpawnStore — shared machine/tool selection for dock and modal Quick Spawn
 │   ├── config.ts               # useConfigStore — cliBindingsCache, cliSequencesCache, cliToolsCache, cliTypes
 │   ├── drafts.ts               # useDraftsStore — draftCounts, activeDraft, editorVisible
 │   ├── plans.ts                # usePlansStore — planDoingCounts, planStartableCounts
@@ -389,6 +392,7 @@ tests/                                  # 61 test files
 ├── pty-manager.test.ts         # PTY process management tests
 ├── pty-output-buffer.test.ts   # PtyOutputBuffer ring buffer tests
 ├── quick-spawn.test.ts         # Quick-spawn CLI type picker tests
+├── quick-spawn-machines.test.ts # Shared machine/tool state, mounted surfaces, remote spawn selection, and navigation tests
 ├── reply-keyboard.test.ts      # Telegram reply keyboard tests
 ├── resume-spawn.test.ts        # CLI session resume spawning tests
 ├── sequence-parser.test.ts     # Sequence format parser tests

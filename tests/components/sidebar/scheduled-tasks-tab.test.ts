@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import ScheduledTasksTab from '../../../renderer/components/sidebar/ScheduledTasksTab.vue';
 import QuickSpawnModal from '../../../renderer/components/modals/QuickSpawnModal.vue';
 import DirPickerModal from '../../../renderer/components/modals/DirPickerModal.vue';
@@ -33,7 +34,7 @@ function localDateTimeInputValue(date: Date): string {
 }
 
 function mountTab() {
-  return mount(ScheduledTasksTab);
+  return mount(ScheduledTasksTab, { global: { plugins: [createPinia()] } });
 }
 
 describe('ScheduledTasksTab', () => {

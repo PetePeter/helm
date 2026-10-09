@@ -163,6 +163,13 @@ Pane content does not provide a second close control. The dock tab close button
 is the close action, the View menu restores closed panes, and rails reveal
 collapsed or autohide panes.
 
+The Quick Spawn pane lists tools for the selected machine. Its tabs show This
+PC and eligible fleet peers when any are available; selecting a tool opens the
+folder picker for that same machine. With the pane focused, Left/Right Bumper
+cycles machine tabs. Keyboard left/right cycles tabs while a machine tab has
+focus, and the tabs remain clickable. With no eligible peer, the pane keeps its
+local tool list without showing tabs.
+
 ## Chips belong to the terminal
 
 `TerminalChips` (plan pills + quick actions) mounts **inside** `TerminalPane`, at

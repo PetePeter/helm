@@ -18,6 +18,7 @@ Gamepad button and keyboard shortcut mappings.
 | Y | (planned: cycle terminal state) |
 | Left Trigger | Spawn Claude Code |
 | Right Bumper | Spawn Copilot CLI |
+| Left / Right Bumper (Quick Spawn focused) | Previous / next machine tab; wraps |
 | Back/Start | Switch profile (previous/next) |
 | Sandwich/Guide | Focus hub window + show sessions screen |
 | Any button bound to `voice-talk` | Hold to talk to Helm (the operator); release sends. The release is honoured from any pane |
@@ -56,10 +57,10 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+Shift+P | Open/focus the Plans pane for the active session folder |
 | Ctrl+Shift+S | Focus the Sessions pane |
 | Ctrl+Shift+A | Show/focus the Artifacts pane; never toggles it |
-| Ctrl+Shift+N | Terminal: open quick spawn / Sessions: create a new plan for the current directory |
+| Ctrl+Shift+N | Terminal: open machine-first Quick Spawn / Sessions: create a new plan for the current directory |
 | Ctrl+Shift+W | Close the active session; needs a terminal **visible**, not focused |
 | Ctrl+Tab / Ctrl+Shift+Tab | Cycle the selected session forward/back. Moves the session spine only — the focused pane stays put and re-points at the new session |
-| Arrow keys | Navigate the focused pane (mapped to D-pad equivalents). xterm owns arrows when the keystroke lands in it |
+| Arrow keys | Navigate the focused pane (mapped to D-pad equivalents). In Quick Spawn, left/right cycle machine tabs while a tab has focus; in the modal they cycle tabs directly. xterm owns arrows when the keystroke lands in it |
 | Enter | Mapped to A button |
 | Escape | Focused terminal: ESC protection (see below), else ESC to the PTY. Any other pane: the pane's own business (mapped to B button) |
 | Delete | Mapped to X button |

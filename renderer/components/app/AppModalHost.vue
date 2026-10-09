@@ -8,7 +8,7 @@ import {
   bulkCleanup, getBulkCleanupCallback,
   promptTree, getPromptTreeCallback, hidePromptTree,
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
-  dirPicker, closeDirPicker, switchDirPickerMachine,
+  dirPicker, closeDirPicker,
   draftSubmenu,
   formModal, getFormModalResolve,
   toolEditor, getToolEditorCallback,
@@ -18,7 +18,6 @@ import {
   runtimeGroupMove, closeRuntimeGroupMoveSubmenu,
 } from '../../stores/modal-bridge.js';
 import { useRuntimeGroupActions } from '../../composables/useRuntimeGroupActions.js';
-import { usePeers } from '../../composables/usePeers.js';
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../../src/types/scheduled-task.js';
 import CloseConfirmModal from '../modals/CloseConfirmModal.vue';
 import PlanDeleteConfirmModal from '../modals/PlanDeleteConfirmModal.vue';
@@ -126,21 +125,16 @@ function onPromptTreeSelect(templateId: string): void {
   cb?.(templateId);
 }
 
-function onQuickSpawnSelect(cliType: string): void {
+function onQuickSpawnSelect(cliType: string, machineId?: string): void {
   const cb = getQuickSpawnCallback();
   closeQuickSpawn();
-  cb?.(cliType);
+  cb?.(cliType, machineId);
 }
 
-function onDirPickerSelect(path: string): void {
-  const { cliType, machineId } = dirPicker;
+function onDirPickerSelect(path: string, machineId = ''): void {
+  const { cliType } = dirPicker;
   closeDirPicker();
   emit('dir-select', path, cliType, machineId);
-}
-
-const { listPeerDirs } = usePeers();
-function onDirPickerMachine(id: string): void {
-  void switchDirPickerMachine(id, listPeerDirs);
 }
 
 function onFormModalSave(values: Record<string, string>): void {
@@ -239,6 +233,7 @@ function onRuntimeGroupMoveCancel(): void {
     v-model:visible="quickSpawn.visible"
     :cli-types="cliTypes"
     :preselected-cli-type="quickSpawn.preselectedCliType"
+    :machine-aware="quickSpawn.machineAware"
     @select="onQuickSpawnSelect"
     @cancel="closeQuickSpawn()"
   />
@@ -272,12 +267,10 @@ function onRuntimeGroupMoveCancel(): void {
     :cli-type="dirPicker.cliType"
     :items="dirPicker.items"
     :preselected-path="dirPicker.preselectedPath"
-    :machines="dirPicker.machines"
     :machine-id="dirPicker.machineId"
     :loading="dirPicker.loading"
     :error="dirPicker.error"
     @select="onDirPickerSelect"
-    @machine="onDirPickerMachine"
     @cancel="closeDirPicker()"
   />
 

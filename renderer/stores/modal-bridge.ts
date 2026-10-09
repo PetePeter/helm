@@ -213,22 +213,26 @@ export function hidePromptTree(): void {
 export const quickSpawn = reactive({
   visible: false,
   preselectedCliType: undefined as string | undefined,
+  machineAware: false,
 });
 
-let _quickSpawnOnSelect: ((cliType: string) => void) | null = null;
-export function setQuickSpawnCallback(cb: ((cliType: string) => void) | null): void { _quickSpawnOnSelect = cb; }
-export function getQuickSpawnCallback(): ((cliType: string) => void) | null { return _quickSpawnOnSelect; }
+let _quickSpawnOnSelect: ((cliType: string, machineId?: string) => void) | null = null;
+export function setQuickSpawnCallback(cb: ((cliType: string, machineId?: string) => void) | null): void { _quickSpawnOnSelect = cb; }
+export function getQuickSpawnCallback(): ((cliType: string, machineId?: string) => void) | null { return _quickSpawnOnSelect; }
 export function openQuickSpawn(
-  onSelect: (cliType: string) => void,
+  onSelect: (cliType: string, machineId?: string) => void,
   preselectedCliType?: string,
+  machineAware = false,
 ): void {
   quickSpawn.visible = true;
   quickSpawn.preselectedCliType = preselectedCliType;
+  quickSpawn.machineAware = machineAware;
   setQuickSpawnCallback(onSelect);
 }
 export function closeQuickSpawn(): void {
   quickSpawn.visible = false;
   quickSpawn.preselectedCliType = undefined;
+  quickSpawn.machineAware = false;
   setQuickSpawnCallback(null);
 }
 
@@ -237,66 +241,40 @@ export function closeQuickSpawn(): void {
 // ============================================================================
 
 type DirPickerItem = { name: string; path: string; projectId?: string; projectName?: string };
-/** A machine the picker can spawn on; id '' is this PC. */
-export type DirPickerMachine = { id: string; label: string };
 
 export const dirPicker = reactive({
   visible: false,
   cliType: '',
   items: [] as DirPickerItem[],
   preselectedPath: undefined as string | undefined,
-  machines: [] as DirPickerMachine[],
   /** '' = this PC; otherwise the fleet peer id the spawn goes to. */
   machineId: '',
   loading: false,
   error: '',
-  /** This PC's items, restored when switching back from a peer. */
-  localItems: [] as DirPickerItem[],
+  requestId: 0,
 });
 export function openDirPicker(
   cliType: string,
   items: DirPickerItem[],
   preselectedPath?: string,
-  peers: DirPickerMachine[] = [],
-): void {
+  machineId = '',
+): number {
+  dirPicker.requestId++;
   dirPicker.visible = true;
   dirPicker.cliType = cliType;
   dirPicker.items = [...items];
-  dirPicker.localItems = [...items];
   dirPicker.preselectedPath = preselectedPath;
-  dirPicker.machines = peers.length ? [{ id: '', label: 'This PC' }, ...peers] : [];
-  dirPicker.machineId = '';
+  dirPicker.machineId = machineId;
   dirPicker.loading = false;
   dirPicker.error = '';
-}
-/**
- * Point the picker at another machine, loading its dirs with `load`. A late
- * answer for a machine the user already left is dropped.
- */
-export async function switchDirPickerMachine(id: string, load: (peerId: string) => Promise<DirPickerItem[]>): Promise<void> {
-  dirPicker.machineId = id;
-  dirPicker.error = '';
-  if (!id) { dirPicker.items = [...dirPicker.localItems]; dirPicker.loading = false; return; }
-  dirPicker.items = [];
-  dirPicker.loading = true;
-  try {
-    const items = await load(id);
-    if (dirPicker.machineId !== id) return;
-    dirPicker.items = items;
-    if (!items.length) dirPicker.error = 'No directories on that machine.';
-  } catch (err) {
-    if (dirPicker.machineId === id) dirPicker.error = err instanceof Error ? err.message : String(err);
-  } finally {
-    if (dirPicker.machineId === id) dirPicker.loading = false;
-  }
+  return dirPicker.requestId;
 }
 export function closeDirPicker(): void {
+  dirPicker.requestId++;
   dirPicker.visible = false;
   dirPicker.cliType = '';
   dirPicker.items = [];
-  dirPicker.localItems = [];
   dirPicker.preselectedPath = undefined;
-  dirPicker.machines = [];
   dirPicker.machineId = '';
   dirPicker.loading = false;
   dirPicker.error = '';

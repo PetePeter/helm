@@ -8,6 +8,7 @@
 export interface SpawnItem {
   cliType: string;
   displayName: string;
+  machineId?: string;
 }
 
 const props = defineProps<{
@@ -17,8 +18,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  spawn: [cliType: string];
+  spawn: [cliType: string, machineId?: string];
 }>();
+
+function select(item: SpawnItem): void {
+  if (item.machineId) emit('spawn', item.cliType, item.machineId);
+  else emit('spawn', item.cliType);
+}
 </script>
 
 <template>
@@ -29,7 +35,7 @@ const emit = defineEmits<{
       class="spawn-btn focusable"
       :class="{ focused: isActive && focusIndex === i }"
       :data-focus-id="`spawn:${item.cliType}`"
-      @click="emit('spawn', item.cliType)"
+      @click="select(item)"
     >
       <span class="spawn-label">{{ item.displayName }}</span>
     </button>

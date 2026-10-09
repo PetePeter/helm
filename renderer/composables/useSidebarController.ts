@@ -6,7 +6,6 @@ import { patternsClient, schedulerClient, sessionsClient } from '../ipc/clients.
 import { setDirPickerBridge } from '../screens/sessions-spawn.js';
 import { openDirPicker, dirPicker, closeConfirm, setCloseConfirmCallback } from '../stores/modal-bridge.js';
 import { usePeers } from './usePeers.js';
-import { getCliDisplayName } from '../utils.js';
 import { useToast } from './useToast.js';
 import { refreshSessions, getSortField, getSortDirection, setSortField, setSortDirection } from './useAppBootstrap.js';
 import { startRename, commitRename, cancelRename } from '../sidebar/session-services.js';
@@ -33,7 +32,7 @@ export interface SidebarControllerDeps {
 
 
 export function useSidebarController(deps: SidebarControllerDeps) {
-  const { spawnTargets, listPeerCliTypes, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
+  const { listPeerDirs, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
   const overviewCollapsedIds = ref<Set<string>>(new Set());
   const overviewGroupLabel = ref('');
   const schedulerPopupVisible = ref(false);
@@ -144,34 +143,51 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     await schedulerClient.scheduledTaskDelete(task.id);
   }
 
-  /** Every spawn picker offers the fleet peers that let me spawn on them as machine tabs. */
-  function openSpawnPicker(cliType: string, dirs: Parameters<typeof buildDirPickerItems>[0], preselectedPath?: string): void {
-    openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath,
-      spawnTargets.value.map((p) => ({ id: p.id, label: p.alias })));
+  async function openSpawnPicker(
+    cliType: string,
+    dirs: Parameters<typeof buildDirPickerItems>[0],
+    preselectedPath?: string,
+    machineId = '',
+  ): Promise<void> {
+    if (!machineId) {
+      openDirPicker(cliType, buildDirPickerItems(dirs), preselectedPath, '');
+      return;
+    }
+
+    const requestId = openDirPicker(cliType, [], preselectedPath, machineId);
+    dirPicker.loading = true;
+    try {
+      const peerDirs = await listPeerDirs(machineId);
+      if (!dirPicker.visible || dirPicker.requestId !== requestId) return;
+      dirPicker.items = buildDirPickerItems(peerDirs);
+      if (peerDirs.length === 0) dirPicker.error = 'No directories on that machine.';
+    } catch (error) {
+      if (dirPicker.visible && dirPicker.requestId === requestId) {
+        dirPicker.error = error instanceof Error ? error.message : String(error);
+      }
+    } finally {
+      if (dirPicker.visible && dirPicker.requestId === requestId) dirPicker.loading = false;
+    }
   }
 
-  async function onSpawn(cliType: string): Promise<void> {
+  async function onSpawn(cliType: string, machineId = ''): Promise<void> {
+    if (machineId) {
+      await openSpawnPicker(cliType, [], undefined, machineId);
+      return;
+    }
     await deps.refreshProjects();
     const dirs = sessionsState.directories ?? [];
-    // No local folders and no peer to spawn on: nothing to choose, spawn here.
-    if (dirs.length === 0 && spawnTargets.value.length === 0) { await deps.doSpawn(cliType); return; }
-    openSpawnPicker(cliType, dirs);
+    if (dirs.length === 0) { await deps.doSpawn(cliType); return; }
+    await openSpawnPicker(cliType, dirs);
   }
 
-  /** `machineId` '' spawns here; a peer id spawns there and opens it here. */
+  /** The directory picker carries the machine selected before tool selection. */
   async function onDirPickerSelect(path: string, selectedCliType = dirPicker.cliType, machineId = ''): Promise<void> {
     if (!machineId) { await deps.doSpawn(selectedCliType, path); return; }
 
     let remoteSessionId: string;
     try {
-      const localName = getCliDisplayName(selectedCliType);
-      const peerCliTypes = await listPeerCliTypes(machineId);
-      const matches = peerCliTypes.filter((cliType) => cliType.name.trim().toLowerCase() === localName.trim().toLowerCase());
-      const peerLabel = spawnTargets.value.find((peer) => peer.id === machineId)?.alias ?? machineId;
-      if (matches.length === 0) throw new Error(`No matching tool "${localName}" is available on ${peerLabel}.`);
-      if (matches.length > 1) throw new Error(`More than one tool named "${localName}" is available on ${peerLabel}.`);
-
-      const result = await spawnOnPeer(machineId, matches[0].id, path);
+      const result = await spawnOnPeer(machineId, selectedCliType, path);
       if (!result.ok || !result.sessionId) {
         throw new Error(result.error ?? 'The peer did not return a session id.');
       }
@@ -198,7 +214,7 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   }
 
   function installDirPickerBridge(): void {
-    // The machine tabs read peer state, so keep it live from startup.
+    // Keep fleet status live for the shared machine tabs.
     ensurePeersSubscribed();
     setDirPickerBridge(openSpawnPicker);
   }

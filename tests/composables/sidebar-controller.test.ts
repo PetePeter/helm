@@ -19,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   scheduledTaskDelete: vi.fn(),
   sessionSnapOut: vi.fn(),
   sessionSnapBack: vi.fn(),
-  openDirPicker: vi.fn(),
   setDirPickerBridge: vi.fn(),
   refreshSessions: vi.fn(),
   setSortField: vi.fn(),
@@ -28,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   peerCliTypes: [] as Array<{ id: string; name: string; kind?: string }>,
   peerCliTypeError: null as Error | null,
   peerCliTypeCalls: [] as string[],
+  peerDirs: [] as Array<{ name: string; path: string }>,
+  peerDirCalls: [] as string[],
+  peerDirsPromise: null as Promise<Array<{ name: string; path: string }>> | null,
+  peerDirsError: null as Error | null,
   peerSpawnCalls: [] as Array<{ peerId: string; cliType: string; dirPath: string }>,
   peerSpawnResult: { ok: true, sessionId: 'remote-session' } as { ok: boolean; sessionId?: string; error?: string },
 }));
@@ -45,13 +48,15 @@ vi.mock('../../renderer/ipc/clients.js', () => ({
   },
 }));
 vi.mock('../../renderer/screens/sessions-spawn.js', () => ({ setDirPickerBridge: mocks.setDirPickerBridge }));
-vi.mock('../../renderer/stores/modal-bridge.js', () => ({
-  openDirPicker: mocks.openDirPicker,
-  isAnyBridgeModalVisible: () => false,
-  dirPicker: { cliType: 'codex' },
-  closeConfirm: { visible: false, sessionId: '', sessionName: '', draftCount: 0 },
-  setCloseConfirmCallback: vi.fn(),
-}));
+vi.mock('../../renderer/stores/modal-bridge.js', async () => {
+  const actual = await vi.importActual<typeof import('../../renderer/stores/modal-bridge.js')>('../../renderer/stores/modal-bridge.js');
+  return {
+    ...actual,
+    isAnyBridgeModalVisible: () => false,
+    closeConfirm: { visible: false, sessionId: '', sessionName: '', draftCount: 0 },
+    setCloseConfirmCallback: vi.fn(),
+  };
+});
 vi.mock('../../renderer/composables/usePeers.js', () => ({
   usePeers: () => ({
     spawnTargets: mocks.spawnTargets,
@@ -59,6 +64,12 @@ vi.mock('../../renderer/composables/usePeers.js', () => ({
       mocks.peerCliTypeCalls.push(peerId);
       if (mocks.peerCliTypeError) throw mocks.peerCliTypeError;
       return mocks.peerCliTypes;
+    },
+    listPeerDirs: async (peerId: string) => {
+      mocks.peerDirCalls.push(peerId);
+      if (mocks.peerDirsError) throw mocks.peerDirsError;
+      if (mocks.peerDirCalls.length === 1 && mocks.peerDirsPromise) return mocks.peerDirsPromise;
+      return mocks.peerDirs;
     },
     spawnOnPeer: async (peerId: string, cliType: string, dirPath: string) => {
       mocks.peerSpawnCalls.push({ peerId, cliType, dirPath });
@@ -87,6 +98,7 @@ vi.mock('../../renderer/screens/sessions.js', () => ({
 
 import { useSidebarController } from '../../renderer/composables/useSidebarController.js';
 import { useToast } from '../../renderer/composables/useToast.js';
+import { closeDirPicker, dirPicker } from '../../renderer/stores/modal-bridge.js';
 
 function createController() {
   const navStore = {
@@ -108,6 +120,7 @@ function createController() {
 describe('useSidebarController', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    closeDirPicker();
     mocks.state.activeSessionId = 's1';
     mocks.state.draftCounts = new Map();
     mocks.state.projects = [];
@@ -117,6 +130,10 @@ describe('useSidebarController', () => {
     mocks.peerCliTypes = [];
     mocks.peerCliTypeError = null;
     mocks.peerCliTypeCalls = [];
+    mocks.peerDirs = [];
+    mocks.peerDirCalls = [];
+    mocks.peerDirsPromise = null;
+    mocks.peerDirsError = null;
     mocks.peerSpawnCalls = [];
     mocks.peerSpawnResult = { ok: true, sessionId: 'remote-session' };
     useToast().removeByKey('remote-spawn-error');
@@ -130,35 +147,39 @@ describe('useSidebarController', () => {
     await controller.onSpawn('codex');
 
     expect(deps.refreshProjects).toHaveBeenCalled();
-    expect(mocks.openDirPicker).toHaveBeenCalledWith('codex', [{
-      name: 'Hub',
-      path: 'X:\\coding\\hub',
-      projectId: 'p1',
-      projectName: 'Hub',
-      isCanonical: true,
-    }], undefined, []);
+    expect(dirPicker).toMatchObject({
+      visible: true,
+      cliType: 'codex',
+      items: [{
+        name: 'Hub',
+        path: 'X:\\coding\\hub',
+        projectId: 'p1',
+        projectName: 'Hub',
+        isCanonical: true,
+      }],
+      machineId: '',
+    });
     expect(deps.doSpawn).not.toHaveBeenCalled();
   });
 
-  it('offers fleet peers as machine tabs from the Spawn button', async () => {
-    mocks.sessionsState.directories = [{ name: 'Hub', path: 'X:\coding\hub' }];
-    mocks.spawnTargets.value = [{ id: 'mac', alias: 'MacBook' }];
-    const { controller } = createController();
-
-    await controller.onSpawn('codex');
-
-    expect(mocks.openDirPicker).toHaveBeenCalledWith('codex', mocks.sessionsState.directories, undefined,
-      [{ id: 'mac', label: 'MacBook' }]);
-  });
-
-  it('opens the picker for a fleet peer even with no local directories', async () => {
-    mocks.spawnTargets.value = [{ id: 'mac', alias: 'MacBook' }];
+  it('loads folders for the chosen peer, then spawns with that peer tool id and path', async () => {
+    mocks.peerDirs = [{ name: 'Remote Project', path: 'D:/remote/project' }];
     const { controller, deps } = createController();
 
-    await controller.onSpawn('codex');
+    await controller.onSpawn('peer-cli-id', 'mac');
 
-    expect(mocks.openDirPicker).toHaveBeenCalledWith('codex', [], undefined, [{ id: 'mac', label: 'MacBook' }]);
+    expect(mocks.peerDirCalls).toEqual(['mac']);
+    expect(dirPicker).toMatchObject({
+      visible: true,
+      cliType: 'peer-cli-id',
+      machineId: 'mac',
+      items: [{ name: 'Remote Project', path: 'D:/remote/project' }],
+      loading: false,
+    });
     expect(deps.doSpawn).not.toHaveBeenCalled();
+
+    await controller.onDirPickerSelect('D:/remote/project', 'peer-cli-id', 'mac');
+    expect(mocks.peerSpawnCalls).toEqual([{ peerId: 'mac', cliType: 'peer-cli-id', dirPath: 'D:/remote/project' }]);
   });
 
   it('spawns directly when no directories are configured', async () => {
@@ -168,17 +189,54 @@ describe('useSidebarController', () => {
 
     expect(deps.refreshProjects).toHaveBeenCalled();
     expect(deps.doSpawn).toHaveBeenCalledWith('codex');
-    expect(mocks.openDirPicker).not.toHaveBeenCalled();
+    expect(dirPicker.visible).toBe(false);
   });
 
-  it('resolves the local selection to the matching peer tool id before spawning', async () => {
-    mocks.state.cliToolsCache = { 'local-cli-id': { displayName: 'Claude Code' } };
-    mocks.peerCliTypes = [{ id: 'peer-cli-id', name: 'Claude Code', kind: 'cli' }];
+  it('drops late peer folders after the picker is reopened for a different tool', async () => {
+    let resolveFirst!: (items: Array<{ name: string; path: string }>) => void;
+    mocks.peerDirsPromise = new Promise(resolve => { resolveFirst = resolve; });
+    mocks.peerDirs = [{ name: 'Second Tool Project', path: 'D:/second/project' }];
+    const { controller } = createController();
+
+    const firstPicker = controller.onSpawn('first-peer-tool', 'mac');
+    expect(dirPicker).toMatchObject({ cliType: 'first-peer-tool', machineId: 'mac', loading: true });
+    await controller.onSpawn('second-peer-tool', 'mac');
+    expect(dirPicker).toMatchObject({
+      cliType: 'second-peer-tool',
+      items: [{ name: 'Second Tool Project', path: 'D:/second/project' }],
+      loading: false,
+    });
+
+    resolveFirst([{ name: 'Late First Tool Project', path: 'D:/late/project' }]);
+    await firstPicker;
+
+    expect(dirPicker).toMatchObject({
+      cliType: 'second-peer-tool',
+      items: [{ name: 'Second Tool Project', path: 'D:/second/project' }],
+      loading: false,
+    });
+  });
+
+  it('shows a peer folder request error in the real directory picker state', async () => {
+    mocks.peerDirsError = new Error('Folders denied');
+    const { controller } = createController();
+
+    await controller.onSpawn('peer-cli-id', 'mac');
+
+    expect(dirPicker).toMatchObject({
+      visible: true,
+      machineId: 'mac',
+      loading: false,
+      error: 'Folders denied',
+    });
+  });
+
+  it('passes the selected peer-owned tool id straight to spawnOnPeer', async () => {
     const { controller, navStore } = createController();
 
-    await controller.onDirPickerSelect('D:/work/project', 'local-cli-id', 'mac');
+    await controller.onDirPickerSelect('D:/work/project', 'peer-cli-id', 'mac');
 
-    expect(mocks.peerCliTypeCalls).toEqual(['mac']);
+    expect(mocks.peerCliTypeCalls).toEqual([]);
     expect(mocks.peerSpawnCalls).toEqual([{
       peerId: 'mac',
       cliType: 'peer-cli-id',
@@ -187,40 +245,18 @@ describe('useSidebarController', () => {
     expect(navStore.navigateToSession).toHaveBeenCalledWith('remote-session');
   });
 
-  it('refuses a remote spawn when the peer has no matching display name and shows a toast', async () => {
-    mocks.state.cliToolsCache = { 'local-cli-id': { displayName: 'Claude Code' } };
-    mocks.peerCliTypes = [{ id: 'peer-other-id', name: 'Copilot CLI', kind: 'cli' }];
-    const { controller, navStore } = createController();
+  it('shows remote spawn failures through the persistent toast mechanism', async () => {
+    mocks.peerSpawnResult = { ok: false, error: 'Tool not permitted' };
+    const { controller } = createController();
 
-    await controller.onDirPickerSelect('D:/work/project', 'local-cli-id', 'mac');
+    await controller.onDirPickerSelect('D:/work/project', 'peer-cli-id', 'mac');
 
-    expect(mocks.peerSpawnCalls).toEqual([]);
-    expect(navStore.navigateToSession).not.toHaveBeenCalled();
+    expect(mocks.peerSpawnCalls).toEqual([{ peerId: 'mac', cliType: 'peer-cli-id', dirPath: 'D:/work/project' }]);
     expect(useToast().toasts.find((toast) => toast.key === 'remote-spawn-error')).toMatchObject({
       type: 'error',
       persistent: true,
-      message: expect.stringMatching(/No matching tool "Claude Code".*mac/i),
+      message: expect.stringContaining('Tool not permitted'),
     });
-  });
-
-  it('shows peer-list and spawn failures through the toast mechanism', async () => {
-    mocks.state.cliToolsCache = { 'local-cli-id': { displayName: 'Claude Code' } };
-    mocks.peerCliTypeError = new Error('Tool not permitted');
-    const { controller } = createController();
-
-    await controller.onDirPickerSelect('D:/work/project', 'local-cli-id', 'mac');
-
-    expect(mocks.peerSpawnCalls).toEqual([]);
-    expect(useToast().toasts.find((toast) => toast.key === 'remote-spawn-error')?.message).toContain('Tool not permitted');
-
-    useToast().removeByKey('remote-spawn-error');
-    mocks.peerCliTypeError = null;
-    mocks.peerCliTypes = [{ id: 'peer-cli-id', name: 'Claude Code', kind: 'cli' }];
-    mocks.peerSpawnResult = { ok: false, error: 'No live link to peer mac' };
-
-    await controller.onDirPickerSelect('D:/work/project', 'local-cli-id', 'mac');
-
-    expect(useToast().toasts.find((toast) => toast.key === 'remote-spawn-error')?.message).toContain('No live link to peer mac');
   });
 
   it('closes overview before navigating from a session click', async () => {

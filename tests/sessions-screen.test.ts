@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { usePeers, resetPeersStateForTesting } from '../renderer/composables/usePeers.js';
 
 // ---------------------------------------------------------------------------
 // Mocks — declared BEFORE vi.mock() calls so hoisted references resolve
@@ -362,6 +363,8 @@ describe('Sessions Screen', () => {
     // Reset module-level bridges so tests don't leak state
     sessions.setDirPickerBridge(null as any);
     sessions.setTerminalManagerGetter(null as any);
+    resetPeersStateForTesting();
+    delete (window as Window & { helm?: unknown }).helm;
     Object.assign(sessionsState, {
       activeFocus: 'sessions',
       sessionsFocusIndex: 0,
@@ -737,6 +740,39 @@ describe('Sessions Screen', () => {
         undefined,
         undefined,
       );
+    });
+
+    it('A on a peer-owned tool passes its tool id and machine id to the picker bridge', async () => {
+      const { useQuickSpawnStore } = await import('../renderer/stores/quick-spawn.js');
+      Object.defineProperty(window, 'helm', {
+        configurable: true,
+        value: {
+          peers: {
+            peerCliTypes: vi.fn().mockResolvedValue([{ id: 'peer-cli-id', name: 'Peer CLI', kind: 'cli' }]),
+          },
+        },
+      });
+      usePeers().configuredPeers.value = [{
+        id: 'peer-id',
+        machineId: 'peer-machine',
+        alias: 'Peer',
+        address: 'peer:47474',
+        direction: 'bidirectional',
+        inbound: false,
+        peerAllowsMe: true,
+        enabled: true,
+        online: true,
+      }];
+      await useQuickSpawnStore().selectMachine('peer-id');
+      const bridge = vi.fn();
+      sessions.setDirPickerBridge(bridge);
+
+      sessionsState.spawnFocusIndex = 0;
+      sessions.handleSessionsScreenButton('A');
+      await flush();
+
+      expect(bridge).toHaveBeenCalledWith('peer-cli-id', [], undefined, 'peer-id');
+      expect(mockCreateTerminal).not.toHaveBeenCalled();
     });
 
     it('B returns to sessions zone', () => {

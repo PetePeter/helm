@@ -10,6 +10,7 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { mount, VueWrapper, flushPromises } from '@vue/test-utils';
+import { createPinia } from 'pinia';
 import { useModalStack } from '../../../renderer/composables/useModalStack.js';
 import { state } from '../../../renderer/state.js';
 
@@ -459,7 +460,7 @@ describe('QuickSpawnModal.vue', () => {
     return mount(QuickSpawnModal, {
       props: { visible: true, cliTypes, ...props },
       attachTo: document.body,
-      global: { stubs: GLOBAL_STUBS },
+      global: { stubs: GLOBAL_STUBS, plugins: [createPinia()] },
     });
   }
 
@@ -684,7 +685,7 @@ describe('DirPickerModal.vue', () => {
     const vm = w.vm as any;
     vm.handleButton('DPadDown'); // index 1
     vm.handleButton('A');
-    expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\project-b']);
+    expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\project-b', '']);
     w.unmount();
   });
 
@@ -700,7 +701,7 @@ describe('DirPickerModal.vue', () => {
     const w = factory();
     const items = w.findAll('.dir-picker-item');
     await items[2].trigger('click');
-    expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\project-c']);
+    expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\project-c', '']);
     w.unmount();
   });
 
