@@ -19,6 +19,7 @@ import { placeSessionInRuntimeGroup } from '../../session/runtime-group-placemen
 import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
 import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
+import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
@@ -29,6 +30,7 @@ export class HelmSessionService {
   private readonly gitBranchResolver = new GitBranchResolver();
   /** Runtime session groups (optional overlay on top of project grouping). */
   private runtimeGroupManager: RuntimeGroupManager | null = null;
+  private apiContextSizeLookup?: (sessionId: string) => ApiSessionContextSize;
 
   constructor(
     private readonly sessionManager: SessionManager,
@@ -43,6 +45,10 @@ export class HelmSessionService {
   /** Late-bound: the RuntimeGroupManager lives in the main process orchestrator. */
   setRuntimeGroupManager(manager: RuntimeGroupManager): void {
     this.runtimeGroupManager = manager;
+  }
+
+  setApiContextSizeLookup(lookup: (sessionId: string) => ApiSessionContextSize): void {
+    this.apiContextSizeLookup = lookup;
   }
 
   /** Late-bound: carries a session's artifacts to the session that continues it. */
@@ -75,7 +81,12 @@ export class HelmSessionService {
 
   getSession(sessionRef: string): SessionSummary | null {
     const session = this.findSession(sessionRef);
-    return session ? this.toSessionSummary(session) : null;
+    return session ? { ...this.toSessionSummary(session), context: this.contextSizeFor(session) } : null;
+  }
+
+  getSessionContextSize(sessionId: string): SessionContextSize | undefined {
+    const session = this.sessionManager.getSession(sessionId);
+    return session ? this.contextSizeFor(session) : undefined;
   }
 
   spawnCli(
@@ -382,6 +393,21 @@ export class HelmSessionService {
       ...(session.subagentOf ? { subagentOf: session.subagentOf } : {}),
       ...(session.pendingSubagents ? { pendingSubagents: session.pendingSubagents } : {}),
     };
+  }
+
+  private contextSizeFor(session: SessionInfo): SessionContextSize {
+    const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
+    const apiContext = session.apiTool ? this.apiContextSizeLookup?.(session.id) : undefined;
+    return resolveSessionContextSize({
+      cliTranscriptPath: session.cliTranscriptPath,
+      provider: cliEntry?.provider,
+      apiTool: session.apiTool,
+      comfyUiTool: session.comfyUiTool,
+      remote: session.remote,
+    }, {
+      contextWindow: cliEntry?.contextWindow,
+      ...(apiContext ? { apiContext } : {}),
+    });
   }
 
   private findSession(sessionRef: string): SessionInfo | null {

@@ -39,6 +39,7 @@ import { ApiSessionProcess, type ApiTurnOutcome } from './api-session-process.js
 import { buildTranscriptResumePrompt } from '../transcript-strip.js';
 import { formatApiHistoryTranscript } from './api-history-transcript.js';
 import type { ChatTurnUsage } from '../chat/chat-bridge.js';
+import type { ApiSessionContextSize } from '../context-size.js';
 
 export interface ApiSessionHostDeps {
   /** Same dispatch path as the MCP server, under the session's own identity. */
@@ -143,6 +144,13 @@ export class ApiSessionHost {
   private subagentCounter = 0;
 
   constructor(private readonly deps: ApiSessionHostDeps) {}
+
+  getContextSize(sessionId: string): ApiSessionContextSize {
+    const process = this.processes.get(sessionId);
+    return process
+      ? { available: true, ...(process.currentContextTokens !== undefined ? { tokens: process.currentContextTokens } : {}) }
+      : { available: false };
+  }
 
   /**
    * The user deleted chat bubbles of an API session: drop what they stand for

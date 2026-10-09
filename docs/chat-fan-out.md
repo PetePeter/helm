@@ -477,7 +477,10 @@ graph LR
 - **Why the transcript.** An API tool's loop sees the server's `usage`; a CLI in
   a PTY reports nothing. Its own JSONL log does, and hooks already tell Helm
   where that log is — so `src/session/transcript-usage.ts` reads the last usage
-  from the file's tail when the session sends a chat message.
+  from the file's tail when the session sends a chat message. `session_info` and
+  `session_get` use the same resolver, so known transcript counts and their
+  window fallback match the phone badge. `session_list` and the session feed
+  omit it to avoid a transcript read for every row.
 - **Per CLI.** Claude stamps `usage` on every reply (fresh + cached prompt +
   output). Codex emits `token_count` with the last request's size *and* the
   model window. Copilot writes its context size only at `session.shutdown`, so

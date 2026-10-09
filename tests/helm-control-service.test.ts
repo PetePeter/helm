@@ -111,6 +111,40 @@ describe('HelmControlService.listClis', () => {
   });
 });
 
+describe('HelmControlService.getSessionInfo context size', () => {
+  it('omits context when a global-token caller has no session', () => {
+    expect(makeService().service.getSessionInfo()).not.toHaveProperty('context');
+  });
+
+  it('returns the caller session’s measured context size', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-info-context-'));
+    const cliTranscriptPath = join(dir, 'transcript.jsonl');
+    writeFileSync(cliTranscriptPath, JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-10-10T10:00:00Z',
+      message: { role: 'assistant', content: [], usage: { input_tokens: 80_000, output_tokens: 0 } },
+    }));
+    const { service, sessionManager, configLoader } = makeService();
+    sessionManager.getSession.mockReturnValue({
+      id: 'caller', name: 'Caller', cliType: 'claude-code', cliTranscriptPath, workingDir: '/work',
+    } as any);
+    configLoader.getCliTypeEntry.mockReturnValue({ contextWindow: 200_000 } as any);
+
+    try {
+      expect(service.getSessionInfo({ sessionId: 'caller' }).context).toEqual({
+        known: true,
+        tokens: 80_000,
+        window: 200_000,
+        percent: 40,
+        measuredAtIso: '2026-10-10T10:00:00.000Z',
+        source: 'transcript',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('HelmControlService.sendTextToSession', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -643,7 +677,8 @@ describe('HelmControlService.getSessionInfo', () => {
 
     const info = service.getSessionInfo({ sessionId: 's1', sessionName: 'Claude' });
 
-    expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_mission', 'your_session_id', 'your_working_dir']);
+    expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'context', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_mission', 'your_session_id', 'your_working_dir']);
+    expect(info.context).toEqual({ known: false, reason: 'no-transcript' });
     expect(info.helm_workflow).toContain('startup');
     expect(info.chat).toContain('chat_send');
     expect(info.artifact_viewer).toContain('artifact_create');

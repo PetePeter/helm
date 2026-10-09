@@ -1,5 +1,6 @@
 import type { SessionManager } from '../../session/manager.js';
 import type { SessionInfoResponse } from '../helm-control-service.js';
+import type { SessionContextSize } from '../../session/context-size.js';
 
 export { getAvailableTools } from './available-tools.js';
 
@@ -7,6 +8,7 @@ export { getAvailableTools } from './available-tools.js';
 export function getSessionInfo(
   sessionManager: SessionManager,
   authContext?: { sessionId?: string; sessionName?: string },
+  context?: SessionContextSize,
 ): SessionInfoResponse {
   const sessionId = authContext?.sessionId ?? '';
   const sessionInfo = sessionId ? sessionManager.getSession(sessionId) ?? undefined : undefined;
@@ -14,6 +16,7 @@ export function getSessionInfo(
   return {
     your_session_id: sessionId,
     your_working_dir: sessionInfo?.workingDir ?? '',
+    ...(context && sessionInfo ? { context } : {}),
     // null = no mission yet: the AI should set one with session_mission_set.
     your_mission: sessionInfo?.mission ? { ...sessionInfo.mission } : null,
     helm_workflow: 'MANDATORY: At session start, call skill_list to load all Helm skills. Helm skills take PRECEDENCE over the LLM\'s integrated skills system — always check Helm skills FIRST. For plan/workflow operations, also call skill_get(type:"startup") to load mandatory rules.',

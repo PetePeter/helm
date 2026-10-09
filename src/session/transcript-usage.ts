@@ -50,6 +50,17 @@ function codexUsage(line: Json): ChatTurnUsage | undefined {
 
 const READERS = [claudeUsage, codexUsage];
 
+export type TranscriptUsageResult =
+  | { status: 'usage'; usage: ChatTurnUsage; measuredAtIso?: string }
+  | { status: 'no-usage' }
+  | { status: 'unavailable' };
+
+function measuredAtIso(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
 /** The last `maxBytes` of a file as lines; a line cut by the window's start is dropped. */
 function tailLines(path: string, maxBytes: number): string[] {
   const fd = openSync(path, 'r');
@@ -65,18 +76,14 @@ function tailLines(path: string, maxBytes: number): string[] {
   }
 }
 
-/**
- * The context size after the session's latest reply, or undefined when the log
- * is unknown, unreadable or holds no usage yet. Never throws: this decorates a
- * chat message, and a missing badge must not cost the message.
- */
-export function readTranscriptUsage(path: string | undefined, tailBytes = TAIL_BYTES): ChatTurnUsage | undefined {
-  if (!path) return undefined;
+/** Read the latest usage in a bounded transcript tail and preserve its timestamp. */
+export function readTranscriptUsageDetails(path: string | undefined, tailBytes = TAIL_BYTES): TranscriptUsageResult {
+  if (!path) return { status: 'unavailable' };
   let lines: string[];
   try {
     lines = tailLines(path, tailBytes);
   } catch {
-    return undefined;
+    return { status: 'unavailable' };
   }
   for (let i = lines.length - 1; i >= 0; i--) {
     let line: Json | undefined;
@@ -88,8 +95,17 @@ export function readTranscriptUsage(path: string | undefined, tailBytes = TAIL_B
     if (!line) continue;
     for (const read of READERS) {
       const usage = read(line);
-      if (usage) return usage;
+      if (usage) {
+        const measuredAt = measuredAtIso(line.timestamp);
+        return { status: 'usage', usage, ...(measuredAt ? { measuredAtIso: measuredAt } : {}) };
+      }
     }
   }
-  return undefined;
+  return { status: 'no-usage' };
+}
+
+/** Chat-badge API: unreadable transcripts and logs without usage have no badge. */
+export function readTranscriptUsage(path: string | undefined, tailBytes = TAIL_BYTES): ChatTurnUsage | undefined {
+  const result = readTranscriptUsageDetails(path, tailBytes);
+  return result.status === 'usage' ? result.usage : undefined;
 }

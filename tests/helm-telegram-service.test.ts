@@ -208,10 +208,37 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
     expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextWindow: 200_000 });
   });
 
+  it('keeps Codex\'s reported model window ahead of the configured fallback', async () => {
+    const cliTranscriptPath = join(dir, 'codex-transcript.jsonl');
+    writeFileSync(cliTranscriptPath, JSON.stringify({
+      type: 'event_msg',
+      timestamp: '2026-10-10T09:30:00Z',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { total_tokens: 125_000 }, model_context_window: 250_000 },
+      },
+    }));
+    const { svc, sent } = chatService(
+      { id: 'cli-1', name: 'Codex', cliType: 'codex', cliTranscriptPath },
+      { codex: { contextWindow: 200_000 } },
+    );
+
+    await svc.sendTelegramChat('cli-1', 'done');
+    expect(sent[0].usage).toEqual({ contextTokens: 125_000, contextWindow: 250_000 });
+  });
+
   it('keeps the usage an API session passed rather than reading a transcript', async () => {
     const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
     await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 1234, toolCalls: 2 });
     expect(sent[0].usage).toEqual({ contextTokens: 1234, toolCalls: 2, contextWindow: 200_000 });
+  });
+
+  it('preserves API tool-call usage when the reported context count is zero', async () => {
+    const apiSession = { id: 'cli-1', name: 'API', cliType: 'api', apiTool: true };
+    const { svc, sent } = chatService(apiSession, { api: { contextWindow: 200_000 } });
+
+    await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 0, toolCalls: 2 });
+    expect(sent[0].usage).toEqual({ contextTokens: 0, toolCalls: 2, contextWindow: 200_000 });
   });
 
   it('still sends, without a badge, when the session has no transcript', async () => {

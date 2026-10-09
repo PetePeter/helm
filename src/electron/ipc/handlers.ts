@@ -500,6 +500,7 @@ export function registerIPCHandlers(
     historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
   });
   registerApiSessionHost(apiSessionHost);
+  helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
   const patternMatcher = new PatternMatcher(

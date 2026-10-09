@@ -241,6 +241,10 @@ export class ApiSessionProcess implements PtyProcess {
     return this.running !== null;
   }
 
+  get currentContextTokens(): number | undefined {
+    return this.contextTokens;
+  }
+
   get hasReadTool(): boolean {
     return this.deps.tools.some((tool) => tool.name === 'Read');
   }

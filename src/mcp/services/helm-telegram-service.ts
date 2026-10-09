@@ -14,7 +14,7 @@ import type { ChatBroker } from '../../session/chat/chat-broker.js';
 import type { ChatOutboundMessage, ChatTurnUsage } from '../../session/chat/chat-bridge.js';
 import type { NotificationManager } from '../../session/notification-manager.js';
 import type { CapabilityDetector } from '../../session/capability-detector.js';
-import { readTranscriptUsage } from '../../session/transcript-usage.js';
+import { resolveSessionContextSize } from '../../session/context-size.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
 import { PiperTts } from '../../voice/piper-tts.js';
 import { getTempDir } from '../../utils/app-paths.js';
@@ -172,10 +172,26 @@ export class HelmTelegramService {
    * CLI type's `contextWindow`.
    */
   private usageBadge(session: SessionInfo, reported: ChatTurnUsage | undefined): ChatTurnUsage | undefined {
-    const usage = reported ?? readTranscriptUsage(session.cliTranscriptPath);
-    if (!usage) return undefined;
-    const contextWindow = usage.contextWindow ?? this.configLoader.getCliTypeEntry(session.cliType)?.contextWindow;
-    return contextWindow ? { ...usage, contextWindow } : usage;
+    const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
+    if (reported) {
+      const contextWindow = reported.contextWindow ?? cliEntry?.contextWindow;
+      return contextWindow ? { ...reported, contextWindow } : reported;
+    }
+
+    const context = resolveSessionContextSize({
+      cliTranscriptPath: session.cliTranscriptPath,
+      provider: cliEntry?.provider,
+      apiTool: session.apiTool,
+      comfyUiTool: session.comfyUiTool,
+      remote: session.remote,
+    }, {
+      contextWindow: cliEntry?.contextWindow,
+    });
+    if (!context.known) return undefined;
+    return {
+      contextTokens: context.tokens,
+      ...(context.window !== undefined ? { contextWindow: context.window } : {}),
+    };
   }
 
   /**

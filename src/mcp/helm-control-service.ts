@@ -37,6 +37,7 @@ import type { ScheduledTaskManager } from '../session/scheduled-task-manager.js'
 import type { RingRetry } from '../session/ring-retry.js';
 import type { CreateScheduledTaskParams, ScheduledTask, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
 import type { ContextBindingTargetType, ContextNode, ContextPermission, PlanContextRef } from '../types/context.js';
+import type { ApiSessionContextSize, SessionContextSize } from '../session/context-size.js';
 import type { Skill, SkillCreateInput, SkillReview, SkillSummary, SkillUpdateInput } from '../types/skill.js';
 import { ContextManager } from '../session/context-manager.js';
 import { SkillManager } from '../session/skill-manager.js';
@@ -122,6 +123,8 @@ export interface SessionSummary {
   /** Human label for cliType. Use this in anything a person reads. */
   cliTypeName: string;
   workingDir?: string;
+  /** Read only by session_get; session_list deliberately omits transcript-backed usage. */
+  context?: SessionContextSize;
   /** Current local git branch; omitted for main/master and non-repositories. */
   gitBranch?: string;
   projectId?: string;
@@ -233,6 +236,8 @@ export interface SessionInfoResponse {
   your_working_dir: string;
   /** This session's mission TL;DR, or null when none is set (session_mission_set). */
   your_mission: { text: string; setBy: 'user' | 'ai'; setAt: number } | null;
+  /** The caller's measured model context, when its session is known. */
+  context?: SessionContextSize;
   helm_workflow: string;
   chat: string;
   artifact_viewer: string;
@@ -1432,6 +1437,10 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.getSession(sessionRef);
   }
 
+  setApiContextSizeLookup(lookup: (sessionId: string) => ApiSessionContextSize): void {
+    this.sessionService.setApiContextSizeLookup(lookup);
+  }
+
   spawnCli(
     cliType: string,
     dirPath: string,
@@ -1757,7 +1766,10 @@ export class HelmControlService extends EventEmitter {
   // ---------------------------------------------------------------------------
 
   getSessionInfo(authContext?: { sessionId?: string; sessionName?: string }): SessionInfoResponse {
-    return getSessionInfo(this.sessionManager, authContext);
+    const context = authContext?.sessionId
+      ? this.sessionService.getSessionContextSize(authContext.sessionId)
+      : undefined;
+    return getSessionInfo(this.sessionManager, authContext, context);
   }
 
   // ---------------------------------------------------------------------------

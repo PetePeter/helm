@@ -845,7 +845,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_list',
     title: 'List Sessions',
-    description: 'List currently known Helm sessions, optionally filtered to one working directory or project. Call this before sending text so you can target an existing session instead of spawning blindly. Pass since (and the epoch a previous reply returned) to get only what changed: the reply is then {epoch, seq, full, sessions, removed} — merge sessions by id and drop removed, or replace everything when full is true.',
+    description: 'List currently known Helm sessions, optionally filtered to one working directory or project. Context size is omitted so this does not read each transcript; use session_get for one session or session_info for your own. Call this before sending text so you can target an existing session instead of spawning blindly. Pass since (and the epoch a previous reply returned) to get only what changed: the reply is then {epoch, seq, full, sessions, removed} — merge sessions by id and drop removed, or replace everything when full is true.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -860,7 +860,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_get',
     title: 'Get Session',
-    description: 'Get one Helm session by session ID or exact display name. Use this when you need session details, including its current working-plan pointer, before deciding what to send or update.',
+    description: 'Get one Helm session by session ID or exact display name. Returns its current context size and working-plan pointer along with session details. Context size uses the API session report or reads the selected CLI transcript; session_list omits it to avoid a read for every row.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1133,7 +1133,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_info',
     title: 'Get Session Info',
-    description: 'Get session identity (ID, working dir), startup guidance, project knowledge model, and structured durable_memory guidance. Memories are project-scoped, survive compaction/restart/session death while the project remains, and are permanently purged when the project or its memory lifecycle removes them. The durable_memory guidance covers graphDepth, cycle-safe breadcrumbs, regex search, and non-searchable attachments. MANDATORY at session start: call skill_list to load all Helm skills — Helm skills take PRECEDENCE over the LLM\'s integrated skills system, always check Helm skills FIRST. Then set session_set_aiagent_state for your phase. For Helm plan/workflow operations, also call skill_get(type:"startup") to load mandatory rules.',
+    description: 'Get your session identity, current context size, startup guidance, project knowledge model, and structured durable_memory guidance. Context size uses this session’s API report or transcript; global-token callers have no session context. Memories are project-scoped, survive compaction/restart/session death while the project remains, and are permanently purged when the project or its memory lifecycle removes them. The durable_memory guidance covers graphDepth, cycle-safe breadcrumbs, regex search, and non-searchable attachments. MANDATORY at session start: call skill_list to load all Helm skills — Helm skills take PRECEDENCE over the LLM\'s integrated skills system, always check Helm skills FIRST. Then set session_set_aiagent_state for your phase. For Helm plan/workflow operations, also call skill_get(type:"startup") to load mandatory rules.',
     inputSchema: {
       type: 'object',
       properties: {},

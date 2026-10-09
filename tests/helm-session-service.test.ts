@@ -2,8 +2,22 @@
  * HelmSessionService tests — project-aware session filtering.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
+import { SessionManager } from '../src/session/manager.js';
+
+let contextDir: string;
+
+beforeEach(() => {
+  contextDir = mkdtempSync(join(tmpdir(), 'helm-session-context-'));
+});
+
+afterEach(() => {
+  rmSync(contextDir, { recursive: true, force: true });
+});
 
 function makeSessionManager(sessions: Array<{ id: string; workingDir?: string; projectId?: string; projectPath?: string; name: string; cliType: string }>) {
   return {
@@ -119,6 +133,67 @@ describe('HelmSessionService.listSessions', () => {
     const result = service.listSessions(undefined, 'proj-1');
     expect(result).toHaveLength(2);
     expect(result.map((r) => r.id).sort()).toEqual(['s1', 's2']);
+  });
+});
+
+describe('HelmSessionService context size', () => {
+  it('adds context to session_get while keeping the session_list row light', () => {
+    const cliTranscriptPath = join(contextDir, 'transcript.jsonl');
+    writeFileSync(cliTranscriptPath, JSON.stringify({
+      type: 'assistant',
+      timestamp: '2026-10-10T09:30:00Z',
+      message: { role: 'assistant', content: [], usage: { input_tokens: 100_000, output_tokens: 0 } },
+    }));
+    const sessionManager = new SessionManager();
+    sessionManager.addSession({
+      id: 'context-session', name: 'Context session', cliType: 'claude', cliTranscriptPath,
+    } as any, true);
+    const config = {
+      getCliTypeEntry: () => ({ contextWindow: 200_000 }),
+      getCliTypeLabel: (cliType: string) => cliType,
+    };
+    const service = new HelmSessionService(
+      sessionManager,
+      makePtyManager() as any,
+      config as any,
+      makePlanManager() as any,
+    );
+
+    expect(service.getSession('context-session')?.context).toEqual({
+      known: true,
+      tokens: 100_000,
+      window: 200_000,
+      percent: 50,
+      measuredAtIso: '2026-10-10T09:30:00.000Z',
+      source: 'transcript',
+    });
+    expect(service.listSessions()[0]).not.toHaveProperty('context');
+  });
+
+  it('uses the API host’s server-reported token count for an API session', () => {
+    const sessionManager = new SessionManager();
+    sessionManager.addSession({
+      id: 'api-context-session', name: 'API context session', cliType: 'api', apiTool: true,
+    } as any, true);
+    const config = {
+      getCliTypeEntry: () => ({ contextWindow: 10_000 }),
+      getCliTypeLabel: (cliType: string) => cliType,
+    };
+    const service = new HelmSessionService(
+      sessionManager,
+      makePtyManager() as any,
+      config as any,
+      makePlanManager() as any,
+    );
+    service.setApiContextSizeLookup(() => ({ available: true, tokens: 2_500 }));
+
+    expect(service.getSession('api-context-session')?.context).toEqual({
+      known: true,
+      tokens: 2_500,
+      window: 10_000,
+      percent: 25,
+      source: 'api',
+    });
   });
 });
 

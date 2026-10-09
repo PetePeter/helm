@@ -1717,6 +1717,7 @@ describe('LocalhostMcpServer', () => {
         getMcpConfig: vi.fn(() => ({ port: 47373, authToken: 'secret-token-value' })),
         getWorkingDirectories: vi.fn(() => [{ path: 'X:\\coding\\gamepad-cli-hub', name: 'Helm' }]),
         getTelegramConfig: vi.fn(() => ({ enabled: false })),
+        getCliTypeEntry: vi.fn(() => undefined),
       } as any,
       {} as any,
     );

@@ -12,7 +12,7 @@ export const HEARTBEAT_MARKER = `{Esc}${HEARTBEAT_OPEN}`;
 
 /** Default ping text: short housekeeping guidance. Per CLI: keepWarmPrompt. */
 export const KEEP_WARM_DEFAULT_TEXT =
-  'heartbeat. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
+  'heartbeat. Check your current context size with session_get using your own HELM_SESSION_ID instead of estimating; session_info also includes it at startup. If context is at least 200k tokens and you have not already reminded the user since compacting, briefly suggest Helm Quick Compact; do not run it automatically. ' +
   'If any worker sessions you spawned are still in flight and you have not checked recently, consider checking their progress or whether they are stuck.';
 
 const MARKERS = /\[HEARTBEAT_(?:START|END)\]/gi;

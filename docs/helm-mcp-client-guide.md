@@ -247,6 +247,12 @@ session_mission_set(text="Port the planner canvas to Vue; keep DAG layout stable
 
 See [mission-statement.md](mission-statement.md).
 
+## Checking your context size
+
+`session_info` includes your context size at startup. For routine checks, call `session_get` with `{ "sessionId": process.env.HELM_SESSION_ID }`; it returns the same positive token count, source, and transcript timestamp in a smaller response. If the count is not available, inspect `context.reason`; do not infer a size from earlier chat badges.
+
+These calls read a bounded transcript tail for CLI sessions. `session_list` and its change feed intentionally omit context size so listing sessions does not read up to 1 MB per row.
+
 ## Restarting Helm: the `helm_restart` ritual
 
 `helm_restart` is a two-phase gate. A restart destroys your own context, so the
