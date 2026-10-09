@@ -30,9 +30,11 @@ function makeService(schedulerManager?: { createTask: ReturnType<typeof vi.fn> }
       lastOutputAt: 1234,
     })),
   };
+  const getAllSessions = vi.fn(() => [{ id: 's1', name: 'Claude', cliType: 'claude-code' }]);
   const sessionManager = {
     getSession: vi.fn((id: string) => ({ id, name: 'Claude', cliType: 'claude-code' })),
-    getAllSessions: vi.fn(() => [{ id: 's1', name: 'Claude', cliType: 'claude-code' }]),
+    getAllSessions,
+    hasSession: vi.fn((id: string) => getAllSessions().some((session) => session.id === id)),
     addSession: vi.fn(),
     updateSession: vi.fn(),
     removeSession: vi.fn(),

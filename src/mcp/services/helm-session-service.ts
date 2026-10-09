@@ -245,7 +245,9 @@ export class HelmSessionService {
     } catch (killError) {
       logger.warn(`[HelmControlService] Failed to kill PTY for session ${session.id}: ${killError}`);
     }
-    this.sessionManager.removeSession(session.id);
+    if (this.sessionManager.hasSession(session.id)) {
+      this.sessionManager.removeSession(session.id);
+    }
     return { ok: true };
   }
 

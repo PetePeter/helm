@@ -39,6 +39,7 @@ function setup(patch: Partial<SessionInfo> = {}) {
   const sessionManager = {
     getAllSessions: () => [...sessions.values()],
     getSession: (id: string) => sessions.get(id) ?? null,
+    hasSession: (id: string) => sessions.has(id),
     removeSession: (id: string) => { sessions.delete(id); artifacts.clearSession(id); },
   };
   const artifacts = new ArtifactManager();

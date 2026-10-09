@@ -136,6 +136,48 @@ describe('HelmSessionService.listSessions', () => {
   });
 });
 
+describe('HelmSessionService.closeSession', () => {
+  it('succeeds when killing the PTY synchronously removes its session', () => {
+    const sessionManager = new SessionManager();
+    // Keep this test from writing its temporary session into the user config.
+    vi.spyOn(sessionManager as any, 'persistSessions').mockImplementation(() => {});
+    sessionManager.addSession({ id: 's1', name: 'ComfyUI', cliType: 'comfy' } as any, true);
+    const ptyManager = {
+      has: vi.fn(() => true),
+      getTerminalTail: vi.fn(() => ({ raw: [], stripped: [] })),
+      kill: vi.fn((sessionId: string) => sessionManager.removeSession(sessionId, { force: true })),
+    };
+    const service = new HelmSessionService(
+      sessionManager,
+      ptyManager as any,
+      makeConfigLoader() as any,
+      makePlanManager() as any,
+    );
+
+    expect(service.closeSession('s1')).toEqual({ ok: true });
+    expect(ptyManager.kill).toHaveBeenCalledWith('s1');
+    expect(sessionManager.hasSession('s1')).toBe(false);
+  });
+
+  it('still reports an unknown session', () => {
+    const sessionManager = new SessionManager();
+    const ptyManager = {
+      has: vi.fn(() => true),
+      getTerminalTail: vi.fn(() => ({ raw: [], stripped: [] })),
+      kill: vi.fn(),
+    };
+    const service = new HelmSessionService(
+      sessionManager,
+      ptyManager as any,
+      makeConfigLoader() as any,
+      makePlanManager() as any,
+    );
+
+    expect(() => service.closeSession('missing')).toThrow('Session not found: missing');
+    expect(ptyManager.kill).not.toHaveBeenCalled();
+  });
+});
+
 describe('HelmSessionService context size', () => {
   it('adds context to session_get while keeping the session_list row light', () => {
     const cliTranscriptPath = join(contextDir, 'transcript.jsonl');
