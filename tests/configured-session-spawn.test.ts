@@ -1,8 +1,59 @@
 import { describe, expect, it, vi } from 'vitest';
 import { spawnConfiguredSession } from '../src/session/configured-session-spawn.js';
 import { normalizeProjectPath as norm } from '../src/session/project-identity.js';
+import { PtyManager, type PtyFactory, type PtyProcess } from '../src/session/pty-manager.js';
+
+class FakePtyProcess implements PtyProcess {
+  pid = 4321;
+  writes: string[] = [];
+  onData(_callback: (data: string) => void): void {}
+  onExit(_callback: (exitCode: { exitCode: number; signal?: number }) => void): void {}
+  write(data: string): void { this.writes.push(data); }
+  resize(): void {}
+  kill(): void {}
+}
+
+class InMemorySessionManager {
+  sessions = new Map<string, any>();
+  addSession(session: any): void { this.sessions.set(session.id, session); }
+  hasSession(id: string): boolean { return this.sessions.has(id); }
+  getSession(id: string): any { return this.sessions.get(id); }
+  updateSession(id: string, session: any): void { this.sessions.set(id, session); }
+}
 
 describe('spawnConfiguredSession', () => {
+  it('spawns the built-in shell with an empty command and no configured CLI types', () => {
+    const pty = new FakePtyProcess();
+    const spawned: Array<{ file: string; args: string[] }> = [];
+    const ptyFactory: PtyFactory = {
+      spawn(file, args) {
+        spawned.push({ file, args });
+        return pty;
+      },
+    };
+    const ptyManager = new PtyManager(ptyFactory);
+    const sessionManager = new InMemorySessionManager();
+
+    const result = spawnConfiguredSession({
+      ptyManager,
+      sessionManager: sessionManager as any,
+      sessionId: 'shell-no-cli-config',
+      cliType: 'shell',
+      command: '',
+      args: [],
+    });
+
+    expect(result.pty).toBe(pty);
+    expect(spawned).toHaveLength(1);
+    expect(pty.writes).toEqual([]);
+    expect(sessionManager.getSession('shell-no-cli-config')).toMatchObject({
+      id: 'shell-no-cli-config',
+      cliType: 'shell',
+      name: 'Shell',
+      processId: 4321,
+    });
+  });
+
   it('updates an existing session when resuming with the same session id', () => {
     const addSession = vi.fn();
     const updateSession = vi.fn();

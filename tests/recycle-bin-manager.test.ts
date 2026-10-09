@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RecycleBinEntry } from '../src/types/recycle-bin.js';
-import type { SessionInfo, SessionRemovedEvent } from '../src/types/session.js';
+import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo, type SessionRemovedEvent } from '../src/types/session.js';
 
 let diskStore: RecycleBinEntry[] = [];
 vi.mock('../src/session/recycle-bin-persistence.js', () => ({
@@ -184,6 +184,22 @@ describe('recordRemovedSession', () => {
     const bookmark = vi.fn();
 
     const event = makeRemovedEvent({ workingDir: 'X:\\coding\\proj' });
+    const entry = recordRemovedSession(event, manager, bookmark);
+
+    expect(entry).toBeNull();
+    expect(manager.list()).toHaveLength(0);
+    expect(bookmark).not.toHaveBeenCalled();
+  });
+
+  it('does NOT make a built-in shell restorable even if it has resume fields', () => {
+    const manager = new RecycleBinManager();
+    const bookmark = vi.fn();
+    const event = makeRemovedEvent({
+      cliType: BUILTIN_SHELL_CLI_TYPE,
+      cliSessionName: 'shell-resume-id',
+      workingDir: 'X:\\coding\\project',
+    });
+
     const entry = recordRemovedSession(event, manager, bookmark);
 
     expect(entry).toBeNull();

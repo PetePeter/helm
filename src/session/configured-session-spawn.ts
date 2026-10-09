@@ -3,7 +3,7 @@ import { resolveEnvWithMode, type ConfigLoader, type ResolvedCliType, type Seque
 import { mintSessionAuthToken } from '../mcp/session-auth.js';
 import { parseSubmitSuffix } from '../mcp/submit-suffix.js';
 import type { SessionManager } from './manager.js';
-import type { SessionInfo } from '../types/session.js';
+import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo } from '../types/session.js';
 import { scheduleInitialPrompt } from './initial-prompt.js';
 import type { PtyManager, PtyProcess } from './pty-manager.js';
 import { deliverPromptSequenceToSession } from './sequence-delivery.js';
@@ -65,16 +65,19 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   const sessionId = params.sessionId ?? randomUUID();
   // Resolve once, up front: the session records the canonical uuid, never the
   // slug or display name the caller happened to use.
-  const resolved = resolveCliType(params.configLoader, params.cliType);
-  const cliType = resolved?.id ?? params.cliType ?? 'unknown';
+  const isShellSession = params.cliType === BUILTIN_SHELL_CLI_TYPE;
+  const resolved = isShellSession ? undefined : resolveCliType(params.configLoader, params.cliType);
+  const cliType = isShellSession ? BUILTIN_SHELL_CLI_TYPE : resolved?.id ?? params.cliType ?? 'unknown';
   const cfg = resolved?.config;
   // Falling back to the raw ref would name sessions after a UUID, so prefer the
   // human label whenever the type resolved.
-  const sessionName = params.sessionName?.trim()
-    || cfg?.displayName
-    || cfg?.name
-    || params.cliType
-    || 'unknown';
+  const sessionName = isShellSession
+    ? 'Shell'
+    : params.sessionName?.trim()
+      || cfg?.displayName
+      || cfg?.name
+      || params.cliType
+      || 'unknown';
   const isResume = Boolean(params.resumeSessionName);
   const cliSessionName = params.resumeSessionName || randomUUID();
   const cliThreadId = isResume
@@ -101,6 +104,8 @@ export function spawnConfiguredSession(params: ConfiguredSessionSpawnParams): Co
   } else if (apiProcess) {
     params.ptyManager.adopt(sessionId, apiProcess, API_SESSION_SIZE);
     launched = { pty: apiProcess };
+  } else if (isShellSession && !params.command) {
+    launched = { pty: params.ptyManager.spawn({ sessionId, cwd: normalizedCwd }) };
   } else {
     launched = spawnCliProcess(params, { cfg, sessionId, sessionName, cliSessionName, cliThreadId, isResume, cwd: normalizedCwd });
   }

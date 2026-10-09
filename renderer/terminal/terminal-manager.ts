@@ -9,7 +9,7 @@ import { TerminalView } from './terminal-view.js';
 import { fitAndSyncPty } from './fit-and-sync-pty.js';
 import { PtyOutputBuffer } from './pty-output-buffer.js';
 import { resolveSuccessorSessionId } from './successor-pick.js';
-import type { SessionInfo } from '../../src/types/session.js';
+import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo } from '../../src/types/session.js';
 import { loadStoredSessions } from '../session-store.js';
 import { eventsClient, terminalClient } from '../ipc/clients.js';
 import { cliTypeWantsMouseTracking } from '../utils.js';
@@ -44,6 +44,8 @@ export class TerminalManager {
   private fitWatchdog: ReturnType<typeof setInterval> | null = null;
   private outputBuffer: PtyOutputBuffer;
   private snapBackBuffer: Map<string, string[]> = new Map();
+  private sessionsWithOutput: Set<string> = new Set();
+  private firstOutputWaiters: Map<string, Set<(error?: Error) => void>> = new Map();
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -130,10 +132,11 @@ export class TerminalManager {
       },
     });
 
-    this.terminals.set(sessionId, { sessionId, cliType, name: cliType, view, element, cwd });
+    const name = cliType === BUILTIN_SHELL_CLI_TYPE ? 'Shell' : cliType;
+    this.terminals.set(sessionId, { sessionId, cliType, name, view, element, cwd });
     this.upsertManagedSession({
       id: sessionId,
-      name: cliType,
+      name,
       cliType,
       processId: 0,
       workingDir: cwd,
@@ -172,6 +175,34 @@ export class TerminalManager {
     this.switchTo(sessionId);
 
     return true;
+  }
+
+  /** Wait for real PTY output, which confirms an interactive shell has started. */
+  waitForFirstOutput(sessionId: string, timeoutMs = 10_000): Promise<void> {
+    if (this.sessionsWithOutput.has(sessionId)) return Promise.resolve();
+    if (!this.terminals.has(sessionId)) return Promise.reject(new Error(`Terminal ${sessionId} is not open`));
+
+    return new Promise((resolve, reject) => {
+      let waiters = this.firstOutputWaiters.get(sessionId);
+      if (!waiters) {
+        waiters = new Set();
+        this.firstOutputWaiters.set(sessionId, waiters);
+      }
+
+      let timer: ReturnType<typeof setTimeout>;
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        waiters!.delete(finish);
+        if (waiters!.size === 0) this.firstOutputWaiters.delete(sessionId);
+        if (error) reject(error);
+        else resolve();
+      };
+
+      waiters.add(finish);
+      timer = setTimeout(() => {
+        finish(new Error(`Shell did not become ready within ${timeoutMs}ms because it produced no output`));
+      }, timeoutMs);
+    });
   }
 
   /**
@@ -422,6 +453,9 @@ export class TerminalManager {
     const session = this.terminals.get(sessionId);
     if (!session) return;
 
+    this.finishFirstOutputWaiters(sessionId, new Error(`Terminal ${sessionId} closed before producing output`));
+    this.sessionsWithOutput.delete(sessionId);
+
     session.view.dispose();
     session.element.remove();
     this.terminals.delete(sessionId);
@@ -468,6 +502,7 @@ export class TerminalManager {
     const session = this.terminals.get(sessionId);
     if (!session) return;
 
+    this.finishFirstOutputWaiters(sessionId, new Error(`Terminal ${sessionId} was detached before producing output`));
     session.view.dispose();
     session.element.remove();
     this.terminals.delete(sessionId);
@@ -628,12 +663,15 @@ export class TerminalManager {
   private setupIpcListeners(): void {
     if (eventsClient.onPtyData) {
       this.unsubscribers.push(eventsClient.onPtyData((sessionId: string, data: string) => {
+        this.sessionsWithOutput.add(sessionId);
+        this.finishFirstOutputWaiters(sessionId);
         this.writeToTerminal(sessionId, data);
         this.outputBuffer.append(sessionId, data);
       }));
     }
     if (eventsClient.onPtyExit) {
       this.unsubscribers.push(eventsClient.onPtyExit((sessionId: string, _exitCode: number) => {
+        this.finishFirstOutputWaiters(sessionId, new Error(`Shell exited before producing output`));
         const session = this.terminals.get(sessionId);
         if (session) session.view.write('\r\n\x1b[33m[Process exited]\x1b[0m\r\n');
       }));
@@ -654,6 +692,12 @@ export class TerminalManager {
       name: record.name || existing?.name || record.cliType,
       processId: record.processId ?? existing?.processId ?? 0,
     });
+  }
+
+  private finishFirstOutputWaiters(sessionId: string, error?: Error): void {
+    const waiters = this.firstOutputWaiters.get(sessionId);
+    if (!waiters) return;
+    for (const finish of [...waiters]) finish(error);
   }
 
   /** Observe container resize to re-fit terminals.

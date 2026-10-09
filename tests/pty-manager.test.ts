@@ -194,14 +194,14 @@ describe('PtyManager', () => {
   describe('write', () => {
     it('writes to the correct PTY', () => {
       manager.spawn({ sessionId: 's1', command: 'test' });
-      manager.write('s1', 'input data');
+      expect(manager.write('s1', 'input data')).toBe(true);
 
       // write is called once for the command, once for our explicit write
       expect(mock.pty.write).toHaveBeenCalledWith('input data');
     });
 
     it('does not throw for unknown session', () => {
-      expect(() => manager.write('nonexistent', 'data')).not.toThrow();
+      expect(manager.write('nonexistent', 'data')).toBe(false);
     });
   });
 
@@ -271,7 +271,7 @@ describe('PtyManager', () => {
       manager.spawn({ sessionId: 's1', command: 'test' });
       (mock.pty.write as any).mockImplementation(() => { throw new Error('broken pipe'); });
 
-      expect(() => manager.write('s1', 'data')).not.toThrow();
+      expect(manager.write('s1', 'data')).toBe(false);
       expect(manager.has('s1')).toBe(true); // PTY not removed
     });
 

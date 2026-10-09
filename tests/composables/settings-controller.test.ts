@@ -54,6 +54,7 @@ import { useSettingsController } from '../../renderer/composables/useSettingsCon
 import { sessionsState } from '../../renderer/screens/sessions-state.js';
 import { state } from '../../renderer/state.js';
 import { getToolEditorCallback, toolEditor } from '../../renderer/stores/modal-bridge.js';
+import { useToast } from '../../renderer/composables/useToast.js';
 
 const CODEX_ID = '11111111-2222-4333-8444-555566667777';
 const CLAUDE_ID = '99999999-8888-4777-8666-555544443333';
@@ -98,6 +99,42 @@ describe('useSettingsController', () => {
       autoStart: true,
     });
     mocks.telegramIsRunning.mockResolvedValue(true);
+  });
+
+  it('shows a persistent error when the MCP shell launch fails', async () => {
+    const toastKey = 'mcp-run-in-shell-error';
+    useToast().removeByKey(toastKey);
+    let settingsClosed = false;
+    const controller = useSettingsController({
+      refreshProjects: async () => {},
+      closeSettings: () => { settingsClosed = true; },
+      doSpawnShell: async () => { throw new Error('PTY could not start'); },
+    });
+
+    await expect(controller.onMcpRunInShell('register mcp')).resolves.toBeUndefined();
+
+    expect(settingsClosed).toBe(true);
+    expect(useToast().toasts.find(toast => toast.key === toastKey)).toMatchObject({
+      type: 'error',
+      persistent: true,
+      message: expect.stringContaining('PTY could not start'),
+    });
+    useToast().removeByKey(toastKey);
+  });
+
+  it('reports when the shell launcher is not wired', async () => {
+    const toastKey = 'mcp-run-in-shell-error';
+    useToast().removeByKey(toastKey);
+    const controller = useSettingsController({ refreshProjects: async () => {} });
+
+    await expect(controller.onMcpRunInShell('register mcp')).resolves.toBeUndefined();
+
+    expect(useToast().toasts.find(toast => toast.key === toastKey)).toMatchObject({
+      type: 'error',
+      persistent: true,
+      message: expect.stringContaining('Shell launch is unavailable'),
+    });
+    useToast().removeByKey(toastKey);
   });
 
   it('loads settings subsections through one data owner', async () => {

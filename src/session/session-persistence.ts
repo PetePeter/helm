@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
-import type { SessionInfo, UserPromptSource } from '../types/session.js';
+import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo, type UserPromptSource } from '../types/session.js';
 import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
@@ -77,10 +77,10 @@ function isUserPromptSource(value: unknown): value is UserPromptSource {
 
 export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
   try {
-    // A Remote row is a live view of a peer's PTY, not a local CLI: restoring it
-    // would resume-spawn that CLI here. It is re-opened, never restored.
-    const local = sessions.filter(s => !s.remote);
-    atomicWriteFileSync(sessionsFile, YAML.stringify({ sessions: local.map(serializeSession) }));
+    // Remote rows are reopened from their peer, and built-in shells have no
+    // resumable CLI identity. Neither belongs in the restart session list.
+    const persistable = sessions.filter(s => !s.remote && s.cliType !== BUILTIN_SHELL_CLI_TYPE);
+    atomicWriteFileSync(sessionsFile, YAML.stringify({ sessions: persistable.map(serializeSession) }));
   } catch (err) {
     logger.error(`Failed to save sessions: ${err}`);
   }
@@ -91,47 +91,50 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
     if (!existsSync(sessionsFile)) return [];
     const parsed = YAML.parse(readFileSync(sessionsFile, 'utf8')) as unknown;
     if (!isRecord(parsed) || !Array.isArray(parsed.sessions)) return [];
-    return parsed.sessions.filter(isSessionInfo).map(session => {
-      // Normalize workingDir and projectPath on load to ensure consistent casing across platforms
-      if (session.workingDir) {
-        session.workingDir = normalizeProjectPath(session.workingDir);
-      }
-      if (session.projectPath) {
-        session.projectPath = normalizeProjectPath(session.projectPath);
-      }
-      // Drop a malformed stall record rather than let a hand-edited file put a
-      // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
-      if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
-        delete session.hookStall;
-      }
-      if (session.cliThreadId !== undefined && !isString(session.cliThreadId)) {
-        delete session.cliThreadId;
-      }
-      if (session.cliTranscriptPath !== undefined && !isString(session.cliTranscriptPath)) {
-        delete session.cliTranscriptPath;
-      }
-      if (session.mission !== undefined && !isSessionMission(session.mission)) {
-        delete session.mission;
-      }
-      if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
-        delete session.missionBarHeight;
-      }
-      if (!isNumber(session.lastUserPromptAt) || !isUserPromptSource(session.lastUserPromptSource)) {
-        delete session.lastUserPromptAt;
-        delete session.lastUserPromptSource;
-      }
-      if (session.role !== undefined && session.role !== 'operator') {
-        delete session.role;
-      }
-      // G10 removed SessionInfo.loopDriving (the per-session loop-driving
-      // opt-in). A stale key in pre-G10 sessions.yaml is not an error — the
-      // value is silently dropped: consent lives on the plan's autoImplement.
-      if ('loopDriving' in session) {
-        delete (session as Record<string, unknown>).loopDriving;
-      }
-      // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
-      return hydrateChatBindings(session);
-    });
+    return parsed.sessions
+      .filter(isSessionInfo)
+      .filter(session => session.cliType !== BUILTIN_SHELL_CLI_TYPE)
+      .map(session => {
+        // Normalize workingDir and projectPath on load to ensure consistent casing across platforms
+        if (session.workingDir) {
+          session.workingDir = normalizeProjectPath(session.workingDir);
+        }
+        if (session.projectPath) {
+          session.projectPath = normalizeProjectPath(session.projectPath);
+        }
+        // Drop a malformed stall record rather than let a hand-edited file put a
+        // bogus shape on SessionInfo (invariant 6: durable fields hydrate validated).
+        if (session.hookStall !== undefined && !isHookStall(session.hookStall)) {
+          delete session.hookStall;
+        }
+        if (session.cliThreadId !== undefined && !isString(session.cliThreadId)) {
+          delete session.cliThreadId;
+        }
+        if (session.cliTranscriptPath !== undefined && !isString(session.cliTranscriptPath)) {
+          delete session.cliTranscriptPath;
+        }
+        if (session.mission !== undefined && !isSessionMission(session.mission)) {
+          delete session.mission;
+        }
+        if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
+          delete session.missionBarHeight;
+        }
+        if (!isNumber(session.lastUserPromptAt) || !isUserPromptSource(session.lastUserPromptSource)) {
+          delete session.lastUserPromptAt;
+          delete session.lastUserPromptSource;
+        }
+        if (session.role !== undefined && session.role !== 'operator') {
+          delete session.role;
+        }
+        // G10 removed SessionInfo.loopDriving (the per-session loop-driving
+        // opt-in). A stale key in pre-G10 sessions.yaml is not an error — the
+        // value is silently dropped: consent lives on the plan's autoImplement.
+        if ('loopDriving' in session) {
+          delete (session as Record<string, unknown>).loopDriving;
+        }
+        // Rehydrate chat bindings, migrating a pre-chatBindings record's topicId.
+        return hydrateChatBindings(session);
+      });
   } catch (err) {
     logger.error(`Failed to load sessions: ${err}`);
     return [];

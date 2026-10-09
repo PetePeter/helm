@@ -101,6 +101,24 @@ describe('pty:write input origin', () => {
     expect(onPtyInput).not.toHaveBeenCalled();
   });
 
+  it('returns PTY write failures to the renderer', async () => {
+    const { ptyManager } = setup();
+    ptyManager.write.mockImplementation(() => { throw new Error('broken pipe'); });
+
+    const result = await handlers.get('pty:write')?.({}, 's1', 'register mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('broken pipe') });
+  });
+
+  it('reports a PTY manager write rejection instead of returning success', async () => {
+    const { ptyManager } = setup();
+    ptyManager.write.mockReturnValue(false);
+
+    const result = await handlers.get('pty:write')?.({}, 's1', 'register mcp');
+
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('could not accept') });
+  });
+
   it('switches Telegram affinity back to desktop for user writes', async () => {
     const { sessionManager, onPtyInput } = setup();
 

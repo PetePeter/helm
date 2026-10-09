@@ -129,10 +129,12 @@ export function setupPtyHandlers(
 
   // pty:write - Write data to a session's PTY stdin
   ipcMain.handle('pty:write', (event, sessionId: string, data: string, options?: PtyWriteOptions) => {
-    if (!isRendererOwner(event, sessionId)) return;
+    if (!isRendererOwner(event, sessionId)) return { success: false, error: 'Renderer does not own session' };
     try {
       const inputOrigin = options?.inputOrigin === 'programmatic' ? 'programmatic' : 'user';
-      ptyManager.write(sessionId, data);
+      if (ptyManager.write(sessionId, data) === false) {
+        return { success: false, error: 'PTY could not accept the input' };
+      }
       if (inputOrigin === 'user') {
         // Switch to desktop channel when the user types in terminal.
         const session = sessionManager.getSession(sessionId);
@@ -153,8 +155,10 @@ export function setupPtyHandlers(
         }
         onPtyInput?.(sessionId, data);
       }
+      return { success: true };
     } catch (error) {
       logger.error(`[PTY IPC] pty:write failed for session=${sessionId}: ${error}`);
+      return { success: false, error: String(error) };
     }
   });
 

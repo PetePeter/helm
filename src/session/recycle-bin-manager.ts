@@ -13,6 +13,7 @@
 
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { BUILTIN_SHELL_CLI_TYPE } from '../types/session.js';
 import {
   saveRecycleBin,
   loadRecycleBin,
@@ -114,7 +115,7 @@ export function recordRemovedSession(
   project?: { id: string; name: string },
 ): RecycleBinEntry | null {
   const session = event.session;
-  if (!session?.cliSessionName || !session.workingDir) return null;
+  if (!session?.cliSessionName || !session.workingDir || session.cliType === BUILTIN_SHELL_CLI_TYPE) return null;
 
   bookmarkDir(session.workingDir);
   return recycleBin.append({

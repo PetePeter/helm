@@ -17,6 +17,9 @@ export type ActivityLevel = 'active' | 'inactive' | 'idle';
 /** Surface where the user most recently submitted a prompt. */
 export type UserPromptSource = 'terminal' | 'phone';
 
+/** Reserved identity for an embedded command shell that has no configured CLI type. */
+export const BUILTIN_SHELL_CLI_TYPE = 'shell';
+
 /**
  * CLI session information
  */

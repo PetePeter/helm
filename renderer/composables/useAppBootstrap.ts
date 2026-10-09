@@ -23,6 +23,7 @@ import { setupKeyboardRelay } from '../paste-handler.js';
 import { resolveNextTerminalId } from '../tab-cycling.js';
 import { sortSessions, type SessionSortField, type SortDirection } from '../sort-logic.js';
 import { findNavIndexBySessionId } from '../session-groups.js';
+import { BUILTIN_SHELL_CLI_TYPE } from '../../src/types/session.js';
 
 // Side-effect imports — modules that call registerView() at top level
 import '../screens/group-overview.js';
@@ -408,43 +409,33 @@ export async function doSpawn(
 }
 
 export async function doSpawnShell(command: string): Promise<void> {
+  const tm = getTerminalManager();
+  if (!tm) throw new Error('Terminal manager is unavailable.');
+
+  const sessionId = `pty-shell-${Date.now()}`;
   try {
-    const tm = getTerminalManager();
-    if (!tm) return;
+    // The main process owns the platform shell; wait for its first PTY output
+    // before sending the snippet so startup timing is event-driven.
+    const success = await tm.createTerminal(sessionId, BUILTIN_SHELL_CLI_TYPE, '', [], undefined);
+    if (!success) throw new Error('The shell session could not be created.');
 
-    const sessionId = `pty-shell-${Date.now()}`;
-    // No initial command: resolvePtyShell() in the main process already opens
-    // the platform's shell (cmd.exe on Windows, $SHELL -il on macOS/Linux).
-    // Passing 'cmd.exe' here typed it as a COMMAND into that shell, which the
-    // POSIX shell answered with "command not found". The real command is
-    // written below, once the shell is ready.
-    const success = await tm.createTerminal(sessionId, 'shell', '', [], undefined);
+    state.lastOutputTimes.set(sessionId, Date.now());
+    logEvent('Spawned embedded shell terminal');
+    const navStore = useNavigationStore();
+    await navStore.navigateToSession(sessionId);
+    navStore.syncSidebarToSession(sessionId);
+    sessionsState.activeFocus = 'sessions';
+    await tm.waitForFirstOutput(sessionId);
 
-    if (success) {
-      state.lastOutputTimes.set(sessionId, Date.now());
-      logEvent('Spawned embedded shell terminal');
-      await useNavigationStore().navigateToSession(sessionId);
-
-      setTimeout(async () => {
-        try {
-          await terminalClient.ptyWrite(sessionId, normalizeCmdInput(command));
-        } catch (e) { console.error('[Bootstrap] Failed to write command to shell:', e); }
-      }, 300);
-
-      setTimeout(async () => {
-        try {
-          await refreshSessions();
-          const navStore = useNavigationStore();
-          navStore.syncSidebarToSession(sessionId);
-          sessionsState.activeFocus = 'sessions';
-        } catch (e) { console.error('[Bootstrap] Post-shell-spawn refresh failed:', e); }
-      }, 400);
-    } else {
-      logEvent('Spawn FAILED: PTY creation returned false for shell');
+    if (!terminalClient.ptyWrite) throw new Error('PTY input is unavailable.');
+    const writeResult = await terminalClient.ptyWrite(sessionId, normalizeCmdInput(command));
+    if (!writeResult?.success) {
+      throw new Error(writeResult?.error || 'The command could not be written to the shell.');
     }
-  } catch (error) {
-    console.error('[Bootstrap] Failed to spawn shell:', error);
-    logEvent('Shell spawn failed');
+  } finally {
+    try {
+      await refreshSessions();
+    } catch (e) { console.error('[Bootstrap] Post-shell-spawn refresh failed:', e); }
   }
 }
 

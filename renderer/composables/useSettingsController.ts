@@ -812,8 +812,19 @@ export function useSettingsController(options: {
   }
 
   async function onMcpRunInShell(command: string): Promise<void> {
-    options.closeSettings?.();
-    await options.doSpawnShell?.(command);
+    try {
+      options.closeSettings?.();
+      if (!options.doSpawnShell) throw new Error('Shell launch is unavailable.');
+      await options.doSpawnShell(command);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      useToast().addToast({
+        message: `Could not run the MCP setup command in a shell: ${reason}`,
+        type: 'error',
+        persistent: true,
+        key: 'mcp-run-in-shell-error',
+      });
+    }
   }
 
   async function onSkillSelect(id: string): Promise<void> {

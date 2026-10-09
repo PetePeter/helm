@@ -259,25 +259,26 @@ export class PtyManager extends EventEmitter {
    * send-text — move the activity dots too. Genuinely user-origin concerns
    * (interaction-channel affinity, the Telegram input hook) stay in the handler.
    */
-  write(sessionId: string, data: string, intent: WriteIntent = 'input'): void {
+  write(sessionId: string, data: string, intent: WriteIntent = 'input'): boolean {
     const pty = this.ptys.get(sessionId);
     if (!pty) {
       logger.warn(`[PTY] No PTY found for session: ${sessionId} (available: ${[...this.ptys.keys()].join(', ')})`);
-      return;
+      return false;
     }
     // Scroll is the user reading, not input — a frozen session still scrolls.
     if (intent !== 'scroll' && this.writeGate && !this.writeGate(sessionId)) {
       logger.info(`[PTY] Dropped write to frozen session ${sessionId}`);
-      return;
+      return false;
     }
     try {
       pty.write(data);
       this.writeCounts.set(sessionId, (this.writeCounts.get(sessionId) ?? 0) + 1);
     } catch (error) {
       logger.error(`[PTY] Write failed for session=${sessionId}: ${error}`);
-      return;
+      return false;
     }
     if (intent === 'input') this.activityMarker?.(sessionId);
+    return true;
   }
 
   /** Register the gate consulted before every non-scroll stdin write. */

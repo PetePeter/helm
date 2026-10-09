@@ -382,6 +382,59 @@ describe('TerminalManager', () => {
     mgr.dispose();
   });
 
+  it('waits for actual PTY output before reporting a shell ready', async () => {
+    const mgr = new TerminalManager(container);
+    await mgr.createTerminal('shell-ready', 'shell', '');
+    expect(mgr.getSession('shell-ready')?.name).toBe('Shell');
+
+    const ready = mgr.waitForFirstOutput('shell-ready', 100);
+    let resolved = false;
+    void ready.then(() => { resolved = true; });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    capturedPtyDataCb?.('shell-ready', 'C:\\>');
+    await expect(ready).resolves.toBeUndefined();
+    mgr.dispose();
+  });
+
+  it('remembers PTY output that arrived before the readiness wait began', async () => {
+    const mgr = new TerminalManager(container);
+    await mgr.createTerminal('shell-early-output', 'shell', '');
+    capturedPtyDataCb?.('shell-early-output', 'C:\\>');
+
+    await expect(mgr.waitForFirstOutput('shell-early-output', 100)).resolves.toBeUndefined();
+    mgr.dispose();
+  });
+
+  it('fails readiness if the shell exits before producing output', async () => {
+    const mgr = new TerminalManager(container);
+    await mgr.createTerminal('shell-exit', 'shell', '');
+    const ready = mgr.waitForFirstOutput('shell-exit', 100);
+
+    capturedPtyExitCb?.('shell-exit', 1);
+
+    await expect(ready).rejects.toThrow('Shell exited before producing output');
+    mgr.dispose();
+  });
+
+  it('fails readiness immediately when a terminal is detached before producing output', async () => {
+    vi.useFakeTimers();
+    const mgr = new TerminalManager(container);
+    try {
+      await mgr.createTerminal('shell-detach', 'shell', '');
+      const ready = mgr.waitForFirstOutput('shell-detach', 10_000);
+
+      mgr.detachTerminal('shell-detach');
+      const result = expect(ready).rejects.toThrow('Terminal shell-detach was detached before producing output');
+      await vi.advanceTimersByTimeAsync(10_000);
+      await result;
+    } finally {
+      mgr.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('auto-activates the first terminal', async () => {
     const mgr = new TerminalManager(container);
     await mgr.createTerminal('s1', 'aider', 'aider');
