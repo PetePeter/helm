@@ -244,13 +244,13 @@ stateDiagram-v2
     Idle --> Idle: start (user's call): ask Telecom, "Connecting…"
     Idle --> Listening: Telecom took the call / answered ring (mic opens once)
     Idle --> Ended: Telecom refused (Busy / Unavailable) / hang up while connecting
-    Listening --> Sending: non-empty final (unmuted)
+    Listening --> Sending: non-empty final (unmuted; barge-in report rides on this call)
     Sending --> Listening: carried
     Sending --> Speaking: send failed (spoken error)
     Listening --> Speaking: reply arrives (mic stays open)
     Speaking --> Speaking: next queued reply
     Speaking --> Listening: queue empty
-    Speaking --> Listening: barge-in (2+ words heard)
+    Speaking --> Listening: barge-in (2+ words; snapshot active range + dropped queue)
     Listening --> Ended: hang up / mic failure
     Speaking --> Ended: hang up
 ```
@@ -269,6 +269,19 @@ Why each rule exists:
   drops what was queued, and what the user says is sent. One stray word while
   speaking is taken as residual echo and ignored — echo removal itself is the
   recorder's job (below).
+- **What the caller heard.** A sent final after barge-in carries the interrupted
+  reply, the TTS character offset and every dropped queued reply on that same
+  phone `call` record. The desktop prepends a plain-text report to the user's
+  words before making the ordinary gated `session_send_text`, so the operator
+  and a picked session receive it in one ordered message. The report marks only
+  complete sentences as heard; it labels the cut sentence and nearby word as a
+  hint, then lists the remaining reply and queued replies as not heard. If a
+  new reply is interrupted before the final is sent, only the latest interruption
+  is reported. TTS range callbacks can run ahead of audible buffered audio, so the offset is
+  preserved without a guessed safety margin. If ranges are unavailable, the
+  report says position unknown and treats the full active reply as not heard.
+  A short echo partial, an empty final, a normally completed reply, or a final
+  that was not carried produces no report.
 - **Replies queue in order**, including ones that arrive mid-send.
 - **Mute is the phone's own microphone mute** (`MicSwitch` →
   `AudioManager.isMicrophoneMute`), not an app flag. The Mute button, a car

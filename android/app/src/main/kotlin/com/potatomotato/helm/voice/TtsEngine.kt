@@ -6,6 +6,9 @@ package com.potatomotato.helm.voice
  * (a reply mid-sentence, a barge-in, a late "done") are driven in JVM tests.
  */
 interface TtsEngine {
+    /** Start index of the latest text range the engine began speaking, or null when unavailable. */
+    val lastStartedCharacterOffset: Int?
+
     /**
      * Say [text], replacing anything still being said. [onDone] runs once, on the
      * main thread, when the utterance ends on its own or fails — never after

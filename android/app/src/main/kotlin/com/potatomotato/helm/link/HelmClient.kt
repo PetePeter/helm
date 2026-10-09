@@ -37,6 +37,7 @@ import com.potatomotato.helm.notify.AlertRouter
 import com.potatomotato.helm.save.SavedFile
 import com.potatomotato.helm.wire.JsonNull
 import com.potatomotato.helm.wire.MobileEnvelope
+import com.potatomotato.helm.wire.MobileCallInterruption
 import com.potatomotato.helm.data.ArtifactRules
 
 import kotlinx.coroutines.CoroutineScope
@@ -343,9 +344,13 @@ class HelmClient(
         comfyImageSizeId: String? = null,
         comfyInputImagePath: String? = null,
         comfyInputAttachmentIds: List<String> = emptyList(),
+        interruption: MobileCallInterruption? = null,
     ): Boolean {
         val key = chats.sending(sessionId, text, now(), comfyProfileId, comfyImageSizeId, comfyInputImagePath, comfyInputAttachmentIds)
-        return issueText(sessionId, text, key, comfyProfileId, comfyImageSizeId, comfyInputImagePath, comfyInputAttachmentIds)
+        return issueText(
+            sessionId, text, key, comfyProfileId, comfyImageSizeId,
+            comfyInputImagePath, comfyInputAttachmentIds, interruption,
+        )
     }
 
     /**
@@ -406,6 +411,7 @@ class HelmClient(
         comfyImageSizeId: String? = null,
         comfyInputImagePath: String? = null,
         comfyInputAttachmentIds: List<String> = emptyList(),
+        interruption: MobileCallInterruption? = null,
     ): Boolean {
         val params = linkedMapOf<String, Any>("sessionId" to sessionId, "text" to text)
         comfyProfileId?.let { params["comfyProfileId"] = it }
@@ -418,7 +424,7 @@ class HelmClient(
         // desktop derives the echo's originId from it — this end must know it to
         // recognise its own words when the journal replays them back.
         val id = nextCallId()
-        val issued = call(METHOD_SESSION_SEND_TEXT, params, id = id) { outcome ->
+        val issued = call(METHOD_SESSION_SEND_TEXT, params, id = id, interruption = interruption) { outcome ->
             chats.settle(
                 sessionId, key, outcome is Outcome.Ok,
                 frozen = outcome is Outcome.Failed && isFrozenRefusal(outcome.message),
@@ -2132,10 +2138,11 @@ class HelmClient(
         params: Map<String, Any>? = null,
         id: String? = null,
         requestDeadlineMs: Long? = REQUEST_DEADLINE_MS,
+        interruption: MobileCallInterruption? = null,
         onOutcome: (Outcome) -> Unit,
     ): Boolean {
         val callId = id ?: nextCallId()
-        val frame = MobileEnvelope.encodeCall(callId, method, params)
+        val frame = MobileEnvelope.encodeCall(callId, method, params, interruption)
         // Key NAMES only, never values — the same rule the desktop's audit keeps.
         HelmLog.d(HelmLog.CLIENT) {
             "call $id $method, ${frame.size} bytes, args ${params?.keys?.sorted() ?: emptyList<String>()}"

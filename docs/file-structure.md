@@ -86,6 +86,7 @@ src/
 │   ├── mobile-gate.ts          # The security boundary for a phone's MCP calls: deny by default, no impersonation, rate limited
 │   ├── mobile-identity.ts      # Synthesizes the mobile:<deviceId> proxy AuthContext. The prefix is not part of any UUID, so it cannot impersonate
 │   ├── mobile-envelope.ts      # The application records (call/result/error/chat/lan/changes + binary blob). Deterministic encoding; a field or key-order change is a wire break
+│   ├── mobile-call-interruption.ts  # Renders spoken progress into the report prepended to the user's phone message
 │   ├── mobile-envelope-vectors.ts  # Generates tests/fixtures/mobile-envelope-vectors.json — regenerating is a WIRE BREAK
 │   ├── mobile-chat-bridge.ts   # The phone as a ChatBridge, and the ONE inbound path from a phone into Helm's tools (always via MobileGate)
 │   ├── mobile-alert-notifier.ts    # Session state / notify_user / flash_attention → a kind-bearing chat record over the open link. No dedup, deliberately

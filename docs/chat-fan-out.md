@@ -87,6 +87,39 @@ dropped silently — answering would tell a stranger their bytes were understood
 `MobileDeviceStore.getByMachineId` is the bridge between the link manager (keyed
 on `machineId`) and the gate (keyed on the local `MobileDevice` record id).
 
+### Phone call interruption report
+
+When TTS is cut off during a voice call, the next non-empty user message can
+carry one optional top-level `interruption` object on the same `call` record:
+
+```json
+{
+  "interruption": {
+    "text": "The complete active reply",
+    "characterOffset": 24,
+    "queuedReplies": ["A reply that never started"]
+  }
+}
+```
+
+`text` is the active utterance, `characterOffset` is the UTF-16 start index of
+the latest TTS text range (omitted if the engine gave no ranges), and
+`queuedReplies` preserves every dropped line in order. The field is appended
+after `params`; its nested keys are emitted as `text`, optional
+`characterOffset`, then `queuedReplies`. It is omitted entirely on ordinary
+messages, so existing bytes stay unchanged. Older desktops ignore this unknown
+additive field and still dispatch the original `params.text`.
+
+For a current desktop, `MobileChatBridge` turns it into plain text before the
+user's words and makes one normal `MobileGate` call. It lists only complete
+sentences under **Heard**, labels the cut sentence and nearby word as a hint,
+and lists the remaining text plus all queued replies under **Not heard**. If
+the offset is absent or unusable, it says position unknown and lists the full
+active reply as not heard. `journalPhoneReply` records only the user's original
+words, not the report. The report does not create a second message or a second
+delivery. Both codec suites cover the optional fields in the committed
+cross-language call vector.
+
 ## The mobile wire records
 
 `src/mobile/mobile-envelope.ts` defines the UTF-8 JSON records carried inside a

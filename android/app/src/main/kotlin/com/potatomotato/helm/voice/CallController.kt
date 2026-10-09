@@ -1,6 +1,7 @@
 package com.potatomotato.helm.voice
 
 import com.potatomotato.helm.log.HelmLog
+import com.potatomotato.helm.wire.MobileCallInterruption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,7 +30,7 @@ class CallController(
     private val mic: CallMic,
     private val tts: TtsEngine,
     /** Hand the words to the target. False when the link could not carry them. */
-    private val send: (String) -> Boolean,
+    private val send: (String, MobileCallInterruption?) -> Boolean,
     /** What is said aloud when a send fails. A resource string in the app. */
     private val sendFailedLine: String,
     private val line: CallLine,
@@ -39,6 +40,9 @@ class CallController(
     val state: StateFlow<CallState> = _state.asStateFlow()
 
     private val queue = ArrayDeque<String>()
+
+    /** Held until the user's barge-in final is carried as one call record. */
+    private var pendingInterruption: MobileCallInterruption? = null
 
     /** Bumped per utterance and per interruption, so a stale onDone resumes nothing. */
     private var utterance = 0
@@ -137,6 +141,7 @@ class CallController(
         if (phase == CallPhase.Ended) return
         placing = false
         queue.clear()
+        pendingInterruption = null
         utterance++
         tts.release()
         mic.release()
@@ -157,21 +162,29 @@ class CallController(
         if (!live || _state.value.muted) return
         if (phase == CallPhase.Speaking) {
             if (wordCount(text) < BARGE_IN_WORDS) return
-            interrupt()
+            pendingInterruption = interrupt()
         }
         _state.value = _state.value.copy(heard = text)
     }
 
     override fun onFinal(text: String) {
-        if (!live) return
+        if (!live) {
+            pendingInterruption = null
+            return
+        }
         val words = text.trim()
-        if (_state.value.muted || words.isEmpty()) return
+        if (_state.value.muted || words.isEmpty()) {
+            pendingInterruption = null
+            return
+        }
         if (phase == CallPhase.Speaking) {
             if (wordCount(words) < BARGE_IN_WORDS) return
-            interrupt()
+            pendingInterruption = interrupt()
         }
         _state.value = _state.value.copy(phase = CallPhase.Sending, heard = words)
-        val carried = send(words)
+        val interruption = pendingInterruption
+        pendingInterruption = null
+        val carried = send(words, interruption)
         // A reply can already have started speaking during the send.
         if (phase == CallPhase.Sending) _state.value = _state.value.copy(phase = CallPhase.Listening)
         if (!carried) onSendFailed()
@@ -183,13 +196,19 @@ class CallController(
         end(error = SpeechError.Audio)
     }
 
-    /** The user talked over Helm: stop, forget what was queued, listen. */
-    private fun interrupt() {
+    /** The user talked over Helm: capture progress and queued lines, then stop and listen. */
+    private fun interrupt(): MobileCallInterruption {
         HelmLog.d(HelmLog.UI) { "call barge-in; ${queue.size} queued line(s) dropped" }
+        val interruption = MobileCallInterruption(
+            text = _state.value.spoken,
+            characterOffset = tts.lastStartedCharacterOffset,
+            queuedReplies = queue.toList(),
+        )
         queue.clear()
         utterance++
         tts.stop()
         _state.value = _state.value.copy(phase = CallPhase.Listening)
+        return interruption
     }
 
     /** Speak now, or queue behind what is being said. */

@@ -1,5 +1,6 @@
 package com.potatomotato.helm.voice
 
+import com.potatomotato.helm.wire.MobileCallInterruption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -18,11 +19,16 @@ class CallControllerTest {
     private val line = FakeCallLine()
     private val micSwitch = FakeMicSwitch()
     private val sent = mutableListOf<String>()
+    private val sentInterruptions = mutableListOf<MobileCallInterruption?>()
     private var sendWorks = true
     private val controller = CallController(
         mic = mic,
         tts = tts,
-        send = { text -> sent += text; sendWorks },
+        send = { text, interruption ->
+            sent += text
+            sentInterruptions += interruption
+            sendWorks
+        },
         sendFailedLine = SEND_FAILED,
         line = line,
         micSwitch = micSwitch,
@@ -92,6 +98,17 @@ class CallControllerTest {
     }
 
     @Test
+    fun `a normally completed reply adds no interruption to the next user message`() {
+        dial()
+        controller.onReply("That reply finished.")
+        tts.finish()
+        mic.final("thanks")
+
+        assertEquals(listOf("thanks"), sent)
+        assertEquals(listOf(null), sentInterruptions)
+    }
+
+    @Test
     fun `talking over Helm stops it and what was said is sent`() {
         dial()
         controller.onReply("here is a long answer")
@@ -110,6 +127,55 @@ class CallControllerTest {
     }
 
     @Test
+    fun `a sent barge-in carries the active reply offset and every dropped queued reply`() {
+        dial()
+        val reply = "First sentence. The second sentence was interrupted here. The third sentence follows."
+        controller.onReply(reply)
+        controller.onReply("queued reply one")
+        controller.onReply("queued reply two")
+        val offset = reply.indexOf("interrupted")
+        tts.advanceProgress(offset)
+
+        mic.partial("please wait")
+        mic.final("please wait a moment")
+
+        assertEquals(listOf("please wait a moment"), sent)
+        assertEquals(
+            listOf(MobileCallInterruption(reply, offset, listOf("queued reply one", "queued reply two"))),
+            sentInterruptions,
+        )
+        assertEquals(listOf(reply), tts.spoken)
+    }
+
+    @Test
+    fun `a barge-in without spoken progress carries the full active and queued replies`() {
+        dial()
+        controller.onReply("Unmeasured reply.")
+        controller.onReply("Queued reply.")
+
+        mic.partial("please stop")
+        mic.final("please stop")
+
+        assertEquals(
+            listOf(MobileCallInterruption("Unmeasured reply.", null, listOf("Queued reply."))),
+            sentInterruptions,
+        )
+    }
+
+    @Test
+    fun `an interrupted reply is not attached when no non-empty final is sent`() {
+        dial()
+        controller.onReply("A reply that gets cut off.")
+        tts.advanceProgress(0)
+
+        mic.partial("please stop")
+        mic.final("")
+
+        assertTrue(sent.isEmpty())
+        assertTrue(sentInterruptions.isEmpty())
+    }
+
+    @Test
     fun `a single stray word while speaking is echo, not the user`() {
         dial()
         controller.onReply("on it")
@@ -119,6 +185,7 @@ class CallControllerTest {
 
         assertEquals(0, tts.stopCount)
         assertTrue(sent.isEmpty())
+        assertTrue(sentInterruptions.isEmpty())
         assertEquals(CallPhase.Speaking, controller.state.value.phase)
     }
 

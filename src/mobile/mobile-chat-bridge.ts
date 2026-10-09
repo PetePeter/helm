@@ -44,6 +44,7 @@ import {
 } from './protocol-version.js';
 import { decodeBlobResult, decodeRecord, encodeBlobResult, encodeChanges, encodeChat, encodeError, encodeResult, isBlobPayload } from './mobile-envelope.js';
 import type { ChatRecordInput, MobileCallRecord, MobileChatKind } from './mobile-envelope.js';
+import { renderCallInterruption } from './mobile-call-interruption.js';
 import type { MobileArtifactUploadService } from './mobile-artifact-upload.js';
 import { isArtifactDownloadBinary } from '../session/artifact-download.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
@@ -431,7 +432,7 @@ export class MobileChatBridge implements ChatBridge {
 
     try {
       logger.info(`[MobileChat] Dispatching ${record.method} id=${record.id} from ${machineId}`);
-      const result = await gate.handle(device.id, record.method, record.params);
+      const result = await gate.handle(device.id, record.method, paramsForDispatch(record));
       logger.info(`[MobileChat] Dispatch completed ${record.method} id=${record.id} from ${machineId}`);
       // A download answers with FILE BYTES, which JSON can only carry as base64.
       // The gate has already run — this is purely how the ANSWER is written.
@@ -629,6 +630,18 @@ export class MobileChatBridge implements ChatBridge {
       }
     }
   }
+}
+
+/** Attach report text to the same gated phone message; journalPhoneReply keeps its raw user words. */
+function paramsForDispatch(record: MobileCallRecord): unknown {
+  if (record.method !== SESSION_SEND_TEXT_METHOD || !record.interruption) return record.params;
+  if (!record.params || typeof record.params !== 'object' || Array.isArray(record.params)) return record.params;
+  const params = record.params as Record<string, unknown>;
+  if (typeof params.text !== 'string') return record.params;
+  return {
+    ...params,
+    text: renderCallInterruption(record.interruption, params.text),
+  };
 }
 
 /**

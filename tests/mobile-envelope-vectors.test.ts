@@ -15,6 +15,7 @@ import {
   MOBILE_ENVELOPE_VERSION,
   decodeBlobResult,
   decodeRecord,
+  encodeCall,
 } from '../src/mobile/mobile-envelope';
 import {
   buildEnvelopeVectors,
@@ -47,6 +48,22 @@ describe('committed mobile envelope vectors', () => {
       expect(bytes.toString('utf8'), testCase.name).toBe(testCase.json);
       expect(decodeRecord(bytes), testCase.name).not.toBeNull();
     }
+  });
+
+  it('decodes and re-encodes the structured interruption call vector', () => {
+    const testCase = committed.cases.find((item) => item.name === 'call with voice interruption');
+    expect(testCase).toBeDefined();
+    const decoded = decodeRecord(Buffer.from(testCase!.bytesHex, 'hex'));
+    expect(decoded?.t).toBe('call');
+    if (!decoded || decoded.t !== 'call') throw new Error('interruption vector must decode as a call');
+
+    expect(decoded.interruption).toEqual({
+      text: 'First sentence. Second sentence was cut. Last sentence not heard.',
+      characterOffset: 29,
+      queuedReplies: ['Queued reply one.', 'Queued reply two.'],
+    });
+    expect(encodeCall(decoded.id, decoded.method, decoded.params, decoded.interruption).toString('utf8'))
+      .toBe(testCase!.json);
   });
 
   it('covers both directions — a one-way fixture would leave half the app unverified', () => {

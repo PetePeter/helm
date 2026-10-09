@@ -67,6 +67,18 @@ export interface MobileCallRecord {
   id: string;
   method: string;
   params?: unknown;
+  /** Optional raw TTS progress attached to the user's next phone message. */
+  interruption?: MobileCallInterruption;
+}
+
+/** Raw call reply data; the desktop renders the human-readable report. */
+export interface MobileCallInterruption {
+  /** The complete active TTS utterance, including the unspoken suffix. */
+  text: string;
+  /** UTF-16 index of the last TTS range start; absent when the engine has no ranges. */
+  characterOffset?: number;
+  /** Lines dropped from the reply queue, in their original order. */
+  queuedReplies: string[];
 }
 
 export interface MobileResultRecord {
@@ -260,9 +272,21 @@ export interface ChatRecordInput {
  * two languages produce byte-identical JSON. Optional keys are appended last and
  * omitted entirely when absent — never emitted as null.
  */
-export function encodeCall(id: string, method: string, params?: unknown): Buffer {
+export function encodeCall(
+  id: string,
+  method: string,
+  params?: unknown,
+  interruption?: MobileCallInterruption,
+): Buffer {
   const record: MobileCallRecord = { v: MOBILE_ENVELOPE_VERSION, t: 'call', id, method };
   if (params !== undefined) record.params = params;
+  if (interruption !== undefined) {
+    record.interruption = {
+      text: interruption.text,
+      ...(interruption.characterOffset !== undefined ? { characterOffset: interruption.characterOffset } : {}),
+      queuedReplies: interruption.queuedReplies,
+    };
+  }
   return encode(record);
 }
 
@@ -465,10 +489,16 @@ export function decodeRecord(payload: Buffer): MobileRecord | null {
   if (record.v !== MOBILE_ENVELOPE_VERSION) return null;
 
   switch (record.t) {
-    case 'call':
-      return isString(record.id) && isString(record.method)
-        ? ({ ...record } as unknown as MobileCallRecord)
-        : null;
+    case 'call': {
+      if (!isString(record.id) || !isString(record.method)) return null;
+      const decoded = { ...record };
+      // This field is additive and optional: an older or reshaped interruption
+      // must not discard the user's actual call text.
+      if (decoded.interruption !== undefined && !isMobileCallInterruption(decoded.interruption)) {
+        delete decoded.interruption;
+      }
+      return decoded as unknown as MobileCallRecord;
+    }
     case 'result':
       return isString(record.id) && 'result' in record
         ? ({ ...record } as unknown as MobileResultRecord)
@@ -502,6 +532,18 @@ export function decodeRecord(payload: Buffer): MobileRecord | null {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function isMobileCallInterruption(value: unknown): value is MobileCallInterruption {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const report = value as Record<string, unknown>;
+  return isString(report.text)
+    && (report.characterOffset === undefined
+      || (typeof report.characterOffset === 'number'
+        && Number.isSafeInteger(report.characterOffset)
+        && report.characterOffset >= 0))
+    && Array.isArray(report.queuedReplies)
+    && report.queuedReplies.every(isString);
 }
 
 function isErrorBody(value: unknown): value is { code: number; message: string } {

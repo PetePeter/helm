@@ -46,6 +46,15 @@ class MobileEnvelopeVectorsTest {
                 is MobileRecord.Call -> {
                     assertEquals(name, expected.getString("id"), record.id)
                     assertEquals(name, expected.getString("method"), record.method)
+                    val interruption = expected.optJSONObject("interruption")?.let { raw ->
+                        val queued = raw.getJSONArray("queuedReplies")
+                        MobileCallInterruption(
+                            text = raw.getString("text"),
+                            characterOffset = (raw.opt("characterOffset") as? Number)?.toInt(),
+                            queuedReplies = List(queued.length()) { queued.getString(it) },
+                        )
+                    }
+                    assertEquals(name, interruption, record.interruption)
                 }
 
                 is MobileRecord.Result -> {
@@ -106,11 +115,20 @@ class MobileEnvelopeVectorsTest {
             } else {
                 null
             }
+            val interruption = source.optJSONObject("interruption")?.let { raw ->
+                val queued = raw.getJSONArray("queuedReplies")
+                MobileCallInterruption(
+                    text = raw.getString("text"),
+                    characterOffset = (raw.opt("characterOffset") as? Number)?.toInt(),
+                    queuedReplies = List(queued.length()) { queued.getString(it) },
+                )
+            }
 
             val produced = MobileEnvelope.encodeCall(
                 id = source.getString("id"),
                 method = source.getString("method"),
                 params = params,
+                interruption = interruption,
             )
             assertEquals(name, bytes.toHex(), produced.toHex())
         }
@@ -230,8 +248,13 @@ class MobileEnvelopeVectorsTest {
 
     /** Param keys in the order the canonical JSON text writes them. */
     private fun orderedKeys(json: String): List<String> {
-        val params = json.substringAfter("\"params\":{").substringBeforeLast("}")
-        return Regex("\"([^\"]+)\":").findAll(params).map { it.groupValues[1] }.toList()
+        val params = json.substringAfter("\"params\":{")
+        val boundedParams = if (params.contains("},\"interruption\"")) {
+            params.substringBefore("},\"interruption\"")
+        } else {
+            params.substringBeforeLast("}")
+        }
+        return Regex("\"([^\"]+)\":").findAll(boundedParams).map { it.groupValues[1] }.toList()
     }
 
     private fun forEachCase(body: (name: String, direction: String, bytes: ByteArray, json: String) -> Unit) {

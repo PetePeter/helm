@@ -28,6 +28,9 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
     private var owed: Pair<String, () -> Unit>? = null
     private var sequence = 0
 
+    override var lastStartedCharacterOffset: Int? = null
+        private set
+
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
         main.post {
             initialised = true
@@ -49,6 +52,12 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
         setSpeechRate(SPEECH_RATE)
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) = Unit
+            override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                // The range callback can lead the audible audio because TTS buffers ahead.
+                main.post {
+                    if (owed?.first == utteranceId && start >= 0) lastStartedCharacterOffset = start
+                }
+            }
             override fun onDone(utteranceId: String?) {
                 HelmLog.d(HelmLog.UI) { "text to speech done $utteranceId" }
                 finished(utteranceId)
@@ -64,6 +73,7 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
     }
 
     override fun speak(text: String, onDone: () -> Unit) {
+        lastStartedCharacterOffset = null
         if (!initialised) {
             HelmLog.d(HelmLog.UI) { "text to speech not initialised yet; the line waits" }
             waiting = text to onDone
@@ -88,6 +98,7 @@ class AndroidTtsEngine(context: Context) : TtsEngine {
     override fun stop() {
         waiting = null
         owed = null
+        lastStartedCharacterOffset = null
         tts.stop()
     }
 

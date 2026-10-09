@@ -14,7 +14,12 @@ package com.potatomotato.helm.wire
 sealed interface MobileRecord {
 
     /** Phone -> Helm. A gated tool invocation. */
-    data class Call(val id: String, val method: String, val params: Map<String, String>?) : MobileRecord
+    data class Call(
+        val id: String,
+        val method: String,
+        val params: Map<String, String>?,
+        val interruption: MobileCallInterruption? = null,
+    ) : MobileRecord
 
     /**
      * Helm -> phone. The gate's return value for one call id.
@@ -222,4 +227,15 @@ sealed interface MobileRecord {
      */
     data class Changes(val kind: String, val seq: Long) : MobileRecord
 }
+
+/**
+ * Raw speech facts attached to a phone call message after TTS is interrupted.
+ * A missing offset means the engine could not report progress; consumers must
+ * treat the entire active reply as not heard rather than infer timing.
+ */
+data class MobileCallInterruption(
+    val text: String,
+    val characterOffset: Int?,
+    val queuedReplies: List<String>,
+)
 

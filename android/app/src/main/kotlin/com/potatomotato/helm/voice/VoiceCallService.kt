@@ -236,11 +236,11 @@ class VoiceCallService : Service() {
             micSwitch = micSwitch,
             mic = VoskCallMic(this),
             tts = AndroidTtsEngine(this),
-            send = { text ->
+            send = { text, interruption ->
                 // The instant "heard you": the reply is seconds away, silence reads as deaf.
                 cue()
                 HelmLog.d(HelmLog.UI) { "call sending ${text.length} chars" }
-                targetId?.let { client.sendChat(it, text) } ?: false
+                targetId?.let { client.sendChat(it, text, interruption = interruption) } ?: false
             },
             sendFailedLine = getString(R.string.call_send_failed),
         )

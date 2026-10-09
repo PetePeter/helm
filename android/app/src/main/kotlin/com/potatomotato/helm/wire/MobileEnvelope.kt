@@ -50,7 +50,12 @@ object MobileEnvelope {
      * Pass a [LinkedHashMap] (or any ordered map) — iteration order becomes wire
      * order.
      */
-    fun encodeCall(id: String, method: String, params: Map<String, Any>? = null): ByteArray {
+    fun encodeCall(
+        id: String,
+        method: String,
+        params: Map<String, Any>? = null,
+        interruption: MobileCallInterruption? = null,
+    ): ByteArray {
         val json = StringBuilder()
         json.append("{\"v\":").append(VERSION)
         json.append(",\"t\":\"call\"")
@@ -63,6 +68,16 @@ object MobileEnvelope {
                 json.appendJsonString(key).append(':').appendJsonValue(value)
             }
             json.append('}')
+        }
+        interruption?.let { report ->
+            json.append(",\"interruption\":{\"text\":").appendJsonString(report.text)
+            report.characterOffset?.let { json.append(",\"characterOffset\":").append(it) }
+            json.append(",\"queuedReplies\":[")
+            report.queuedReplies.forEachIndexed { index, reply ->
+                if (index > 0) json.append(',')
+                json.appendJsonString(reply)
+            }
+            json.append("]}")
         }
         json.append('}')
         return json.toString().toByteArray(Charsets.UTF_8)
@@ -230,10 +245,35 @@ object MobileEnvelope {
     private fun decodeCall(record: JSONObject): MobileRecord.Call? {
         val id = record.string("id") ?: return null
         val method = record.string("method") ?: return null
+        val interruption = if (record.has("interruption")) {
+            decodeCallInterruption(record.opt("interruption") as? JSONObject ?: return null) ?: return null
+        } else {
+            null
+        }
         val params = (record.opt("params") as? JSONObject)?.let { raw ->
             raw.keys().asSequence().associateWithTo(LinkedHashMap()) { raw.optString(it) }
         }
-        return MobileRecord.Call(id, method, params)
+        return MobileRecord.Call(id, method, params, interruption)
+    }
+
+    private fun decodeCallInterruption(record: JSONObject): MobileCallInterruption? {
+        val text = record.string("text") ?: return null
+        val rawOffset = if (record.has("characterOffset")) record.opt("characterOffset") else null
+        val offset = when (rawOffset) {
+            null -> null
+            is Number -> {
+                val value = rawOffset.toLong()
+                if (rawOffset.toDouble() != value.toDouble() || value !in 0..Int.MAX_VALUE.toLong()) return null
+                value.toInt()
+            }
+            else -> return null
+        }
+        val queued = record.opt("queuedReplies") as? JSONArray ?: return null
+        val replies = ArrayList<String>(queued.length())
+        for (index in 0 until queued.length()) {
+            replies += queued.opt(index) as? String ?: return null
+        }
+        return MobileCallInterruption(text, offset, replies)
     }
 
     private fun decodeResult(record: JSONObject): MobileRecord.Result? {

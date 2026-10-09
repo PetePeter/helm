@@ -64,6 +64,7 @@ let phone: MobileDevice;
 
 const SESSIONS = new Map<string, { id: string; name: string; interactionChannel: 'telegram' | 'desktop' }>([
   ['s1', { id: 's1', name: 'work', interactionChannel: 'desktop' }],
+  ['operator', { id: 'operator', name: 'Helm', interactionChannel: 'desktop' }],
 ]);
 const sessionUpdates: Array<{ sessionId: string; patch: Record<string, unknown> }> = [];
 const NOW = 1_700_000_000_000;
@@ -81,6 +82,7 @@ beforeEach(() => {
   dispatched = [];
   sessionUpdates.length = 0;
   SESSIONS.get('s1')!.interactionChannel = 'desktop';
+  SESSIONS.get('operator')!.interactionChannel = 'desktop';
   gate = new MobileGate({
     deviceStore,
     dispatch: async (method, params, ctx) => {
@@ -413,6 +415,104 @@ describe('MobileChatBridge catch-up from a phone cursor', () => {
  * live-fanned, and named by the sending phone so it can drop its own echo.
  */
 describe('MobileChatBridge journaling a phone reply', () => {
+  it.each(['s1', 'operator'])('renders call interruption before the user text sent to %s', async (sessionId) => {
+    const reply = 'First sentence. Second sentence has the active word and rest. Third sentence unspoken.';
+    const interruption = {
+      text: reply,
+      characterOffset: reply.indexOf('active'),
+      queuedReplies: ['Queued answer one.', 'Queued answer two.'],
+    };
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall(
+      'barge-1',
+      'session_send_text',
+      { sessionId, text: 'wait a moment' },
+      interruption,
+    ));
+    await vi.waitFor(() => expect(dispatched).toHaveLength(1));
+    await vi.waitFor(() => expect(journal.latestSeq()).toBe(1));
+
+    const deliveredText = (dispatched[0].params as { text: string }).text;
+    expect(deliveredText).toBe(
+      'Call interruption report:\n' +
+      'Heard (complete sentences only): First sentence.\n' +
+      'Cut during: Second sentence has the active word and rest. (around “active”; hint: TTS progress can run ahead of audio.)\n' +
+      'Not heard from current reply: active word and rest. Third sentence unspoken.\n' +
+      'Not heard from queued replies:\n' +
+      '- Queued answer one.\n' +
+      '- Queued answer two.\n' +
+      "User's words: wait a moment",
+    );
+    expect(journal.since(0)[0].record.text).toBe('wait a moment');
+    expect(links.records()).toHaveLength(1);
+  });
+
+  it('reports an unknown position and keeps the entire interrupted reply in not heard', async () => {
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall(
+      'barge-unknown',
+      'session_send_text',
+      { sessionId: 's1', text: 'repeat that' },
+      { text: 'Entire reply, not measured.', queuedReplies: ['Queued reply.'] },
+    ));
+    await vi.waitFor(() => expect(dispatched).toHaveLength(1));
+
+    const deliveredText = (dispatched[0].params as { text: string }).text;
+    expect(deliveredText).toBe(
+      'Call interruption report:\n' +
+      'Heard (complete sentences only): none can be confirmed.\n' +
+      'Cut during: position unknown; there is no usable TTS range.\n' +
+      'Not heard from current reply: Entire reply, not measured.\n' +
+      'Not heard from queued replies:\n' +
+      '- Queued reply.\n' +
+      "User's words: repeat that",
+    );
+  });
+
+  it('does not label a partial first sentence as heard', async () => {
+    const reply = 'The first sentence is cut. The next sentence was never spoken.';
+    links.online.add('phone-machine');
+
+    links.receive('phone-machine', encodeCall(
+      'barge-first',
+      'session_send_text',
+      { sessionId: 's1', text: 'hold on' },
+      { text: reply, characterOffset: 5, queuedReplies: [] },
+    ));
+    await vi.waitFor(() => expect(dispatched).toHaveLength(1));
+
+    const deliveredText = (dispatched[0].params as { text: string }).text;
+    expect(deliveredText).toBe(
+      'Call interruption report:\n' +
+      'Heard (complete sentences only): none confirmed.\n' +
+      'Cut during: The first sentence is cut. (around “first”; hint: TTS progress can run ahead of audio.)\n' +
+      'Not heard from current reply: first sentence is cut. The next sentence was never spoken.\n' +
+      'Not heard from queued replies:\n' +
+      '- none\n' +
+      "User's words: hold on",
+    );
+  });
+
+  it('drops a malformed optional interruption but still dispatches and journals the user words', async () => {
+    const call = {
+      v: 1,
+      t: 'call',
+      id: 'bad-interruption',
+      method: 'session_send_text',
+      params: { sessionId: 's1', text: 'keep these words' },
+      interruption: { text: 'reply', queuedReplies: 'not-an-array' },
+    };
+
+    links.receive('phone-machine', Buffer.from(JSON.stringify(call), 'utf8'));
+    await vi.waitFor(() => expect(dispatched).toHaveLength(1));
+    await vi.waitFor(() => expect(journal.latestSeq()).toBe(1));
+
+    expect(dispatched[0].params).toEqual({ sessionId: 's1', text: 'keep these words' });
+    expect(journal.since(0)[0].record.text).toBe('keep these words');
+  });
+
   it('a phone reply the gate accepted is journaled phone-origin and fanned nowhere', async () => {
     const second = deviceStore.add({ name: 'Tablet', machineId: 'tablet-machine', pskRef: 'secret-2', allow: [] });
     links.online.add('phone-machine');

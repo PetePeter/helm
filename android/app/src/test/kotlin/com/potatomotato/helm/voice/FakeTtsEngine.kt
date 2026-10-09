@@ -17,23 +17,40 @@ class FakeTtsEngine : TtsEngine {
         private set
 
     private var onDone: (() -> Unit)? = null
+    private var currentText: String? = null
+
+    override var lastStartedCharacterOffset: Int? = null
+        private set
 
     /** True while an utterance has been started and not yet finished or stopped. */
     val speaking: Boolean get() = onDone != null
 
     override fun speak(text: String, onDone: () -> Unit) {
         spoken += text
+        currentText = text
+        lastStartedCharacterOffset = null
         this.onDone = onDone
     }
 
     override fun stop() {
         stopCount++
         onDone = null
+        currentText = null
+        lastStartedCharacterOffset = null
     }
 
     override fun release() {
         releaseCount++
         onDone = null
+        currentText = null
+        lastStartedCharacterOffset = null
+    }
+
+    /** Advance to a text range whose start offset the platform says it began speaking. */
+    fun advanceProgress(offset: Int) {
+        val text = currentText ?: error("Nothing is being spoken")
+        require(offset in text.indices) { "offset must name a character in the active utterance" }
+        lastStartedCharacterOffset = offset
     }
 
     /** The current utterance's done callback, kept to fire late (after a stop). */
@@ -43,6 +60,7 @@ class FakeTtsEngine : TtsEngine {
     fun finish() {
         val done = onDone ?: error("Nothing is being spoken, so the platform would have nothing to finish")
         onDone = null
+        currentText = null
         done()
     }
 }

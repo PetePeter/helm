@@ -125,6 +125,16 @@ export function buildEnvelopeVectors(): EnvelopeVectors {
       sessionId: '11111111-2222-3333-4444-555555555555',
       text: 'carry on',
     })),
+    vector('call with voice interruption', 'phone-to-helm', encodeCall(
+      'c9',
+      'session_send_text',
+      { sessionId: 's1', text: 'please repeat that' },
+      {
+        text: 'First sentence. Second sentence was cut. Last sentence not heard.',
+        characterOffset: 29,
+        queuedReplies: ['Queued reply one.', 'Queued reply two.'],
+      },
+    )),
     vector('call with a non-ASCII argument', 'phone-to-helm', encodeCall('c3', 'session_rename', {
       sessionId: 's1',
       name: 'ñoño — 完了',
