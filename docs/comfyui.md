@@ -20,7 +20,7 @@ Only safe selector data leaves the main process: `id`, `name`, `kind`, `supports
 
 ## Reference images
 
-Desktop and Android ComfyUI chats show image results and imported references in a session-scoped horizontal filmstrip. Images start selected for later requests. Each image can be unchecked; the profile picker reports the reference limit. Tap an item to view it full screen and save it. Android fetches the image only when opened or saved, using the existing sliced attachment transfer, and saves it in Downloads. Selection state is remembered per session.
+Desktop and Android ComfyUI chats show image results and imported references in a session-scoped horizontal filmstrip. Images start selected for later requests. Each image can be unchecked; the profile picker reports the reference limit. Save and Delete actions are available on each thumbnail and in the full-screen view; Delete asks for confirmation first. Tap an item to view it full screen. Android fetches the image only when opened or saved, using the existing sliced attachment transfer, and saves it in Downloads. Selection state is remembered per session.
 
 The prompt can be sent by itself, with one newly attached image, with selected filmstrip references, or with both a new image and selected references. An image alone is also a valid request. The phone's existing picker uploads its selected image to the desktop share inbox; Helm accepts that path only from the paired phone that uploaded it and verifies it stays inside that inbox. Inputs are limited to PNG, JPEG or WebP files, with a 10 MiB limit per file.
 

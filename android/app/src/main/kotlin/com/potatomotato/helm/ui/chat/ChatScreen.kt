@@ -1044,6 +1044,7 @@ private fun ComfyGalleryTile(
 ) {
     var previewOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
     var deleteConfirmationOpen by remember(attachment.artifactId, attachment.attachmentId) { mutableStateOf(false) }
+    val saveAction = comfyGallerySaveAction(state)
     LaunchedEffect(attachment.artifactId, attachment.attachmentId, state) {
         if (state is PullState.Idle && attachment.mimeType.startsWith("image/")) onPreview()
     }
@@ -1078,27 +1079,49 @@ private fun ComfyGalleryTile(
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when (val action = saveAction) {
+                ComfyGallerySaveAction.Busy -> ComfyGalleryActionText(
+                    text = stringResource(R.string.comfy_gallery_saving_short),
+                    color = HelmColors.Dim,
+                )
+                ComfyGallerySaveAction.Download -> ComfyGalleryActionText(
+                    text = stringResource(R.string.comfy_gallery_save_short),
+                    color = HelmColors.Accent,
+                    onClick = onDownload,
+                )
+                is ComfyGallerySaveAction.SavePreview -> ComfyGalleryActionText(
+                    text = stringResource(R.string.comfy_gallery_save_short),
+                    color = HelmColors.Accent,
+                    onClick = { onSavePreview(action.uri) },
+                )
+                is ComfyGallerySaveAction.Open -> ComfyGalleryActionText(
+                    text = stringResource(R.string.chat_attachment_open),
+                    color = HelmColors.Accent,
+                    onClick = { onOpen(action.uri, attachment.mimeType) },
+                )
+            }
+            ComfyGalleryActionText(
+                text = stringResource(R.string.artifacts_action_delete),
+                color = HelmColors.Danger,
+                onClick = { deleteConfirmationOpen = true },
+            )
+        }
     }
 
-    if (previewOpen) {
+    if (previewOpen && !deleteConfirmationOpen) {
         Dialog(
             onDismissRequest = { previewOpen = false },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            if (deleteConfirmationOpen) {
-                ConfirmDelete(
-                    message = stringResource(R.string.artifacts_attachment_confirm_delete, attachment.filename),
-                    onConfirm = {
-                        deleteConfirmationOpen = false
-                        previewOpen = false
-                        onDelete()
-                    },
-                    onCancel = { deleteConfirmationOpen = false },
-                )
-            } else Column(
-                    modifier = Modifier.fillMaxSize().background(HelmColors.Bg).padding(HelmSpacing.Md),
-                    verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-                ) {
+            Column(
+                modifier = Modifier.fillMaxSize().background(HelmColors.Bg).padding(HelmSpacing.Md),
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(attachment.filename, color = HelmColors.Txt, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
                     Text(stringResource(R.string.comfy_gallery_close), color = HelmColors.Accent, modifier = Modifier.clickable { previewOpen = false }.padding(HelmSpacing.Sm))
@@ -1119,16 +1142,17 @@ private fun ComfyGalleryTile(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md), verticalAlignment = Alignment.CenterVertically) {
-                    when (state) {
-                        is PullState.Ready -> if (state.previewOnly) {
-                            Text(state.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
-                            Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable { onSavePreview(state.uri) }.padding(HelmSpacing.Sm))
-                        } else {
-                            Text(state.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
-                            Text("Open", color = HelmColors.Accent, modifier = Modifier.clickable { onOpen(state.uri, attachment.mimeType) }.padding(HelmSpacing.Sm))
+                    when (val action = saveAction) {
+                        is ComfyGallerySaveAction.SavePreview -> {
+                            Text(action.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable { onSavePreview(action.uri) }.padding(HelmSpacing.Sm))
                         }
-                        is PullState.Pulling -> Text("Saving…", color = HelmColors.Dim)
-                        else -> Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable(onClick = onDownload).padding(HelmSpacing.Sm))
+                        is ComfyGallerySaveAction.Open -> {
+                            Text(action.location, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text(stringResource(R.string.chat_attachment_open), color = HelmColors.Accent, modifier = Modifier.clickable { onOpen(action.uri, attachment.mimeType) }.padding(HelmSpacing.Sm))
+                        }
+                        ComfyGallerySaveAction.Busy -> Text(stringResource(R.string.comfy_gallery_saving_short), color = HelmColors.Dim)
+                        ComfyGallerySaveAction.Download -> Text(stringResource(R.string.comfy_gallery_save), color = HelmColors.Accent, modifier = Modifier.clickable(onClick = onDownload).padding(HelmSpacing.Sm))
                     }
                     Text(
                         stringResource(R.string.artifacts_action_delete),
@@ -1138,6 +1162,38 @@ private fun ComfyGalleryTile(
                 }
             }
         }
+    }
+
+    if (deleteConfirmationOpen) {
+        Dialog(
+            onDismissRequest = { deleteConfirmationOpen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            ConfirmDelete(
+                message = stringResource(R.string.artifacts_attachment_confirm_delete, attachment.filename),
+                onConfirm = {
+                    deleteConfirmationOpen = false
+                    previewOpen = false
+                    onDelete()
+                },
+                onCancel = { deleteConfirmationOpen = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ComfyGalleryActionText(
+    text: String,
+    color: Color,
+    onClick: (() -> Unit)? = null,
+) {
+    val clickModifier = onClick?.let { Modifier.clickable(onClick = it) } ?: Modifier
+    Box(
+        modifier = Modifier.heightIn(min = 40.dp).then(clickModifier).padding(horizontal = HelmSpacing.Xs),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, color = color, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 

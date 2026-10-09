@@ -236,6 +236,8 @@
     <string name="comfy_gallery_tap_view">Tap to view</string>
     <string name="comfy_gallery_loading">Loading…</string>
     <string name="comfy_gallery_close">Close</string>
+    <string name="comfy_gallery_save_short">Save</string>
+    <string name="comfy_gallery_saving_short">Saving…</string>
     <string name="comfy_gallery_save_to_preview">Loading image preview…</string>
     <string name="comfy_gallery_saving">Saving %1$s of %2$s…</string>
     <string name="comfy_gallery_preview_unavailable">Preview unavailable for this file.</string>
