@@ -66,6 +66,11 @@ export interface ApiSessionHostDeps {
    * hints naming any other tool are dropped.
    */
   promptContext?: (sessionId: string, prompt: string, tools: ReadonlySet<string>) => Promise<string | null>;
+  /**
+   * Auto memory: a top-level session finished a turn. Fire-and-forget, off the
+   * turn's path; `history` is a copy. Absent = nothing records.
+   */
+  recordTurn?: (sessionId: string, history: ChatMessage[]) => void;
   /** The session's chat messages (both sides), oldest first — backs chat_history. */
   chatHistory?: (sessionId: string) => ChatHistoryEntry[];
   /** Folder holding one history JSON per cliSessionName. */
@@ -241,7 +246,10 @@ export class ApiSessionHost {
         this.hook(sessionId, 'UserPromptSubmit', cwd);
         return this.promptContext(sessionId, input, offered);
       },
-      onTurnEnd: (outcome) => this.onTurnEnd(sessionId, auth, cwd, outcome),
+      onTurnEnd: (outcome) => {
+        if (api.autoMemory !== false) this.recordTurn(sessionId, proc, outcome);
+        return this.onTurnEnd(sessionId, auth, cwd, outcome);
+      },
       stashSummary: (summary) => {
         try {
           return this.deps.createMemory(sessionId, { tldr: `[HANDOVER] ${sessionName} — compaction summary`, content: summary, agentRun: false, summary: true }).id;
@@ -533,6 +541,20 @@ export class ApiSessionHost {
     if (!replied) return;
     if (isChatTool(tool)) replied.add(CHAT_TARGET);
     if (tool === 'session_send_text' && typeof args.sessionId === 'string') replied.add(args.sessionId);
+  }
+
+  /**
+   * Hand a finished turn to auto memory. A failed or interrupted turn has
+   * nothing settled to judge. A subagent is skipped: its result is already
+   * filed as a memory for its parent, and its session closes once it answers.
+   */
+  private recordTurn(sessionId: string, proc: ApiSessionProcess, outcome: ApiTurnOutcome): void {
+    if (!this.deps.recordTurn || outcome.error || this.lineage.has(sessionId)) return;
+    try {
+      this.deps.recordTurn(sessionId, proc.historySnapshot);
+    } catch (err) {
+      logger.warn(`[ApiSession] Auto memory could not take the turn of ${sessionId}: ${String(err)}`);
+    }
   }
 
   /**

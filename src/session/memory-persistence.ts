@@ -42,7 +42,7 @@ const STORE_VERSION = 2;
 
 /** Every field that is absent on a fresh record and must survive a round trip. */
 const OPTIONAL_NUMBERS = ['lastAccessedAt', 'recallSessionCount', 'dormantSince', 'createdAtEpoch'] as const;
-const OPTIONAL_STRINGS = ['projectId', 'planId', 'lastRecallSessionId'] as const;
+const OPTIONAL_STRINGS = ['projectId', 'planId', 'lastRecallSessionId', 'sourceTurn'] as const;
 /** First-party flags; only `true` is stored, absent means false. */
 const OPTIONAL_FLAGS = ['agentRun', 'summary', 'sessionBound'] as const;
 

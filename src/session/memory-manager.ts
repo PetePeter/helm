@@ -76,11 +76,15 @@ export interface CreateMemoryInput {
   agentRun?: boolean;
   summary?: boolean;
   sessionBound?: boolean;
+  /** Auto-saved memories only: the turn it was drawn from. Needs `sessionBound`. */
+  sourceTurn?: string;
 }
 
 export interface UpdateMemoryInput {
   tldr?: string;
   content?: string;
+  /** Move an auto-saved memory to the turn that completed it. Ignored once the binding is released. */
+  sourceTurn?: string;
 }
 
 export class MemoryManager extends EventEmitter {
@@ -356,7 +360,9 @@ export class MemoryManager extends EventEmitter {
     if (!current) return false;
     if (!current.sessionBound) return true;
     this.mutate((candidate) => {
-      delete candidate.records.find((item) => item.id === id)!.sessionBound;
+      const record = candidate.records.find((item) => item.id === id)!;
+      delete record.sessionBound;
+      delete record.sourceTurn;
       return { type: 'release', id, ...(current.sessionId ? { sessionId: current.sessionId } : {}) };
     });
     return true;
@@ -373,6 +379,7 @@ export class MemoryManager extends EventEmitter {
 
   private createRecord(sessionId: string | undefined, input: CreateMemoryInput): MemoryRecord {
     if (input.sessionBound && !sessionId) throw new Error('A session-bound memory needs a session to bind to');
+    if (input.sourceTurn && !input.sessionBound) throw new Error('Only a session-bound memory records its source turn');
     const timestamp = this.now();
     // Provenance is resolved here and nowhere else. It cannot be reconstructed
     // later — a plan's sessionId is overwritten by whoever claims it next.
@@ -392,6 +399,7 @@ export class MemoryManager extends EventEmitter {
       ...(input.agentRun ? { agentRun: true } : {}),
       ...(input.summary ? { summary: true } : {}),
       ...(input.sessionBound ? { sessionBound: true } : {}),
+      ...(input.sourceTurn ? { sourceTurn: input.sourceTurn } : {}),
       attachments: [],
     };
     this.mutate((candidate) => {
@@ -412,6 +420,7 @@ export class MemoryManager extends EventEmitter {
       ...current,
       ...(updates.tldr !== undefined ? { tldr: updates.tldr } : {}),
       ...(updates.content !== undefined ? { content: updates.content } : {}),
+      ...(updates.sourceTurn && current.sessionBound ? { sourceTurn: updates.sourceTurn } : {}),
       updatedAt: this.now(),
       attachments: current.attachments.map((attachment) => ({ ...attachment })),
     };
@@ -427,6 +436,14 @@ export class MemoryManager extends EventEmitter {
     assertSessionId(sessionId);
     if (!this.owns(sessionId, id)) return null;
     return this.update(id, updates, expectedUpdatedAt);
+  }
+
+  /** The memories bound to this session: what auto-save wrote for it and no dream has digested yet. */
+  listBoundForSession(sessionId: string): MemoryRecord[] {
+    assertSessionId(sessionId);
+    return this.state.records
+      .filter((record) => record.sessionBound === true && record.sessionId === sessionId && record.dormantSince === undefined)
+      .map(cloneMemoryRecord);
   }
 
   getRecordForSession(sessionId: string, id: string, options: MemoryListOptions = {}): MemoryRecord | null {

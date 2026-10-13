@@ -189,6 +189,7 @@ everything above the new message. Two rules follow from that:
     apiKeyEnv: OPENROUTER_API_KEY  # optional; the key itself is never stored
     maxToolRounds: 25           # optional; the final round offers no tools
     handshake: true             # optional; first turn without tools until the user confirms
+    autoMemory: true            # optional; false keeps this tool's sessions out of auto-save (docs/auto-memory.md)
     systemPrompt: ...           # optional; appended to the constant prompt
     allowedTools: [Read, Glob, Grep, memory_search, skill_get]
 ```

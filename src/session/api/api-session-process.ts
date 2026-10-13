@@ -241,6 +241,11 @@ export class ApiSessionProcess implements PtyProcess {
     return this.running !== null;
   }
 
+  /** A copy of the conversation so far, for readers that must never touch the live one. */
+  get historySnapshot(): ChatMessage[] {
+    return [...this.history];
+  }
+
   get currentContextTokens(): number | undefined {
     return this.contextTokens;
   }

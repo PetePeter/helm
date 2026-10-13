@@ -65,6 +65,12 @@ export interface MemoryRecord {
    * so it must earn its place before it can shape anyone else's recall.
    */
   sessionBound?: boolean;
+  /**
+   * The turn of the owning session an auto-saved memory was drawn from (see
+   * `splitTurns`). Lets the judge be shown what it already saved from the
+   * turns in front of it. Dropped when the binding is released.
+   */
+  sourceTurn?: string;
   attachments: MemoryAttachment[];
 }
 
@@ -315,7 +321,7 @@ export function validateMemoryState(state: MemoryState): void {
     if (record.lastAccessedAt !== undefined && !isFiniteNumber(record.lastAccessedAt)) {
       throw new Error(`Memory ${record.id} has an invalid lastAccessedAt`);
     }
-    for (const field of ['projectId', 'planId', 'lastRecallSessionId'] as const) {
+    for (const field of ['projectId', 'planId', 'lastRecallSessionId', 'sourceTurn'] as const) {
       const value = record[field];
       if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
         throw new Error(`Memory ${record.id} has an invalid ${field}`);

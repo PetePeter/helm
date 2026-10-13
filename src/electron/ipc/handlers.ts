@@ -75,6 +75,7 @@ import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
 import { resolveConfiguredSpawnEnv, spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-model-runner.js';
+import { AutoMemoryRecorder } from '../../session/auto-memory-judge.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -500,6 +501,8 @@ export function registerIPCHandlers(
       seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,
     })),
     historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
+    // Bound lazily: the recorder needs the silent runner, which needs this host.
+    recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurn(sessionId, history); },
   });
   registerApiSessionHost(apiSessionHost);
   // Auto memory's silent runs go to the recording model picked in Settings.
@@ -515,6 +518,16 @@ export function registerIPCHandlers(
         : { id: resolved.id, kind: 'cli' };
     },
     backends: { api: apiSilentBackend(apiSessionHost) },
+  });
+  // The judge pass behind auto-save: at most one session-bound memory per finished turn.
+  const autoMemoryRecorder = new AutoMemoryRecorder({
+    runner: recordingModelRunner,
+    isEnabled: () => configLoader.getAutoMemoryConfig().autoSave,
+    isLive: (sessionId) => sessionManager.hasSession(sessionId),
+    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
+    listBound: (sessionId) => memoryManager.listBoundForSession(sessionId),
+    create: (sessionId, memory) => { memoryManager.createForSession(sessionId, { ...memory, sessionBound: true }); },
+    update: (sessionId, id, memory) => { memoryManager.updateForSession(sessionId, id, memory); },
   });
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
 

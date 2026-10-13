@@ -387,4 +387,40 @@ describe('MemoryManager session-bound memories', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('lists a session\'s own bound memories and nobody else\'s', () => {
+    const manager = boundFixture();
+    manager.createForSession('s2', { tldr: 's2 finding', content: '', sessionBound: true });
+
+    expect(manager.listBoundForSession('s1').map((record) => record.id)).toEqual(['bound']);
+    expect(manager.listBoundForSession('s2').map((record) => record.id)).toEqual(['other']);
+    expect(manager.listBoundForSession('x')).toEqual([]);
+  });
+
+  it('keeps an auto-saved memory\'s source turn across a restart, moves it on update, drops it on release', () => {
+    const root = makeTempRoot('helm-memory-turn-');
+    try {
+      const filePath = join(root, 'memories.json');
+      const manager = new MemoryManager({ persistence: new MemoryPersistence(filePath), idFactory: () => 'auto' });
+      manager.createForSession('s1', { tldr: 'vite runs on 5173', content: '', sessionBound: true, sourceTurn: 'turn-1' });
+
+      const reloaded = new MemoryManager({ persistence: new MemoryPersistence(filePath) });
+      expect(reloaded.listBoundForSession('s1')[0].sourceTurn).toBe('turn-1');
+
+      reloaded.updateForSession('s1', 'auto', { tldr: 'vite runs on 5173, preview on 4173', sourceTurn: 'turn-2' });
+      expect(reloaded.getRecord('auto')).toMatchObject({ sourceTurn: 'turn-2', sessionBound: true });
+
+      // Once it is project memory the turn means nothing: no later update may bring it back.
+      reloaded.releaseBinding('auto');
+      reloaded.update('auto', { sourceTurn: 'turn-3' });
+      expect(new MemoryManager({ persistence: new MemoryPersistence(filePath) }).getRecord('auto')).not.toHaveProperty('sourceTurn');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a source turn on a memory that is not session-bound', () => {
+    const manager = boundFixture();
+    expect(() => manager.createForSession('s1', { tldr: 'x', content: '', sourceTurn: 'turn-1' })).toThrow(/session-bound/i);
+  });
 });
