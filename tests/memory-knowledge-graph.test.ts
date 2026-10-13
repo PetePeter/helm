@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { MemoryManager } from '../src/session/memory-manager.js';
 import { MemoryAttachmentManager } from '../src/session/memory-attachment-manager.js';
+import { MEMORY_SEARCH_LIMIT } from '../src/types/memory.js';
 import { ATOM_SOFT_LIMIT, HelmMemoryService } from '../src/mcp/services/helm-memory-service.js';
 
 const ALPHA = 'project-alpha';
@@ -39,7 +40,7 @@ describe('ranked search', () => {
     const passing = manager.createForSession(A1, { tldr: 'Build notes', content: 'uses vite once; mostly about esbuild and packaging' });
     const focused = manager.createForSession(A1, { tldr: 'Vite config', content: 'vite dev server, vite plugins' });
 
-    const ids = manager.searchForSession(A1, 'vite').results.map((r) => r.rootId);
+    const ids = manager.searchForSession(A1, 'vite').hits.map((hit) => hit.id);
 
     expect(ids).toEqual([focused.id, passing.id]);
   });
@@ -48,22 +49,82 @@ describe('ranked search', () => {
     const manager = makeManager();
     const memory = manager.createForSession(A1, { tldr: 'RS485 wiring', content: 'baud 9600' });
 
-    expect(manager.searchForSession(A1, 'charger rs485 baud').results.map((r) => r.rootId)).toEqual([memory.id]);
+    expect(manager.searchForSession(A1, 'charger rs485 baud').hits.map((hit) => hit.id)).toEqual([memory.id]);
   });
 
   it('forgives a typo and a half-typed word', () => {
     const manager = makeManager();
     const memory = manager.createForSession(A1, { tldr: 'Mermaid rendering', content: 'diagram ids must be unique' });
 
-    expect(manager.searchForSession(A1, 'mermad').results.map((r) => r.rootId)).toEqual([memory.id]);
-    expect(manager.searchForSession(A1, 'diagr').results.map((r) => r.rootId)).toEqual([memory.id]);
+    expect(manager.searchForSession(A1, 'mermad').hits.map((hit) => hit.id)).toEqual([memory.id]);
+    expect(manager.searchForSession(A1, 'diagr').hits.map((hit) => hit.id)).toEqual([memory.id]);
   });
 
   it('still finds a substring inside a longer word', () => {
     const manager = makeManager();
     const memory = manager.createForSession(A1, { tldr: 'Release', content: 'run prepareDeploy first' });
 
-    expect(manager.searchForSession(A1, 'deploy').results.map((r) => r.rootId)).toEqual([memory.id]);
+    expect(manager.searchForSession(A1, 'deploy').hits.map((hit) => hit.id)).toEqual([memory.id]);
+  });
+});
+
+describe('compact search', () => {
+  function twelve(manager: MemoryManager) {
+    // Repeating the term ranks them: the first created matches best.
+    return Array.from({ length: 12 }, (_, index) => manager.createForSession(A1, {
+      tldr: `Vite note ${index}`,
+      content: `${'vite '.repeat(12 - index)}and a long body nobody asked for`,
+    }));
+  }
+
+  it('answers with id and tldr only, never the content', () => {
+    const manager = makeManager();
+    const memory = manager.createForSession(A1, { tldr: 'Vite config', content: 'a long body nobody asked for' });
+
+    const result = manager.searchForSession(A1, 'vite');
+
+    expect(result.hits).toEqual([{ id: memory.id, tldr: 'Vite config', score: expect.any(Number), projectId: ALPHA, foreign: false }]);
+    expect(JSON.stringify(result)).not.toContain('nobody asked for');
+  });
+
+  it('caps the hits at the limit, keeps the ranking, and says how many matched', () => {
+    const manager = makeManager();
+    const created = twelve(manager);
+
+    const all = manager.searchForSession(A1, 'vite');
+    const capped = manager.searchForSession(A1, 'vite', { limit: MEMORY_SEARCH_LIMIT });
+
+    expect(all.hits.map((hit) => hit.id)).toEqual(created.map((memory) => memory.id));
+    expect(capped.matched).toBe(12);
+    expect(capped.hits).toEqual(all.hits.slice(0, 5));
+  });
+
+  it('keeps an own-project hit ahead of an equal foreign one inside the cap', () => {
+    const manager = makeManager();
+    manager.createForSession(B1, { tldr: 'Modbus timeout', content: 'modbus needs 200ms' });
+    const own = manager.createForSession(A1, { tldr: 'Modbus timeout', content: 'modbus needs 200ms' });
+
+    const result = manager.searchForSession(A1, 'modbus', { limit: 1 });
+
+    expect(result.hits.map((hit) => hit.id)).toEqual([own.id]);
+    expect(result.matched).toBe(2);
+  });
+
+  it('holds regex search to the same cap and shape', () => {
+    const manager = makeManager();
+    twelve(manager);
+
+    const result = manager.searchForSession(A1, '^Vite note', { regex: true, limit: MEMORY_SEARCH_LIMIT });
+
+    expect(result.matched).toBe(12);
+    expect(result.hits).toHaveLength(5);
+    expect(result.hits[0]).toEqual({ id: 'm1', tldr: 'Vite note 0', score: 1, projectId: ALPHA, foreign: false });
+  });
+
+  it('rejects a limit that is not a positive integer', () => {
+    const manager = makeManager();
+
+    expect(() => manager.searchForSession(A1, 'vite', { limit: 0 })).toThrow(/limit/i);
   });
 });
 
@@ -75,7 +136,7 @@ describe('cross-project reading', () => {
 
     const result = manager.searchForSession(A1, 'modbus');
 
-    expect(result.results.map((r) => r.rootId)).toEqual([own.id, foreign.id]);
+    expect(result.hits.map((hit) => hit.id)).toEqual([own.id, foreign.id]);
     expect(result.hits.map((hit) => [hit.id, hit.projectId, hit.foreign])).toEqual([
       [own.id, ALPHA, false],
       [foreign.id, BETA, true],
@@ -94,7 +155,7 @@ describe('cross-project reading', () => {
     const hidden = manager.createForSession(P1, { tldr: 'secret modbus', content: 'x' });
     const foreign = manager.createForSession(B1, { tldr: 'beta modbus', content: 'x' });
 
-    expect(manager.searchForSession(A1, 'modbus').results.map((r) => r.rootId)).toEqual([foreign.id]);
+    expect(manager.searchForSession(A1, 'modbus').hits.map((hit) => hit.id)).toEqual([foreign.id]);
     expect(manager.getRecordForSession(A1, hidden.id)).toBeNull();
     expect(manager.listRecordsForSession(A1)).toEqual([]);
     expect(manager.updateForSession(A1, foreign.id, { content: 'changed' })).toBeNull();
@@ -105,7 +166,7 @@ describe('cross-project reading', () => {
     const manager = makeManager(false);
     const foreign = manager.createForSession(B1, { tldr: 'beta modbus', content: 'x' });
 
-    expect(manager.searchForSession(A1, 'modbus').results).toEqual([]);
+    expect(manager.searchForSession(A1, 'modbus').hits).toEqual([]);
     expect(manager.getRecordForSession(A1, foreign.id)).toBeNull();
   });
 });
@@ -140,13 +201,13 @@ describe('typed and cross-project links', () => {
     expect(() => manager.linkForSession(A1, a.id, b.id, 'likes' as never)).toThrow(/edge type/i);
   });
 
-  it('pulls a linked foreign neighbour into a search traversal', () => {
+  it('pulls a linked foreign neighbour into a traversal', () => {
     const manager = makeManager();
     const own = manager.createForSession(A1, { tldr: 'charger wiring', content: 'x' });
     const foreign = manager.createForSession(B1, { tldr: 'unrelated words', content: 'y' });
     manager.linkForSession(A1, own.id, foreign.id);
 
-    const traversal = manager.searchForSession(A1, 'charger', { graphDepth: 1 }).results[0]!;
+    const traversal = manager.getForSession(A1, own.id, 1)!;
 
     expect(traversal.entries.map((entry) => [entry.id, entry.status])).toEqual([
       [own.id, 'record'],

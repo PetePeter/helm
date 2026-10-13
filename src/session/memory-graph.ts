@@ -1,5 +1,6 @@
 import type {
   MemoryEdge,
+  MemoryRecall,
   MemoryRecord,
   MemoryState,
   MemoryTraversal,
@@ -81,6 +82,19 @@ export class MemoryGraph {
     visit(rootId, 0, []);
     return { rootId, graphDepth, entries };
   }
+}
+
+/**
+ * The root in full, every memory it reaches as id + tldr. A hub's neighbours
+ * can be essays; the reader fetches the ones it decides it needs.
+ */
+export function compactNeighbours(traversal: MemoryTraversal): MemoryRecall {
+  return {
+    ...traversal,
+    entries: traversal.entries.map((entry) => (entry.depth === 0 || !entry.record
+      ? entry
+      : { ...entry, record: { id: entry.record.id, tldr: entry.record.tldr } })),
+  };
 }
 
 export function deleteMemoryAndReroute(state: MemoryState, deletedId: string): MemoryState {

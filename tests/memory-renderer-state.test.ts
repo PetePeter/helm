@@ -23,7 +23,6 @@ describe('memory renderer state', () => {
     memoryScreenState.detailVisible = false;
     memoryScreenState.loading = false;
     memoryScreenState.searchQuery = '';
-    memoryScreenState.searchResults = [];
     memoryScreenState.matchedIds = [];
   });
 
@@ -84,13 +83,11 @@ describe('memory renderer state', () => {
     store.setActiveSessionId('projectA');
     await refreshMemories();
     memoryScreenState.searchQuery = 'alpha';
-    memoryScreenState.searchResults = [{ rootId: 'a1', nodes: [], edges: [] }] as any;
     memoryScreenState.matchedIds = ['a1'];
 
     store.setActiveSessionId('projectB');
     await refreshMemories();
 
-    expect(memoryScreenState.searchResults).toEqual([]);
     expect(memoryScreenState.matchedIds).toEqual([]);
     expect(memoryScreenState.searchQuery).toBe('');
   });

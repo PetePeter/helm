@@ -151,7 +151,7 @@ onUnmounted(disposeMemoryChangedSubscription);
       <div class="memory-graph-panel">
         <div class="memory-graph-toolbar">
           <span>Read-only graph — click a node to read it</span>
-          <span v-if="memoryScreenState.searchQuery" class="memory-search-count">{{ memoryScreenState.searchResults.length }} match(es)</span>
+          <span v-if="memoryScreenState.searchQuery" class="memory-search-count">{{ memoryScreenState.matchedIds.length }} match(es)</span>
           <button type="button" class="btn btn--secondary btn--sm" @click="resetViewport">Reset view</button>
           <button v-if="memoryScreenState.detail" type="button" class="btn btn--secondary btn--sm" @click="openDetail">Open detail</button>
         </div>

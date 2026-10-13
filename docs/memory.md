@@ -45,8 +45,29 @@ still matches, ranked last, so `deploy` finds `prepareDeploy`. `regex=true`
 filters instead of ranking. The index is built per call: a store of tens to
 hundreds of memories costs less to index than to keep a synced copy.
 
-`memory_search` and `memory_get` default to `graphDepth: 1`, so a hit arrives
-with its direct neighbours.
+### Search is cheap, get is full
+
+```mermaid
+flowchart LR
+    Q[memory_search] --> H["5 best hits · id + tldr<br/>matched = every match"]
+    H -->|pick one| G[memory_get]
+    G --> R[that memory in full]
+    G --> N[its links · id + tldr]
+    N -->|pick one| G
+```
+
+- **Why:** older memories run to several KB. Returning each hit in full, with
+  its neighbours, let one search flood a small model's context and cost every
+  caller tokens it did not ask to spend.
+- **One shape for every caller.** A hit is `id`, `tldr`, `score`, `projectId`,
+  `foreign`; never content. `MEMORY_SEARCH_LIMIT` (5) caps `memory_search`, and
+  `matched` says how many matched so the caller knows to narrow the query.
+  `regex=true` follows the same shape and cap.
+- **`memory_get`** returns the asked-for memory whole and everything it reaches
+  (`graphDepth` defaults to 1) as id + tldr, with the edge type on `via`.
+- **Not capped:** the Memory pane's search. It highlights every match on the
+  canvas and its hits carry no content, so there is nothing to protect.
+  `memory_graph` and `memory_export` are explicit dumps and stay full.
 
 ## Cross-project
 

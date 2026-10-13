@@ -1864,7 +1864,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_get',
     title: 'Get Memory',
-    description: 'Get a memory by id: your project\'s, or another project\'s found via memory_search. Returns its cycle-safe graph neighbourhood; graphDepth defaults to 1 (the memory plus its direct links), 0 for the memory alone.',
+    description: 'Get a memory by id: your project\'s, or another project\'s found via memory_search. Returns the memory in full plus its cycle-safe graph neighbourhood, each linked memory as id + tldr only: memory_get the ones you need. graphDepth defaults to 1 (direct links), 0 for the memory alone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1919,13 +1919,12 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_search',
     title: 'Search Memories',
-    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Covers your project plus other projects that share; `hits` gives each result\'s score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking. graphDepth defaults to 1 (each hit plus its direct links). Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
+    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Returns the 5 best `hits` as id + tldr, never the content: memory_get the hit you want. `matched` counts every match; when it is above 5, narrow the query. Covers your project plus other projects that share; each hit carries its score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking, under the same cap. Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string' },
         regex: { type: 'boolean' },
-        graphDepth: { type: 'integer', minimum: 0, maximum: 100 },
       },
       required: ['query'],
       additionalProperties: false,

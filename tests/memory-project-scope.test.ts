@@ -71,7 +71,7 @@ describe('scope and lifetime', () => {
 
     expect(manager.getRecordForSession(OUTSIDER, written.id)).toBeNull();
     expect(manager.listRecordsForSession(OUTSIDER)).toEqual([]);
-    expect(manager.searchForSession(OUTSIDER, 'project').results).toEqual([]);
+    expect(manager.searchForSession(OUTSIDER, 'project').hits).toEqual([]);
   });
 
   // Regression guard for every session that predates projects: without a
@@ -218,7 +218,7 @@ describe('dormancy', () => {
     const { manager, dormant, active } = seedDormant();
 
     expect(manager.listRecordsForSession(LATER).map((r) => r.id)).toEqual([active.id]);
-    expect(manager.searchForSession(LATER, 'needle').results.map((r) => r.rootId)).toEqual([active.id]);
+    expect(manager.searchForSession(LATER, 'needle').hits.map((hit) => hit.id)).toEqual([active.id]);
     expect(manager.forestForSession(LATER).records.map((r) => r.id)).toEqual([active.id]);
 
     const all = manager.listRecordsForSession(LATER, { includeDormant: true }).map((r) => r.id);

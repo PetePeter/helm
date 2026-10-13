@@ -34,7 +34,6 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     const store = useAppStore();
     store.setActiveSessionId('session-1');
     memoryScreenState.summaries = [];
-    memoryScreenState.searchResults = [];
     memoryScreenState.searchQuery = '';
     memoryScreenState.selectedId = null;
     memoryScreenState.detail = null;
@@ -85,7 +84,7 @@ describe('MemoryScreen shared-primitives anatomy', () => {
 
   it('renders the match count after a search has run', async () => {
     memoryScreenState.searchQuery = 'memory';
-    memoryScreenState.searchResults = [{}, {}, {}] as any;
+    memoryScreenState.matchedIds = ['a', 'b', 'c'];
     const wrapper = mountScreen();
     await flushPromises();
 

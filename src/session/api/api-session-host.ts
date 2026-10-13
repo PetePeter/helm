@@ -415,7 +415,7 @@ export class ApiSessionHost {
     return [
       `Subagent "${description}" — result memory ${header.id}`,
       summary,
-      `(Full detail and any nested results: memory_get id=${header.id} graphDepth=1)`,
+      `(Full detail and any nested results are linked: memory_get id=${header.id} lists them as id + tldr, then memory_get the one you need)`,
     ].join('\n');
   }
 

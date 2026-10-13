@@ -39,7 +39,7 @@ function installApi(overrides: Record<string, unknown> = {}) {
     memoryGraphAll: vi.fn(async () => FOREST),
     memoryGet: vi.fn(async (id: string) => RECORDS[id] ?? null),
     memoryGraph: vi.fn(async () => ({ rootId: 'a', graphDepth: 0, entries: [] })),
-    memorySearch: vi.fn(async () => ({ query: '', regex: false, results: [] })),
+    memorySearch: vi.fn(async () => ({ query: '', regex: false, matched: 0, hits: [] })),
     onMemoryChanged: vi.fn(() => vi.fn()),
     ...overrides,
   };
@@ -164,7 +164,8 @@ describe('memory canvas interaction', () => {
       memorySearch: vi.fn(async () => ({
         query: 'alpha',
         regex: false,
-        results: [{ rootId: 'a', graphDepth: 0, entries: [{ id: 'a', depth: 0, path: ['a'], breadcrumbs: [], status: 'record', record: RECORDS.a }] }],
+        matched: 1,
+        hits: [{ id: 'a', tldr: RECORDS.a.tldr, score: 1, foreign: false }],
       })),
     });
     const wrapper = await mountScreen();

@@ -34,7 +34,8 @@ import {
   requireBooleanResult,
   requireResult,
 } from './validation.js';
-import { MEMORY_EDGE_TYPES } from '../../types/memory.js';
+import { MEMORY_EDGE_TYPES, MEMORY_SEARCH_LIMIT } from '../../types/memory.js';
+import { compactNeighbours } from '../../session/memory-graph.js';
 
 /**
  * Reading a memory brings its direct links along: small memories only add up
@@ -1103,7 +1104,7 @@ export async function callMcpTool(
           `Memory not found: ${memoryId}`,
         );
         recordFetched(deps, authContext, 'memory', memoryId);
-        return traversal;
+        return compactNeighbours(traversal);
       }
       case 'memory_create': {
         const sessionId = requireCallerSession(authContext, 'memory_create');
@@ -1138,7 +1139,7 @@ export async function callMcpTool(
         const regex = args.regex === undefined ? false : asBoolean(args.regex, 'regex must be a boolean');
         return service.searchMemories(sessionId, asStringValue(args.query, 'query is required'), {
           regex,
-          graphDepth: asGraphDepth(args.graphDepth, RECALL_GRAPH_DEPTH),
+          limit: MEMORY_SEARCH_LIMIT,
         });
       }
       case 'memory_graph': {

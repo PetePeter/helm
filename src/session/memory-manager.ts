@@ -479,25 +479,12 @@ export class MemoryManager extends EventEmitter {
   searchForSession(sessionId: string, query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     assertSessionId(sessionId);
     const scopedRecords = this.findableRecords(sessionId, options.includeDormant);
-    const allowedIds = new Set(scopedRecords.map((record) => record.id));
-    const graphDepth = options.graphDepth ?? 0;
-    validateGraphDepth(graphDepth);
     const regexMode = options.regex === true;
-    const graph = new MemoryGraph({
-      records: scopedRecords,
-      edges: this.edgesFor(sessionId).filter((edge) => allowedIds.has(edge.fromId)),
-    });
     const isForeign = this.foreignTo(sessionId);
     const ranked = regexMode
       ? regexMatches(scopedRecords, compileRegex(query))
       : rankMemories(scopedRecords, query, { boost: (record) => (isForeign(record) ? 1 : OWN_PROJECT_BOOST) });
-    const byId = new Map(scopedRecords.map((record) => [record.id, record]));
-    return {
-      query,
-      regex: regexMode,
-      results: ranked.map((hit) => graph.traverse(hit.id, graphDepth)),
-      hits: ranked.map((hit) => toSearchHit(hit, byId.get(hit.id)!, isForeign)),
-    };
+    return toSearchResult(query, regexMode, ranked, scopedRecords, isForeign, options.limit);
   }
 
   /**
@@ -741,17 +728,8 @@ export class MemoryManager extends EventEmitter {
 
   search(query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     const regexMode = options.regex === true;
-    const graphDepth = options.graphDepth ?? 0;
-    validateGraphDepth(graphDepth);
     const ranked = regexMode ? regexMatches(this.state.records, compileRegex(query)) : rankMemories(this.state.records, query);
-    const graph = new MemoryGraph(this.state);
-    const byId = new Map(this.state.records.map((record) => [record.id, record]));
-    return {
-      query,
-      regex: regexMode,
-      results: ranked.map((hit) => graph.traverse(hit.id, graphDepth)),
-      hits: ranked.map((hit) => toSearchHit(hit, byId.get(hit.id)!, () => false)),
-    };
+    return toSearchResult(query, regexMode, ranked, this.state.records, () => false, options.limit);
   }
 
   getRecord(id: string): MemoryRecord | null {
@@ -935,9 +913,34 @@ function regexMatches(records: readonly MemoryRecord[], expression: RegExp): Ran
     .map((record) => ({ id: record.id, score: 1 }));
 }
 
+/**
+ * A search answers with what each match is, never its content: one essay-sized
+ * memory per hit would flood the caller, who fetches the one it wants instead.
+ */
+function toSearchResult(
+  query: string,
+  regex: boolean,
+  ranked: readonly RankedMemory[],
+  records: readonly MemoryRecord[],
+  isForeign: (record: MemoryRecord) => boolean,
+  limit?: number,
+): MemorySearchResult {
+  if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) {
+    throw new Error('limit must be a positive integer');
+  }
+  const byId = new Map(records.map((record) => [record.id, record]));
+  return {
+    query,
+    regex,
+    matched: ranked.length,
+    hits: ranked.slice(0, limit).map((hit) => toSearchHit(hit, byId.get(hit.id)!, isForeign)),
+  };
+}
+
 function toSearchHit(hit: RankedMemory, record: MemoryRecord, isForeign: (record: MemoryRecord) => boolean): MemorySearchHit {
   return {
     id: hit.id,
+    tldr: record.tldr,
     score: hit.score,
     ...(record.projectId !== undefined ? { projectId: record.projectId } : {}),
     foreign: isForeign(record),

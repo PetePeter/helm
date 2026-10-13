@@ -16,11 +16,11 @@ line_3 = "You are trusted to use judgement here. There is no checklist that prod
 
 [procedure]
 step_1 = "Call memory_dream. It returns FADED candidates (rarely read, weakly linked) and SALIENT candidates (frequently read or heavily linked), with the metrics behind each. contentChars over ~300 usually means several ideas to split."
-step_2 = "Read the actual memory before acting on it. memory_get with graphDepth shows what links into it — a memory that looks stale in isolation is often the hub of a cluster."
+step_2 = "Read the actual memory before acting on it. memory_get returns it in full with its links as id + tldr — a memory that looks stale in isolation is often the hub of a cluster."
 step_3 = "Retire what no longer earns its place with memory_set_dormant. Dormant is reversible and searchable; prefer it to memory_delete."
 step_4 = "Split essays into atoms: a memory holding several ideas becomes one memory per idea (memory_create), each tldr stating its idea, linked with a type (part-of, supports, example-of...). Keep the original as a short summary pointing at the atoms, or set it dormant once nothing is lost."
 step_4b = "Merge only true duplicates (the same idea twice): keep the sharper one, link the other to it as supersedes, set it dormant."
-step_4c = "Link what relates: memory_search each atom's idea, and memory_link it to the related memories you find, in any project, with the type that says why."
+step_4c = "Link what relates: memory_search each atom's idea (hits are id + tldr; memory_get one before judging it), and memory_link it to the related memories you find, in any project, with the type that says why."
 step_5 = "Sharpen salient memories whose tldr no longer matches their content, or that have drifted out of date."
 step_6 = "Finish with mess_check so you pick up notes other sessions left for this project."
 

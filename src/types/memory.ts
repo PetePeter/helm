@@ -194,15 +194,35 @@ export interface MemoryTraversal {
   entries: MemoryTraversalEntry[];
 }
 
-export interface MemorySearchOptions {
-  regex?: boolean;
-  graphDepth?: number;
-  includeDormant?: boolean;
+/**
+ * A linked memory as `memory_get` reports it: enough to decide whether to
+ * fetch it, without paying for its content.
+ */
+export type MemoryNeighbour = Pick<MemoryRecord, 'id' | 'tldr'>;
+
+export interface MemoryRecallEntry extends Omit<MemoryTraversalEntry, 'record'> {
+  record?: MemoryRecord | MemoryNeighbour;
 }
 
-/** One search root, aligned with `results`: how well it matched and whose it is. */
+/** A traversal whose root is whole and whose neighbours are `MemoryNeighbour`s. */
+export interface MemoryRecall extends Omit<MemoryTraversal, 'entries'> {
+  entries: MemoryRecallEntry[];
+}
+
+/** How many hits `memory_search` answers with; the rest are only counted. */
+export const MEMORY_SEARCH_LIMIT = 5;
+
+export interface MemorySearchOptions {
+  regex?: boolean;
+  includeDormant?: boolean;
+  /** Keep only the best N hits. Absent = every match. */
+  limit?: number;
+}
+
+/** One match: what it is, how well it matched and whose it is. Never its content. */
 export interface MemorySearchHit {
   id: string;
+  tldr: string;
   score: number;
   projectId?: string;
   /** From a project other than the caller's — knowledge to weigh, not to assume. */
@@ -212,7 +232,8 @@ export interface MemorySearchHit {
 export interface MemorySearchResult {
   query: string;
   regex: boolean;
-  results: MemoryTraversal[];
+  /** Every match, including the ones `limit` left out of `hits`. */
+  matched: number;
   hits: MemorySearchHit[];
 }
 

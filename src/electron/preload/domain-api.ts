@@ -1071,7 +1071,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   memoryList: (sessionId?: string) => ipcRenderer.invoke('memory:list', sessionId),
   memoryGet: (memoryId: string, sessionId?: string) => ipcRenderer.invoke('memory:get', memoryId, sessionId),
-  memorySearch: (query: string, options?: { regex?: boolean; graphDepth?: number }, sessionId?: string) =>
+  memorySearch: (query: string, options?: { regex?: boolean }, sessionId?: string) =>
     ipcRenderer.invoke('memory:search', query, options, sessionId),
   memoryGraph: (rootId: string, graphDepth?: number, sessionId?: string) =>
     ipcRenderer.invoke('memory:graph', rootId, graphDepth, sessionId),

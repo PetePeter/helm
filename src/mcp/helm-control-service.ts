@@ -84,6 +84,7 @@ import type {
   MemoryListOptions,
   MemoryRecord,
   MemoryEdgeType,
+  MemorySearchOptions,
   MemorySearchResult,
   MemoryTraversal,
 } from '../types/memory.js';
@@ -1012,7 +1013,7 @@ export class HelmControlService extends EventEmitter {
     return this.requireMemoryService().deleteMemory(sessionId, id);
   }
 
-  searchMemories(sessionId: string, query: string, options?: { regex?: boolean; graphDepth?: number }): MemorySearchResult {
+  searchMemories(sessionId: string, query: string, options?: MemorySearchOptions): MemorySearchResult {
     return this.requireMemoryService().searchMemories(sessionId, query, options);
   }
 

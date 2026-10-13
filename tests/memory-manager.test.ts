@@ -78,15 +78,13 @@ describe('MemoryManager', () => {
     expect(manager.exportState().edges).toEqual([{ fromId: 'a', toId: 'b' }]);
   });
 
-  it('searches literal by default and returns graph expansion per matching root', () => {
+  it('searches literal by default and rejects a broken regex', () => {
     const manager = new MemoryManager({ idFactory: (() => { const ids = ['a', 'b']; return () => ids.shift()!; })() });
     manager.create({ tldr: 'Alpha', content: 'plain' });
     manager.create({ tldr: 'Beta', content: 'Alpha body' });
     manager.link('a', 'b');
 
-    const result = manager.search('Alpha', { graphDepth: 1 });
-    expect(result.results.map((item) => item.rootId)).toEqual(['a', 'b']);
-    expect(result.results[0].entries.map((entry) => entry.id)).toEqual(['a', 'b']);
+    expect(manager.search('Alpha').hits.map((hit) => hit.id)).toEqual(['a', 'b']);
     expect(() => manager.search('[', { regex: true })).toThrow(/regular expression/i);
   });
 
@@ -128,7 +126,7 @@ describe('MemoryManager', () => {
     manager.createForSession('w', { tldr: 'work fact', content: 'the build uses vite' });
 
     expect(manager.getRecordForSession('op', 'theirs')?.tldr).toBe('work fact');
-    expect(manager.searchForSession('op', 'vite').results.map((r) => r.rootId)).toEqual(['theirs']);
+    expect(manager.searchForSession('op', 'vite').hits.map((hit) => hit.id)).toEqual(['theirs']);
     expect(manager.listRecordsForSession('op').map((r) => r.id).sort()).toEqual(['mine', 'theirs']);
     // Reading is not owning: another project's memory stays read-only.
     expect(manager.updateForSession('op', 'theirs', { tldr: 'nope' })).toBeNull();
@@ -273,7 +271,7 @@ describe('MemoryManager session-bound memories', () => {
   }
 
   const rootIds = (manager: MemoryManager, sessionId: string, query: string) =>
-    manager.searchForSession(sessionId, query).results.map((item) => item.rootId).sort();
+    manager.searchForSession(sessionId, query).hits.map((hit) => hit.id).sort();
 
   it('returns a bound memory to its own session on every read path', () => {
     const manager = boundFixture();
@@ -310,10 +308,8 @@ describe('MemoryManager session-bound memories', () => {
   it('never discloses a bound memory through an edge from a memory others can see', () => {
     const manager = boundFixture();
     expect(manager.linkForSession('s1', 'plain', 'bound', 'supports')).toBe(true);
-    const reached = (sessionId: string) => [
-      ...manager.getForSession(sessionId, 'plain', 2)!.entries,
-      ...manager.searchForSession(sessionId, 'vite', { graphDepth: 2 }).results.flatMap((item) => item.entries),
-    ].map((entry) => entry.id);
+    const reached = (sessionId: string) =>
+      manager.getForSession(sessionId, 'plain', 2)!.entries.map((entry) => entry.id);
 
     expect(reached('s1')).toContain('bound');
     for (const sessionId of ['s2', 'x', 'op']) expect(reached(sessionId)).not.toContain('bound');
