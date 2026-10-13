@@ -180,6 +180,7 @@ renderer/
 │   │   ├── TelegramTab.vue     # Telegram bot configuration
 │   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
 │   │   ├── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
+│   │   ├── AutoMemoryTab.vue   # Settings → Auto memory: recording model picker, auto-save / auto-recall switches, Test
 │   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
 │   ├── dock/
 │   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state

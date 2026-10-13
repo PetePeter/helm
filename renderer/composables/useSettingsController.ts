@@ -216,6 +216,7 @@ export function useSettingsController(options: {
       { id: 'chipbar-actions', label: '⚡ Quick Actions' },
       { id: 'projects', label: '📁 Projects' },
       { id: 'skills', label: '🧠 Skills' },
+      { id: 'auto-memory', label: '💾 Auto memory' },
       { id: 'telegram', label: '📨 Telegram' },
       { id: 'mcp', label: '🧩 MCP' },
       { id: 'peers', label: '🔗 Fleet' },

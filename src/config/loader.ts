@@ -26,6 +26,13 @@ import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
 import { defaultComfyUiMigrationFiles, migrateComfyUiToolDefaults } from './comfyui-default-migration.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
+import {
+  DEFAULT_AUTO_MEMORY_SETTINGS,
+  HEADLESS_RUNNER_NOTE,
+  INCOMPLETE_API_NOTE,
+  type AutoMemorySettings,
+  type RecordingModelOption,
+} from '../types/auto-memory.js';
 import type { ProjectStore } from '../session/project-store.js';
 import {
   DEFAULT_FLEET_CONFIG,
@@ -142,6 +149,11 @@ export interface PatternRule {
 // ============================================================================
 
 /** A bare CLI-type identity. Matching this means the reference is an id, not a label. */
+/** A hand-edited `api` block can lack what a request needs; such a tool cannot record. */
+function isRunnableApi(api: ApiToolConfig): boolean {
+  return typeof api.baseUrl === 'string' && !!api.baseUrl.trim() && typeof api.model === 'string' && !!api.model.trim();
+}
+
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -447,6 +459,8 @@ export interface SettingsConfig {
   mobileLan?: MobileLanConfig;
   /** Voice operator singleton. Absent means the defaults, i.e. off. */
   operator?: OperatorConfig;
+  /** Auto memory: the recording model and the auto-save / auto-recall switches. */
+  autoMemory?: Partial<AutoMemorySettings>;
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
    * consecutive auto-continue cap. Absent means allowed at the shipped cap —
@@ -1213,6 +1227,66 @@ export class ConfigLoader {
       enabled: section.enabled !== false,
       maxAutoContinues,
     };
+  }
+
+  /**
+   * Auto memory: one global recording model plus the two switches. A malformed
+   * value degrades to its default, so a hand-edited settings.yaml can only
+   * switch a behaviour back on, never crash the judge or the suggester.
+   */
+  getAutoMemoryConfig(): AutoMemorySettings {
+    const raw = this.settings?.autoMemory;
+    const section = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+    return {
+      recordingModel: typeof section.recordingModel === 'string' ? section.recordingModel : DEFAULT_AUTO_MEMORY_SETTINGS.recordingModel,
+      autoSave: typeof section.autoSave === 'boolean' ? section.autoSave : DEFAULT_AUTO_MEMORY_SETTINGS.autoSave,
+      autoRecall: typeof section.autoRecall === 'boolean' ? section.autoRecall : DEFAULT_AUTO_MEMORY_SETTINGS.autoRecall,
+    };
+  }
+
+  /**
+   * Update the auto memory settings (partial merge). A recording model that
+   * cannot run silently is REFUSED, not stored: a pick that quietly records
+   * nothing is worse than an error. Empty clears the pick.
+   */
+  setAutoMemoryConfig(updates: Partial<AutoMemorySettings>): void {
+    this.ensureLoaded();
+    const next = { ...this.getAutoMemoryConfig() };
+    if (typeof updates.autoSave === 'boolean') next.autoSave = updates.autoSave;
+    if (typeof updates.autoRecall === 'boolean') next.autoRecall = updates.autoRecall;
+    if (typeof updates.recordingModel === 'string') {
+      const ref = updates.recordingModel.trim();
+      next.recordingModel = ref ? this.requireRecordingModel(ref) : '';
+    }
+    this.settings!.autoMemory = next;
+    this.saveSettings();
+  }
+
+  /** The CLI types the recording-model picker lists, in configured order. */
+  getRecordingModelOptions(): RecordingModelOption[] {
+    this.ensureLoaded();
+    const options: RecordingModelOption[] = [];
+    for (const id of this.cliTypeStore.list()) {
+      const config = this.cliTypeStore.get(id);
+      // A ComfyUI type draws pictures; it has no text model to record with.
+      if (!config || config.comfyUi) continue;
+      const name = config.displayName ?? config.name ?? id;
+      if (!config.api) options.push({ id, name, kind: 'cli', available: false, note: HEADLESS_RUNNER_NOTE });
+      else if (isRunnableApi(config.api)) options.push({ id, name, kind: 'api', available: true });
+      else options.push({ id, name, kind: 'api', available: false, note: INCOMPLETE_API_NOTE });
+    }
+    return options;
+  }
+
+  /** Resolve a picked recording model to its CLI type id, or throw saying why it cannot record. */
+  private requireRecordingModel(ref: string): string {
+    const resolved = this.cliTypeStore.resolve(ref);
+    if (!resolved) throw new Error(`Unknown CLI type: ${ref}`);
+    const name = resolved.config.displayName ?? resolved.config.name ?? resolved.id;
+    if (resolved.config.comfyUi) throw new Error(`${name} is a ComfyUI type and cannot record memories`);
+    if (!resolved.config.api) throw new Error(`${name} is a real CLI: recording with it needs the headless runner`);
+    if (!isRunnableApi(resolved.config.api)) throw new Error(`${name} cannot record: its ${INCOMPLETE_API_NOTE}`);
+    return resolved.id;
   }
 
   /** Update the localhost MCP configuration (partial merge). */

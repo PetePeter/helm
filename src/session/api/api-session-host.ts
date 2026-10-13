@@ -209,25 +209,7 @@ export class ApiSessionHost {
       skills: toolNames.includes('skill_get') ? this.safeSkills(cwd) : [],
       extra: api.systemPrompt,
     });
-    const apiKey = api.apiKeyEnv
-      ? spawn.env?.[api.apiKeyEnv] || (this.deps.env ?? process.env)[api.apiKeyEnv]
-      : undefined;
-    const rawClient = this.deps.createClient?.(api, apiKey)
-      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey, temperature: api.temperature });
-    // Every request of this API tool waits for one of its slots, so a burst of
-    // subagents queues here instead of overrunning the server.
-    const slotKey = spawn.cliType ?? sessionId;
-    const slotCount = Math.max(1, api.slots ?? 1);
-    const client: ChatClient = {
-      complete: async (messages, toolSpecs, signal) => {
-        await this.acquireSlot(slotKey, slotCount);
-        try {
-          return await rawClient.complete(messages, toolSpecs, signal);
-        } finally {
-          this.releaseSlot(slotKey);
-        }
-      },
-    };
+    const client = this.slottedClient(api, spawn.env, spawn.cliType ?? sessionId);
     const historyFile = this.historyFile(spawn.cliSessionName);
     const now = this.deps.now ?? (() => new Date());
 
@@ -288,6 +270,43 @@ export class ApiSessionHost {
       this.subagentWaiters.get(sessionId)?.({ input: '', finalText: '', toolsUsed: [], error: 'subagent session closed' });
     });
     return proc;
+  }
+
+  /**
+   * One tool-less request to an API tool with no session behind it: no row, no
+   * history, no chat reply, no hook event. It waits for one of the tool's
+   * slots like any other request, so it queues behind real work.
+   */
+  async completeSilently(
+    target: { cliType: string; api: ApiToolConfig; env?: Record<string, string> },
+    messages: ChatMessage[],
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const result = await this.slottedClient(target.api, target.env, target.cliType).complete(messages, [], signal);
+    return result.message.content ?? '';
+  }
+
+  /**
+   * The API tool's client, with every request waiting for one of the tool's
+   * slots, so a burst of subagents queues here instead of overrunning the server.
+   */
+  private slottedClient(api: ApiToolConfig, env: Record<string, string> | undefined, slotKey: string): ChatClient {
+    const apiKey = api.apiKeyEnv
+      ? env?.[api.apiKeyEnv] || (this.deps.env ?? process.env)[api.apiKeyEnv]
+      : undefined;
+    const rawClient = this.deps.createClient?.(api, apiKey)
+      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey, temperature: api.temperature });
+    const slotCount = Math.max(1, api.slots ?? 1);
+    return {
+      complete: async (messages, toolSpecs, signal) => {
+        await this.acquireSlot(slotKey, slotCount, signal);
+        try {
+          return await rawClient.complete(messages, toolSpecs, signal);
+        } finally {
+          this.releaseSlot(slotKey);
+        }
+      },
+    };
   }
 
   /**
@@ -426,14 +445,28 @@ export class ApiSessionHost {
     this.deps.onPendingSubagents?.(sessionId, count);
   }
 
-  private acquireSlot(key: string, max: number): Promise<void> {
+  /** Resolves once a slot is held. An abort while still queued gives the place up and rejects. */
+  private acquireSlot(key: string, max: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new Error('Request aborted'));
     const slots = this.slots.get(key) ?? { running: 0, queue: [] };
     this.slots.set(key, slots);
     if (slots.running < max) {
       slots.running++;
       return Promise.resolve();
     }
-    return new Promise((resolve) => slots.queue.push(() => { slots.running++; resolve(); }));
+    return new Promise((resolve, reject) => {
+      const take = (): void => {
+        signal?.removeEventListener('abort', leave);
+        slots.running++;
+        resolve();
+      };
+      const leave = (): void => {
+        slots.queue.splice(slots.queue.indexOf(take), 1);
+        reject(new Error('Request aborted'));
+      };
+      signal?.addEventListener('abort', leave, { once: true });
+      slots.queue.push(take);
+    });
   }
 
   private releaseSlot(key: string): void {

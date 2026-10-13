@@ -62,6 +62,7 @@ import { initTelegramModules } from '../../telegram/orchestrator.js';
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
 import { setupEditorHandlers } from './editor-handlers.js';
+import { setupAutoMemoryHandlers } from './auto-memory-handlers.js';
 import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
@@ -72,7 +73,8 @@ import { VoiceService } from '../../voice/voice-service.js';
 import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
 import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
-import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
+import { resolveConfiguredSpawnEnv, spawnConfiguredSession } from '../../session/configured-session-spawn.js';
+import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-model-runner.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -500,6 +502,20 @@ export function registerIPCHandlers(
     historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
   });
   registerApiSessionHost(apiSessionHost);
+  // Auto memory's silent runs go to the recording model picked in Settings.
+  // Only API tools can answer today; a real CLI type gets its backend with the
+  // headless runner.
+  const recordingModelRunner = new RecordingModelRunner({
+    getRecordingModel: () => configLoader.getAutoMemoryConfig().recordingModel,
+    resolveModel: (ref) => {
+      const resolved = configLoader.resolveCliType(ref);
+      if (!resolved) return null;
+      return resolved.config.api
+        ? { id: resolved.id, kind: 'api', api: resolved.config.api, env: resolveConfiguredSpawnEnv(configLoader, resolved.id) }
+        : { id: resolved.id, kind: 'cli' };
+    },
+    backends: { api: apiSilentBackend(apiSessionHost) },
+  });
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
@@ -541,6 +557,7 @@ export function registerIPCHandlers(
     suggestionUsage,
   );
   setupEditorHandlers(configLoader);
+  setupAutoMemoryHandlers(configLoader, recordingModelRunner);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
   setupSystemHandlers(dirname ?? process.cwd());
@@ -804,6 +821,7 @@ export function registerIPCHandlers(
         }));
       return [...skills, ...memories];
     },
+    memoriesEnabled: () => configLoader.getAutoMemoryConfig().autoRecall,
     scorer: suggestionScorer,
     onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),
   });

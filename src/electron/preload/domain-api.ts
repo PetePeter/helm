@@ -9,6 +9,7 @@ import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { MessEntry } from '../../types/mess.js';
+import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
@@ -562,6 +563,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Remove Helm's hook block from a CLI's user-level config. Reversible. */
   hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
+
+  /** Auto memory: the recording model, the two switches, and the models the picker lists. */
+  configGetAutoMemory: (): Promise<AutoMemoryState> => ipcRenderer.invoke('config:getAutoMemory'),
+
+  /** Partial merge. A recording model that cannot run silently is refused with its reason. */
+  configSetAutoMemory: (updates: Partial<AutoMemorySettings>): Promise<AutoMemoryState> =>
+    ipcRenderer.invoke('config:setAutoMemory', updates),
+
+  /** One silent request to the picked recording model, to prove it answers. */
+  configTestAutoMemoryModel: (): Promise<SilentRunResult> => ipcRenderer.invoke('config:testAutoMemoryModel'),
 
   /**
    * G9 reminder delivery: the user's per-reminder mode overrides

@@ -107,6 +107,7 @@ import PeersTab from './components/sidebar/PeersTab.vue';
 import VoiceTab from './components/sidebar/VoiceTab.vue';
 import UpdatesTab from './components/sidebar/UpdatesTab.vue';
 import OperatorTab from './components/sidebar/OperatorTab.vue';
+import AutoMemoryTab from './components/sidebar/AutoMemoryTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
@@ -1305,6 +1306,9 @@ onUnmounted(() => {
             />
             <OperatorTab
               v-else-if="activeTab === 'operator'"
+            />
+            <AutoMemoryTab
+              v-else-if="activeTab === 'auto-memory'"
             />
             <BindingsTab
               v-else
