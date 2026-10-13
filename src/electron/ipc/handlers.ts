@@ -793,8 +793,7 @@ export function registerIPCHandlers(
         allProjects: skill.allProjects,
       }));
       if (!projectId) return skills;
-      const memories = memoryManager.listRecords()
-        .filter((record) => record.projectId === projectId && record.dormantSince === undefined)
+      const memories = memoryManager.listProjectRecords(projectId)
         .map((record) => ({
           type: 'memory' as const,
           id: record.id,

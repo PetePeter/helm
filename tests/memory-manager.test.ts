@@ -253,3 +253,142 @@ describe('MemoryManager', () => {
     }
   });
 });
+
+describe('MemoryManager session-bound memories', () => {
+  /** s1 and s2 share project p-a, x sits in p-b, op is the read-all operator. */
+  function boundFixture(extra: { persistence?: MemoryPersistence } = {}) {
+    const projects: Record<string, string> = { s1: 'p-a', s2: 'p-a', x: 'p-b', op: 'p-op' };
+    const ids = ['bound', 'plain', 'other'];
+    let extraIds = 0;
+    const manager = new MemoryManager({
+      ...extra,
+      idFactory: () => ids.shift() ?? `extra-${extraIds++}`,
+      resolveSessionProject: (id) => projects[id] ?? null,
+      canReadAll: (id) => id === 'op',
+      isProjectShared: () => true,
+    });
+    manager.createForSession('s1', { tldr: 'vite builds the renderer', content: 'esbuild builds main', sessionBound: true });
+    manager.createForSession('s1', { tldr: 'vite config lives in root', content: 'renderer config' });
+    return manager;
+  }
+
+  const rootIds = (manager: MemoryManager, sessionId: string, query: string) =>
+    manager.searchForSession(sessionId, query).results.map((item) => item.rootId).sort();
+
+  it('returns a bound memory to its own session on every read path', () => {
+    const manager = boundFixture();
+
+    expect(manager.getRecordForSession('s1', 'bound')).toMatchObject({ sessionBound: true, projectId: 'p-a' });
+    expect(rootIds(manager, 's1', 'vite')).toEqual(['bound', 'plain']);
+    expect(manager.similarForSession('s1', 'plain', 5).map((hit) => hit.id)).toEqual(['bound']);
+    expect(manager.listRecordsForSession('s1').map((record) => record.id)).toEqual(['bound', 'plain']);
+    expect(manager.forestForSession('s1').records.find((record) => record.id === 'bound')?.sessionBound).toBe(true);
+    expect(manager.updateForSession('s1', 'bound', { tldr: 'vite builds the renderer bundle' })).not.toBeNull();
+  });
+
+  it('hides a bound memory from every other session — same project, another project, the operator', () => {
+    const manager = boundFixture();
+
+    for (const sessionId of ['s2', 'x', 'op']) {
+      expect(manager.getRecordForSession(sessionId, 'bound')).toBeNull();
+      expect(manager.getForSession(sessionId, 'bound')).toBeNull();
+      expect(rootIds(manager, sessionId, 'vite')).toEqual(['plain']);
+      expect(manager.listRecordsForSession(sessionId).map((record) => record.id)).not.toContain('bound');
+      expect(manager.forestForSession(sessionId).records.map((record) => record.id)).not.toContain('bound');
+      // Not even as a ranking seed: its text must not shape another session's results.
+      expect(manager.similarForSession(sessionId, 'bound', 5)).toEqual([]);
+    }
+    expect(manager.similarForSession('s2', 'plain', 5)).toEqual([]);
+    // Hidden means untouchable, not merely unlisted.
+    expect(manager.updateForSession('s2', 'bound', { tldr: 'nope' })).toBeNull();
+    expect(manager.deleteForSession('s2', 'bound')).toBe(false);
+    expect(manager.setDormantForSession('s2', 'bound', true)).toBe(false);
+    expect(manager.linkForSession('s2', 'plain', 'bound')).toBe(false);
+    expect(manager.getRecord('bound')?.tldr).toBe('vite builds the renderer');
+  });
+
+  it('never discloses a bound memory through an edge from a memory others can see', () => {
+    const manager = boundFixture();
+    expect(manager.linkForSession('s1', 'plain', 'bound', 'supports')).toBe(true);
+    const reached = (sessionId: string) => [
+      ...manager.getForSession(sessionId, 'plain', 2)!.entries,
+      ...manager.searchForSession(sessionId, 'vite', { graphDepth: 2 }).results.flatMap((item) => item.entries),
+    ].map((entry) => entry.id);
+
+    expect(reached('s1')).toContain('bound');
+    for (const sessionId of ['s2', 'x', 'op']) expect(reached(sessionId)).not.toContain('bound');
+    expect(manager.forestForSession('s2').edges).toEqual([]);
+    // s2 owns the source, but cutting the edge would confirm the hidden target.
+    expect(manager.unlinkForSession('s2', 'plain', 'bound')).toBe(false);
+    expect(manager.exportState().edges).toEqual([{ fromId: 'plain', toId: 'bound', type: 'supports' }]);
+    expect(manager.unlinkForSession('s1', 'plain', 'bound')).toBe(true);
+  });
+
+  it('keeps a bound memory out of project-wide candidates and the dream review set', () => {
+    const manager = boundFixture();
+    // Three changes of writing session carry both records past the grace period.
+    manager.createForSession('s2', { tldr: 'epoch one', content: '' });
+    manager.createForSession('s1', { tldr: 'epoch two', content: '' });
+    manager.createForSession('s2', { tldr: 'epoch three', content: '' });
+
+    expect(manager.listProjectRecords('p-a').map((record) => record.id)).not.toContain('bound');
+    expect(manager.isDiscardEligible('plain')).toBe(true);
+    const dream = manager.dreamForSession('s1');
+    expect([...dream.faded, ...dream.salient].map((candidate) => candidate.id)).toEqual(['plain']);
+  });
+
+  it('turns a bound memory into ordinary project memory when its binding is released', () => {
+    const manager = boundFixture();
+    const events: unknown[] = [];
+    manager.on('memory:changed', (event) => events.push(event));
+    const before = manager.getRecord('bound')!.updatedAt;
+
+    expect(manager.releaseBinding('missing')).toBe(false);
+    expect(manager.releaseBinding('bound')).toBe(true);
+
+    expect(events).toEqual([{ type: 'release', id: 'bound', sessionId: 's1' }]);
+    expect(manager.getRecord('bound')).not.toHaveProperty('sessionBound');
+    // Promotion is not authoring: it must not make the memory look freshly written.
+    expect(manager.getRecord('bound')!.updatedAt).toBe(before);
+    expect(rootIds(manager, 's2', 'vite')).toEqual(['bound', 'plain']);
+    expect(rootIds(manager, 'x', 'vite')).toEqual(['bound', 'plain']);
+    expect(manager.listProjectRecords('p-a').map((record) => record.id)).toEqual(['bound', 'plain']);
+  });
+
+  it('keeps a project session\'s bound memories for the next dream when the session goes', () => {
+    const manager = boundFixture();
+    // No project means no dream will ever digest it, so it goes with its session.
+    manager.createForSession('loner', { tldr: 'no project', content: '', sessionBound: true });
+
+    expect(manager.purgeSession('s1')).toBe(0);
+    expect(manager.pruneOrphanedSessions(new Set())).toBe(1);
+    expect(manager.getRecord('bound')?.sessionBound).toBe(true);
+    expect(manager.getRecord('other')).toBeNull();
+  });
+
+  it('refuses a binding with no session to bind to', () => {
+    const manager = new MemoryManager();
+    expect(() => manager.create({ tldr: 'x', content: '', sessionBound: true })).toThrow(/session/i);
+  });
+
+  it('round-trips the binding through disk and loads an older store unbound', () => {
+    const root = makeTempRoot('helm-memory-bound-');
+    try {
+      const filePath = join(root, 'memories.json');
+      boundFixture({ persistence: new MemoryPersistence(filePath) });
+
+      const reloaded = new MemoryManager({ persistence: new MemoryPersistence(filePath) });
+      expect(reloaded.getRecord('bound')?.sessionBound).toBe(true);
+      expect(reloaded.getRecord('plain')).not.toHaveProperty('sessionBound');
+
+      // A store written before the field existed: no record carries it.
+      const stored = JSON.parse(readFileSync(filePath, 'utf8'));
+      for (const record of stored.records) delete record.sessionBound;
+      writeFileSync(filePath, JSON.stringify(stored), 'utf8');
+      const legacy = new MemoryManager({ persistence: new MemoryPersistence(filePath) });
+      expect(legacy.listRecords().some((record) => record.sessionBound)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

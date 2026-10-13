@@ -44,7 +44,7 @@ const STORE_VERSION = 2;
 const OPTIONAL_NUMBERS = ['lastAccessedAt', 'recallSessionCount', 'dormantSince', 'createdAtEpoch'] as const;
 const OPTIONAL_STRINGS = ['projectId', 'planId', 'lastRecallSessionId'] as const;
 /** First-party flags; only `true` is stored, absent means false. */
-const OPTIONAL_FLAGS = ['agentRun', 'summary'] as const;
+const OPTIONAL_FLAGS = ['agentRun', 'summary', 'sessionBound'] as const;
 
 function optionalFields(record: MemoryRecord): Partial<MemoryRecord> {
   const out: Record<string, unknown> = {};

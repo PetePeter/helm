@@ -67,6 +67,36 @@ flowchart LR
   everyone else's search. Absent = shared. `MemoryManager` without an
   `isProjectShared` policy keeps the old full fence.
 
+## Session-bound memories
+
+A memory Helm saves unattended is not project knowledge yet. It carries
+`sessionBound: true` and stays private to the session that produced it
+(`sessionId`) until a dream has read it and released the binding.
+
+```mermaid
+flowchart LR
+    A[auto-save<br/>sessionBound] --> B{who asks?}
+    B -->|its own session| V[visible: get · search · similar · list]
+    B -->|any other session<br/>same project · other project · operator| H[hidden]
+    A -->|releaseBinding| P[ordinary project memory]
+    M[memory_create] --> P
+```
+
+- **Why:** a small model writing on every turn would otherwise flood search,
+  hints and `similar` for every session in the project.
+- **One rule.** `MemoryManager.candidateRecords` drops other sessions' bound
+  memories before project scope, read-all or cross-project sharing widen the
+  set, so no read path can skip it. Hidden also means untouchable: update,
+  delete, dormancy and link targets go through the same set.
+- **Edges too.** `edgesFor` drops any edge touching a hidden memory, rather
+  than keeping it as a `missing` marker that would disclose its id.
+- **Not in the project's shared pool.** `listProjectRecords` (the prompt-hint
+  candidates) and the dream's faded/salient lists leave bound memories out.
+- **Lifetime.** A bound memory in a project outlives its session, so the next
+  dream can still digest it. One written by a project-less session goes with
+  that session, as any session-private memory does.
+- `memory_create` never binds; only first-party code can.
+
 ## Dreaming
 
 The dream guide now splits essays into linked atoms (candidates carry

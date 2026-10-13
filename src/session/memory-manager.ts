@@ -75,6 +75,7 @@ export interface CreateMemoryInput {
   /** First-party flags (see MemoryRecord). */
   agentRun?: boolean;
   summary?: boolean;
+  sessionBound?: boolean;
 }
 
 export interface UpdateMemoryInput {
@@ -151,17 +152,42 @@ export class MemoryManager extends EventEmitter {
     return projectId !== null && record.projectId === projectId;
   }
 
+  /**
+   * The records a session may be considered for at all. Every session-scoped
+   * read is built on this, so a session-bound memory is fenced in one place:
+   * project scope, read-all and cross-project sharing all widen from here and
+   * none of them can reach another session's bound memory.
+   */
+  private candidateRecords(sessionId: string, includeDormant: boolean): MemoryRecord[] {
+    return this.state.records.filter((record) =>
+      !boundElsewhere(record, sessionId)
+      && (includeDormant || record.dormantSince === undefined));
+  }
+
+  /**
+   * The edges a session may follow or cut. An edge touching another session's
+   * bound memory is left out entirely: kept as a `missing` marker it would
+   * still disclose that the memory exists, and its id.
+   */
+  private edgesFor(sessionId: string): MemoryState['edges'] {
+    const hidden = new Set(this.state.records
+      .filter((record) => boundElsewhere(record, sessionId))
+      .map((record) => record.id));
+    return hidden.size === 0
+      ? this.state.edges
+      : this.state.edges.filter((edge) => !hidden.has(edge.fromId) && !hidden.has(edge.toId));
+  }
+
   private scopedRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
     const projectId = this.resolveSessionProject?.(sessionId) ?? null;
-    return this.state.records.filter((record) =>
-      this.isVisible(record, sessionId, projectId)
-      && (includeDormant || record.dormantSince === undefined));
+    return this.candidateRecords(sessionId, includeDormant)
+      .filter((record) => this.isVisible(record, sessionId, projectId));
   }
 
   /** What a session may READ: its own scope, or everything for a read-all session. */
   private readableRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
     if (!this.canReadAll?.(sessionId)) return this.scopedRecords(sessionId, includeDormant);
-    return this.state.records.filter((record) => includeDormant || record.dormantSince === undefined);
+    return this.candidateRecords(sessionId, includeDormant);
   }
 
   /**
@@ -173,10 +199,9 @@ export class MemoryManager extends EventEmitter {
     const shared = this.isProjectShared;
     if (!shared) return readable;
     const readableIds = new Set(readable.map((record) => record.id));
-    return [...readable, ...this.state.records.filter((record) =>
+    return [...readable, ...this.candidateRecords(sessionId, includeDormant).filter((record) =>
       !readableIds.has(record.id)
-      && record.projectId !== undefined && shared(record.projectId)
-      && (includeDormant || record.dormantSince === undefined))];
+      && record.projectId !== undefined && shared(record.projectId))];
   }
 
   /** Whether the caller's project owns neither the record nor its session. */
@@ -233,7 +258,9 @@ export class MemoryManager extends EventEmitter {
     }
     const projectId = this.resolveSessionProject?.(sessionId) ?? null;
     if (!projectId) throw new Error('memory_dream requires a project-scoped session');
-    const projectRecords = this.state.records.filter((record) => record.projectId === projectId);
+    // Bound memories are not project knowledge yet; pruning or merging them
+    // here would judge them by recall counts nobody else could have added to.
+    const projectRecords = this.state.records.filter((record) => record.projectId === projectId && !record.sessionBound);
     const eligible = projectRecords.filter((record) =>
       record.dormantSince === undefined && this.isDiscardEligible(record.id));
     const epoch = this.projectEpoch(projectId);
@@ -320,6 +347,21 @@ export class MemoryManager extends EventEmitter {
     return this.setDormant(id, dormant);
   }
 
+  /**
+   * Promote a session-bound memory to ordinary project memory. Like dormancy,
+   * not an update: promotion is not authoring, so `updatedAt` stays put.
+   */
+  releaseBinding(id: string): boolean {
+    const current = this.state.records.find((record) => record.id === id);
+    if (!current) return false;
+    if (!current.sessionBound) return true;
+    this.mutate((candidate) => {
+      delete candidate.records.find((item) => item.id === id)!.sessionBound;
+      return { type: 'release', id, ...(current.sessionId ? { sessionId: current.sessionId } : {}) };
+    });
+    return true;
+  }
+
   create(input: CreateMemoryInput): MemoryRecord {
     return this.createRecord(undefined, input);
   }
@@ -330,6 +372,7 @@ export class MemoryManager extends EventEmitter {
   }
 
   private createRecord(sessionId: string | undefined, input: CreateMemoryInput): MemoryRecord {
+    if (input.sessionBound && !sessionId) throw new Error('A session-bound memory needs a session to bind to');
     const timestamp = this.now();
     // Provenance is resolved here and nowhere else. It cannot be reconstructed
     // later — a plan's sessionId is overwritten by whoever claims it next.
@@ -348,6 +391,7 @@ export class MemoryManager extends EventEmitter {
       ...(planId ? { planId } : {}),
       ...(input.agentRun ? { agentRun: true } : {}),
       ...(input.summary ? { summary: true } : {}),
+      ...(input.sessionBound ? { sessionBound: true } : {}),
       attachments: [],
     };
     this.mutate((candidate) => {
@@ -409,7 +453,7 @@ export class MemoryManager extends EventEmitter {
       // An owned source may point at a missing or foreign target. The graph
       // intentionally keeps that edge so the renderer can show a missing
       // marker without ever receiving the foreign record.
-      edges: this.state.edges.filter((edge) => allowedIds.has(edge.fromId)),
+      edges: this.edgesFor(sessionId).filter((edge) => allowedIds.has(edge.fromId)),
     }).traverse(rootId, graphDepth);
   }
 
@@ -441,7 +485,7 @@ export class MemoryManager extends EventEmitter {
     const regexMode = options.regex === true;
     const graph = new MemoryGraph({
       records: scopedRecords,
-      edges: this.state.edges.filter((edge) => allowedIds.has(edge.fromId)),
+      edges: this.edgesFor(sessionId).filter((edge) => allowedIds.has(edge.fromId)),
     });
     const isForeign = this.foreignTo(sessionId);
     const ranked = regexMode
@@ -463,7 +507,7 @@ export class MemoryManager extends EventEmitter {
    */
   similarForSession(sessionId: string, id: string, limit: number): MemorySearchHit[] {
     assertSessionId(sessionId);
-    const record = this.state.records.find((item) => item.id === id);
+    const record = this.findableRecords(sessionId, true).find((item) => item.id === id);
     if (!record) return [];
     const linked = new Set(this.state.edges
       .filter((edge) => edge.fromId === id || edge.toId === id)
@@ -544,6 +588,7 @@ export class MemoryManager extends EventEmitter {
   unlinkForSession(sessionId: string, fromId: string, toId: string): boolean {
     assertSessionId(sessionId);
     if (!this.owns(sessionId, fromId)) return false;
+    if (!this.edgesFor(sessionId).some((edge) => edge.fromId === fromId && edge.toId === toId)) return false;
     return this.unlink(fromId, toId, sessionId);
   }
 
@@ -726,6 +771,13 @@ export class MemoryManager extends EventEmitter {
     return this.state.records.map(cloneMemoryRecord);
   }
 
+  /** A project's shared knowledge: live, and not bound to any one session. */
+  listProjectRecords(projectId: string): MemoryRecord[] {
+    return this.state.records
+      .filter((record) => record.projectId === projectId && record.dormantSince === undefined && !record.sessionBound)
+      .map(cloneMemoryRecord);
+  }
+
   exportState(): MemoryState {
     return cloneMemoryState(this.state);
   }
@@ -898,6 +950,11 @@ function compileRegex(query: string): RegExp {
   } catch (error) {
     throw new Error(`Invalid regular expression: ${String(error)}`);
   }
+}
+
+/** Session-bound to a session other than the one asking. */
+function boundElsewhere(record: MemoryRecord, sessionId: string): boolean {
+  return record.sessionBound === true && record.sessionId !== sessionId;
 }
 
 function assertSessionId(sessionId: string): void {

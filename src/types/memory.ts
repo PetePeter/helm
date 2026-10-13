@@ -59,6 +59,12 @@ export interface MemoryRecord {
    * detail and at child summaries — a struct with a description and pointers.
    */
   summary?: boolean;
+  /**
+   * Belongs to `sessionId` alone and is not yet project knowledge: no other
+   * session can see it until a dream releases the binding. Saved unattended,
+   * so it must earn its place before it can shape anyone else's recall.
+   */
+  sessionBound?: boolean;
   attachments: MemoryAttachment[];
 }
 
@@ -74,6 +80,7 @@ export interface MemorySummary {
   dormantSince?: number;
   agentRun?: boolean;
   summary?: boolean;
+  sessionBound?: boolean;
   attachmentCount: number;
 }
 
@@ -251,6 +258,7 @@ export function toMemorySummary(record: MemoryRecord): MemorySummary {
     ...(record.dormantSince !== undefined ? { dormantSince: record.dormantSince } : {}),
     ...(record.agentRun ? { agentRun: true } : {}),
     ...(record.summary ? { summary: true } : {}),
+    ...(record.sessionBound ? { sessionBound: true } : {}),
     attachmentCount: record.attachments.length,
   };
 }
@@ -297,6 +305,12 @@ export function validateMemoryState(state: MemoryState): void {
       if (value !== undefined && !isFiniteNumber(value)) {
         throw new Error(`Memory ${record.id} has an invalid ${field}`);
       }
+    }
+    if (record.sessionBound !== undefined && typeof record.sessionBound !== 'boolean') {
+      throw new Error(`Memory ${record.id} has an invalid sessionBound`);
+    }
+    if (record.sessionBound && record.sessionId === undefined) {
+      throw new Error(`Memory ${record.id} is session-bound but has no owning session`);
     }
     if (!Array.isArray(record.attachments)) throw new Error(`Memory ${record.id} has invalid attachments`);
 
