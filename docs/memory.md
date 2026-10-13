@@ -111,8 +111,10 @@ flowchart LR
   delete, dormancy and link targets go through the same set.
 - **Edges too.** `edgesFor` drops any edge touching a hidden memory, rather
   than keeping it as a `missing` marker that would disclose its id.
-- **Not in the project's shared pool.** `listProjectRecords` (the prompt-hint
-  candidates) and the dream's faded/salient lists leave bound memories out.
+- **Not in the project's shared pool.** `listProjectRecords` and the dream's
+  faded/salient lists leave bound memories out. Prompt hints add back only the
+  asking session's own (`listBoundForSession`), see
+  [auto-memory.md](auto-memory.md#auto-recall).
 - **Lifetime.** A bound memory in a project outlives its session, so the next
   dream can still digest it. One written by a project-less session goes with
   that session, as any session-private memory does.

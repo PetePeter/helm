@@ -163,6 +163,7 @@ import { openTaskLines } from '../../session/operator-tasks.js';
 import { RingRetry } from '../../session/ring-retry.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { createSuggestionCandidateSource } from '../../session/hooks/suggestion-candidates.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
@@ -808,32 +809,18 @@ export function registerIPCHandlers(
   // G4: the injection brain, bound to the receiver built above. SILENT for a
   // session without hook events — nothing here runs, so behaviour is exactly
   // as before. The suggester's candidates are built per prompt: skills visible
-  // to the session's project (globals included), plus that project's live
-  // (non-dormant) memories. Pointers only, capped, once per item.
+  // to the session's project (globals included), that project's live
+  // (non-dormant) memories, and the asking session's own bound memories.
+  // Pointers only, capped, once per item.
   //
   // G5: the suggester now runs on the boosted scorer above, and feeds the
   // usage store what was actually sent.
   const suggestionService = new SuggestionService({
-    getCandidates: (projectId) => {
-      const skills = skillManager.listForProject(projectId).map((skill) => ({
-        type: 'skill' as const,
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        allProjects: skill.allProjects,
-      }));
-      if (!projectId) return skills;
-      const memories = memoryManager.listProjectRecords(projectId)
-        .map((record) => ({
-          type: 'memory' as const,
-          id: record.id,
-          name: record.tldr,
-          description: record.content,
-          createdAt: record.createdAt,
-          ...(record.planId ? { planId: record.planId } : {}),
-        }));
-      return [...skills, ...memories];
-    },
+    getCandidates: createSuggestionCandidateSource({
+      listSkills: (projectId) => skillManager.listForProject(projectId),
+      listProjectMemories: (projectId) => memoryManager.listProjectRecords(projectId),
+      listBoundMemories: (sessionId) => memoryManager.listBoundForSession(sessionId),
+    }),
     memoriesEnabled: () => configLoader.getAutoMemoryConfig().autoRecall,
     scorer: suggestionScorer,
     onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),

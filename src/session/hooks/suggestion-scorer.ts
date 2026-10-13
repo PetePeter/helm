@@ -328,8 +328,11 @@ export class BoostedSuggestionScorer implements SuggestionScorer {
 // ---------------------------------------------------------------------------
 
 export interface SuggestionServiceDeps {
-  /** Live read of the scoreable candidates for a project (pre-filtered). */
-  getCandidates: (projectId: string | null) => SuggestionCandidate[];
+  /**
+   * Live read of the scoreable candidates (pre-filtered): what the project
+   * shares, plus what belongs to the asking session alone.
+   */
+  getCandidates: (projectId: string | null, sessionId: string) => SuggestionCandidate[];
   /**
    * Auto-recall switch, read live. False = memory candidates are never hinted;
    * skill hints are unaffected. Absent = on.
@@ -394,7 +397,7 @@ export class SuggestionService {
     const startedAt = performance.now();
 
     const recall = this.deps.memoriesEnabled?.() ?? true;
-    const candidates = this.deps.getCandidates(projectId)
+    const candidates = this.deps.getCandidates(projectId, sessionId)
       .filter((candidate) => recall || candidate.type !== 'memory');
     if (candidates.length === 0) return null;
 

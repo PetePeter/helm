@@ -332,8 +332,10 @@ to tune and never will be. A prompt that NAMES a candidate bypasses scoring.
 Caps: top-3, 400 bytes — a cap that bites drops whole pointers, never splits
 one; once per item per session; below threshold sends
 nothing (that is the common case and it must be free). Candidates are
-pre-filtered to the session's project — skills visible to that project, plus
-that project's live (non-dormant) memories. `Trigger:` phrases declared in a
+pre-filtered (`src/session/hooks/suggestion-candidates.ts`): skills visible
+to the session's project, that project's live (non-dormant) memories, and
+the asking session's own session-bound memories — never another session's
+(see [auto-memory.md](auto-memory.md#auto-recall)). `Trigger:` phrases declared in a
 description (`Trigger: /graphify`) beat any inference. Known, accepted
 weakness: BM25 misses oblique phrasing; revisit only with evidence from real
 use.
@@ -698,6 +700,7 @@ for both surfaces.
 | `src/session/hooks/context-injector.ts` | G4: SessionStart context, UserPromptSubmit rules + nudges, one-shot Stop block; silent when there is nothing worth saying |
 | `src/session/hooks/loop-driver.ts` | G8: Stop-block continuation (autoImplement-gated, live follow-up reads, hard stops) + the one-shot completionRecap verification block |
 | `src/session/hooks/suggestion-scorer.ts` | G4 hint-only suggester: BM25, tuples only, caps + once-per-item ledger |
+| `src/session/hooks/suggestion-candidates.ts` | The suggester's candidate list: project skills and memories, plus the asking session's own bound memories |
 | `src/session/hooks/hook-encoder.ts` | per-CLI additionalContext nesting and the stop-block form |
 | `src/session/hooks/hook-capability.ts` | the ONE rules-via-hooks check behind both delivery paths; false on every failure |
 | `src/session/reminder-delivery.ts` | G9: pure hook/pty/off resolution per reminder + the per-recipient factory wrapping the capability check |

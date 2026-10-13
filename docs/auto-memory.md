@@ -1,6 +1,6 @@
 # Auto memory
 
-Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, and auto-save for API sessions. Real CLI sessions are not recorded yet. The storage rules for the memories themselves are in [memory.md](memory.md).
+Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, auto-save for API sessions, and recall of what a session saved. Real CLI sessions are not recorded yet. The storage rules for the memories themselves are in [memory.md](memory.md).
 
 ## Settings
 
@@ -94,6 +94,26 @@ Measured on 2026-10-14 against the local llama router, one two-turn "nothing to 
 
 Both answered `NOTHING` and found the fact in all three runs. Nearly all completion tokens are the model's reasoning. A first request after a model load took 12 to 21 s.
 
-## Auto-recall switch
+## Auto-recall
 
-`SuggestionService` reads `autoRecall` on every prompt. Off means memory candidates are dropped before scoring, so no memory is hinted; skills are still suggested. Switching it back on needs no restart.
+Recall is the prompt-hint suggester that already existed ([cli-hooks.md](cli-hooks.md), "The hint-only suggester"). Auto memory adds one thing to it: the asking session's own bound memories join the candidate list. There is no second recall path and no model in it.
+
+```mermaid
+flowchart LR
+    P[prompt from session S] --> C[createSuggestionCandidateSource]
+    SK[skills visible to the project] --> C
+    PM[project memories<br/>live, unbound] --> C
+    BM[S's own bound memories<br/>listBoundForSession] --> C
+    OB[another session's<br/>bound memories] -.->|never| C
+    C --> SW{autoRecall on?}
+    SW -->|no| D[memory candidates dropped]
+    SW -->|yes| SC[scorer: BM25 threshold,<br/>then G5 reorder]
+    D --> SC
+    SC -->|passers, top 3| H["possibly related: memory/&lt;id&gt; (&lt;tldr&gt;)"]
+```
+
+- **Same line, same rules.** A bound memory is hinted as `memory/<id> (<tldr>)` like any other, must pass the same BM25 threshold (unless the prompt names its tldr outright, which bypasses scoring for every candidate), and is hinted once per session. This is why the judge writes the tldr as the fact itself.
+- **Own session only.** A session is reminded of what it learned earlier; other sessions of the project see the memory only after a dream releases its binding, at which point it arrives through the project list.
+- **No project needed.** A session outside any project still gets its own bound memories as candidates.
+- **No per-type branch.** CLI sessions get the hint through the UserPromptSubmit hook and API sessions through `promptContext`; both call the same `SuggestionService`. A CLI whose prompt-hook output never reaches the model (Copilot today) gets no hint of any kind, bound memories included.
+- **The switch.** `SuggestionService` reads `autoRecall` on every prompt. Off means memory candidates, bound or not, are dropped before scoring, so no memory is hinted; skills are still suggested. Switching it back on needs no restart.
