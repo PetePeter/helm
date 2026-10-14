@@ -38,7 +38,7 @@ const keyOf = (history: ChatMessage[], turn: number) => splitTurns(history)[turn
 
 describe('buildJudgeWindow', () => {
   it('shows a one-turn session as mission + target, with no context', () => {
-    const window = buildJudgeWindow({ history: toolTurn(1, 'file body'), mission: 'Port the charger to RS485', bound: [] })!;
+    const window = buildJudgeWindow({ turns: splitTurns(toolTurn(1, 'file body')), mission: 'Port the charger to RS485', bound: [] })!;
 
     expect(window.mission).toBe('Port the charger to RS485');
     expect(window.context).toEqual([]);
@@ -48,7 +48,7 @@ describe('buildJudgeWindow', () => {
 
   it('gives the three turns before the target as context: user message and final answer only', () => {
     const history = [1, 2, 3, 4].flatMap((n) => toolTurn(n, `tool output ${n}`)).concat(toolTurn(5, 'tool output 5'));
-    const window = buildJudgeWindow({ history, bound: [] })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), bound: [] })!;
 
     expect(window.context).toEqual([
       { request: 'question 2', answer: 'answer 2' },
@@ -67,7 +67,7 @@ describe('buildJudgeWindow', () => {
 
   it('labels the parts in order: mission, context, target, already saved', () => {
     const history = [...plainTurn(1), ...plainTurn(2)];
-    const prompt = renderJudgePrompt(buildJudgeWindow({ history, mission: 'Ship it', bound: [] })!);
+    const prompt = renderJudgePrompt(buildJudgeWindow({ turns: splitTurns(history), mission: 'Ship it', bound: [] })!);
 
     const positions = ['MISSION', 'CONTEXT', 'TARGET', 'ALREADY SAVED'].map((label) => prompt.indexOf(label));
     expect(positions.every((position) => position >= 0)).toBe(true);
@@ -75,19 +75,19 @@ describe('buildJudgeWindow', () => {
   });
 
   it('builds a valid window for a session with no mission', () => {
-    const window = buildJudgeWindow({ history: plainTurn(1), bound: [] })!;
+    const window = buildJudgeWindow({ turns: splitTurns(plainTurn(1)), bound: [] })!;
 
     expect(window.mission).toBeUndefined();
     expect(renderJudgePrompt(window)).not.toContain('MISSION');
   });
 
   it('returns nothing to judge for an empty history', () => {
-    expect(buildJudgeWindow({ history: [], bound: [] })).toBeNull();
+    expect(buildJudgeWindow({ turns: splitTurns([]), bound: [] })).toBeNull();
   });
 
   it('over budget, trims tool results before it drops any context turn, and keeps the mission', () => {
     const history = [...plainTurn(1), ...plainTurn(2), ...plainTurn(3), ...toolTurn(4, 'R'.repeat(40_000))];
-    const window = buildJudgeWindow({ history, mission: 'Keep me', bound: [], budgetTokens: 600 })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), mission: 'Keep me', bound: [], budgetTokens: 600 })!;
     const prompt = renderJudgePrompt(window);
 
     expect(estimateTokens(prompt)).toBeLessThanOrEqual(600);
@@ -100,7 +100,7 @@ describe('buildJudgeWindow', () => {
   it('still over budget with tool results gone, drops the oldest context turn first', () => {
     const long = (n: number): ChatMessage[] => [user(`question ${n} ${'q'.repeat(700)}`, n), { role: 'assistant', content: `answer ${n} ${'a'.repeat(700)}` }];
     const history = [...long(1), ...long(2), ...long(3), ...plainTurn(4)];
-    const window = buildJudgeWindow({ history, mission: 'Keep me', bound: [], budgetTokens: 900 })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), mission: 'Keep me', bound: [], budgetTokens: 900 })!;
 
     expect(estimateTokens(renderJudgePrompt(window))).toBeLessThanOrEqual(900);
     expect(window.mission).toBe('Keep me');
@@ -117,7 +117,7 @@ describe('buildJudgeWindow', () => {
       { id: 'late', tldr: 'from turn 4', sourceTurn: keyOf(history, 3), updatedAt: 300 },
       { id: 'manual', tldr: 'bound, but not saved by the judge', updatedAt: 900 },
     ];
-    const window = buildJudgeWindow({ history, bound })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), bound })!;
 
     expect(window.saved.map((memory) => memory.id)).toEqual(['late', 'early']);
     expect(renderJudgePrompt(window)).toMatch(/\[1\] from turn 4\n\[2\] from turn 2/);
@@ -128,7 +128,7 @@ describe('buildJudgeWindow', () => {
     const history = [...long(1), ...long(2), ...plainTurn(3)];
     const bound: SavedMemory[] = [{ id: 'gone', tldr: 'from turn 1', sourceTurn: keyOf(history, 0), updatedAt: 1 }];
 
-    const window = buildJudgeWindow({ history, bound, budgetTokens: 500 })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), bound, budgetTokens: 500 })!;
 
     expect(window.context.map((turn) => turn.request.slice(0, 10))).toEqual(['question 2']);
     expect(window.saved).toEqual([]);
@@ -144,7 +144,7 @@ describe('buildJudgeWindow', () => {
       { role: 'user', content: '[Rolled back to checkpoint "probe". Your note: grep was enough]' },
       { role: 'assistant', content: 'answer 2' },
     ];
-    const window = buildJudgeWindow({ history, bound: [] })!;
+    const window = buildJudgeWindow({ turns: splitTurns(history), bound: [] })!;
 
     expect(splitTurns(history)).toHaveLength(2);
     expect(window.context).toEqual([{ request: 'question 1', answer: 'answer 1' }]);
@@ -161,8 +161,8 @@ describe('buildJudgeWindow', () => {
       { role: 'assistant', content: 'answer 1' },
     ];
 
-    expect(renderJudgePrompt(buildJudgeWindow({ history, bound: [] })!)).toContain(added);
-    const tight = renderJudgePrompt(buildJudgeWindow({ history, bound: [], budgetTokens: 450 })!);
+    expect(renderJudgePrompt(buildJudgeWindow({ turns: splitTurns(history), bound: [] })!)).toContain(added);
+    const tight = renderJudgePrompt(buildJudgeWindow({ turns: splitTurns(history), bound: [], budgetTokens: 450 })!);
     expect(tight).not.toContain(added);
     expect(estimateTokens(tight)).toBeLessThanOrEqual(450);
   });
@@ -174,19 +174,39 @@ describe('buildJudgeWindow', () => {
       ...plainTurn(1),
     ];
 
-    expect(buildJudgeWindow({ history, bound: [] })!.context).toEqual([
+    expect(buildJudgeWindow({ turns: splitTurns(history), bound: [] })!.context).toEqual([
       { request: '[Handover — your summary of the conversation before compaction]\nwe fixed the port', answer: 'Understood — continuing from the summary.' },
     ]);
   });
 
-  it('does not judge a turn that cannot be made to fit the budget', () => {
+  it('keeps the newest steps of a turn with more tool calls than the budget holds', () => {
     const calls = Array.from({ length: 400 }, (_, n) => [
       { role: 'assistant' as const, content: null, tool_calls: [{ id: `c${n}`, type: 'function' as const, function: { name: 'Read', arguments: `{"file":"file-${n}.ts"}` } }] },
       { role: 'tool' as const, tool_call_id: `c${n}`, content: 'body' },
     ]).flat();
     const history: ChatMessage[] = [user('read everything', 1), ...calls, { role: 'assistant', content: 'done' }];
 
-    expect(buildJudgeWindow({ history, bound: [], budgetTokens: 600 })).toBeNull();
+    const window = buildJudgeWindow({ turns: [...splitTurns(plainTurn(0)), ...splitTurns(history)], mission: 'Keep me', bound: [], budgetTokens: 600 })!;
+    const prompt = renderJudgePrompt(window);
+
+    expect(estimateTokens(prompt)).toBeLessThanOrEqual(600);
+    const [marker, ...shown] = window.target.steps;
+    expect(marker).toEqual({ kind: 'omitted', count: 800 - shown.length });
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.at(-2)).toMatchObject({ kind: 'call', args: '{"file":"file-399.ts"}' });
+    expect(prompt).toContain(`USER: read everything\n[${800 - shown.length} earlier steps of this turn are not shown]\nTOOL CALL: Read`);
+    expect(window.target).toMatchObject({ request: 'read everything', answer: 'done' });
+    // Context goes before the target's own steps do.
+    expect(window.context).toEqual([]);
+    expect(window.mission).toBe('Keep me');
+  });
+
+  it('does not judge a window its fixed parts overflow', () => {
+    const bound: SavedMemory[] = Array.from({ length: 60 }, (_, n) => ({
+      id: `m${n}`, tldr: `saved fact number ${n} `.repeat(4), sourceTurn: keyOf(plainTurn(1), 0), updatedAt: n,
+    }));
+
+    expect(buildJudgeWindow({ turns: splitTurns(plainTurn(1)), bound, budgetTokens: 600 })).toBeNull();
   });
 
   it('keys a turn by its own user message, so the key survives earlier turns being forgotten', () => {

@@ -75,7 +75,8 @@ import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
 import { resolveConfiguredSpawnEnv, spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-model-runner.js';
-import { AutoMemoryRecorder } from '../../session/auto-memory-judge.js';
+import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.js';
+import { CliAutoMemory } from '../../session/cli-auto-memory.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -505,7 +506,7 @@ export function registerIPCHandlers(
     })),
     historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
     // Bound lazily: the recorder needs the silent runner, which needs this host.
-    recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurn(sessionId, history); },
+    recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurns(sessionId, splitTurns(history)); },
   });
   registerApiSessionHost(apiSessionHost);
   // Auto memory's silent runs go to the recording model picked in Settings.
@@ -532,6 +533,16 @@ export function registerIPCHandlers(
     create: (sessionId, memory) => { memoryManager.createForSession(sessionId, { ...memory, sessionBound: true }); },
     update: (sessionId, id, memory) => { memoryManager.updateForSession(sessionId, id, memory); },
   });
+  // The same pass for real CLI sessions, whose turns come from the transcript their hooks report.
+  const cliAutoMemory = new CliAutoMemory({
+    isEnabled: () => {
+      const { autoSave, recordingModel } = configLoader.getAutoMemoryConfig();
+      return autoSave && Boolean(recordingModel);
+    },
+    getTranscriptPath: (sessionId) => sessionManager.getSession(sessionId)?.cliTranscriptPath,
+    record: (sessionId, turns) => autoMemoryRecorder.recordTurns(sessionId, turns),
+  });
+  sessionManager.on('session:removed', (event: { sessionId: string }) => cliAutoMemory.forget(event.sessionId));
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
@@ -789,6 +800,7 @@ export function registerIPCHandlers(
     draftManager,
     artifactManager,
     artifactAttachments: artifactAttachmentManager,
+    onTurnEnded: (sessionId) => { void cliAutoMemory.turnEnded(sessionId); },
   });
   hookTracker.watch(hookReceiver);
 

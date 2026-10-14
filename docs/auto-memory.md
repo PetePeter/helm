@@ -1,6 +1,6 @@
 # Auto memory
 
-Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, auto-save for API sessions, recall of what a session saved, and the dream that turns saved memories into project knowledge ([dreaming.md](dreaming.md#digesting-session-bound-memories)). Real CLI sessions are not recorded yet. The storage rules for the memories themselves are in [memory.md](memory.md).
+Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, auto-save for API sessions and for real CLI sessions, recall of what a session saved, and the dream that turns saved memories into project knowledge ([dreaming.md](dreaming.md#digesting-session-bound-memories)). The storage rules for the memories themselves are in [memory.md](memory.md).
 
 ## Settings
 
@@ -77,11 +77,50 @@ graph TB
 - **One memory at most per pass**, always session-bound: only its own session sees it until a dream digests it.
 - **The memory comes from the whole window.** The question may sit in one turn, the clue in the next, the result in the target. The target is the newest piece, not the only source.
 - **Duplicates are prevented by showing what is saved.** Windows overlap, so the same fact is in front of up to four passes. Each memory records its source turn (`sourceTurn`, a hash of that turn's user message), and a pass lists the memories whose source turn is in its window. The list slides with the window and needs no cap. An update moves the memory to the turn that completed it. Passes over one session run one at a time, so each sees what the one before saved.
-- **Budget.** The window is capped at about 3000 tokens (`JUDGE_WINDOW_TOKENS`, estimated at four characters a token). Over budget, tool results shrink first, then the oldest context turn is dropped, then the target's own text is clipped. The mission is never dropped. A turn that still does not fit (hundreds of tool calls) is not judged.
+- **Budget.** The window is capped at about 3000 tokens (`JUDGE_WINDOW_TOKENS`, estimated at four characters a token). Over budget, tool results shrink first, then the oldest context turn is dropped, then the oldest half of the target's steps (again and again, with a line saying how many are not shown), then the target's own text is clipped. The mission is never dropped. A long agent turn of a real CLI, with hundreds of tool calls, is therefore judged on its request, its last steps and its answer.
 - **Strict reply format.** `NOTHING`, or `NEW` / `UPDATE <n>` followed by a `TLDR:` line and a `CONTENT:` line. Thinking blocks and code fences are tolerated; anything else, including a chatty lead-in or an `UPDATE` naming a memory not in the list, saves nothing. The tldr is cut at 200 characters and the content at 600.
 - **The tldr is written for the suggester**: the fact itself, with the terms someone would search for ("RS485 on the EG004 needs 9600 baud", not "Baud rate finding").
 
 All of it lives in `src/session/auto-memory-judge.ts`; `ApiSessionHost` only hands over the finished turn.
+
+### CLI sessions
+
+A real CLI (Claude Code, Codex, Copilot CLI) gets the same pass. Helm does not own its loop, so the turns are read back from the log the CLI's hooks report, the file Quick Compact strips ([quick-compact-switch-cli.md](quick-compact-switch-cli.md)). Only the source of the turns differs: the window, the prompt, the parser and the recorder are the ones above.
+
+```mermaid
+graph LR
+    S[Stop hook] --> HT[HookTracker<br/>onTurnEnded]
+    HT --> CA[CliAutoMemory.turnEnded]
+    CA -->|before the hook is answered| K[take the log's size: its newest<br/>turn is the one this Stop ended]
+    K -->|one Stop at a time per session,<br/>after a 1 s pause| RD[readTranscriptTurns<br/>tail of the log, back to that turn]
+    RD --> Q{that turn finished?<br/>a later turn began,<br/>or two reads agree on it}
+    Q -->|not yet| RT[read again,<br/>up to 4 reads]
+    RT --> RD
+    Q -->|yes, and not already judged| R[AutoMemoryRecorder.recordTurns<br/>same pass as an API session]
+    API[API session turn] -->|splitTurns| R
+```
+
+- **Trigger.** The `Stop` hook, so a session without hooks installed is never recorded: it has no transcript path. A sub-agent's `SubagentStop` and a failed turn's `StopFailure` do not trigger it.
+- **What a turn is.** A user message and everything up to the next one. Text a CLI or a hook puts under the user role does not start a turn: meta and compact-summary records, slash-command wrappers, environment and instruction blocks, Stop-hook feedback, task notifications, interrupt markers, keep-warm pings. Helm's own wrappers are stripped from a request with the transcript stripper's rules, so a phone message is judged as the text the user wrote.
+- **Turn identity.** The id the CLI gave the user record (`uuid` for Claude Code, the message `id` for Codex, the event `id` for Copilot). Older Codex rollouts carry no message id; there the key is a hash of the record's timestamp and text. It does not depend on where the read started, so `sourceTurn` stays valid as the log grows.
+- **Only the tail is read.** A pass needs four turns and a log can be hundreds of megabytes. The read starts at the last megabyte and grows fourfold until it holds four turns, the whole file, or 64 MB. A single turn larger than that is not judged.
+- **Which turn a Stop ended.** The newest turn in the log at the moment the Stop arrives. The log's size is taken before the hook is answered, and the turn's key is read from the log up to that size, so a request sent the instant the hook returns cannot be mistaken for it. The pass itself runs later, and by then the next turn may be running, so the pass looks that turn up by key and takes it and the turns before it. The read goes back as far as that turn needs.
+- **When a turn counts as finished.** The logs carry no end-of-turn record that holds across the three CLIs, the Stop hook can fire before the final message is written, and text an agent writes before a tool call looks like an answer. So the turn is finished once a later request exists, or once two reads a second apart show it unchanged. A pass therefore starts about two seconds after the Stop. After four reads without agreement the turn is given up, until its next Stop.
+- **A repeated Stop is not judged twice.** Stops of one session are judged one at a time, and a Stop that adds nothing to the turn last judged makes no request. A turn that grew (a Stop-hook nudge made the agent continue) is judged again, with what it saved already listed under ALREADY SAVED. A pass that failed, or found auto-save off, leaves the turn for its next Stop.
+- **Cost on the main process.** The read is asynchronous; parsing is not. The usual megabyte parses in a few milliseconds, the 64 MB worst case in about a quarter of a second.
+- **A turn cut short is no context.** An earlier turn without an answer (interrupted) is left out of the window.
+- **Not applicable to CLIs:** the per-tool `api.autoMemory` opt-out. Auto-save for CLI sessions is all or nothing.
+
+| CLI | Supported | User request | Tool calls and results | Turn key |
+|---|---|---|---|---|
+| Claude Code | yes | `user` record with text and no `tool_result` | `tool_use` blocks, `tool_result` blocks | `uuid` |
+| Codex | yes | `response_item` message, role `user` | `function_call` / `custom_tool_call` and their `_output` | message `id`, else a hash |
+| Copilot CLI | yes | `user.message` (`content`, not `transformedContent`; not a sub-agent's, which has `parentAgentTaskId`) | `toolRequests`, `tool.execution_complete` | event `id` |
+| Any other hooked CLI | no | falls through to the Claude reader and yields no turns | | |
+
+Copilot sessions are recorded but cannot be hinted at ([Auto-recall](#auto-recall)): what they save reaches other sessions once a dream promotes it.
+
+The adapter and the trigger live in `src/session/cli-auto-memory.ts`.
 
 ### What a pass costs
 

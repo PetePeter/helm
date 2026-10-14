@@ -183,6 +183,7 @@ flowchart LR
     T -->|Stop / StopFailure| F[flash-attention]
     T -->|PostToolUse edit| P["PlanManager<br/>claim → coding"]
     T -->|Stop under claim| P2["PlanManager<br/>coding → review"]
+    T -->|Stop| M["onTurnEnded<br/>auto memory's judge pass"]
     T -->|PreCompact| C["snapshot artifact<br/>+ deliverFromPreCompact"]
 ```
 
@@ -209,6 +210,11 @@ flowchart LR
   (`claimedPlanFor` — active work only — cannot see the `ready` claim the
   first edit exists to promote). `blocked` stays sacred: only a human or an
   MCP call unblocks.
+- **Auto memory** — `Stop` also reports the turn end to auto memory, after
+  the event's transcript path is on the session. The judge pass reads the
+  turn back from that transcript after the hook has been answered, so the
+  hook reply does not wait for the judge. See
+  [auto-memory.md](auto-memory.md#cli-sessions).
 - **PreCompact** — Helm composes a **Compaction snapshot** artifact itself
   (below).
 

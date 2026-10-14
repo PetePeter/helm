@@ -92,7 +92,7 @@ describe('auto-save for API sessions', () => {
       createMemory: () => ({ id: 'm' }),
       linkMemory: () => {},
       now: () => new Date('2026-10-14T10:00:00.000Z'),
-      recordTurn: (sessionId, history) => { passes.push(recorder.recordTurn(sessionId, history)); },
+      recordTurn: (sessionId, history) => { passes.push(recorder.recordTurns(sessionId, splitTurns(history))); },
     });
     const api = { baseUrl, model: 'qwen', allowedTools: options.tools ? ['Glob'] : [], slots: 1, handshake: false, ...(options.autoMemory === false ? { autoMemory: false } : {}) };
     const recorder = new AutoMemoryRecorder({

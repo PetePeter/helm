@@ -6,6 +6,10 @@
  * answer. This file is the pure part (the window the judge is shown, its
  * prompt, and the parser for its reply) plus the recorder that runs a pass
  * and writes at most one session-bound memory.
+ *
+ * Everything past `splitTurns` works on turns, not on a history: an API
+ * session's turns come from its own messages, a CLI session's from its
+ * transcript (cli-auto-memory.ts).
  */
 
 import { createHash } from 'node:crypto';
@@ -32,16 +36,18 @@ export type JudgeStep =
   | { kind: 'call'; name: string; args: string }
   | { kind: 'result'; text: string }
   /** Something the user (or a rollback) added while the turn was running. */
-  | { kind: 'user'; text: string };
+  | { kind: 'user'; text: string }
+  /** Only in a window: the turn's oldest steps, left out to fit the budget. */
+  | { kind: 'omitted'; count: number };
 
-/** One turn of an API session: the user's request and everything done in answer. */
+/** One turn of a session: the user's request and everything done in answer. */
 export interface JudgeTurn {
-  /** Stable id of the turn, from its own user message; survives earlier turns being forgotten. */
+  /** Stable id of the turn, from its own user message; survives earlier turns being forgotten or left unread. */
   key: string;
   request: string;
   /** Tool calls, their results and mid-turn user messages, in order. */
   steps: JudgeStep[];
-  /** The last text the model wrote in the turn. */
+  /** The last text the model wrote in the turn; empty while the turn is unfinished. */
   answer: string;
 }
 
@@ -166,7 +172,8 @@ export function renderJudgePrompt(window: JudgeWindow): string {
     'TARGET (the newest turn):',
     `USER: ${window.target.request}`,
     ...window.target.steps.map((step) => (step.kind === 'call' ? `TOOL CALL: ${step.name} ${step.args}`
-      : step.kind === 'result' ? `TOOL RESULT: ${step.text}` : `USER: ${step.text}`)),
+      : step.kind === 'result' ? `TOOL RESULT: ${step.text}`
+        : step.kind === 'user' ? `USER: ${step.text}` : `[${step.count} earlier steps of this turn are not shown]`)),
     `ASSISTANT: ${window.target.answer}`,
   ].join('\n'));
   parts.push([
@@ -181,16 +188,17 @@ export function renderJudgePrompt(window: JudgeWindow): string {
  * What one pass is shown: the mission, up to three earlier turns as user
  * message + final answer, the newest turn whole, and the memories already
  * saved from those turns. Over budget, tool results shrink first, then the
- * oldest context turn goes; the mission is never dropped. A turn that cannot
- * be made to fit is not judged: null.
+ * oldest context turn goes, then the target's oldest steps; the mission is
+ * never dropped. A window that still does not fit is not judged: null.
  */
 export function buildJudgeWindow(params: {
-  history: readonly ChatMessage[];
+  /** Oldest first; the last one is judged. */
+  turns: readonly JudgeTurn[];
   mission?: string;
   bound: readonly SavedMemory[];
   budgetTokens?: number;
 }): JudgeWindow | null {
-  const turns = splitTurns(params.history);
+  const { turns } = params;
   const target = turns.at(-1);
   if (!target) return null;
   const budget = params.budgetTokens ?? JUDGE_WINDOW_TOKENS;
@@ -198,6 +206,7 @@ export function buildJudgeWindow(params: {
   let shown = turns.slice(-(JUDGE_CONTEXT_TURNS + 1), -1);
   let request = target.request;
   let answer = target.answer;
+  let steps = target.steps;
 
   /** Mid-turn user messages are the target's own text: whole until the last resort. */
   let midTurnCap = Infinity;
@@ -210,9 +219,12 @@ export function buildJudgeWindow(params: {
       target: {
         request,
         answer,
-        steps: target.steps.map((step): JudgeStep => (step.kind === 'call' ? { ...step, args: clip(step.args, TOOL_ARGS_CAP) }
-          : step.kind === 'user' ? { ...step, text: clip(step.text, midTurnCap) }
-            : { kind: 'result', text: resultCap ? clip(step.text, resultCap) : '[trimmed]' })),
+        steps: [
+          ...(steps.length < target.steps.length ? [{ kind: 'omitted' as const, count: target.steps.length - steps.length }] : []),
+          ...steps.map((step): JudgeStep => (step.kind === 'call' ? { ...step, args: clip(step.args, TOOL_ARGS_CAP) }
+            : step.kind === 'user' ? { ...step, text: clip(step.text, midTurnCap) }
+              : step.kind === 'result' ? { kind: 'result', text: resultCap ? clip(step.text, resultCap) : '[trimmed]' } : step)),
+        ],
       },
       saved: params.bound
         .filter((memory) => memory.sourceTurn !== undefined && keys.has(memory.sourceTurn))
@@ -232,6 +244,11 @@ export function buildJudgeWindow(params: {
     shown = shown.slice(1);
     window = assemble(0);
   }
+  // A long agent turn, common for a real CLI: the steps next to the answer stay, the oldest half goes.
+  while (overBy(window) > 0 && steps.length) {
+    steps = steps.slice(Math.ceil(steps.length / 2));
+    window = assemble(0);
+  }
   // Last resort: the target's own text is too long for the budget.
   if (overBy(window) > 0) {
     midTurnCap = CONTEXT_TEXT_CAP;
@@ -246,7 +263,7 @@ export function buildJudgeWindow(params: {
     else request = clipped;
     window = assemble(0);
   }
-  // What is left is fixed (the mission, the step list, the saved list): too big to judge.
+  // What is left is fixed (the mission, the saved list): too big to judge.
   return overBy(window) > 0 ? null : window;
 }
 
@@ -310,12 +327,12 @@ export class AutoMemoryRecorder {
   constructor(private readonly deps: AutoMemoryRecorderDeps) {}
 
   /**
-   * Judge the newest turn of `history`. Queued behind the session's earlier
-   * passes, so each one sees what the one before saved. Never throws.
+   * Judge the newest of `turns`. Queued behind the session's earlier passes,
+   * so each one sees what the one before saved. Never throws.
    */
-  recordTurn(sessionId: string, history: readonly ChatMessage[]): Promise<JudgeOutcome> {
+  recordTurns(sessionId: string, turns: readonly JudgeTurn[]): Promise<JudgeOutcome> {
     const pass = (this.tails.get(sessionId) ?? Promise.resolve<JudgeOutcome>('off'))
-      .then(() => this.judge(sessionId, history))
+      .then(() => this.judge(sessionId, turns))
       .catch((err): JudgeOutcome => {
         logger.warn(`[AutoMemory] Judge pass failed for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`);
         return 'failed';
@@ -325,10 +342,10 @@ export class AutoMemoryRecorder {
     return pass;
   }
 
-  private async judge(sessionId: string, history: readonly ChatMessage[]): Promise<JudgeOutcome> {
+  private async judge(sessionId: string, turns: readonly JudgeTurn[]): Promise<JudgeOutcome> {
     if (!this.deps.isEnabled() || !this.deps.isLive(sessionId)) return 'off';
     const window = buildJudgeWindow({
-      history,
+      turns,
       mission: this.deps.getMission(sessionId),
       bound: this.deps.listBound(sessionId),
       budgetTokens: this.deps.budgetTokens,

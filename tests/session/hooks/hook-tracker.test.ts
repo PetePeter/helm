@@ -71,6 +71,8 @@ interface Setup {
   attachments: ArtifactAttachmentManager;
   handover: HandoverDelivery;
   flashes: string[];
+  /** Per turn end: the session, and the transcript path the session held at that moment. */
+  turnsEnded: Array<{ sessionId: string; transcript?: string }>;
   delivered: Array<{ sessionId: string; text: string }>;
   updates: Array<Partial<SessionInfo>>;
   addSession: (id?: string) => void;
@@ -81,6 +83,7 @@ interface Setup {
 function setup(): Setup {
   const activity: ActivityChange[] = [];
   const flashes: string[] = [];
+  const turnsEnded: Array<{ sessionId: string; transcript?: string }> = [];
   const delivered: Array<{ sessionId: string; text: string }> = [];
   const losses: Array<{ sessionId: string; reason: string }> = [];
   const updates: Array<Partial<SessionInfo>> = [];
@@ -116,6 +119,7 @@ function setup(): Setup {
     draftManager,
     artifactManager,
     artifactAttachments: attachments,
+    onTurnEnded: (sessionId) => { turnsEnded.push({ sessionId, transcript: sessionManager.getSession(sessionId)?.cliTranscriptPath }); },
     now: () => NOW,
   });
   const hookReceiver = new EventEmitter();
@@ -147,7 +151,7 @@ function setup(): Setup {
 
   return {
     tracker, hookReceiver, stateDetector, activity, sessionManager, planManager,
-    draftManager, artifactManager, attachments, handover, flashes, delivered, updates,
+    draftManager, artifactManager, attachments, handover, flashes, turnsEnded, delivered, updates,
     addSession, claimPlan, dispose,
   };
 }
@@ -278,6 +282,23 @@ describe('HookTracker — hook events become session truth', () => {
       s.hookReceiver.emit('hook', hookEvent('claude', 'Stop'));
       expect(s.activity[1]).toMatchObject({ sessionId: 's1', level: 'inactive' });
       expect(s.flashes).toEqual(['s1']);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('reports a turn end on Stop only, once the transcript path it carries is on the session', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: 'go' }));
+      s.hookReceiver.emit('hook', hookEvent('claude', 'SubagentStop', {}));
+      s.hookReceiver.emit('hook', hookEvent('claude', 'StopFailure', { error: 'rate_limit' }));
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop', {}, 'ghost-session'));
+      expect(s.turnsEnded).toEqual([]);
+
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop', { transcript_path: 'C:/t/a.jsonl' }));
+      expect(s.turnsEnded).toEqual([{ sessionId: 's1', transcript: 'C:/t/a.jsonl' }]);
     } finally {
       s.dispose();
     }
