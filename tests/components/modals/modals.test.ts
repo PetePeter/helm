@@ -630,20 +630,77 @@ describe('DirPickerModal.vue', () => {
     w.unmount();
   });
 
-  it('sections directories by project when project metadata is present', () => {
-    const w = factory({
-      items: [
-        { name: 'repo root', path: 'C:\\dev\\repo', projectId: 'p1', projectName: 'Repo', isCanonical: true },
-        { name: 'repo app', path: 'C:\\dev\\repo\\app', projectId: 'p1', projectName: 'Repo' },
-        { name: 'other', path: 'C:\\dev\\other', projectId: 'p2', projectName: 'Other' },
-      ],
+  describe('master/detail when project metadata is present', () => {
+    const projectDirs = [
+      { name: 'repo app', path: 'C:\\dev\\repo\\app', projectId: 'p1', projectName: 'Repo' },
+      { name: 'repo root', path: 'C:\\dev\\repo', projectId: 'p1', projectName: 'Repo', isCanonical: true },
+      { name: 'site', path: 'C:\\dev\\site', projectId: 'p2', projectName: 'Site' },
+    ];
+    const open = (props: Record<string, any> = {}) => factory({ items: projectDirs, ...props });
+
+    it('lists projects on the left and the focused project dirs on the right', () => {
+      const w = open();
+      expect(w.findAll('.dir-picker-project').map(p => p.text())).toEqual(['Repo2', 'Site1']);
+      const dirs = w.findAll('.dir-picker-item');
+      expect(dirs.map(d => d.find('.dir-picker-item__path').text())).toEqual(['C:\\dev\\repo', 'C:\\dev\\repo\\app']);
+      expect(w.find('.dir-picker-item__badge').text()).toBe('Main');
+      w.unmount();
     });
 
-    const sections = w.findAll('.dir-picker-section');
-    expect(sections.map(section => section.text())).toEqual(['Repo', 'Other']);
-    expect(w.findAll('.dir-picker-item')).toHaveLength(3);
-    expect(w.find('.dir-picker-item__badge').text()).toBe('[Main]');
-    w.unmount();
+    it('up/down in the project pane switches the right pane and resets dir focus', async () => {
+      const w = open();
+      const vm = w.vm as any;
+      vm.handleButton('DPadRight');
+      vm.handleButton('DPadDown');
+      expect(vm.selectedIndex).toBe(1);
+      vm.handleButton('DPadLeft');
+      vm.handleButton('DPadDown');
+      await w.vm.$nextTick();
+      expect(vm.projectIndex).toBe(1);
+      expect(vm.selectedIndex).toBe(0);
+      expect(w.findAll('.dir-picker-item').map(d => d.find('.dir-picker-item__path').text())).toEqual(['C:\\dev\\site']);
+      w.unmount();
+    });
+
+    it('A on a project enters its dirs, A on a dir spawns there', () => {
+      const w = open();
+      const vm = w.vm as any;
+      vm.handleButton('A');
+      expect(vm.pane).toBe('dirs');
+      expect(w.emitted('select')).toBeUndefined();
+      vm.handleButton('DPadDown');
+      vm.handleButton('A');
+      expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\repo\\app', '']);
+      w.unmount();
+    });
+
+    it('B in the dir pane steps back to projects; B in the project pane cancels', () => {
+      const w = open();
+      const vm = w.vm as any;
+      vm.handleButton('A');
+      vm.handleButton('B');
+      expect(vm.pane).toBe('projects');
+      expect(w.emitted('cancel')).toBeUndefined();
+      vm.handleButton('B');
+      expect(w.emitted('cancel')).toHaveLength(1);
+      w.unmount();
+    });
+
+    it('jump keys pick a dir of the focused project from either pane', () => {
+      const w = open();
+      (w.vm as any).handleButton('Digit2');
+      expect(w.emitted('select')?.[0]).toEqual(['C:\\dev\\repo\\app', '']);
+      w.unmount();
+    });
+
+    it('preselected path opens on its project and dir in the dir pane', () => {
+      const w = open({ preselectedPath: 'C:\\dev\\site' });
+      const vm = w.vm as any;
+      expect(vm.pane).toBe('dirs');
+      expect(vm.projectIndex).toBe(1);
+      expect(vm.selectedIndex).toBe(0);
+      w.unmount();
+    });
   });
 
   it('title includes CLI display name', () => {

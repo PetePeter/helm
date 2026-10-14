@@ -98,6 +98,22 @@ button behave identically. The dialog owns its own confirmation: once it is up
 it holds modal scope, which by design gates the terminal handlers out entirely
 (see [keyboard-routing.md](keyboard-routing.md#modal-ownership-is-two-part)).
 
+## Directory Picker (new session)
+
+When the spawn dirs carry project metadata, the picker is master/detail: projects on the left, the focused project's dirs on the right (Main first, ungrouped dirs under a trailing **Other**). Without project metadata it is a single dir list. Grouping lives in `renderer/utils/dir-picker-model.ts` so a future one-step spawn sheet can reuse it.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Projects: no preselected dir
+    [*] --> Dirs: preselected dir (opens on its project)
+    Projects --> Dirs: A / Right
+    Dirs --> Projects: B / Left
+    Dirs --> [*]: A (spawn) / digit
+    Projects --> [*]: B (cancel) / digit
+```
+
+Up/Down moves within the active pane; moving between projects resets dir focus. Digits `1`–`0` pick a dir of the focused project from either pane.
+
 ## Navigation Priority Chain
 
 When a button is pressed, the navigation system checks handlers in this order:
