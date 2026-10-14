@@ -10,6 +10,10 @@
   spawnCommand: claude --session-id {cliSessionName}
   resumeCommand: claude --resume={cliSessionName}
   continueCommand: claude --continue
+  # No headlessCommand here on purpose: Claude Code and Codex have a built-in
+  # one (session/headless-command.ts), which also reaches installs seeded
+  # before it existed. Set `headlessCommand` only to override it, e.g. to
+  # name a cheaper model. It must read {promptFile} and write {outputFile}.
   initialPrompt:
     - label: Helm session init
       sequence: Call session_info to get Helm MCP initial information.{Enter}

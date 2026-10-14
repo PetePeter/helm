@@ -12,22 +12,24 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import AutoMemoryTab from '../../../renderer/components/sidebar/AutoMemoryTab.vue';
 
-const MODELS = [
+const ALL_MODELS = [
   { id: 'api-local', name: 'Local model', kind: 'api', available: true },
-  { id: 'cli-claude', name: 'Claude Code', kind: 'cli', available: false, note: 'needs headless runner' },
+  { id: 'cli-claude', name: 'Claude Code', kind: 'cli', available: true, note: 'real CLI: its full prompt on every turn' },
+  { id: 'cli-shell', name: 'cmd', kind: 'cli', available: false, note: 'no headless command' },
 ];
+let models = ALL_MODELS;
 let stored = { recordingModel: '', autoSave: true, autoRecall: true };
 let testResult: Record<string, string> = { status: 'ok', text: 'OK' };
 const setCalls: Array<Record<string, unknown>> = [];
 
 vi.mock('../../../renderer/ipc/clients.js', () => ({
   configClient: {
-    configGetAutoMemory: vi.fn(async () => ({ success: true, settings: { ...stored }, models: MODELS })),
+    configGetAutoMemory: vi.fn(async () => ({ success: true, settings: { ...stored }, models })),
     configSetAutoMemory: vi.fn(async (updates: Record<string, unknown>) => {
       setCalls.push(updates);
-      if (updates.recordingModel === 'cli-claude') return { success: false, error: 'Claude Code is a real CLI: recording with it needs the headless runner' };
+      if (updates.recordingModel === 'cli-shell') return { success: false, error: 'cmd cannot record: no headless command' };
       stored = { ...stored, ...updates } as typeof stored;
-      return { success: true, settings: { ...stored }, models: MODELS };
+      return { success: true, settings: { ...stored }, models };
     }),
     configTestAutoMemoryModel: vi.fn(async () => testResult),
   },
@@ -44,14 +46,28 @@ describe('AutoMemoryTab', () => {
     stored = { recordingModel: '', autoSave: true, autoRecall: true };
     testResult = { status: 'ok', text: 'OK' };
     setCalls.length = 0;
+    models = ALL_MODELS;
   });
 
-  it('lists API tools as pickable and real CLI types as disabled with the reason', async () => {
+  it('lists what can record, marks a real CLI with its cost, and disables the rest with the reason', async () => {
     const wrapper = await factory();
     const options = wrapper.findAll('select option');
 
-    expect(options.map((option) => option.text())).toEqual(['None', 'Local model', 'Claude Code (needs headless runner)']);
-    expect(options.map((option) => (option.element as HTMLOptionElement).disabled)).toEqual([false, false, true]);
+    expect(options.map((option) => option.text())).toEqual([
+      'None', 'Local model', 'Claude Code (real CLI: its full prompt on every turn)', 'cmd (no headless command)',
+    ]);
+    expect(options.map((option) => (option.element as HTMLOptionElement).disabled)).toEqual([false, false, false, true]);
+  });
+
+  it('spells out what a real CLI costs before one is picked, and only when one can be', async () => {
+    const wrapper = await factory();
+
+    expect(stored.recordingModel).toBe('');
+    expect(wrapper.text()).toContain('about 28k tokens for Claude Code');
+    expect(wrapper.text()).toContain('after every turn of every session');
+
+    models = [ALL_MODELS[0], ALL_MODELS[2]];
+    expect((await factory()).text()).not.toContain('28k tokens');
   });
 
   it('says auto-save is inert until a model is picked, and offers no test', async () => {
@@ -86,11 +102,11 @@ describe('AutoMemoryTab', () => {
 
     // A disabled option cannot be clicked, but main is the gate: prove the refusal surfaces.
     const select = wrapper.find('select');
-    (select.element as HTMLSelectElement).options[2].disabled = false;
-    await select.setValue('cli-claude');
+    (select.element as HTMLSelectElement).options[3].disabled = false;
+    await select.setValue('cli-shell');
     await flushPromises();
 
-    expect(wrapper.text()).toContain('needs the headless runner');
+    expect(wrapper.text()).toContain('cmd cannot record: no headless command');
     expect((wrapper.find('select').element as HTMLSelectElement).value).toBe('api-local');
   });
 

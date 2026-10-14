@@ -4,7 +4,7 @@
  * auto-save / auto-recall switches. Helm uses the picked model silently — no
  * session row, nothing in the chat.
  */
-import { onMounted } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useAutoMemoryStore } from '../../stores/auto-memory.js';
 import type { RecordingModelOption } from '../../../src/types/auto-memory.js';
 
@@ -14,6 +14,9 @@ onMounted(() => { void store.load(); });
 
 const optionLabel = (model: RecordingModelOption): string =>
   model.note ? `${model.name} (${model.note})` : model.name;
+
+/** Said before the pick, not after: picking saves at once. */
+const offersRealCli = computed(() => store.models.some((model) => model.kind === 'cli' && model.available));
 
 const checked = (event: Event): boolean => (event.target as HTMLInputElement).checked;
 </script>
@@ -53,6 +56,11 @@ const checked = (event: Event): boolean => (event.target as HTMLInputElement).ch
       >{{ store.testing ? 'Testing…' : 'Test' }}</button>
     </label>
 
+    <span v-if="offersRealCli" class="auto-memory-note">
+      A real CLI is started once for every pass and loads its whole system prompt each time: about 28k tokens for Claude Code.
+      Auto-save runs after every turn of every session, and on the same provider it draws on the quota of the sessions it serves.
+      An API tool with a small model costs far less.
+    </span>
     <span v-if="store.inert" class="auto-memory-note">No recording model picked: auto-save does nothing until you pick one.</span>
     <span v-if="store.stale" class="auto-memory-note">The picked model can no longer record, so auto-save does nothing: pick another.</span>
     <span v-if="store.testOutcome" class="auto-memory-note">{{ store.testOutcome }}</span>

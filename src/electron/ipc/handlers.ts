@@ -154,6 +154,8 @@ import { PromptTemplateManager } from '../../session/prompt-template-manager.js'
 import { MessNotifier } from '../../session/mess-notifier.js';
 import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
+import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
+import { headlessCommandFor } from '../../session/headless-command.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
@@ -509,19 +511,22 @@ export function registerIPCHandlers(
     recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurns(sessionId, splitTurns(history)); },
   });
   registerApiSessionHost(apiSessionHost);
-  // Auto memory's silent runs go to the recording model picked in Settings.
-  // Only API tools can answer today; a real CLI type gets its backend with the
-  // headless runner.
+  // Auto memory's silent runs go to the recording model picked in Settings:
+  // an API tool answers one direct request, a real CLI is run once, headless.
   const recordingModelRunner = new RecordingModelRunner({
     getRecordingModel: () => configLoader.getAutoMemoryConfig().recordingModel,
     resolveModel: (ref) => {
       const resolved = configLoader.resolveCliType(ref);
       if (!resolved) return null;
+      const env = resolveConfiguredSpawnEnv(configLoader, resolved.id);
       return resolved.config.api
-        ? { id: resolved.id, kind: 'api', api: resolved.config.api, env: resolveConfiguredSpawnEnv(configLoader, resolved.id) }
-        : { id: resolved.id, kind: 'cli' };
+        ? { id: resolved.id, kind: 'api', api: resolved.config.api, env }
+        : { id: resolved.id, kind: 'cli', headlessCommand: headlessCommandFor(resolved.config), env };
     },
-    backends: { api: apiSilentBackend(apiSessionHost) },
+    backends: {
+      api: apiSilentBackend(apiSessionHost),
+      cli: new HeadlessCliRunner({ pty: ptyManager, workDir: join(getTempDir(dirname ?? process.cwd()), 'headless') }),
+    },
   });
   // The judge pass behind auto-save: at most one session-bound memory per finished turn.
   const autoMemoryRecorder = new AutoMemoryRecorder({

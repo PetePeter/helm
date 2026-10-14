@@ -165,7 +165,7 @@ describe('RecordingModelRunner', () => {
     proc.kill();
   });
 
-  it('fails a real CLI type that has no headless runner yet, without a request', async () => {
+  it('fails a real CLI type when no headless backend is wired, without a request', async () => {
     const { runner } = setup('cli-claude');
 
     expect(await runner.runSilently({ prompt: 'anything' })).toEqual({

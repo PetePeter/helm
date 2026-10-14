@@ -5,8 +5,8 @@
  * backend answers.
  *
  * One interface, one backend per kind of model. An API tool is a direct
- * request through its slots (below). A real CLI type needs a headless runner,
- * which registers itself as the `cli` backend when it exists.
+ * request through its slots (below). A real CLI type is run once, headless,
+ * by the `cli` backend (headless-cli-runner.ts).
  */
 
 import type { ApiToolConfig } from '../config/loader-helpers.js';
@@ -29,7 +29,7 @@ export interface SilentRunner {
 /** The recording model, resolved from its CLI type. */
 export type RecordingModel =
   | { id: string; kind: 'api'; api: ApiToolConfig; env?: Record<string, string> }
-  | { id: string; kind: 'cli' };
+  | { id: string; kind: 'cli'; headlessCommand?: string; env?: Record<string, string> };
 
 /** Runs one request against one kind of model and returns its text; may throw. */
 export interface SilentRunBackend<TModel extends RecordingModel = RecordingModel> {

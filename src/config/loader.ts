@@ -1,3 +1,4 @@
+import { headlessCommandFor, headlessCommandProblem } from '../session/headless-command.js';
 import * as fs from 'fs';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../session/prompt-staleness.js';
 import * as path from 'path';
@@ -28,7 +29,7 @@ import { defaultComfyUiMigrationFiles, migrateComfyUiToolDefaults } from './comf
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
 import {
   DEFAULT_AUTO_MEMORY_SETTINGS,
-  HEADLESS_RUNNER_NOTE,
+  CLI_COST_NOTE,
   INCOMPLETE_API_NOTE,
   type AutoMemorySettings,
   type RecordingModelOption,
@@ -236,6 +237,10 @@ export interface CliTypeConfig {
   resumeCommand?: string;
   /** CLI command to resume most recent session (fallback when resumeCommand is not configured). */
   continueCommand?: string;
+  /** Shell line that runs the CLI once with no terminal UI, for a silent recording-model pass.
+   * Templates: {promptFile} (the prompt, read by the command) and {outputFile} (where it leaves the reply).
+   * Unset = the built-in command of the type's `provider`, if it has one (session/headless-command.ts). */
+  headlessCommand?: string;
   /** Escape sequence sent after text delivery (e.g. '\r', '\n', or '\r\n'). Empty string clears/uses default. */
   submitSuffix?: string;
   /** Command pasted into the PTY by session_clear to reset the CLI's context. Default: '/clear'.
@@ -1271,8 +1276,10 @@ export class ConfigLoader {
       // A ComfyUI type draws pictures; it has no text model to record with.
       if (!config || config.comfyUi) continue;
       const name = config.displayName ?? config.name ?? id;
-      if (!config.api) options.push({ id, name, kind: 'cli', available: false, note: HEADLESS_RUNNER_NOTE });
-      else if (isRunnableApi(config.api)) options.push({ id, name, kind: 'api', available: true });
+      if (!config.api) {
+        const problem = headlessCommandProblem(headlessCommandFor(config));
+        options.push({ id, name, kind: 'cli', available: !problem, note: problem ?? CLI_COST_NOTE });
+      } else if (isRunnableApi(config.api)) options.push({ id, name, kind: 'api', available: true });
       else options.push({ id, name, kind: 'api', available: false, note: INCOMPLETE_API_NOTE });
     }
     return options;
@@ -1284,7 +1291,11 @@ export class ConfigLoader {
     if (!resolved) throw new Error(`Unknown CLI type: ${ref}`);
     const name = resolved.config.displayName ?? resolved.config.name ?? resolved.id;
     if (resolved.config.comfyUi) throw new Error(`${name} is a ComfyUI type and cannot record memories`);
-    if (!resolved.config.api) throw new Error(`${name} is a real CLI: recording with it needs the headless runner`);
+    if (!resolved.config.api) {
+      const problem = headlessCommandProblem(headlessCommandFor(resolved.config));
+      if (problem) throw new Error(`${name} cannot record: ${problem}`);
+      return resolved.id;
+    }
     if (!isRunnableApi(resolved.config.api)) throw new Error(`${name} cannot record: its ${INCOMPLETE_API_NOTE}`);
     return resolved.id;
   }
@@ -1434,6 +1445,7 @@ export class ConfigLoader {
     if (options?.spawnCommand) tool.spawnCommand = options.spawnCommand;
     if (options?.resumeCommand) tool.resumeCommand = options.resumeCommand;
     if (options?.continueCommand) tool.continueCommand = options.continueCommand;
+    if (options?.headlessCommand) tool.headlessCommand = options.headlessCommand;
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
@@ -1499,7 +1511,7 @@ export class ConfigLoader {
         if (options.env.length === 0) delete existing.env;
         else existing.env = options.env;
       }
-      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix', 'bindingProfileId', 'keepWarmPrompt'] as const) {
+      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'headlessCommand', 'submitSuffix', 'bindingProfileId', 'keepWarmPrompt'] as const) {
         const val = options[field];
         if (val === undefined) continue;
         if (val === '') { delete (existing as any)[field]; }

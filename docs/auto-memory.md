@@ -19,15 +19,16 @@ graph LR
     CL -->|autoRecall, read live| S[SuggestionService<br/>drops memory candidates when off]
     UI -->|Test| R
     R -->|API tool| H[ApiSessionHost.completeSilently<br/>one request, through the tool's slots]
-    R -.->|real CLI type| HR[headless runner<br/>not built yet]
+    R -->|real CLI type| HR[HeadlessCliRunner<br/>one row-less PTY per pass]
     CL -->|autoSave, read live| AR[AutoMemoryRecorder<br/>judge pass after each API turn]
     AR --> R
 ```
 
 - **One global model**, not one per project or per CLI type.
-- **The picker lists Helm's configured CLI types.** API tools are pickable. Real CLI types (Claude Code, Codex, …) are listed disabled with "needs headless runner" until that runner exists. ComfyUI types are not listed: they have no text model.
-- **A model that cannot record is refused, not stored.** `ConfigLoader.setAutoMemoryConfig` throws for a real CLI type, a ComfyUI type or an unknown reference, and the tab shows the reason. A pick that quietly records nothing would be worse than an error.
-- **A stored pick that stops being runnable** (its CLI type deleted, or its `api` block removed) is flagged in the tab and Test is disabled; silent runs answer `failed`.
+- **The picker lists Helm's configured CLI types.** API tools are pickable. A real CLI type (Claude Code, Codex, …) is pickable when it has a [headless command](#real-clis-the-headless-run), and is marked "real CLI: its full prompt on every turn". One without is listed disabled as "no headless command". ComfyUI types are not listed: they have no text model.
+- **The tab states the price of a real CLI before one is picked.** Picking saves at once, so the note stands above the pick whenever the list offers a real CLI: it is started once per pass, loads its whole system prompt each time (about 28k tokens for Claude Code), runs after every turn of every session, and on the same provider draws on the quota of the sessions it serves.
+- **A model that cannot record is refused, not stored.** `ConfigLoader.setAutoMemoryConfig` throws for a real CLI type with no usable headless command, a ComfyUI type or an unknown reference, and the tab shows the reason. A pick that quietly records nothing would be worse than an error.
+- **A stored pick that stops being runnable** (its CLI type deleted, its `api` block removed, or its headless command gone) is flagged in the tab and Test is disabled; silent runs answer `failed`.
 - **An API tool without a base URL or a model** is listed disabled as "API settings are incomplete" and refused.
 - **Test** sends one small request to the picked model and reports whether it answered.
 
@@ -39,14 +40,65 @@ The judge never opens a session. It asks `SilentRunner.runSilently({ prompt, sys
 |---|---|
 | `{ status: 'ok', text }` | The model answered. |
 | `{ status: 'inert', reason }` | No recording model is picked. No request was made. |
-| `{ status: 'failed', error }` | The request failed, the model returned no text, the picked type was deleted, or it is a real CLI type with no headless runner. |
+| `{ status: 'failed', error }` | The request failed, the model returned no text, the picked type was deleted, or its headless run failed, timed out or has no command. |
 
 `runSilently` never throws, and a failure never reaches the user's chat: it is logged and returned.
 
 Callers depend on the interface only. Behind it, `RecordingModelRunner` resolves the picked CLI type and hands the request to the backend for its kind:
 
 - **API tool**: `ApiSessionHost.completeSilently` sends one chat-completions request with no tools offered. It waits for one of that API tool's `slots`, the same queue its sessions and subagents use, so a judge pass queues behind real work instead of competing with it. Aborting the request while it is still queued gives its place up at once. No `PtyProcess`, no session row, no history file, no chat entry, no hook event.
-- **Real CLI type**: no backend yet. The headless runner registers as the `cli` backend when it lands.
+- **Real CLI type**: `HeadlessCliRunner` runs the CLI once, headless, in a row-less PTY. See below.
+
+### Real CLIs: the headless run
+
+A real CLI has no request path: Helm only knows how to start it. `HeadlessCliRunner` (`src/session/headless-cli-runner.ts`) starts it once per pass with the type's **headless command**, a shell line that reads the prompt from one file and leaves the reply in another:
+
+| CLI family | Built-in headless command |
+|---|---|
+| Claude Code | `claude -p --no-session-persistence --strict-mcp-config --output-format text --tools "" < "{promptFile}" > "{outputFile}"` |
+| Codex | `codex exec --skip-git-repo-check --ephemeral --sandbox read-only -o "{outputFile}" - < "{promptFile}"` |
+| Copilot | none: its print mode only takes the prompt as an argument |
+
+The built-in commands live in code (`src/session/headless-command.ts`), keyed by the type's `provider`, and not in the shipped `cli-types.yaml`. That file only seeds a fresh install, so a default written there would never reach an existing one. A type's own `headlessCommand` (Tool Editor → Launch → Headless Command) overrides the built-in one: to name a cheaper model, to keep a profile, or to give a CLI of another family a command at all. A command without both `{promptFile}` and `{outputFile}` is refused.
+
+Files, not arguments or the terminal: a prompt is many lines of anything and no shell quotes that reliably, and a reply scraped from a terminal carries the shell's echo and its colour codes. The placeholders are filled with bare file names in the run's working directory, never full paths: a `%`, `$` or backtick in one of the user's directory names would be code in a shell line.
+
+**The judged transcript is untrusted text handed to an agent**, and a tool result in it can try to give that agent orders. The built-in commands take its hands away: Claude Code runs with no tools (`--tools ""`) and no MCP servers, so it can only answer. Codex cannot switch its shell off, so it runs in its read-only sandbox: it can read files and say what it read, it cannot change anything. A `headlessCommand` of your own carries whatever limits you give it, and none if you give none.
+
+```mermaid
+sequenceDiagram
+    participant J as Judge pass
+    participant H as HeadlessCliRunner
+    participant P as PtyManager
+    participant C as CLI in a row-less PTY
+    J->>H: run(model, prompt)
+    Note over H: waits for the previous pass<br/>of the same CLI type
+    H->>H: write <id>.prompt.txt
+    H->>P: spawn({ rawCommand, headless: true })<br/>Helm session variables blanked
+    P->>C: shell line && exit 0 || exit 1
+    Note over P: no 'data', no 'exit' broadcast
+    alt exits 0
+        C-->>H: onExit(0)
+        H->>H: read <id>.reply.txt
+        H-->>J: text
+    else exits non-zero
+        C-->>H: onExit(1)
+        H-->>J: throws, quoting the end of the terminal
+    else 120 s pass, or the caller aborts
+        H->>P: kill(id)
+        H-->>J: throws
+    end
+    H->>H: delete both files
+```
+
+- **It is a PTY, so invariant 2 holds as written.** The CLI runs in an embedded PTY inside `PtyManager` and its command reaches it through PTY stdin. `PtyManager` tracks the process, and kills it with every other one when the app quits.
+- **It is not a session.** `spawn({ headless: true })` never emits `data` or `exit` for the run. Everything that makes a PTY a session hangs off those two events: the renderer's terminal, the state detector, the pattern matcher, the Telegram mirror, the session record, the recycle bin, time tracking. The runner listens on the process it was handed instead.
+- **No hook reaches Helm, so a judge pass cannot start a judge pass.** The CLI's hooks are installed machine-wide and do fire in a headless run. The shim does nothing without `HELM_SESSION_ID`, and the runner blanks it, with the hook URL and the token, in the run's environment. That also covers a Helm that was itself started from inside a Helm session and inherited those variables, and a type whose own `env` sets them.
+- **One pass at a time per CLI type.** Passes of the same type queue, since a second CLI process would only race the first for the same quota. Different types do not wait for each other. A failed pass does not block the queue.
+- **A pass is bounded.** After 120 s the PTY is killed and the pass dropped. An abort does the same at once.
+- **The run's directory is Helm's own temp dir** (`<temp>/headless`), not a project: a CLI that does keep a transcript does not file it under the project it is judging.
+- **It still reads the user's own CLI configuration** (for Claude Code, the global `CLAUDE.md`). An instruction there that shapes every reply shapes the judge's too, and the reply is parsed strictly, so such a pass may save nothing.
+- **An abort while queued** drops the pass at once; the passes behind it keep their place. An abort while the prompt file is being written is honoured before anything is started.
 
 ## Auto-save: the judge pass
 
@@ -132,6 +184,8 @@ Measured on 2026-10-14 against the local llama router, one two-turn "nothing to 
 | bonsai | 6 to 7 s, 185 to 240 completion tokens | about 11 s, about 400 completion tokens | 580 to 710, about 420 cached |
 
 Both answered `NOTHING` and found the fact in all three runs. Nearly all completion tokens are the model's reasoning. A first request after a model load took 12 to 21 s.
+
+A real CLI as the recording model, measured the same day with the built-in commands and a one-word reply: Claude Code about 6.7 s, Codex about 5.8 s, each one a fresh process carrying its whole agent prompt. Compare that with a second or so and under a thousand tokens for a small local model before picking one.
 
 ## Auto-recall
 

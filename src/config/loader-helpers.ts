@@ -103,6 +103,7 @@ export type CliTypeOptions = {
   spawnCommand?: string;
   resumeCommand?: string;
   continueCommand?: string;
+  headlessCommand?: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;

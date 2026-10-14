@@ -26,12 +26,19 @@ const CLI_ID = '22222222-2222-4222-8222-222222222222';
 const COMFY_ID = '33333333-3333-4333-8333-333333333333';
 
 const BROKEN_ID = '44444444-4444-4444-8444-444444444444';
+const SHELL_ID = '55555555-5555-4555-8555-555555555555';
+const OWN_ID = '66666666-6666-4666-8666-666666666666';
+const HALF_ID = '77777777-7777-4777-8777-777777777777';
 
 const CLI_TYPES = {
   [API_ID]: { id: API_ID, name: 'Local model', api: { baseUrl: 'http://127.0.0.1:8080/v1', model: 'qwen', allowedTools: [] } },
   [CLI_ID]: { id: CLI_ID, name: 'Claude Code', command: 'claude' },
   [BROKEN_ID]: { id: BROKEN_ID, name: 'Half-edited', api: { baseUrl: '', allowedTools: [] } },
   [COMFY_ID]: { id: COMFY_ID, name: 'Comfy', comfyUi: { baseUrl: 'http://127.0.0.1:8188', profiles: [] } },
+  // A real CLI of no known family: nothing built in to run it headless.
+  [SHELL_ID]: { id: SHELL_ID, name: 'cmd', spawnCommand: 'cmd.exe' },
+  [OWN_ID]: { id: OWN_ID, name: 'Aider', spawnCommand: 'aider', headlessCommand: 'aider --message-file "{promptFile}" > "{outputFile}"' },
+  [HALF_ID]: { id: HALF_ID, name: 'Half a command', spawnCommand: 'tool', headlessCommand: 'tool --print' },
 };
 
 function makeLoader(settings: Record<string, unknown> = {}): ConfigLoader {
@@ -80,11 +87,30 @@ describe('autoMemory settings', () => {
     expect(loader.getAutoMemoryConfig().recordingModel).toBe(API_ID);
   });
 
-  it('refuses a real CLI type until the headless runner exists, keeping the old pick', () => {
+  it('accepts a real CLI type that can run headless: by its family, or by its own command', () => {
+    const loader = makeLoader();
+
+    loader.setAutoMemoryConfig({ recordingModel: 'Claude Code' });
+    expect(reload().getAutoMemoryConfig().recordingModel).toBe(CLI_ID);
+    loader.setAutoMemoryConfig({ recordingModel: OWN_ID });
+    expect(reload().getAutoMemoryConfig().recordingModel).toBe(OWN_ID);
+  });
+
+  it('keeps a headless command typed in the tool editor, and drops it when cleared', () => {
+    const loader = makeLoader();
+    loader.updateCliType(SHELL_ID, 'cmd', [], 0, { headlessCommand: 'ask < "{promptFile}" > "{outputFile}"' });
+    expect(reload().getRecordingModelOptions().find((model) => model.id === SHELL_ID)?.available).toBe(true);
+
+    reload().updateCliType(SHELL_ID, 'cmd', [], 0, { headlessCommand: '' });
+    expect(reload().getRecordingModelOptions().find((model) => model.id === SHELL_ID)?.available).toBe(false);
+  });
+
+  it('refuses a model that cannot run silently, keeping the old pick', () => {
     const loader = makeLoader();
     loader.setAutoMemoryConfig({ recordingModel: API_ID });
 
-    expect(() => loader.setAutoMemoryConfig({ recordingModel: CLI_ID })).toThrow(/headless runner/);
+    expect(() => loader.setAutoMemoryConfig({ recordingModel: SHELL_ID })).toThrow(/cmd cannot record: no headless command/);
+    expect(() => loader.setAutoMemoryConfig({ recordingModel: HALF_ID })).toThrow(/needs \{promptFile\} and \{outputFile\}/);
     expect(() => loader.setAutoMemoryConfig({ recordingModel: COMFY_ID })).toThrow(/cannot record/i);
     expect(() => loader.setAutoMemoryConfig({ recordingModel: BROKEN_ID })).toThrow(/API settings are incomplete/);
     expect(() => loader.setAutoMemoryConfig({ recordingModel: 'no-such-type' })).toThrow(/Unknown CLI type/);
@@ -97,11 +123,15 @@ describe('autoMemory settings', () => {
     expect(reload().getAutoMemoryConfig().recordingModel).toBe('');
   });
 
-  it('lists API tools as pickable and real CLI types as waiting for the headless runner', () => {
+  it('lists what can record, what a real CLI costs, and why the rest cannot', () => {
     expect(makeLoader().getRecordingModelOptions()).toEqual([
       { id: API_ID, name: 'Local model', kind: 'api', available: true },
-      { id: CLI_ID, name: 'Claude Code', kind: 'cli', available: false, note: 'needs headless runner' },
+      // Its family (inferred from the name on load) has a built-in headless command.
+      { id: CLI_ID, name: 'Claude Code', kind: 'cli', available: true, note: 'real CLI: its full prompt on every turn' },
       { id: BROKEN_ID, name: 'Half-edited', kind: 'api', available: false, note: 'API settings are incomplete' },
+      { id: SHELL_ID, name: 'cmd', kind: 'cli', available: false, note: 'no headless command' },
+      { id: OWN_ID, name: 'Aider', kind: 'cli', available: true, note: 'real CLI: its full prompt on every turn' },
+      { id: HALF_ID, name: 'Half a command', kind: 'cli', available: false, note: 'headless command needs {promptFile} and {outputFile}' },
     ]);
   });
 });

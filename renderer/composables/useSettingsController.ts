@@ -265,6 +265,7 @@ export function useSettingsController(options: {
       spawnCommand: value?.spawnCommand || '',
       resumeCommand: value?.resumeCommand || '',
       continueCommand: value?.continueCommand || '',
+      headlessCommand: value?.headlessCommand || '',
       renameCommand: value?.renameCommand || '',
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),

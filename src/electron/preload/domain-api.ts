@@ -693,6 +693,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       spawnCommand?: string;
       resumeCommand?: string;
       continueCommand?: string;
+      headlessCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
@@ -715,6 +716,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       spawnCommand?: string;
       resumeCommand?: string;
       continueCommand?: string;
+      headlessCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;

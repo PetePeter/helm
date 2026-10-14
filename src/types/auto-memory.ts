@@ -22,10 +22,10 @@ export const DEFAULT_AUTO_MEMORY_SETTINGS: AutoMemorySettings = {
 export interface RecordingModelOption {
   id: string;
   name: string;
-  /** `api` = Helm sends the request itself; `cli` = a real CLI, which needs the headless runner. */
+  /** `api` = Helm sends the request itself; `cli` = a real CLI, run once headless per pass. */
   kind: 'api' | 'cli';
   available: boolean;
-  /** Why an unavailable model cannot be picked yet. */
+  /** Why an unavailable model cannot be picked; on a real CLI that can, what picking it costs. */
   note?: string;
 }
 
@@ -34,8 +34,8 @@ export type AutoMemoryState =
   | { success: true; settings: AutoMemorySettings; models: RecordingModelOption[] }
   | { success: false; error: string };
 
-/** Shown next to a real CLI type until the headless runner lands. */
-export const HEADLESS_RUNNER_NOTE = 'needs headless runner';
+/** Shown next to every real CLI type that can record: the price is the reason to think twice. */
+export const CLI_COST_NOTE = 'real CLI: its full prompt on every turn';
 
 /** Shown next to an API tool whose block lacks a base URL or a model. */
 export const INCOMPLETE_API_NOTE = 'API settings are incomplete';

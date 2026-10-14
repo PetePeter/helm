@@ -46,6 +46,7 @@ export interface ToolEditorData {
   spawnCommand: string;
   resumeCommand: string;
   continueCommand: string;
+  headlessCommand?: string;
   renameCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
@@ -80,6 +81,7 @@ const emit = defineEmits<{
     spawnCommand: string;
     resumeCommand: string;
     continueCommand: string;
+    headlessCommand?: string;
     renameCommand: string;
     helmPreambleForInterSession?: boolean;
     largeTextAsTempFile: boolean;
@@ -108,6 +110,7 @@ const initialPromptDelay = ref(2000);
 const spawnCommand = ref('');
 const resumeCommand = ref('');
 const continueCommand = ref('');
+const headlessCommand = ref('');
 const renameCommand = ref('');
 const helmPreambleForInterSession = ref(true);
 const largeTextAsTempFile = ref(false);
@@ -296,6 +299,7 @@ function initForm(): void {
   spawnCommand.value = d.spawnCommand ?? '';
   resumeCommand.value = d.resumeCommand ?? '';
   continueCommand.value = d.continueCommand ?? '';
+  headlessCommand.value = d.headlessCommand ?? '';
   renameCommand.value = d.renameCommand ?? '';
   helmPreambleForInterSession.value = d.helmPreambleForInterSession !== false;
   largeTextAsTempFile.value = Boolean(d.largeTextAsTempFile);
@@ -386,6 +390,7 @@ function onSave(): void {
     spawnCommand: spawnCommand.value,
     resumeCommand: resumeCommand.value,
     continueCommand: continueCommand.value,
+    headlessCommand: headlessCommand.value,
     renameCommand: renameCommand.value,
     ...(helmPreambleForInterSession.value !== true ? { helmPreambleForInterSession: helmPreambleForInterSession.value } : {}),
     largeTextAsTempFile: largeTextAsTempFile.value,
@@ -584,6 +589,7 @@ defineExpose({ handleButton });
             <div class="te-field"><label for="te-spawn">Spawn Command</label><input id="te-spawn" v-model="spawnCommand" type="text" placeholder="e.g. codex --dangerously-bypass-approvals-and-sandbox" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-resume">Resume Command</label><input id="te-resume" v-model="resumeCommand" type="text" placeholder="Template for resuming sessions" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-continue">Continue Command</label><input id="te-continue" v-model="continueCommand" type="text" placeholder="Template for continuing sessions" class="te-input te-input--mono" /></div>
+            <div class="te-field"><label for="te-headless">Headless Command</label><input id="te-headless" v-model="headlessCommand" type="text" placeholder="Runs the CLI once as the recording model: … < &quot;{promptFile}&quot; > &quot;{outputFile}&quot;. Blank = built-in for Claude Code and Codex" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-rename">Rename Command</label><input id="te-rename" v-model="renameCommand" type="text" placeholder="Template for renaming sessions" class="te-input te-input--mono" /></div>
           </fieldset>
 
