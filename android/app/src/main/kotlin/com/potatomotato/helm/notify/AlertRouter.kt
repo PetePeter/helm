@@ -61,8 +61,7 @@ class AlertRouter {
     /** Null until the app is up. Alerts that arrive before then are DROPPED. */
     var port: NotificationPort? = null
 
-    private var openSessionId: String? = null
-    private var appVisible = false
+    private var viewedSessionId: String? = null
 
     private var settings: NotificationSettings = MemoryNotificationSettings()
 
@@ -148,8 +147,8 @@ class AlertRouter {
         if (record.sessionId.isBlank() || record.sessionName.isBlank() || record.text.isBlank()) return
         if (kind == AlertKind.Artifact && record.artifactId.isNullOrBlank()) return
 
-        if (appVisible && openSessionId == record.sessionId) {
-            // Already being read. Clear anything left over from before it was opened.
+        if (viewedSessionId == record.sessionId) {
+            // The thread is visible. Clear anything left over from before it was viewed.
             clearSession(surface, record.sessionId)
             return
         }
@@ -189,19 +188,11 @@ class AlertRouter {
         showing[row.notificationId] = Row(sessionId, AlertKind.Message, null)
     }
 
-    /** The session the user has on screen, or null for the list. */
-    fun opened(sessionId: String?) {
-        openSessionId = sessionId
+    /** The chat thread actually displayed to the user, or null when none is visible. */
+    fun viewed(sessionId: String?) {
+        viewedSessionId = sessionId
         val surface = port ?: return
-        if (sessionId != null && appVisible) clearSession(surface, sessionId)
-    }
-
-    /** Whether the app is in front of the user at all. */
-    fun visible(visible: Boolean) {
-        appVisible = visible
-        val surface = port ?: return
-        val open = openSessionId
-        if (visible && open != null) clearSession(surface, open)
+        if (sessionId != null) clearSession(surface, sessionId)
     }
 
     /** Every row this session currently holds — its own, and one per artifact. */

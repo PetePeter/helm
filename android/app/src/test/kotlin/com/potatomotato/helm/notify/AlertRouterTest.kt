@@ -101,8 +101,7 @@ class AlertRouterTest {
 
     @Test
     fun `nothing is posted for the session the user is already reading`() {
-        router.visible(true)
-        router.opened("s1")
+        router.viewed("s1")
 
         router.onAlert(alert())
 
@@ -110,10 +109,9 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `an open session still alerts once the app is backgrounded`() {
-        router.visible(true)
-        router.opened("s1")
-        router.visible(false)
+    fun `a chat alerts again after its thread is no longer viewed`() {
+        router.viewed("s1")
+        router.viewed(null)
 
         router.onAlert(alert())
 
@@ -122,8 +120,7 @@ class AlertRouterTest {
 
     @Test
     fun `another session alerts while one is open`() {
-        router.visible(true)
-        router.opened("s1")
+        router.viewed("s1")
 
         router.onAlert(alert(sessionId = "s2", sessionName = "two"))
 
@@ -131,21 +128,30 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `opening a session clears its notification`() {
-        router.onAlert(alert())
-        router.visible(true)
+    fun `viewing a chat clears only that session's notification`() {
+        router.onMessage(message(sessionId = "s1", sessionName = "one"))
+        router.onMessage(message(sessionId = "s2", sessionName = "two"))
 
-        router.opened("s1")
+        router.viewed("s1")
+
+        assertNull(port.showing("s1"))
+        assertEquals("I have pushed the fix", port.showing("s2")?.text)
+    }
+
+    @Test
+    fun `viewing a chat clears its notification`() {
+        router.onAlert(alert())
+
+        router.viewed("s1")
 
         assertNull(port.showing("s1"))
     }
 
     @Test
-    fun `returning to the list clears nothing that was never opened`() {
+    fun `viewing no chat clears nothing`() {
         router.onAlert(alert())
-        router.visible(true)
 
-        router.opened(null)
+        router.viewed(null)
 
         assertEquals("ble-transport", port.showing("s1")?.sessionName)
     }
@@ -153,9 +159,8 @@ class AlertRouterTest {
     @Test
     fun `a channel change is forgotten when the notification is cleared`() {
         router.onAlert(alert(kind = "attention"))
-        router.visible(true)
-        router.opened("s1")
-        router.opened(null)
+        router.viewed("s1")
+        router.viewed(null)
         port.calls.clear()
 
         router.onAlert(alert(kind = "completion"))
@@ -214,19 +219,17 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `opening the session clears its artifact rows with it`() {
+    fun `viewing a chat clears its artifact rows for that session`() {
         router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
-        router.visible(true)
 
-        router.opened("s1")
+        router.viewed("s1")
 
         assertNull(port.showing("s1", artifactId = "a1"))
     }
 
     @Test
-    fun `an artifact for the session on screen is not posted`() {
-        router.visible(true)
-        router.opened("s1")
+    fun `an artifact for the viewed session is not posted`() {
+        router.viewed("s1")
 
         router.onAlert(alert(kind = "artifact", text = "Report", artifactId = "a1"))
 
@@ -235,8 +238,7 @@ class AlertRouterTest {
 
     @Test
     fun `another session's artifact still posts while one session is open`() {
-        router.visible(true)
-        router.opened("s1")
+        router.viewed("s1")
 
         router.onAlert(alert(sessionId = "s2", kind = "artifact", text = "Report", artifactId = "a1"))
 
@@ -286,8 +288,7 @@ class AlertRouterTest {
 
     @Test
     fun `nothing is posted for a message in the session being read`() {
-        router.visible(true)
-        router.opened("s1")
+        router.viewed("s1")
 
         router.onMessage(message())
 
@@ -376,11 +377,10 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `a row left by a failed reply is cleared by opening the session`() {
+    fun `a row left by a failed reply is cleared by viewing the chat`() {
         router.replyFailed("s1", "ble-transport")
-        router.visible(true)
 
-        router.opened("s1")
+        router.viewed("s1")
 
         assertNull(port.showing("s1"))
     }

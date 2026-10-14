@@ -341,31 +341,28 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         }
     }
 
-    // What the notifier needs to know to stay quiet about the thing on screen —
-    // and to clear rows the user has just answered by opening them. The
-    // artifacts screens count as reading the session too: opening the list is
-    // answering every artifact buzz for it. The same predicate drives the
-    // unread badge: a thread on screen is being read, so its count clears on
-    // the way in and nothing counts as read once the user leaves it.
-    // The Helm home tab shows the operator's thread without opening it, so it
-    // counts as reading that thread too.
+    // Keep chat unread state aligned with the session content on screen. The
+    // artifact screens count as reading the session too. The Helm home tab also
+    // shows the operator's thread without opening it.
     val operator = remember(sessions, threads) { operatorSummary(sessions, threads) }
     val callScreenTarget = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf {
             where == Destination.Thread && homeTab == HomeTab.Helm
         }
-    LaunchedEffect(liveCall?.targetId, callScreenTarget) {
+    // The lastCallTarget effect follows call-driven transfers. Don't sync on call-target
+    // updates or a stale chat would transfer the call back.
+    LaunchedEffect(liveCall != null, callScreenTarget) {
         val call = liveCall ?: return@LaunchedEffect
         val target = callScreenTarget ?: return@LaunchedEffect
         if (call.targetId != target) VoiceCallService.retarget(context, target)
     }
     val onScreenThread = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }
-    ReportVisibility(client)
+    val viewedChat = onScreenThread?.takeIf { where == Destination.Thread }
+    ReportViewedChat(client, viewedChat)
     LaunchedEffect(onScreenThread, where) {
         val reading = where == Destination.Thread ||
             where == Destination.ArtifactDetail || where == Destination.ArtifactEditor
-        client.alerts.opened(onScreenThread?.takeIf { reading })
         client.chats.reading(onScreenThread?.takeIf { reading })
     }
 
@@ -506,20 +503,18 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     // the call left lands on the chat it moved to. Waits for the row like a
     // fresh spawn does, so the went-away fallback does not fire first.
     var lastCallTarget by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(liveCall?.targetId) {
+    LaunchedEffect(liveCall?.targetId, callScreenTarget) {
         val to = liveCall?.targetId
         val from = lastCallTarget
         lastCallTarget = to
-        if (to == null || from == null || to == from || openSessionId != from) return@LaunchedEffect
+        if (to == null || from == null || to == from || callScreenTarget != from) return@LaunchedEffect
         var waits = 0
         while (client.sessions.sessions.value.none { it.id == to } && waits < CREATED_SESSION_WAITS) {
             delay(SESSION_WAIT_STEP_MS)
             waits++
         }
-        if (openSessionId == from) {
-            openSessionId = to
-            tab = SessionTab.Chat
-        }
+        openSessionId = to
+        tab = SessionTab.Chat
     }
 
     LaunchedEffect(createdSessionId) {
@@ -1899,25 +1894,18 @@ private fun WatchSessions(client: HelmClient, active: Boolean) {
     }
 }
 
-/**
- * Tell the notifier whether the user can actually see the app.
- *
- * STARTED and not RESUMED is the right line: an app visible behind the pairing
- * dialog is still being looked at, while one in the recents carousel is not.
- * Without this the phone would go silent for a session left open in a pocket —
- * which is precisely the case the whole feature exists for.
- */
+/** Tell the notifier which chat thread is actually visible to the user. */
 @Composable
-private fun ReportVisibility(client: HelmClient) {
+private fun ReportViewedChat(client: HelmClient, viewedChat: String?) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(lifecycle) {
+    LaunchedEffect(client, lifecycle, viewedChat) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            client.alerts.visible(true)
+            client.alerts.viewed(viewedChat)
             try {
                 awaitCancellation()
             } finally {
-                client.alerts.visible(false)
+                client.alerts.viewed(null)
             }
         }
     }
