@@ -1189,6 +1189,45 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_scratchpad_get',
+    title: 'Read Session Scratchpad',
+    description: 'Read a session scratchpad: one plain-text pad per session that the user types in (a Helm tool window) and that session\'s own LLM writes too. Use it for the running notes of this session: a to-do list, numbers to remember, something the user pasted for you. It lives and dies with the session; lasting knowledge belongs in memory_*. Omit sessionId to read your own. Returns text and the revision to pass to session_scratchpad_set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Session ID or exact name to read. Defaults to your own session.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_scratchpad_set',
+    title: 'Replace Session Scratchpad',
+    description: 'Replace the whole text of YOUR OWN session scratchpad. Pass the revision you got from session_scratchpad_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_scratchpad_append.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The full new text. Empty clears the pad.' },
+        revision: { type: 'integer', description: 'The revision this text was based on (0 for a pad never written).' },
+      },
+      required: ['text', 'revision'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_scratchpad_append',
+    title: 'Append To Session Scratchpad',
+    description: 'Add text on a new line at the end of YOUR OWN session scratchpad. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The text to add.' },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_set_locked',
     title: 'Set Session Lock',
     description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, Telegram, group close, and force restart. Accepts sessionId or exact session name.',

@@ -8,6 +8,7 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
+import type { Scratchpad, ScratchpadWriteResult } from '../../types/scratchpad.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
@@ -93,6 +94,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Persist the per-session mission bar height (px, clamped in main). */
   sessionSetMissionBarHeight: (id: string, px: number): Promise<{ success: boolean; height?: number; error?: string }> =>
     ipcRenderer.invoke('session:setMissionBarHeight', id, px),
+
+  /** Read a session's scratchpad (empty at revision 0 when never written). */
+  scratchpadGet: (sessionId: string): Promise<Scratchpad> =>
+    ipcRenderer.invoke('scratchpad:get', sessionId),
+
+  /** Replace the scratchpad text as the user; refused when `baseRevision` is no longer current. */
+  scratchpadSet: (sessionId: string, text: string, baseRevision: number): Promise<ScratchpadWriteResult> =>
+    ipcRenderer.invoke('scratchpad:set', sessionId, text, baseRevision),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>
@@ -1387,6 +1396,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: Electron.IpcRendererEvent, data: { sessionId?: string }) => callback(data);
     ipcRenderer.on('memory:changed', listener);
     return () => ipcRenderer.removeListener('memory:changed', listener);
+  },
+
+  /** Subscribe to scratchpad changes; the event carries the whole new pad. */
+  onScratchpadChanged: (callback: (scratchpad: Scratchpad) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: Scratchpad) => callback(data);
+    ipcRenderer.on('scratchpad:changed', listener);
+    return () => ipcRenderer.removeListener('scratchpad:changed', listener);
   },
 
   /** Subscribe to artifact reveal (bring-forward) events */

@@ -19,6 +19,7 @@ import PlanDirectoriesPane from './components/dock/PlanDirectoriesPane.vue';
 import ArtifactsPane from './components/dock/ArtifactsPane.vue';
 import MessPane from './components/dock/MessPane.vue';
 import TimesheetPane from './components/dock/TimesheetPane.vue';
+import ScratchpadPane from './components/dock/ScratchpadPane.vue';
 import {
   PANE_ARTIFACTS,
   PANE_PLAN_DIRECTORIES,
@@ -26,6 +27,7 @@ import {
   PANE_MEMORIES,
   PANE_QUICK_SPAWN,
   PANE_SCHEDULER,
+  PANE_SCRATCHPAD,
   PANE_SESSIONS,
   PANE_TERMINAL,
   PANE_MESS,
@@ -47,6 +49,7 @@ export const DOCK_PANE_COMPONENTS: Readonly<Record<PaneId, Component>> = Object.
   [PANE_ARTIFACTS]: ArtifactsPane,
   [PANE_MESS]: MessPane,
   [PANE_TIMESHEET]: TimesheetPane,
+  [PANE_SCRATCHPAD]: ScratchpadPane,
 });
 
 /** Components for runtime panes live beside, but do not mutate, static entries. */

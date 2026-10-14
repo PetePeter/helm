@@ -38,6 +38,9 @@ import { ArtifactManager } from '../../session/artifact-manager.js';
 import { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
 import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence.js';
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
+import { ScratchpadManager } from '../../session/scratchpad-manager.js';
+import type { Scratchpad } from '../../types/scratchpad.js';
+import { createScratchpadStore } from '../../session/scratchpad-persistence.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
 import { MemoryPersistence } from '../../session/memory-persistence.js';
 import { MemoryAttachmentManager } from '../../session/memory-attachment-manager.js';
@@ -85,6 +88,7 @@ import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
 import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
+import { setupScratchpadHandlers } from './scratchpad-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from './time-tracking-handlers.js';
@@ -236,6 +240,7 @@ export function registerIPCHandlers(
     (artifactId) => artifactAttachmentManager.deleteForArtifact(artifactId),
   );
   artifactManager.importAll(loadArtifacts());
+  const scratchpadManager = new ScratchpadManager(createScratchpadStore());
   const memoryPersistence = new MemoryPersistence();
   const memoryAttachmentManager = new MemoryAttachmentManager();
   // PlanManager is constructed before MemoryManager so provenance can be
@@ -275,6 +280,7 @@ export function registerIPCHandlers(
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
   helmControlService.sessionChangeFeed.attach(sessionManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
+  helmControlService.setScratchpadManager(scratchpadManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
@@ -391,6 +397,8 @@ export function registerIPCHandlers(
     binSessionIds,
     id => artifactManager.clearSession(id),
   );
+  // Scratchpads follow the same rule: kept for a live or binned session, dropped otherwise.
+  scratchpadManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
 
   // Prune orphan attachment directories (artifacts deleted in a previous crash)
   const allArtifactIds = new Set(
@@ -681,12 +689,17 @@ export function registerIPCHandlers(
     recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
     // Restore reuses the original session id, so the mission lands back on the same session.
     (entry) => sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight),
+    scratchpadManager,
   );
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
   recycleBinManager.pruneExpired();
   setupRuntimeGroupHandlers(runtimeGroupManager, windowManager);
   setupArtifactHandlers(artifactManager, artifactAttachmentManager, windowManager, dirname, artifactTempRegistry);
+  setupScratchpadHandlers(
+    scratchpadManager,
+    (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
+  );
   setupMemoryHandlers(memoryManager, memoryAttachmentManager, sessionManager, windowManager, artifactTempRegistry);
 
   // Memory mutations can originate from MCP or another window. Route the
@@ -722,6 +735,12 @@ export function registerIPCHandlers(
   artifactManager.on('artifact:reveal', (sessionId: string, artifactId: string) => {
     for (const win of artifactWindowsFor(sessionId)) {
       win.webContents.send('artifact:reveal', { sessionId, artifactId });
+    }
+  });
+  // The pad itself rides the event: an LLM edit shows in the pane without a second round trip.
+  scratchpadManager.on('scratchpad:changed', (scratchpad: Scratchpad) => {
+    for (const win of artifactWindowsFor(scratchpad.sessionId)) {
+      win.webContents.send('scratchpad:changed', scratchpad);
     }
   });
   setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordUser(data.includes('\r') ? SUBMIT_WEIGHT : 1, sessionId), patternMatcher, recycleBinManager);
@@ -978,6 +997,7 @@ export function registerIPCHandlers(
         logger.error(`[IPC] Failed to purge memories for removed session ${event.sessionId}: ${error}`);
       }
       artifactManager.clearSession(event.sessionId);
+      scratchpadManager.clearSession(event.sessionId);
       // No bin entry means no way back, so the phone's replay of this
       // conversation goes now too — same rule the bin's purge paths enforce.
       try {

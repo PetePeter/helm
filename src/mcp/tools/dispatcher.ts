@@ -60,6 +60,19 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
 }
 
 /**
+ * A scratchpad is written only by its own session (and its user). Naming
+ * another session is refused out loud: silently writing the caller's pad
+ * instead would look like success.
+ */
+function requireOwnScratchpad(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+  const own = requireCallerSession(authContext, tool);
+  if (args.sessionId !== undefined && args.sessionId !== own) {
+    throw new Error(`${tool} only writes your own session's scratchpad. Read another session's with session_scratchpad_get.`);
+  }
+  return own;
+}
+
+/**
  * Resolve the TARGET session for the session-addressed artifact tools. Unlike
  * the artifact_* family — which trusts the caller's own authContext because the
  * subject is always "mine" — these take the session as an argument, so the
@@ -713,6 +726,23 @@ export async function callMcpTool(
           : requireCallerSession(authContext, 'session_mission_set');
         return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
       }
+      case 'session_scratchpad_get': {
+        const target = typeof args.sessionId === 'string' && args.sessionId.trim()
+          ? args.sessionId
+          : requireCallerSession(authContext, 'session_scratchpad_get');
+        return service.getSessionScratchpad(target);
+      }
+      case 'session_scratchpad_set':
+        return service.setSessionScratchpad(
+          requireOwnScratchpad(authContext, args, 'session_scratchpad_set'),
+          asStringValue(args.text, 'text is required'),
+          asFiniteNumber(args.revision, 'revision is required: pass the revision from session_scratchpad_get'),
+        );
+      case 'session_scratchpad_append':
+        return service.appendSessionScratchpad(
+          requireOwnScratchpad(authContext, args, 'session_scratchpad_append'),
+          asString(args.text, 'text is required'),
+        );
       case 'session_rename':
         return service.renameSession(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),

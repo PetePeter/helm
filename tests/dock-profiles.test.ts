@@ -16,6 +16,7 @@ import {
   PANE_MEMORIES,
   PANE_MESS,
   PANE_PLAN_SCREEN,
+  PANE_SCRATCHPAD,
   PANE_SESSIONS,
   PANE_TERMINAL,
   isProfilePane,
@@ -32,7 +33,7 @@ import {
 import { loadDockLayout, LEGACY_SIDEBAR_WIDTH_KEY } from '../renderer/dock-persistence.js';
 import { listRegisteredPanes } from '../renderer/composables/useDockWorkspace.js';
 
-const POPOUT_PANES = [PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS];
+const POPOUT_PANES = [PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_SCRATCHPAD];
 
 describe('dock profiles', () => {
   it('derives the main profile from the registry rather than re-listing it', () => {
@@ -76,10 +77,10 @@ describe('createDefaultLayout(profile)', () => {
     const centre = children.find((child): child is DockGroupNode => child.type === 'group');
     expect(centre?.tabs).toEqual([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS]);
 
-    // Artifacts is the only tool pane in the profile, and it homes right.
+    // The profile's tool panes are per-session ones, and both home right.
     const edge = children.find((child): child is DockDockNode => child.type === 'dock');
     expect(edge?.side).toBe('right');
-    expect(listPanes(edge ?? null)).toEqual([PANE_ARTIFACTS]);
+    expect(listPanes(edge ?? null)).toEqual([PANE_ARTIFACTS, PANE_SCRATCHPAD]);
   });
 
   it('validates against its own profile', () => {
@@ -152,7 +153,7 @@ describe('listRegisteredPanes(layout, profile)', () => {
 
   it('lists only the profile panes for a popout', () => {
     const listed = listRegisteredPanes(createDefaultLayout('popout'), 'popout');
-    expect(listed).toHaveLength(5);
+    expect(listed).toHaveLength(POPOUT_PANES.length);
     expect(listed.map(p => p.id).sort()).toEqual([...POPOUT_PANES].sort());
     expect(listed.every(p => p.closed === false)).toBe(true);
   });

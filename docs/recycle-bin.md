@@ -134,6 +134,9 @@ Artifacts are ephemeral per-session reports, and their lifetime is bound to the 
 | Entry ages out at runtime | `recycle-bin:expired` fires → `clearSession` per expired entry |
 | Startup | `pruneOrphanArtifacts` reclaims artifacts whose session is neither live nor in the bin |
 
+The session's [scratchpad](scratchpad.md) follows the same table: kept while the
+session is in the bin, deleted on Forget, Empty and expiry, reclaimed at startup.
+
 The `recycle-bin:expired` event exists because startup pruning only covers restarts;
 an entry that crosses the 30-day line while the app is running would otherwise leave
 its artifacts stranded.

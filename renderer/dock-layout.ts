@@ -21,6 +21,7 @@ import {
   PANE_MEMORIES,
   PANE_MESS,
   PANE_TIMESHEET,
+  PANE_SCRATCHPAD,
   PANE_QUICK_SPAWN,
   PANE_SCHEDULER,
   PANE_SESSIONS,
@@ -86,8 +87,8 @@ const DEFAULT_DOCK_MODES: Partial<Record<DockSide, DockMode>> = { right: 'autohi
 
 /**
  * The Classic layout — a close reproduction of the pre-docking UI: session list
- * and tool windows on the left, the view group in the centre, and Artifacts as a
- * collapsed right-edge rail.
+ * and tool windows on the left, the view group in the centre, and Artifacts with
+ * the Scratchpad as a collapsed right-edge rail.
  *
  * Kept as a literal rather than derived: the left column's split between the
  * session list and the stacked tool windows is a hand-tuned arrangement that no
@@ -102,7 +103,7 @@ function createClassicLayout(): DockWorkspaceLayout {
         group([PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES], PANE_SCHEDULER),
       ], [0.6, 0.4])),
       group([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], PANE_TERMINAL),
-      dock('right', 'autohide', group([PANE_ARTIFACTS])),
+      dock('right', 'autohide', group([PANE_ARTIFACTS, PANE_SCRATCHPAD], PANE_ARTIFACTS)),
     ], [0.22, 0.56, 0.22]),
     closed: [],
   };

@@ -58,7 +58,7 @@ and the View menu all read one allow-list.
 | Profile | Panes | Window |
 |---------|-------|--------|
 | `main` | every registered pane (derived, never re-listed), including runtime panes | `MainWindowApp.vue` |
-| `popout` | terminal, plans, memories, mess, artifacts | `SnapOutWindow.vue` |
+| `popout` | terminal, plans, memories, mess, artifacts, scratchpad | `SnapOutWindow.vue` |
 
 The pop-out omits the session list, quick spawn, scheduler and projects: those
 act on things the main shell owns.
@@ -227,8 +227,8 @@ projection before normalizing the persisted tree.
 
 The Classic default is one horizontal root split with three tracks: the left
 tool dock (session list over the stacked tool windows), the view group
-(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts as a
-collapsed right-edge rail.
+(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts with the
+[Scratchpad](scratchpad.md) as a collapsed right-edge rail.
 
 **Retired panes.** A saved layout may name a pane that no longer exists — the
 `overview` pane (Team View, replaced by

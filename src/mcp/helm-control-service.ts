@@ -70,6 +70,8 @@ import {
 } from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
+import type { ScratchpadManager } from '../session/scratchpad-manager.js';
+import { SCRATCHPAD_MAX_BYTES, scratchpadBytes, type Scratchpad, type ScratchpadRefusal, type ScratchpadWriteResult } from '../types/scratchpad.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
 import { MessManager } from '../session/mess-manager.js';
@@ -270,6 +272,21 @@ interface McpSkillSummary {
  * Thin facade that delegates all MCP tool operations to domain-focused service classes.
  * The constructor signature and public method names are preserved for backward compatibility.
  */
+/**
+ * What a scratchpad write tells the LLM. A success omits the text (the caller
+ * just sent it); a stale refusal carries it, since that is what must be redone.
+ */
+export type McpScratchpadWrite =
+  | { ok: true; revision: number; bytes: number; maxBytes: number }
+  | { ok: false; reason: ScratchpadRefusal; message: string; revision: number; bytes: number; maxBytes: number; text?: string };
+
+function toMcpScratchpadWrite(result: ScratchpadWriteResult): McpScratchpadWrite {
+  const { text, revision } = result.scratchpad;
+  const size = { revision, bytes: scratchpadBytes(text), maxBytes: SCRATCHPAD_MAX_BYTES };
+  if (result.ok) return { ok: true, ...size };
+  return { ok: false, reason: result.reason, message: result.message, ...size, ...(result.reason === 'stale' ? { text } : {}) };
+}
+
 export class HelmControlService extends EventEmitter {
   // Composed services
   private readonly sessionDelivery: HelmSessionDeliveryService;
@@ -290,6 +307,7 @@ export class HelmControlService extends EventEmitter {
   private ringRetry: RingRetry | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
+  private scratchpadManager?: ScratchpadManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
   private artifactAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
@@ -479,6 +497,12 @@ export class HelmControlService extends EventEmitter {
   /** Wire the RuntimeGroupManager so session_create can place into runtime groups. */
   setRuntimeGroupManager(manager: import('../session/runtime-group-manager.js').RuntimeGroupManager): void {
     this.sessionService.setRuntimeGroupManager(manager);
+  }
+
+  /** Wire the ScratchpadManager behind the session_scratchpad_* MCP tools. */
+  setScratchpadManager(manager: ScratchpadManager): void {
+    this.scratchpadManager = manager;
+    this.sessionService.setSessionScratchpadCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
   }
 
   /** Wire the ArtifactManager so the artifact_* MCP tools can produce session reports. */
@@ -1501,6 +1525,34 @@ export class HelmControlService extends EventEmitter {
 
   setSessionMission(sessionRef: string, text: string) {
     return this.sessionService.setSessionMission(sessionRef, text);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session scratchpad (one plain-text pad per session, shared with the user)
+  // ---------------------------------------------------------------------------
+
+  private scratchpadOf(sessionRef: string): { manager: ScratchpadManager; sessionId: string } {
+    if (!this.scratchpadManager) throw new Error('Scratchpads are not available: ScratchpadManager is not configured.');
+    const session = this.sessionService.getSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    return { manager: this.scratchpadManager, sessionId: session.id };
+  }
+
+  getSessionScratchpad(sessionRef: string): Scratchpad & { bytes: number; maxBytes: number } {
+    const { manager, sessionId } = this.scratchpadOf(sessionRef);
+    const scratchpad = manager.get(sessionId);
+    return { ...scratchpad, bytes: scratchpadBytes(scratchpad.text), maxBytes: SCRATCHPAD_MAX_BYTES };
+  }
+
+  setSessionScratchpad(sessionRef: string, text: string, revision: number): McpScratchpadWrite {
+    if (!Number.isInteger(revision) || revision < 0) throw new Error('revision must be a whole number, 0 or more');
+    const { manager, sessionId } = this.scratchpadOf(sessionRef);
+    return toMcpScratchpadWrite(manager.set(sessionId, text, 'ai', revision));
+  }
+
+  appendSessionScratchpad(sessionRef: string, text: string): McpScratchpadWrite {
+    const { manager, sessionId } = this.scratchpadOf(sessionRef);
+    return toMcpScratchpadWrite(manager.append(sessionId, text, 'ai'));
   }
 
   // ---------------------------------------------------------------------------

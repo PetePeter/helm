@@ -243,6 +243,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setApiContextSizeLookup = vi.fn();
     this.sessionChangeFeed = { attach: vi.fn(), on: vi.fn(), off: vi.fn(), seq: 0 };
     this.setArtifactManager = vi.fn();
+    this.setScratchpadManager = vi.fn();
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
     this.setHandoverDelivery = vi.fn();

@@ -138,6 +138,7 @@ beforeEach(() => {
     memoryList: vi.fn().mockResolvedValue([]),
     memoryGraphAll: vi.fn().mockResolvedValue({ records: [], edges: [] }),
     artifactList: vi.fn().mockResolvedValue([]),
+    scratchpadGet: vi.fn(async (sessionId: string) => ({ sessionId, text: '', revision: 0 })),
     planList: vi.fn().mockResolvedValue([]),
     planDeps: vi.fn().mockResolvedValue([]),
     planSequenceList: vi.fn().mockResolvedValue([]),

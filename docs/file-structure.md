@@ -20,6 +20,7 @@ src/
 │       ├── system-handlers.ts  # system:openLogsFolder
 │       ├── telegram-handlers.ts # Telegram bot settings CRUD, bot start/stop IPC
 │       ├── draft-handlers.ts   # 5 IPC channels (draft:create/update/delete/list/count) wired to DraftManager
+│       ├── scratchpad-handlers.ts # scratchpad:get / scratchpad:set (the user's side of the session scratchpad)
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
@@ -44,6 +45,8 @@ src/
 │   ├── notification-manager.ts # Windows toast notifications (Electron Notification API, activity-change triggers for implementing/planning sessions, dedup, click-to-focus)
 │   ├── initial-prompt.ts       # Sequence syntax → PTY escape codes, configurable delay, onComplete callback
 │   ├── draft-manager.ts        # Per-session draft prompt CRUD (EventEmitter, emits draft:changed, persisted to config/drafts.yaml)
+│   ├── scratchpad-manager.ts   # Per-session scratchpad shared by the user and the session's LLM (revision-checked writes, 64 KB cap)
+│   ├── scratchpad-persistence.ts # Scratchpad file store: one JSON file per session under config/scratchpads/
 │   ├── plan-manager.ts         # Per-directory plan DAG CRUD (EventEmitter, emits plan:changed, cycle prevention via DFS, ready-state computation, persisted to config/plans/*.json)
 │   ├── mess-manager.ts         # Project-scoped durable coordination, ordered unread cursors, bounded history, and mess:appended events
 │   ├── operator-session-manager.ts # Keeps exactly one locked role=operator "Helm" session (voice router); ensure() on startup + settings save
@@ -186,6 +189,7 @@ renderer/
 │   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
+│   │   ├── ScratchpadPane.vue  # Scratchpad tool window: plain textarea over the active session's pad
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
 │   └── panels/
 │       ├── index.ts
@@ -375,6 +379,9 @@ tests/                                  # 63 test files
 ├── context-menu.test.ts        # Context menu overlay tests
 ├── draft-editor.test.ts        # Draft editor panel tests
 ├── draft-manager.test.ts       # DraftManager CRUD + events
+├── scratchpad-manager.test.ts  # ScratchpadManager over its real file store: stale writes, cap, lifecycle
+├── scratchpad-handlers.test.ts # Scratchpad IPC: user authorship, stale hand-back, unknown session refused
+├── mcp-session-scratchpad.test.ts # session_scratchpad_get/_set/_append through the dispatcher
 ├── draft-persistence.test.ts   # Draft save/load persistence
 ├── mess-manager.test.ts        # Project membership, ordered unread cursors, visibility, and cursor-neutral history
 ├── mess-persistence.test.ts    # JSONL persistence, atomic metadata, sequence recovery, pruning, and diagnostics

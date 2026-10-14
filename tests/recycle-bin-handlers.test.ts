@@ -36,6 +36,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 const { RecycleBinManager } = await import('../src/session/recycle-bin-manager.js');
 const { ArtifactManager } = await import('../src/session/artifact-manager.js');
+const { ScratchpadManager } = await import('../src/session/scratchpad-manager.js');
 const { setupRecycleBinHandlers } = await import('../src/electron/ipc/recycle-bin-handlers.js');
 
 function getHandler(channel: string): Function {
@@ -135,5 +136,74 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
     });
 
     expect(art.count('s1')).toBe(0); // expired entry's artifacts reclaimed at runtime
+  });
+});
+
+describe('recycle-bin handlers: scratchpad lifecycle', () => {
+  let bin: InstanceType<typeof RecycleBinManager>;
+  let pads: InstanceType<typeof ScratchpadManager>;
+  let files: Map<string, unknown>;
+  let nowVal: number;
+
+  beforeEach(() => {
+    diskStore = [];
+    handleCalls.clear();
+    nowVal = 1_700_000_000_000;
+    files = new Map();
+    bin = new RecycleBinManager(() => nowVal);
+    pads = new ScratchpadManager({
+      load: (id) => (files.get(id) as never) ?? null,
+      save: (pad) => { files.set(pad.sessionId, pad); },
+      remove: (id) => { files.delete(id); },
+      list: () => [...files.keys()],
+    });
+    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, undefined, pads);
+  });
+
+  function binSession(sessionId: string): RecycleBinEntry {
+    pads.set(sessionId, `notes of ${sessionId}`, 'user', 0);
+    return bin.append({
+      sessionId, name: 'claude', cliType: 'claude-code', workingDir: 'X:\\work',
+      cliSessionName: 'uuid-' + sessionId, closedAt: nowVal,
+    });
+  }
+
+  it('keeps the pad while the session sits in the bin and through a restore', async () => {
+    const entry = binSession('s1');
+    expect(files.has('s1')).toBe(true);
+
+    await getHandler('recycleBin:restore')(null, entry.id);
+    await getHandler('recycleBin:commitRestore')(null, entry.id);
+
+    expect(bin.count()).toBe(0);
+    expect(pads.get('s1').text).toBe('notes of s1');
+    expect(files.has('s1')).toBe(true);
+  });
+
+  it('Forget deletes exactly that session\'s pad', async () => {
+    const entry = binSession('s1');
+    binSession('s2');
+
+    await getHandler('recycleBin:forget')(null, entry.id);
+
+    expect([...files.keys()]).toEqual(['s2']);
+    expect(pads.get('s1')).toEqual({ sessionId: 's1', text: '', revision: 0 });
+  });
+
+  it('Empty deletes every binned session\'s pad', async () => {
+    binSession('s1');
+    binSession('s2');
+
+    await getHandler('recycleBin:empty')(null);
+
+    expect(files.size).toBe(0);
+  });
+
+  it('an entry that ages out of the bin takes its pad with it', () => {
+    binSession('s1');
+    nowVal += 30 * 24 * 60 * 60 * 1000 + 1;
+    binSession('s2');
+
+    expect([...files.keys()]).toEqual(['s2']);
   });
 });

@@ -160,6 +160,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/drafts.md](docs/drafts.md) | Per-session draft prompt memos |
 | [docs/time-tracking.md](docs/time-tracking.md) | Per-project time tracking — 5-min You/AI slots, origin-tagged input, JSONL store, Timesheet pane + CSV |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
+| [docs/scratchpad.md](docs/scratchpad.md) | Per-session scratchpad — one plain-text pad the user (dock pane) and the session's LLM (`session_scratchpad_*`) both write, stale-write refusal, 64 KB cap, deleted with the session |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
 | [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Quick Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |
 | [docs/mess.md](docs/mess.md) | Durable local project conversation, ordered cursors, best-effort reminders, and read-only observer pane |
