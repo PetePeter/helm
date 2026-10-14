@@ -21,9 +21,13 @@ export interface SessionContextUsageTrackerOptions {
   resolve: (session: SessionInfo) => SessionContextSize | undefined;
   /** Delay hook refreshes until the CLI has finished writing its transcript. */
   refreshDelayMs?: number;
+  /** Floor between transcript reads for one session, so a tool-heavy turn does not re-read per call. */
+  minRefreshIntervalMs?: number;
 }
 
-const REFRESH_EVENTS = new Set<HookEvent['event']>(['SessionStart', 'Stop', 'StopFailure']);
+const REFRESH_EVENTS = new Set<HookEvent['event']>([
+  'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'StopFailure',
+]);
 
 /**
  * Keeps a persisted, last-known context snapshot on each session. Initial
@@ -36,6 +40,8 @@ export class SessionContextUsageTracker {
   private readonly sessionManager: SessionUsageStore;
   private readonly resolve: SessionContextUsageTrackerOptions['resolve'];
   private readonly refreshDelayMs: number;
+  private readonly minRefreshIntervalMs: number;
+  private readonly lastRefreshAt = new Map<string, number>();
   private hookSource?: HookEventSource;
   private readonly refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private hydrationTimer?: ReturnType<typeof setTimeout>;
@@ -47,6 +53,7 @@ export class SessionContextUsageTracker {
     this.sessionManager = options.sessionManager;
     this.resolve = options.resolve;
     this.refreshDelayMs = options.refreshDelayMs ?? 300;
+    this.minRefreshIntervalMs = options.minRefreshIntervalMs ?? 2000;
   }
 
   start(hookSource: HookEventSource): void {
@@ -68,6 +75,7 @@ export class SessionContextUsageTracker {
       this.sessionManager.off('session:updated', this.onSession);
     }
     this.attemptedPath.clear();
+    this.lastRefreshAt.clear();
     this.hookSource = undefined;
     for (const timer of this.refreshTimers.values()) clearTimeout(timer);
     this.refreshTimers.clear();
@@ -87,13 +95,15 @@ export class SessionContextUsageTracker {
     this.scheduleRefresh(session.id);
   };
 
+  /** Trailing throttle: one pending read per session, so the last value of a burst always lands. */
   private scheduleRefresh(sessionId: string): void {
-    const previous = this.refreshTimers.get(sessionId);
-    if (previous !== undefined) clearTimeout(previous);
+    if (this.refreshTimers.has(sessionId)) return;
+    const sinceLast = Date.now() - (this.lastRefreshAt.get(sessionId) ?? -Infinity);
+    const delay = Math.max(this.refreshDelayMs, this.minRefreshIntervalMs - sinceLast);
     const timer = setTimeout(() => {
       this.refreshTimers.delete(sessionId);
       this.refresh(sessionId);
-    }, this.refreshDelayMs);
+    }, delay);
     this.refreshTimers.set(sessionId, timer);
   }
 
@@ -110,6 +120,7 @@ export class SessionContextUsageTracker {
   private refresh(sessionId: string): void {
     const session = this.sessionManager.getSession(sessionId);
     if (!session) return;
+    this.lastRefreshAt.set(sessionId, Date.now());
     if (session.cliTranscriptPath) this.attemptedPath.set(sessionId, session.cliTranscriptPath);
     try {
       const context = this.resolve(session);

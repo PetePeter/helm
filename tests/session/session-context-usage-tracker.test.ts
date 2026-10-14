@@ -43,6 +43,31 @@ function hook(event: HookEvent['event'], sessionId: string): HookEvent {
 afterEach(() => vi.useRealTimers());
 
 describe('SessionContextUsageTracker', () => {
+  it('refreshes mid-turn on tool calls, at most once per interval, ending on the latest value', async () => {
+    vi.useFakeTimers();
+    const manager = fakeSessionManager([makeSession('busy')]);
+    let tokens = 1000;
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: true, tokens, source: 'transcript' }),
+    });
+    const hooks = new EventEmitter();
+    tracker.start(hooks);
+    await vi.runAllTimersAsync();
+    manager.updates.length = 0;
+
+    for (let i = 0; i < 5; i++) {
+      tokens += 100;
+      hooks.emit('hook', hook('PostToolUse', 'busy'));
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    await vi.runAllTimersAsync();
+
+    expect(manager.updates.length).toBeLessThanOrEqual(2);
+    expect(manager.getSession('busy')?.contextUsage?.tokens).toBe(1500);
+    tracker.stop();
+  });
+
   it('reads a transcript path that arrives after startup, once, without waiting for a hook', async () => {
     vi.useFakeTimers();
     const manager = fakeSessionManager([makeSession('resumed', { cliTranscriptPath: undefined })]);
