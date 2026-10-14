@@ -20,6 +20,7 @@ import {
   type ChatMessage,
   type ToolSpec,
 } from './api-agent-loop.js';
+import { DiscardTable } from './api-discard.js';
 
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
@@ -96,6 +97,8 @@ export interface ApiSessionDeps {
    */
   onContextShrunk?: (reason: 'compacted' | 'deleted', before: number | undefined, after: number | undefined) => void;
   banner?: string;
+  /** The clock a refused lookup is told its times by. */
+  now?: () => Date;
 }
 
 /**
@@ -214,11 +217,14 @@ export class ApiSessionProcess implements PtyProcess {
   private injected: string[] = [];
   /** The model's own checkpoints (label → history index); any rewrite of history invalidates them. */
   private readonly checkpoints = new Map<string, number>();
+  /** Lookups the model threw away. Not history: it outlives compaction and forgetting, and ends with the conversation. */
+  private readonly discards: DiscardTable;
   /** The context size the server last reported (or its estimate after a shrink). */
   private contextTokens: number | undefined;
 
   constructor(private readonly deps: ApiSessionDeps) {
     this.history = [...deps.history];
+    this.discards = new DiscardTable(deps.now);
   }
 
   onData = (callback: (data: string) => void): void => {
@@ -427,6 +433,7 @@ export class ApiSessionProcess implements PtyProcess {
       : [];
     this.contextTokens = undefined;
     this.checkpoints.clear();
+    this.discards.clear();
     this.deps.saveHistory(this.history);
     this.emit(`${DIM}(history cleared)${RESET}\r\n`);
   }
@@ -520,6 +527,7 @@ export class ApiSessionProcess implements PtyProcess {
         signal: controller.signal,
         takeInjected: () => (this.injected.length ? this.injected.splice(0).join('\n\n') : null),
         checkpoints: this.checkpoints,
+        discards: this.discards,
       }));
       this.history = result.history;
       this.deps.saveHistory(this.history);
@@ -558,6 +566,9 @@ export class ApiSessionProcess implements PtyProcess {
         return;
       case 'rollback':
         this.emit(`${CYAN}↺ rolled back to "${event.label}"${RESET}${DIM} (${event.dropped} messages forgotten)${RESET}\r\n`);
+        return;
+      case 'discard':
+        this.emit(`${CYAN}↺ discarded ${toTerminal(event.tried.join(', '))}${RESET}${DIM} (${event.dropped} messages forgotten)${RESET}\r\n`);
         return;
       case 'tool_result':
         this.emit(`${DIM}  ⎿ ${toTerminal(preview(event.result, MAX_RESULT_PREVIEW_LINES)).replace(/\r\n/g, '\r\n    ')}${RESET}\r\n`);

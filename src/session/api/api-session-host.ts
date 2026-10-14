@@ -17,6 +17,7 @@ import type { AuthContext, McpTool } from '../../mcp/tools/types.js';
 import { getToolReminder } from '../../mcp/tools/reminders.js';
 import type { HookEvent } from '../hooks/hook-normaliser.js';
 import { logger } from '../../utils/logger.js';
+import { DISCARD_TOOL, withForce } from './api-discard.js';
 import { CHECKPOINT_TOOL, createOpenAiChatClient, FORGET_TOOL, ROLLBACK_TOOL, type ChatClient, type ChatMessage, type ToolSpec } from './api-agent-loop.js';
 import { getNativeTool, truncateOutput } from './api-native-tools.js';
 import {
@@ -199,11 +200,12 @@ export class ApiSessionHost {
       this.pendingSubagents.delete(sessionName);
       this.lineage.set(sessionId, pending);
     }
-    const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
+    const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, DISCARD_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
     const offered = new Set([...toolNames, ...builtins.map((tool) => tool.name)]);
     // Helm MCP tools carry long schemas: only their names ride in the constant
     // prefix; load_tools discloses the rest on demand. Native tools stay loaded.
-    const spec = ({ name, description, parameters }: ToolSpec) => ({ name, description, parameters });
+    // A lookup tool is offered with `force`, which the loop reads and strips (api-discard.ts).
+    const spec = ({ name, description, parameters }: ToolSpec) => withForce({ name, description, parameters });
     // skill_get stays loaded: the skills directory points at it, so a load hop would be pure cost.
     const isCore = (tool: { source: string; name: string }) => tool.source === 'native' || tool.name === 'skill_get';
     const core = tools.filter(isCore).map(spec);
@@ -269,6 +271,7 @@ export class ApiSessionHost {
           .catch((err) => logger.warn(`[ApiSession] Could not post context update for ${sessionId}: ${String(err)}`));
       },
       banner: `API tool · ${api.model} @ ${api.baseUrl} · ${toolNames.length} tools`,
+      now,
     });
     this.processes.set(sessionId, proc);
     proc.onExit(() => {
