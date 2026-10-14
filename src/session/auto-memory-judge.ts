@@ -333,6 +333,11 @@ export class AutoMemoryRecorder {
   recordTurns(sessionId: string, turns: readonly JudgeTurn[]): Promise<JudgeOutcome> {
     const pass = (this.tails.get(sessionId) ?? Promise.resolve<JudgeOutcome>('off'))
       .then(() => this.judge(sessionId, turns))
+      .then((outcome) => {
+        // Said for every pass that asked the model: "nothing to keep" must not look like "never ran".
+        if (outcome !== 'off') logger.info(`[AutoMemory] Judge pass for ${sessionId}: ${outcome}`);
+        return outcome;
+      })
       .catch((err): JudgeOutcome => {
         logger.warn(`[AutoMemory] Judge pass failed for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`);
         return 'failed';
@@ -350,7 +355,10 @@ export class AutoMemoryRecorder {
       bound: this.deps.listBound(sessionId),
       budgetTokens: this.deps.budgetTokens,
     });
-    if (!window) return 'off';
+    if (!window) {
+      if (turns.length) logger.info(`[AutoMemory] Turn of ${sessionId} not judged: it does not fit the judge window`);
+      return 'off';
+    }
     const result = await this.deps.runner.runSilently({ system: JUDGE_SYSTEM_PROMPT, prompt: renderJudgePrompt(window) });
     if (result.status === 'inert') return 'off';
     if (result.status === 'failed') return 'failed';

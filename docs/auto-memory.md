@@ -42,7 +42,7 @@ The judge never opens a session. It asks `SilentRunner.runSilently({ prompt, sys
 | `{ status: 'inert', reason }` | No recording model is picked. No request was made. |
 | `{ status: 'failed', error }` | The request failed, the model returned no text, the picked type was deleted, or its headless run failed, timed out or has no command. |
 
-`runSilently` never throws, and a failure never reaches the user's chat: it is logged and returned.
+`runSilently` never throws, and a failure never reaches the user's chat: it is logged and returned. Every judge pass that asked the model leaves one log line, `[AutoMemory] Judge pass for <session>: nothing | created | updated | failed`, so a pass with nothing to keep cannot be mistaken for one that never ran; a turn too big for the window is logged as not judged.
 
 Callers depend on the interface only. Behind it, `RecordingModelRunner` resolves the picked CLI type and hands the request to the backend for its kind:
 
