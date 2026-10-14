@@ -18,8 +18,12 @@ function makeSession(id: string, extra: Partial<SessionInfo> = {}): SessionInfo 
 function fakeSessionManager(sessions: SessionInfo[]) {
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const updates: Array<{ id: string; value: Partial<SessionInfo> }> = [];
+  const events = new EventEmitter();
   return {
     updates,
+    on: (event: string, listener: (session: SessionInfo) => void) => events.on(event, listener),
+    off: (event: string, listener: (session: SessionInfo) => void) => events.off(event, listener),
+    announce: (id: string) => events.emit('session:updated', byId.get(id)),
     getAllSessions: () => [...byId.values()],
     getSession: (id: string) => byId.get(id),
     updateSession: (id: string, value: Partial<SessionInfo>) => {
@@ -39,6 +43,30 @@ function hook(event: HookEvent['event'], sessionId: string): HookEvent {
 afterEach(() => vi.useRealTimers());
 
 describe('SessionContextUsageTracker', () => {
+  it('reads a transcript path that arrives after startup, once, without waiting for a hook', async () => {
+    vi.useFakeTimers();
+    const manager = fakeSessionManager([makeSession('resumed', { cliTranscriptPath: undefined })]);
+    const resolved: string[] = [];
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: (session) => {
+        resolved.push(session.id);
+        return { known: false, reason: 'no-usage-yet' };
+      },
+    });
+    tracker.start(new EventEmitter());
+    await vi.runAllTimersAsync();
+    expect(resolved).toEqual([]);
+
+    manager.getSession('resumed')!.cliTranscriptPath = 'resumed.jsonl';
+    manager.announce('resumed');
+    manager.announce('resumed');
+    await vi.runAllTimersAsync();
+
+    expect(resolved).toEqual(['resumed']);
+    tracker.stop();
+  });
+
   it('hydrates missing transcript snapshots in the background and keeps cached rows untouched', async () => {
     vi.useFakeTimers();
     const manager = fakeSessionManager([

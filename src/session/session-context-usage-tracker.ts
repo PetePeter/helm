@@ -7,6 +7,8 @@ interface SessionUsageStore {
   getAllSessions(): SessionInfo[];
   getSession(sessionId: string): SessionInfo | null;
   updateSession(sessionId: string, updates: Partial<SessionInfo>): void;
+  on(event: 'session:added' | 'session:updated', listener: (session: SessionInfo) => void): unknown;
+  off(event: 'session:added' | 'session:updated', listener: (session: SessionInfo) => void): unknown;
 }
 
 interface HookEventSource {
@@ -26,7 +28,9 @@ const REFRESH_EVENTS = new Set<HookEvent['event']>(['SessionStart', 'Stop', 'Sto
 /**
  * Keeps a persisted, last-known context snapshot on each session. Initial
  * backfill yields between bounded transcript reads; later reads happen only
- * for the session whose hook reports a start or finished turn.
+ * for the session whose hook reports a start or finished turn, or whose
+ * transcript path first appears after startup (a resumed session may not
+ * finish a turn for a long while, and would otherwise show no label).
  */
 export class SessionContextUsageTracker {
   private readonly sessionManager: SessionUsageStore;
@@ -36,6 +40,8 @@ export class SessionContextUsageTracker {
   private readonly refreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private hydrationTimer?: ReturnType<typeof setTimeout>;
   private hydrationQueue: string[] = [];
+  /** Transcript path last read per session, so a path that yields no usage is not re-read on every update. */
+  private readonly attemptedPath = new Map<string, string>();
 
   constructor(options: SessionContextUsageTrackerOptions) {
     this.sessionManager = options.sessionManager;
@@ -47,6 +53,8 @@ export class SessionContextUsageTracker {
     if (this.hookSource) return;
     this.hookSource = hookSource;
     hookSource.on('hook', this.onHook);
+    this.sessionManager.on('session:added', this.onSession);
+    this.sessionManager.on('session:updated', this.onSession);
     this.hydrationQueue = this.sessionManager.getAllSessions()
       .filter((session) => !session.remote && !session.contextUsage && session.cliTranscriptPath)
       .map((session) => session.id);
@@ -54,7 +62,12 @@ export class SessionContextUsageTracker {
   }
 
   stop(): void {
-    if (this.hookSource) this.hookSource.off('hook', this.onHook);
+    if (this.hookSource) {
+      this.hookSource.off('hook', this.onHook);
+      this.sessionManager.off('session:added', this.onSession);
+      this.sessionManager.off('session:updated', this.onSession);
+    }
+    this.attemptedPath.clear();
     this.hookSource = undefined;
     for (const timer of this.refreshTimers.values()) clearTimeout(timer);
     this.refreshTimers.clear();
@@ -66,6 +79,12 @@ export class SessionContextUsageTracker {
   private readonly onHook = (event: HookEvent): void => {
     if (!event.helmSessionId || !REFRESH_EVENTS.has(event.event)) return;
     this.scheduleRefresh(event.helmSessionId);
+  };
+
+  private readonly onSession = (session: SessionInfo): void => {
+    const path = session.cliTranscriptPath;
+    if (session.remote || session.contextUsage || !path || this.attemptedPath.get(session.id) === path) return;
+    this.scheduleRefresh(session.id);
   };
 
   private scheduleRefresh(sessionId: string): void {
@@ -91,6 +110,7 @@ export class SessionContextUsageTracker {
   private refresh(sessionId: string): void {
     const session = this.sessionManager.getSession(sessionId);
     if (!session) return;
+    if (session.cliTranscriptPath) this.attemptedPath.set(sessionId, session.cliTranscriptPath);
     try {
       const context = this.resolve(session);
       const contextUsage = context?.known
