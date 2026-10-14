@@ -5,13 +5,14 @@
  * compatibility alias for non-Vue modules still being migrated.
  */
 
-import type { UserPromptSource } from '../src/types/session.js';
+import type { SessionContextUsageSnapshot, UserPromptSource } from '../src/types/session.js';
 
 export interface Session {
   id: string;
   name: string;
   cliType: string;
   processId: number;
+  contextUsage?: SessionContextUsageSnapshot;
   workingDir?: string;
   projectId?: string;
   projectPath?: string;

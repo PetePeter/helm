@@ -13,8 +13,9 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
-import type { UserPromptSource } from '../../../src/types/session.js';
+import type { SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
+import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 
 function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
@@ -26,6 +27,7 @@ export interface SessionCardSession {
   id: string;
   name: string;
   cliType: string;
+  contextUsage?: SessionContextUsageSnapshot;
   title?: string;
   cliSessionName?: string;
   /** Epoch ms when the session was first spawned. */
@@ -208,6 +210,8 @@ const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
 });
+const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
+const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
 
 // --- Runtime group badge + drag ---
 
@@ -462,6 +466,12 @@ function onCardClick(e: MouseEvent): void {
         <span v-if="metaText" class="session-meta" :title="metaText">
           {{ metaText }}
         </span>
+        <span
+          v-if="contextUsageText"
+          class="session-context-usage"
+          :title="contextUsageTooltip"
+          :aria-label="contextUsageTooltip"
+        >{{ contextUsageText }}</span>
       </template>
     </div>
 
@@ -506,6 +516,12 @@ function onCardClick(e: MouseEvent): void {
 .session-card { position: relative; isolation: isolate; }
 .session-card.peer-stale { opacity: 0.72; }
 .session-card.interaction-disabled { cursor: default; }
+.session-context-usage {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
 .session-prompt-fade {
   position: absolute;
   inset: 0;

@@ -891,6 +891,15 @@ describe('ApiSessionHost', () => {
     expect(usages[0]).toMatchObject({ thoughtCount: 1, toolCalls: 0 });
   });
 
+  it('/clear refreshes desktop context usage after resetting API history', async () => {
+    const changed: string[] = [];
+    const { host } = makeHost([], { onContextUsageChanged: (sessionId) => changed.push(sessionId) });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'clear-context', api });
+
+    proc.write('/clear\r');
+    await vi.waitFor(() => expect(changed).toEqual(['s1']));
+  });
+
   it('does not double-post when the model replied through chat_send itself', async () => {
     const { host, dispatched, hooks } = makeHost([
       { content: '', tool_calls: [toolCall('c1', 'chat_send', '{"message":"hi from model"}')] },

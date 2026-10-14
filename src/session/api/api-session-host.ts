@@ -61,6 +61,8 @@ export interface ApiSessionHostDeps {
   postChat: (sessionId: string, message: string, usage: ChatTurnUsage) => Promise<unknown>;
   /** Feed a synthetic hook event to the tracker, so dots/flash/plan settlement match a hooked CLI. */
   emitHook: (event: HookEvent) => void;
+  /** Refresh the desktop row after an API context operation changes in-memory usage. */
+  onContextUsageChanged?: (sessionId: string) => void;
   /**
    * The per-prompt hook context (suggestions, mission, rules, nudges) a hooked
    * CLI would be injected with. `tools` = every tool the session is offered;
@@ -266,6 +268,7 @@ export class ApiSessionHost {
       },
       // The badge on this note is the new context count; the next reply's badge is the server's truth.
       onContextShrunk: (reason, _before, after) => {
+        this.deps.onContextUsageChanged?.(sessionId);
         if (after === undefined || this.lineage.has(sessionId)) return;
         this.deps.postChat(sessionId, reason === 'compacted' ? '(context compacted)' : '(deleted from context)', { contextTokens: after, toolCalls: 0 })
           .catch((err) => logger.warn(`[ApiSession] Could not post context update for ${sessionId}: ${String(err)}`));

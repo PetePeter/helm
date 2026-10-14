@@ -424,6 +424,7 @@ export class ApiSessionProcess implements PtyProcess {
 
   /** `/clear` — what session_clear sends by default — starts a fresh conversation. */
   private clearHistory(): void {
+    const before = this.contextTokens;
     const manifesto = this.deps.getManifestoContext?.().trim();
     this.history = manifesto
       ? [
@@ -436,6 +437,7 @@ export class ApiSessionProcess implements PtyProcess {
     this.discards.clear();
     this.deps.saveHistory(this.history);
     this.emit(`${DIM}(history cleared)${RESET}\r\n`);
+    this.deps.onContextShrunk?.('deleted', before, this.contextTokens);
   }
 
   /**

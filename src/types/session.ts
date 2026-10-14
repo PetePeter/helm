@@ -17,6 +17,13 @@ export type ActivityLevel = 'active' | 'inactive' | 'idle';
 /** Surface where the user most recently submitted a prompt. */
 export type UserPromptSource = 'terminal' | 'phone';
 
+/** Last known current-context usage, cached so session rows need no transcript reads. */
+export interface SessionContextUsageSnapshot {
+  tokens: number;
+  window?: number;
+  measuredAtIso?: string;
+}
+
 /** Reserved identity for an embedded command shell that has no configured CLI type. */
 export const BUILTIN_SHELL_CLI_TYPE = 'shell';
 
@@ -51,6 +58,8 @@ export interface SessionInfo {
   /** Absolute path of the CLI's own conversation log, as reported by its hooks
    *  (`transcript_path`). Source for quick compact and CLI switch. Newest wins. */
   cliTranscriptPath?: string;
+  /** Last known context size, refreshed at turn boundaries and persisted for the session row. */
+  contextUsage?: SessionContextUsageSnapshot;
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
   /** Telegram forum topic ID for this session's topic thread. The typed view of

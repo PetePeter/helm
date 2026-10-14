@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { dormantAfterMs } from '../../session/prompt-staleness.js';
 import { AutoFreezer } from '../../session/auto-freezer.js';
 import { KeepWarmer } from '../../session/keep-warmer.js';
+import { SessionContextUsageTracker } from '../../session/session-context-usage-tracker.js';
 import { BrowserWindow, app, dialog, ipcMain, net, powerMonitor } from 'electron';
 import { getMessageFlightTimeoutMs, type SessionMessageFlight } from '../../session/message-flight.js';
 import { SessionManager } from '../../session/manager.js';
@@ -482,6 +483,7 @@ export function registerIPCHandlers(
 
   // API tools: Helm hosts the agent loop for CLI types with an `api` block.
   // Tools dispatch through the MCP server's own path under the session's identity.
+  let sessionContextUsageTracker: SessionContextUsageTracker | undefined;
   const apiSessionHost = new ApiSessionHost({
     dispatchTool: (name, args, auth) => localhostMcpServer.dispatchForPeer(name, args, auth),
     postChat: (sessionId, message, usage) => helmControlService.sendTelegramChat(sessionId, message, undefined, usage),
@@ -507,6 +509,7 @@ export function registerIPCHandlers(
       helmControlService.submitSkillFeedback(skillId, 1, `${name}: ${purpose}`, example, auth);
     },
     emitHook: (event) => hookReceiver.emit('hook', event),
+    onContextUsageChanged: (sessionId) => sessionContextUsageTracker?.refreshSession(sessionId),
     // Bound lazily: the injector is built further down, after the managers it reads.
     promptContext: (sessionId, prompt, tools) => contextInjector.promptContext(sessionId, prompt, tools),
     // A record with an originId came in from the user; the rest are the session's own replies.
@@ -556,6 +559,11 @@ export function registerIPCHandlers(
   });
   sessionManager.on('session:removed', (event: { sessionId: string }) => cliAutoMemory.forget(event.sessionId));
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
+  sessionContextUsageTracker = new SessionContextUsageTracker({
+    sessionManager,
+    resolve: (session) => helmControlService.getSessionContextSize(session.id),
+  });
+  sessionContextUsageTracker.start(hookReceiver);
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
   const patternMatcher = new PatternMatcher(
@@ -1501,6 +1509,7 @@ export function registerIPCHandlers(
       // Latch shutdown first: everything below can kill PTYs, and a PTY dying
       // because the app is quitting must not be mistaken for a closed session.
       ptyManager.beginShutdown();
+      sessionContextUsageTracker.stop();
       if (telegramAutoStartTimer) clearTimeout(telegramAutoStartTimer);
       if (mcpStartTimer) clearTimeout(mcpStartTimer);
       cleanupTelegram();

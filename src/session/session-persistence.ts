@@ -1,7 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import * as YAML from 'yaml';
 import { logger } from '../utils/logger.js';
-import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo, type UserPromptSource } from '../types/session.js';
+import {
+  BUILTIN_SHELL_CLI_TYPE,
+  type SessionContextUsageSnapshot,
+  type SessionInfo,
+  type UserPromptSource,
+} from '../types/session.js';
 import { SESSIONS_FILE } from './persistence-paths.js';
 import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence-utils.js';
 import { normalizeProjectPath } from './project-identity.js';
@@ -20,6 +25,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(s.cliSessionName ? { cliSessionName: s.cliSessionName } : {}),
     ...(isString(s.cliThreadId) ? { cliThreadId: s.cliThreadId } : {}),
     ...(isString(s.cliTranscriptPath) ? { cliTranscriptPath: s.cliTranscriptPath } : {}),
+    ...(isContextUsageSnapshot(s.contextUsage) ? { contextUsage: s.contextUsage } : {}),
     ...(s.currentPlanId ? { currentPlanId: s.currentPlanId } : {}),
     // Generic per-provider chat bindings REPLACE the old Telegram-only topicId
     // on disk. serializeChatBindings derives the Telegram entry from topicId and
@@ -71,6 +77,13 @@ function isHookStall(value: unknown): value is SessionInfo['hookStall'] {
   return isRecord(value) && isNumber(value.at) && isString(value.reason);
 }
 
+function isContextUsageSnapshot(value: unknown): value is SessionContextUsageSnapshot {
+  return isRecord(value)
+    && isNumber(value.tokens) && value.tokens > 0
+    && (value.window === undefined || (isNumber(value.window) && value.window > 0))
+    && (value.measuredAtIso === undefined || isString(value.measuredAtIso));
+}
+
 function isUserPromptSource(value: unknown): value is UserPromptSource {
   return value === 'terminal' || value === 'phone';
 }
@@ -112,6 +125,9 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
         }
         if (session.cliTranscriptPath !== undefined && !isString(session.cliTranscriptPath)) {
           delete session.cliTranscriptPath;
+        }
+        if (session.contextUsage !== undefined && !isContextUsageSnapshot(session.contextUsage)) {
+          delete session.contextUsage;
         }
         if (session.mission !== undefined && !isSessionMission(session.mission)) {
           delete session.mission;

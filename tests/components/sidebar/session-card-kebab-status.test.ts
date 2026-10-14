@@ -15,15 +15,20 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
     props: {
       session: { id: 's1', name: 'worker', cliType: 'claude-code', ...session },
       navIndex: 0,
+      displayName: 'worker',
       isFocused,
       focusColumn,
       isActive: false,
       isEditing: false,
       sessionState: 'idle',
       activityLevel: 'idle',
+      loopContinues: 0,
+      pendingSubagents: 0,
       draftCount: 0,
       artifactCount: 0,
       elapsedText: '0:00:00:00',
+      workingPlanLabel: '',
+      workingPlanTooltip: '',
       isSnappedOut: false,
       llmNotifications: [],
       shortcutKey: null,
@@ -71,6 +76,16 @@ describe('SessionCard kebab and status icons', () => {
 
   it('a locked session still cannot be closed', () => {
     expect(mountCard({ locked: true }).find('.session-close').attributes('disabled')).toBeDefined();
+  });
+
+  it('shows cached context usage with an optional percentage and exact tooltip', () => {
+    const withWindow = mountCard({ contextUsage: { tokens: 18_400, window: 200_000 } });
+    expect(withWindow.find('.session-context-usage').text()).toBe('ctx 18.4k · 9%');
+    expect(withWindow.find('.session-context-usage').attributes('title')).toBe('18,400 context tokens · 9% of 200,000');
+
+    const withoutWindow = mountCard({ contextUsage: { tokens: 850 } });
+    expect(withoutWindow.find('.session-context-usage').text()).toBe('ctx 850');
+    expect(withoutWindow.find('.session-context-usage').attributes('title')).toBe('850 context tokens');
   });
 
   it('gamepad columns: 2 is the kebab, 3 is close', () => {

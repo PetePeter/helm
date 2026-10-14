@@ -1825,6 +1825,11 @@ export class HelmControlService extends EventEmitter {
     return getSessionInfo(this.sessionManager, authContext, context);
   }
 
+  /** Current context size for a desktop row cache; session_list stays transcript-free. */
+  getSessionContextSize(sessionId: string): SessionContextSize | undefined {
+    return this.sessionService.getSessionContextSize(sessionId);
+  }
+
   // ---------------------------------------------------------------------------
   // Telegram & notifications
   // ---------------------------------------------------------------------------
