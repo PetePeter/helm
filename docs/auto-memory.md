@@ -53,17 +53,17 @@ Callers depend on the interface only. Behind it, `RecordingModelRunner` resolves
 
 A real CLI has no request path: Helm only knows how to start it. `HeadlessCliRunner` (`src/session/headless-cli-runner.ts`) starts it once per pass with the type's **headless command**, a shell line that reads the prompt from one file and leaves the reply in another:
 
-| CLI family | Built-in headless command |
+| CLI family | Suggested headless command |
 |---|---|
 | Claude Code | `claude -p --no-session-persistence --strict-mcp-config --output-format text --tools "" < "{promptFile}" > "{outputFile}"` |
 | Codex | `codex exec --skip-git-repo-check --ephemeral --sandbox read-only -o "{outputFile}" - < "{promptFile}"` |
 | Copilot | none: its print mode only takes the prompt as an argument |
 
-The built-in commands live in code (`src/session/headless-command.ts`), keyed by the type's `provider`, and not in the shipped `cli-types.yaml`. That file only seeds a fresh install, so a default written there would never reach an existing one. A type's own `headlessCommand` (Tool Editor → Launch → Headless Command) overrides the built-in one: to name a cheaper model, to keep a profile, or to give a CLI of another family a command at all. A command without both `{promptFile}` and `{outputFile}` is refused.
+**A CLI type runs headless only with the command saved on it** (Tool Editor → Launch → Headless Command, `headlessCommand` in `cli-types.yaml`). Nothing is assumed from the type's family: one without a command is listed as "no headless command" and cannot be picked, so the line a pass runs is always one you can see and change. The table is what Helm *suggests* (`SUGGESTED_HEADLESS_COMMANDS` in `src/session/headless-command.ts`): the Tool Editor puts it in the field of a Claude Code or Codex type that has none, where it takes effect once the tool is saved; the shipped `cli-types.yaml` carries it for a fresh install; and the field's tooltip shows one as an example. A type set up before the field existed has none until its editor is opened and saved. Change the line to name a cheaper model, to keep a profile, or to give a CLI of another family a command. A command without both `{promptFile}` and `{outputFile}` is refused.
 
 Files, not arguments or the terminal: a prompt is many lines of anything and no shell quotes that reliably, and a reply scraped from a terminal carries the shell's echo and its colour codes. The placeholders are filled with bare file names in the run's working directory, never full paths: a `%`, `$` or backtick in one of the user's directory names would be code in a shell line.
 
-**The judged transcript is untrusted text handed to an agent**, and a tool result in it can try to give that agent orders. The built-in commands take its hands away: Claude Code runs with no tools (`--tools ""`) and no MCP servers, so it can only answer. Codex cannot switch its shell off, so it runs in its read-only sandbox: it can read files and say what it read, it cannot change anything. A `headlessCommand` of your own carries whatever limits you give it, and none if you give none.
+**The judged transcript is untrusted text handed to an agent**, and a tool result in it can try to give that agent orders. The suggested commands take its hands away: Claude Code runs with no tools (`--tools ""`) and no MCP servers, so it can only answer. Codex cannot switch its shell off, so it runs in its read-only sandbox: it can read files and say what it read, it cannot change anything. A `headlessCommand` of your own carries whatever limits you give it, and none if you give none.
 
 ```mermaid
 sequenceDiagram
@@ -185,7 +185,7 @@ Measured on 2026-10-14 against the local llama router, one two-turn "nothing to 
 
 Both answered `NOTHING` and found the fact in all three runs. Nearly all completion tokens are the model's reasoning. A first request after a model load took 12 to 21 s.
 
-A real CLI as the recording model, measured the same day with the built-in commands and a one-word reply: Claude Code about 6.7 s, Codex about 5.8 s, each one a fresh process carrying its whole agent prompt. Compare that with a second or so and under a thousand tokens for a small local model before picking one.
+A real CLI as the recording model, measured the same day with the suggested commands and a one-word reply: Claude Code about 6.7 s, Codex about 5.8 s, each one a fresh process carrying its whole agent prompt. Compare that with a second or so and under a thousand tokens for a small local model before picking one.
 
 ## Auto-recall
 

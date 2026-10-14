@@ -13,8 +13,15 @@ import PromptTextarea from '../common/PromptTextarea.vue';
 import { toolsClient } from '../../ipc/clients.js';
 import type { ToolEditorApiConfig, ToolEditorComfyUiConfig } from '../../stores/modal-bridge.js';
 import { cloneDefaultComfyUiConfig } from '../../../src/session/comfyui/comfyui-config.js';
+import { SUGGESTED_HEADLESS_COMMANDS } from '../../../src/session/headless-command.js';
 
 const MODAL_ID = 'tool-editor-modal';
+/** Tooltip of the Headless Command field: what it is for, and a line that works. */
+const HEADLESS_COMMAND_HINT = [
+  'Runs this CLI once, with no terminal, when it is the Auto memory recording model.',
+  'Helm writes the prompt to {promptFile} and reads the reply from {outputFile}: the line needs both.',
+  `Example: ${SUGGESTED_HEADLESS_COMMANDS.claude}`,
+].join('\n');
 const HELM_AUTOFILLED_ENV_ITEMS = [
   { name: 'HELM_MCP_TOKEN', value: '<autofilled by helm>' },
   { name: 'HELM_SESSION_ID', value: '<autofilled by helm>' },
@@ -589,7 +596,7 @@ defineExpose({ handleButton });
             <div class="te-field"><label for="te-spawn">Spawn Command</label><input id="te-spawn" v-model="spawnCommand" type="text" placeholder="e.g. codex --dangerously-bypass-approvals-and-sandbox" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-resume">Resume Command</label><input id="te-resume" v-model="resumeCommand" type="text" placeholder="Template for resuming sessions" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-continue">Continue Command</label><input id="te-continue" v-model="continueCommand" type="text" placeholder="Template for continuing sessions" class="te-input te-input--mono" /></div>
-            <div class="te-field"><label for="te-headless">Headless Command</label><input id="te-headless" v-model="headlessCommand" type="text" placeholder="Runs the CLI once as the recording model: … < &quot;{promptFile}&quot; > &quot;{outputFile}&quot;. Blank = built-in for Claude Code and Codex" class="te-input te-input--mono" /></div>
+            <div class="te-field"><label for="te-headless">Headless Command</label><input id="te-headless" v-model="headlessCommand" type="text" :title="HEADLESS_COMMAND_HINT" placeholder="Blank = this tool cannot be the Auto memory recording model" class="te-input te-input--mono" /></div>
             <div class="te-field"><label for="te-rename">Rename Command</label><input id="te-rename" v-model="renameCommand" type="text" placeholder="Template for renaming sessions" class="te-input te-input--mono" /></div>
           </fieldset>
 

@@ -1,4 +1,4 @@
-import { headlessCommandFor, headlessCommandProblem } from '../session/headless-command.js';
+import { headlessCommandProblem } from '../session/headless-command.js';
 import * as fs from 'fs';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../session/prompt-staleness.js';
 import * as path from 'path';
@@ -239,7 +239,7 @@ export interface CliTypeConfig {
   continueCommand?: string;
   /** Shell line that runs the CLI once with no terminal UI, for a silent recording-model pass.
    * Templates: {promptFile} (the prompt, read by the command) and {outputFile} (where it leaves the reply).
-   * Unset = the built-in command of the type's `provider`, if it has one (session/headless-command.ts). */
+   * Unset = this type cannot be the recording model; nothing is assumed for it (session/headless-command.ts). */
   headlessCommand?: string;
   /** Escape sequence sent after text delivery (e.g. '\r', '\n', or '\r\n'). Empty string clears/uses default. */
   submitSuffix?: string;
@@ -1277,7 +1277,7 @@ export class ConfigLoader {
       if (!config || config.comfyUi) continue;
       const name = config.displayName ?? config.name ?? id;
       if (!config.api) {
-        const problem = headlessCommandProblem(headlessCommandFor(config));
+        const problem = headlessCommandProblem(config.headlessCommand);
         options.push({ id, name, kind: 'cli', available: !problem, note: problem ?? CLI_COST_NOTE });
       } else if (isRunnableApi(config.api)) options.push({ id, name, kind: 'api', available: true });
       else options.push({ id, name, kind: 'api', available: false, note: INCOMPLETE_API_NOTE });
@@ -1292,7 +1292,7 @@ export class ConfigLoader {
     const name = resolved.config.displayName ?? resolved.config.name ?? resolved.id;
     if (resolved.config.comfyUi) throw new Error(`${name} is a ComfyUI type and cannot record memories`);
     if (!resolved.config.api) {
-      const problem = headlessCommandProblem(headlessCommandFor(resolved.config));
+      const problem = headlessCommandProblem(resolved.config.headlessCommand);
       if (problem) throw new Error(`${name} cannot record: ${problem}`);
       return resolved.id;
     }

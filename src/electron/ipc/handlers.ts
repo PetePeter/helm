@@ -159,7 +159,6 @@ import { MessNotifier } from '../../session/mess-notifier.js';
 import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
 import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
-import { headlessCommandFor } from '../../session/headless-command.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
@@ -529,7 +528,7 @@ export function registerIPCHandlers(
       const env = resolveConfiguredSpawnEnv(configLoader, resolved.id);
       return resolved.config.api
         ? { id: resolved.id, kind: 'api', api: resolved.config.api, env }
-        : { id: resolved.id, kind: 'cli', headlessCommand: headlessCommandFor(resolved.config), env };
+        : { id: resolved.id, kind: 'cli', headlessCommand: resolved.config.headlessCommand, env };
     },
     backends: {
       api: apiSilentBackend(apiSessionHost),

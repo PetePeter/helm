@@ -15,6 +15,7 @@ import {
 } from '../stores/modal-bridge.js';
 import { useChipBarStore } from '../stores/chip-bar.js';
 import { useToast } from './useToast.js';
+import { headlessCommandToEdit } from '../../src/session/headless-command.js';
 
 export interface SettingsBindingProfile {
   id: string;
@@ -265,7 +266,7 @@ export function useSettingsController(options: {
       spawnCommand: value?.spawnCommand || '',
       resumeCommand: value?.resumeCommand || '',
       continueCommand: value?.continueCommand || '',
-      headlessCommand: value?.headlessCommand || '',
+      headlessCommand: headlessCommandToEdit(value ?? {}),
       renameCommand: value?.renameCommand || '',
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),

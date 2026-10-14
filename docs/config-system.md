@@ -197,7 +197,7 @@ Resume templates accept two placeholders:
 | `{cliSessionName}` | UUID Helm mints at spawn | claude (`--session-id`/`--resume`), copilot, codex rename |
 | `{cliThreadId}` | The CLI's own `session_id`, captured from its hook events (`SessionInfo.cliThreadId`) | codex: `codex resume {cliThreadId}` |
 
-`headlessCommand` is a different kind of template: a whole shell line that runs the CLI once with no terminal UI, reads its prompt from `{promptFile}` and leaves its reply in `{outputFile}`. It is what lets a real CLI be picked as auto memory's recording model. Claude Code and Codex have a built-in one, so the field is only needed to override it or to give another CLI one. See [auto-memory.md](auto-memory.md#real-clis-the-headless-run).
+`headlessCommand` is a different kind of template: a whole shell line that runs the CLI once with no terminal UI, reads its prompt from `{promptFile}` and leaves its reply in `{outputFile}`. It is what lets a real CLI be picked as auto memory's recording model. A type without one cannot be picked. Nothing is built in: the Tool Editor offers a suggested line for Claude Code and Codex, and it counts once saved. See [auto-memory.md](auto-memory.md#real-clis-the-headless-run).
 
 `{cliThreadId}` has no fallback. If the CLI never reported an id (no hooks block, or a session from before capture existed), the literal placeholder reaches the CLI and the resume fails visibly. See [cli-hooks.md](cli-hooks.md#thread-id-capture).
 

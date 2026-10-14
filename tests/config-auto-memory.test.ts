@@ -35,7 +35,6 @@ const CLI_TYPES = {
   [CLI_ID]: { id: CLI_ID, name: 'Claude Code', command: 'claude' },
   [BROKEN_ID]: { id: BROKEN_ID, name: 'Half-edited', api: { baseUrl: '', allowedTools: [] } },
   [COMFY_ID]: { id: COMFY_ID, name: 'Comfy', comfyUi: { baseUrl: 'http://127.0.0.1:8188', profiles: [] } },
-  // A real CLI of no known family: nothing built in to run it headless.
   [SHELL_ID]: { id: SHELL_ID, name: 'cmd', spawnCommand: 'cmd.exe' },
   [OWN_ID]: { id: OWN_ID, name: 'Aider', spawnCommand: 'aider', headlessCommand: 'aider --message-file "{promptFile}" > "{outputFile}"' },
   [HALF_ID]: { id: HALF_ID, name: 'Half a command', spawnCommand: 'tool', headlessCommand: 'tool --print' },
@@ -87,12 +86,13 @@ describe('autoMemory settings', () => {
     expect(loader.getAutoMemoryConfig().recordingModel).toBe(API_ID);
   });
 
-  it('accepts a real CLI type that can run headless: by its family, or by its own command', () => {
+  it('accepts a real CLI type only with a headless command saved on it, whatever its family', () => {
     const loader = makeLoader();
 
-    loader.setAutoMemoryConfig({ recordingModel: 'Claude Code' });
-    expect(reload().getAutoMemoryConfig().recordingModel).toBe(CLI_ID);
     loader.setAutoMemoryConfig({ recordingModel: OWN_ID });
+    expect(reload().getAutoMemoryConfig().recordingModel).toBe(OWN_ID);
+    // Claude Code is a known family, but nothing is assumed for it.
+    expect(() => loader.setAutoMemoryConfig({ recordingModel: 'Claude Code' })).toThrow(/Claude Code cannot record: no headless command/);
     expect(reload().getAutoMemoryConfig().recordingModel).toBe(OWN_ID);
   });
 
@@ -126,8 +126,7 @@ describe('autoMemory settings', () => {
   it('lists what can record, what a real CLI costs, and why the rest cannot', () => {
     expect(makeLoader().getRecordingModelOptions()).toEqual([
       { id: API_ID, name: 'Local model', kind: 'api', available: true },
-      // Its family (inferred from the name on load) has a built-in headless command.
-      { id: CLI_ID, name: 'Claude Code', kind: 'cli', available: true, note: 'real CLI: its full prompt on every turn' },
+      { id: CLI_ID, name: 'Claude Code', kind: 'cli', available: false, note: 'no headless command' },
       { id: BROKEN_ID, name: 'Half-edited', kind: 'api', available: false, note: 'API settings are incomplete' },
       { id: SHELL_ID, name: 'cmd', kind: 'cli', available: false, note: 'no headless command' },
       { id: OWN_ID, name: 'Aider', kind: 'cli', available: true, note: 'real CLI: its full prompt on every turn' },

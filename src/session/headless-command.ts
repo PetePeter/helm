@@ -14,17 +14,19 @@ export const OUTPUT_FILE_PLACEHOLDER = '{outputFile}';
 type CliProvider = 'claude' | 'codex' | 'copilot';
 
 /**
- * Built-in commands per CLI family, used when a type states none. They live in
- * code, not in the shipped cli-types.yaml, because that file only seeds a
- * fresh install: an existing install would never get them.
+ * Suggested commands per CLI family. They are never run from here: a CLI type
+ * runs headless only with the `headlessCommand` saved on it. These are what the
+ * Tool Editor offers in that field for a type that has none, and what the
+ * shipped cli-types.yaml carries, so the command a pass runs is always one the
+ * user can see and change.
  *
  * The prompt is a transcript: text Helm did not write, handed to an agent.
- * So the built-in commands take the agent's hands away. Claude Code runs with
- * no tools at all and no MCP servers; Codex cannot switch its shell off, so it
+ * So the suggestions take the agent's hands away. Claude Code runs with no
+ * tools at all and no MCP servers; Codex cannot switch its shell off, so it
  * runs in its read-only sandbox. Copilot has none: its print mode only takes
  * the prompt as an argument.
  */
-export const DEFAULT_HEADLESS_COMMANDS: Partial<Record<CliProvider, string>> = {
+export const SUGGESTED_HEADLESS_COMMANDS: Partial<Record<CliProvider, string>> = {
   claude: 'claude -p --no-session-persistence --strict-mcp-config --output-format text --tools "" < "{promptFile}" > "{outputFile}"',
   codex: 'codex exec --skip-git-repo-check --ephemeral --sandbox read-only -o "{outputFile}" - < "{promptFile}"',
 };
@@ -32,9 +34,11 @@ export const DEFAULT_HEADLESS_COMMANDS: Partial<Record<CliProvider, string>> = {
 export const NO_HEADLESS_COMMAND_NOTE = 'no headless command';
 export const BAD_HEADLESS_COMMAND_NOTE = `headless command needs ${PROMPT_FILE_PLACEHOLDER} and ${OUTPUT_FILE_PLACEHOLDER}`;
 
-/** The command a CLI type runs headless: its own, else its family's built-in one. */
-export function headlessCommandFor(config: { headlessCommand?: string; provider?: CliProvider | null }): string | undefined {
-  return config.headlessCommand?.trim() || (config.provider ? DEFAULT_HEADLESS_COMMANDS[config.provider] : undefined);
+/** What the Tool Editor puts in the Headless Command field: the type's own command, else its family's suggestion. */
+export function headlessCommandToEdit(config: { headlessCommand?: string; provider?: string | null }): string {
+  return config.headlessCommand?.trim()
+    || SUGGESTED_HEADLESS_COMMANDS[config.provider as CliProvider]
+    || '';
 }
 
 /** Why a command cannot run headless; undefined when it can. */
