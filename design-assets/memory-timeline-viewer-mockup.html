@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Memory timeline viewer mockup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111214;
+      --panel: #181a1e;
+      --panel-2: #1f2228;
+      --hover: #262a32;
+      --text: #f2f4f7;
+      --muted: #929aa8;
+      --border: #323743;
+      --accent: #6c9dff;
+      --accent-soft: rgba(108, 157, 255, .18);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 "Segoe UI", system-ui, sans-serif;
+    }
+    button, input { font: inherit; }
+    .app { min-height: 100vh; display: flex; flex-direction: column; }
+    .header {
+      padding: 15px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    .header-top, .toolbar, .timeline-heading, .date-labels, .list-heading, .memory-row {
+      display: flex;
+      align-items: center;
+    }
+    .header-top { justify-content: space-between; gap: 16px; }
+    h1 { margin: 0; font-size: 18px; font-weight: 650; }
+    .total { margin-left: 10px; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .actions, .view-switch, .quick-ranges { display: flex; align-items: center; gap: 6px; }
+    button {
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+    button:hover { background: var(--hover); }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .toolbar { gap: 12px; margin-top: 13px; }
+    .search {
+      flex: 1;
+      min-width: 130px;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .view-switch { padding: 3px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
+    .view-switch button { border-color: transparent; background: transparent; color: var(--muted); }
+    .view-switch button[aria-pressed="true"] { border-color: var(--border); background: var(--panel-2); color: var(--text); }
+    .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 310px; }
+    main { min-width: 0; padding: 18px 20px 24px; }
+    .timeline-card, .list-card, aside {
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--panel);
+    }
+    .timeline-card { padding: 16px 18px 12px; }
+    .timeline-heading { justify-content: space-between; gap: 12px; }
+    .timeline-title { font-weight: 650; }
+    .range-summary { color: var(--muted); font-size: 12px; }
+    .quick-ranges button { min-height: 26px; padding: 3px 8px; color: var(--muted); font-size: 11px; }
+    .quick-ranges button.active { border-color: rgba(108,157,255,.55); color: var(--text); background: var(--accent-soft); }
+    .chart-wrap { position: relative; height: 148px; margin: 15px 0 0; padding: 0 2px; }
+    .chart-grid { position: absolute; inset: 8px 0 24px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+    .grid-line { border-top: 1px solid rgba(146,154,168,.14); }
+    .bars { position: absolute; inset: 8px 0 24px; display: grid; grid-template-columns: repeat(30, minmax(3px, 1fr)); align-items: end; gap: 4px; }
+    .bar {
+      position: relative;
+      min-height: 3px;
+      padding: 0;
+      border: 0;
+      border-radius: 3px 3px 0 0;
+      background: #506f9f;
+      opacity: .8;
+    }
+    .bar:hover, .bar.selected { background: var(--accent); opacity: 1; }
+    .bar.selected::after { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); color: var(--text); content: attr(aria-label); font-size: 10px; white-space: nowrap; }
+    .date-labels { justify-content: space-between; position: absolute; right: 0; bottom: 0; left: 0; color: var(--muted); font-size: 10px; }
+    .range-control { margin-top: 8px; padding: 8px 0 0; }
+    .range-track { position: relative; height: 18px; }
+    .track-base, .track-selected { position: absolute; top: 8px; height: 3px; border-radius: 4px; }
+    .track-base { right: 0; left: 0; background: #3c424e; }
+    .track-selected { left: 23%; width: 77%; background: var(--accent); }
+    .range-track input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 18px;
+      margin: 0;
+      appearance: none;
+      background: transparent;
+      pointer-events: none;
+    }
+    .range-track input::-webkit-slider-runnable-track { height: 3px; background: transparent; }
+    .range-track input::-webkit-slider-thumb {
+      width: 14px;
+      height: 14px;
+      margin-top: -5px;
+      appearance: none;
+      border: 2px solid var(--bg);
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+      pointer-events: auto;
+      cursor: ew-resize;
+    }
+    .range-track input::-moz-range-track { height: 3px; background: transparent; }
+    .range-track input::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--bg);
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+      pointer-events: auto;
+      cursor: ew-resize;
+    }
+    .range-track input:first-of-type { z-index: 2; }
+    .range-hint { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .list-card { margin-top: 14px; overflow: hidden; }
+    .list-heading { justify-content: space-between; padding: 12px 15px; border-bottom: 1px solid var(--border); }
+    .list-heading strong { font-size: 12px; }
+    .list-heading span { color: var(--muted); font-size: 11px; }
+    .memory-row { gap: 13px; min-height: 66px; padding: 10px 15px; border-bottom: 1px solid rgba(50,55,67,.75); cursor: pointer; }
+    .memory-row:last-child { border-bottom: 0; }
+    .memory-row:hover, .memory-row.selected { background: var(--hover); }
+    .memory-row.selected { box-shadow: inset 2px 0 var(--accent); }
+    .row-date { width: 74px; flex: 0 0 74px; color: var(--muted); font-size: 11px; }
+    .row-copy { min-width: 0; flex: 1; }
+    .row-title { overflow: hidden; margin-bottom: 3px; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .row-preview { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+    .row-kind { flex: 0 0 auto; padding: 2px 7px; border: 1px solid var(--border); border-radius: 10px; color: var(--muted); font-size: 10px; }
+    aside { border-top: 0; border-right: 0; border-bottom: 0; border-radius: 0; padding: 19px 17px; }
+    .detail-label { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .detail-title { margin: 8px 0 12px; font-size: 14px; line-height: 1.35; }
+    .detail-meta { display: grid; gap: 6px; margin: 0 0 16px; color: var(--muted); font-size: 11px; }
+    .detail-meta strong { color: var(--text); font-weight: 500; }
+    .detail-body { padding-top: 14px; border-top: 1px solid var(--border); color: #d4d8df; font-size: 12px; line-height: 1.6; }
+    .detail-actions { display: flex; gap: 7px; margin-top: 16px; }
+    .detail-actions button { font-size: 11px; }
+    @media (max-width: 760px) {
+      .header { padding: 12px; }
+      .header-top { align-items: flex-start; flex-wrap: wrap; }
+      .actions { margin-left: auto; }
+      .toolbar { flex-wrap: wrap; }
+      .workspace { grid-template-columns: 1fr; }
+      main { padding: 12px; }
+      aside { border: 1px solid var(--border); border-radius: 9px; margin: 0 12px 12px; }
+      .timeline-heading { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-top">
+        <h1>Memories <span class="total">42 memories</span></h1>
+        <div class="actions">
+          <button type="button">Markdown</button><button type="button">JSON</button><button type="button">Refresh</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <input class="search" type="search" placeholder="Search memories" aria-label="Search memories">
+        <div class="view-switch" role="group" aria-label="Memory view">
+          <button type="button" aria-pressed="false">Graph</button>
+          <button type="button" aria-pressed="true">Timeline</button>
+        </div>
+      </div>
+    </header>
+    <div class="workspace">
+      <main>
+        <section class="timeline-card" aria-label="Memory creation timeline">
+          <div class="timeline-heading">
+            <div>
+              <div class="timeline-title">Memory activity</div>
+              <div class="range-summary">Showing 18 memories · Sep 15 – Oct 14</div>
+            </div>
+            <div class="quick-ranges" aria-label="Choose date range">
+              <button type="button">7 days</button><button type="button" class="active">30 days</button>
+              <button type="button">90 days</button><button type="button">All time</button>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <div class="chart-grid" aria-hidden="true"><div class="grid-line"></div><div class="grid-line"></div><div class="grid-line"></div></div>
+            <div class="bars" aria-label="Memories created per day">
+              <button class="bar" style="height:8%" aria-label="Sep 15: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 16: 0 memories"></button>
+              <button class="bar" style="height:18%" aria-label="Sep 17: 2 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 18: 0 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Sep 19: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 20: 0 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 21: 0 memories"></button>
+              <button class="bar" style="height:27%" aria-label="Sep 22: 3 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 23: 0 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Sep 24: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 25: 0 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 26: 0 memories"></button>
+              <button class="bar" style="height:18%" aria-label="Sep 27: 2 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Sep 28: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 29: 0 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Sep 30: 0 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Oct 1: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 2: 0 memories"></button>
+              <button class="bar" style="height:18%" aria-label="Oct 3: 2 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 4: 0 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 5: 0 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Oct 6: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 7: 0 memories"></button>
+              <button class="bar" style="height:18%" aria-label="Oct 8: 2 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Oct 9: 1 memory"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 10: 0 memories"></button>
+              <button class="bar" style="height:0%" aria-label="Oct 11: 0 memories"></button>
+              <button class="bar" style="height:27%" aria-label="Oct 12: 3 memories"></button>
+              <button class="bar" style="height:8%" aria-label="Oct 13: 1 memory"></button>
+              <button class="bar selected" style="height:18%" aria-label="Oct 14: 2 memories"></button>
+            </div>
+            <div class="date-labels"><span>Sep 15</span><span>Sep 22</span><span>Sep 29</span><span>Oct 6</span><span>Oct 14</span></div>
+          </div>
+          <div class="range-control">
+            <div class="range-track" role="group" aria-label="Adjust visible date range">
+              <div class="track-base"></div><div class="track-selected"></div>
+              <input type="range" min="0" max="100" value="23" aria-label="Start of visible date range">
+              <input type="range" min="0" max="100" value="100" aria-label="End of visible date range">
+            </div>
+            <div class="range-hint">Drag either handle to focus on a time window. Click a histogram bar to inspect that day.</div>
+          </div>
+        </section>
+
+        <section class="list-card" aria-label="Memories in selected date range">
+          <div class="list-heading"><strong>Newest first</strong><span>18 in this range</span></div>
+          <div class="memory-row selected" role="button" tabindex="0">
+            <span class="row-date">Today<br>10:42 am</span>
+            <span class="row-copy"><span class="row-title">Memory timeline UI investigation</span><span class="row-preview">Created while exploring a time-based view for durable memories…</span></span>
+            <span class="row-kind">project</span>
+          </div>
+          <div class="memory-row" role="button" tabindex="0">
+            <span class="row-date">Today<br>9:18 am</span>
+            <span class="row-copy"><span class="row-title">Session summaries stay separate from project knowledge</span><span class="row-preview">Bound memories are grouped by their source session before promotion…</span></span>
+            <span class="row-kind">project</span>
+          </div>
+          <div class="memory-row" role="button" tabindex="0">
+            <span class="row-date">Oct 13</span>
+            <span class="row-copy"><span class="row-title">Read access is tracked independently from edits</span><span class="row-preview">lastAccessedAt changes when a memory is read; updatedAt remains authoring…</span></span>
+            <span class="row-kind">project</span>
+          </div>
+          <div class="memory-row" role="button" tabindex="0">
+            <span class="row-date">Oct 12</span>
+            <span class="row-copy"><span class="row-title">One idea per durable memory</span><span class="row-preview">Keep memories small and connect related facts with typed links…</span></span>
+            <span class="row-kind">project</span>
+          </div>
+        </section>
+      </main>
+
+      <aside aria-label="Selected memory details">
+        <div class="detail-label">Selected memory</div>
+        <h2 class="detail-title">Memory timeline UI investigation</h2>
+        <div class="detail-meta">
+          <div>Created <strong>Oct 14, 2026 · 10:42 am</strong></div>
+          <div>Updated <strong>Oct 14, 2026 · 10:42 am</strong></div>
+          <div>Last read <strong>Never</strong></div>
+        </div>
+        <div class="detail-body">A timeline view makes recent memories easy to find. This item is selected from the newest-first list; the existing memory detail panel stays in place.</div>
+        <div class="detail-actions"><button type="button">Open detail</button><button type="button">Delete</button></div>
+      </aside>
+    </div>
+  </div>
+</body>
+</html>

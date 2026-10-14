@@ -7,13 +7,14 @@ import MemoryScreen from '../../../renderer/components/panels/MemoryScreen.vue';
 import {
   disposeMemoryChangedSubscription,
   memoryScreenState,
+  setMemoryTimelineRange,
 } from '../../../renderer/memories/memory-screen.js';
 
-const summary = (id: string, tldr: string) => ({
+const summary = (id: string, tldr: string, createdAt = 1) => ({
   id,
   tldr,
-  createdAt: 1,
-  updatedAt: 2,
+  createdAt,
+  updatedAt: createdAt + 1,
   attachmentCount: 0,
 });
 
@@ -37,9 +38,11 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     memoryScreenState.searchQuery = '';
     memoryScreenState.selectedId = null;
     memoryScreenState.detail = null;
-    memoryScreenState.traversal = null;
     memoryScreenState.forest = null;
     memoryScreenState.matchedIds = [];
+    memoryScreenState.timelinePreset = '30d';
+    memoryScreenState.timelineStart = null;
+    memoryScreenState.timelineEnd = null;
     memoryScreenState.loading = false;
     window.helm = {
       memory: {
@@ -66,7 +69,7 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     const wrapper = mountScreen();
     await nextTick();
 
-    const loading = wrapper.find('.empty-state[role="status"]');
+    const loading = wrapper.find('.memory-list .empty-state[role="status"]');
     expect(loading.exists()).toBe(true);
     expect(loading.attributes('aria-busy')).toBe('true');
     expect(loading.text()).toContain('Loading memories');
@@ -77,68 +80,112 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     const wrapper = mountScreen();
     await flushPromises();
 
-    expect(wrapper.find('.memory-graph-canvas .empty-state').exists()).toBe(true);
-    expect(wrapper.find('.memory-graph-canvas .empty-state').text()).toContain('No memories for this session.');
+    expect(wrapper.find('.memory-list .empty-state').exists()).toBe(true);
+    expect(wrapper.find('.memory-list .empty-state').text()).toContain('No memories in this range.');
     wrapper.unmount();
   });
 
-  it('renders the match count after a search has run', async () => {
-    memoryScreenState.searchQuery = 'memory';
-    memoryScreenState.matchedIds = ['a', 'b', 'c'];
-    const wrapper = mountScreen();
-    await flushPromises();
-
-    expect(wrapper.find('.memory-search-count').text()).toBe('3 match(es)');
-    wrapper.unmount();
-  });
-
-  // Filtering hides non-matches (and links touching them) instead of fading
-  // them, so a search reduces the picture rather than just recolouring it.
-  it('hides non-matching memories and their links while filtering', async () => {
-    const records = [summary('a', 'Alpha'), summary('b', 'Beta'), summary('c', 'Gamma')];
-    const edges = [{ fromId: 'a', toId: 'b', type: 'related' }, { fromId: 'b', toId: 'c', type: 'related' }];
+  it('shows the timeline list and keeps relationship data loaded internally', async () => {
+    const records = [summary('older', 'Older memory', 1), summary('newest', 'Newest memory', 3)];
     window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
-    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges });
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [{ fromId: 'older', toId: 'newest' }] });
     const wrapper = mountScreen();
     await flushPromises();
-    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(3);
-    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(2);
 
-    memoryScreenState.searchQuery = 'a';
-    memoryScreenState.matchedIds = ['a', 'b'];
-    await nextTick();
-    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(2);
-    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(1);
-
-    memoryScreenState.searchQuery = '';
-    memoryScreenState.matchedIds = [];
-    await nextTick();
-    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(3);
-    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(2);
+    expect(wrapper.find('.memory-timeline-card').exists()).toBe(true);
+    expect(wrapper.find('.memory-graph-canvas').exists()).toBe(false);
+    expect(window.helm.memory.memoryGraphAll).toHaveBeenCalledWith('session-1');
+    expect(wrapper.findAll('.memory-row').map((row) => row.text())).toEqual([
+      expect.stringContaining('Newest memory'),
+      expect.stringContaining('Older memory'),
+    ]);
     wrapper.unmount();
   });
 
-  it('moves the selected marker between canvas nodes', async () => {
-    const records = [summary('first', 'First memory'), summary('second', 'Second memory')];
+  it('intersects text and date filters in the timeline list and histogram', async () => {
+    const records = [
+      summary('older', 'Older memory', 1),
+      summary('middle', 'Middle memory', 2),
+      summary('newest', 'Newest memory', 3),
+    ];
+    window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [] });
+    const wrapper = mountScreen();
+    await flushPromises();
+
+    memoryScreenState.searchQuery = 'memory';
+    memoryScreenState.matchedIds = ['older', 'middle'];
+    setMemoryTimelineRange(2, 3);
+    await nextTick();
+
+    expect(wrapper.findAll('.memory-row')).toHaveLength(1);
+    expect(wrapper.find('.memory-row').text()).toContain('Middle memory');
+    expect(wrapper.findAll('.memory-bar').reduce((sum, bar) => {
+      const label = bar.attributes('aria-label') ?? '';
+      return sum + (label.includes(': 1 memory') ? 1 : 0);
+    }, 0)).toBe(1);
+    wrapper.unmount();
+  });
+
+  it('adjusts the visible memories from the date slider and histogram', async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const records = [
+      summary('old', 'Old memory', 0),
+      summary('middle', 'Middle memory', 20 * day),
+      summary('newest', 'Newest memory', 40 * day),
+    ];
+    window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [] });
+    const wrapper = mountScreen();
+    await flushPromises();
+
+    expect(wrapper.findAll('.memory-row')).toHaveLength(2);
+    await wrapper.find('input[aria-label="Start of visible date range"]').setValue(String(32 * day));
+    await nextTick();
+    expect(wrapper.findAll('.memory-row')).toHaveLength(1);
+    expect(wrapper.find('.memory-row').text()).toContain('Newest memory');
+
+    const allTime = wrapper.findAll('.memory-quick-ranges button').find((button) => button.text() === 'All time');
+    await allTime!.trigger('click');
+    await nextTick();
+    expect(wrapper.findAll('.memory-row')).toHaveLength(3);
+
+    await wrapper.findAll('.memory-bar').at(-1)!.trigger('click');
+    await nextTick();
+    expect(wrapper.findAll('.memory-row')).toHaveLength(1);
+    expect(wrapper.find('.memory-row').text()).toContain('Newest memory');
+    wrapper.unmount();
+  });
+
+  it('selects a memory from its list row and shows its detail', async () => {
+    const records = [summary('first', 'First memory'), summary('second', 'Second memory', 3)];
     window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
     window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [] });
     window.helm.memory.memoryGet = vi.fn().mockResolvedValue({
-      id: 'first', tldr: 'First memory', content: '', createdAt: 1, updatedAt: 2, attachments: [],
+      id: 'second', tldr: 'Second memory', content: '', createdAt: 3, updatedAt: 4, attachments: [],
     });
 
     const wrapper = mountScreen();
     await flushPromises();
-
-    // Nothing is selected until the user picks a node — the canvas shows the
-    // whole forest, so auto-selecting one would be arbitrary.
-    expect(wrapper.findAll('.memory-graph-node.selected')).toHaveLength(0);
-
-    await wrapper.findAll('.memory-graph-node')[1].trigger('click');
+    await wrapper.findAll('.memory-row')[0].trigger('click');
     await flushPromises();
 
-    const selected = wrapper.findAll('.memory-graph-node.selected');
-    expect(selected).toHaveLength(1);
-    expect(selected[0].text()).toContain('Second memory');
+    expect(wrapper.find('.memory-row.selected').text()).toContain('Second memory');
+    expect(wrapper.find('.memory-detail-title').text()).toBe('Second memory');
     wrapper.unmount();
   });
+
+  it('renders the visible match count after a search has run', async () => {
+    const records = [summary('a', 'Memory A'), summary('b', 'Memory B'), summary('c', 'Memory C')];
+    window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges: [] });
+    memoryScreenState.searchQuery = 'memory';
+    memoryScreenState.matchedIds = ['a', 'b'];
+    const wrapper = mountScreen();
+    await flushPromises();
+
+    expect(wrapper.find('.memory-list-heading span').text()).toBe('2 in this range');
+    wrapper.unmount();
+  });
+
 });

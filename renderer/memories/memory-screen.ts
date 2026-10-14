@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue';
 import { useAppStore } from '../stores/app.js';
 import { dialogClient, eventsClient, incomingClient, memoryClient } from '../ipc/clients.js';
+import { memoryRangeForPreset, memoryTimelineBounds, type MemoryTimelinePreset } from './memory-timeline.js';
 import type {
   MemoryForest,
   MemoryRecord,
@@ -10,9 +11,8 @@ import type {
 
 export const memoryScreenState = reactive({
   /**
-   * Internal index only — never rendered as a list. The canvas is the visible
-   * surface; this exists so search and callers can resolve an id whose node is
-   * filtered out or off-screen.
+   * Renderer-safe rows for the timeline list. Full content is fetched only
+   * when a memory is selected.
    */
   summaries: [] as MemorySummary[],
   forest: null as MemoryForest | null,
@@ -21,6 +21,9 @@ export const memoryScreenState = reactive({
   searchQuery: '',
   regex: false,
   graphDepth: 1,
+  timelinePreset: '30d' as MemoryTimelinePreset,
+  timelineStart: null as number | null,
+  timelineEnd: null as number | null,
   selectedId: null as string | null,
   detailVisible: false,
   deleteTargetId: null as string | null,
@@ -53,10 +56,34 @@ function clearSessionScopedState(): void {
   memoryScreenState.forest = null;
   memoryScreenState.matchedIds = [];
   memoryScreenState.searchQuery = '';
+  memoryScreenState.timelinePreset = '30d';
+  memoryScreenState.timelineStart = null;
+  memoryScreenState.timelineEnd = null;
   memoryScreenState.selectedId = null;
   memoryScreenState.detail = null;
   memoryScreenState.detailVisible = false;
   memoryScreenState.deleteTargetId = null;
+}
+
+function syncMemoryTimelineRange(): void {
+  const bounds = memoryTimelineBounds(memoryScreenState.summaries);
+  if (!bounds) {
+    memoryScreenState.timelineStart = null;
+    memoryScreenState.timelineEnd = null;
+    return;
+  }
+
+  if (memoryScreenState.timelinePreset !== 'custom') {
+    const range = memoryRangeForPreset(bounds, memoryScreenState.timelinePreset);
+    memoryScreenState.timelineStart = range.start;
+    memoryScreenState.timelineEnd = range.end;
+    return;
+  }
+
+  const start = Math.max(bounds.start, Math.min(bounds.end, memoryScreenState.timelineStart ?? bounds.start));
+  const end = Math.max(bounds.start, Math.min(bounds.end, memoryScreenState.timelineEnd ?? bounds.end));
+  memoryScreenState.timelineStart = Math.min(start, end);
+  memoryScreenState.timelineEnd = Math.max(start, end);
 }
 
 function requestIsCurrent(generation: number, sessionId: string | null): boolean {
@@ -90,6 +117,7 @@ export async function refreshMemories(): Promise<void> {
     ]);
     if (!requestIsCurrent(generation, sessionId)) return;
     memoryScreenState.summaries = [...summaries].sort((a, b) => a.id.localeCompare(b.id));
+    syncMemoryTimelineRange();
     memoryScreenState.forest = forest;
     const selectedStillExists = memoryScreenState.selectedId
       && memoryScreenState.summaries.some((item) => item.id === memoryScreenState.selectedId);
@@ -97,7 +125,7 @@ export async function refreshMemories(): Promise<void> {
     else {
       memoryScreenState.selectedId = null;
       memoryScreenState.detail = null;
-        memoryScreenState.detailVisible = false;
+      memoryScreenState.detailVisible = false;
     }
   } catch (error) {
     if (requestIsCurrent(generation, sessionId)) setNotice(`Could not load memories: ${String(error)}`);
@@ -151,11 +179,19 @@ export async function searchMemories(): Promise<void> {
   }
 }
 
-/**
- * Depth used when exporting. The canvas no
- * longer depends on it — it draws the whole forest — so changing it must not
- * re-fetch the selection.
- */
+export function setMemoryTimelinePreset(preset: Exclude<MemoryTimelinePreset, 'custom'>): void {
+  memoryScreenState.timelinePreset = preset;
+  syncMemoryTimelineRange();
+}
+
+export function setMemoryTimelineRange(start: number, end: number): void {
+  memoryScreenState.timelinePreset = 'custom';
+  memoryScreenState.timelineStart = Math.min(start, end);
+  memoryScreenState.timelineEnd = Math.max(start, end);
+  syncMemoryTimelineRange();
+}
+
+/** Depth used when exporting connected memories; changing it does not reload the selection. */
 export function setGraphDepth(value: number): void {
   memoryScreenState.graphDepth = Number.isSafeInteger(value) ? Math.min(100, Math.max(0, value)) : 0;
 }
