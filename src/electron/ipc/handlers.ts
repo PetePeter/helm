@@ -246,6 +246,8 @@ export function registerIPCHandlers(
     canReadAll: (id) => sessionManager.getSession(id)?.role === 'operator',
     isProjectShared: (projectId) => projectStore.getById(projectId)?.memoryPrivate !== true,
     resolveSessionPlan: (id) => planManager.claimedPlanFor(id)?.id ?? null,
+    isDreamSession: (id) => scheduledTaskManager.isDreamSession(id),
+    resolveSessionMission: (id) => sessionManager.getSession(id)?.mission?.text ?? null,
   });
   const contextManager = new ContextManager(planManager);
   const getSkillsPath = (configLoader as ConfigLoader & { getSkillsPath?: () => string }).getSkillsPath;

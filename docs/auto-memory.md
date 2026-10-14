@@ -1,6 +1,6 @@
 # Auto memory
 
-Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, auto-save for API sessions, and recall of what a session saved. Real CLI sessions are not recorded yet. The storage rules for the memories themselves are in [memory.md](memory.md).
+Helm records the key facts of every session as memories and recalls them later, without the working model spending tokens on it. This document covers the parts that have shipped: the settings, the silent runner, auto-save for API sessions, recall of what a session saved, and the dream that turns saved memories into project knowledge ([dreaming.md](dreaming.md#digesting-session-bound-memories)). Real CLI sessions are not recorded yet. The storage rules for the memories themselves are in [memory.md](memory.md).
 
 ## Settings
 

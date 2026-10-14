@@ -1815,7 +1815,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_dream',
     title: 'Dream Memories',
-    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. This tool only identifies candidates; it never decides what to forget or merge.',
+    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. For a dream session it also returns `bound`: the auto-saved, session-bound memories waiting to be digested, grouped by the session that saved them with its mission; `totals.bound` counts all of them. This tool only identifies candidates; it never decides what to forget, merge or promote.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1892,7 +1892,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_update',
     title: 'Update Memory',
-    description: 'Update a memory in the project resolved from the authenticated caller session. Provide tldr and/or content; expectedUpdatedAt enables optimistic concurrency protection.',
+    description: 'Update a memory in the project resolved from the authenticated caller session. Provide tldr and/or content; expectedUpdatedAt enables optimistic concurrency protection. During a dream, promote=true releases a session-bound memory into project memory.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1900,6 +1900,7 @@ export const MCP_TOOLS: McpTool[] = [
         tldr: { type: 'string', minLength: 1 },
         content: { type: 'string' },
         expectedUpdatedAt: { type: 'number' },
+        promote: { type: 'boolean', description: 'Dream sessions only: clear the session binding so every session of the project sees this memory. Refused for any other caller.' },
       },
       required: ['id'],
       additionalProperties: false,

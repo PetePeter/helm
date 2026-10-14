@@ -132,6 +132,23 @@ export interface DreamCandidate {
   plan: MemoryDreamPlan | null;
 }
 
+/** An auto-saved memory waiting for a dream to drop, merge or promote it. */
+export interface DreamBoundMemory {
+  id: string;
+  tldr: string;
+  /** In full: a bound memory is one small atom, and none may be promoted unread. */
+  content: string;
+  ageDays: number;
+}
+
+/** One session's bound memories, framed by what that session was doing. */
+export interface DreamBoundGroup {
+  sessionId: string;
+  /** Null once the session is gone, or when it never set one. */
+  mission: string | null;
+  memories: DreamBoundMemory[];
+}
+
 export interface MemoryDreamOptions {
   percentile?: number;
   minCandidates?: number;
@@ -141,11 +158,15 @@ export interface MemoryDreamOptions {
 export interface MemoryDreamResult {
   faded: DreamCandidate[];
   salient: DreamCandidate[];
+  /** Session-bound memories to digest, oldest first. Empty unless the caller is a dream. */
+  bound: DreamBoundGroup[];
   totals: {
     memories: number;
     dormant: number;
     eligible: number;
     epoch: number;
+    /** Every bound memory waiting in the project; above the listed ones when the cap cut the list. */
+    bound: number;
   };
 }
 

@@ -99,7 +99,8 @@ flowchart LR
     A[auto-save<br/>sessionBound] --> B{who asks?}
     B -->|its own session| V[visible: get · search · similar · list]
     B -->|any other session<br/>same project · other project · operator| H[hidden]
-    A -->|releaseBinding| P[ordinary project memory]
+    B -->|a dream of the same project| DG[digest: read · rewrite · link · delete]
+    DG -->|memory_update promote=true| P[ordinary project memory]
     M[memory_create] --> P
 ```
 
@@ -109,10 +110,14 @@ flowchart LR
   memories before project scope, read-all or cross-project sharing widen the
   set, so no read path can skip it. Hidden also means untouchable: update,
   delete, dormancy and link targets go through the same set.
+- **One exception.** A running dream sees the bound memories of its own
+  project, and only a dream may release a binding. See
+  [dreaming.md](dreaming.md#digesting-session-bound-memories).
 - **Edges too.** `edgesFor` drops any edge touching a hidden memory, rather
   than keeping it as a `missing` marker that would disclose its id.
 - **Not in the project's shared pool.** `listProjectRecords` and the dream's
-  faded/salient lists leave bound memories out. Prompt hints add back only the
+  faded/salient lists leave bound memories out (a dream gets them as a
+  separate `bound` list). Prompt hints add back only the
   asking session's own (`listBoundForSession`), see
   [auto-memory.md](auto-memory.md#auto-recall).
 - **Lifetime.** A bound memory in a project outlives its session, so the next
@@ -123,8 +128,9 @@ flowchart LR
 ## Dreaming
 
 The dream guide now splits essays into linked atoms (candidates carry
-`contentChars`), merges only true duplicates (`supersedes`), and links related
-memories across projects. See [dreaming.md](dreaming.md).
+`contentChars`), merges only true duplicates (`supersedes`), links related
+memories across projects, and digests session-bound memories: delete, merge
+or promote. See [dreaming.md](dreaming.md).
 
 ## Memory skills across the plan lifecycle
 

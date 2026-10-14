@@ -1115,9 +1115,10 @@ export async function callMcpTool(
       }
       case 'memory_update': {
         const sessionId = requireCallerSession(authContext, 'memory_update');
-        const updates: { tldr?: string; content?: string } = {};
+        const updates: { tldr?: string; content?: string; promote?: boolean } = {};
         if (args.tldr !== undefined) updates.tldr = asString(args.tldr, 'tldr must be a non-empty string');
         if (args.content !== undefined) updates.content = asStringValue(args.content, 'content must be a string');
+        if (args.promote !== undefined && asBoolean(args.promote, 'promote must be a boolean')) updates.promote = true;
         if (Object.keys(updates).length === 0) throw new Error('Provide tldr and/or content to update');
         const expectedUpdatedAt = args.expectedUpdatedAt === undefined
           ? undefined

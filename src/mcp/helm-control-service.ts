@@ -1003,7 +1003,7 @@ export class HelmControlService extends EventEmitter {
   updateMemory(
     sessionId: string,
     id: string,
-    updates: { tldr?: string; content?: string },
+    updates: { tldr?: string; content?: string; promote?: boolean },
     expectedUpdatedAt?: number,
   ): MemoryRecord | null {
     return this.requireMemoryService().updateMemory(sessionId, id, updates, expectedUpdatedAt);

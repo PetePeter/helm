@@ -220,6 +220,36 @@ describe('dream scheduled task', () => {
       expect(fired.nextRunAt!.getTime()).toBe(before);
     });
 
+    it('marks the spawned session as a dream only while the run lasts', async () => {
+      const dream = seedEnabledDream();
+      sessionManager.addSession({ id: 'bystander', cliType: 'claude' });
+
+      await manager.runTaskNow(dream.id);
+      await vi.runOnlyPendingTimersAsync();
+      const sessionId = manager.getTask(dream.id)!.sessionId!;
+
+      expect(manager.isDreamSession(sessionId)).toBe(true);
+      expect(manager.isDreamSession('bystander')).toBe(false);
+
+      ptyManager.emit('exit', sessionId, 0);
+
+      expect(manager.isDreamSession(sessionId)).toBe(false);
+    });
+
+    it('never makes an existing session a dream, even when a dream row is pointed at it', async () => {
+      const dream = seedEnabledDream();
+      sessionManager.addSession({ id: 'bystander', cliType: 'claude' });
+      ptyManager.spawn({ sessionId: 'bystander' });
+      manager.updateTask(dream.id, { mode: 'direct', targetSessionId: 'bystander' });
+
+      // Direct delivery holds the row `executing` on the target while it types.
+      const run = manager.runTaskNow(dream.id);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(manager.getTask(dream.id)).toMatchObject({ status: 'executing', sessionId: 'bystander' });
+      expect(manager.isDreamSession('bystander')).toBe(false);
+      void run.catch(() => {});
+    });
+
     it('returns false for an unknown task', async () => {
       expect(await manager.runTaskNow('no-such-task')).toBe(false);
     });
