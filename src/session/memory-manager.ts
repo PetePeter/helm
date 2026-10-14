@@ -168,10 +168,12 @@ export class MemoryManager extends EventEmitter {
   /**
    * What a session may see: its own memories, plus every memory belonging to
    * the project it is running in. A project-less session keeps the original
-   * session-private behaviour exactly.
+   * session-private behaviour exactly. A dream also sees every unscoped
+   * memory: they belong to no project, so no project's privacy is crossed.
    */
-  private isVisible(record: MemoryRecord, sessionId: string, projectId: string | null): boolean {
+  private isVisible(record: MemoryRecord, sessionId: string, projectId: string | null, dreaming: boolean): boolean {
     if (record.sessionId === sessionId) return true;
+    if (dreaming && record.projectId === undefined) return true;
     return projectId !== null && record.projectId === projectId;
   }
 
@@ -183,9 +185,11 @@ export class MemoryManager extends EventEmitter {
    */
   private candidateRecords(sessionId: string, includeDormant: boolean): MemoryRecord[] {
     const hidden = this.hiddenFrom(sessionId);
+    // A dream maintains what recall has set aside, so dormancy never hides anything from it.
+    const withDormant = includeDormant || this.isDreamSession?.(sessionId) === true;
     return this.state.records.filter((record) =>
       !hidden(record)
-      && (includeDormant || record.dormantSince === undefined));
+      && (withDormant || record.dormantSince === undefined));
   }
 
   /**
@@ -221,8 +225,9 @@ export class MemoryManager extends EventEmitter {
 
   private scopedRecords(sessionId: string, includeDormant = false): MemoryRecord[] {
     const projectId = this.resolveSessionProject?.(sessionId) ?? null;
+    const dreaming = this.isDreamSession?.(sessionId) === true;
     return this.candidateRecords(sessionId, includeDormant)
-      .filter((record) => this.isVisible(record, sessionId, projectId));
+      .filter((record) => this.isVisible(record, sessionId, projectId, dreaming));
   }
 
   /** What a session may READ: its own scope, or everything for a read-all session. */
@@ -875,11 +880,13 @@ export class MemoryManager extends EventEmitter {
     const targets = new Set(ids);
     const timestamp = this.now();
     const candidate = cloneMemoryState(this.state);
+    // A dream inspecting a dormant memory is review, not retrieval.
+    const revives = readerSessionId === undefined || !this.isDreamSession?.(readerSessionId);
     for (const record of candidate.records) {
       if (!targets.has(record.id)) continue;
       record.lastAccessedAt = timestamp;
       // Being read is retrieval succeeding — the opposite of being forgotten.
-      delete record.dormantSince;
+      if (revives) delete record.dormantSince;
       if (readerSessionId === undefined) continue;
       if (record.projectId) advanceEpoch(candidate, record.projectId, readerSessionId);
       // The author already holds the fact in context; re-reading it is not

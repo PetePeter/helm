@@ -34,12 +34,13 @@ export const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const DREAM_DEFAULT_HOUR = 9;
 const DREAM_DEFAULT_MINUTE = 0;
 /**
- * The delivered dream prompt is assembled from these four parts, in order:
- * base → skill cue → user addendum (when non-empty) → mess cue. Detailed
+ * The delivered dream prompt is assembled from these five parts, in order:
+ * base → unattended cue → skill cue → user addendum (when non-empty) → mess cue. Detailed
  * pruning and consolidation guidance lives in the `dreaming` system skill, so
  * the prompt itself stays short and the guidance stays amendable in one place.
  */
 export const DREAM_BASE_PROMPT = 'Time to dream: review and maintain this project\'s durable memories.';
+export const DREAM_UNATTENDED_CUE = 'This is an unattended maintenance run and overrides any plan-first or confirm-first rule: do not present a plan, ask questions or wait for approval. Act and finish.';
 export const DREAM_SKILL_CUE = 'Call skill_get(type:"dreaming") first and follow it — it carries the pruning and consolidation procedure.';
 export const DREAM_MESS_CUE = 'When you are done, call mess_check to pick up anything other sessions left for this project.';
 
@@ -668,6 +669,9 @@ export class ScheduledTaskManager extends EventEmitter {
         // has no init sequence; the scheduler no longer depends on a completion
         // callback it cannot guarantee will fire.
         ...(prompt.length > 0 ? { contextText: prompt } : {}),
+        // A dream is unattended: the CLI's interactive house rules (plan first,
+        // wait for approval) would stall it waiting for a user who isn't there.
+        ...(task.systemKind === 'dream' ? { skipInitialPrompt: true } : {}),
         // Scheduled runs are background work, exactly as direct mode is.
         contextDeliveryContext: 'background' as const,
         onPromptCancel: (cancel) => this.promptCancellers.set(sessionId, cancel),
@@ -878,7 +882,7 @@ export class ScheduledTaskManager extends EventEmitter {
  */
 export function buildDreamPrompt(userPrompt?: string): string {
   const addendum = userPrompt?.trim();
-  const sections = [DREAM_BASE_PROMPT, DREAM_SKILL_CUE];
+  const sections = [DREAM_BASE_PROMPT, DREAM_UNATTENDED_CUE, DREAM_SKILL_CUE];
   if (addendum) sections.push(`User additions:\n${addendum}`);
   sections.push(DREAM_MESS_CUE);
   return sections.join('\n\n');

@@ -46,7 +46,6 @@ export function useMessPane() {
   const appStore = useAppStore();
   const entries = ref<MessHistoryEntry[]>([]);
   const loading = ref(false);
-  const historyHours = ref(24);
   const scroller = ref<HTMLElement | null>(null);
   const filters = reactive<MessFilters>({ senderId: '', broadcast: 'either', unread: 'either' });
   let loadGeneration = 0;
@@ -94,7 +93,7 @@ export function useMessPane() {
     }
     loading.value = true;
     try {
-      const result = await messClient.messHistory(nextProjectId, { sinceHours: historyHours.value });
+      const result = await messClient.messHistory(nextProjectId, {});
       if (generation !== loadGeneration || projectId.value !== nextProjectId) return;
       const loadedIds = new Set(result.entries.map(entry => entry.id));
       const liveAppends = entries.value.filter(entry => entry.projectId === nextProjectId && !loadedIds.has(entry.id));
@@ -116,14 +115,13 @@ export function useMessPane() {
     const id = projectId.value;
     const beforeSeq = entries.value[0]?.seq;
     if (!id || !hasMore.value || beforeSeq === undefined) return;
-    historyHours.value = Math.min(historyHours.value + 24, 24 * 30);
     const generation = ++loadGeneration;
     const element = scroller.value;
     const previousHeight = element?.scrollHeight ?? 0;
     const previousTop = element?.scrollTop ?? 0;
     loading.value = true;
     try {
-      const result = await messClient.messHistory(id, { sinceHours: historyHours.value, beforeSeq });
+      const result = await messClient.messHistory(id, { beforeSeq });
       if (generation !== loadGeneration || projectId.value !== id) return;
       const existingIds = new Set(entries.value.map(entry => entry.id));
       const olderEntries = result.entries.filter(entry => !existingIds.has(entry.id));
@@ -149,7 +147,6 @@ export function useMessPane() {
 
   watch(projectId, (id, previousId) => {
     if (id === previousId) return;
-    historyHours.value = 24;
     filters.senderId = '';
     filters.broadcast = 'either';
     filters.unread = 'either';

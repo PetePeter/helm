@@ -7,7 +7,6 @@ import type { SessionManager } from '../../session/manager.js';
 import type { WindowManager } from '../window-manager.js';
 import { logger } from '../../utils/logger.js';
 
-const DEFAULT_HISTORY_HOURS = 24;
 const MAX_HISTORY_HOURS = 24 * 30;
 const MAX_HISTORY_LIMIT = 500;
 const MAX_HISTORY_BYTES = DEFAULT_MESS_HISTORY_MAX_BYTES;
@@ -18,11 +17,11 @@ function validateProjectId(value: unknown): string {
 }
 
 function validateOptions(value: unknown): MessHistoryOptions {
-  if (value === undefined) return { sinceHours: DEFAULT_HISTORY_HOURS };
+  if (value === undefined) return {};
   if (!value || typeof value !== 'object') throw new Error('Mess history options must be an object');
   const options = value as Partial<MessHistoryOptions>;
-  const sinceHours = options.sinceHours ?? DEFAULT_HISTORY_HOURS;
-  if (typeof sinceHours !== 'number' || !Number.isFinite(sinceHours) || sinceHours < 0 || sinceHours > MAX_HISTORY_HOURS) {
+  const sinceHours = options.sinceHours ?? undefined;
+  if (sinceHours !== undefined && (typeof sinceHours !== 'number' || !Number.isFinite(sinceHours) || sinceHours < 0 || sinceHours > MAX_HISTORY_HOURS)) {
     throw new Error(`sinceHours must be between 0 and ${MAX_HISTORY_HOURS}`);
   }
   const limit = options.limit ?? undefined;
@@ -38,7 +37,7 @@ function validateOptions(value: unknown): MessHistoryOptions {
     throw new Error('beforeSeq must be a positive integer');
   }
   return {
-    sinceHours,
+    ...(sinceHours === undefined ? {} : { sinceHours }),
     ...(limit === undefined ? {} : { limit }),
     ...(maxBytes === undefined ? {} : { maxBytes }),
     ...(beforeSeq === undefined ? {} : { beforeSeq }),

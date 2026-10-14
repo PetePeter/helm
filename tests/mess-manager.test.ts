@@ -464,4 +464,34 @@ describe('MessManager', () => {
     expect(result.entries.map(entry => entry.text)).toEqual(['one', 'two']);
     expect(result.hasMore).toBe(false);
   });
+
+  it('returns entries older than a day when no time window is requested', () => {
+    const now = 2_000_000_000_000;
+    const { sessions, manager, directory } = setup(now);
+    add(sessions, 'sender', 'planner');
+    const log = new MessPersistence(project.id, { directory });
+    const base = { projectId: project.id, fromSessionId: 'sender', fromLabelSnapshot: 'planner' };
+    log.append({ ...base, text: 'three days ago', createdAt: now - 3 * 24 * 60 * 60 * 1000 });
+    log.append({ ...base, text: 'two days ago', createdAt: now - 2 * 24 * 60 * 60 * 1000 });
+
+    const result = manager.historyForProject(project.id, { limit: 1 });
+
+    expect(result.entries.map(entry => entry.text)).toEqual(['two days ago']);
+    expect(result.hasMore).toBe(true);
+  });
+
+  it('reports older entries beyond a requested time window', () => {
+    const now = 2_000_000_000_000;
+    const { sessions, manager, directory } = setup(now);
+    add(sessions, 'sender', 'planner');
+    const log = new MessPersistence(project.id, { directory });
+    const base = { projectId: project.id, fromSessionId: 'sender', fromLabelSnapshot: 'planner' };
+    log.append({ ...base, text: 'old', createdAt: now - 2 * 24 * 60 * 60 * 1000 });
+    log.append({ ...base, text: 'fresh', createdAt: now });
+
+    const result = manager.historyForProject(project.id, { sinceHours: 1 });
+
+    expect(result.entries.map(entry => entry.text)).toEqual(['fresh']);
+    expect(result.hasMore).toBe(true);
+  });
 });

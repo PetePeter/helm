@@ -174,6 +174,36 @@ describe('digesting a bound memory', () => {
   });
 });
 
+describe('dream reach: dormant and unscoped memories', () => {
+  it('lets the dream list, read and search its project\'s dormant memories without reviving them', () => {
+    const { manager } = setup();
+    const resting = manager.createForSession('s1', { tldr: 'Old charger firmware quirk', content: 'quirk.' });
+    manager.setDormant(resting.id, true);
+
+    expect(manager.listRecordsForSession(DREAMER).map((record) => record.id)).toContain(resting.id);
+    expect(manager.getForSession(DREAMER, resting.id)?.entries[0]?.id).toBe(resting.id);
+    expect(manager.getRecordForSession(DREAMER, resting.id)?.id).toBe(resting.id);
+    expect(manager.searchForSession(DREAMER, 'firmware').hits.map((hit) => hit.id)).toEqual([resting.id]);
+
+    expect(manager.getRecordForSession('s2', resting.id)).toBeNull();
+    expect(manager.listRecordsForSession('s2').map((record) => record.id)).not.toContain(resting.id);
+  });
+
+  it('lets the dream see every unscoped memory while ordinary sessions keep their own', () => {
+    const { manager } = setup();
+    const loose = manager.createForSession('loner', { tldr: 'Scratch note with no project', content: 'note.' });
+
+    expect(loose.projectId).toBeUndefined();
+    expect(manager.listRecordsForSession(DREAMER).map((record) => record.id)).toContain(loose.id);
+    expect(manager.getRecordForSession(DREAMER, loose.id)?.id).toBe(loose.id);
+    expect(manager.searchForSession(DREAMER, 'scratch').hits.map((hit) => hit.id)).toEqual([loose.id]);
+    expect(manager.getRecordForSession('beta-dreamer', loose.id)?.id).toBe(loose.id);
+
+    expect(manager.getRecordForSession('s1', loose.id)).toBeNull();
+    expect(manager.getRecordForSession('loner', loose.id)?.id).toBe(loose.id);
+  });
+});
+
 describe('MCP: memory_update promote', () => {
   it('promotes for a dream and can sharpen the tldr in the same call', async () => {
     const { bind, call } = setupMcp();

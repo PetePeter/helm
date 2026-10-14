@@ -94,7 +94,8 @@ describe('MessPane', () => {
     await wrapper.find('.mess-older').trigger('click');
     await flushPromises();
 
-    expect(history).toHaveBeenLastCalledWith('p1', { sinceHours: 48, beforeSeq: 2 });
+    expect(history).toHaveBeenNthCalledWith(1, 'p1', {});
+    expect(history).toHaveBeenLastCalledWith('p1', { beforeSeq: 2 });
     expect(wrapper.text()).toContain('older');
     expect(wrapper.text()).toContain('newer');
     expect(scroller.scrollTop).toBe(0);

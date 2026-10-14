@@ -243,7 +243,9 @@ shows `not picked up`; the main process derives that from the stored cursor, so
 the renderer never infers delivery from session activity. The badge is a
 visibility hint, never an ownership or lock indicator. Filters cover sender, broadcast, and unread state.
 The pane follows new entries unless the user has scrolled up, and `Older` reads
-cursor-neutral history. There is no composer and human reads never advance an
+cursor-neutral history. History is paged by sequence (`beforeSeq` + `limit`), never
+by age: a quiet project still opens on its last messages, and `hasMore` is judged
+against the whole log so a time-windowed caller is still told older entries exist. There is no composer and human reads never advance an
 agent cursor.
 
 ## Lifecycle and limits

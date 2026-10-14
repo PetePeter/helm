@@ -36,6 +36,8 @@ export interface ConfiguredSessionSpawnParams {
    *  session record does not (a recycle-bin restore). Defaults to the session's. */
   resumeThreadId?: string;
   contextText?: string;
+  /** Leave out the CLI type's configured initial prompt (rename still runs) — an unattended run must not inherit interactive house rules. */
+  skipInitialPrompt?: boolean;
   /** Delivery context for contextText; background keeps a scheduled run out of the foreground. */
   contextDeliveryContext?: DeliveryContext;
   onPromptComplete?: () => void;
@@ -182,7 +184,8 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
     if (typeof maybeWait === 'function') await maybeWait.call(params.ptyManager, sessionId);
   };
 
-  const promptConfig = resolveInitialPromptConfig(params.cfg, params.cliSessionName);
+  const resolvedPrompt = resolveInitialPromptConfig(params.cfg, params.cliSessionName);
+  const promptConfig = params.skipInitialPrompt ? { ...resolvedPrompt, initialPrompt: undefined } : resolvedPrompt;
   if (params.isResume) {
     params.markRestored?.(params.sessionId);
     if (!promptConfig.renameCommand) return;

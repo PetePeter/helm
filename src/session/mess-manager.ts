@@ -327,8 +327,8 @@ export class MessManager extends EventEmitter {
     const cutoff = options.sinceHours === undefined
       ? Number.NEGATIVE_INFINITY
       : this.now() - Math.max(0, options.sinceHours) * 60 * 60 * 1000;
-    const recent = candidates.filter(entry => entry.createdAt >= cutoff
-      && (options.beforeSeq === undefined || entry.seq < options.beforeSeq));
+    const page = candidates.filter(entry => options.beforeSeq === undefined || entry.seq < options.beforeSeq);
+    const recent = page.filter(entry => entry.createdAt >= cutoff);
     const selected: MessHistoryEntry[] = [];
     let bytes = 0;
     for (let index = recent.length - 1; index >= 0; index -= 1) {
@@ -342,7 +342,10 @@ export class MessManager extends EventEmitter {
     selected.reverse();
     return {
       entries: selected,
-      hasMore: selected.length > 0 && recent.some(entry => entry.seq < selected[0].seq),
+      // Judged against the whole page, not the time window, so older entries stay reachable.
+      hasMore: selected.length > 0
+        ? page.some(entry => entry.seq < selected[0].seq)
+        : page.length > 0,
     };
   }
 

@@ -44,6 +44,24 @@ describe('Mess renderer IPC', () => {
     expect(projects.getById).toHaveBeenCalledWith('p1');
   });
 
+  it('applies no time window when the renderer asks for a plain page', async () => {
+    const historyForProject = vi.fn(() => ({ entries: [], hasMore: false }));
+    const manager = new EventEmitter() as EventEmitter & { historyForProject: typeof historyForProject };
+    manager.historyForProject = historyForProject;
+    const projects = { getById: vi.fn(() => ({ id: 'p1' })) } as any;
+    setupMessHandlers(manager as any, projects, {
+      getMainWindow: () => undefined,
+      getAllWindows: () => [],
+      getSessionsInWindow: () => [],
+    } as any, { getActiveSession: () => undefined } as any);
+
+    await handlers.get('mess:history')!({}, 'p1');
+    await handlers.get('mess:history')!({}, 'p1', { beforeSeq: 5 });
+
+    expect(historyForProject).toHaveBeenNthCalledWith(1, 'p1', {});
+    expect(historyForProject).toHaveBeenNthCalledWith(2, 'p1', { beforeSeq: 5 });
+  });
+
   it('returns empty for an unknown project without touching Mess storage', async () => {
     const manager = new EventEmitter() as EventEmitter & { historyForProject: Function };
     manager.historyForProject = vi.fn();
