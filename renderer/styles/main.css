@@ -358,6 +358,24 @@ input[type='radio'] {
   text-align: left;
   white-space: nowrap;
   border-bottom: 2px solid transparent;
+  position: relative;
+}
+/* "+1" when a new memory / mess post / artifact / plan lands: floats up and
+ * fades over NEW_ITEM_PULSE_MS (useNewItemPulse.ts). Never takes the pointer. */
+.dock-new-item-pulse {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+  animation: dock-new-item-pulse 1.2s ease-out forwards;
+}
+@keyframes dock-new-item-pulse {
+  0% { opacity: 0; transform: translateY(4px) scale(0.8); }
+  15% { opacity: 1; transform: translateY(0) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-10px) scale(1); }
 }
 .dock-tab__icon { font-size: 13px; line-height: 1; }
 .dock-tab:hover,
@@ -446,6 +464,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   border: none;
   border-radius: var(--radius-sm, 3px);
   cursor: pointer;
+  position: relative;
 }
 .dock-rail__btn:hover,
 .dock-rail__btn:focus-visible { color: var(--text-primary); background: var(--bg-tertiary); outline: 2px solid var(--accent); outline-offset: -2px; }

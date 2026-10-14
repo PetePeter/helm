@@ -53,6 +53,10 @@ PTY Data Flow:
   PipelineQueue  ←── state changes       └──────────────────┘
 ```
 
+## Row-less PTYs
+
+`PtyManager.spawn({ headless: true })` starts a PTY that is no session: the one-shot CLI run behind auto memory's recording model ([auto-memory.md](auto-memory.md#real-clis-the-headless-run)). It is spawned, tracked and killed like any other PTY, so "CLIs run in embedded PTYs" holds for it, but `PtyManager` never emits `data` or `exit` for it. Those two events are where a PTY becomes a session (terminal view, activity dots, pattern matcher, session record, recycle bin), so withholding them is the whole fence. The caller reads the run from the `PtyProcess` that `spawn` returns.
+
 ## Activity Dots
 
 Session cards and overview cards use activity-based coloring (PTY I/O timing, not AIAGENT state):

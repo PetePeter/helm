@@ -15,6 +15,7 @@ import {
 } from '../stores/modal-bridge.js';
 import { useChipBarStore } from '../stores/chip-bar.js';
 import { useToast } from './useToast.js';
+import { headlessCommandToEdit } from '../../src/session/headless-command.js';
 
 export interface SettingsBindingProfile {
   id: string;
@@ -216,6 +217,7 @@ export function useSettingsController(options: {
       { id: 'chipbar-actions', label: '⚡ Quick Actions' },
       { id: 'projects', label: '📁 Projects' },
       { id: 'skills', label: '🧠 Skills' },
+      { id: 'auto-memory', label: '💾 Auto memory' },
       { id: 'telegram', label: '📨 Telegram' },
       { id: 'mcp', label: '🧩 MCP' },
       { id: 'peers', label: '🔗 Fleet' },
@@ -264,6 +266,7 @@ export function useSettingsController(options: {
       spawnCommand: value?.spawnCommand || '',
       resumeCommand: value?.resumeCommand || '',
       continueCommand: value?.continueCommand || '',
+      headlessCommand: headlessCommandToEdit(value ?? {}),
       renameCommand: value?.renameCommand || '',
       helmPreambleForInterSession: value?.helmPreambleForInterSession !== false,
       largeTextAsTempFile: Boolean(value?.largeTextAsTempFile),

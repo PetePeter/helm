@@ -76,12 +76,85 @@ graph LR
   reported size scaled by the characters kept. The next reply shows the
   server's real figure. CLI sessions get the same badge from their transcript —
   see [chat-fan-out.md](chat-fan-out.md#context-badge--how-full-a-session-is).
-- **Forgetting on purpose.** Three tools, always offered:
+- **Forgetting on purpose.** Three tools, always offered (a fourth, `discard`, is under Speculative lookups below):
   - `checkpoint` / `rollback` cut everything since a mark and leave a note.
   - `forget_turns` drops chosen past turns by quoting their first words. It
     uses the same matching as bubble deletion and applies after the turn. Once
     history reaches 20 turns, the per-turn context nudges the model to prune,
     and repeats every 10 turns after that.
+- **Speculative lookups.** A lookup that found nothing useful should not sit
+  in a small model's context for the rest of the session. `checkpoint` /
+  `rollback` can already undo it, but only if the model set the checkpoint
+  first, and small models do not. So the loop sets the mark itself, and one
+  always-offered tool, `discard`, cuts back to it.
+
+  ```mermaid
+  sequenceDiagram
+      participant M as Model
+      participant L as runAgentTurn
+      participant T as DiscardTable (per session)
+      M->>L: lookup (memory_search / memory_get / Glob / Grep / Read)
+      L->>T: discarded before?
+      T-->>L: no
+      L->>L: run it, mark the start of this step
+      L-->>M: result
+      alt useful
+          M->>L: carries on (the next step replaces or clears the mark)
+      else no use
+          M->>L: discard
+          L->>L: cut the history back to the mark
+          L->>T: record the lookup and the time
+          L-->>M: note: tried X, threw it away
+      end
+      M->>L: the same lookup again
+      L->>T: discarded before?
+      T-->>L: yes: record this repeat
+      L-->>M: not run, with the times; "force": true runs it
+  ```
+
+  - **Lookups only.** `memory_search`, `memory_get`, `Glob`, `Grep`, `Read`.
+    Forgetting a call removes it from the context but cannot undo what it did,
+    so `Write`, `Edit`, `Shell` and every other tool are never speculative.
+  - **The mark stands only while the lookup is the last thing in the
+    context.** It is the start of the last step, and only if every call in
+    that step was a lookup. Any other tool call, a rollback, or a message the
+    user sent mid-turn clears it, and so does the end of the turn. `discard`
+    must also be the only call in its step. Otherwise it changes nothing,
+    says what stood in the way, and the calls beside it run as usual. There is
+    therefore no way to discard a write, an edit, a shell command or a user
+    message.
+  - **One step back.** `discard` removes the last lookup step (all its calls,
+    when the model made several at once), not earlier ones the model kept.
+  - **The discard table.** Per session, in memory: it survives compaction and
+    forgetting (a note in the context would not), ends with `/clear`, and
+    starts empty after a Helm restart. An entry is the tool name plus its
+    arguments. A ranked `memory_search` query is the same query in any case,
+    spacing or term order; everything else is taken exactly as written, a
+    stray space included, because refusing a lookup that never ran is worse
+    than running one twice. A refusal lists the five newest repeats and
+    counts the rest.
+  - **A repeat is refused, with its times.** Nothing expires on a timer. The
+    reply gives each time as clock time and as age, because small models are
+    poor at subtracting times, and the model decides whether enough has
+    changed:
+
+    ```
+    Not run: you discarded this lookup.
+    First run and discarded: 14:02 (38 min ago)
+    Asked again and rejected: 14:10 (30 min ago), 14:31 (9 min ago)
+    Now: 14:40. If things may have changed since, call again with "force": true.
+    ```
+
+    `force` is offered on the five lookup tools. The loop reads it and strips
+    it, so the tool itself never sees it. A forced lookup runs and is an
+    ordinary lookup again. The refusal itself stays in the history, like any
+    tool result.
+  - **Cost.** A discard makes the server re-read from the mark: one
+    prefix-cache miss for what follows it. Everything before the mark is
+    byte-identical to the request that produced the lookup, tool block
+    included: a deferred tool that only the discarded call had loaded is
+    unloaded again, and one loaded earlier stays.
+  - **API sessions only.** Helm cannot rewrite a real CLI's context.
 - **Compaction.** `session_compact` works on an API tool with no configured
   action: Helm's loop understands `/compact [focus]`. The model writes a
   handover summary in one tool-less turn. The summary is saved as a memory, so
@@ -189,6 +262,7 @@ everything above the new message. Two rules follow from that:
     apiKeyEnv: OPENROUTER_API_KEY  # optional; the key itself is never stored
     maxToolRounds: 25           # optional; the final round offers no tools
     handshake: true             # optional; first turn without tools until the user confirms
+    autoMemory: true            # optional; false keeps this tool's sessions out of auto-save (docs/auto-memory.md)
     systemPrompt: ...           # optional; appended to the constant prompt
     allowedTools: [Read, Glob, Grep, memory_search, skill_get]
 ```
@@ -211,6 +285,7 @@ Spawn, resume and continue commands are ignored for an API tool.
 | File | Role |
 |------|------|
 | `src/session/api/api-agent-loop.ts` | `runAgentTurn` and the OpenAI-compatible client |
+| `src/session/api/api-discard.ts` | Speculative lookups: the `discard` tool, which tools are lookups, request normalisation, the per-session `DiscardTable` and its refusal text |
 | `src/session/api/api-native-tools.ts` | Read / Write / Edit / Glob / Grep / Shell |
 | `src/session/api/api-prompt.ts` | Tool catalog, tick selection, system prompt, mutable context, chat chunking |
 | `src/session/api/api-session-process.ts` | The `PtyProcess` adapter: line editor, turn queue, transcript |

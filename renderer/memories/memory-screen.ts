@@ -6,7 +6,6 @@ import type {
   MemoryRecord,
   MemorySearchResult,
   MemorySummary,
-  MemoryTraversal,
 } from '../../src/types/memory.js';
 
 export const memoryScreenState = reactive({
@@ -19,7 +18,6 @@ export const memoryScreenState = reactive({
   forest: null as MemoryForest | null,
   matchedIds: [] as string[],
   detail: null as MemoryRecord | null,
-  searchResults: [] as MemoryTraversal[],
   searchQuery: '',
   regex: false,
   graphDepth: 1,
@@ -54,7 +52,6 @@ function clearSessionScopedState(): void {
   memoryScreenState.summaries = [];
   memoryScreenState.forest = null;
   memoryScreenState.matchedIds = [];
-  memoryScreenState.searchResults = [];
   memoryScreenState.searchQuery = '';
   memoryScreenState.selectedId = null;
   memoryScreenState.detail = null;
@@ -144,11 +141,9 @@ export async function searchMemories(): Promise<void> {
   try {
     const result = await memoryClient.memorySearch(memoryScreenState.searchQuery, {
       regex: memoryScreenState.regex,
-      graphDepth: memoryScreenState.graphDepth,
     }, sessionId ?? undefined) as MemorySearchResult;
     if (!requestIsCurrent(generation, sessionId)) return;
-    memoryScreenState.searchResults = result.results;
-    memoryScreenState.matchedIds = result.results.map((traversal) => traversal.rootId);
+    memoryScreenState.matchedIds = result.hits.map((hit) => hit.id);
   } catch (error) {
     if (requestIsCurrent(generation, sessionId)) setNotice(`Search failed: ${String(error)}`);
   } finally {
@@ -157,7 +152,7 @@ export async function searchMemories(): Promise<void> {
 }
 
 /**
- * Depth used when exporting and when expanding search results. The canvas no
+ * Depth used when exporting. The canvas no
  * longer depends on it — it draws the whole forest — so changing it must not
  * re-fetch the selection.
  */

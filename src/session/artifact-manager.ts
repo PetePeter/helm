@@ -66,6 +66,7 @@ export class ArtifactManager extends EventEmitter {
     if (!this.artifacts.has(sessionId)) this.artifacts.set(sessionId, []);
     this.artifacts.get(sessionId)!.push(artifact);
     this.markChanged(sessionId, [artifact.id]);
+    this.emit('artifact:created', sessionId, artifact.id);
     this.emitReveal(sessionId, artifact.id);
     logger.info(`[ArtifactManager] Created artifact "${title}" for session ${sessionId}`);
     return artifact;

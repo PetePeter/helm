@@ -5,6 +5,7 @@ import { DOCK_MIN_TRACK_PX, DOCK_SPLITTER_PX, getPaneDescriptor } from '../../do
 import { isDockCollapsed, listPanes } from '../../dock-layout.js';
 import DockSplitter from './DockSplitter.vue';
 import DockTabGroup from './DockTabGroup.vue';
+import NewItemPulse from './NewItemPulse.vue';
 
 defineOptions({ name: 'DockNode' });
 
@@ -223,6 +224,7 @@ function onDockFocusOut(event: FocusEvent): void {
         @click="openRail(item.paneId)"
       >
         <span class="dock-rail__icon" aria-hidden="true">{{ item.icon }}</span>
+        <NewItemPulse :pane-id="item.paneId" />
       </button>
     </div>
   </div>

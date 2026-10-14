@@ -47,6 +47,12 @@ export class ScheduledTaskManager extends EventEmitter {
   private tasks = new Map<string, ScheduledTask>();
   private timers = new Map<string, NodeJS.Timeout>();
   private promptCancellers = new Map<string, () => void>();
+  /**
+   * Sessions this manager spawned for a dream and that are still running. Kept
+   * apart from the task rows on purpose: a row's mode and target can be edited,
+   * and dream status must never be reachable by pointing a task at a session.
+   */
+  private dreamSessions = new Set<string>();
   private started = false;
 
   constructor(
@@ -673,6 +679,7 @@ export class ScheduledTaskManager extends EventEmitter {
       }
       task.status = 'executing';
       task.sessionId = sessionId;
+      if (task.systemKind === 'dream') this.dreamSessions.add(sessionId);
       this.saveTasks();
       this.emit('task:changed', task);
 
@@ -687,6 +694,7 @@ export class ScheduledTaskManager extends EventEmitter {
       if (exitListener) {
         this.ptyManager.off('exit', exitListener);
       }
+      this.dreamSessions.delete(sessionId);
       logger.error(`[ScheduledTaskManager] Failed to execute task "${task.title}" (${task.id}): ${err}`);
       task.status = 'failed';
       task.error = err instanceof Error ? err.message : String(err);
@@ -697,6 +705,15 @@ export class ScheduledTaskManager extends EventEmitter {
       this.saveTasks();
       this.emit('task:changed', task);
     }
+  }
+
+  /**
+   * Whether a session was spawned by a dream that is still running. A finished
+   * or failed run is not one, nor is an existing session a dream row was
+   * pointed at in direct mode, nor anything from before a restart.
+   */
+  isDreamSession(sessionId: string): boolean {
+    return this.dreamSessions.has(sessionId);
   }
 
   /** The task prompt, with plan references appended when the task carries any. */
@@ -823,6 +840,7 @@ export class ScheduledTaskManager extends EventEmitter {
   private finishScheduledRun(task: ScheduledTask, sessionId: string): void {
     const cancel = this.promptCancellers.get(sessionId);
     if (cancel) { cancel(); this.promptCancellers.delete(sessionId); }
+    this.dreamSessions.delete(sessionId);
     // Snapshot before completeOrReschedule resets a recurring task to pending
     // and before sessionId is cleared below.
     this.recordHistory(task, 'done');

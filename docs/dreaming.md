@@ -20,6 +20,31 @@ Assembled by `buildDreamPrompt` and delivered as the spawned session's `contextT
 
 The procedure itself lives in the `dreaming` system skill (`src/mcp/guides/dream-guide.ts`, registered as `sys-dream` in `helm-control-service.ts`). Like every system skill it is shadowed by a user skill of the same `type`, so a project can override the dreaming procedure without a code change.
 
+## Digesting session-bound memories
+
+Auto-saved memories are session-bound: only the session that produced them can see them ([memory.md](memory.md#session-bound-memories)). A dream is the only way they become project knowledge, and the only caller the binding does not apply to.
+
+```mermaid
+flowchart TD
+    AS[auto-save after a turn] --> BM[bound memory<br/>visible to its own session only]
+    BM --> MD["memory_dream.bound<br/>grouped by session + mission"]
+    MD --> Q1{true beyond that session,<br/>useful to a later one?}
+    Q1 -->|no| DEL[memory_delete]
+    Q1 -->|yes| Q2{project memory<br/>already has the idea?}
+    Q2 -->|yes| MG[merge into one atom<br/>delete or supersede the other]
+    Q2 -->|no| PR["memory_update promote=true<br/>+ sharpen tldr, then memory_link"]
+    PR --> PK[project memory<br/>hinted to every session]
+    MG --> PK
+```
+
+- **Who is a dream.** A session is a dream when the scheduler spawned it for a `systemKind: 'dream'` task and that run has not ended (`ScheduledTaskManager.isDreamSession`); the scheduled run and Run now both count. The status is tracked per spawned session, not read off the task row, so pointing a dream row at an existing session (direct mode) never makes that session a dream, and it does not survive a restart. A session that calls `memory_dream` by hand is not one: it gets the faded and salient lists and an empty `bound`.
+- **What a dream may do.** For bound memories of its own project, the ordinary tools simply work: `memory_get`, `memory_search`, `memory_update`, `memory_link`, `memory_delete`. There is no second tool set. `MemoryManager.hiddenFrom` is the single rule, and it lifts for nobody else and for no other project.
+- **Promote.** `memory_update` with `promote: true` clears the binding. Any other caller is refused, the owning session included: the binding exists so that an unattended write is read by a dream before the project inherits it. Promotion and the rewrite are one write (`MemoryManager.update`), so a refused caller or a stale `expectedUpdatedAt` changes nothing. Promotion alone does not touch `updatedAt`.
+- **The list.** `bound` holds up to `maxCandidates` memories, oldest first, each with its full content; `totals.bound` counts all that are waiting, so a capped dream knows the next one has more. Dormant bound memories are left out.
+- **Closed sessions.** Their bound memories are kept for this and are listed with `mission: null`.
+- **Duplicates.** The judge only dedupes within its own window, so the same fact saved late in a session or by two sessions is resolved here.
+- **The procedure** is the `[bound_memories]` section of the `dreaming` skill. A user skill of type `dreaming` that shadows it must carry its own digest steps, or bound memories pile up unseen.
+
 ## Scheduling
 
 - The sidebar resolves the exact instant the user picked and sends it as `scheduledTime` alongside a daily cron expression.

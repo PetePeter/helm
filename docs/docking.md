@@ -58,7 +58,7 @@ and the View menu all read one allow-list.
 | Profile | Panes | Window |
 |---------|-------|--------|
 | `main` | every registered pane (derived, never re-listed), including runtime panes | `MainWindowApp.vue` |
-| `popout` | terminal, plans, memories, mess, artifacts | `SnapOutWindow.vue` |
+| `popout` | terminal, plans, memories, mess, artifacts, scratchpad | `SnapOutWindow.vue` |
 
 The pop-out omits the session list, quick spawn, scheduler and projects: those
 act on things the main shell owns.
@@ -196,6 +196,16 @@ line, and only clipped ones loop as a seamless two-copy marquee at a constant
 speed. Lines that fit stay static with ellipsis, and `prefers-reduced-motion`
 falls back to plain ellipsis.
 
+## New-item "+1"
+
+A new memory, Mess post, artifact or plan floats a `+1` over that pane's rail
+button and tab, fading over 1.2 s; quick bursts stack. Only creations count —
+edits, links and new versions do not — so main emits dedicated `plan:created` /
+`artifact:created` events next to the generic `*:changed` invalidations, and
+memory uses the `type: 'create'` already on `memory:changed`.
+`renderer/composables/useNewItemPulse.ts` owns the state, subscribed once by
+the main window; `NewItemPulse.vue` renders it.
+
 ## Gamepad navigation
 
 The imperative nav in `renderer/screens/` must skip zones that cannot take
@@ -227,8 +237,8 @@ projection before normalizing the persisted tree.
 
 The Classic default is one horizontal root split with three tracks: the left
 tool dock (session list over the stacked tool windows), the view group
-(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts as a
-collapsed right-edge rail.
+(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts with the
+[Scratchpad](scratchpad.md) as a collapsed right-edge rail.
 
 **Retired panes.** A saved layout may name a pane that no longer exists — the
 `overview` pane (Team View, replaced by

@@ -17,6 +17,7 @@ import type { AuthContext, McpTool } from '../../mcp/tools/types.js';
 import { getToolReminder } from '../../mcp/tools/reminders.js';
 import type { HookEvent } from '../hooks/hook-normaliser.js';
 import { logger } from '../../utils/logger.js';
+import { DISCARD_TOOL, withForce } from './api-discard.js';
 import { CHECKPOINT_TOOL, createOpenAiChatClient, FORGET_TOOL, ROLLBACK_TOOL, type ChatClient, type ChatMessage, type ToolSpec } from './api-agent-loop.js';
 import { getNativeTool, truncateOutput } from './api-native-tools.js';
 import {
@@ -66,6 +67,11 @@ export interface ApiSessionHostDeps {
    * hints naming any other tool are dropped.
    */
   promptContext?: (sessionId: string, prompt: string, tools: ReadonlySet<string>) => Promise<string | null>;
+  /**
+   * Auto memory: a top-level session finished a turn. Fire-and-forget, off the
+   * turn's path; `history` is a copy. Absent = nothing records.
+   */
+  recordTurn?: (sessionId: string, history: ChatMessage[]) => void;
   /** The session's chat messages (both sides), oldest first — backs chat_history. */
   chatHistory?: (sessionId: string) => ChatHistoryEntry[];
   /** Folder holding one history JSON per cliSessionName. */
@@ -194,11 +200,12 @@ export class ApiSessionHost {
       this.pendingSubagents.delete(sessionName);
       this.lineage.set(sessionId, pending);
     }
-    const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
+    const builtins = [REQUEST_TOOL, CHAT_HISTORY_TOOL, CHECKPOINT_TOOL, ROLLBACK_TOOL, DISCARD_TOOL, FORGET_TOOL, ...(hasAgentTool ? [AGENT_TOOL] : [])];
     const offered = new Set([...toolNames, ...builtins.map((tool) => tool.name)]);
     // Helm MCP tools carry long schemas: only their names ride in the constant
     // prefix; load_tools discloses the rest on demand. Native tools stay loaded.
-    const spec = ({ name, description, parameters }: ToolSpec) => ({ name, description, parameters });
+    // A lookup tool is offered with `force`, which the loop reads and strips (api-discard.ts).
+    const spec = ({ name, description, parameters }: ToolSpec) => withForce({ name, description, parameters });
     // skill_get stays loaded: the skills directory points at it, so a load hop would be pure cost.
     const isCore = (tool: { source: string; name: string }) => tool.source === 'native' || tool.name === 'skill_get';
     const core = tools.filter(isCore).map(spec);
@@ -209,25 +216,7 @@ export class ApiSessionHost {
       skills: toolNames.includes('skill_get') ? this.safeSkills(cwd) : [],
       extra: api.systemPrompt,
     });
-    const apiKey = api.apiKeyEnv
-      ? spawn.env?.[api.apiKeyEnv] || (this.deps.env ?? process.env)[api.apiKeyEnv]
-      : undefined;
-    const rawClient = this.deps.createClient?.(api, apiKey)
-      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey, temperature: api.temperature });
-    // Every request of this API tool waits for one of its slots, so a burst of
-    // subagents queues here instead of overrunning the server.
-    const slotKey = spawn.cliType ?? sessionId;
-    const slotCount = Math.max(1, api.slots ?? 1);
-    const client: ChatClient = {
-      complete: async (messages, toolSpecs, signal) => {
-        await this.acquireSlot(slotKey, slotCount);
-        try {
-          return await rawClient.complete(messages, toolSpecs, signal);
-        } finally {
-          this.releaseSlot(slotKey);
-        }
-      },
-    };
+    const client = this.slottedClient(api, spawn.env, spawn.cliType ?? sessionId);
     const historyFile = this.historyFile(spawn.cliSessionName);
     const now = this.deps.now ?? (() => new Date());
 
@@ -259,7 +248,10 @@ export class ApiSessionHost {
         this.hook(sessionId, 'UserPromptSubmit', cwd);
         return this.promptContext(sessionId, input, offered);
       },
-      onTurnEnd: (outcome) => this.onTurnEnd(sessionId, auth, cwd, outcome),
+      onTurnEnd: (outcome) => {
+        if (api.autoMemory !== false) this.recordTurn(sessionId, proc, outcome);
+        return this.onTurnEnd(sessionId, auth, cwd, outcome);
+      },
       stashSummary: (summary) => {
         try {
           return this.deps.createMemory(sessionId, { tldr: `[HANDOVER] ${sessionName} — compaction summary`, content: summary, agentRun: false, summary: true }).id;
@@ -279,6 +271,7 @@ export class ApiSessionHost {
           .catch((err) => logger.warn(`[ApiSession] Could not post context update for ${sessionId}: ${String(err)}`));
       },
       banner: `API tool · ${api.model} @ ${api.baseUrl} · ${toolNames.length} tools`,
+      now,
     });
     this.processes.set(sessionId, proc);
     proc.onExit(() => {
@@ -288,6 +281,43 @@ export class ApiSessionHost {
       this.subagentWaiters.get(sessionId)?.({ input: '', finalText: '', toolsUsed: [], error: 'subagent session closed' });
     });
     return proc;
+  }
+
+  /**
+   * One tool-less request to an API tool with no session behind it: no row, no
+   * history, no chat reply, no hook event. It waits for one of the tool's
+   * slots like any other request, so it queues behind real work.
+   */
+  async completeSilently(
+    target: { cliType: string; api: ApiToolConfig; env?: Record<string, string> },
+    messages: ChatMessage[],
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const result = await this.slottedClient(target.api, target.env, target.cliType).complete(messages, [], signal);
+    return result.message.content ?? '';
+  }
+
+  /**
+   * The API tool's client, with every request waiting for one of the tool's
+   * slots, so a burst of subagents queues here instead of overrunning the server.
+   */
+  private slottedClient(api: ApiToolConfig, env: Record<string, string> | undefined, slotKey: string): ChatClient {
+    const apiKey = api.apiKeyEnv
+      ? env?.[api.apiKeyEnv] || (this.deps.env ?? process.env)[api.apiKeyEnv]
+      : undefined;
+    const rawClient = this.deps.createClient?.(api, apiKey)
+      ?? createOpenAiChatClient({ baseUrl: api.baseUrl, model: api.model, apiKey, temperature: api.temperature });
+    const slotCount = Math.max(1, api.slots ?? 1);
+    return {
+      complete: async (messages, toolSpecs, signal) => {
+        await this.acquireSlot(slotKey, slotCount, signal);
+        try {
+          return await rawClient.complete(messages, toolSpecs, signal);
+        } finally {
+          this.releaseSlot(slotKey);
+        }
+      },
+    };
   }
 
   /**
@@ -415,7 +445,7 @@ export class ApiSessionHost {
     return [
       `Subagent "${description}" — result memory ${header.id}`,
       summary,
-      `(Full detail and any nested results: memory_get id=${header.id} graphDepth=1)`,
+      `(Full detail and any nested results are linked: memory_get id=${header.id} lists them as id + tldr, then memory_get the one you need)`,
     ].join('\n');
   }
 
@@ -426,14 +456,28 @@ export class ApiSessionHost {
     this.deps.onPendingSubagents?.(sessionId, count);
   }
 
-  private acquireSlot(key: string, max: number): Promise<void> {
+  /** Resolves once a slot is held. An abort while still queued gives the place up and rejects. */
+  private acquireSlot(key: string, max: number, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(new Error('Request aborted'));
     const slots = this.slots.get(key) ?? { running: 0, queue: [] };
     this.slots.set(key, slots);
     if (slots.running < max) {
       slots.running++;
       return Promise.resolve();
     }
-    return new Promise((resolve) => slots.queue.push(() => { slots.running++; resolve(); }));
+    return new Promise((resolve, reject) => {
+      const take = (): void => {
+        signal?.removeEventListener('abort', leave);
+        slots.running++;
+        resolve();
+      };
+      const leave = (): void => {
+        slots.queue.splice(slots.queue.indexOf(take), 1);
+        reject(new Error('Request aborted'));
+      };
+      signal?.addEventListener('abort', leave, { once: true });
+      slots.queue.push(take);
+    });
   }
 
   private releaseSlot(key: string): void {
@@ -500,6 +544,20 @@ export class ApiSessionHost {
     if (!replied) return;
     if (isChatTool(tool)) replied.add(CHAT_TARGET);
     if (tool === 'session_send_text' && typeof args.sessionId === 'string') replied.add(args.sessionId);
+  }
+
+  /**
+   * Hand a finished turn to auto memory. A failed or interrupted turn has
+   * nothing settled to judge. A subagent is skipped: its result is already
+   * filed as a memory for its parent, and its session closes once it answers.
+   */
+  private recordTurn(sessionId: string, proc: ApiSessionProcess, outcome: ApiTurnOutcome): void {
+    if (!this.deps.recordTurn || outcome.error || this.lineage.has(sessionId)) return;
+    try {
+      this.deps.recordTurn(sessionId, proc.historySnapshot);
+    } catch (err) {
+      logger.warn(`[ApiSession] Auto memory could not take the turn of ${sessionId}: ${String(err)}`);
+    }
   }
 
   /**

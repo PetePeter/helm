@@ -38,6 +38,9 @@ import { ArtifactManager } from '../../session/artifact-manager.js';
 import { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
 import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence.js';
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
+import { ScratchpadManager } from '../../session/scratchpad-manager.js';
+import type { Scratchpad } from '../../types/scratchpad.js';
+import { createScratchpadStore } from '../../session/scratchpad-persistence.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
 import { MemoryPersistence } from '../../session/memory-persistence.js';
 import { MemoryAttachmentManager } from '../../session/memory-attachment-manager.js';
@@ -62,6 +65,7 @@ import { initTelegramModules } from '../../telegram/orchestrator.js';
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
 import { setupEditorHandlers } from './editor-handlers.js';
+import { setupAutoMemoryHandlers } from './auto-memory-handlers.js';
 import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
@@ -72,7 +76,10 @@ import { VoiceService } from '../../voice/voice-service.js';
 import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
 import { CapabilityDetector } from '../../session/capability-detector.js';
 import { OperatorSessionManager } from '../../session/operator-session-manager.js';
-import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
+import { resolveConfiguredSpawnEnv, spawnConfiguredSession } from '../../session/configured-session-spawn.js';
+import { RecordingModelRunner, apiSilentBackend } from '../../session/silent-model-runner.js';
+import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.js';
+import { CliAutoMemory } from '../../session/cli-auto-memory.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
@@ -81,6 +88,7 @@ import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
 import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
+import { setupScratchpadHandlers } from './scratchpad-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from './time-tracking-handlers.js';
@@ -150,6 +158,7 @@ import { PromptTemplateManager } from '../../session/prompt-template-manager.js'
 import { MessNotifier } from '../../session/mess-notifier.js';
 import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
+import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { HookReceiver } from '../../session/hooks/hook-receiver.js';
@@ -160,6 +169,7 @@ import { openTaskLines } from '../../session/operator-tasks.js';
 import { RingRetry } from '../../session/ring-retry.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
 import { Bm25SuggestionScorer, BoostedSuggestionScorer, SuggestionService } from '../../session/hooks/suggestion-scorer.js';
+import { createSuggestionCandidateSource } from '../../session/hooks/suggestion-candidates.js';
 import { SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { createRulesViaHooksFn } from '../../session/hooks/hook-capability.js';
 import { createReminderDeliveryFn } from '../../session/reminder-delivery.js';
@@ -229,6 +239,7 @@ export function registerIPCHandlers(
     (artifactId) => artifactAttachmentManager.deleteForArtifact(artifactId),
   );
   artifactManager.importAll(loadArtifacts());
+  const scratchpadManager = new ScratchpadManager(createScratchpadStore());
   const memoryPersistence = new MemoryPersistence();
   const memoryAttachmentManager = new MemoryAttachmentManager();
   // PlanManager is constructed before MemoryManager so provenance can be
@@ -242,6 +253,8 @@ export function registerIPCHandlers(
     canReadAll: (id) => sessionManager.getSession(id)?.role === 'operator',
     isProjectShared: (projectId) => projectStore.getById(projectId)?.memoryPrivate !== true,
     resolveSessionPlan: (id) => planManager.claimedPlanFor(id)?.id ?? null,
+    isDreamSession: (id) => scheduledTaskManager.isDreamSession(id),
+    resolveSessionMission: (id) => sessionManager.getSession(id)?.mission?.text ?? null,
   });
   const contextManager = new ContextManager(planManager);
   const getSkillsPath = (configLoader as ConfigLoader & { getSkillsPath?: () => string }).getSkillsPath;
@@ -266,6 +279,7 @@ export function registerIPCHandlers(
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
   helmControlService.sessionChangeFeed.attach(sessionManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
+  helmControlService.setScratchpadManager(scratchpadManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
@@ -382,6 +396,8 @@ export function registerIPCHandlers(
     binSessionIds,
     id => artifactManager.clearSession(id),
   );
+  // Scratchpads follow the same rule: kept for a live or binned session, dropped otherwise.
+  scratchpadManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
 
   // Prune orphan attachment directories (artifacts deleted in a previous crash)
   const allArtifactIds = new Set(
@@ -498,8 +514,47 @@ export function registerIPCHandlers(
       seq, at: record.at, fromUser: record.originId !== undefined, text: record.text,
     })),
     historyDir: join(getConfigDir(dirname ?? process.cwd()), 'api-sessions'),
+    // Bound lazily: the recorder needs the silent runner, which needs this host.
+    recordTurn: (sessionId, history) => { void autoMemoryRecorder.recordTurns(sessionId, splitTurns(history)); },
   });
   registerApiSessionHost(apiSessionHost);
+  // Auto memory's silent runs go to the recording model picked in Settings:
+  // an API tool answers one direct request, a real CLI is run once, headless.
+  const recordingModelRunner = new RecordingModelRunner({
+    getRecordingModel: () => configLoader.getAutoMemoryConfig().recordingModel,
+    resolveModel: (ref) => {
+      const resolved = configLoader.resolveCliType(ref);
+      if (!resolved) return null;
+      const env = resolveConfiguredSpawnEnv(configLoader, resolved.id);
+      return resolved.config.api
+        ? { id: resolved.id, kind: 'api', api: resolved.config.api, env }
+        : { id: resolved.id, kind: 'cli', headlessCommand: resolved.config.headlessCommand, env };
+    },
+    backends: {
+      api: apiSilentBackend(apiSessionHost),
+      cli: new HeadlessCliRunner({ pty: ptyManager, workDir: join(getTempDir(dirname ?? process.cwd()), 'headless') }),
+    },
+  });
+  // The judge pass behind auto-save: at most one session-bound memory per finished turn.
+  const autoMemoryRecorder = new AutoMemoryRecorder({
+    runner: recordingModelRunner,
+    isEnabled: () => configLoader.getAutoMemoryConfig().autoSave,
+    isLive: (sessionId) => sessionManager.hasSession(sessionId),
+    getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
+    listBound: (sessionId) => memoryManager.listBoundForSession(sessionId),
+    create: (sessionId, memory) => { memoryManager.createForSession(sessionId, { ...memory, sessionBound: true }); },
+    update: (sessionId, id, memory) => { memoryManager.updateForSession(sessionId, id, memory); },
+  });
+  // The same pass for real CLI sessions, whose turns come from the transcript their hooks report.
+  const cliAutoMemory = new CliAutoMemory({
+    isEnabled: () => {
+      const { autoSave, recordingModel } = configLoader.getAutoMemoryConfig();
+      return autoSave && Boolean(recordingModel);
+    },
+    getTranscriptPath: (sessionId) => sessionManager.getSession(sessionId)?.cliTranscriptPath,
+    record: (sessionId, turns) => autoMemoryRecorder.recordTurns(sessionId, turns),
+  });
+  sessionManager.on('session:removed', (event: { sessionId: string }) => cliAutoMemory.forget(event.sessionId));
   helmControlService.setApiContextSizeLookup((sessionId) => apiSessionHost.getContextSize(sessionId));
 
   // Pattern matcher uses raw deliverText for send-text rule actions.
@@ -541,6 +596,7 @@ export function registerIPCHandlers(
     suggestionUsage,
   );
   setupEditorHandlers(configLoader);
+  setupAutoMemoryHandlers(configLoader, recordingModelRunner);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
   setupSystemHandlers(dirname ?? process.cwd());
@@ -632,12 +688,17 @@ export function registerIPCHandlers(
     recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
     // Restore reuses the original session id, so the mission lands back on the same session.
     (entry) => sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight),
+    scratchpadManager,
   );
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
   recycleBinManager.pruneExpired();
   setupRuntimeGroupHandlers(runtimeGroupManager, windowManager);
   setupArtifactHandlers(artifactManager, artifactAttachmentManager, windowManager, dirname, artifactTempRegistry);
+  setupScratchpadHandlers(
+    scratchpadManager,
+    (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
+  );
   setupMemoryHandlers(memoryManager, memoryAttachmentManager, sessionManager, windowManager, artifactTempRegistry);
 
   // Memory mutations can originate from MCP or another window. Route the
@@ -670,9 +731,20 @@ export function registerIPCHandlers(
       win.webContents.send('artifact:changed', { sessionId });
     }
   });
+  artifactManager.on('artifact:created', (sessionId: string) => {
+    for (const win of artifactWindowsFor(sessionId)) {
+      win.webContents.send('artifact:created', { sessionId });
+    }
+  });
   artifactManager.on('artifact:reveal', (sessionId: string, artifactId: string) => {
     for (const win of artifactWindowsFor(sessionId)) {
       win.webContents.send('artifact:reveal', { sessionId, artifactId });
+    }
+  });
+  // The pad itself rides the event: an LLM edit shows in the pane without a second round trip.
+  scratchpadManager.on('scratchpad:changed', (scratchpad: Scratchpad) => {
+    for (const win of artifactWindowsFor(scratchpad.sessionId)) {
+      win.webContents.send('scratchpad:changed', scratchpad);
     }
   });
   setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordUser(data.includes('\r') ? SUBMIT_WEIGHT : 1, sessionId), patternMatcher, recycleBinManager);
@@ -756,6 +828,7 @@ export function registerIPCHandlers(
     draftManager,
     artifactManager,
     artifactAttachments: artifactAttachmentManager,
+    onTurnEnded: (sessionId) => { void cliAutoMemory.turnEnded(sessionId); },
   });
   hookTracker.watch(hookReceiver);
 
@@ -778,33 +851,19 @@ export function registerIPCHandlers(
   // G4: the injection brain, bound to the receiver built above. SILENT for a
   // session without hook events — nothing here runs, so behaviour is exactly
   // as before. The suggester's candidates are built per prompt: skills visible
-  // to the session's project (globals included), plus that project's live
-  // (non-dormant) memories. Pointers only, capped, once per item.
+  // to the session's project (globals included), that project's live
+  // (non-dormant) memories, and the asking session's own bound memories.
+  // Pointers only, capped, once per item.
   //
   // G5: the suggester now runs on the boosted scorer above, and feeds the
   // usage store what was actually sent.
   const suggestionService = new SuggestionService({
-    getCandidates: (projectId) => {
-      const skills = skillManager.listForProject(projectId).map((skill) => ({
-        type: 'skill' as const,
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        allProjects: skill.allProjects,
-      }));
-      if (!projectId) return skills;
-      const memories = memoryManager.listRecords()
-        .filter((record) => record.projectId === projectId && record.dormantSince === undefined)
-        .map((record) => ({
-          type: 'memory' as const,
-          id: record.id,
-          name: record.tldr,
-          description: record.content,
-          createdAt: record.createdAt,
-          ...(record.planId ? { planId: record.planId } : {}),
-        }));
-      return [...skills, ...memories];
-    },
+    getCandidates: createSuggestionCandidateSource({
+      listSkills: (projectId) => skillManager.listForProject(projectId),
+      listProjectMemories: (projectId) => memoryManager.listProjectRecords(projectId),
+      listBoundMemories: (sessionId) => memoryManager.listBoundForSession(sessionId),
+    }),
+    memoriesEnabled: () => configLoader.getAutoMemoryConfig().autoRecall,
     scorer: suggestionScorer,
     onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),
   });
@@ -942,6 +1001,7 @@ export function registerIPCHandlers(
         logger.error(`[IPC] Failed to purge memories for removed session ${event.sessionId}: ${error}`);
       }
       artifactManager.clearSession(event.sessionId);
+      scratchpadManager.clearSession(event.sessionId);
       // No bin entry means no way back, so the phone's replay of this
       // conversation goes now too — same rule the bin's purge paths enforce.
       try {

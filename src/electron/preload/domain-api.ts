@@ -8,7 +8,9 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
+import type { Scratchpad, ScratchpadWriteResult } from '../../types/scratchpad.js';
 import type { MessEntry } from '../../types/mess.js';
+import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
@@ -92,6 +94,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Persist the per-session mission bar height (px, clamped in main). */
   sessionSetMissionBarHeight: (id: string, px: number): Promise<{ success: boolean; height?: number; error?: string }> =>
     ipcRenderer.invoke('session:setMissionBarHeight', id, px),
+
+  /** Read a session's scratchpad (empty at revision 0 when never written). */
+  scratchpadGet: (sessionId: string): Promise<Scratchpad> =>
+    ipcRenderer.invoke('scratchpad:get', sessionId),
+
+  /** Replace the scratchpad text as the user; refused when `baseRevision` is no longer current. */
+  scratchpadSet: (sessionId: string, text: string, baseRevision: number): Promise<ScratchpadWriteResult> =>
+    ipcRenderer.invoke('scratchpad:set', sessionId, text, baseRevision),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>
@@ -563,6 +573,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Remove Helm's hook block from a CLI's user-level config. Reversible. */
   hooksUninstall: (cliTypeId: string) => ipcRenderer.invoke('hooks:uninstall', cliTypeId),
 
+  /** Auto memory: the recording model, the two switches, and the models the picker lists. */
+  configGetAutoMemory: (): Promise<AutoMemoryState> => ipcRenderer.invoke('config:getAutoMemory'),
+
+  /** Partial merge. A recording model that cannot run silently is refused with its reason. */
+  configSetAutoMemory: (updates: Partial<AutoMemorySettings>): Promise<AutoMemoryState> =>
+    ipcRenderer.invoke('config:setAutoMemory', updates),
+
+  /** One silent request to the picked recording model, to prove it answers. */
+  configTestAutoMemoryModel: (): Promise<SilentRunResult> => ipcRenderer.invoke('config:testAutoMemoryModel'),
+
   /**
    * G9 reminder delivery: the user's per-reminder mode overrides
    * ('hook' | 'pty' | 'off'). Absent reminder = its shipped default.
@@ -682,6 +702,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       spawnCommand?: string;
       resumeCommand?: string;
       continueCommand?: string;
+      headlessCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
@@ -704,6 +725,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       spawnCommand?: string;
       resumeCommand?: string;
       continueCommand?: string;
+      headlessCommand?: string;
       helmPreambleForInterSession?: boolean;
       largeTextAsTempFile?: boolean;
       messReminders?: boolean;
@@ -1071,7 +1093,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   memoryList: (sessionId?: string) => ipcRenderer.invoke('memory:list', sessionId),
   memoryGet: (memoryId: string, sessionId?: string) => ipcRenderer.invoke('memory:get', memoryId, sessionId),
-  memorySearch: (query: string, options?: { regex?: boolean; graphDepth?: number }, sessionId?: string) =>
+  memorySearch: (query: string, options?: { regex?: boolean }, sessionId?: string) =>
     ipcRenderer.invoke('memory:search', query, options, sessionId),
   memoryGraph: (rootId: string, graphDepth?: number, sessionId?: string) =>
     ipcRenderer.invoke('memory:graph', rootId, graphDepth, sessionId),
@@ -1115,6 +1137,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: unknown, dirPath: string) => callback(dirPath);
     ipcRenderer.on('plan:changed', listener);
     return () => ipcRenderer.removeListener('plan:changed', listener);
+  },
+
+  /** Subscribe to brand-new plans (not edits). */
+  onPlanCreated: (callback: (dirPath: string) => void) => {
+    const listener = (_event: unknown, dirPath: string) => callback(dirPath);
+    ipcRenderer.on('plan:created', listener);
+    return () => ipcRenderer.removeListener('plan:created', listener);
   },
 
   /** Subscribe to successful incoming plan import notifications */
@@ -1369,11 +1398,25 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('artifact:changed', listener);
   },
 
+  /** Subscribe to brand-new artifacts (not new versions). */
+  onArtifactCreated: (callback: (event: { sessionId: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string }) => callback(data);
+    ipcRenderer.on('artifact:created', listener);
+    return () => ipcRenderer.removeListener('artifact:created', listener);
+  },
+
   /** Subscribe to durable-memory invalidation for the owning session. */
   onMemoryChanged: (callback: (event: { sessionId?: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { sessionId?: string }) => callback(data);
     ipcRenderer.on('memory:changed', listener);
     return () => ipcRenderer.removeListener('memory:changed', listener);
+  },
+
+  /** Subscribe to scratchpad changes; the event carries the whole new pad. */
+  onScratchpadChanged: (callback: (scratchpad: Scratchpad) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: Scratchpad) => callback(data);
+    ipcRenderer.on('scratchpad:changed', listener);
+    return () => ipcRenderer.removeListener('scratchpad:changed', listener);
   },
 
   /** Subscribe to artifact reveal (bring-forward) events */

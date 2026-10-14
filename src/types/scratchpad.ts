@@ -1,0 +1,32 @@
+/**
+ * Per-session scratchpad: one plain-text working surface that the user (dock
+ * pane) and the session's own LLM (MCP) both read and write. See docs/scratchpad.md.
+ */
+
+export type ScratchpadAuthor = 'user' | 'ai';
+
+export interface Scratchpad {
+  sessionId: string;
+  text: string;
+  /** 0 until the first write; every change adds one. A write names the revision it was based on. */
+  revision: number;
+  updatedAt?: number;
+  updatedBy?: ScratchpadAuthor;
+}
+
+export type ScratchpadRefusal = 'stale' | 'too_large';
+
+/** A refused write always carries the pad as it stands, so the caller can retry without a second read. */
+export type ScratchpadWriteResult =
+  | { ok: true; scratchpad: Scratchpad }
+  | { ok: false; reason: ScratchpadRefusal; message: string; scratchpad: Scratchpad };
+
+/** Bounds the file, the IPC payload and what an LLM pulls into its context on a read. */
+export const SCRATCHPAD_MAX_BYTES = 64 * 1024;
+
+const encoder = new TextEncoder();
+
+/** Size as stored (UTF-8), the unit the cap is expressed in. */
+export function scratchpadBytes(text: string): number {
+  return encoder.encode(text).length;
+}

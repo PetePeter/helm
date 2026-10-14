@@ -1189,6 +1189,45 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_scratchpad_get',
+    title: 'Read Session Scratchpad',
+    description: 'Read a session scratchpad: one plain-text pad per session that the user types in (a Helm tool window) and that session\'s own LLM writes too. Use it for the running notes of this session: a to-do list, numbers to remember, something the user pasted for you. It lives and dies with the session; lasting knowledge belongs in memory_*. Omit sessionId to read your own. Returns text and the revision to pass to session_scratchpad_set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessionId: { type: 'string', description: 'Session ID or exact name to read. Defaults to your own session.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_scratchpad_set',
+    title: 'Replace Session Scratchpad',
+    description: 'Replace the whole text of YOUR OWN session scratchpad. Pass the revision you got from session_scratchpad_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_scratchpad_append.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The full new text. Empty clears the pad.' },
+        revision: { type: 'integer', description: 'The revision this text was based on (0 for a pad never written).' },
+      },
+      required: ['text', 'revision'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_scratchpad_append',
+    title: 'Append To Session Scratchpad',
+    description: 'Add text on a new line at the end of YOUR OWN session scratchpad. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The text to add.' },
+      },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'session_set_locked',
     title: 'Set Session Lock',
     description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, Telegram, group close, and force restart. Accepts sessionId or exact session name.',
@@ -1815,7 +1854,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_dream',
     title: 'Dream Memories',
-    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. This tool only identifies candidates; it never decides what to forget or merge.',
+    description: 'Return bounded, disjoint faded and salient candidates from the project resolved from the authenticated caller session. For a dream session it also returns `bound`: the auto-saved, session-bound memories waiting to be digested, grouped by the session that saved them with its mission; `totals.bound` counts all of them. This tool only identifies candidates; it never decides what to forget, merge or promote.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1864,7 +1903,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_get',
     title: 'Get Memory',
-    description: 'Get a memory by id: your project\'s, or another project\'s found via memory_search. Returns its cycle-safe graph neighbourhood; graphDepth defaults to 1 (the memory plus its direct links), 0 for the memory alone.',
+    description: 'Get a memory by id: your project\'s, or another project\'s found via memory_search. Returns the memory in full plus its cycle-safe graph neighbourhood, each linked memory as id + tldr only: memory_get the ones you need. graphDepth defaults to 1 (direct links), 0 for the memory alone.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1892,7 +1931,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_update',
     title: 'Update Memory',
-    description: 'Update a memory in the project resolved from the authenticated caller session. Provide tldr and/or content; expectedUpdatedAt enables optimistic concurrency protection.',
+    description: 'Update a memory in the project resolved from the authenticated caller session. Provide tldr and/or content; expectedUpdatedAt enables optimistic concurrency protection. During a dream, promote=true releases a session-bound memory into project memory.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1900,6 +1939,7 @@ export const MCP_TOOLS: McpTool[] = [
         tldr: { type: 'string', minLength: 1 },
         content: { type: 'string' },
         expectedUpdatedAt: { type: 'number' },
+        promote: { type: 'boolean', description: 'Dream sessions only: clear the session binding so every session of the project sees this memory. Refused for any other caller.' },
       },
       required: ['id'],
       additionalProperties: false,
@@ -1919,13 +1959,12 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'memory_search',
     title: 'Search Memories',
-    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Covers your project plus other projects that share; `hits` gives each result\'s score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking. graphDepth defaults to 1 (each hit plus its direct links). Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
+    description: 'Search memories, best match first (BM25 over tldr and content: any term, typo-tolerant, prefixes). Returns the 5 best `hits` as id + tldr, never the content: memory_get the hit you want. `matched` counts every match; when it is above 5, narrow the query. Covers your project plus other projects that share; each hit carries its score, projectId and `foreign` flag. A foreign memory is another repo\'s knowledge: check that it applies here before acting on it. regex=true filters by regular expression instead of ranking, under the same cap. Start narrow with the most specific multi-term query, then widen: drop terms, then try synonyms and alternate spellings, until your terminology is exhausted; only then conclude nothing is stored.',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string' },
         regex: { type: 'boolean' },
-        graphDepth: { type: 'integer', minimum: 0, maximum: 100 },
       },
       required: ['query'],
       additionalProperties: false,

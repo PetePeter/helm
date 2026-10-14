@@ -27,6 +27,17 @@ describe('ArtifactManager — drafts', () => {
     manager.on('artifact:reveal', (_sessionId: string, id: string) => revealed.push(id));
   });
 
+  // The dock's "+1" counts new artifacts only: a new version is not a new item.
+  it('emits artifact:created on create but not on update', () => {
+    const created: string[] = [];
+    manager.on('artifact:created', (sessionId: string) => created.push(sessionId));
+
+    const art = manager.create('s1', 'Report', 'markdown', 'v1');
+    manager.update(art.id, 'v2');
+
+    expect(created).toEqual(['s1']);
+  });
+
   // A draft is the user typing, not content anyone was told about: it must not
   // pop the artifact forward, reorder the list, or arm the phone's "artifact
   // changed" notice (which keys off the changed ids).

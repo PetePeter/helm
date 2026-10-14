@@ -88,6 +88,8 @@ export interface HookTrackerDeps {
   draftManager: Pick<DraftManager, 'getForSession'>;
   artifactManager: Pick<ArtifactManager, 'create'>;
   artifactAttachments: Pick<ArtifactAttachmentManager, 'add'>;
+  /** A turn of the session's own agent finished (Stop); auto memory judges it. */
+  onTurnEnded?: (sessionId: string) => void;
   now?: () => number;
 }
 
@@ -184,6 +186,7 @@ export class HookTracker {
         this.clearStall(sessionId);
         this.deps.flashAttention(sessionId);
         this.settlePlanOnStop(sessionId);
+        this.deps.onTurnEnded?.(sessionId);
         break;
 
       case 'StopFailure':

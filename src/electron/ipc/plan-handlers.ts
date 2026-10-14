@@ -46,6 +46,11 @@ export function setupPlanHandlers(
       }
     }
   });
+  planManager.on('plan:created', (dirPath: string) => {
+    for (const win of getTargetWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('plan:created', dirPath);
+    }
+  });
   contextManager?.on('context:changed', (projectId: string) => {
     const dirPath = planManager.getDirectoryForProject(projectId) ?? projectId;
     for (const win of getTargetWindows()) {

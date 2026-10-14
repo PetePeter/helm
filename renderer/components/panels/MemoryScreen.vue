@@ -38,6 +38,20 @@ const layout = computed(() => memoryScreenState.forest
 const matchedIds = computed(() => new Set(memoryScreenState.matchedIds));
 
 /**
+ * While the filter box has text, only matches are drawn — and only links whose
+ * both ends are drawn. Fading non-matches left the graph as noisy as before.
+ */
+const filtering = computed(() => memoryScreenState.searchQuery.trim().length > 0);
+const visibleNodes = computed(() => (layout.value?.nodes ?? [])
+  .filter((node) => !filtering.value || matchedIds.value.has(node.id)));
+const visibleEdges = computed(() => {
+  const all = layout.value?.edges ?? [];
+  if (!filtering.value) return all;
+  const shown = new Set(visibleNodes.value.map((node) => node.key));
+  return all.filter((edge) => shown.has(edge.from) && shown.has(edge.to));
+});
+
+/**
  * Direct neighbours of the selection, read off the forest rather than a rooted
  * traversal. Both directions are included and labelled, because an incoming
  * link is just as much a relationship as an outgoing one.
@@ -151,7 +165,7 @@ onUnmounted(disposeMemoryChangedSubscription);
       <div class="memory-graph-panel">
         <div class="memory-graph-toolbar">
           <span>Read-only graph — click a node to read it</span>
-          <span v-if="memoryScreenState.searchQuery" class="memory-search-count">{{ memoryScreenState.searchResults.length }} match(es)</span>
+          <span v-if="memoryScreenState.searchQuery" class="memory-search-count">{{ memoryScreenState.matchedIds.length }} match(es)</span>
           <button type="button" class="btn btn--secondary btn--sm" @click="resetViewport">Reset view</button>
           <button v-if="memoryScreenState.detail" type="button" class="btn btn--secondary btn--sm" @click="openDetail">Open detail</button>
         </div>
@@ -181,7 +195,7 @@ onUnmounted(disposeMemoryChangedSubscription);
             </defs>
             <g :transform="`translate(${pan.x} ${pan.y}) scale(${layout.zoom})`">
               <line
-                v-for="edge in layout.edges"
+                v-for="edge in visibleEdges"
                 :key="edge.from + '>' + edge.to"
                 class="memory-graph-edge"
                 marker-end="url(#memory-edge-arrow)"
@@ -191,13 +205,12 @@ onUnmounted(disposeMemoryChangedSubscription);
                 :y2="(nodeByKey(edge.to)?.y ?? 0) + 42"
               />
               <g
-                v-for="node in layout.nodes"
+                v-for="node in visibleNodes"
                 :key="node.key"
                 class="memory-graph-node"
                 :class="{
                   selected: node.id === memoryScreenState.selectedId,
                   match: matchedIds.has(node.id),
-                  dimmed: matchedIds.size > 0 && !matchedIds.has(node.id),
                 }"
                 :transform="`translate(${node.x} ${node.y})`"
                 @click.stop="void selectMemory(node.id)"
@@ -300,7 +313,6 @@ onUnmounted(disposeMemoryChangedSubscription);
 .memory-graph-node rect { fill: var(--bg-secondary); stroke: var(--border); stroke-width: 2; }
 .memory-graph-node.selected rect { stroke: var(--accent); }
 .memory-graph-node.match rect { stroke: var(--accent); stroke-width: 3; }
-.memory-graph-node.dimmed { opacity: .35; }
 .memory-graph-arrow { fill: var(--text-secondary); }
 .memory-graph-node text { fill: var(--text-primary); font-size: 12px; pointer-events: none; }
 .memory-graph-node .memory-node-status, .memory-graph-node .memory-node-path { fill: var(--text-secondary); font-size: 10px; }

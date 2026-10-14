@@ -306,8 +306,15 @@ function onCardClick(e: MouseEvent): void {
   >
     <span v-if="fadeStyle" :key="session.lastPromptAt" class="session-prompt-fade" :style="fadeStyle" />
     <!-- Status at a glance, centred on the row: every one that applies, side by side. -->
-    <span v-if="statusIcons.length" class="session-status-icons" aria-hidden="true">
+    <span v-if="statusIcons.length || isHiddenFromOverview" class="session-status-icons" aria-hidden="true">
       <span v-for="s in statusIcons" :key="s.icon" :title="s.title">{{ s.icon }}</span>
+      <!-- No emoji for a closed eye: a drawn one, in the row's text colour. -->
+      <span v-if="isHiddenFromOverview" class="session-status-hidden" title="Hidden from the overview">
+        <svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <path d="M1 2c2 3 4.5 4.5 7 4.5S13 5 15 2" />
+          <path d="M4 5.5 3 8M8 6.5V9M12 5.5l1 2.5" />
+        </svg>
+      </span>
     </span>
     <!-- Line 1: top row -->
     <div class="session-top-row">

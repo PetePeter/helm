@@ -34,7 +34,6 @@ describe('MemoryScreen shared-primitives anatomy', () => {
     const store = useAppStore();
     store.setActiveSessionId('session-1');
     memoryScreenState.summaries = [];
-    memoryScreenState.searchResults = [];
     memoryScreenState.searchQuery = '';
     memoryScreenState.selectedId = null;
     memoryScreenState.detail = null;
@@ -85,11 +84,37 @@ describe('MemoryScreen shared-primitives anatomy', () => {
 
   it('renders the match count after a search has run', async () => {
     memoryScreenState.searchQuery = 'memory';
-    memoryScreenState.searchResults = [{}, {}, {}] as any;
+    memoryScreenState.matchedIds = ['a', 'b', 'c'];
     const wrapper = mountScreen();
     await flushPromises();
 
     expect(wrapper.find('.memory-search-count').text()).toBe('3 match(es)');
+    wrapper.unmount();
+  });
+
+  // Filtering hides non-matches (and links touching them) instead of fading
+  // them, so a search reduces the picture rather than just recolouring it.
+  it('hides non-matching memories and their links while filtering', async () => {
+    const records = [summary('a', 'Alpha'), summary('b', 'Beta'), summary('c', 'Gamma')];
+    const edges = [{ fromId: 'a', toId: 'b', type: 'related' }, { fromId: 'b', toId: 'c', type: 'related' }];
+    window.helm.memory.memoryList = vi.fn().mockResolvedValue(records);
+    window.helm.memory.memoryGraphAll = vi.fn().mockResolvedValue({ records, edges });
+    const wrapper = mountScreen();
+    await flushPromises();
+    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(3);
+    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(2);
+
+    memoryScreenState.searchQuery = 'a';
+    memoryScreenState.matchedIds = ['a', 'b'];
+    await nextTick();
+    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(2);
+    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(1);
+
+    memoryScreenState.searchQuery = '';
+    memoryScreenState.matchedIds = [];
+    await nextTick();
+    expect(wrapper.findAll('.memory-graph-node')).toHaveLength(3);
+    expect(wrapper.findAll('.memory-graph-edge')).toHaveLength(2);
     wrapper.unmount();
   });
 

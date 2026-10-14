@@ -167,6 +167,19 @@ describe('SuggestionService', () => {
     expect(payload).toContain('skill/deploy-check');
   });
 
+  it('hints at no memory while auto-recall is off, and still at skills', async () => {
+    let recall = false;
+    const service = new SuggestionService({ getCandidates: () => ALL, memoriesEnabled: () => recall });
+
+    expect(await service.suggest('s1', 'the helm chain stall recovery after a usage-limit stall', null)).toBeNull();
+    expect(await service.suggest('s1', 'graphify this folder into a knowledge graph', null)).toContain('skill/');
+
+    // Read live: switching it back on needs no restart.
+    recall = true;
+    expect(await service.suggest('s1', 'the helm chain stall recovery after a usage-limit stall', null))
+      .toContain('memory/helm-chain-stall-recovery');
+  });
+
   it('suggests an item only once per session', async () => {
     const service = makeService();
     const prompt = 'graphify this folder into a knowledge graph';

@@ -33,6 +33,7 @@ import {
   PANE_MESS,
   PANE_TIMESHEET,
   PANE_QUICK_SPAWN,
+  PANE_SCRATCHPAD,
   PANE_SCHEDULER,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -106,7 +107,7 @@ describe('default Classic layout', () => {
     expect(loaded.closed).toEqual([]);
   });
 
-  it('places sessions/tools left, views centre, artifacts right', () => {
+  it('places sessions/tools left, views centre, artifacts and scratchpad right', () => {
     // Deterministic left-to-right, top-to-bottom order mirrors the current UI.
     expect(listPanes(layout.root)).toEqual([
       PANE_SESSIONS,
@@ -119,7 +120,9 @@ describe('default Classic layout', () => {
       PANE_MESS,
       PANE_TIMESHEET,
       PANE_ARTIFACTS,
+      PANE_SCRATCHPAD,
     ]);
+    expect(findPaneGroup(layout.root, PANE_SCRATCHPAD)).toMatchObject({ activeTab: PANE_ARTIFACTS });
   });
 
   it('keeps the terminal active and artifacts collapsed to an edge rail', () => {

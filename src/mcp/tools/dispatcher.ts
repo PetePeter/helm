@@ -34,7 +34,8 @@ import {
   requireBooleanResult,
   requireResult,
 } from './validation.js';
-import { MEMORY_EDGE_TYPES } from '../../types/memory.js';
+import { MEMORY_EDGE_TYPES, MEMORY_SEARCH_LIMIT } from '../../types/memory.js';
+import { compactNeighbours } from '../../session/memory-graph.js';
 
 /**
  * Reading a memory brings its direct links along: small memories only add up
@@ -56,6 +57,19 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
     );
   }
   return authContext.sessionId;
+}
+
+/**
+ * A scratchpad is written only by its own session (and its user). Naming
+ * another session is refused out loud: silently writing the caller's pad
+ * instead would look like success.
+ */
+function requireOwnScratchpad(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+  const own = requireCallerSession(authContext, tool);
+  if (args.sessionId !== undefined && args.sessionId !== own) {
+    throw new Error(`${tool} only writes your own session's scratchpad. Read another session's with session_scratchpad_get.`);
+  }
+  return own;
 }
 
 /**
@@ -712,6 +726,23 @@ export async function callMcpTool(
           : requireCallerSession(authContext, 'session_mission_set');
         return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
       }
+      case 'session_scratchpad_get': {
+        const target = typeof args.sessionId === 'string' && args.sessionId.trim()
+          ? args.sessionId
+          : requireCallerSession(authContext, 'session_scratchpad_get');
+        return service.getSessionScratchpad(target);
+      }
+      case 'session_scratchpad_set':
+        return service.setSessionScratchpad(
+          requireOwnScratchpad(authContext, args, 'session_scratchpad_set'),
+          asStringValue(args.text, 'text is required'),
+          asFiniteNumber(args.revision, 'revision is required: pass the revision from session_scratchpad_get'),
+        );
+      case 'session_scratchpad_append':
+        return service.appendSessionScratchpad(
+          requireOwnScratchpad(authContext, args, 'session_scratchpad_append'),
+          asString(args.text, 'text is required'),
+        );
       case 'session_rename':
         return service.renameSession(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
@@ -1103,7 +1134,7 @@ export async function callMcpTool(
           `Memory not found: ${memoryId}`,
         );
         recordFetched(deps, authContext, 'memory', memoryId);
-        return traversal;
+        return compactNeighbours(traversal);
       }
       case 'memory_create': {
         const sessionId = requireCallerSession(authContext, 'memory_create');
@@ -1114,9 +1145,10 @@ export async function callMcpTool(
       }
       case 'memory_update': {
         const sessionId = requireCallerSession(authContext, 'memory_update');
-        const updates: { tldr?: string; content?: string } = {};
+        const updates: { tldr?: string; content?: string; promote?: boolean } = {};
         if (args.tldr !== undefined) updates.tldr = asString(args.tldr, 'tldr must be a non-empty string');
         if (args.content !== undefined) updates.content = asStringValue(args.content, 'content must be a string');
+        if (args.promote !== undefined && asBoolean(args.promote, 'promote must be a boolean')) updates.promote = true;
         if (Object.keys(updates).length === 0) throw new Error('Provide tldr and/or content to update');
         const expectedUpdatedAt = args.expectedUpdatedAt === undefined
           ? undefined
@@ -1138,7 +1170,7 @@ export async function callMcpTool(
         const regex = args.regex === undefined ? false : asBoolean(args.regex, 'regex must be a boolean');
         return service.searchMemories(sessionId, asStringValue(args.query, 'query is required'), {
           regex,
-          graphDepth: asGraphDepth(args.graphDepth, RECALL_GRAPH_DEPTH),
+          limit: MEMORY_SEARCH_LIMIT,
         });
       }
       case 'memory_graph': {

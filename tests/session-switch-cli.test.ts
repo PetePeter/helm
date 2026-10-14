@@ -25,6 +25,8 @@ vi.mock('../src/utils/logger.js', () => ({
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
 import { RuntimeGroupManager } from '../src/session/runtime-group-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
+import { ScratchpadManager } from '../src/session/scratchpad-manager.js';
+import type { Scratchpad } from '../src/types/scratchpad.js';
 import type { SessionInfo } from '../src/types/session.js';
 
 let dir: string;
@@ -56,7 +58,16 @@ function setup(patch: Partial<SessionInfo> = {}) {
   const groups = new RuntimeGroupManager();
   service.setRuntimeGroupManager(groups);
   service.setSessionArtifactCopier((from, to) => { artifacts.copySession(from, to); });
-  return { service, sessions, killed, groups, artifacts };
+  const padFiles = new Map<string, Scratchpad>();
+  const pads = new ScratchpadManager({
+    load: id => padFiles.get(id) ?? null,
+    save: pad => { padFiles.set(pad.sessionId, pad); },
+    remove: id => { padFiles.delete(id); },
+    list: () => [...padFiles.keys()],
+  });
+  pads.set('old-sid', 'todo: lexer', 'user', 0);
+  service.setSessionScratchpadCopier((from, to) => pads.copySession(from, to));
+  return { service, sessions, killed, groups, artifacts, pads };
 }
 
 describe('HelmSessionService.switchCli', () => {
@@ -92,6 +103,21 @@ describe('HelmSessionService.switchCli', () => {
 
     expect(artifacts.getForSession('new-sid').map(a => a.title)).toEqual(['Findings']);
     rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('hands the scratchpad to the replacement, but not to a session that leaves the source open', () => {
+    const switched = setup();
+    switched.service.switchCli('old-sid', 'codex');
+    expect(switched.pads.get('new-sid').text).toBe('todo: lexer');
+    expect(switched.pads.get('old-sid').text).toBe('todo: lexer'); // still there for a restore
+
+    for (const kept of [setup(), setup({ locked: true })]) {
+      kept.service.switchCli('old-sid', 'codex', { closeSource: false });
+      expect(kept.pads.get('new-sid').text).toBe('');
+    }
+    const locked = setup({ locked: true });
+    locked.service.switchCli('old-sid', 'codex');
+    expect(locked.pads.get('new-sid').text).toBe('');
   });
 
   it('keeps the source when asked to, or when it is locked', () => {

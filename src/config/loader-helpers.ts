@@ -58,6 +58,11 @@ export interface ApiToolConfig {
    * the task, and the user's next message unlocks tools. Default true.
    */
   handshake?: boolean;
+  /**
+   * Whether auto memory records this tool's sessions (docs/auto-memory.md).
+   * Default true; false opts every session of this API tool out.
+   */
+  autoMemory?: boolean;
 }
 
 export interface ComfyUiInputBinding {
@@ -98,6 +103,7 @@ export type CliTypeOptions = {
   spawnCommand?: string;
   resumeCommand?: string;
   continueCommand?: string;
+  headlessCommand?: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;

@@ -50,6 +50,17 @@ describe('PlanManager', () => {
   // ─── CRUD ───────────────────────────────────────────────
 
   describe('create', () => {
+    // The dock's "+1" counts new plans only, never edits.
+    it('emits plan:created on create but not on update', () => {
+      const created: string[] = [];
+      pm.on('plan:created', (dirPath: string) => created.push(dirPath));
+
+      const item = pm.create('/projects/backend', 'Build Auth', 'JWT middleware');
+      pm.update(item.id, { title: 'Build Auth v2' });
+
+      expect(created).toEqual(['/projects/backend']);
+    });
+
     it('creates item with all fields populated', () => {
       const item = pm.create('/projects/backend', 'Build Auth', 'JWT middleware');
 

@@ -359,6 +359,8 @@ export interface ToolEditorBridgeData {
   spawnCommand: string;
   resumeCommand: string;
   continueCommand: string;
+  /** Blank = the built-in command of the tool's CLI family, if any. */
+  headlessCommand?: string;
   renameCommand: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile: boolean;
@@ -442,6 +444,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   spawnCommand?: string;
   resumeCommand?: string;
   continueCommand?: string;
+  headlessCommand?: string;
   helmPreambleForInterSession?: boolean;
   largeTextAsTempFile?: boolean;
   messReminders?: boolean;
@@ -454,7 +457,7 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   submitSuffix?: string;
   helmActions?: { clear?: string; compact?: string; export?: string };
 } {
-  const fields = ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand'] as const;
+  const fields = ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'headlessCommand'] as const;
   const options: Record<string, string> = {};
   for (const field of fields) {
     options[field] = typeof values[field] === 'string' ? values[field].trim() : '';

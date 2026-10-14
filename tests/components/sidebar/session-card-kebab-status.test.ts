@@ -10,7 +10,7 @@ import { mount } from '@vue/test-utils';
 import SessionCard from '../../../renderer/components/sidebar/SessionCard.vue';
 import { contextMenu } from '../../../renderer/stores/modal-bridge.js';
 
-function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0) {
+function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0, isHiddenFromOverview = false) {
   return mount(SessionCard, {
     props: {
       session: { id: 's1', name: 'worker', cliType: 'claude-code', ...session },
@@ -27,6 +27,7 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
       isSnappedOut: false,
       llmNotifications: [],
       shortcutKey: null,
+      isHiddenFromOverview,
     } as never,
   });
 }
@@ -55,6 +56,13 @@ describe('SessionCard kebab and status icons', () => {
     expect(icons(mountCard())).toEqual([]);
     expect(icons(mountCard({ locked: true }))).toEqual(['🔒']);
     expect(icons(mountCard({ locked: true, frozen: true, keepWarmUntil: Date.now() + 60_000 }))).toEqual(['🔒', '❄️', '⏰']);
+  });
+
+  it('a session hidden from the overview shows a closed eye mid-row', () => {
+    expect(mountCard().find('.session-status-hidden').exists()).toBe(false);
+    const hidden = mountCard({ locked: true }, false, 0, true);
+    expect(hidden.find('.session-status-icons .session-status-hidden').attributes('title')).toBe('Hidden from the overview');
+    expect(icons(hidden)).toEqual(['🔒', '']);
   });
 
   it('an expired keep-warm shows no alarm clock', () => {

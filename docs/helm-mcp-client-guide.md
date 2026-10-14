@@ -247,6 +247,29 @@ session_mission_set(text="Port the planner canvas to Vue; keep DAG layout stable
 
 See [mission-statement.md](mission-statement.md).
 
+## The session scratchpad: `session_scratchpad_*`
+
+Every session has a scratchpad: one plain-text pad the user types in (a Helm
+tool window) and you can read and write too. Use it for the running notes of
+this session, such as a to-do list or something the user pasted for you.
+Lasting knowledge belongs in `memory_*`; the pad is deleted with the session.
+
+```
+session_scratchpad_get()                              -> { text, revision, bytes, maxBytes }
+session_scratchpad_append(text="- tests green")       -> { ok, revision }
+session_scratchpad_set(text="...", revision=4)        -> { ok, revision }
+```
+
+- Helm does not show you the pad: read it when the user refers to it.
+- `set` replaces the whole text and needs the `revision` from your last read.
+  If the user changed the pad since, you get `ok: false, reason: "stale"` with
+  the current `text` and `revision`: redo your change on that text and retry.
+- `append` adds a line at the end and needs no revision. Prefer it for notes.
+- You write only your own session's pad; `get` takes a `sessionId` to read another's.
+- Max 65536 bytes; an over-limit write is refused and nothing changes.
+
+See [scratchpad.md](scratchpad.md).
+
 ## Checking your context size
 
 `session_info` includes your context size at startup. For routine checks, call `session_get` with `{ "sessionId": process.env.HELM_SESSION_ID }`; it returns the same positive token count, source, and transcript timestamp in a smaller response. If the count is not available, inspect `context.reason`; do not infer a size from earlier chat badges.

@@ -14,7 +14,7 @@ line_2 = "Do not save what the repo already records (code structure, git history
 line_3 = "Saving nothing is a valid outcome when you learned nothing durable."
 
 [procedure]
-step_1 = "memory_search the idea first, with specific terms. If a memory already covers it, memory_update that one instead of creating a duplicate; correct it if it is wrong."
+step_1 = "memory_search the idea first, with specific terms. Hits are id + tldr: memory_get the close ones to read them. If a memory already covers it, memory_update that one instead of creating a duplicate; correct it if it is wrong."
 step_2 = "memory_create one atom per idea: a tldr that states the fact itself, content that adds Why (the reason or incident) and How to apply (when it matters, what to do)."
 step_3 = "memory_link the new atom to related memories you found, with a type that says why (supports, example-of, part-of, supersedes...), in any project."
 

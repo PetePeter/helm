@@ -40,14 +40,14 @@ describe('literal search is case-insensitive', () => {
 
     const result = manager.searchForSession(SESSION, 'deploy');
 
-    expect(result.results).toHaveLength(1);
+    expect(result.hits).toHaveLength(1);
   });
 
   it('matches the tldr regardless of case', () => {
     const { manager } = makeManager();
     manager.createForSession(SESSION, { tldr: 'Config Boundary', content: 'irrelevant body' });
 
-    expect(manager.searchForSession(SESSION, 'config boundary').results).toHaveLength(1);
+    expect(manager.searchForSession(SESSION, 'config boundary').hits).toHaveLength(1);
   });
 
   // Regex mode is an explicit instruction from the caller; blanket-folding it
@@ -56,15 +56,15 @@ describe('literal search is case-insensitive', () => {
     const { manager } = makeManager();
     manager.createForSession(SESSION, { tldr: 'lowercase deploy', content: 'body' });
 
-    expect(manager.searchForSession(SESSION, 'Deploy', { regex: true }).results).toHaveLength(0);
-    expect(manager.searchForSession(SESSION, 'deploy', { regex: true }).results).toHaveLength(1);
+    expect(manager.searchForSession(SESSION, 'Deploy', { regex: true }).hits).toHaveLength(0);
+    expect(manager.searchForSession(SESSION, 'deploy', { regex: true }).hits).toHaveLength(1);
   });
 
   it('still refuses to match another session\'s records', () => {
     const { manager } = makeManager();
     manager.createForSession(OTHER_SESSION, { tldr: 'Deploy notes', content: 'body' });
 
-    expect(manager.searchForSession(SESSION, 'deploy').results).toHaveLength(0);
+    expect(manager.searchForSession(SESSION, 'deploy').hits).toHaveLength(0);
   });
 });
 

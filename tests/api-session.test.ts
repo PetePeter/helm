@@ -13,6 +13,7 @@ const { chunkForChat, selectApiTools, listAvailableApiTools, buildSystemPrompt, 
 const { ApiSessionProcess, dropTurns, forgetNudge, rescaleTokens, trimForOverflow, isContextOverflow } = await import('../src/session/api/api-session-process.js');
 const { ApiSessionHost } = await import('../src/session/api/api-session-host.js');
 const { NATIVE_TOOLS, globToRegExp } = await import('../src/session/api/api-native-tools.js');
+const { DiscardTable, lookupKey: lookupKeyOf } = await import('../src/session/api/api-discard.js');
 
 type Msg = import('../src/session/api/api-agent-loop.js').ChatMessage;
 type Result = import('../src/session/api/api-agent-loop.js').CompletionResult;
@@ -232,6 +233,230 @@ describe('runAgentTurn', () => {
   it('parses empty arguments as an empty object and rejects arrays', () => {
     expect(parseToolArguments('')).toEqual({});
     expect(parseToolArguments('[1]')).toBeNull();
+  });
+});
+
+describe('speculative lookups', () => {
+  const TOOLS = ['Glob', 'Grep', 'Read', 'Write', 'discard'].map((name) => ({ name, description: '', parameters: {} }));
+  const NOTE = (tried: string) => `[Discarded: you tried ${tried} and threw the result away. Ask a different question; the same one will not run again.]`;
+
+  function setup(replies: Result['message'][]) {
+    const client = scriptedClient(replies);
+    const executed: string[] = [];
+    const discards = new DiscardTable(() => new Date(2026, 9, 14, 14, 2));
+    const run = (extra: Partial<Parameters<typeof runAgentTurn>[0]> = {}) => runAgentTurn({
+      client,
+      system: 'SYS',
+      tools: TOOLS,
+      history: [],
+      userContent: 'find the config',
+      executeTool: async (name, args) => { executed.push(`${name}:${JSON.stringify(args)}`); return `${name} result`; },
+      discards,
+      ...extra,
+    });
+    /** What the model was sent on its nth request, as role + text or tool names. */
+    const sent = (request: number) => client.calls[request].messages.map((message) => (
+      message.tool_calls ? message.tool_calls.map((call) => call.function.name).join('+') : message.content
+    ));
+    return { client, executed, discards, run, sent };
+  }
+
+  it('discard removes the lookup and its result from the context and leaves a note of what was tried', async () => {
+    const { run, sent } = setup([
+      { content: 'looking', tool_calls: [toolCall('g', 'Glob', '{"pattern":"lib/*.yaml"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'not there' },
+    ]);
+
+    const result = await run({ history: [{ role: 'user', content: 'earlier' }, { role: 'assistant', content: 'ok' }] });
+
+    expect(sent(2)).toEqual(['SYS', 'earlier', 'ok', 'find the config', NOTE('Glob({"pattern":"lib/*.yaml"})')]);
+    expect(result.history.map((message) => message.role)).toEqual(['user', 'assistant', 'user', 'user', 'assistant']);
+    expect(result.toolsUsed).toEqual(['Glob', 'discard']);
+  });
+
+  it('does not run a discarded lookup again, and says when it was discarded', async () => {
+    const { run, executed, sent } = setup([
+      { content: '', tool_calls: [toolCall('g1', 'Glob', '{"pattern":"lib/*.yaml"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: '', tool_calls: [toolCall('g2', 'Glob', '{ "force": false, "pattern": "lib/*.yaml" }')] },
+      { content: 'gave up' },
+    ]);
+
+    await run();
+
+    expect(executed).toEqual(['Glob:{"pattern":"lib/*.yaml"}']);
+    expect(last(sent(3))).toBe([
+      'Not run: you discarded this lookup.',
+      'First run and discarded: 14:02 (just now)',
+      'Now: 14:02. If things may have changed since, call again with "force": true.',
+    ].join('\n'));
+  });
+
+  it('runs a discarded lookup when forced, without handing force to the tool, and stops refusing it', async () => {
+    const { run, executed } = setup([
+      { content: '', tool_calls: [toolCall('g1', 'Glob', '{"pattern":"lib/*.yaml"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: '', tool_calls: [toolCall('g2', 'Glob', '{"pattern":"lib/*.yaml","force":true}')] },
+      { content: '', tool_calls: [toolCall('w', 'Write', '{"file_path":"a"}')] },
+      { content: '', tool_calls: [toolCall('g3', 'Glob', '{"pattern":"lib/*.yaml"}')] },
+      { content: 'found' },
+    ]);
+
+    await run();
+
+    expect(executed).toEqual([
+      'Glob:{"pattern":"lib/*.yaml"}', 'Glob:{"pattern":"lib/*.yaml"}', 'Write:{"file_path":"a"}', 'Glob:{"pattern":"lib/*.yaml"}',
+    ]);
+  });
+
+  it('keeps the table across turns: it belongs to the session, not to the turn', async () => {
+    const first = setup([
+      { content: '', tool_calls: [toolCall('r1', 'Read', '{"file_path":"a.txt"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'nothing' },
+    ]);
+    await first.run();
+    const client = scriptedClient([
+      { content: '', tool_calls: [toolCall('r2', 'Read', '{"file_path":"a.txt"}')] },
+      { content: 'still nothing' },
+    ]);
+
+    await first.run({ client });
+
+    expect(first.executed).toEqual(['Read:{"file_path":"a.txt"}']);
+    expect(last(client.calls[1].messages).content).toMatch(/^Not run: you discarded this lookup\./);
+  });
+
+  it('refuses to discard past a write, and says what stands in the way', async () => {
+    const { run, sent, discards } = setup([
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('w', 'Write', '{"file_path":"a"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    const result = await run();
+
+    expect(sent(3).slice(2, 6)).toEqual(['Glob', 'Glob result', 'Write', 'Write result']);
+    expect(last(sent(3))).toMatch(/^Nothing discarded: Write ran after your last lookup\./);
+    expect(result.history).toHaveLength(8);
+    expect(discards.reject(lookupKeyOf('Glob', { pattern: '*.ts' }))).toBeUndefined();
+  });
+
+  it('does not cut when discard comes with another call: that call runs and nothing is forgotten', async () => {
+    const { run, sent, executed } = setup([
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}'), toolCall('w', 'Write', '{"file_path":"a"}')] },
+      { content: '', tool_calls: [toolCall('d2', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run();
+
+    expect(executed).toEqual(['Glob:{"pattern":"*.ts"}', 'Write:{"file_path":"a"}']);
+    expect(sent(3).slice(2)).toEqual([
+      'Glob', 'Glob result',
+      'discard+Write', expect.stringMatching(/^Nothing discarded: discard has to be the only call in its step\./), 'Write result',
+      'discard', expect.stringMatching(/^Nothing discarded: Write ran after your last lookup\./),
+    ]);
+  });
+
+  it('never discards a step that also wrote', async () => {
+    const { run, sent } = setup([
+      { content: '', tool_calls: [toolCall('r', 'Read', '{"file_path":"a"}'), toolCall('w', 'Write', '{"file_path":"a"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run();
+
+    expect(sent(2).slice(2)).toEqual(['Read+Write', 'Read result', 'Write result', 'discard', expect.stringMatching(/^Nothing discarded: Write ran/)]);
+  });
+
+  it('finds nothing to discard when no lookup came just before', async () => {
+    const { run, sent } = setup([
+      { content: '', tool_calls: [toolCall('d1', 'discard', '{}')] },
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('d2', 'discard', '{}')] },
+      { content: '', tool_calls: [toolCall('d3', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run();
+
+    expect(last(sent(1))).toMatch(/^Nothing discarded: no lookup came just before this\./);
+    // d2 took the Glob; d3 has nothing left, and the note d2 left is still there.
+    expect(sent(4).slice(2)).toEqual([
+      'discard', expect.stringMatching(/^Nothing discarded/), NOTE('Glob({"pattern":"*.ts"})'),
+      'discard', expect.stringMatching(/^Nothing discarded: no lookup came just before this\./),
+    ]);
+  });
+
+  it('goes back to the last lookup only: an earlier one that was kept stays', async () => {
+    const { run, sent, executed } = setup([
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('r', 'Grep', '{"pattern":"port"}'), toolCall('r2', 'Read', '{"file_path":"a"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: '', tool_calls: [toolCall('g2', 'Glob', '{"pattern":"*.ts"}'), toolCall('r3', 'Read', '{"file_path":"a"}')] },
+      { content: 'ok' },
+    ]);
+
+    await run();
+
+    expect(sent(3).slice(2)).toEqual(['Glob', 'Glob result', NOTE('Grep({"pattern":"port"}), Read({"file_path":"a"})')]);
+    // The kept Glob runs again; the discarded Read does not.
+    expect(executed.slice(3)).toEqual(['Glob:{"pattern":"*.ts"}']);
+  });
+
+  it('does not take a message the user sent after the lookup with it', async () => {
+    const waiting = ['look in config/ instead'];
+    const { run, sent } = setup([
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run({ takeInjected: () => waiting.shift() ?? null });
+
+    expect(sent(2).slice(2)).toEqual([
+      'Glob', 'Glob result', 'look in config/ instead', 'discard',
+      expect.stringMatching(/^Nothing discarded: the user sent a message after your last lookup\./),
+    ]);
+  });
+
+  it('leaves a rollback in charge of its own cut', async () => {
+    const { run, sent } = setup([
+      { content: '', tool_calls: [toolCall('k', 'checkpoint', '{"label":"a"}')] },
+      { content: '', tool_calls: [toolCall('g', 'Glob', '{"pattern":"*.ts"}')] },
+      { content: '', tool_calls: [toolCall('rb', 'rollback', '{"label":"a","note":"n"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run({ checkpoints: new Map() });
+
+    expect(sent(4).slice(1)).toEqual([
+      'find the config', '[Rolled back to checkpoint "a". Your note: n]', 'discard', expect.stringMatching(/^Nothing discarded/),
+    ]);
+  });
+
+  it('offers a deferred tool loaded before the lookup after a discard, and not one only the discarded call loaded', async () => {
+    const deferred = ['memory_search', 'memory_get'].map((name) => ({ name, description: '', parameters: {} }));
+    const { run, client, sent } = setup([
+      { content: '', tool_calls: [toolCall('l', 'load_tools', '{"names":["memory_get"]}')] },
+      { content: '', tool_calls: [toolCall('s', 'memory_search', '{"query":"port"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'ok' },
+    ]);
+
+    await run({ deferredTools: deferred });
+
+    const base = [...TOOLS.map((tool) => tool.name), 'load_tools'];
+    expect(client.calls[2].toolNames).toEqual([...base, 'memory_search', 'memory_get']);
+    expect(client.calls[3].toolNames).toEqual([...base, 'memory_get']);
+    // Up to the mark the request is the one that produced the lookup: the server's cache still holds it.
+    expect(sent(3).slice(0, -1)).toEqual(sent(1));
   });
 });
 
@@ -686,7 +911,7 @@ describe('ApiSessionHost', () => {
     const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'abc-2', cwd: dir, api });
     proc.write('find x\r');
     await vi.waitFor(() => expect(hooks).toContain('Stop'));
-    expect(client.calls[0].toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'load_tools']);
+    expect(client.calls[0].toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'discard', 'forget_turns', 'load_tools']);
     // Helm MCP tools are named in the system prompt, their schemas held back until loaded.
     expect(client.calls[0].messages[0].content).toContain('call them directly (load_tools shows their arguments if you need them): memory_search.');
     expect(dispatched).toEqual([
@@ -793,7 +1018,7 @@ describe('ApiSessionHost', () => {
     proc.write('find x\r');
     await vi.waitFor(() => expect(hooks).toContain('Stop'));
     expect(asked).toEqual([['s1', 'find x']]);
-    expect([...offeredTools].sort()).toEqual(['Read', 'chat_history', 'checkpoint', 'forget_turns', 'memory_search', 'request_tool', 'rollback']);
+    expect([...offeredTools].sort()).toEqual(['Read', 'chat_history', 'checkpoint', 'discard', 'forget_turns', 'memory_search', 'request_tool', 'rollback']);
     expect(client.calls[0].messages[1].content).toMatch(/<\/helm_context>\n\npossibly related: memory\/m1 \(Thing\)$/);
   });
 
@@ -847,7 +1072,7 @@ describe('ApiSessionHost', () => {
     const proc = host.create({ sessionId: 's1', sessionName: 'mini', cliSessionName: 'abc-6', api: { ...api, allowedTools: [] } });
     proc.write('get example.com\r');
     await vi.waitFor(() => expect(client.calls).toHaveLength(2));
-    expect(client.calls[0].toolNames).toEqual(['request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns']);
+    expect(client.calls[0].toolNames).toEqual(['request_tool', 'chat_history', 'checkpoint', 'rollback', 'discard', 'forget_turns']);
     expect(requests).toEqual([{ name: 'HttpGet', purpose: 'fetch a URL', example: '{"url":"x"}', sessionId: 's1' }]);
     expect(dispatched[0]).toEqual({ name: 'chat_send', args: { message: 'mini requests a new tool: HttpGet\nfetch a URL' }, sessionId: 's1' });
     expect(last(client.calls[1].messages).content).toMatch(/carry on without it/);
@@ -916,6 +1141,52 @@ describe('ApiSessionHost', () => {
     if (second.queued) throw new Error('second quick compact unexpectedly queued');
     expect(fs.existsSync(first.archiveFile)).toBe(true);
     expect(fs.readFileSync(second.transcriptFile, 'utf8')).toContain(first.transcriptFile);
+  });
+
+  it('offers discard and force, refuses a discarded lookup in a later turn, and forgets it on /clear', async () => {
+    const tool = { name: 'memory_search', title: '', description: 'search', inputSchema: { type: 'object', properties: { query: { type: 'string' } } } };
+    const { host, client, dispatched, hooks } = makeHost([
+      { content: '', tool_calls: [toolCall('s1', 'memory_search', '{"query":"deploy port"}')] },
+      { content: '', tool_calls: [toolCall('d', 'discard', '{}')] },
+      { content: 'nothing stored' },
+      { content: '', tool_calls: [toolCall('s2', 'memory_search', '{"query":"Port  deploy"}')] },
+      { content: 'still nothing' },
+      { content: '', tool_calls: [toolCall('s3', 'memory_search', '{"query":"deploy port"}')] },
+      { content: 'ran it' },
+    ], { mcpTools: () => [tool] });
+    const stops = (count: number) => vi.waitFor(() => expect(hooks.filter((hook) => hook === 'Stop')).toHaveLength(count));
+    const searches = () => dispatched.filter((call) => call.name === 'memory_search').map((call) => call.args);
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'discard-1', cwd: dir, api });
+
+    proc.write('what port do we deploy on\r');
+    await stops(1);
+    expect(client.calls[0].toolNames).toContain('discard');
+    expect(client.calls[2].messages.at(-1)?.content).toMatch(/^\[Discarded: you tried memory_search\(\{"query":"deploy port"\}\)/);
+
+    proc.write('look again\r');
+    await stops(2);
+    expect(client.calls[4].messages.at(-1)?.content).toMatch(/^Not run: you discarded this lookup\./);
+    expect(searches()).toEqual([{ query: 'deploy port' }]);
+
+    proc.write('/clear\r');
+    proc.write('and now\r');
+    await stops(3);
+    // A cleared conversation starts with an empty table: the same lookup runs.
+    expect(searches()).toEqual([{ query: 'deploy port' }, { query: 'deploy port' }]);
+  });
+
+  it('offers a lookup tool with a force argument, and no other tool', async () => {
+    const offered: Array<{ name: string; parameters: Record<string, unknown> }> = [];
+    const client = { complete: async (_messages: Msg[], tools: typeof offered) => { offered.push(...tools); return { message: { content: 'hi' } }; } };
+    const { host, hooks } = makeHost([], { createClient: () => client as never });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'discard-2', cwd: dir, api: { ...api, allowedTools: ['Read', 'Write'] } });
+
+    proc.write('hello\r');
+    await vi.waitFor(() => expect(hooks).toContain('Stop'));
+
+    const properties = (name: string) => Object.keys(offered.find((tool) => tool.name === name)!.parameters.properties as object);
+    expect(properties('Read')).toContain('force');
+    expect(properties('Write')).not.toContain('force');
   });
 
   it('invalidates checkpoints and updates context usage after quick compact', async () => {
@@ -1105,7 +1376,7 @@ describe('ApiSessionHost — subagents and slots', () => {
     // Same system prompt and tool block as the parent, so the prefix cache is shared.
     expect(childFirst.messages[0]).toEqual(parentFirst.messages[0]);
     expect(childFirst.toolNames).toEqual(parentFirst.toolNames);
-    expect(parentFirst.toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'forget_turns', 'Agent', 'load_tools']);
+    expect(parentFirst.toolNames).toEqual(['Read', 'request_tool', 'chat_history', 'checkpoint', 'rollback', 'discard', 'forget_turns', 'Agent', 'load_tools']);
     expect(childFirst.messages[1].content).toMatch(/^Handover from boss — subagent task: count docs\nParent mission: ship it\n\nHow many md files in docs\?/);
     // The subagent writes its own summary in one more turn.
     expect(last(childSummary.messages).content).toMatch(/^Summarise your result/);

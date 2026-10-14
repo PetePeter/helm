@@ -85,11 +85,11 @@ describe('MCP memory surface', () => {
     const search = await callMcpTool(
       deps,
       'memory_search',
-      { query: '^Al', regex: true, graphDepth: 2 },
+      { query: '^Al', regex: true },
       { sessionId: 's1' },
-    ) as { regex: boolean; results: Array<{ graphDepth: number }> };
+    ) as { regex: boolean; hits: Array<{ id: string }> };
     expect(search.regex).toBe(true);
-    expect(search.results[0].graphDepth).toBe(2);
+    expect(search.hits.map((hit) => hit.id)).toEqual([memory.id]);
 
     const exported = await callMcpTool(
       deps,
@@ -101,6 +101,63 @@ describe('MCP memory surface', () => {
     expect(JSON.parse(exported.content).rootId).toBe(memory.id);
     expect(exported.content).not.toContain('secret.bin');
     expect(exported.content).not.toContain('memory-attachments');
+  });
+
+  it('memory_search answers the five best hits as id + tldr and counts the rest', async () => {
+    root = makeTempRoot('helm-memory-mcp-');
+    const attachments = new MemoryAttachmentManager(join(root, 'attachments'), join(root, 'temp'));
+    let sequence = 0;
+    const manager = new MemoryManager({ attachmentManager: attachments, idFactory: () => `m${++sequence}` });
+    const deps = makeDispatcher(makeService(manager, attachments));
+    for (let index = 0; index < 7; index += 1) {
+      await callMcpTool(deps, 'memory_create', { tldr: `vite note ${index}`, content: 'a long body nobody asked for' }, { sessionId: 's1' });
+    }
+
+    const search = await callMcpTool(deps, 'memory_search', { query: 'vite' }, { sessionId: 's1' }) as {
+      matched: number; hits: Array<{ id: string; tldr: string }>;
+    };
+
+    expect(search.matched).toBe(7);
+    expect(search.hits).toHaveLength(5);
+    expect(search.hits[0]).toMatchObject({ id: expect.any(String), tldr: expect.stringContaining('vite note') });
+    expect(JSON.stringify(search)).not.toContain('nobody asked for');
+  });
+
+  it('memory_get returns the memory in full and its neighbours as id + tldr', async () => {
+    const { deps } = setup();
+    const main = await callMcpTool(deps, 'memory_create', { tldr: 'root', content: 'root body' }, { sessionId: 's1' }) as { id: string };
+    const linked = await callMcpTool(deps, 'memory_create', { tldr: 'neighbour', content: 'neighbour body' }, { sessionId: 's1' }) as { id: string };
+    await callMcpTool(deps, 'memory_link', { fromId: main.id, toId: linked.id, type: 'supports' }, { sessionId: 's1' });
+
+    const traversal = await callMcpTool(deps, 'memory_get', { id: main.id }, { sessionId: 's1' }) as {
+      entries: Array<{ id: string; record?: Record<string, unknown>; via?: { type?: string } }>;
+    };
+
+    expect(traversal.entries[0].record).toMatchObject({ id: main.id, content: 'root body' });
+    expect(traversal.entries[1].record).toEqual({ id: linked.id, tldr: 'neighbour' });
+    expect(traversal.entries[1].via?.type).toBe('supports');
+  });
+
+  it('memory_get keeps deeper neighbours compact and loop markers intact', async () => {
+    const { deps } = setup();
+    for (const tldr of ['root', 'near', 'far']) {
+      await callMcpTool(deps, 'memory_create', { tldr, content: `${tldr} body` }, { sessionId: 's1' });
+    }
+    for (const [fromId, toId] of [['a', 'b'], ['b', 'c'], ['c', 'a']]) {
+      await callMcpTool(deps, 'memory_link', { fromId, toId }, { sessionId: 's1' });
+    }
+
+    const traversal = await callMcpTool(deps, 'memory_get', { id: 'a', graphDepth: 2 }, { sessionId: 's1' }) as {
+      entries: Array<{ id: string; status: string; breadcrumbs: string[]; record?: Record<string, unknown> }>;
+    };
+
+    expect(traversal.entries.map((entry) => [entry.id, entry.status, entry.record])).toEqual([
+      ['a', 'record', expect.objectContaining({ content: 'root body' })],
+      ['b', 'record', { id: 'b', tldr: 'near' }],
+      ['c', 'record', { id: 'c', tldr: 'far' }],
+      ['a', 'cycle', undefined],
+    ]);
+    expect(traversal.entries[3].breadcrumbs).toEqual(['a', 'b', 'c', 'a']);
   });
 
   it('adds attachments from an absolute source path and only exposes a safe temp copy on get', async () => {

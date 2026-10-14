@@ -10,6 +10,8 @@
  * everything before it.
  */
 
+import { describeLookup, DISCARD_TOOL, LOOKUP_TOOLS, lookupKey, type DiscardTable } from './api-discard.js';
+
 export interface ToolCall {
   id: string;
   type: 'function';
@@ -50,7 +52,8 @@ export type AgentEvent =
   | { type: 'text'; text: string }
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; result: string }
-  | { type: 'rollback'; label: string; dropped: number };
+  | { type: 'rollback'; label: string; dropped: number }
+  | { type: 'discard'; tried: string[]; dropped: number };
 
 export interface AgentTurnParams {
   client: ChatClient;
@@ -76,6 +79,12 @@ export interface AgentTurnParams {
    * turn; the loop reads and writes it for the checkpoint/rollback tools.
    */
   checkpoints?: Map<string, number>;
+  /**
+   * The session's discarded lookups. With it, the loop marks the conversation
+   * before every read-only lookup, `discard` cuts back to the mark, and a
+   * discarded lookup asked again is refused (api-discard.ts).
+   */
+  discards?: DiscardTable;
   /**
    * Tools named in the system prompt but not offered until the model loads
    * them with load_tools. What is loaded is read back from the history, so it
@@ -280,6 +289,10 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
   const toolsUsed: string[] = [];
   let contextTokens: number | undefined;
   let thoughtCount = 0;
+  /** Where `discard` returns to: the start of the last step, when that step was lookups only. */
+  let lookupMark: { index: number; lookups: Array<{ key: string; tried: string }> } | undefined;
+  /** Why no mark stands, when something other than a lookup came after the last one. */
+  let unmarked: string | undefined;
 
   for (let round = 0; ; round++) {
     // On the last allowed round, offer no tools: the model must answer in text.
@@ -314,10 +327,34 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
         toolsUsed.push(ROLLBACK_TOOL.name);
         params.onEvent?.({ type: 'rollback', label, dropped });
         history.push({ role: 'user', content: `[Rolled back to checkpoint "${label}". Your note: ${note}]` });
+        lookupMark = undefined;
         continue;
       }
     }
 
+    // A discard rewinds the same way, to the mark the loop set itself. The mark only
+    // stands while the lookup is the last thing in the conversation, and discard has to
+    // come alone, so the cut never takes a write, an edit, a shell command or a message
+    // from the user with it, and never drops a call the model made beside it.
+    if (lookupMark && params.discards && calls.length === 1 && calls[0].function.name === DISCARD_TOOL.name) {
+      const { index, lookups } = lookupMark;
+      const dropped = history.length - index;
+      history.splice(index);
+      for (const lookup of lookups) params.discards.discard(lookup.key);
+      const tried = lookups.map((lookup) => lookup.tried);
+      toolsUsed.push(DISCARD_TOOL.name);
+      params.onEvent?.({ type: 'discard', tried, dropped });
+      history.push({
+        role: 'user',
+        content: `[Discarded: you tried ${tried.join(', ') || 'a lookup'} and threw the result away. `
+          + 'Ask a different question; the same one will not run again.]',
+      });
+      lookupMark = undefined;
+      continue;
+    }
+
+    /** The lookups this step ran. */
+    const stepLookups: Array<{ key: string; tried: string }> = [];
     const run = async (call: ToolCall): Promise<string> => {
       const name = call.function.name;
       const args = parseToolArguments(call.function.arguments);
@@ -338,8 +375,26 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
         return `Checkpoint "${label}" set. rollback(label, note) returns here.`;
       }
       if (name === ROLLBACK_TOOL.name) return 'Error: no such checkpoint — set one with checkpoint first';
+      if (name === DISCARD_TOOL.name && params.discards) {
+        // A mark still standing here means discard did not come alone.
+        const why = lookupMark ? 'discard has to be the only call in its step' : unmarked ?? 'no lookup came just before this';
+        return `Nothing discarded: ${why}. discard only removes a lookup `
+          + `(${[...LOOKUP_TOOLS].join(', ')}) that is the last thing in your context; it never removes anything else.`;
+      }
+      const { force, ...asked } = args;
+      const lookup = Boolean(params.discards) && LOOKUP_TOOLS.has(name);
+      if (lookup) {
+        const key = lookupKey(name, args);
+        if (force === true) params.discards!.release(key);
+        else {
+          const refusal = params.discards!.reject(key);
+          if (refusal) return refusal;
+        }
+        stepLookups.push({ key, tried: describeLookup(name, asked) });
+      }
       try {
-        const result = await params.executeTool(name, args);
+        // `force` is the loop's own argument; the tool never sees it.
+        const result = await params.executeTool(name, lookup ? asked : args);
         if (!AUTO_CHECKPOINT_TOOLS.has(name) || !params.checkpoints) return result;
         const label = `agents-${stepStart}`;
         params.checkpoints.set(label, stepStart);
@@ -362,6 +417,12 @@ export async function runAgentTurn(params: AgentTurnParams): Promise<AgentTurnRe
     // the API requires every tool call to be answered before a new user turn.
     const injected = params.takeInjected?.();
     if (injected) history.push({ role: 'user', content: injected });
+    const others = calls.map((call) => call.function.name).filter((name) => !LOOKUP_TOOLS.has(name));
+    lookupMark = others.length || injected ? undefined : { index: stepStart, lookups: stepLookups };
+    // A refused discard changes nothing: unless something ran beside it, the reason before it still holds.
+    const ran = others.find((name) => name !== DISCARD_TOOL.name);
+    if (injected) unmarked = 'the user sent a message after your last lookup';
+    else if (ran || !others.length) unmarked = ran && `${ran} ran after your last lookup`;
   }
 }
 

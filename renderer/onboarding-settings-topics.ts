@@ -26,6 +26,7 @@ export const ONBOARDING_SETTING_GROUPS: OnboardingSettingGroup[] = [
       { title: 'Projects and folders', description: 'Organize repositories and working directories', tabId: 'projects' },
       { title: 'Profiles and controls', description: 'Choose reusable keyboard and gamepad bindings', tabId: 'bindings' },
       { title: 'Skills', description: 'Reusable agent instructions', tabId: 'skills' },
+      { title: 'Auto memory', description: 'Pick the model that records memories for every session', tabId: 'auto-memory' },
       { title: 'Quick actions', description: 'Reusable prompts and workflow shortcuts', tabId: 'chipbar-actions' },
       { title: 'Scheduled tasks', description: 'Create a recurring or one-time prompt', tabId: 'scheduled-tasks' },
     ],

@@ -3,6 +3,7 @@ import { nextTick, type Component } from 'vue';
 import type { DockSide, PaneId } from '../../dock-types.js';
 import { getPaneDescriptor } from '../../dock-types.js';
 import DockPane from './DockPane.vue';
+import NewItemPulse from './NewItemPulse.vue';
 
 const props = defineProps<{
   tabs: readonly PaneId[];
@@ -139,6 +140,7 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
         >
           <span class="dock-tab__icon" aria-hidden="true">{{ iconFor(paneId) }}</span>
           <span class="dock-tab__label">{{ titleFor(paneId) }}</span>
+          <NewItemPulse :pane-id="paneId" />
         </button>
         <button
           class="dock-tab-close"

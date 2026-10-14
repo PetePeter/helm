@@ -59,6 +59,18 @@ export interface MemoryRecord {
    * detail and at child summaries — a struct with a description and pointers.
    */
   summary?: boolean;
+  /**
+   * Belongs to `sessionId` alone and is not yet project knowledge: no other
+   * session can see it until a dream releases the binding. Saved unattended,
+   * so it must earn its place before it can shape anyone else's recall.
+   */
+  sessionBound?: boolean;
+  /**
+   * The turn of the owning session an auto-saved memory was drawn from (see
+   * `splitTurns`). Lets the judge be shown what it already saved from the
+   * turns in front of it. Dropped when the binding is released.
+   */
+  sourceTurn?: string;
   attachments: MemoryAttachment[];
 }
 
@@ -74,6 +86,7 @@ export interface MemorySummary {
   dormantSince?: number;
   agentRun?: boolean;
   summary?: boolean;
+  sessionBound?: boolean;
   attachmentCount: number;
 }
 
@@ -119,6 +132,23 @@ export interface DreamCandidate {
   plan: MemoryDreamPlan | null;
 }
 
+/** An auto-saved memory waiting for a dream to drop, merge or promote it. */
+export interface DreamBoundMemory {
+  id: string;
+  tldr: string;
+  /** In full: a bound memory is one small atom, and none may be promoted unread. */
+  content: string;
+  ageDays: number;
+}
+
+/** One session's bound memories, framed by what that session was doing. */
+export interface DreamBoundGroup {
+  sessionId: string;
+  /** Null once the session is gone, or when it never set one. */
+  mission: string | null;
+  memories: DreamBoundMemory[];
+}
+
 export interface MemoryDreamOptions {
   percentile?: number;
   minCandidates?: number;
@@ -128,11 +158,15 @@ export interface MemoryDreamOptions {
 export interface MemoryDreamResult {
   faded: DreamCandidate[];
   salient: DreamCandidate[];
+  /** Session-bound memories to digest, oldest first. Empty unless the caller is a dream. */
+  bound: DreamBoundGroup[];
   totals: {
     memories: number;
     dormant: number;
     eligible: number;
     epoch: number;
+    /** Every bound memory waiting in the project; above the listed ones when the cap cut the list. */
+    bound: number;
   };
 }
 
@@ -187,15 +221,35 @@ export interface MemoryTraversal {
   entries: MemoryTraversalEntry[];
 }
 
-export interface MemorySearchOptions {
-  regex?: boolean;
-  graphDepth?: number;
-  includeDormant?: boolean;
+/**
+ * A linked memory as `memory_get` reports it: enough to decide whether to
+ * fetch it, without paying for its content.
+ */
+export type MemoryNeighbour = Pick<MemoryRecord, 'id' | 'tldr'>;
+
+export interface MemoryRecallEntry extends Omit<MemoryTraversalEntry, 'record'> {
+  record?: MemoryRecord | MemoryNeighbour;
 }
 
-/** One search root, aligned with `results`: how well it matched and whose it is. */
+/** A traversal whose root is whole and whose neighbours are `MemoryNeighbour`s. */
+export interface MemoryRecall extends Omit<MemoryTraversal, 'entries'> {
+  entries: MemoryRecallEntry[];
+}
+
+/** How many hits `memory_search` answers with; the rest are only counted. */
+export const MEMORY_SEARCH_LIMIT = 5;
+
+export interface MemorySearchOptions {
+  regex?: boolean;
+  includeDormant?: boolean;
+  /** Keep only the best N hits. Absent = every match. */
+  limit?: number;
+}
+
+/** One match: what it is, how well it matched and whose it is. Never its content. */
 export interface MemorySearchHit {
   id: string;
+  tldr: string;
   score: number;
   projectId?: string;
   /** From a project other than the caller's — knowledge to weigh, not to assume. */
@@ -205,7 +259,8 @@ export interface MemorySearchHit {
 export interface MemorySearchResult {
   query: string;
   regex: boolean;
-  results: MemoryTraversal[];
+  /** Every match, including the ones `limit` left out of `hits`. */
+  matched: number;
   hits: MemorySearchHit[];
 }
 
@@ -251,6 +306,7 @@ export function toMemorySummary(record: MemoryRecord): MemorySummary {
     ...(record.dormantSince !== undefined ? { dormantSince: record.dormantSince } : {}),
     ...(record.agentRun ? { agentRun: true } : {}),
     ...(record.summary ? { summary: true } : {}),
+    ...(record.sessionBound ? { sessionBound: true } : {}),
     attachmentCount: record.attachments.length,
   };
 }
@@ -286,7 +342,7 @@ export function validateMemoryState(state: MemoryState): void {
     if (record.lastAccessedAt !== undefined && !isFiniteNumber(record.lastAccessedAt)) {
       throw new Error(`Memory ${record.id} has an invalid lastAccessedAt`);
     }
-    for (const field of ['projectId', 'planId', 'lastRecallSessionId'] as const) {
+    for (const field of ['projectId', 'planId', 'lastRecallSessionId', 'sourceTurn'] as const) {
       const value = record[field];
       if (value !== undefined && (typeof value !== 'string' || value.trim() === '')) {
         throw new Error(`Memory ${record.id} has an invalid ${field}`);
@@ -297,6 +353,12 @@ export function validateMemoryState(state: MemoryState): void {
       if (value !== undefined && !isFiniteNumber(value)) {
         throw new Error(`Memory ${record.id} has an invalid ${field}`);
       }
+    }
+    if (record.sessionBound !== undefined && typeof record.sessionBound !== 'boolean') {
+      throw new Error(`Memory ${record.id} has an invalid sessionBound`);
+    }
+    if (record.sessionBound && record.sessionId === undefined) {
+      throw new Error(`Memory ${record.id} is session-bound but has no owning session`);
     }
     if (!Array.isArray(record.attachments)) throw new Error(`Memory ${record.id} has invalid attachments`);
 

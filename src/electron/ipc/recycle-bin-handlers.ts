@@ -9,6 +9,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import type { RecycleBinManager } from '../../session/recycle-bin-manager.js';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
+import type { ScratchpadManager } from '../../session/scratchpad-manager.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { WindowManager } from '../window-manager.js';
 import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
@@ -27,6 +28,7 @@ export function setupRecycleBinHandlers(
   chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
   /** Re-applies bin-carried session fields (the mission) once the re-spawn is back. */
   onRestoreCommitted?: (entry: RecycleBinEntry) => void,
+  scratchpadManager?: Pick<ScratchpadManager, 'clearSession'>,
 ): void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   /**
@@ -57,6 +59,13 @@ export function setupRecycleBinHandlers(
     return true;
   };
 
+  /** What a binned session keeps under its id for a restore; dropped once the entry is gone. */
+  const clearPreserved = (sessionId: string): void => {
+    artifactManager.clearSession(sessionId);
+    scratchpadManager?.clearSession(sessionId);
+    tempRegistry.drain(sessionId);
+  };
+
   recycleBin.on('recycle-bin:changed', () => {
     for (const win of getTargetWindows()) {
       if (!win.isDestroyed()) win.webContents.send('recycle-bin:changed');
@@ -64,14 +73,13 @@ export function setupRecycleBinHandlers(
   });
 
   // An entry that ages out of the retention window at runtime takes its preserved
-  // artifacts with it — same effect as a Forget.
+  // artifacts and scratchpad with it — same effect as a Forget.
   // Temp copies opened externally go too — a session that ages out is never
   // coming back, so nothing can still legitimately reference them.
   recycleBin.on('recycle-bin:expired', (expired: RecycleBinEntry[]) => {
     for (const entry of expired) {
       if (!purgeSessionData(entry.sessionId, 'expired')) continue;
-      artifactManager.clearSession(entry.sessionId);
-      tempRegistry.drain(entry.sessionId);
+      clearPreserved(entry.sessionId);
     }
   });
 
@@ -128,10 +136,7 @@ export function setupRecycleBinHandlers(
         if (!purgeSessionData(sessionId, 'forgotten')) return false;
       }
       recycleBin.forget(id);
-      if (sessionId) {
-        artifactManager.clearSession(sessionId);
-        tempRegistry.drain(sessionId);
-      }
+      if (sessionId) clearPreserved(sessionId);
       return true;
     } catch (err) {
       logger.error(`[recycleBin:forget] Failed: ${err}`);
@@ -147,10 +152,7 @@ export function setupRecycleBinHandlers(
         if (!purgeSessionData(sessionId, 'forgotten')) return false;
       }
       recycleBin.empty();
-      for (const sessionId of sessionIds) {
-        artifactManager.clearSession(sessionId);
-        tempRegistry.drain(sessionId);
-      }
+      for (const sessionId of sessionIds) clearPreserved(sessionId);
       return true;
     } catch (err) {
       logger.error(`[recycleBin:empty] Failed: ${err}`);

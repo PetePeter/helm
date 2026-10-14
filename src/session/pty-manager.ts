@@ -49,6 +49,13 @@ export interface PtySpawnOptions {
   cols?: number;
   rows?: number;
   env?: Record<string, string>;
+  /**
+   * A one-shot run that is no session (the recording model's headless CLI).
+   * The PTY is tracked and killed like any other, but its output and exit are
+   * never broadcast: everything that makes a PTY a session hangs off those
+   * two events. The caller listens on the returned process instead.
+   */
+  headless?: boolean;
 }
 
 export interface PtyFactory {
@@ -142,7 +149,7 @@ export class PtyManager extends EventEmitter {
 
   /** Spawn a new PTY process. */
   spawn(options: PtySpawnOptions): PtyProcess {
-    const { sessionId, command, args = [], rawCommand, cwd, cols = 120, rows = 30, env } = options;
+    const { sessionId, command, args = [], rawCommand, cwd, cols = 120, rows = 30, env, headless = false } = options;
 
     if (this.ptys.has(sessionId)) {
       throw new Error(`PTY already exists for session: ${sessionId}`);
@@ -173,7 +180,7 @@ export class PtyManager extends EventEmitter {
       env: { ...process.env, ...env } as Record<string, string>,
     });
 
-    this.register(sessionId, ptyProcess, { cols, rows });
+    this.register(sessionId, ptyProcess, { cols, rows }, !headless);
 
     // Write initial command to shell stdin.
     // rawCommand: written as-is (for resume commands like `copilot --continue`)
@@ -209,7 +216,7 @@ export class PtyManager extends EventEmitter {
     this.register(sessionId, ptyProcess, size);
   }
 
-  private register(sessionId: string, ptyProcess: PtyProcess, size: { cols: number; rows: number }): void {
+  private register(sessionId: string, ptyProcess: PtyProcess, size: { cols: number; rows: number }, broadcast = true): void {
     this.ptys.set(sessionId, ptyProcess);
     this.sizes.set(sessionId, { ...size });
     this.terminalScreenBuffer.attach(sessionId, size);
@@ -233,7 +240,7 @@ export class PtyManager extends EventEmitter {
       this.terminalScreenBuffer.append(sessionId, data);
       this.bracketedPaste.observe(sessionId, data);
       this.lastOutputAt.set(sessionId, Date.now());
-      this.emit('data', sessionId, data);
+      if (broadcast) this.emit('data', sessionId, data);
     });
 
     ptyProcess.onExit(({ exitCode }: { exitCode: number }) => {
@@ -246,7 +253,7 @@ export class PtyManager extends EventEmitter {
       this.lastOutputAt.delete(sessionId);
       // During app shutdown every PTY dies at once; those exits are not
       // session closures, so no listener may act on them.
-      if (this.shuttingDown) return;
+      if (this.shuttingDown || !broadcast) return;
       this.emit('exit', sessionId, exitCode);
     });
   }

@@ -154,6 +154,7 @@ export class PlanManager extends EventEmitter {
     savePlanFile(item);
 
     this.emit('plan:changed', dirPath);
+    this.emit('plan:created', dirPath);
     logger.info(`[PlanManager] Created plan "${title}" in ${dirPath}`);
     return item;
   }

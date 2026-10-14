@@ -1,3 +1,4 @@
+import { headlessCommandProblem } from '../session/headless-command.js';
 import * as fs from 'fs';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../session/prompt-staleness.js';
 import * as path from 'path';
@@ -26,6 +27,13 @@ import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
 import { defaultComfyUiMigrationFiles, migrateComfyUiToolDefaults } from './comfyui-default-migration.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
+import {
+  DEFAULT_AUTO_MEMORY_SETTINGS,
+  CLI_COST_NOTE,
+  INCOMPLETE_API_NOTE,
+  type AutoMemorySettings,
+  type RecordingModelOption,
+} from '../types/auto-memory.js';
 import type { ProjectStore } from '../session/project-store.js';
 import {
   DEFAULT_FLEET_CONFIG,
@@ -142,6 +150,11 @@ export interface PatternRule {
 // ============================================================================
 
 /** A bare CLI-type identity. Matching this means the reference is an id, not a label. */
+/** A hand-edited `api` block can lack what a request needs; such a tool cannot record. */
+function isRunnableApi(api: ApiToolConfig): boolean {
+  return typeof api.baseUrl === 'string' && !!api.baseUrl.trim() && typeof api.model === 'string' && !!api.model.trim();
+}
+
 const CLI_TYPE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -224,6 +237,10 @@ export interface CliTypeConfig {
   resumeCommand?: string;
   /** CLI command to resume most recent session (fallback when resumeCommand is not configured). */
   continueCommand?: string;
+  /** Shell line that runs the CLI once with no terminal UI, for a silent recording-model pass.
+   * Templates: {promptFile} (the prompt, read by the command) and {outputFile} (where it leaves the reply).
+   * Unset = this type cannot be the recording model; nothing is assumed for it (session/headless-command.ts). */
+  headlessCommand?: string;
   /** Escape sequence sent after text delivery (e.g. '\r', '\n', or '\r\n'). Empty string clears/uses default. */
   submitSuffix?: string;
   /** Command pasted into the PTY by session_clear to reset the CLI's context. Default: '/clear'.
@@ -447,6 +464,8 @@ export interface SettingsConfig {
   mobileLan?: MobileLanConfig;
   /** Voice operator singleton. Absent means the defaults, i.e. off. */
   operator?: OperatorConfig;
+  /** Auto memory: the recording model and the auto-save / auto-recall switches. */
+  autoMemory?: Partial<AutoMemorySettings>;
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
    * consecutive auto-continue cap. Absent means allowed at the shipped cap —
@@ -1215,6 +1234,72 @@ export class ConfigLoader {
     };
   }
 
+  /**
+   * Auto memory: one global recording model plus the two switches. A malformed
+   * value degrades to its default, so a hand-edited settings.yaml can only
+   * switch a behaviour back on, never crash the judge or the suggester.
+   */
+  getAutoMemoryConfig(): AutoMemorySettings {
+    const raw = this.settings?.autoMemory;
+    const section = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+    return {
+      recordingModel: typeof section.recordingModel === 'string' ? section.recordingModel : DEFAULT_AUTO_MEMORY_SETTINGS.recordingModel,
+      autoSave: typeof section.autoSave === 'boolean' ? section.autoSave : DEFAULT_AUTO_MEMORY_SETTINGS.autoSave,
+      autoRecall: typeof section.autoRecall === 'boolean' ? section.autoRecall : DEFAULT_AUTO_MEMORY_SETTINGS.autoRecall,
+    };
+  }
+
+  /**
+   * Update the auto memory settings (partial merge). A recording model that
+   * cannot run silently is REFUSED, not stored: a pick that quietly records
+   * nothing is worse than an error. Empty clears the pick.
+   */
+  setAutoMemoryConfig(updates: Partial<AutoMemorySettings>): void {
+    this.ensureLoaded();
+    const next = { ...this.getAutoMemoryConfig() };
+    if (typeof updates.autoSave === 'boolean') next.autoSave = updates.autoSave;
+    if (typeof updates.autoRecall === 'boolean') next.autoRecall = updates.autoRecall;
+    if (typeof updates.recordingModel === 'string') {
+      const ref = updates.recordingModel.trim();
+      next.recordingModel = ref ? this.requireRecordingModel(ref) : '';
+    }
+    this.settings!.autoMemory = next;
+    this.saveSettings();
+  }
+
+  /** The CLI types the recording-model picker lists, in configured order. */
+  getRecordingModelOptions(): RecordingModelOption[] {
+    this.ensureLoaded();
+    const options: RecordingModelOption[] = [];
+    for (const id of this.cliTypeStore.list()) {
+      const config = this.cliTypeStore.get(id);
+      // A ComfyUI type draws pictures; it has no text model to record with.
+      if (!config || config.comfyUi) continue;
+      const name = config.displayName ?? config.name ?? id;
+      if (!config.api) {
+        const problem = headlessCommandProblem(config.headlessCommand);
+        options.push({ id, name, kind: 'cli', available: !problem, note: problem ?? CLI_COST_NOTE });
+      } else if (isRunnableApi(config.api)) options.push({ id, name, kind: 'api', available: true });
+      else options.push({ id, name, kind: 'api', available: false, note: INCOMPLETE_API_NOTE });
+    }
+    return options;
+  }
+
+  /** Resolve a picked recording model to its CLI type id, or throw saying why it cannot record. */
+  private requireRecordingModel(ref: string): string {
+    const resolved = this.cliTypeStore.resolve(ref);
+    if (!resolved) throw new Error(`Unknown CLI type: ${ref}`);
+    const name = resolved.config.displayName ?? resolved.config.name ?? resolved.id;
+    if (resolved.config.comfyUi) throw new Error(`${name} is a ComfyUI type and cannot record memories`);
+    if (!resolved.config.api) {
+      const problem = headlessCommandProblem(resolved.config.headlessCommand);
+      if (problem) throw new Error(`${name} cannot record: ${problem}`);
+      return resolved.id;
+    }
+    if (!isRunnableApi(resolved.config.api)) throw new Error(`${name} cannot record: its ${INCOMPLETE_API_NOTE}`);
+    return resolved.id;
+  }
+
   /** Update the localhost MCP configuration (partial merge). */
   setMcpConfig(updates: Partial<McpConfig>): void {
     if (!this.settings) return;
@@ -1360,6 +1445,7 @@ export class ConfigLoader {
     if (options?.spawnCommand) tool.spawnCommand = options.spawnCommand;
     if (options?.resumeCommand) tool.resumeCommand = options.resumeCommand;
     if (options?.continueCommand) tool.continueCommand = options.continueCommand;
+    if (options?.headlessCommand) tool.headlessCommand = options.headlessCommand;
     if (options?.helmPreambleForInterSession !== undefined) tool.helmPreambleForInterSession = options.helmPreambleForInterSession;
     if (options?.largeTextAsTempFile === true) tool.largeTextAsTempFile = true;
     if (options?.messReminders === false) tool.messReminders = false;
@@ -1425,7 +1511,7 @@ export class ConfigLoader {
         if (options.env.length === 0) delete existing.env;
         else existing.env = options.env;
       }
-      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'submitSuffix', 'bindingProfileId', 'keepWarmPrompt'] as const) {
+      for (const field of ['renameCommand', 'spawnCommand', 'resumeCommand', 'continueCommand', 'headlessCommand', 'submitSuffix', 'bindingProfileId', 'keepWarmPrompt'] as const) {
         const val = options[field];
         if (val === undefined) continue;
         if (val === '') { delete (existing as any)[field]; }

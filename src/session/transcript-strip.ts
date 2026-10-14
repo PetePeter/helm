@@ -20,8 +20,9 @@ import { logger } from '../utils/logger.js';
 const TOOL_ARGS_MAX = 200;
 const ERROR_MAX = 300;
 
-type Block = Record<string, unknown>;
-type Line = Record<string, unknown>;
+export type Block = Record<string, unknown>;
+/** One parsed JSONL record of a CLI's log. */
+export type Line = Record<string, unknown>;
 
 /** Injected wrappers a successor should never see as conversation. */
 const NOISE_PREFIXES = ['<local-command', '<command-', '<environment_context', '<user_instructions', '<permissions'];
@@ -46,7 +47,7 @@ const PLUMBING_LINE =
  *  `{Esc}` is the sequence token that clears half-typed input before the marker. */
 const HEARTBEAT_LINE = /^\s*(?:\{Esc\})?\[HEARTBEAT_START\]/i;
 
-function cleanText(text: string): string {
+export function cleanText(text: string): string {
   const dropLines = (s: string) => s.split('\n').filter(line => !(PLUMBING_LINE.test(line) || HEARTBEAT_LINE.test(line))).join('\n');
   // Lines are dropped both before tag removal (some are identified by their
   // tag) and after (some only start a line once an envelope is stripped off).
@@ -55,7 +56,7 @@ function cleanText(text: string): string {
   return dropLines(out).trim();
 }
 
-function isNoise(text: string): boolean {
+export function isNoise(text: string): boolean {
   // A keep-warm ping is plumbing, not conversation: a marked ping drops as a wrapped
   // block (PLUMBING_LINE / HELM_PLUMBING), and one that starts with the marker drops
   // even when its pair is unclosed. Every ping carries the pair, whatever its text.
@@ -74,7 +75,7 @@ function toolLine(name: unknown, args: unknown): string {
   return `- tool: ${String(name)} ${clip(argText, TOOL_ARGS_MAX)}`;
 }
 
-function resultText(content: unknown): string {
+export function resultText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
   return content.map(b => (typeof (b as Block)?.text === 'string' ? (b as Block).text as string : '')).join(' ');
@@ -101,7 +102,7 @@ function* readLines(path: string): Generator<string> {
   }
 }
 
-function parse(rawLines: Iterable<string>): Line[] {
+export function parse(rawLines: Iterable<string>): Line[] {
   const lines: Line[] = [];
   for (const raw of rawLines) {
     if (!raw.trim()) continue;
@@ -229,11 +230,13 @@ function stripCopilot(lines: Line[]): string {
   return out.toString();
 }
 
-type TranscriptFormat = 'claude' | 'codex' | 'copilot';
+export type TranscriptFormat = 'claude' | 'codex' | 'copilot';
 
-function detectFormat(lines: Line[]): TranscriptFormat {
+export function detectFormat(lines: Line[]): TranscriptFormat {
   if (lines.some(l => l.type === 'response_item' || l.type === 'session_meta')) return 'codex';
-  if (lines.some(l => typeof l.type === 'string' && l.type.startsWith('session.'))) return 'copilot';
+  // Only Copilot names its records `<area>.<event>`. Any of them will do: the
+  // tail of a log, which is all auto memory reads, holds no `session.` record.
+  if (lines.some(l => typeof l.type === 'string' && l.type.includes('.'))) return 'copilot';
   return 'claude';
 }
 

@@ -10,6 +10,10 @@
   spawnCommand: claude --session-id {cliSessionName}
   resumeCommand: claude --resume={cliSessionName}
   continueCommand: claude --continue
+  # Runs the CLI once, no terminal UI, when this type is the Auto memory
+  # recording model. It must read {promptFile} and write {outputFile}; a type
+  # without one cannot be picked. Change it to name a cheaper model.
+  headlessCommand: claude -p --no-session-persistence --strict-mcp-config --output-format text --tools "" < "{promptFile}" > "{outputFile}"
   initialPrompt:
     - label: Helm session init
       sequence: Call session_info to get Helm MCP initial information.{Enter}
@@ -60,6 +64,7 @@
   # The rename stays for codex's own picker; the helm- prefix keeps that name
   # from parsing as a UUID.
   resumeCommand: codex resume {cliThreadId}
+  headlessCommand: codex exec --skip-git-repo-check --ephemeral --sandbox read-only -o "{outputFile}" - < "{promptFile}"
   continueCommand: codex resume --last
   renameCommand: /rename helm-{cliSessionName}
   initialPrompt:

@@ -101,10 +101,8 @@ export function setupMemoryHandlers(
     if (typeof query !== 'string') throw new Error('query must be a string');
     const safeOptions = options ?? {};
     if (safeOptions.regex !== undefined && typeof safeOptions.regex !== 'boolean') throw new Error('regex must be boolean');
-    return service.searchMemories(requireOwner(event, sessionId), query, {
-      regex: safeOptions.regex,
-      graphDepth: validateGraphDepth(safeOptions.graphDepth),
-    });
+    // No cap: the canvas highlights every match, and hits carry no content.
+    return service.searchMemories(requireOwner(event, sessionId), query, { regex: safeOptions.regex });
   });
   ipcMain.handle('memory:graph-all', (event, sessionId?: unknown) =>
     service.graphAllMemories(requireOwner(event, sessionId)));

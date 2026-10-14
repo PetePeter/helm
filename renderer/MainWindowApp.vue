@@ -10,6 +10,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { sessionsState } from './screens/sessions-state.js';
 import { useAppStore } from './stores/app.js';
+import { startNewItemPulses } from './composables/useNewItemPulse.js';
 import { adoptTerminalHost, getTerminalManager } from './runtime/terminal-provider.js';
 import { getCliDisplayName } from './utils.js';
 import { initConfigCache } from './bindings.js';
@@ -107,6 +108,7 @@ import PeersTab from './components/sidebar/PeersTab.vue';
 import VoiceTab from './components/sidebar/VoiceTab.vue';
 import UpdatesTab from './components/sidebar/UpdatesTab.vue';
 import OperatorTab from './components/sidebar/OperatorTab.vue';
+import AutoMemoryTab from './components/sidebar/AutoMemoryTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/sidebar/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
@@ -941,7 +943,10 @@ watch(() => {
   dockWorkspace.focusPane(paneId, sessionId);
 }, { flush: 'post' });
 
+let stopNewItemPulses: (() => void) | null = null;
+
 onMounted(async () => {
+  stopNewItemPulses = startNewItemPulses();
   const dockLoad = await dockWorkspace.loadPersisted();
   if (dockLoad.source === 'persisted') syncViewFromDockLayout();
   else fallbackToOpenView();
@@ -1113,6 +1118,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  stopNewItemPulses?.();
   peerSessionPanes.stop();
   for (const cleanup of keyHandlerCleanups.splice(0)) cleanup();
   uninstallKeyRouter?.();
@@ -1305,6 +1311,9 @@ onUnmounted(() => {
             />
             <OperatorTab
               v-else-if="activeTab === 'operator'"
+            />
+            <AutoMemoryTab
+              v-else-if="activeTab === 'auto-memory'"
             />
             <BindingsTab
               v-else

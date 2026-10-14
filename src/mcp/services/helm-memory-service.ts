@@ -16,6 +16,7 @@ import type {
   MemoryEdgeType,
   MemoryListOptions,
   MemorySearchHit,
+  MemorySearchOptions,
   MemorySearchResult,
   MemoryRecord,
   MemorySummary,
@@ -108,7 +109,7 @@ export class HelmMemoryService {
     return this.memoryManager.setDormantForSession(sessionId, id, dormant);
   }
 
-  searchMemories(sessionId: string, query: string, options: { regex?: boolean; graphDepth?: number } = {}): MemorySearchResult {
+  searchMemories(sessionId: string, query: string, options: MemorySearchOptions = {}): MemorySearchResult {
     return this.memoryManager.searchForSession(sessionId, query, options);
   }
 

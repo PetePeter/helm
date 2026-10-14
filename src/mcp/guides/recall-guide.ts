@@ -11,7 +11,7 @@ tools = ["memory_search", "memory_get", "memory_graph"]
 [procedure]
 step_1 = "memory_search the task with its most specific terms: file, function, error text, feature name."
 step_2 = "Widen until your terminology is exhausted: drop terms, try synonyms and alternate spellings. Only then conclude nothing is stored."
-step_3 = "memory_get the hits that matter with graphDepth to follow their links; the linked memories often carry the reason or the trap."
+step_3 = "A search returns the 5 best hits as id + tldr. memory_get the hits that matter: you get the memory in full and its links as id + tldr. memory_get a linked one too when its tldr looks relevant; it often carries the reason or the trap. If matched is above 5, narrow the query."
 
 [rules]
 rule_1 = "Memories reflect what was true when written. Verify a named file, function or flag still exists before acting on it."
