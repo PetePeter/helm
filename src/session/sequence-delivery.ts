@@ -155,9 +155,10 @@ export async function deliverPromptSequenceToSession(input: {
   const runSequence = () => executeSequenceString({
     sessionId,
     input: processedText,
-    write: (sid, data) => writeIntent
-      ? ptyManager.write(sid, data, writeIntent)
-      : ptyManager.write(sid, data),
+    write: (sid, data) => {
+      if (writeIntent) ptyManager.write(sid, data, writeIntent);
+      else ptyManager.write(sid, data);
+    },
     deliverText: (sid, chunk) => deliverText(sid, chunk, textDeliveryOptions),
     submit: async (sid) => {
       await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
