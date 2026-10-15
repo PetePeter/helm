@@ -1081,21 +1081,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-card:hover,
 .session-card.focused { background: var(--bg-tertiary); }
 .session-card.active { border-color: var(--accent); background: var(--bg-secondary); }
-/* Inside a group box the selection is a solid fill in the group's colour with
-   a white ring, and every other row recedes so the selected one is unmistakable.
-   Text goes white on the fill; the activity dot keeps its own state colour. */
-.session-group-box .session-card.active {
-  background: var(--group-color);
-  border-color: #fff;
-  box-shadow: 0 0 0 1px #fff;
-  color: #fff;
-}
-.session-group-box .session-card.active :where(.session-name, .session-meta, .session-context-usage, .session-working-plan) {
-  color: #fff;
-}
-.sessions-list-shell:has(.session-card.active) .session-card:not(.active, .flash-pulse, .flash-solid, :hover) {
-  opacity: 0.6;
-}
 .session-card.snapped-out {
   opacity: 0.6;
   filter: grayscale(0.5);

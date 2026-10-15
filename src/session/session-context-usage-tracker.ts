@@ -2,6 +2,7 @@ import type { HookEvent } from './hooks/hook-normaliser.js';
 import type { SessionInfo, SessionContextUsageSnapshot } from '../types/session.js';
 import type { SessionContextSize } from './context-size.js';
 import { logger } from '../utils/logger.js';
+import { appendContextSample } from './context-usage-history.js';
 
 interface SessionUsageStore {
   getAllSessions(): SessionInfo[];
@@ -154,7 +155,7 @@ export class SessionContextUsageTracker {
         }
         : undefined;
       if (sameSnapshot(session.contextUsage, contextUsage)) return;
-      this.sessionManager.updateSession(sessionId, { contextUsage });
+      this.storeUsage(session, contextUsage);
     } catch (error) {
       logger.warn(`[SessionContextUsage] Refresh failed for ${sessionId}: ${String(error)}`);
     }
@@ -182,7 +183,7 @@ export class SessionContextUsageTracker {
     this.emptyStatusline.delete(sessionId);
     this.lastRefreshAt.set(sessionId, Date.now());
     if (sameSnapshot(session.contextUsage, contextUsage)) return true;
-    this.sessionManager.updateSession(sessionId, { contextUsage });
+    this.storeUsage(session, contextUsage);
     return true;
   }
 
@@ -195,6 +196,20 @@ export class SessionContextUsageTracker {
     this.lastRefreshAt.set(sessionId, Date.now());
     if (session.contextUsage) this.sessionManager.updateSession(sessionId, { contextUsage: undefined });
     return true;
+  }
+
+  /** Every new snapshot also lands in the session's history, so the fill graph sees each reading. */
+  private storeUsage(session: SessionInfo, contextUsage: SessionContextUsageSnapshot | undefined): void {
+    if (!contextUsage) {
+      this.sessionManager.updateSession(session.id, { contextUsage });
+      return;
+    }
+    const at = Date.parse(contextUsage.measuredAtIso ?? '');
+    const contextHistory = appendContextSample(session.contextHistory, {
+      at: Number.isFinite(at) ? at : Date.now(),
+      tokens: contextUsage.tokens,
+    });
+    this.sessionManager.updateSession(session.id, { contextUsage, contextHistory });
   }
 
   private correlateStatuslineSession(sessionId: string, cliSessionId: string): boolean {

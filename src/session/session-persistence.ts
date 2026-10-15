@@ -12,6 +12,7 @@ import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence
 import { normalizeProjectPath } from './project-identity.js';
 import { hydrateChatBindings, serializeChatBindings } from './chat/chat-bindings.js';
 import { isSessionMission } from './mission.js';
+import { isContextUsageSample } from './context-usage-history.js';
 
 function serializeSession(s: SessionInfo): Record<string, unknown> {
   return {
@@ -26,6 +27,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(isString(s.cliThreadId) ? { cliThreadId: s.cliThreadId } : {}),
     ...(isString(s.cliTranscriptPath) ? { cliTranscriptPath: s.cliTranscriptPath } : {}),
     ...(isContextUsageSnapshot(s.contextUsage) ? { contextUsage: s.contextUsage } : {}),
+    ...(s.contextHistory?.length ? { contextHistory: s.contextHistory.filter(isContextUsageSample) } : {}),
     ...(s.currentPlanId ? { currentPlanId: s.currentPlanId } : {}),
     // Generic per-provider chat bindings REPLACE the old Telegram-only topicId
     // on disk. serializeChatBindings derives the Telegram entry from topicId and
@@ -129,6 +131,11 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
         }
         if (session.contextUsage !== undefined && !isContextUsageSnapshot(session.contextUsage)) {
           delete session.contextUsage;
+        }
+        if (session.contextHistory !== undefined) {
+          const samples = Array.isArray(session.contextHistory) ? session.contextHistory.filter(isContextUsageSample) : [];
+          if (samples.length) session.contextHistory = samples;
+          else delete session.contextHistory;
         }
         if (session.mission !== undefined && !isSessionMission(session.mission)) {
           delete session.mission;

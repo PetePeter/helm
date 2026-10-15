@@ -5,7 +5,7 @@
  * compatibility alias for non-Vue modules still being migrated.
  */
 
-import type { SessionContextUsageSnapshot, UserPromptSource } from '../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../src/types/session.js';
 
 export interface Session {
   id: string;
@@ -13,6 +13,7 @@ export interface Session {
   cliType: string;
   processId: number;
   contextUsage?: SessionContextUsageSnapshot;
+  contextHistory?: ContextUsageSample[];
   workingDir?: string;
   projectId?: string;
   projectPath?: string;

@@ -13,9 +13,11 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
-import type { SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
+import ContextSparkline from './ContextSparkline.vue';
+import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
 
 function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
@@ -35,6 +37,7 @@ export interface SessionCardSession {
   name: string;
   cliType: string;
   contextUsage?: SessionContextUsageSnapshot;
+  contextHistory?: ContextUsageSample[];
   title?: string;
   cliSessionName?: string;
   /** Epoch ms when the session was first spawned. */
@@ -221,6 +224,20 @@ const metaText = computed(() => {
 });
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
+const hasContextGraph = computed(() => (props.session.contextHistory?.length ?? 0) >= 1);
+/** Last 2h for every row. A plain function, not a computed: it re-reads the
+ *  clock on each render, and the parent's elapsed-timer tick re-renders the card. */
+function rowContextSamples(): ContextUsageSample[] {
+  const now = Date.now();
+  return windowSamples(props.session.contextHistory, now - ROW_GRAPH_SPAN_MS, now);
+}
+/** Fixed-position so the sidebar's scroll container cannot clip it. */
+const contextCardAt = ref<{ top: number; right: number } | null>(null);
+function showContextCard(event: MouseEvent): void {
+  if (!hasContextGraph.value) return;
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  contextCardAt.value = { top: rect.bottom + 4, right: Math.max(window.innerWidth - rect.right, 4) };
+}
 
 // --- Runtime group badge + drag ---
 
@@ -479,9 +496,30 @@ function onCardClick(e: MouseEvent): void {
         <span
           v-if="contextUsageText"
           class="session-context-usage"
-          :title="contextUsageTooltip"
+          :title="hasContextGraph ? undefined : contextUsageTooltip"
           :aria-label="contextUsageTooltip"
-        >{{ contextUsageText }}</span>
+          @mouseenter="showContextCard"
+          @mouseleave="contextCardAt = null"
+        >
+          <ContextSparkline :samples="rowContextSamples()" :window="session.contextUsage?.window" />
+          {{ contextUsageText }}
+        </span>
+        <Teleport to="body">
+          <div
+            v-if="contextCardAt"
+            class="session-context-card"
+            :style="{ top: `${contextCardAt.top}px`, right: `${contextCardAt.right}px` }"
+          >
+            <div class="session-context-card__head">{{ contextUsageTooltip }}</div>
+            <ContextSparkline
+              :samples="session.contextHistory"
+              :window="session.contextUsage?.window"
+              :width="280"
+              :height="90"
+              detailed
+            />
+          </div>
+        </Teleport>
       </template>
     </div>
 
@@ -528,9 +566,45 @@ function onCardClick(e: MouseEvent): void {
 .session-card.interaction-disabled { cursor: default; }
 .session-context-usage {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   white-space: nowrap;
+}
+/* Inside a group box the selection is a solid fill in the group's colour with
+   a white ring, and every other row recedes so the selected one is unmistakable.
+   Text goes white on the fill; the activity dot keeps its own state colour. */
+.session-group-box .session-card.active {
+  background: var(--group-color);
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+  color: #fff;
+}
+.session-group-box .session-card.active .session-name,
+.session-group-box .session-card.active .session-meta,
+.session-group-box .session-card.active .session-context-usage,
+.session-group-box .session-card.active .session-working-plan {
+  color: #fff;
+}
+.sessions-list-shell:has(.session-card.active) .session-card:not(.active, .flash-pulse, .flash-solid, :hover) {
+  opacity: 0.6;
+}
+.session-context-card {
+  position: fixed;
+  z-index: 1000;
+  padding: var(--spacing-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.session-context-card__head {
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
 }
 .session-prompt-fade {
   position: absolute;

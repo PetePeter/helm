@@ -1,5 +1,8 @@
 package com.potatomotato.helm.ui
 
+import com.potatomotato.helm.data.ContextGraph
+import com.potatomotato.helm.data.ContextHistory
+import com.potatomotato.helm.ui.components.ContextStrip
 import com.potatomotato.helm.data.TimeAsk
 import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.ui.time.TimeScreen
@@ -203,6 +206,9 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val pulls by client.chats.pulls.collectAsState()
     val excludedComfyReferenceIds by client.chats.excludedComfyReferenceIds.collectAsState()
     val unreadCounts by client.chats.unreadCounts.collectAsState()
+    val contextHistories = remember(threads) {
+        threads.mapNotNull { (id, thread) -> ContextGraph.fromThread(thread)?.let { id to it } }.toMap()
+    }
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()
     val requestedLines by client.control.requestedLines.collectAsState()
@@ -1224,6 +1230,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                                 reach = reach,
                                 capabilities = capabilities,
                                 unread = unreadCounts,
+                                contextHistories = contextHistories,
                                 spawnInFlight = spawnInFlight,
                                 onOpen = { session ->
                                     openSessionId = session.id
@@ -1521,6 +1528,7 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
                             .filter { it.isNotEmpty() }.joinToString("  "),
                         mission = targetSession.mission,
                         details = sessionHeaderDetails(targetSession),
+                        context = contextHistories[targetSession.id],
                         linkState = linkState,
                         tab = tab,
                         onSelectTab = { tab = it },
@@ -1811,6 +1819,7 @@ private fun SessionTabScaffold(
     sessionName: String,
     mission: String?,
     details: String,
+    context: ContextHistory?,
     linkState: LinkState,
     tab: SessionTab,
     onSelectTab: (SessionTab) -> Unit,
@@ -1827,6 +1836,7 @@ private fun SessionTabScaffold(
             onBack = onBack,
             onOverflow = onOverflow,
         )
+        context?.let { ContextStrip(it) }
         SessionTabs(selected = tab, onSelect = onSelectTab)
         Box(modifier = Modifier.weight(1f)) { body() }
     }

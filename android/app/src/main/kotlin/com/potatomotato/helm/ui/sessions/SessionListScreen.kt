@@ -2,6 +2,8 @@
 
 package com.potatomotato.helm.ui.sessions
 
+import com.potatomotato.helm.data.ContextHistory
+import com.potatomotato.helm.ui.components.ContextRowGraph
 import android.provider.Settings
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.runtime.remember
@@ -78,6 +80,8 @@ fun SessionListScreen(
     capabilities: Capabilities,
     /** Per-session unread chat counts; a row with one wears the badge. */
     unread: Map<String, Int>,
+    /** Per-session token history for the row graph; absent where no reply carried stats. */
+    contextHistories: Map<String, ContextHistory>,
     onOpen: (HelmSession) -> Unit,
     /** Long-press acts on a session from the list — see HelmHome for the routing. */
     onLongPress: (HelmSession) -> Unit,
@@ -128,6 +132,7 @@ fun SessionListScreen(
                         SessionRow(
                             entry.session,
                             unreadCount = unread[entry.session.id] ?: 0,
+                            context = contextHistories[entry.session.id],
                             onClick = { onOpen(entry.session) },
                             onLongClick = { onLongPress(entry.session) },
                         )
@@ -227,6 +232,7 @@ fun SessionRow(
     onLongClick: () -> Unit,
     selected: Boolean = false,
     selectedMarkerAtEnd: Boolean = false,
+    context: ContextHistory? = null,
 ) {
     val labels = SessionRowText.Labels(
         needsDecision = stringResource(R.string.sessions_sub_needs_decision),
@@ -294,6 +300,7 @@ fun SessionRow(
                 }
                 SessionRowText.missionLine(session.mission)?.let { MissionTicker(it) }
             }
+            context?.let { ContextRowGraph(it, now) }
             // Lock / frozen / keep-warm — the same icons the desktop row centres.
             session.statusIcons(now).takeIf { it.isNotEmpty() }?.let { icons ->
                 Text(text = icons, style = MaterialTheme.typography.titleMedium, maxLines = 1)

@@ -314,10 +314,13 @@ describe('registerIPCHandlers session:updated → renameSessionTopic', () => {
     vi.clearAllMocks();
   });
 
+  /** Several modules subscribe to session:updated; fire them all, as the emitter would. */
   function getSessionUpdatedHandler(): Function | undefined {
     const smInstance = (SessionManager as any).mock.instances[0];
-    const call = (smInstance?.on as any)?.mock?.calls?.find(([e]: [string]) => e === 'session:updated');
-    return call?.[1];
+    const listeners = ((smInstance?.on as any)?.mock?.calls ?? [])
+      .filter(([e]: [string]) => e === 'session:updated')
+      .map(([, fn]: [string, Function]) => fn);
+    return listeners.length ? (event: unknown) => listeners.forEach((fn: Function) => fn(event)) : undefined;
   }
 
   it('calls renameSessionTopic when bot is running and session:updated fires', async () => {

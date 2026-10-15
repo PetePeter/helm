@@ -544,6 +544,13 @@ discussion. [`HelmLog`'s one rule](../android/app/src/main/kotlin/com/potatomota
 matters more now that the file is something a user can mail onward — never log a
 secret or a payload, enforced by `NoPayloadInLogsTest` scanning every call site.
 
+## Context fill graph — built from chat replies (v1)
+
+Each session row shows a small token graph of the last 2 hours with the % full under it. The open-session header shows a strip graph of the whole history, with the window limit and guides at 70% and 85%. Colours: `Accent` normally, `CacheWarn` above 70%, `Danger` above 85%. These are the same thresholds as the desktop ([session-list-previews.md](session-list-previews.md#context-fill-graph)).
+
+- **Why there is no wire change:** every chat reply already carries `contextTokens`/`contextWindow`. `ContextGraph.fromThread` turns a session's stored thread into its history, so the graph comes from data the phone already keeps.
+- **Limit, stated plainly:** a session that has never replied over chat has no graph. The next step would be to send the desktop's persisted `contextHistory` with each session's details.
+
 ## Why it is built this way
 
 **Why BLE, and not LAN or a cloud relay.** Battery over range, and it works

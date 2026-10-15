@@ -64,6 +64,7 @@
     <string name="sessions_context">Sessions</string>
     <string name="sessions_plan_claimed">plan</string>
     <string name="sessions_git_branch">git: %1$s</string>
+    <string name="session_context_label">Context</string>
     <string name="share_wait_title">Upload is still running</string>
     <string name="share_wait_cancelling">Cancelling upload</string>
     <string name="share_wait_prompt_body">The upload will keep running. Continue waiting?</string>

@@ -294,4 +294,19 @@ describe('SessionContextUsageTracker', () => {
       measuredAtIso: '2026-10-15T03:01:00.000Z',
     });
   });
+
+  it('keeps a token history across refreshes, including the drop after a compaction', () => {
+    const manager = fakeSessionManager([makeSession('claude')]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    tracker.reportStatuslineUsage('claude', 'thread', 120_000, 200_000);
+    tracker.reportStatuslineUsage('claude', 'thread', 150_000, 200_000);
+    tracker.clearStatuslineUsage('claude', 'thread');
+    tracker.reportStatuslineUsage('claude', 'thread', 20_000, 200_000);
+
+    expect(manager.getSession('claude')?.contextHistory?.map((s) => s.tokens)).toEqual([120_000, 150_000, 20_000]);
+  });
 });

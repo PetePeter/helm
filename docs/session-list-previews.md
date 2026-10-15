@@ -50,3 +50,20 @@ comparing `dataset` values, not by building an attribute selector, because
 session ids and paths contain characters that would need CSS escaping.
 Envelope colours come from `MESSAGE_FLIGHT_COLORS` in `renderer/state-colors.ts`:
 blue for a first send, amber for a reply within the reply window.
+
+## Context fill graph
+
+The `ctx` label on each row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS`). Every row uses the same span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the label opens a larger chart of the whole stored history, with the window limit and guides at 70% and 85%.
+
+```mermaid
+graph LR
+  SL[statusline / transcript / API] --> T[SessionContextUsageTracker]
+  T -->|contextUsage + contextHistory| SI[SessionInfo]
+  SI -->|serializeSession| Y[sessions.yaml]
+  SI -->|session:updated| R[SessionCard → ContextSparkline]
+```
+
+- **Why the tracker owns the history:** every snapshot already passes through `SessionContextUsageTracker.storeUsage`, so each reading lands in `contextHistory` without a second producer. The history is capped at `CONTEXT_HISTORY_LIMIT` (120) points, and a reading equal to the last one is skipped, so idle refreshes do not flatten the trend.
+- **Why it is persisted:** a restored session keeps its trend, including any `/compact` drops, which appear as ordinary points.
+- **Colour:** the graph is `--accent`, turning `--status-blocked` (amber) above 70% and `--danger` above 85% of the window. With no known window it scales to the peak and stays green.
+- **Hover card:** it is fixed-position and teleported to `body`, so the sidebar's scroll container cannot clip it.

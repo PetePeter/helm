@@ -25,6 +25,13 @@ export interface SessionContextUsageSnapshot {
   source?: 'transcript' | 'api' | 'statusline';
 }
 
+/** One context-size reading, for the token-fill graph. */
+export interface ContextUsageSample {
+  /** Epoch ms of the measurement. */
+  at: number;
+  tokens: number;
+}
+
 /** Reserved identity for an embedded command shell that has no configured CLI type. */
 export const BUILTIN_SHELL_CLI_TYPE = 'shell';
 
@@ -61,6 +68,8 @@ export interface SessionInfo {
   cliTranscriptPath?: string;
   /** Last known context size, refreshed at turn boundaries and persisted for the session row. */
   contextUsage?: SessionContextUsageSnapshot;
+  /** Recent context readings, oldest first, capped (see context-usage-history.ts). */
+  contextHistory?: ContextUsageSample[];
   /** Explicit plan item to show on the session row as the current working plan. */
   currentPlanId?: string;
   /** Telegram forum topic ID for this session's topic thread. The typed view of
