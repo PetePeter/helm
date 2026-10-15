@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helm · New session four-step proposal</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --surface: #0b0b0d;
+      --surface-2: #121215;
+      --line: #35353e;
+      --separator: #1e1e23;
+      --txt: #fff;
+      --dim: #8b8b95;
+      --faint: #5a5a63;
+      --accent: #ccff00;
+      --selected: #141900;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #111114; color: var(--txt); font: 15px/1.45 system-ui, sans-serif; }
+    main { width: min(100%, 920px); display: grid; justify-items: center; gap: 12px; }
+    h1 { margin: 0; font-size: clamp(20px, 4vw, 28px); font-weight: 650; text-align: center; }
+    .lede { max-width: 700px; margin: 0 0 6px; color: var(--dim); text-align: center; }
+    .phone { width: min(100%, 390px); height: min(790px, calc(100vh - 185px)); min-height: 570px; display: flex; flex-direction: column; position: relative; overflow: hidden; border: 8px solid #29292e; border-radius: 36px; background: var(--bg); box-shadow: 0 24px 80px #000a; }
+    .status { height: 35px; flex: 0 0 35px; display: flex; justify-content: space-between; padding: 9px 18px 0; color: #ddd; font-size: 11px; }
+    .appbar { min-height: 58px; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--separator); }
+    .back { width: 32px; height: 36px; border: 0; padding: 0; color: var(--txt); background: transparent; font-size: 24px; cursor: pointer; }
+    .back[hidden] { display: block; visibility: hidden; }
+    .appbar-title { min-width: 0; }
+    .appbar-title strong { display: block; font-size: 15px; font-weight: 650; }
+    .appbar-title small { display: block; color: var(--dim); font-size: 11px; }
+    .screen { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 16px 16px; }
+    .eyebrow { color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h2 { margin: 5px 0 4px; font-size: 21px; font-weight: 650; }
+    .hint { margin: 0 0 16px; color: var(--dim); font-size: 13px; }
+    .section { margin-top: 19px; }
+    .section-label { display: flex; align-items: center; gap: 7px; margin: 0 0 7px; color: var(--dim); font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+    .optional { color: var(--faint); font-size: 9px; font-weight: 600; letter-spacing: .04em; }
+    .name-input { width: 100%; min-height: 48px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--surface-2); color: var(--txt); font: inherit; font-size: 13px; }
+    .name-input:focus { border-color: var(--accent); }
+    .helper { margin: 6px 2px 0; color: var(--faint); font-size: 11px; }
+    .list { border-top: 1px solid var(--separator); }
+    .row { width: 100%; min-height: 62px; display: flex; align-items: center; gap: 12px; padding: 9px 2px; border: 0; border-bottom: 1px solid var(--separator); background: transparent; color: var(--txt); text-align: left; cursor: pointer; }
+    .row:hover, .row:focus-visible { background: #111114; outline: none; }
+    .row.selected { background: var(--selected); }
+    .icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; color: var(--accent); font-size: 16px; }
+    .copy { min-width: 0; flex: 1; }
+    .copy strong { display: block; overflow: hidden; color: var(--txt); text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 650; }
+    .copy small { display: block; margin-top: 3px; overflow: hidden; color: var(--dim); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+    .count { color: var(--dim); font-size: 10px; white-space: nowrap; }
+    .check { width: 20px; color: var(--accent); text-align: center; font-size: 15px; font-weight: 800; }
+    .chevron { color: var(--faint); font-size: 22px; line-height: 1; }
+    .badge { padding: 2px 6px; border: 1px solid #526600; border-radius: 99px; color: var(--accent); font-size: 9px; font-weight: 750; text-transform: uppercase; }
+    .footer { display: flex; align-items: center; gap: 8px; padding: 10px 16px 13px; border-top: 1px solid var(--separator); background: var(--surface); }
+    .primary { min-height: 46px; flex: 1; border: 0; border-radius: 11px; background: var(--accent); color: #0d1200; font: inherit; font-weight: 750; }
+    .primary:disabled { background: #29292e; color: var(--faint); }
+    .secondary { min-height: 42px; padding: 0 10px; border: 0; background: transparent; color: var(--dim); font: inherit; font-size: 12px; }
+    .footnote { max-width: 740px; margin: 0; color: var(--dim); font-size: 11px; text-align: center; }
+    @media (max-width: 440px) { body { padding: 12px 8px; } .phone { height: min(790px, calc(100vh - 165px)); border-width: 5px; border-radius: 29px; } }
+    @media (max-height: 760px) { .phone { height: calc(100vh - 170px); min-height: 520px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>New session · four-step flow</h1>
+    <p class="lede">Name and machine, then CLI, project, and folder. Each choice gets its own focused page in the project picker’s visual style.</p>
+    <section class="phone" aria-label="Interactive four-step Android new session mockup">
+      <div class="status"><span>9:41</span><span>● &nbsp;▰ &nbsp;82%</span></div>
+      <header class="appbar">
+        <button class="back" id="back" aria-label="Back" hidden>‹</button>
+        <div class="appbar-title"><strong id="barTitle">New session</strong><small id="barSub">Name and machine · 1 of 4</small></div>
+      </header>
+      <div class="screen" id="screen"></div>
+      <footer class="footer" id="footer"></footer>
+    </section>
+    <p class="footnote">Rows, dividers, icon tiles, selection marks, and the Main folder badge follow the committed Android project picker. Sample names and paths are illustrative.</p>
+  </main>
+  <script>
+    const machines = [
+      { id: 'local', title: 'This desktop', subtitle: 'Local machine', icon: '▣' },
+      { id: 'peer', title: 'Development PC', subtitle: 'Connected machine', icon: '▣' },
+    ];
+    const clis = [
+      { id: 'codex', title: 'Codex', subtitle: 'OpenAI CLI', icon: '⌘' },
+      { id: 'claude', title: 'Claude Code', subtitle: 'Anthropic CLI', icon: '⌘' },
+    ];
+    const projects = [
+      { name: 'gamepad-cli-hub', folders: [
+        { name: 'gamepad-cli-hub', path: 'X:\\coding\\gamepad-cli-hub', main: true },
+        { name: 'android', path: 'X:\\coding\\gamepad-cli-hub\\android' },
+        { name: 'renderer', path: 'X:\\coding\\gamepad-cli-hub\\renderer' },
+      ] },
+      { name: 'CyberfileSystems', folders: [
+        { name: 'CyberfileSystems', path: 'X:\\coding\\CyberfileSystems', main: true },
+        { name: 'tools', path: 'X:\\coding\\CyberfileSystems\\tools' },
+      ] },
+      { name: 'Other', folders: [
+        { name: 'scratch', path: 'X:\\coding\\scratch' },
+        { name: 'playground', path: 'X:\\coding\\playground' },
+      ] },
+    ];
+    const pages = ['details', 'cli', 'projects', 'folders'];
+    let page = 'details';
+    let machine = 'local';
+    let cli = null;
+    let sessionName = '';
+    let project = null;
+    let folder = null;
+    const screen = document.getElementById('screen');
+    const footer = document.getElementById('footer');
+    const barTitle = document.getElementById('barTitle');
+    const barSub = document.getElementById('barSub');
+
+    function row(icon, title, subtitle, selected, extra = '', trailing = '') {
+      return `<button class="row ${selected ? 'selected' : ''}" ${extra}>
+        <span class="icon">${icon}</span><span class="copy"><strong>${title}</strong><small>${subtitle}</small></span>
+        ${trailing}<span class="check">${selected ? '✓' : ''}</span>
+      </button>`;
+    }
+    function stepLabel() {
+      const current = pages.indexOf(page) + 1;
+      const names = ['Name and machine', 'CLI', 'Project', 'Folder'];
+      return `New session · ${names[current - 1]} · ${current} of 4`;
+    }
+    function render() {
+      const current = pages.indexOf(page);
+      document.getElementById('back').hidden = current === 0;
+      barTitle.textContent = page === 'details' ? 'New session' : {
+        cli: 'Choose a CLI', projects: 'Choose a project', folders: 'Choose a folder',
+      }[page];
+      barSub.textContent = stepLabel();
+
+      if (page === 'details') {
+        screen.innerHTML = `<div class="eyebrow">Step 1 of 4</div><h2>Name and machine</h2><p class="hint">Give the session a name and choose the PC it runs on.</p>
+          <section class="section"><label class="section-label" for="sessionName">SESSION NAME <span class="optional">OPTIONAL</span></label><input class="name-input" id="sessionName" placeholder="Give this session a name"><p class="helper">Leave blank to let Helm name it.</p></section>
+          <section class="section"><p class="section-label">RUNS ON</p><div class="list">${machines.map(m => row(m.icon, m.title, m.subtitle, m.id === machine, `data-machine="${m.id}"`)).join('')}</div></section>`;
+        const input = document.getElementById('sessionName');
+        input.value = sessionName;
+        input.addEventListener('input', event => { sessionName = event.target.value; });
+        screen.querySelectorAll('[data-machine]').forEach(el => el.addEventListener('click', () => { machine = el.dataset.machine; render(); }));
+      } else if (page === 'cli') {
+        screen.innerHTML = `<div class="eyebrow">Step 2 of 4</div><h2>Choose a CLI</h2><p class="hint">Select the tool to start on ${machine === 'local' ? 'this desktop' : 'Development PC'}.</p><div class="list">${clis.map(c => row(c.icon, c.title, c.subtitle, c.id === cli, `data-cli="${c.id}"`)).join('')}</div>`;
+        screen.querySelectorAll('[data-cli]').forEach(el => el.addEventListener('click', () => { cli = el.dataset.cli; render(); }));
+      } else if (page === 'projects') {
+        screen.innerHTML = `<div class="eyebrow">Step 3 of 4</div><h2>Choose a project</h2><p class="hint">Pick a project to see its folders.</p><div class="list">${projects.map((p, i) => row('▰', p.name, 'Project', p === project, `data-project="${i}"`, `<span class="count">${p.folders.length} folders</span><span class="chevron">›</span>`)).join('')}</div>`;
+        screen.querySelectorAll('[data-project]').forEach(el => el.addEventListener('click', () => { project = projects[Number(el.dataset.project)]; folder = null; render(); }));
+      } else {
+        const rows = project ? project.folders : [];
+        screen.innerHTML = `<div class="eyebrow">Step 4 of 4</div><h2>Choose a folder</h2><p class="hint">${project ? project.name : 'Choose a project first.'}</p><div class="list">${rows.map((f, i) => row('⌂', f.name, f.path, f === folder, `data-folder="${i}"`, f.main ? '<span class="badge">Main</span>' : '')).join('')}</div>`;
+        screen.querySelectorAll('[data-folder]').forEach(el => el.addEventListener('click', () => { folder = project.folders[Number(el.dataset.folder)]; render(); }));
+      }
+
+      const backButton = current > 0 ? '<button class="secondary" id="previous">Back</button>' : '<button class="secondary" id="cancel">Cancel</button>';
+      const action = page === 'folders' ? 'Start session' : 'Next';
+      const enabled = page === 'details' || (page === 'cli' && cli != null) || (page === 'projects' && project != null) || (page === 'folders' && folder != null);
+      footer.innerHTML = `${backButton}<button class="primary" id="advance" ${enabled ? '' : 'disabled'}>${action}</button>`;
+      document.getElementById('previous')?.addEventListener('click', () => { page = pages[current - 1]; render(); });
+      document.getElementById('advance')?.addEventListener('click', () => {
+        if (page === 'folders') {
+          const button = document.getElementById('advance');
+          button.textContent = 'Ready to start';
+          return;
+        }
+        page = pages[current + 1];
+        render();
+      });
+    }
+    document.getElementById('back').addEventListener('click', () => { page = pages[pages.indexOf(page) - 1]; render(); });
+    render();
+  </script>
+</body>
+</html>
