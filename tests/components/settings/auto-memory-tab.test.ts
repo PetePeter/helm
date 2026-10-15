@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
 import AutoMemoryTab from '../../../renderer/components/sidebar/AutoMemoryTab.vue';
+import { DEFAULT_JUDGE_PROMPT } from '../../../src/types/auto-memory.js';
 
 const ALL_MODELS = [
   { id: 'api-local', name: 'Local model', kind: 'api', available: true },
@@ -18,7 +19,7 @@ const ALL_MODELS = [
   { id: 'cli-shell', name: 'cmd', kind: 'cli', available: false, note: 'no headless command' },
 ];
 let models = ALL_MODELS;
-let stored = { recordingModel: '', autoSave: true, autoRecall: true };
+let stored = { recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' };
 let testResult: Record<string, string> = { status: 'ok', text: 'OK' };
 const setCalls: Array<Record<string, unknown>> = [];
 
@@ -43,7 +44,7 @@ async function factory() {
 
 describe('AutoMemoryTab', () => {
   beforeEach(() => {
-    stored = { recordingModel: '', autoSave: true, autoRecall: true };
+    stored = { recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' };
     testResult = { status: 'ok', text: 'OK' };
     setCalls.length = 0;
     models = ALL_MODELS;
@@ -117,6 +118,32 @@ describe('AutoMemoryTab', () => {
     expect(wrapper.text()).toContain('can no longer record');
     expect(wrapper.find('select option:checked').text()).toBe('Deleted CLI type');
     expect(wrapper.find('button').attributes('disabled')).toBeDefined();
+  });
+
+  it('shows the default judge prompt to edit from, and saves an edit', async () => {
+    const wrapper = await factory();
+    const prompt = wrapper.find('textarea');
+
+    expect((prompt.element as HTMLTextAreaElement).value).toBe(DEFAULT_JUDGE_PROMPT);
+
+    await prompt.setValue('Only save ports.');
+    await flushPromises();
+
+    expect(setCalls).toEqual([{ judgePrompt: 'Only save ports.' }]);
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Only save ports.');
+  });
+
+  it('resets an edited judge prompt to the default', async () => {
+    stored.judgePrompt = 'Only save ports.';
+    const wrapper = await factory();
+    const reset = wrapper.findAll('button').find((button) => button.text() === 'Reset to default')!;
+
+    await reset.trigger('click');
+    await flushPromises();
+
+    expect(setCalls).toEqual([{ judgePrompt: '' }]);
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe(DEFAULT_JUDGE_PROMPT);
+    expect(reset.attributes('disabled')).toBeDefined();
   });
 
   it('reports the outcome of a test run in words', async () => {

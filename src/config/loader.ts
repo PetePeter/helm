@@ -32,6 +32,7 @@ import {
   DEFAULT_AUTO_MEMORY_SETTINGS,
   CLI_COST_NOTE,
   INCOMPLETE_API_NOTE,
+  DEFAULT_JUDGE_PROMPT,
   type AutoMemorySettings,
   type RecordingModelOption,
 } from '../types/auto-memory.js';
@@ -1250,6 +1251,7 @@ export class ConfigLoader {
       recordingModel: typeof section.recordingModel === 'string' ? section.recordingModel : DEFAULT_AUTO_MEMORY_SETTINGS.recordingModel,
       autoSave: typeof section.autoSave === 'boolean' ? section.autoSave : DEFAULT_AUTO_MEMORY_SETTINGS.autoSave,
       autoRecall: typeof section.autoRecall === 'boolean' ? section.autoRecall : DEFAULT_AUTO_MEMORY_SETTINGS.autoRecall,
+      judgePrompt: typeof section.judgePrompt === 'string' ? section.judgePrompt : DEFAULT_AUTO_MEMORY_SETTINGS.judgePrompt,
     };
   }
 
@@ -1263,6 +1265,11 @@ export class ConfigLoader {
     const next = { ...this.getAutoMemoryConfig() };
     if (typeof updates.autoSave === 'boolean') next.autoSave = updates.autoSave;
     if (typeof updates.autoRecall === 'boolean') next.autoRecall = updates.autoRecall;
+    if (typeof updates.judgePrompt === 'string') {
+      // The default is stored as "no override", so a later change to it still reaches this user.
+      const prompt = updates.judgePrompt.trim();
+      next.judgePrompt = prompt === DEFAULT_JUDGE_PROMPT ? '' : prompt;
+    }
     if (typeof updates.recordingModel === 'string') {
       const ref = updates.recordingModel.trim();
       next.recordingModel = ref ? this.requireRecordingModel(ref) : '';

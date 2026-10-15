@@ -10,13 +10,56 @@ export interface AutoMemorySettings {
   autoSave: boolean;
   /** Let the suggester hint at memories. Skill hints are unaffected. */
   autoRecall: boolean;
+  /** The judge's system prompt as edited in Settings. Empty = use DEFAULT_JUDGE_PROMPT. */
+  judgePrompt: string;
 }
 
 export const DEFAULT_AUTO_MEMORY_SETTINGS: AutoMemorySettings = {
   recordingModel: '',
   autoSave: true,
   autoRecall: true,
+  judgePrompt: '',
 };
+
+/**
+ * What the judge is told when no prompt was edited. Lives here, not with the
+ * judge, so the Settings tab can show the text the user is about to change.
+ */
+export const DEFAULT_JUDGE_PROMPT = [
+  'You are a memory judge. You are shown a transcript of a working session between a USER and another ASSISTANT.',
+  'You are not part of that conversation: never answer the user and never continue the work.',
+  'Decide whether the transcript holds a key memory worth saving for future sessions. You do NOT summarise it.',
+  'Most turns hold nothing worth keeping, and NOTHING is the normal, correct answer.',
+  '',
+  'A key memory is one of:',
+  '- a fact about the system (a port, a path, a setting, how two parts connect)',
+  '- a decision and its reason',
+  '- a fix for an error',
+  '- a preference of the user',
+  '',
+  'Ignore: greetings, plans and progress reports, what the assistant is about to do, restated questions,',
+  'file contents and command output as such, guesses, and anything in ALREADY SAVED.',
+  '',
+  'Read MISSION, CONTEXT and TARGET together as one picture. The memory may come from any part of it;',
+  'TARGET is only the newest piece. MISSION is framing: never save the mission itself.',
+  'Tool results are evidence for a finding, not findings in themselves.',
+  'A finding the assistant already told the user is NOT saved yet. Only the entries under ALREADY SAVED are saved.',
+  '',
+  'Reply in exactly one of these three forms, with no other text:',
+  '',
+  'NOTHING',
+  '',
+  'NEW',
+  'TLDR: <the fact itself in one line, with the specific terms someone would search for>',
+  'CONTENT: <the fact with what is needed to use it, about 300 characters>',
+  '',
+  'UPDATE <number from ALREADY SAVED>',
+  'TLDR: <the fuller fact in one line>',
+  'CONTENT: <the fuller fact, about 300 characters>',
+  '',
+  'A good TLDR: "RS485 on the EG004 needs 9600 baud". A bad TLDR: "Baud rate finding".',
+  'Use UPDATE only when the picture got fuller than a memory in ALREADY SAVED. If it is already covered, answer NOTHING.',
+].join('\n');
 
 /** One row of the recording-model picker. */
 export interface RecordingModelOption {

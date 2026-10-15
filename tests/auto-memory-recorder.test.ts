@@ -28,6 +28,8 @@ describe('auto-save for API sessions', () => {
   let server: http.Server;
   let baseUrl: string;
   let judgePrompts: string[];
+  /** The judge prompt edited in Settings, as the recorder reads it live; '' = the default. */
+  let editedJudgePrompt: string;
   /** What the judge answers, given its prompt; a number is an HTTP error status. */
   let judge: (prompt: string) => string | number;
   /** HTTP status of the session's own requests. */
@@ -40,6 +42,7 @@ describe('auto-save for API sessions', () => {
   beforeEach(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-memory-'));
     judgePrompts = [];
+    editedJudgePrompt = '';
     judge = () => 'NOTHING';
     sessionStatus = 200;
     sessionReplies = [];
@@ -50,7 +53,7 @@ describe('auto-save for API sessions', () => {
       req.on('data', (chunk) => { raw += chunk; });
       req.on('end', () => {
         const body = JSON.parse(raw) as Body;
-        const isJudge = body.messages[0].content === JUDGE_SYSTEM_PROMPT;
+        const isJudge = body.messages[0].content === (editedJudgePrompt || JUDGE_SYSTEM_PROMPT);
         if (isJudge) judgePrompts.push(body.messages[1].content);
         else onSessionRequest(++sessionRequests);
         const answer = isJudge ? judge(body.messages[1].content)
@@ -102,6 +105,7 @@ describe('auto-save for API sessions', () => {
         backends: { api: apiSilentBackend(host) },
       }),
       isEnabled: () => options.autoSave ?? true,
+      getJudgePrompt: () => editedJudgePrompt,
       isLive: () => live.value,
       getMission: () => 'Get the renderer dev loop working',
       listBound: (sessionId) => memory.listBoundForSession(sessionId),
@@ -140,6 +144,19 @@ describe('auto-save for API sessions', () => {
     expect(memory.listRecordsForSession('s2')).toEqual([]);
     expect(judgePrompts[0]).toContain('MISSION (framing only, never save it):\nGet the renderer dev loop working');
     expect(judgePrompts[0]).toContain('USER: which port does vite use?\nASSISTANT: the answer');
+  });
+
+  it('judges with the prompt edited in Settings, and with the default when it is empty', async () => {
+    judge = () => VITE_ATOM;
+    editedJudgePrompt = 'Only save ports.';
+    const { turn } = setup();
+
+    expect(await turn('which port does vite use?')).toBe('created');
+    expect(judgePrompts).toHaveLength(1);
+
+    editedJudgePrompt = '';
+    expect(await turn('and the preview server?')).toBeDefined();
+    expect(judgePrompts).toHaveLength(2);
   });
 
   it('writes one memory, not two, when overlapping passes see the same fact', async () => {

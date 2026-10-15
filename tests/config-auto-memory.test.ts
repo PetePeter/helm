@@ -7,6 +7,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { ConfigLoader } from '../src/config/loader.js';
+import { DEFAULT_JUDGE_PROMPT } from '../src/types/auto-memory.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as YAML from 'yaml';
@@ -63,13 +64,13 @@ describe('autoMemory settings', () => {
     root = undefined;
   });
 
-  it('defaults to no recording model with both switches on', () => {
-    expect(makeLoader().getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true });
+  it('defaults to no recording model with both switches on and the default judge prompt', () => {
+    expect(makeLoader().getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' });
   });
 
   it('degrades a malformed section to the defaults', () => {
-    const loader = makeLoader({ autoMemory: { recordingModel: 7, autoSave: 'yes', autoRecall: null } });
-    expect(loader.getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true });
+    const loader = makeLoader({ autoMemory: { recordingModel: 7, autoSave: 'yes', autoRecall: null, judgePrompt: 3 } });
+    expect(loader.getAutoMemoryConfig()).toEqual({ recordingModel: '', autoSave: true, autoRecall: true, judgePrompt: '' });
   });
 
   it('persists the picked model and both switches across a reload', () => {
@@ -77,7 +78,20 @@ describe('autoMemory settings', () => {
     loader.setAutoMemoryConfig({ recordingModel: API_ID, autoSave: false });
     loader.setAutoMemoryConfig({ autoRecall: false });
 
-    expect(reload().getAutoMemoryConfig()).toEqual({ recordingModel: API_ID, autoSave: false, autoRecall: false });
+    expect(reload().getAutoMemoryConfig()).toEqual({ recordingModel: API_ID, autoSave: false, autoRecall: false, judgePrompt: '' });
+  });
+
+  it('persists an edited judge prompt, and a blank or default one clears it back to the default', () => {
+    const loader = makeLoader();
+    loader.setAutoMemoryConfig({ recordingModel: API_ID, judgePrompt: 'Only save ports.' });
+    expect(reload().getAutoMemoryConfig()).toMatchObject({ recordingModel: API_ID, judgePrompt: 'Only save ports.' });
+
+    loader.setAutoMemoryConfig({ judgePrompt: `  ${DEFAULT_JUDGE_PROMPT}  ` });
+    expect(reload().getAutoMemoryConfig().judgePrompt).toBe('');
+
+    loader.setAutoMemoryConfig({ judgePrompt: 'Only save ports.' });
+    loader.setAutoMemoryConfig({ judgePrompt: '   ' });
+    expect(reload().getAutoMemoryConfig().judgePrompt).toBe('');
   });
 
   it('stores the id when the model is picked by its display name', () => {

@@ -550,6 +550,7 @@ export function registerIPCHandlers(
   const autoMemoryRecorder = new AutoMemoryRecorder({
     runner: recordingModelRunner,
     isEnabled: () => configLoader.getAutoMemoryConfig().autoSave,
+    getJudgePrompt: () => configLoader.getAutoMemoryConfig().judgePrompt,
     isLive: (sessionId) => sessionManager.hasSession(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
     listBound: (sessionId) => memoryManager.listBoundForSession(sessionId),

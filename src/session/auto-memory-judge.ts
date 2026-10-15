@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import type { SilentRunner } from './silent-model-runner.js';
 import type { ChatMessage } from './api/api-agent-loop.js';
 import { logger } from '../utils/logger.js';
+import { DEFAULT_JUDGE_PROMPT } from '../types/auto-memory.js';
 
 /** Context turns shown before the target. A ceiling: the token budget may allow fewer. */
 export const JUDGE_CONTEXT_TURNS = 3;
@@ -74,41 +75,8 @@ export type JudgeVerdict =
   /** `index` counts from 1 into the window's `saved` list. */
   | { kind: 'update'; index: number; tldr: string; content: string };
 
-export const JUDGE_SYSTEM_PROMPT = [
-  'You are a memory judge. You are shown a transcript of a working session between a USER and another ASSISTANT.',
-  'You are not part of that conversation: never answer the user and never continue the work.',
-  'Decide whether the transcript holds a key memory worth saving for future sessions. You do NOT summarise it.',
-  'Most turns hold nothing worth keeping, and NOTHING is the normal, correct answer.',
-  '',
-  'A key memory is one of:',
-  '- a fact about the system (a port, a path, a setting, how two parts connect)',
-  '- a decision and its reason',
-  '- a fix for an error',
-  '- a preference of the user',
-  '',
-  'Ignore: greetings, plans and progress reports, what the assistant is about to do, restated questions,',
-  'file contents and command output as such, guesses, and anything in ALREADY SAVED.',
-  '',
-  'Read MISSION, CONTEXT and TARGET together as one picture. The memory may come from any part of it;',
-  'TARGET is only the newest piece. MISSION is framing: never save the mission itself.',
-  'Tool results are evidence for a finding, not findings in themselves.',
-  'A finding the assistant already told the user is NOT saved yet. Only the entries under ALREADY SAVED are saved.',
-  '',
-  'Reply in exactly one of these three forms, with no other text:',
-  '',
-  'NOTHING',
-  '',
-  'NEW',
-  'TLDR: <the fact itself in one line, with the specific terms someone would search for>',
-  'CONTENT: <the fact with what is needed to use it, about 300 characters>',
-  '',
-  'UPDATE <number from ALREADY SAVED>',
-  'TLDR: <the fuller fact in one line>',
-  'CONTENT: <the fuller fact, about 300 characters>',
-  '',
-  'A good TLDR: "RS485 on the EG004 needs 9600 baud". A bad TLDR: "Baud rate finding".',
-  'Use UPDATE only when the picture got fuller than a memory in ALREADY SAVED. If it is already covered, answer NOTHING.',
-].join('\n');
+/** The prompt used when none was edited in Settings. */
+export const JUDGE_SYSTEM_PROMPT = DEFAULT_JUDGE_PROMPT;
 
 /** A rough size: about four characters to a token. The server reports the truth; this only has to cap. */
 export function estimateTokens(text: string): number {
@@ -315,6 +283,8 @@ export interface AutoMemoryRecorderDeps {
   create: (sessionId: string, memory: AutoMemoryWrite) => void;
   update: (sessionId: string, id: string, memory: AutoMemoryWrite) => void;
   budgetTokens?: number;
+  /** Live read of the judge prompt edited in Settings; empty or absent = the default. */
+  getJudgePrompt?: () => string;
 }
 
 /** What a pass did; `off` = no request was made. */
@@ -359,7 +329,7 @@ export class AutoMemoryRecorder {
       if (turns.length) logger.info(`[AutoMemory] Turn of ${sessionId} not judged: it does not fit the judge window`);
       return 'off';
     }
-    const result = await this.deps.runner.runSilently({ system: JUDGE_SYSTEM_PROMPT, prompt: renderJudgePrompt(window) });
+    const result = await this.deps.runner.runSilently({ system: this.deps.getJudgePrompt?.() || JUDGE_SYSTEM_PROMPT, prompt: renderJudgePrompt(window) });
     if (result.status === 'inert') return 'off';
     if (result.status === 'failed') return 'failed';
     const verdict = parseJudgeReply(result.text, window.saved.length);

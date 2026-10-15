@@ -6,7 +6,7 @@
  */
 import { computed, onMounted } from 'vue';
 import { useAutoMemoryStore } from '../../stores/auto-memory.js';
-import type { RecordingModelOption } from '../../../src/types/auto-memory.js';
+import { DEFAULT_JUDGE_PROMPT, type RecordingModelOption } from '../../../src/types/auto-memory.js';
 
 const store = useAutoMemoryStore();
 
@@ -19,6 +19,10 @@ const optionLabel = (model: RecordingModelOption): string =>
 const offersRealCli = computed(() => store.models.some((model) => model.kind === 'cli' && model.available));
 
 const checked = (event: Event): boolean => (event.target as HTMLInputElement).checked;
+
+/** What the judge is told now: the edit, else the default the user starts from. */
+const judgePrompt = computed(() => store.settings.judgePrompt || DEFAULT_JUDGE_PROMPT);
+const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
 </script>
 
 <template>
@@ -85,6 +89,26 @@ const checked = (event: Event): boolean => (event.target as HTMLInputElement).ch
       <span>Auto-recall: hint at related memories when you send a prompt</span>
     </label>
 
+    <label class="auto-memory-prompt">
+      <span>Judge prompt: what the recording model is told before each turn it judges</span>
+      <textarea
+        class="auto-memory-prompt__text focusable"
+        rows="14"
+        spellcheck="false"
+        :value="judgePrompt"
+        @change="store.save({ judgePrompt: ($event.target as HTMLTextAreaElement).value })"
+      />
+    </label>
+    <div class="auto-memory-setting">
+      <button
+        type="button"
+        class="btn btn--secondary btn--sm focusable"
+        :disabled="!promptEdited"
+        @click="store.save({ judgePrompt: '' })"
+      >Reset to default</button>
+      <span class="auto-memory-note">{{ promptEdited ? 'Using your edited prompt.' : 'Using the default prompt.' }}</span>
+    </div>
+
     <span v-if="store.error" class="auto-memory-note">{{ store.error }}</span>
   </div>
 </template>
@@ -97,6 +121,28 @@ const checked = (event: Event): boolean => (event.target as HTMLInputElement).ch
   padding: var(--spacing-sm) 0;
   color: var(--text-primary);
   font-size: var(--font-size-sm);
+}
+
+.auto-memory-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.auto-memory-prompt__text {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-sm);
 }
 
 .auto-memory-note {
