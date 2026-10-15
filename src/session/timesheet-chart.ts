@@ -25,7 +25,7 @@ const STYLE = `
 .tsc svg{width:100%;height:auto;display:block}
 .tsc svg text{fill:#999;font-size:10px;font-family:inherit}`;
 
-export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'>, period: TimesheetPeriod): string {
+export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'>, period: TimesheetPeriod, now = Date.now()): string {
   const { user, ai, tokens } = sheet.totals;
   const n = sheet.columns.length;
   const timeMax = niceMinutes(Math.max(0, ...user, ...ai));
@@ -48,7 +48,9 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
   const bars = (values: number[], dx: number) => values
     .map((v, i) => v > 0 ? `<rect x="${fx(centre(i) + dx)}" y="${fx(yTime(v))}" width="${fx(barW)}" height="${fx(BOTTOM - yTime(v))}"/>` : '')
     .join('');
-  const points = tokens.map((v, i) => `${fx(centre(i))},${fx(yTok(v))}`);
+  // Columns that have not started yet have no tokens to report, not zero.
+  const elapsed = tokens.slice(0, sheet.columns.filter(col => col <= now).length);
+  const points = elapsed.map((v, i) => `${fx(centre(i))},${fx(yTok(v))}`);
   const labels = sheet.columns
     .map((col, i) => i % labelEvery ? '' : `<text x="${fx(centre(i))}" y="${BOTTOM + 18}">${columnLabel(period, col)}</text>`)
     .join('');
@@ -69,7 +71,7 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
     + `<g class="s-you" fill="${COLORS.you}">${bars(user, -barW - 1)}</g>`
     + `<g class="s-ai" fill="${COLORS.ai}">${bars(ai, 1)}</g>`
     + `<g class="s-tok"><polyline fill="none" stroke="${COLORS.tok}" stroke-width="2" points="${points.join(' ')}"/>`
-    + `<g fill="${COLORS.tok}">${tokens.map((v, i) => `<circle cx="${fx(centre(i))}" cy="${fx(yTok(v))}" r="3"/>`).join('')}</g></g>`
+    + `<g fill="${COLORS.tok}">${elapsed.map((v, i) => `<circle cx="${fx(centre(i))}" cy="${fx(yTok(v))}" r="3"/>`).join('')}</g></g>`
     + '</svg></div>';
 }
 
