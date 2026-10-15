@@ -43,7 +43,7 @@ Dock pane **Timesheet** (⏱) starts with totals for every project in the select
 | Week  | the Monday weeks covering a month |
 | Month | the 12 months of a year |
 
-A chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. CSS-only chips toggle each series, and the token axis hides with its series. The token line stops at the current column, so the future is blank rather than zero. The overview chart covers every project.
+A chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. CSS-only chips toggle each series, and the token axis hides with its series. The plot ends at the current column: periods that have not started yet are not drawn. The overview chart covers every project.
 
 ```mermaid
 graph LR

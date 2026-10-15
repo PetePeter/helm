@@ -26,12 +26,18 @@ describe('renderTimesheetChart', () => {
     expect(html).toContain('>5k</text>');
   });
 
-  it('ends the token line at the current column, never plotting the future', () => {
+  it('ends the plot at the current column, never drawing the future', () => {
     const now = DAY0 + 86_400_000 + 3_600_000; // during the second column
     const html = renderTimesheetChart(sheet([0, 0, 0], [0, 0, 0], [100, 0, 0]), 'day', now);
     expect(html.match(/<circle/g)).toHaveLength(2);
     expect(html.match(/points="([^"]*)"/)![1].split(' ')).toHaveLength(2);
-    expect(html).toContain('>Wed 30<'); // the axis still spans the whole period
+    expect(html).toContain('>Tue 29<');
+    expect(html).not.toContain('>Wed 30<');
+  });
+
+  it('scales a day of parallel AI time past 24h to a tight top, not whole days', () => {
+    const html = renderTimesheetChart(sheet([60], [29 * 60], [0]), 'day');
+    expect(html).toContain('>32h</text>');
   });
 
   it('renders an empty period without NaN', () => {

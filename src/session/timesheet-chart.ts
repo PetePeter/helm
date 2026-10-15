@@ -26,8 +26,10 @@ const STYLE = `
 .tsc svg text{fill:#999;font-size:10px;font-family:inherit}`;
 
 export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'>, period: TimesheetPeriod, now = Date.now()): string {
-  const { user, ai, tokens } = sheet.totals;
-  const n = sheet.columns.length;
+  // The plot ends at the current column: periods that have not started have no data, not zero.
+  const n = Math.max(1, sheet.columns.filter(col => col <= now).length);
+  const columns = sheet.columns.slice(0, n);
+  const [user, ai, tokens] = [sheet.totals.user, sheet.totals.ai, sheet.totals.tokens].map(a => a.slice(0, n));
   const timeMax = niceMinutes(Math.max(0, ...user, ...ai));
   const tokMax = niceCeil(Math.max(0, ...tokens));
   const yTime = (v: number) => BOTTOM - (v / timeMax) * (BOTTOM - TOP);
@@ -48,10 +50,8 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
   const bars = (values: number[], dx: number) => values
     .map((v, i) => v > 0 ? `<rect x="${fx(centre(i) + dx)}" y="${fx(yTime(v))}" width="${fx(barW)}" height="${fx(BOTTOM - yTime(v))}"/>` : '')
     .join('');
-  // Columns that have not started yet have no tokens to report, not zero.
-  const elapsed = tokens.slice(0, sheet.columns.filter(col => col <= now).length);
-  const points = elapsed.map((v, i) => `${fx(centre(i))},${fx(yTok(v))}`);
-  const labels = sheet.columns
+  const points = tokens.map((v, i) => `${fx(centre(i))},${fx(yTok(v))}`);
+  const labels = columns
     .map((col, i) => i % labelEvery ? '' : `<text x="${fx(centre(i))}" y="${BOTTOM + 18}">${columnLabel(period, col)}</text>`)
     .join('');
   const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
@@ -71,13 +71,16 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
     + `<g class="s-you" fill="${COLORS.you}">${bars(user, -barW - 1)}</g>`
     + `<g class="s-ai" fill="${COLORS.ai}">${bars(ai, 1)}</g>`
     + `<g class="s-tok"><polyline fill="none" stroke="${COLORS.tok}" stroke-width="2" points="${points.join(' ')}"/>`
-    + `<g fill="${COLORS.tok}">${elapsed.map((v, i) => `<circle cx="${fx(centre(i))}" cy="${fx(yTok(v))}" r="3"/>`).join('')}</g></g>`
+    + `<g fill="${COLORS.tok}">${tokens.map((v, i) => `<circle cx="${fx(centre(i))}" cy="${fx(yTok(v))}" r="3"/>`).join('')}</g></g>`
     + '</svg></div>';
 }
 
-/** Smallest grid of GRID clock-friendly steps (5m … 6h, then whole days) covering v. */
+/**
+ * Smallest grid of GRID clock-friendly steps (5m … 12h, then whole days)
+ * covering v. Parallel AI time can pass 24h a day, so the steps keep going.
+ */
 function niceMinutes(v: number): number {
-  const steps = [5, 15, 30, 60, 90, 120, 180, 240, 360];
+  const steps = [5, 15, 30, 60, 90, 120, 180, 240, 360, 480, 720];
   const step = steps.find(s => s * GRID >= v) ?? Math.ceil(v / GRID / 1440) * 1440;
   return step * GRID;
 }
