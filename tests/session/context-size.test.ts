@@ -86,7 +86,7 @@ describe('resolveSessionContextSize', () => {
     )).toMatchObject({ known: true, tokens: 45_000, percent: 23, measuredAtIso: '2026-10-10T09:45:00.000Z' });
   });
 
-  it('returns server-reported API usage and treats legacy Copilot logs without usage_info as not yet measured', () => {
+  it('returns server-reported API usage and treats Copilot logs without a usage record as not yet measured', () => {
     const copilotLog = transcript([{ type: 'assistant', message: { content: 'done' } }]);
 
     expect(resolveSessionContextSize(
@@ -97,13 +97,13 @@ describe('resolveSessionContextSize', () => {
       .toEqual({ known: false, reason: 'no-usage-yet' });
   });
 
-  it('uses Copilot session.usage_info tokens and its reported context window', () => {
+  it('uses Copilot session.usage_record tokens and its maxPromptTokens window', () => {
     expect(resolveSessionContextSize({ cliTranscriptPath: COPILOT_USAGE_FIXTURE })).toEqual({
       known: true,
-      tokens: 36_700,
-      window: 200_000,
-      percent: 18,
-      measuredAtIso: '2026-10-14T12:01:00.000Z',
+      tokens: 136_519,
+      window: 272_000,
+      percent: 50,
+      measuredAtIso: '2026-10-14T03:29:56.183Z',
       source: 'transcript',
     });
   });

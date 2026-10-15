@@ -1,4 +1,5 @@
-{"type":"session.start","data":{"sessionId":"copilot-context","version":1,"producer":"copilot-agent"},"timestamp":"2026-10-14T12:00:00.000Z"}
-{"type":"session.usage_info","data":{"tokenLimit":200000,"currentTokens":188000,"messagesLength":18},"timestamp":"2026-10-14T12:00:30.000Z"}
-{"type":"session.compaction_complete","data":{"success":true,"preCompactionTokens":188000,"postCompactionTokens":32000},"timestamp":"2026-10-14T12:00:45.000Z"}
-{"type":"session.usage_info","data":{"tokenLimit":200000,"currentTokens":36700,"messagesLength":5},"timestamp":"2026-10-14T12:01:00.000Z"}
+{"type":"session.start","data":{"sessionId":"copilot-context","version":1,"producer":"copilot-agent","copilotVersion":"1.0.97"},"timestamp":"2026-10-14T03:29:46.955Z"}
+{"type":"session.usage_record","data":{"usage":{"model":"gpt-6-luna","inputTokens":3461,"outputTokens":34,"cacheReadTokens":0,"cacheWriteTokens":3458,"reasoningTokens":0,"initiator":"user","interactionType":"conversation-agent","maxPromptTokens":272000}},"timestamp":"2026-10-14T03:29:54.197Z"}
+{"type":"session.usage_record","data":{"usage":{"model":"gpt-6-luna","inputTokens":136513,"outputTokens":6,"cacheReadTokens":133458,"cacheWriteTokens":52,"reasoningTokens":0,"initiator":"agent","interactionType":"conversation-agent","maxPromptTokens":272000}},"timestamp":"2026-10-14T03:29:56.183Z"}
+{"type":"session.usage_checkpoint","data":{"totalNanoAiu":49393000,"totalPremiumRequests":1},"timestamp":"2026-10-14T03:29:56.200Z"}
+{"type":"assistant.turn_end","data":{},"timestamp":"2026-10-14T03:29:56.300Z"}

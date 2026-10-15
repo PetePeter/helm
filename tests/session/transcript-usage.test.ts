@@ -51,22 +51,22 @@ describe('readTranscriptUsage', () => {
     expect(readTranscriptUsage(path)).toEqual({ contextTokens: 148699, contextWindow: 258400 });
   });
 
-  it('reads Copilot\'s latest session.usage_info snapshot, including a post-compaction decrease', () => {
+  it('reads Copilot\'s latest session.usage_record: prompt plus reply, against maxPromptTokens', () => {
     expect(readTranscriptUsage(COPILOT_USAGE_FIXTURE)).toEqual({
-      contextTokens: 36_700,
-      contextWindow: 200_000,
+      contextTokens: 136_519,
+      contextWindow: 272_000,
     });
     expect(readTranscriptUsageDetails(COPILOT_USAGE_FIXTURE)).toMatchObject({
       status: 'usage',
-      measuredAtIso: '2026-10-14T12:01:00.000Z',
+      measuredAtIso: '2026-10-14T03:29:56.183Z',
     });
   });
 
-  it('ignores Copilot usage_info with invalid or zero context values', () => {
+  it('ignores Copilot usage records without a usable prompt size or window', () => {
     const path = transcript([
-      { type: 'session.usage_info', data: { currentTokens: 0, tokenLimit: 200_000 } },
-      { type: 'session.usage_info', data: { currentTokens: 12_000, tokenLimit: 'unknown' } },
-      { type: 'session.usage_info', data: { currentTokens: '12_000', tokenLimit: 200_000 } },
+      { type: 'session.usage_record', data: { usage: { inputTokens: 0, outputTokens: 5, maxPromptTokens: 272_000 } } },
+      { type: 'session.usage_record', data: { usage: { inputTokens: 12_000, maxPromptTokens: 'unknown' } } },
+      { type: 'session.usage_record', data: { usage: { inputTokens: '12_000', maxPromptTokens: 272_000 } } },
     ]);
 
     expect(readTranscriptUsage(path)).toBeUndefined();

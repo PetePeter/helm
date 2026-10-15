@@ -151,26 +151,35 @@ export function getTempDir(_dirname: string, appData?: string): string {
  * merged or overwritten, but a newly shipped default lands on upgrade instead
  * of being locked out forever by the presence of the config dir.
  *
+ * Exception: SHIPPED_CODE_DIRS hold Helm's own code (the CLI hook shim), not
+ * user config — CLIs execute it from here, so a stale copy must be replaced
+ * whenever the shipped one differs. Files only Helm generates there are kept.
+ *
  * Uses readFileSync + writeFileSync instead of copyFileSync because
  * Electron does NOT patch copyFileSync for asar archive reads.
  */
 export function seedConfigIfNeeded(sourceDir: string, targetDir: string): void {
   if (!fs.existsSync(sourceDir)) return;
-  copyDirRecursive(sourceDir, targetDir);
+  copyDirRecursive(sourceDir, targetDir, false);
 }
 
-function copyDirRecursive(src: string, dest: string): void {
+const SHIPPED_CODE_DIRS = new Set(['hooks']);
+
+function copyDirRecursive(src: string, dest: string, refresh: boolean): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
-    } else if (!fs.existsSync(destPath)) {
-      // readFileSync + writeFileSync: asar-safe (Electron patches both).
-      // copyFileSync is NOT patched for asar reads.
-      const content = fs.readFileSync(srcPath);
-      fs.writeFileSync(destPath, content);
+      copyDirRecursive(srcPath, destPath, refresh || SHIPPED_CODE_DIRS.has(entry.name));
+      continue;
     }
+    const exists = fs.existsSync(destPath);
+    if (exists && !refresh) continue;
+    // readFileSync + writeFileSync: asar-safe (Electron patches both).
+    // copyFileSync is NOT patched for asar reads.
+    const content = fs.readFileSync(srcPath);
+    if (exists && content.equals(fs.readFileSync(destPath))) continue;
+    fs.writeFileSync(destPath, content);
   }
 }

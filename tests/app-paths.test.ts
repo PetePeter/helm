@@ -253,6 +253,20 @@ describe('seedConfigIfNeeded', () => {
     expect(profile).toContain('Claude Code');
   });
 
+  it('refreshes stale shipped hook code but keeps generated files beside it', () => {
+    // Regression: a pre-statusline shim survived upgrades and printed "{}" as the status bar.
+    fs.mkdirSync(path.join(sourceConfigDir, 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(sourceConfigDir, 'hooks', 'helm-hook-shim.py'), 'new shim');
+    fs.mkdirSync(path.join(targetConfigDir, 'hooks'), { recursive: true });
+    fs.writeFileSync(path.join(targetConfigDir, 'hooks', 'helm-hook-shim.py'), 'old shim');
+    fs.writeFileSync(path.join(targetConfigDir, 'hooks', 'helm-claude-statusline.json'), '{"command":"mine"}');
+
+    seedConfigIfNeeded(sourceConfigDir, targetConfigDir);
+
+    expect(fs.readFileSync(path.join(targetConfigDir, 'hooks', 'helm-hook-shim.py'), 'utf8')).toBe('new shim');
+    expect(fs.readFileSync(path.join(targetConfigDir, 'hooks', 'helm-claude-statusline.json'), 'utf8')).toBe('{"command":"mine"}');
+  });
+
   it('does not overwrite existing config', () => {
     // Pre-create target with custom content
     fs.mkdirSync(targetConfigDir, { recursive: true });

@@ -6,8 +6,8 @@
  * stamps `usage` on every reply and Codex emits a `token_count` event — so the
  * same badge can be filled without asking the CLI anything.
  *
- * Copilot writes live context snapshots as `session.usage_info` events in its
- * session event log; these report the current token count and window directly.
+ * Copilot logs a `session.usage_record` per model request in its event log.
+ * (Its `session.usage_info` snapshot is ephemeral — never written to disk.)
  */
 
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
@@ -48,15 +48,14 @@ function codexUsage(line: Json): ChatTurnUsage | undefined {
   return { contextTokens, ...(contextWindow > 0 ? { contextWindow } : {}) };
 }
 
-/** Copilot: each `session.usage_info` is a current context snapshot, not a turn total. */
+/** Copilot: `inputTokens` is the whole prompt sent (cache reads included); `maxPromptTokens` its ceiling. */
 function copilotUsage(line: Json): ChatTurnUsage | undefined {
-  if (line.type !== 'session.usage_info') return undefined;
-  const data = obj(line.data);
-  if (!data) return undefined;
-  const contextTokens = num(data.currentTokens);
-  const contextWindow = num(data.tokenLimit);
-  if (contextTokens <= 0 || contextWindow <= 0) return undefined;
-  return { contextTokens, contextWindow };
+  if (line.type !== 'session.usage_record') return undefined;
+  const usage = obj(obj(line.data)?.usage);
+  const inputTokens = num(usage?.inputTokens);
+  const contextWindow = num(usage?.maxPromptTokens);
+  if (inputTokens <= 0 || contextWindow <= 0) return undefined;
+  return { contextTokens: inputTokens + num(usage?.outputTokens), contextWindow };
 }
 
 const READERS = [claudeUsage, codexUsage, copilotUsage];

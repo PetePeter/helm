@@ -75,6 +75,11 @@ bundled defaults. The decision is **per file**: a file that already exists is
 never read, merged or overwritten, but a default shipped in a later version still
 lands on upgrade instead of being locked out by the config dir merely existing.
 
+Exception: `hooks/` holds Helm's own code (the CLI hook shim), which installed
+CLIs execute from the config dir. It is refreshed whenever the shipped copy
+differs — a stale shim once outlived an upgrade and printed `{}` as Claude's
+status bar. Files Helm generates there (the statusline backup) are kept.
+
 `src/config/` is the single source of shipped defaults. Dev mode seeds straight
 from it; for packaged builds `prepareDeploy.py` copies it into `config-deploy/`
 (overwriting the runtime-state files with empty stubs) and electron-builder maps
