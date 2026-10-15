@@ -41,6 +41,7 @@ import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
 import { ScratchpadManager } from '../../session/scratchpad-manager.js';
 import type { Scratchpad } from '../../types/scratchpad.js';
+import type { SessionUpdatedEvent } from '../../types/session.js';
 import { createScratchpadStore } from '../../session/scratchpad-persistence.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
 import { MemoryPersistence } from '../../session/memory-persistence.js';
@@ -674,6 +675,10 @@ export function registerIPCHandlers(
   });
   stateDetector.on('activity-change', ({ sessionId, level }: { sessionId: string; level: string }) => {
     timeTracker.setAiActive(sessionId, level === 'active');
+  });
+  // Every context reading feeds the token ledger; unchanged readings add nothing.
+  sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
+    if (session.contextUsage && !session.remote) timeTracker.recordTokens(session.id, session.contextUsage.tokens);
   });
   // Twice per slot, so an active session never skips one.
   const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);

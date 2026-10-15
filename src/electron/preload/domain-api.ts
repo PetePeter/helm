@@ -11,7 +11,7 @@ import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { Scratchpad, ScratchpadWriteResult } from '../../types/scratchpad.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
-import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../session/time-tracker.js';
+import type { Timesheet, TimesheetPeriod, TimesheetQueryResult } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
@@ -650,8 +650,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   // Time tracking
   // ========================================================================
 
-  /** All project totals, or one project's folder grid for a period. */
-  timeQuery: (params: { period: TimesheetPeriod; anchor: number; projectKey?: string }): Promise<{ projects: ProjectTotal[] } | { sheet: Timesheet }> =>
+  /** All project totals, or one project's folder grid for a period, with the chart. */
+  timeQuery: (params: { period: TimesheetPeriod; anchor: number; projectKey?: string }): Promise<TimesheetQueryResult> =>
     ipcRenderer.invoke('time:query', params),
 
   /** One project's timesheet: minutes per directory per day/week/month column. */

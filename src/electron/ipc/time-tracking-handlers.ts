@@ -1,6 +1,7 @@
 /** Read-only timesheet queries over the TimeTracker (docs/time-tracking.md). */
 import { ipcMain } from 'electron';
-import { buildTimesheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimeTracker } from '../../session/time-tracker.js';
+import { renderTimesheetChart } from '../../session/timesheet-chart.js';
+import { buildTimesheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker } from '../../session/time-tracker.js';
 
 const PERIODS: readonly TimesheetPeriod[] = ['hour', 'day', 'week', 'month'];
 
@@ -23,16 +24,23 @@ function sheetFor(tracker: SlotSource, projectKey: string, period: TimesheetPeri
 }
 
 /**
- * The phone's Time tab (gate method `__timesheet__`): with `projectKey`, that
- * project's folder grid; without, every project's totals for the period.
+ * The Time view on desktop and phone (gate method `__timesheet__`): with
+ * `projectKey`, that project's folder grid; without, every project's totals
+ * plus an all-project sheet. Both carry the shared chart markup.
  */
-export function timesheetQuery(tracker: SlotSource, params: unknown): { sheet: Timesheet } | { projects: ReturnType<typeof summarizeProjects> } {
+export function timesheetQuery(tracker: SlotSource, params: unknown): TimesheetQueryResult {
   if (!params || typeof params !== 'object') throw new Error('timesheet params must be an object');
   const { projectKey, period, anchor } = params as Record<string, unknown>;
-  if (projectKey !== undefined) return { sheet: sheetFor(tracker, ...validate(projectKey, period, anchor)) };
+  if (projectKey !== undefined) {
+    const [key, p, a] = validate(projectKey, period, anchor);
+    const sheet = sheetFor(tracker, key, p, a);
+    return { sheet, chartHtml: renderTimesheetChart(sheet, p) };
+  }
   const [p, a] = validatePeriod(period, anchor);
   const edges = periodEdges(p, a);
-  return { projects: summarizeProjects(tracker.query(edges[0], edges[edges.length - 1])) };
+  const slots = tracker.query(edges[0], edges[edges.length - 1]);
+  const sheet = buildTimesheet(slots, null, edges);
+  return { projects: summarizeProjects(slots), sheet, chartHtml: renderTimesheetChart(sheet, p) };
 }
 
 /** Phone calls that only look (read/list/search/download) are not the user working. */

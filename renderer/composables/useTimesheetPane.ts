@@ -12,6 +12,8 @@ export function useTimesheetPane() {
   const period = ref<TimesheetPeriod>('day');
   const anchor = ref(Date.now());
   const sheet = ref<Timesheet | null>(null);
+  /** Trusted markup built in the main process (timesheet-chart.ts), not AI content. */
+  const chartHtml = ref('');
   const projects = ref<ProjectTotal[] | null>(null);
   const selectedProject = ref<ProjectTotal | null>(null);
 
@@ -25,6 +27,7 @@ export function useTimesheetPane() {
       projectKey: target?.projectKey,
     });
     if (ticket !== generation) return;
+    chartHtml.value = next.chartHtml;
     if ('projects' in next) {
       projects.value = next.projects;
       sheet.value = null;
@@ -72,16 +75,7 @@ export function useTimesheetPane() {
   const timer = setInterval(() => { void refresh(); }, REFRESH_MS);
   onUnmounted(() => clearInterval(timer));
 
-  return { projects, selectedProject, period, anchor, sheet, openProject, backToProjects, step, exportCsv };
-}
-
-/** Column heading for a view. */
-export function columnLabel(period: TimesheetPeriod, start: number): string {
-  const d = new Date(start);
-  if (period === 'hour') return `${String(d.getHours()).padStart(2, '0')}:00`;
-  if (period === 'day') return d.toLocaleDateString([], { weekday: 'short', day: 'numeric' });
-  if (period === 'week') return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
-  return d.toLocaleDateString([], { month: 'short' });
+  return { projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv };
 }
 
 /** Minutes as "3h05"; zero renders as an en dash. */

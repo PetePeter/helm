@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,6 +36,7 @@ import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.data.TimeProjectTotal
 import com.potatomotato.helm.data.TimeRow
 import com.potatomotato.helm.data.TimeSheet
+import com.potatomotato.helm.ui.artifacts.ContainedWebView
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -106,8 +108,8 @@ fun TimeScreen(
             onRefresh = { onFetch(ask) },
         ) { answer ->
             when (answer) {
-                is TimeAnswer.Projects -> ProjectTotals(answer.projects) { onAsk(ask.copy(projectKey = it.projectKey, projectName = it.projectName)) }
-                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet)
+                is TimeAnswer.Projects -> ProjectTotals(answer.projects, answer.chartHtml) { onAsk(ask.copy(projectKey = it.projectKey, projectName = it.projectName)) }
+                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet, answer.chartHtml)
             }
         }
     }
@@ -128,8 +130,9 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProjectTotals(projects: List<TimeProjectTotal>, onOpen: (TimeProjectTotal) -> Unit) {
+private fun ProjectTotals(projects: List<TimeProjectTotal>, chartHtml: String?, onOpen: (TimeProjectTotal) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
+        chartHtml?.let { item { TimeChart(it) } }
         item { TableHeader(stringResource(R.string.time_col_project)) }
         items(projects, key = { it.projectKey }) { project ->
             TableRow(project.projectName, project.userMinutes, project.aiMinutes, onClick = { onOpen(project) })
@@ -139,11 +142,24 @@ private fun ProjectTotals(projects: List<TimeProjectTotal>, onOpen: (TimeProject
 }
 
 @Composable
-private fun FolderSheet(period: TimePeriod, sheet: TimeSheet) {
+private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartHtml: String?) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
+        chartHtml?.let { item { TimeChart(it) } }
         item { Folder(stringResource(R.string.time_total), TimeRow("", sheet.totalUser, sheet.totalAi), sheet.columns, period) }
         items(sheet.rows, key = { it.dir }) { row -> Folder(row.dir, row, sheet.columns, period) }
     }
+}
+
+/**
+ * The desktop's time + tokens chart, drawn as sent so both screens match.
+ * Sized to the chart's 700x290 plot plus its toggle row.
+ */
+@Composable
+private fun TimeChart(html: String) {
+    ContainedWebView(
+        html = "<body style=\"margin:0\">$html</body>",
+        modifier = Modifier.fillMaxWidth().aspectRatio(1.95f).padding(vertical = HelmSpacing.Sm),
+    )
 }
 
 /** One folder: a table of only the columns that have time — a phone has no room for empty cells — then its total. */

@@ -189,7 +189,7 @@ describe('buildTimesheet', () => {
       { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0] },
       { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [0, 0, 0, 0, 0, 0, 0] },
     ]);
-    expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0] });
+    expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
   });
 
   it('cuts day, week and month views on local calendar edges', () => {
@@ -212,13 +212,65 @@ describe('buildTimesheet', () => {
     clock = at(9, 5); t.recordUser(SUBMIT, 'a1'); t.armAi('a1'); t.setAiActive('a1', true);
     clock = at(9, 10); t.recordUser(SUBMIT, 'a2');
     expect(summarizeProjects(t.query(DAY0, DAY0 + 24 * 60 * MIN))).toEqual([
-      { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 5 },
-      { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 0 },
+      { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 5, tokens: 0 },
+      { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 0, tokens: 0 },
     ]);
   });
 
   it('exports CSV with one line per dir and day', () => {
     const sheet = { columns: [DAY0], rows: [{ dir: 'C:/a,b', user: [15], ai: [5] }], totals: { user: [15], ai: [5] } };
     expect(timesheetToCsv(sheet, 'Alpha')).toBe('period_start,project,directory,you_minutes,ai_minutes\n2026-09-28,Alpha,"C:/a,b",15,5\n');
+  });
+});
+
+describe('TimeTracker tokens', () => {
+  const tokens = (t: TimeTracker) => t.query(DAY0, DAY0 + 24 * 60 * MIN).filter(s => s.kind === 'tokens');
+  const total = (t: TimeTracker) => tokens(t).reduce((n, s) => n + (s.tokens ?? 0), 0);
+
+  it("takes a session's first reading as the baseline, then adds each rise", () => {
+    const t = tracker();
+    for (const n of [10_000, 40_000, 90_000]) t.recordTokens('a1', n);
+    expect(total(t)).toBe(80_000);
+  });
+
+  it('adds the post-drop context when it falls (compact, /clear)', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0);
+    t.recordTokens('a1', 199_000);
+    t.recordTokens('a1', 50_000);
+    expect(total(t)).toBe(249_000);
+  });
+
+  it("credits the session's project in the current slot, sessions tracked apart", () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('b1', 0);
+    t.recordTokens('a1', 1_000);
+    clock = at(9, 7); t.recordTokens('a2', 5); t.recordTokens('a2', 505); t.recordTokens('b1', 300);
+    expect(tokens(t).map(s => [s.start, s.projectKey, s.tokens])).toEqual([
+      [at(9, 0), 'pA', 1_000], [at(9, 5), 'pA', 500], [at(9, 5), 'pB', 300],
+    ]);
+  });
+
+  it('sums a slot written at shutdown and again after a restart', () => {
+    const first = tracker();
+    first.recordTokens('a1', 0); first.recordTokens('a1', 700);
+    first.flush();
+    const second = tracker();
+    second.recordTokens('a1', 100); second.recordTokens('a1', 400);
+    expect(total(second)).toBe(1_000);
+  });
+
+  it('totals tokens per column across all projects, or for one', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('b1', 0);
+    t.recordTokens('a1', 2_000); t.recordTokens('b1', 3_000);
+    t.recordUser(SUBMIT, 'a1');
+    const edges = periodEdges('day', DAY0);
+    const slots = t.query(edges[0], edges[7]);
+    expect(buildTimesheet(slots, 'pA', edges).totals.tokens).toEqual([2_000, 0, 0, 0, 0, 0, 0]);
+    const all = buildTimesheet(slots, null, edges);
+    expect(all.totals.tokens[0]).toBe(5_000);
+    expect(all.totals.user[0]).toBe(5);
+    expect(summarizeProjects(slots).map(p => [p.projectKey, p.tokens])).toEqual([['pA', 2_000], ['pB', 3_000]]);
   });
 });

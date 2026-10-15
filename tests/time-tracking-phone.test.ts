@@ -49,8 +49,21 @@ describe('timesheetQuery (the phone Time tab)', () => {
 
   it('lists project totals for the period when no project is named', () => {
     expect(timesheetQuery(tracker, { period: 'day', anchor: day })).toEqual({
-      projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5 }],
+      projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5, tokens: 0 }],
+      sheet: expect.any(Object),
+      chartHtml: expect.any(String),
     });
+  });
+
+  it('carries per-column tokens and the shared chart in both views', () => {
+    const withTokens = [...slots, { start: day, kind: 'tokens' as const, projectKey: 'pA', projectName: 'Alpha', dir: 'C:/a', tokens: 1_234 }];
+    const t = { query: (from: number, to: number) => withTokens.filter(s => s.start >= from && s.start < to) };
+    const overview = timesheetQuery(t, { period: 'day', anchor: day }) as { projects: { tokens: number }[]; sheet: { totals: { tokens: number[] } }; chartHtml: string };
+    expect(overview.projects[0].tokens).toBe(1_234);
+    expect(overview.sheet.totals.tokens[0]).toBe(1_234);
+    expect(overview.chartHtml).toContain('<svg');
+    const detail = timesheetQuery(t, { projectKey: 'pA', period: 'day', anchor: day }) as { chartHtml: string };
+    expect(detail.chartHtml).toContain('<svg');
   });
 
   it("returns one project's folder grid when named", () => {
@@ -67,7 +80,9 @@ describe('timesheetQuery (the phone Time tab)', () => {
 
     expect(handler).toBeTypeOf('function');
     expect(handler({}, { period: 'day', anchor: day })).toEqual({
-      projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5 }],
+      projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5, tokens: 0 }],
+      sheet: expect.any(Object),
+      chartHtml: expect.any(String),
     });
     expect(handler({}, { projectKey: 'pA', period: 'hour', anchor: day })).toMatchObject({
       sheet: { rows: [{ dir: 'C:/a' }], columns: expect.any(Array) },

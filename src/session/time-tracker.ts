@@ -4,7 +4,9 @@
  * A slot is "user" time for exactly one project: the one that got the most
  * user input in it (ties go to the latest). AI activity is tracked as a
  * separate "ai" kind, one per project per slot, because agents genuinely run
- * in parallel. Open slots live in memory and are appended to JSONL once they
+ * in parallel. Token use is a third kind, summed per project per slot: each
+ * context reading adds its rise, and a drop (compact, /clear) adds the new,
+ * smaller context. Open slots live in memory and are appended to JSONL once they
  * end (or on flush at shutdown). See docs/time-tracking.md.
  */
 
@@ -20,7 +22,7 @@ export const SLOT_MS = 5 * 60_000;
 export const SUBMIT_WEIGHT = 20;
 const SLOT_MINUTES = SLOT_MS / 60_000;
 
-export type SlotKind = 'user' | 'ai';
+export type SlotKind = 'user' | 'ai' | 'tokens';
 
 export interface TimeSlot {
   start: number;
@@ -28,6 +30,8 @@ export interface TimeSlot {
   projectKey: string;
   projectName: string;
   dir: string;
+  /** Kind 'tokens' only. */
+  tokens?: number;
 }
 
 /** Where a session's time is credited. projectKey is the Helm project id, else the dir. */
@@ -38,7 +42,7 @@ export interface SessionWhere {
 }
 
 interface UserTally { name: string; count: number; last: number; dirs: Map<string, number> }
-interface OpenSlot { user: Map<string, UserTally>; ai: Map<string, TimeSlot> }
+interface OpenSlot { user: Map<string, UserTally>; ai: Map<string, TimeSlot>; tokens: Map<string, TimeSlot> }
 
 export interface TimeTrackerDeps {
   persistence: Pick<TimePersistence, 'append' | 'load'>;
@@ -51,6 +55,8 @@ export class TimeTracker {
   private readonly aiActive = new Set<string>();
   /** Sessions that have been given a prompt; before that, activity is CLI boot noise. */
   private readonly aiArmed = new Set<string>();
+  /** Last context reading per session; the first is only a baseline. */
+  private readonly lastTokens = new Map<string, number>();
   private readonly now: () => number;
   private seq = 0;
 
@@ -83,6 +89,22 @@ export class TimeTracker {
     if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', ...where });
   }
 
+  /** A context-size reading: a rise adds the growth, a drop adds the new context. */
+  recordTokens(sessionId: string, tokens: number): void {
+    const prev = this.lastTokens.get(sessionId);
+    this.lastTokens.set(sessionId, tokens);
+    if (prev === undefined) return;
+    const added = tokens >= prev ? tokens - prev : tokens;
+    if (!added) return;
+    const where = this.deps.resolve(sessionId);
+    if (!where) return;
+    const start = slotStart(this.now());
+    const map = this.slotFor().tokens;
+    const slot = map.get(where.projectKey) ?? { start, kind: 'tokens' as const, ...where, tokens: 0 };
+    slot.tokens! += added;
+    map.set(where.projectKey, slot);
+  }
+
   /** The session was given a prompt: from now on its activity is AI work. */
   armAi(sessionId: string): void {
     this.aiArmed.add(sessionId);
@@ -103,7 +125,7 @@ export class TimeTracker {
   tick(): void {
     for (const id of this.aiActive) {
       // A closed session never reports going quiet; drop it once it cannot be placed.
-      if (!this.deps.resolve(id)) { this.aiActive.delete(id); this.aiArmed.delete(id); }
+      if (!this.deps.resolve(id)) { this.aiActive.delete(id); this.aiArmed.delete(id); this.lastTokens.delete(id); }
       else if (this.aiArmed.has(id)) this.recordAi(id);
     }
     this.closeBefore(slotStart(this.now()));
@@ -120,9 +142,14 @@ export class TimeTracker {
     for (const [start, slot] of this.open) {
       if (start >= from && start < to) all.push(...resolveSlot(start, slot));
     }
-    // A slot flushed at shutdown and reopened after restart is written twice; the latest wins.
+    // A slot flushed at shutdown and reopened after restart is written twice:
+    // time is presence, so the latest wins; tokens are disjoint partials, so they sum.
     const unique = new Map<string, TimeSlot>();
-    for (const s of all) unique.set(s.kind === 'user' ? `u${s.start}` : `a${s.start}|${s.projectKey}`, s);
+    for (const s of all) {
+      const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.projectKey}`;
+      const seen = unique.get(key);
+      unique.set(key, s.kind === 'tokens' && seen ? { ...s, tokens: (seen.tokens ?? 0) + (s.tokens ?? 0) } : s);
+    }
     return [...unique.values()].sort((a, b) => a.start - b.start);
   }
 
@@ -131,7 +158,7 @@ export class TimeTracker {
     this.closeBefore(start);
     let slot = this.open.get(start);
     if (!slot) {
-      slot = { user: new Map(), ai: new Map() };
+      slot = { user: new Map(), ai: new Map(), tokens: new Map() };
       this.open.set(start, slot);
     }
     return slot;
@@ -163,7 +190,7 @@ function maxKey<T>(map: Map<string, T>, score: (v: T) => [number, number]): stri
 }
 
 function resolveSlot(start: number, slot: OpenSlot): TimeSlot[] {
-  const result: TimeSlot[] = [...slot.ai.values()];
+  const result: TimeSlot[] = [...slot.ai.values(), ...slot.tokens.values()];
   const projectKey = maxKey(slot.user, t => [t.count >= SUBMIT_WEIGHT ? t.count : -1, t.last]);
   if (projectKey) {
     const tally = slot.user.get(projectKey)!;
@@ -183,7 +210,7 @@ export interface Timesheet {
   /** Start of each column (local time, ms). */
   columns: number[];
   rows: TimesheetRow[];
-  totals: { user: number[]; ai: number[] };
+  totals: { user: number[]; ai: number[]; tokens: number[] };
 }
 
 /**
@@ -219,16 +246,20 @@ function mondayOf(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() - offset);
 }
 
-/** Minutes per directory per column for one project. Rows sorted by dir. */
-export function buildTimesheet(slots: TimeSlot[], projectKey: string, edges: number[]): Timesheet {
+/**
+ * Minutes per directory per column for one project (null = every project),
+ * plus tokens per column in the totals. Rows sorted by dir.
+ */
+export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edges: number[]): Timesheet {
   const n = edges.length - 1;
   const zeros = () => new Array<number>(n).fill(0);
   const rows = new Map<string, TimesheetRow>();
-  const totals = { user: zeros(), ai: zeros() };
+  const totals = { user: zeros(), ai: zeros(), tokens: zeros() };
   for (const slot of slots) {
-    if (slot.projectKey !== projectKey) continue;
+    if (projectKey !== null && slot.projectKey !== projectKey) continue;
     const col = columnOf(edges, slot.start);
     if (col < 0) continue;
+    if (slot.kind === 'tokens') { totals.tokens[col] += slot.tokens ?? 0; continue; }
     let row = rows.get(slot.dir);
     if (!row) { row = { dir: slot.dir, user: zeros(), ai: zeros() }; rows.set(slot.dir, row); }
     row[slot.kind][col] += SLOT_MINUTES;
@@ -241,15 +272,21 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string, edges: num
   };
 }
 
-export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number }
+export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }
 
-/** Minutes per project across the given slots, most user time first. */
+/** A Time view (desktop pane, phone tab); both shapes carry the shared chart markup. */
+export type TimesheetQueryResult =
+  | { sheet: Timesheet; chartHtml: string }
+  | { projects: ProjectTotal[]; sheet: Timesheet; chartHtml: string };
+
+/** Minutes and tokens per project across the given slots, most user time first. */
 export function summarizeProjects(slots: TimeSlot[]): ProjectTotal[] {
   const totals = new Map<string, ProjectTotal>();
   for (const slot of slots) {
     let total = totals.get(slot.projectKey);
-    if (!total) { total = { projectKey: slot.projectKey, projectName: slot.projectName, user: 0, ai: 0 }; totals.set(slot.projectKey, total); }
-    total[slot.kind] += SLOT_MINUTES;
+    if (!total) { total = { projectKey: slot.projectKey, projectName: slot.projectName, user: 0, ai: 0, tokens: 0 }; totals.set(slot.projectKey, total); }
+    if (slot.kind === 'tokens') total.tokens += slot.tokens ?? 0;
+    else total[slot.kind] += SLOT_MINUTES;
   }
   return [...totals.values()].sort((a, b) => b.user - a.user || b.ai - a.ai || a.projectName.localeCompare(b.projectName));
 }

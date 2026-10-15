@@ -7,7 +7,8 @@ import { computed } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
 import PanelHeader from '../common/PanelHeader.vue';
 import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
-import { columnLabel, formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
+import { columnLabel, formatTokens } from '../../../src/session/timesheet-chart.js';
+import { formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
 
 const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'hour', label: 'Hour' },
@@ -16,7 +17,7 @@ const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ];
 
-const { projects, selectedProject, period, anchor, sheet, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
+const { projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const range = computed(() => {
@@ -58,9 +59,10 @@ const range = computed(() => {
     <EmptyState v-if="projects === null && sheet === null" title="Loading timesheet" loading />
     <EmptyState v-else-if="projects !== null && !projects.length" title="No time recorded" hint="Time is counted in 5-minute slots while you work across projects." icon="⏱" />
     <div v-else-if="projects !== null" class="timesheet-scroll">
+      <div class="timesheet-chart" v-html="chartHtml" />
       <table class="timesheet-table">
         <thead>
-          <tr><th>Project</th><th>You</th><th>AI</th><th>Total</th></tr>
+          <tr><th>Project</th><th>You</th><th>AI</th><th>Total</th><th>Tokens</th></tr>
         </thead>
         <tbody>
           <tr v-for="project in projects" :key="project.projectKey">
@@ -70,6 +72,7 @@ const range = computed(() => {
             <td>{{ formatMinutes(project.user) }}</td>
             <td>{{ formatMinutes(project.ai) }}</td>
             <td>{{ formatMinutes(project.user + project.ai) }}</td>
+            <td>{{ formatTokens(project.tokens) }}</td>
           </tr>
         </tbody>
         <tfoot>
@@ -78,6 +81,7 @@ const range = computed(() => {
             <td>{{ formatMinutes(sum(projects.map(p => p.user))) }}</td>
             <td>{{ formatMinutes(sum(projects.map(p => p.ai))) }}</td>
             <td>{{ formatMinutes(sum(projects.map(p => p.user + p.ai))) }}</td>
+            <td>{{ formatTokens(sum(projects.map(p => p.tokens))) }}</td>
           </tr>
         </tfoot>
       </table>
@@ -85,6 +89,7 @@ const range = computed(() => {
     <EmptyState v-else-if="sheet && !sheet.rows.length" title="No time recorded" hint="No time was recorded for this project in the selected period." icon="⏱" />
     <div v-else-if="sheet" class="timesheet-scroll">
       <button type="button" class="timesheet-back" aria-label="Back to projects" @click="backToProjects">‹ {{ selectedProject?.projectName }}</button>
+      <div class="timesheet-chart" v-html="chartHtml" />
       <table class="timesheet-table">
         <thead>
           <tr>
@@ -137,6 +142,7 @@ const range = computed(() => {
 .timesheet-project-cell { text-align: left !important; }
 .timesheet-project { display: block; max-width: 280px; overflow: hidden; padding: 0; border: 0; background: none; color: var(--accent); text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; font: inherit; }
 .timesheet-project:hover, .timesheet-back:hover { text-decoration: underline; }
+.timesheet-chart { max-width: 720px; margin-bottom: var(--spacing-md); }
 .timesheet-scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--spacing-sm) var(--spacing-md); }
 .timesheet-table { border-collapse: collapse; font-size: var(--font-size-sm); }
 .timesheet-table th, .timesheet-table td { padding: var(--spacing-xs) var(--spacing-sm); border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; vertical-align: top; }

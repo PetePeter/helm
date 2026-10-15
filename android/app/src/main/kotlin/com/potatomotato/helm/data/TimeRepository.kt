@@ -46,9 +46,12 @@ data class TimeRow(val dir: String, val user: List<Int>, val ai: List<Int>)
 
 data class TimeSheet(val columns: List<Long>, val rows: List<TimeRow>, val totalUser: List<Int>, val totalAi: List<Int>)
 
+/** [chartHtml]: the desktop's shared time + tokens chart (timesheet-chart.ts); null from an older desktop. */
 sealed interface TimeAnswer {
-    data class Projects(val projects: List<TimeProjectTotal>) : TimeAnswer
-    data class Sheet(val sheet: TimeSheet) : TimeAnswer
+    val chartHtml: String?
+
+    data class Projects(val projects: List<TimeProjectTotal>, override val chartHtml: String? = null) : TimeAnswer
+    data class Sheet(val sheet: TimeSheet, override val chartHtml: String? = null) : TimeAnswer
 }
 
 /** The state of the Time tab, keyed by the ask that produced it. */
@@ -99,6 +102,7 @@ class TimeRepository {
 
     private fun parse(json: JSONObject?): TimeAnswer? {
         if (json == null) return null
+        val chartHtml = json.opt("chartHtml") as? String
         json.optJSONArray("projects")?.let { array ->
             return TimeAnswer.Projects(
                 (0 until array.length()).mapNotNull { i ->
@@ -106,6 +110,7 @@ class TimeRepository {
                     val key = o.opt("projectKey") as? String ?: return@mapNotNull null
                     TimeProjectTotal(key, o.opt("projectName") as? String ?: key, o.optInt("user"), o.optInt("ai"))
                 },
+                chartHtml,
             )
         }
         val sheet = json.optJSONObject("sheet") ?: return null
@@ -124,6 +129,7 @@ class TimeRepository {
                 totalUser = ints(totals?.optJSONArray("user")),
                 totalAi = ints(totals?.optJSONArray("ai")),
             ),
+            chartHtml,
         )
     }
 

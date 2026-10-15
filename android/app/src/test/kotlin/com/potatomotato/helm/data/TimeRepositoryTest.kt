@@ -45,6 +45,19 @@ class TimeRepositoryTest {
     }
 
     @Test
+    fun `both views carry the desktop's chart markup, absent from an older desktop`() {
+        val repo = TimeRepository()
+        repo.requested(week)
+        repo.arrived(week, JSONObject("""{"projects":[],"sheet":{"columns":[]},"chartHtml":"<svg/>"}"""))
+        assertEquals("<svg/>", ((LoadViews.time(repo.state.value, week) as LoadView.Ready).data as TimeAnswer.Projects).chartHtml)
+
+        val ask = week.copy(projectKey = "p1")
+        repo.requested(ask)
+        repo.arrived(ask, JSONObject("""{"sheet":{"columns":[]}}"""))
+        assertEquals(null, ((LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Sheet).chartHtml)
+    }
+
+    @Test
     fun `a late answer for an ask the user already left is dropped`() {
         val repo = TimeRepository()
         val next = week.copy(period = TimePeriod.Month)
