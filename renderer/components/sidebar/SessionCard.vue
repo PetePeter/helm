@@ -21,6 +21,13 @@ function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
 }
 
+function onCardContextMenu(event: MouseEvent): void {
+  if (!canOpenSessionMenu.value) return;
+  event.preventDefault();
+  event.stopPropagation();
+  openSessionMenu(event);
+}
+
 // --- Types ---
 
 export interface SessionCardSession {
@@ -101,6 +108,8 @@ const STATES = ['implementing', 'waiting', 'planning', 'completed', 'idle'];
 // --- Props & Emits ---
 
 const props = defineProps<SessionCardProps>();
+
+const canOpenSessionMenu = computed(() => !props.isEditing && !props.readOnly);
 
 const emit = defineEmits<{
   click: [sessionId: string];
@@ -305,6 +314,7 @@ function onCardClick(e: MouseEvent): void {
     :data-sessions-nav-index="navIndex"
     :draggable="!isEditing && !readOnly && !interactionDisabled"
     @click="onCardClick"
+    @contextmenu="onCardContextMenu"
     @dragstart="onDragStart"
     @dragend="onDragEnd"
   >
@@ -420,7 +430,7 @@ function onCardClick(e: MouseEvent): void {
 
       <!-- Kebab: the session's own actions (rename, lock, freeze, keep warm, overview, compact, clone, switch). -->
       <button
-        v-if="!isEditing && !readOnly"
+        v-if="canOpenSessionMenu"
         class="session-kebab"
         :class="colClass(2)"
         :title="`Actions for ${displayName}`"

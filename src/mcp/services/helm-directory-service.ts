@@ -3,6 +3,7 @@ import type { PlanManager } from '../../session/plan-manager.js';
 import type { SessionManager } from '../../session/manager.js';
 import type { DirectorySummary, CliSummary } from '../helm-control-service.js';
 import type { ProjectStore } from '../../session/project-store.js';
+import { normalizeProjectPath } from '../../session/project-identity.js';
 
 /**
  * Case-insensitive path comparison for Windows without resolving relative paths.
@@ -45,6 +46,7 @@ export class HelmDirectoryService {
       consolidated.set(dirPath, {
         dirPath,
         ...(projectId ? { projectId } : {}),
+        ...(project ? { isCanonical: normalizeProjectPath(project.canonicalPath) === normalizeProjectPath(rawPath) } : {}),
         ...(project?.name ? { projectName: project.name } : {}),
         name: name ?? existing?.name ?? project?.name ?? dirPath.split(/[/\\]/).pop() ?? dirPath,
         source: [...source],

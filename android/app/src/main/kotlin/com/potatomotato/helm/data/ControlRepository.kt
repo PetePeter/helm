@@ -269,6 +269,8 @@ class ControlRepository {
                 path = path,
                 name = entry.opt("name") as? String ?: lastPathSegment(path),
                 projectName = entry.opt("projectName") as? String,
+                projectId = entry.opt("projectId") as? String,
+                isCanonical = entry.opt("isCanonical") as? Boolean,
             )
         }.sortedWith(
             compareBy({ (it.projectName ?: it.name).lowercase() }, { it.path }),
@@ -417,4 +419,10 @@ data class HelmCli(val cliType: String, val name: String, val supportedDirPaths:
  * "project ▸ folder" needs both. Absent on an older desktop, which is why
  * the row falls back to [name] alone rather than rendering a dangling marker.
  */
-data class HelmDirectory(val path: String, val name: String, val projectName: String? = null)
+data class HelmDirectory(
+    val path: String,
+    val name: String,
+    val projectName: String? = null,
+    val projectId: String? = null,
+    val isCanonical: Boolean? = null,
+)

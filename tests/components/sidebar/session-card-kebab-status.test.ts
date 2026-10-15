@@ -42,12 +42,55 @@ const icons = (w: ReturnType<typeof mountCard>) =>
 
 beforeEach(() => { contextMenu.visible = false; });
 
-describe('SessionCard kebab and status icons', () => {
+describe('SessionCard menu and status icons', () => {
   it('the kebab opens the session menu for this row, without selecting it', async () => {
     const w = mountCard();
     await w.find('.session-kebab').trigger('click');
     expect(contextMenu).toMatchObject({ visible: true, mode: 'session', sourceSessionId: 's1' });
     expect(w.emitted('click')).toBeUndefined();
+  });
+
+  it('right-click opens the same session menu at the pointer without selecting the row', async () => {
+    const w = mountCard();
+    const event = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      clientX: 30,
+      clientY: 50,
+    });
+
+    const dispatchResult = w.find('.session-card').element.dispatchEvent(event);
+
+    expect(dispatchResult).toBe(false);
+    expect(contextMenu).toMatchObject({
+      visible: true,
+      mode: 'session',
+      sourceSessionId: 's1',
+      position: { x: 30, y: 50 },
+    });
+    expect(w.emitted('click')).toBeUndefined();
+  });
+
+  it.each([
+    ['read-only', { readOnly: true }],
+    ['renaming', { isEditing: true }],
+  ])('does not open the row menu when %s', async (_state, props) => {
+    const w = mountCard();
+    await w.setProps(props);
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+
+    w.find('.session-card').element.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(contextMenu.visible).toBe(false);
+  });
+
+  it('keeps the row menu available when session interactions are disabled, like the kebab', async () => {
+    const w = mountCard();
+    await w.setProps({ interactionDisabled: true });
+    await w.find('.session-card').trigger('contextmenu', { clientX: 30, clientY: 50 });
+
+    expect(contextMenu).toMatchObject({ visible: true, mode: 'session', sourceSessionId: 's1' });
   });
 
   it('no longer carries separate lock / freeze / eye / rename buttons', () => {

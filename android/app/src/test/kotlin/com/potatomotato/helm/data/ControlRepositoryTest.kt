@@ -163,6 +163,26 @@ class ControlRepositoryTest {
     }
 
     @Test
+    fun `directories preserve project identity and canonical marker from the desktop`() {
+        assertTrue(
+            control.directoriesArrived(
+                JSONArray(
+                    """[{"dirPath":"/repo/alternate","name":"docs","projectId":"project-1","projectName":"Renamed","isCanonical":false},
+                       {"dirPath":"/repo/main","name":"repo","projectId":"project-1","projectName":"Renamed","isCanonical":true}]""",
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                HelmDirectory("/repo/alternate", "docs", "Renamed", "project-1", false),
+                HelmDirectory("/repo/main", "repo", "Renamed", "project-1", true),
+            ),
+            control.directories.value,
+        )
+    }
+
+    @Test
     fun `a directory payload that is not a list is refused and changes nothing`() {
         control.directoriesArrived(JSONArray("""[{"dirPath":"/work"}]"""))
 

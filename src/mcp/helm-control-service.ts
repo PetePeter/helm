@@ -205,6 +205,8 @@ export interface McpToolSummary {
 export interface DirectorySummary {
   dirPath: string;
   projectId?: string;
+  /** True when this is the owning project's canonical folder. */
+  isCanonical?: boolean;
   name: string;
   /**
    * The owning project's name, when this directory belongs to one.

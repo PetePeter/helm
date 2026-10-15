@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.control
 
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
@@ -107,6 +109,46 @@ fun SpawnScreen(
     var dirPath by rememberSaveable(plan) { mutableStateOf(plan?.dirPath) }
     var cliType by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable(plan) { mutableStateOf(plan?.name.orEmpty()) }
+    var pickerPage by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedProjectKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val directoryGroups = remember(directories) { groupSpawnDirectories(directories) }
+    val selectedProject = directoryGroups?.firstOrNull { it.key == selectedProjectKey }
+
+    val closePicker = {
+        if (pickerPage == "folders" && directoryGroups != null) {
+            pickerPage = "projects"
+            selectedProjectKey = null
+        } else {
+            pickerPage = null
+            selectedProjectKey = null
+        }
+    }
+    BackHandler(enabled = pickerPage != null) { closePicker() }
+
+    LaunchedEffect(pickerPage, directoryGroups, selectedProjectKey, selectedProject, directories) {
+        when {
+            pickerPage == "projects" && directoryGroups == null -> {
+                pickerPage = null
+                selectedProjectKey = null
+            }
+            pickerPage == "folders" && selectedProject == null -> {
+                pickerPage = if (directoryGroups == null) null else "projects"
+                selectedProjectKey = null
+            }
+            pickerPage == "flat" && directories.isEmpty() -> pickerPage = null
+        }
+    }
+
+    LaunchedEffect(directories, directoriesError, plan, dirPath) {
+        if (plan == null && dirPath != null
+            && (directoriesError != null || directories.isNotEmpty())
+            && directories.none { it.path == dirPath }
+        ) {
+            dirPath = null
+            pickerPage = null
+            selectedProjectKey = null
+        }
+    }
 
     // Raised on the tap itself (see SpawnTapLatch); released by the spawn's
     // answer plus the minimum hold. A success navigates away first.
@@ -118,133 +160,200 @@ fun SpawnScreen(
         tappedAt = null
     }
 
+    val appBarTitle = when (pickerPage) {
+        "projects" -> stringResource(R.string.spawn_choose_project)
+        "folders" -> stringResource(R.string.spawn_choose_folder)
+        "flat" -> stringResource(R.string.spawn_where)
+        else -> stringResource(if (plan != null) R.string.spawn_plan_title else R.string.spawn_title)
+    }
+
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
-            title = stringResource(if (plan != null) R.string.spawn_plan_title else R.string.spawn_title),
+            title = appBarTitle,
             linkState = linkState,
-            onBack = onBack,
+            onBack = { if (pickerPage != null) closePicker() else onBack() },
         )
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(HelmSpacing.Gutter),
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
-        ) {
-            // NAME FIRST. It is the only field that has to be typed, and typing
-            // is what the soft keyboard buries: put it at the top and the
-            // keyboard covers the selectors below it, which are scrollable,
-            // rather than the field itself.
-            FieldLabel(stringResource(R.string.spawn_name))
-            NameField(name = name, onName = { name = it })
+        if (pickerPage == null) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(HelmSpacing.Gutter),
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
+            ) {
+                // NAME FIRST. It is the only field that has to be typed, and typing
+                // is what the soft keyboard buries: put it at the top and the
+                // keyboard covers the selectors below it, which are scrollable,
+                // rather than the field itself.
+                FieldLabel(stringResource(R.string.spawn_name))
+                NameField(name = name, onName = { name = it })
 
-            // Then the machine, ahead of its folders: they are that machine's paths.
-            if (plan == null && machines.isNotEmpty()) {
-                FieldLabel(stringResource(R.string.spawn_runs_on))
-                val choose = { id: String? ->
-                    if (id != machineId) {
-                        machineId = id
-                        cliType = null
-                        dirPath = null
-                        onMachine(id)
+                // Then the machine, ahead of its folders: they are that machine's paths.
+                if (plan == null && machines.isNotEmpty()) {
+                    FieldLabel(stringResource(R.string.spawn_runs_on))
+                    val choose = { id: String? ->
+                        if (id != machineId) {
+                            machineId = id
+                            cliType = null
+                            dirPath = null
+                            pickerPage = null
+                            selectedProjectKey = null
+                            onMachine(id)
+                        }
+                    }
+                    Choice(
+                        label = stringResource(R.string.spawn_this_desktop),
+                        detail = null,
+                        selected = machineId == null,
+                        onClick = { choose(null) },
+                    )
+                    for (machine in machines) {
+                        Choice(
+                            label = "🖥 ${machine.name}",
+                            detail = null,
+                            selected = machine.id == machineId,
+                            onClick = { choose(machine.id) },
+                        )
                     }
                 }
-                Choice(
-                    label = stringResource(R.string.spawn_this_desktop),
-                    detail = null,
-                    selected = machineId == null,
-                    onClick = { choose(null) },
-                )
-                for (machine in machines) {
-                    Choice(
-                        label = "🖥 ${machine.name}",
-                        detail = null,
-                        selected = machine.id == machineId,
-                        onClick = { choose(machine.id) },
-                    )
-                }
-            }
 
-            // Then the CLI. The short list sits above the long directory list
-            // so the folders never bury it off-screen.
-            FieldLabel(stringResource(R.string.spawn_which_cli))
-            if (cliChoices.isEmpty()) {
-                Hint(stringResource(R.string.spawn_no_clis))
-            } else {
-                for ((type, label) in cliChoices) {
-                    Choice(
-                        label = label,
-                        detail = null,
-                        selected = type == cliType,
-                        onClick = { cliType = type },
-                    )
-                }
-            }
-
-            FieldLabel(stringResource(R.string.spawn_where))
-            when {
-                // A plan's directory is fixed: shown, selected, and not a choice.
-                // Never swapped for another if the list lacks it — a plan read
-                // from the wrong project is worse than no session.
-                plan != null -> {
-                    val locked = directories.firstOrNull { it.path == plan.dirPath }
-                    Choice(
-                        label = locked?.let(::directoryLabel) ?: plan.dirPath,
-                        detail = locked?.path,
-                        selected = true,
-                        onClick = null,
-                    )
-                }
-                // A dead fetch says so, with a way to try again. The waiting
-                // hint is only for a fetch that has not answered yet.
-                directoriesError != null -> {
-                    Hint(directoriesError)
-                    GhostButton(text = stringResource(R.string.spawn_retry), onClick = { onRetryDirectories(machineId) })
-                }
-                directories.isEmpty() -> Hint(stringResource(R.string.spawn_no_directories))
-                else -> {
-                    // Row order is the repository's — project label A-Z, path
-                    // breaking ties — so the list reads as projects first.
-                    for (directory in directories) {
+                // Then the CLI. The short list sits above the project picker.
+                FieldLabel(stringResource(R.string.spawn_which_cli))
+                if (cliChoices.isEmpty()) {
+                    Hint(stringResource(R.string.spawn_no_clis))
+                } else {
+                    for ((type, label) in cliChoices) {
                         Choice(
-                            label = directoryLabel(directory),
-                            detail = directory.path,
-                            selected = directory.path == dirPath,
-                            onClick = { dirPath = directory.path },
+                            label = label,
+                            detail = null,
+                            selected = type == cliType,
+                            onClick = { cliType = type },
+                        )
+                    }
+                }
+
+                FieldLabel(stringResource(R.string.spawn_where))
+                when {
+                    // A plan's directory is fixed: shown, selected, and not a choice.
+                    // Never swapped for another if the list lacks it — a plan read
+                    // from the wrong project is worse than no session.
+                    plan != null -> {
+                        val locked = directories.firstOrNull { it.path == plan.dirPath }
+                        Choice(
+                            label = locked?.let(::directoryLabel) ?: plan.dirPath,
+                            detail = locked?.path,
+                            selected = true,
+                            onClick = null,
+                        )
+                    }
+                    // A dead fetch says so, with a way to try again. The waiting
+                    // hint is only for a fetch that has not answered yet.
+                    directoriesError != null -> {
+                        Hint(directoriesError)
+                        GhostButton(text = stringResource(R.string.spawn_retry), onClick = { onRetryDirectories(machineId) })
+                    }
+                    directories.isEmpty() -> Hint(stringResource(R.string.spawn_no_directories))
+                    else -> {
+                        val selectedDirectory = directories.firstOrNull { it.path == dirPath }
+                        Choice(
+                            label = selectedDirectory?.let(::directoryLabel) ?: stringResource(R.string.spawn_choose_project),
+                            detail = selectedDirectory?.path,
+                            selected = selectedDirectory != null,
+                            onClick = { pickerPage = if (directoryGroups == null) "flat" else "projects" },
                         )
                     }
                 }
             }
-        }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(HelmColors.Surface)
-                .padding(HelmSpacing.Gutter),
-            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
-        ) {
-            val chosenDir = dirPath
-            val chosenCli = cliType
-            val chosenName = name.trim()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(HelmColors.Surface)
+                    .padding(HelmSpacing.Gutter),
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
+                val chosenDir = dirPath
+                val chosenCli = cliType
+                val chosenName = name.trim()
+                val chosenDirAvailable = chosenDir != null &&
+                    (plan != null || directories.any { it.path == chosenDir })
 
-            PrimaryButton(
-                text = stringResource(R.string.spawn_start),
-                // Disabled until the two REQUIRED choices are real, and until the
-                // last spawn's answer came back: two taps are two sessions.
-                // The name is optional on the wire: a blank one is omitted and
-                // the desktop names the session after the CLI type.
-                enabled = chosenDir != null && chosenCli != null && !spawnInFlight && tappedAt == null,
-                onClick = {
-                    if (tappedAt == null) {
-                        tappedAt = SystemClock.uptimeMillis()
-                        onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName, machineId)
+                PrimaryButton(
+                    text = stringResource(R.string.spawn_start),
+                    // Disabled until the two REQUIRED choices are real, and until the
+                    // last spawn's answer came back: two taps are two sessions.
+                    // The name is optional on the wire: a blank one is omitted and
+                    // the desktop names the session after the CLI type.
+                    enabled = chosenDirAvailable && chosenCli != null && !spawnInFlight && tappedAt == null,
+                    onClick = {
+                        if (tappedAt == null) {
+                            tappedAt = SystemClock.uptimeMillis()
+                            onSpawn(chosenDir.orEmpty(), chosenCli.orEmpty(), chosenName, machineId)
+                        }
+                    },
+                )
+                GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(HelmSpacing.Gutter),
+                verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
+            ) {
+                when (pickerPage) {
+                    "projects" -> directoryGroups.orEmpty().forEach { group ->
+                        val title = if (group.key.isEmpty()) stringResource(R.string.spawn_other) else group.title
+                        Choice(
+                            label = title,
+                            detail = pluralStringResource(R.plurals.spawn_folder_count, group.directories.size, group.directories.size),
+                            selected = false,
+                            onClick = {
+                                selectedProjectKey = group.key
+                                pickerPage = "folders"
+                            },
+                        )
                     }
-                },
-            )
-            GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
+                    "folders" -> {
+                        if (selectedProject != null) {
+                            FieldLabel(selectedProject.title)
+                            for (directory in selectedProject.directories) {
+                                val isMain = directory.isMainFolder()
+                                val label = if (isMain) {
+                                    "${directory.name} · ${stringResource(R.string.spawn_main_folder)}"
+                                } else {
+                                    directory.name
+                                }
+                                Choice(
+                                    label = label,
+                                    detail = directory.path,
+                                    selected = directory.path == dirPath,
+                                    onClick = {
+                                        dirPath = directory.path
+                                        pickerPage = null
+                                        selectedProjectKey = null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    "flat" -> directories.forEach { directory ->
+                        Choice(
+                            label = directoryLabel(directory),
+                            detail = directory.path,
+                            selected = directory.path == dirPath,
+                            onClick = {
+                                dirPath = directory.path
+                                pickerPage = null
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }

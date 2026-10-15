@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { HelmDirectoryService } from '../src/mcp/services/helm-directory-service.js';
+import { normalizeProjectPath } from '../src/session/project-identity.js';
 
 function makeConfigLoader(workingDirs: Array<{ path: string; name: string }>) {
   return {
@@ -28,10 +29,11 @@ function makePlanManager(planDirs: string[]) {
   };
 }
 
-function makeProjectStore(records: Array<{ id: string; canonicalPath: string; name: string }>) {
+function makeProjectStore(records: Array<{ id: string; canonicalPath: string; name: string; alternatePaths?: string[] }>) {
   return {
     findByPath: vi.fn((path: string) =>
-      records.find((r) => r.canonicalPath === path),
+      records.find((r) => normalizeProjectPath(r.canonicalPath) === normalizeProjectPath(path)
+        || r.alternatePaths?.some((alternatePath) => normalizeProjectPath(alternatePath) === normalizeProjectPath(path))),
     ),
   };
 }
@@ -66,6 +68,35 @@ describe('HelmDirectoryService', () => {
 
     expect(dirs[0].name).toBe('android');
     expect(dirs[0].projectName).toBe('Helm');
+  });
+
+  it('marks canonical and alternate folders so clients can put Main first after a project rename', () => {
+    const configLoader = makeConfigLoader([
+      { path: '/repo/alternate', name: 'docs' },
+      { path: '/repo/main/', name: 'repo' },
+    ]);
+    const projectStore = makeProjectStore([{
+      id: 'proj-1',
+      canonicalPath: '/repo/main',
+      alternatePaths: ['/repo/alternate'],
+      name: 'Renamed Project',
+    }]);
+
+    const service = new HelmDirectoryService(
+      configLoader as any, makeSessionManager([]) as any, makePlanManager([]) as any, projectStore as any,
+    );
+    const dirs = service.listDirectories();
+
+    expect(dirs.find((dir) => dir.dirPath === '/repo/main/')).toMatchObject({
+      projectId: 'proj-1',
+      projectName: 'Renamed Project',
+      isCanonical: true,
+    });
+    expect(dirs.find((dir) => dir.dirPath === '/repo/alternate')).toMatchObject({
+      projectId: 'proj-1',
+      projectName: 'Renamed Project',
+      isCanonical: false,
+    });
   });
 
   it('omits the project name for a directory no project owns', () => {

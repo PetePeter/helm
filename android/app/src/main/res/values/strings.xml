@@ -439,6 +439,10 @@
 
     <string name="spawn_title">New session</string>
     <string name="spawn_where">Where</string>
+    <string name="spawn_choose_project">Choose project</string>
+    <string name="spawn_choose_folder">Choose folder</string>
+    <string name="spawn_other">Other</string>
+    <string name="spawn_main_folder">Main</string>
     <string name="spawn_runs_on">Runs on</string>
     <string name="spawn_this_desktop">This desktop</string>
     <string name="spawn_which_cli">Which CLI</string>
@@ -449,6 +453,10 @@
     <string name="spawn_start">Start session</string>
     <string name="spawn_cancel">Cancel</string>
     <string name="spawn_plan_title">Session for plan</string>
+    <plurals name="spawn_folder_count">
+        <item quantity="one">%1$d folder</item>
+        <item quantity="other">%1$d folders</item>
+    </plurals>
     <string name="plans_spawn_glyph">&gt;_</string>
     <string name="plans_spawn_description">Start a session for this plan</string>
 
