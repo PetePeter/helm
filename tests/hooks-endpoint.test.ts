@@ -1,5 +1,5 @@
 /**
- * POST /hooks on the localhost MCP server — the wire the CLI shims land on.
+ * Session-authenticated local endpoints used by CLI integrations.
  *
  * Real HTTP server, real bearer/session-token auth. The /hooks route must
  * accept ONLY session tokens (a hook belongs to one spawned session), and its
@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { LocalhostMcpServer } from '../src/mcp/localhost-mcp-server';
+import { LocalhostMcpServer, type LocalhostMcpServerOptions } from '../src/mcp/localhost-mcp-server';
 import { HookReceiver } from '../src/session/hooks/hook-receiver';
 import { mintSessionAuthToken } from '../src/mcp/session-auth';
 import type { HelmControlService } from '../src/mcp/helm-control-service';
@@ -26,9 +26,16 @@ afterEach(async () => {
   }
 });
 
-async function makeServer(hooks: HookReceiver): Promise<{ port: number; sessionToken: string }> {
+async function makeServer(
+  hooks: HookReceiver,
+  onClaudeStatuslineUsage?: LocalhostMcpServerOptions['onClaudeStatuslineUsage'],
+): Promise<{ port: number; sessionToken: string }> {
   const service = {} as HelmControlService; // /hooks never touches the tool service
-  const server = new LocalhostMcpServer(service, { token: 'base-token', port: 0 }, undefined, hooks);
+  const server = new LocalhostMcpServer(service, {
+    token: 'base-token',
+    port: 0,
+    onClaudeStatuslineUsage,
+  }, undefined, hooks);
   servers.push(server);
   await server.start();
   return {
@@ -135,5 +142,59 @@ describe('POST /hooks', () => {
 
     const response = await post(port, '/mcp', 'base-token', JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
     expect(response.status).toBe(200);
+  });
+});
+
+describe('POST /context-usage', () => {
+  it('accepts a session token and passes current tokens and the reported window to Helm', async () => {
+    const reports: unknown[] = [];
+    const { port, sessionToken } = await makeServer(new HookReceiver(), (sessionId, cliSessionId, usage) => {
+      reports.push({ sessionId, cliSessionId, usage });
+      return true;
+    });
+    const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
+      session_id: 'claude-session-1',
+      context_window: {
+        total_input_tokens: 15_500,
+        total_output_tokens: 1_200,
+        context_window_size: 200_000,
+      },
+    }));
+
+    expect(response.status).toBe(204);
+    expect(reports).toEqual([{
+      sessionId: 'session-1',
+      cliSessionId: 'claude-session-1',
+      usage: { contextTokens: 16_700, contextWindow: 200_000 },
+    }]);
+  });
+
+  it('rejects the shared bearer and malformed payloads', async () => {
+    const { port, sessionToken } = await makeServer(new HookReceiver());
+
+    expect((await post(port, '/context-usage', 'base-token', '{}')).status).toBe(401);
+    expect((await post(port, '/context-usage', sessionToken, 'not json')).status).toBe(400);
+    expect((await post(port, '/context-usage', sessionToken, '{}')).status).toBe(400);
+    expect((await post(port, '/context-usage', sessionToken, JSON.stringify({
+      context_window: { total_input_tokens: 100, total_output_tokens: 0 },
+    }))).status).toBe(400);
+  });
+
+  it('passes an empty post-compaction window through so Helm can clear stale usage', async () => {
+    const reports: unknown[] = [];
+    const { port, sessionToken } = await makeServer(new HookReceiver(), (_sessionId, _cliSessionId, usage) => {
+      reports.push(usage);
+    });
+    const response = await post(port, '/context-usage', sessionToken, JSON.stringify({
+      session_id: 'claude-session-1',
+      context_window: {
+        total_input_tokens: 15_500,
+        total_output_tokens: 1_200,
+        current_usage: null,
+      },
+    }));
+
+    expect(response.status).toBe(204);
+    expect(reports).toEqual([null]);
   });
 });

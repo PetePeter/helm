@@ -22,6 +22,7 @@ export interface SessionContextUsageSnapshot {
   tokens: number;
   window?: number;
   measuredAtIso?: string;
+  source?: 'transcript' | 'api' | 'statusline';
 }
 
 /** Reserved identity for an embedded command shell that has no configured CLI type. */

@@ -472,6 +472,7 @@ export function registerIPCHandlers(
     },
     usageBoost: (key, terms) => suggestionUsage.boostFor(key, terms),
   }, configLoader.getSuggestionScoring());
+  let sessionContextUsageTracker: SessionContextUsageTracker | undefined;
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
     enabled: configLoader.getMcpConfig().enabled,
     port: configLoader.getMcpConfig().port,
@@ -479,11 +480,17 @@ export function registerIPCHandlers(
     // G5 usage feedback: correlate a fetch with a recent suggestion. Only
     // identifiable sessions land here; anonymous peers learn nothing.
     onItemFetched: (sessionId, type, id) => suggestionUsage.recordFetch(sessionId, `${type}/${id}`),
+    onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) => {
+      const session = sessionManager.getSession(sessionId);
+      if (!session || session.remote || configLoader.getCliTypeEntry(session.cliType)?.provider !== 'claude') return false;
+      return usage !== null
+        ? sessionContextUsageTracker?.reportStatuslineUsage(sessionId, cliSessionId, usage.contextTokens, usage.contextWindow)
+        : sessionContextUsageTracker?.clearStatuslineUsage(sessionId, cliSessionId);
+    },
   }, ptyManager, hookReceiver);
 
   // API tools: Helm hosts the agent loop for CLI types with an `api` block.
   // Tools dispatch through the MCP server's own path under the session's identity.
-  let sessionContextUsageTracker: SessionContextUsageTracker | undefined;
   const apiSessionHost = new ApiSessionHost({
     dispatchTool: (name, args, auth) => localhostMcpServer.dispatchForPeer(name, args, auth),
     postChat: (sessionId, message, usage) => helmControlService.sendTelegramChat(sessionId, message, undefined, usage),

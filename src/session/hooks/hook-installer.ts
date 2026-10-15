@@ -25,6 +25,7 @@ import type { HookProvider } from './hook-normaliser.js';
 import { logger } from '../../utils/logger.js';
 
 const execFileAsync = promisify(execFile);
+const CLAUDE_STATUSLINE_CONFIG = 'helm-claude-statusline.json';
 
 export type HookIntegrationStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
@@ -104,6 +105,97 @@ function hookCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter, 
   return parts
     .map((part) => (part === deps.shimPath || /\s/.test(part) ? `"${part}"` : part))
     .join(' ');
+}
+
+function statuslineCommand(deps: HookInstallerDeps, interpreter: ResolvedInterpreter): string {
+  return [interpreter.command, ...interpreter.args, deps.shimPath, 'statusline']
+    .map((part) => (part === deps.shimPath || /\s/.test(part) ? `"${part}"` : part))
+    .join(' ');
+}
+
+function statuslineConfigPath(deps: HookInstallerDeps): string {
+  return path.join(path.dirname(deps.shimPath), CLAUDE_STATUSLINE_CONFIG);
+}
+
+function readStatuslineBackup(deps: HookInstallerDeps): { command: string } | undefined {
+  const file = statuslineConfigPath(deps);
+  if (!existsSync(file)) return undefined;
+  try {
+    const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const command = (value as { command?: unknown }).command;
+    return typeof command === 'string' && command.length > 0 ? { command } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeStatuslineBackup(deps: HookInstallerDeps, command: string): void {
+  const file = statuslineConfigPath(deps);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ command }, null, 2));
+}
+
+function removeStatuslineBackup(deps: HookInstallerDeps): void {
+  const file = statuslineConfigPath(deps);
+  if (existsSync(file)) unlinkSync(file);
+}
+
+function isOurStatusline(command: unknown, deps: HookInstallerDeps): command is string {
+  return typeof command === 'string'
+    && command.includes(deps.shimPath)
+    && /(?:^|\s)statusline(?:\s|$)/.test(command);
+}
+
+function installClaudeStatusline(
+  obj: JsonRecord,
+  deps: HookInstallerDeps,
+  interpreter: ResolvedInterpreter,
+): boolean {
+  const statusLine = obj.statusLine;
+  if (!statusLine || typeof statusLine !== 'object' || Array.isArray(statusLine)) return false;
+  const status = statusLine as JsonRecord;
+  const command = status.command;
+  if (typeof command !== 'string' || command.trim().length === 0) return false;
+
+  const desired = statuslineCommand(deps, interpreter);
+  if (isOurStatusline(command, deps)) {
+    if (command === desired) return false;
+    status.command = desired;
+    return true;
+  }
+
+  writeStatuslineBackup(deps, command);
+  status.command = desired;
+  return true;
+}
+
+function statuslineIsCurrent(obj: JsonRecord, deps: HookInstallerDeps, interpreter: ResolvedInterpreter): boolean {
+  const statusLine = obj.statusLine;
+  if (!statusLine || typeof statusLine !== 'object' || Array.isArray(statusLine)) return true;
+  const command = (statusLine as JsonRecord).command;
+  if (typeof command !== 'string' || command.trim().length === 0) return true;
+  return isOurStatusline(command, deps)
+    && command === statuslineCommand(deps, interpreter);
+}
+
+function uninstallClaudeStatusline(obj: JsonRecord, deps: HookInstallerDeps): boolean {
+  const statusLine = obj.statusLine;
+  const command = statusLine && typeof statusLine === 'object' && !Array.isArray(statusLine)
+    ? (statusLine as JsonRecord).command
+    : undefined;
+  const backup = readStatuslineBackup(deps);
+  let changed = false;
+  if (isOurStatusline(command, deps)) {
+    if (backup) (statusLine as JsonRecord).command = backup.command;
+    else delete obj.statusLine;
+    changed = true;
+  }
+  if (backup || existsSync(statuslineConfigPath(deps))) {
+    removeStatuslineBackup(deps);
+    changed = true;
+  }
+  return changed;
 }
 
 /** Even quoted, codex cannot run a spaced command — say so instead of installing a hook that fails invisibly. */
@@ -191,7 +283,7 @@ export async function installCliHooks(hooks: CliHooksIntegration, deps: HookInst
   obj.hooks = hooksBlock;
   if (isCopilot(hooks) && obj.version === undefined) obj.version = 1;
 
-  let changed = false;
+  let changed = hooks.provider === 'claude' ? installClaudeStatusline(obj, deps, interpreter) : false;
   for (const event of hooks.events) {
     const command = hookCommand(deps, interpreter, hooks.provider, event);
     const desired = isCopilot(hooks) ? desiredCopilotEntry(command) : desiredGroup(command);
@@ -215,24 +307,29 @@ export async function installCliHooks(hooks: CliHooksIntegration, deps: HookInst
 export function uninstallCliHooks(hooks: CliHooksIntegration, deps: HookInstallerDeps): HookUninstallResult {
   const file = resolveConfigFile(hooks, deps);
   const obj = readConfigFile(file);
-  if (!obj) return { changed: false };
-  const hooksBlock = obj.hooks;
-  if (!hooksBlock || typeof hooksBlock !== 'object' || Array.isArray(hooksBlock)) return { changed: false };
-
-  const isOurs = isCopilot(hooks) ? isOurEntry : isOurGroup;
-  let changed = false;
-  for (const event of Object.keys(hooksBlock as JsonRecord)) {
-    const existing = (hooksBlock as JsonRecord)[event];
-    if (!Array.isArray(existing)) continue;
-    const kept = existing.filter((entry) => !isOurs(entry, deps.shimPath));
-    if (kept.length === existing.length) continue;
-    changed = true;
-    if (kept.length === 0) delete (hooksBlock as JsonRecord)[event];
-    else (hooksBlock as JsonRecord)[event] = kept;
+  if (!obj) {
+    const backupExists = hooks.provider === 'claude' && existsSync(statuslineConfigPath(deps));
+    if (backupExists) removeStatuslineBackup(deps);
+    return { changed: backupExists };
   }
-  if (!changed) return { changed: false };
+  let changed = false;
+  const hooksBlock = obj.hooks;
+  if (hooksBlock && typeof hooksBlock === 'object' && !Array.isArray(hooksBlock)) {
+    const isOurs = isCopilot(hooks) ? isOurEntry : isOurGroup;
+    for (const event of Object.keys(hooksBlock as JsonRecord)) {
+      const existing = (hooksBlock as JsonRecord)[event];
+      if (!Array.isArray(existing)) continue;
+      const kept = existing.filter((entry) => !isOurs(entry, deps.shimPath));
+      if (kept.length === existing.length) continue;
+      changed = true;
+      if (kept.length === 0) delete (hooksBlock as JsonRecord)[event];
+      else (hooksBlock as JsonRecord)[event] = kept;
+    }
 
-  if (Object.keys(hooksBlock as JsonRecord).length === 0) delete obj.hooks;
+    if (Object.keys(hooksBlock as JsonRecord).length === 0) delete obj.hooks;
+  }
+  if (hooks.provider === 'claude') changed = uninstallClaudeStatusline(obj, deps) || changed;
+  if (!changed) return { changed: false };
 
   // The Helm-owned Copilot file goes away entirely only when it holds nothing
   // of the user's — an empty `hooks` plus the version stamp is pure residue.
@@ -285,6 +382,7 @@ export async function readHookIntegrationStatus(
     if (!ours.some((entry) => sameJson(entry, desired))) complete = false;
   }
   if (!foundAny) return 'not-installed';
+  if (hooks.provider === 'claude' && !statuslineIsCurrent(obj ?? {}, deps, resolved)) complete = false;
   return complete ? 'installed' : 'outdated';
 }
 

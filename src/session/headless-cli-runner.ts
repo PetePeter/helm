@@ -34,6 +34,7 @@ const NOT_A_SESSION = {
   HELM_MCP_TOKEN: '',
   HELM_MCP_URL: '',
   HELM_HOOK_URL: '',
+  HELM_CONTEXT_USAGE_URL: '',
 };
 
 export interface HeadlessCliRunnerDeps {

@@ -287,6 +287,10 @@ onMounted(() => {
                 Copy
               </button>
             </div>
+            <span v-if="item.provider === 'claude'" class="settings-list-item__detail">
+              If a custom Claude status line is configured, Install/Update adds live context usage and Remove restores it.
+              Copying the hook block alone does not add the badge.
+            </span>
             <span class="settings-list-item__detail">{{ unregisterHint(item) }}</span>
           </template>
         </div>

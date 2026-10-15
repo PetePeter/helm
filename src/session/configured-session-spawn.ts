@@ -376,6 +376,9 @@ export function resolveConfiguredSpawnEnv(
     // The CLI hook shim reads this (and the token above) from its inherited
     // environment — correlation for hooks needs no other plumbing.
     env.HELM_HOOK_URL = `http://127.0.0.1:${mcpPort}/hooks`;
+    // Claude's configured statusline uses the same session token to report
+    // live context usage without adding another Claude hook event.
+    env.HELM_CONTEXT_USAGE_URL = `http://127.0.0.1:${mcpPort}/context-usage`;
   }
   return Object.keys(env).length > 0 ? env : undefined;
 }

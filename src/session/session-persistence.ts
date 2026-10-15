@@ -81,7 +81,8 @@ function isContextUsageSnapshot(value: unknown): value is SessionContextUsageSna
   return isRecord(value)
     && isNumber(value.tokens) && value.tokens > 0
     && (value.window === undefined || (isNumber(value.window) && value.window > 0))
-    && (value.measuredAtIso === undefined || isString(value.measuredAtIso));
+    && (value.measuredAtIso === undefined || isString(value.measuredAtIso))
+    && (value.source === undefined || value.source === 'transcript' || value.source === 'api' || value.source === 'statusline');
 }
 
 function isUserPromptSource(value: unknown): value is UserPromptSource {

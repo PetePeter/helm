@@ -8,7 +8,9 @@ interface SessionUsageStore {
   getSession(sessionId: string): SessionInfo | null;
   updateSession(sessionId: string, updates: Partial<SessionInfo>): void;
   on(event: 'session:added' | 'session:updated', listener: (session: SessionInfo) => void): unknown;
+  on(event: 'session:removed', listener: (event: { sessionId: string }) => void): unknown;
   off(event: 'session:added' | 'session:updated', listener: (session: SessionInfo) => void): unknown;
+  off(event: 'session:removed', listener: (event: { sessionId: string }) => void): unknown;
 }
 
 interface HookEventSource {
@@ -48,6 +50,8 @@ export class SessionContextUsageTracker {
   private hydrationQueue: string[] = [];
   /** Transcript path last read per session, so a path that yields no usage is not re-read on every update. */
   private readonly attemptedPath = new Map<string, string>();
+  /** Empty means Claude has explicitly reset its context and transcript reads may still be stale. */
+  private readonly emptyStatusline = new Set<string>();
 
   constructor(options: SessionContextUsageTrackerOptions) {
     this.sessionManager = options.sessionManager;
@@ -62,6 +66,7 @@ export class SessionContextUsageTracker {
     hookSource.on('hook', this.onHook);
     this.sessionManager.on('session:added', this.onSession);
     this.sessionManager.on('session:updated', this.onSession);
+    this.sessionManager.on('session:removed', this.onSessionRemoved);
     this.hydrationQueue = this.sessionManager.getAllSessions()
       .filter((session) => !session.remote && !session.contextUsage && session.cliTranscriptPath)
       .map((session) => session.id);
@@ -73,9 +78,11 @@ export class SessionContextUsageTracker {
       this.hookSource.off('hook', this.onHook);
       this.sessionManager.off('session:added', this.onSession);
       this.sessionManager.off('session:updated', this.onSession);
+      this.sessionManager.off('session:removed', this.onSessionRemoved);
     }
     this.attemptedPath.clear();
     this.lastRefreshAt.clear();
+    this.emptyStatusline.clear();
     this.hookSource = undefined;
     for (const timer of this.refreshTimers.values()) clearTimeout(timer);
     this.refreshTimers.clear();
@@ -91,8 +98,12 @@ export class SessionContextUsageTracker {
 
   private readonly onSession = (session: SessionInfo): void => {
     const path = session.cliTranscriptPath;
-    if (session.remote || session.contextUsage || !path || this.attemptedPath.get(session.id) === path) return;
+    if (session.remote || session.contextUsage || this.emptyStatusline.has(session.id) || !path || this.attemptedPath.get(session.id) === path) return;
     this.scheduleRefresh(session.id);
+  };
+
+  private readonly onSessionRemoved = (event: { sessionId: string }): void => {
+    this.emptyStatusline.delete(event.sessionId);
   };
 
   /** Trailing throttle: one pending read per session, so the last value of a burst always lands. */
@@ -124,11 +135,22 @@ export class SessionContextUsageTracker {
     if (session.cliTranscriptPath) this.attemptedPath.set(sessionId, session.cliTranscriptPath);
     try {
       const context = this.resolve(session);
+      // Claude's statusline is the only source that reports its actual model
+      // window. A later transcript read must not replace that live snapshot
+      // with the configured-window fallback.
+      const hasStatuslineContext = context?.known === true && context.source === 'statusline';
+      if (this.emptyStatusline.has(sessionId) && !hasStatuslineContext) return;
+      if (
+        session.contextUsage?.source === 'statusline'
+        && !hasStatuslineContext
+        && !hasNewerMeasurement(session.contextUsage, context)
+      ) return;
       const contextUsage = context?.known
         ? {
           tokens: context.tokens,
           ...(context.window !== undefined ? { window: context.window } : {}),
           ...(context.measuredAtIso ? { measuredAtIso: context.measuredAtIso } : {}),
+          ...(context.source === 'statusline' ? { source: 'statusline' as const } : {}),
         }
         : undefined;
       if (sameSnapshot(session.contextUsage, contextUsage)) return;
@@ -142,6 +164,47 @@ export class SessionContextUsageTracker {
   refreshSession(sessionId: string): void {
     this.refresh(sessionId);
   }
+
+  /** Accept an authenticated Claude statusLine snapshot without waiting for its transcript write. */
+  reportStatuslineUsage(sessionId: string, cliSessionId: string, tokens: number, window?: number): boolean {
+    if (!Number.isFinite(tokens) || tokens <= 0 || (window !== undefined && (!Number.isFinite(window) || window <= 0))) {
+      return false;
+    }
+    if (!this.correlateStatuslineSession(sessionId, cliSessionId)) return false;
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session || session.remote) return false;
+    const contextUsage: SessionContextUsageSnapshot = {
+      tokens,
+      ...(window !== undefined ? { window } : {}),
+      measuredAtIso: new Date().toISOString(),
+      source: 'statusline',
+    };
+    this.emptyStatusline.delete(sessionId);
+    this.lastRefreshAt.set(sessionId, Date.now());
+    if (sameSnapshot(session.contextUsage, contextUsage)) return true;
+    this.sessionManager.updateSession(sessionId, { contextUsage });
+    return true;
+  }
+
+  /** Clear a statusline snapshot after Claude reports an empty window, such as immediately after /compact. */
+  clearStatuslineUsage(sessionId: string, cliSessionId: string): boolean {
+    if (!this.correlateStatuslineSession(sessionId, cliSessionId)) return false;
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session || session.remote) return false;
+    this.emptyStatusline.add(sessionId);
+    this.lastRefreshAt.set(sessionId, Date.now());
+    if (session.contextUsage) this.sessionManager.updateSession(sessionId, { contextUsage: undefined });
+    return true;
+  }
+
+  private correlateStatuslineSession(sessionId: string, cliSessionId: string): boolean {
+    const normalizedId = cliSessionId.trim();
+    if (!normalizedId) return false;
+    const session = this.sessionManager.getSession(sessionId);
+    if (!session || session.remote || (session.cliThreadId && session.cliThreadId !== normalizedId)) return false;
+    if (!session.cliThreadId) this.sessionManager.updateSession(sessionId, { cliThreadId: normalizedId });
+    return true;
+  }
 }
 
 function sameSnapshot(
@@ -150,5 +213,16 @@ function sameSnapshot(
 ): boolean {
   return current?.tokens === next?.tokens
     && current?.window === next?.window
-    && current?.measuredAtIso === next?.measuredAtIso;
+    && current?.measuredAtIso === next?.measuredAtIso
+    && current?.source === next?.source;
+}
+
+function hasNewerMeasurement(
+  current: SessionContextUsageSnapshot,
+  next: SessionContextSize | undefined,
+): boolean {
+  if (!next?.known || !next.measuredAtIso || !current.measuredAtIso) return false;
+  const currentTime = Date.parse(current.measuredAtIso);
+  const nextTime = Date.parse(next.measuredAtIso);
+  return Number.isFinite(currentTime) && Number.isFinite(nextTime) && nextTime > currentTime;
 }

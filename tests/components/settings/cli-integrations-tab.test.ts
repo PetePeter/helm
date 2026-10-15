@@ -148,6 +148,8 @@ describe('CliIntegrationsTab — copy-ready hook registration code', () => {
     expect(rows[0].find('pre').text()).toBe(CLAUDE_SNIPPET);
     expect(rows[2].text()).toContain('~/.copilot/hooks/helm.json');
     expect(rows[2].find('pre').text()).toBe(COPILOT_SNIPPET);
+    expect(rows[0].text()).toContain('Install/Update adds live context usage');
+    expect(rows[0].text()).toContain('Copying the hook block alone does not add the badge');
   });
 
   it('describes manual unregistration per provider', async () => {

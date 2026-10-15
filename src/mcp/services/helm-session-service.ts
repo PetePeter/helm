@@ -407,6 +407,18 @@ export class HelmSessionService {
   }
 
   private contextSizeFor(session: SessionInfo): SessionContextSize {
+    if (session.contextUsage?.source === 'statusline' && session.contextUsage.tokens > 0) {
+      const window = session.contextUsage.window;
+      return {
+        known: true,
+        tokens: session.contextUsage.tokens,
+        ...(window !== undefined && window > 0
+          ? { window, percent: Math.round(session.contextUsage.tokens / window * 100) }
+          : {}),
+        ...(session.contextUsage.measuredAtIso ? { measuredAtIso: session.contextUsage.measuredAtIso } : {}),
+        source: 'statusline',
+      };
+    }
     const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
     const apiContext = session.apiTool ? this.apiContextSizeLookup?.(session.id) : undefined;
     return resolveSessionContextSize({

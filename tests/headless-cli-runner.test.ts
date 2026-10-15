@@ -25,14 +25,14 @@ const prompt = readFileSync(0, 'utf8');
 if (marker) appendFileSync(marker, 'start ' + process.pid + '\\n');
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (mode === 'fail') { console.error('stub: no such model'); process.exit(3); }
-else if (mode === 'env') process.stdout.write('id=[' + (process.env.HELM_SESSION_ID ?? '') + '] url=[' + (process.env.HELM_HOOK_URL ?? '') + '] own=[' + (process.env.STUB_OWN ?? '') + ']');
+else if (mode === 'env') process.stdout.write('id=[' + (process.env.HELM_SESSION_ID ?? '') + '] url=[' + (process.env.HELM_HOOK_URL ?? '') + '] ctx=[' + (process.env.HELM_CONTEXT_USAGE_URL ?? '') + '] own=[' + (process.env.STUB_OWN ?? '') + ']');
 else setTimeout(() => {
   process.stdout.write('REPLY<' + prompt + '>');
   if (marker) appendFileSync(marker, 'end ' + process.pid + '\\n');
 }, mode === 'slow' ? 400 : 0);
 `;
 
-const HELM_ENV = ['HELM_SESSION_ID', 'HELM_HOOK_URL', 'HELM_MCP_TOKEN', 'HELM_MCP_URL', 'HELM_SESSION_NAME'] as const;
+const HELM_ENV = ['HELM_SESSION_ID', 'HELM_HOOK_URL', 'HELM_CONTEXT_USAGE_URL', 'HELM_MCP_TOKEN', 'HELM_MCP_URL', 'HELM_SESSION_NAME'] as const;
 
 function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
@@ -117,7 +117,7 @@ describe('HeadlessCliRunner', () => {
       { prompt: 'p' },
     );
 
-    expect(text).toBe('id=[] url=[] own=[kept]');
+    expect(text).toBe('id=[] url=[] ctx=[] own=[kept]');
   }, 30_000);
 
   const python = ['python', 'python3'].find((name) => spawnSync(name, ['--version'], { timeout: 10_000 }).status === 0);

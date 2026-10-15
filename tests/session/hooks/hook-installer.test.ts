@@ -119,9 +119,52 @@ describe('installCliHooks (Claude settings.json)', () => {
     expect(group.hooks[0].timeout).toBe(10);
   });
 
+  it('wraps an existing Claude statusline, keeps its options, and restores it on uninstall', async () => {
+    const originalStatusLine = {
+      type: 'command',
+      command: 'node "C:/tools/my statusline.js"',
+      padding: 2,
+      refreshInterval: 5,
+    };
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ statusLine: originalStatusLine }));
+    const backupPath = join(home, 'AppData', 'Roaming', 'Helm', 'config', 'hooks', 'helm-claude-statusline.json');
+
+    const installed = await installCliHooks(CLAUDE, depsWithPython());
+
+    expect(installed).toMatchObject({ status: 'installed', written: true });
+    const settings = readJson('.claude/settings.json');
+    expect(settings.statusLine).toEqual({ ...originalStatusLine, command: `python "${shimPath}" statusline` });
+    expect(readJson('AppData/Roaming/Helm/config/hooks/helm-claude-statusline.json'))
+      .toEqual({ command: originalStatusLine.command });
+    expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('installed');
+
+    expect((await installCliHooks(CLAUDE, depsWithPython())).written).toBe(false);
+    expect(uninstallCliHooks(CLAUDE, depsWithPython()).changed).toBe(true);
+    expect(readJson('.claude/settings.json')).toEqual({ statusLine: originalStatusLine });
+    expect(existsSync(backupPath)).toBe(false);
+  });
+
+  it('recovers an existing Helm statusline wrapper when its saved original command is missing', async () => {
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({
+      statusLine: { type: 'command', command: `python "${shimPath}" statusline` },
+    }));
+
+    const installed = await installCliHooks(CLAUDE, depsWithPython());
+    expect(installed.status).toBe('installed');
+    expect(await readHookIntegrationStatus(CLAUDE, depsWithPython())).toBe('installed');
+
+    expect(uninstallCliHooks(CLAUDE, depsWithPython()).changed).toBe(true);
+    expect(readJson('.claude/settings.json').statusLine).toBeUndefined();
+  });
+
   it('creates the config file when it does not exist', async () => {
     await installCliHooks(CLAUDE, depsWithPython());
-    expect(readJson('.claude/settings.json').hooks).toBeTruthy();
+    const settings = readJson('.claude/settings.json');
+    expect(settings.hooks).toBeTruthy();
+    expect(settings.statusLine).toBeUndefined();
+    expect(existsSync(join(home, 'AppData', 'Roaming', 'Helm', 'config', 'hooks', 'helm-claude-statusline.json'))).toBe(false);
   });
 
   it('leaves user-owned hook entries on the same events untouched', async () => {

@@ -173,6 +173,12 @@ export class HelmTelegramService {
    */
   private usageBadge(session: SessionInfo, reported: ChatTurnUsage | undefined): ChatTurnUsage | undefined {
     const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
+    if (!reported && session.contextUsage?.source === 'statusline') {
+      return {
+        contextTokens: session.contextUsage.tokens,
+        ...(session.contextUsage.window !== undefined ? { contextWindow: session.contextUsage.window } : {}),
+      };
+    }
     if (reported) {
       const contextWindow = reported.contextWindow ?? cliEntry?.contextWindow;
       return contextWindow ? { ...reported, contextWindow } : reported;

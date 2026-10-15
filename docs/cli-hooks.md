@@ -34,6 +34,21 @@ never be able to brick a session.
 If `HELM_SESSION_ID` is absent the shim does nothing at all: user-level hook
 config is machine-wide and fires for CLI sessions Helm did not spawn.
 
+## Claude context usage — status line, not a hook
+
+When the user's Claude settings already define a `statusLine.command`, Helm's
+installer wraps that command with the same shim. Claude's statusline JSON goes
+to the original command unchanged; Helm appends a compact `CTX 42% 84k/200k`
+badge and posts only the Claude session id and `context_window` data to the
+session-authenticated `POST /context-usage` endpoint. This is separate from
+Claude lifecycle hooks. The per-session token and `HELM_SESSION_ID` keep
+standalone Claude sessions silent. Remove restores the saved command and its
+other `statusLine` settings remain untouched.
+
+Helm does not create a status line when none is configured. The manual hook
+snippet also does not install the statusline wrapper; use Install/Update for
+that integration.
+
 ## Flow
 
 ```mermaid

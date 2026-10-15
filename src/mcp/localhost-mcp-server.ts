@@ -25,6 +25,7 @@ import { PlanReadTracker } from '../session/plan-read-tracker.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { HookReceiver } from '../session/hooks/hook-receiver.js';
 import type { LoopDriver } from '../session/hooks/loop-driver.js';
+import { parseClaudeStatuslineUsage, type ClaudeStatuslineUsage } from '../session/claude-statusline-usage.js';
 
 type JsonRpcId = string | number | null;
 
@@ -46,6 +47,7 @@ const DEFAULT_PORT = 47373;
 const DEFAULT_HOST = '127.0.0.1';
 const MCP_PATH = '/mcp';
 const HOOKS_PATH = '/hooks';
+const CONTEXT_USAGE_PATH = '/context-usage';
 
 
 const TOOLS = MCP_TOOLS;
@@ -58,6 +60,12 @@ export interface LocalhostMcpServerOptions {
   env?: NodeJS.ProcessEnv;
   /** G5 usage feedback: a caller actually fetched a skill/memory. */
   onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
+  /** Live usage reported by a Helm-hosted Claude statusline. */
+  onClaudeStatuslineUsage?: (
+    sessionId: string,
+    cliSessionId: string,
+    usage: ClaudeStatuslineUsage | null,
+  ) => boolean | void;
 }
 
 export interface McpStartRetryOptions {
@@ -95,6 +103,7 @@ export class LocalhostMcpServer {
   private enabled: boolean;
   private readonly planReadTracker = new PlanReadTracker();
   private readonly onItemFetched?: (sessionId: string, type: 'skill' | 'memory', id: string) => void;
+  private readonly onClaudeStatuslineUsage?: LocalhostMcpServerOptions['onClaudeStatuslineUsage'];
   private ptyManager?: PtyManager;
   private hookReceiver?: HookReceiver;
   /** G8 loop driving — late-bound like the receiver: the LoopDriver needs
@@ -110,6 +119,7 @@ export class LocalhostMcpServer {
     this.ptyManager = ptyManager;
     this.hookReceiver = hookReceiver;
     this.onItemFetched = options.onItemFetched;
+    this.onClaudeStatuslineUsage = options.onClaudeStatuslineUsage;
     const env = options.env ?? process.env;
     this.host = options.host ?? env.HELM_MCP_HOST ?? DEFAULT_HOST;
     this.port = options.port ?? parsePort(env.HELM_MCP_PORT) ?? DEFAULT_PORT;
@@ -213,6 +223,10 @@ export class LocalhostMcpServer {
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const pathname = (req.url ?? '').split('?')[0];
+    if (pathname === CONTEXT_USAGE_PATH) {
+      await this.handleContextUsageRequest(req, res);
+      return;
+    }
     if (pathname === HOOKS_PATH) {
       await this.handleHookRequest(req, res);
       return;
@@ -318,6 +332,61 @@ export class LocalhostMcpServer {
     }
   }
 
+
+  /**
+   * POST /context-usage — authenticated statusline snapshots are scoped to the
+   * session embedded in the bearer token. The endpoint is intentionally
+   * write-only and returns no session data to the CLI.
+   */
+  private async handleContextUsageRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' });
+      res.end();
+      return;
+    }
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : '';
+    const auth = token ? parseSessionAuthToken(this.token, token) : null;
+    if (!auth) {
+      logger.warn('[MCP] Context usage post rejected: not a session token');
+      this.writeJson(res, 401, { error: 'Unauthorized' });
+      return;
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(await this.readBody(req));
+    } catch {
+      this.writeJson(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      this.writeJson(res, 400, { error: 'Invalid statusline payload' });
+      return;
+    }
+    const body = payload as Record<string, unknown>;
+    const contextWindow = body.context_window;
+    if (!contextWindow || typeof contextWindow !== 'object' || Array.isArray(contextWindow)) {
+      this.writeJson(res, 400, { error: 'Missing context_window' });
+      return;
+    }
+    if (typeof body.session_id !== 'string' || !body.session_id.trim()) {
+      this.writeJson(res, 400, { error: 'Missing session_id' });
+      return;
+    }
+
+    try {
+      const cliSessionId = body.session_id.trim();
+      const usage = parseClaudeStatuslineUsage(body);
+      if (usage !== undefined) this.onClaudeStatuslineUsage?.(auth.sessionId, cliSessionId, usage);
+    } catch (error) {
+      logger.warn(`[MCP] Context usage report failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.writeJson(res, 500, { error: 'Context usage report failed' });
+      return;
+    }
+    res.writeHead(204);
+    res.end();
+  }
 
   /**
    * POST /hooks — where the CLI shims land. Session tokens ONLY: a hook

@@ -181,4 +181,117 @@ describe('SessionContextUsageTracker', () => {
 
     expect(manager.getSession('api')?.contextUsage).toEqual({ tokens: 1200, window: 100_000 });
   });
+
+  it('stores live statusline usage and clears it when Claude reports an empty window', () => {
+    const manager = fakeSessionManager([makeSession('claude')]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    expect(tracker.reportStatuslineUsage('claude', 'claude-thread', 16_700, 200_000)).toBe(true);
+    expect(manager.getSession('claude')?.contextUsage).toMatchObject({
+      tokens: 16_700,
+      window: 200_000,
+      source: 'statusline',
+    });
+    expect(manager.getSession('claude')?.cliThreadId).toBe('claude-thread');
+    expect(tracker.clearStatuslineUsage('claude', 'claude-thread')).toBe(true);
+    expect(manager.getSession('claude')?.contextUsage).toBeUndefined();
+  });
+
+  it('rejects statusline usage from a different Claude thread', () => {
+    const manager = fakeSessionManager([makeSession('claude', {
+      cliThreadId: 'expected-thread',
+      contextUsage: { tokens: 9000, source: 'transcript' },
+    })]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    expect(tracker.reportStatuslineUsage('claude', 'other-thread', 16_700, 200_000)).toBe(false);
+    expect(tracker.clearStatuslineUsage('claude', 'other-thread')).toBe(false);
+    expect(manager.getSession('claude')?.contextUsage).toEqual({ tokens: 9000, source: 'transcript' });
+    expect(manager.getSession('claude')?.cliThreadId).toBe('expected-thread');
+  });
+
+  it('rejects invalid statusline counts without changing the cached snapshot', () => {
+    const manager = fakeSessionManager([makeSession('transcript', {
+      contextUsage: { tokens: 9000, source: 'transcript' },
+    })]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: false, reason: 'no-usage-yet' }),
+    });
+
+    expect(tracker.reportStatuslineUsage('transcript', 'claude-thread', 0, 200_000)).toBe(false);
+    expect(tracker.clearStatuslineUsage('missing', 'claude-thread')).toBe(false);
+    expect(manager.getSession('transcript')?.contextUsage).toEqual({ tokens: 9000, source: 'transcript' });
+  });
+
+  it('does not revive stale transcript usage after Claude reports an empty post-compact window', () => {
+    const manager = fakeSessionManager([makeSession('claude', {
+      contextUsage: { tokens: 9000, source: 'transcript' },
+    })]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: true, tokens: 9000, window: 200_000, source: 'transcript' }),
+    });
+
+    expect(tracker.clearStatuslineUsage('claude', 'claude-thread')).toBe(true);
+    tracker.refreshSession('claude');
+    expect(manager.getSession('claude')?.contextUsage).toBeUndefined();
+
+    expect(tracker.reportStatuslineUsage('claude', 'claude-thread', 1000, 200_000)).toBe(true);
+    expect(manager.getSession('claude')?.contextUsage).toMatchObject({ tokens: 1000, source: 'statusline' });
+  });
+
+  it('keeps the exact statusline window when a later transcript refresh has only a fallback window', () => {
+    const manager = fakeSessionManager([makeSession('claude', {
+      contextUsage: { tokens: 16_700, window: 1_000_000, source: 'statusline' },
+    })]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({ known: true, tokens: 16_700, window: 200_000, source: 'transcript' }),
+    });
+
+    tracker.refreshSession('claude');
+
+    expect(manager.updates).toEqual([]);
+    expect(manager.getSession('claude')?.contextUsage).toEqual({
+      tokens: 16_700,
+      window: 1_000_000,
+      source: 'statusline',
+    });
+  });
+
+  it('lets a newer transcript snapshot replace statusline usage after the statusline stops reporting', () => {
+    const manager = fakeSessionManager([makeSession('claude', {
+      contextUsage: {
+        tokens: 16_700,
+        window: 1_000_000,
+        measuredAtIso: '2026-10-15T03:00:00.000Z',
+        source: 'statusline',
+      },
+    })]);
+    const tracker = new SessionContextUsageTracker({
+      sessionManager: manager,
+      resolve: () => ({
+        known: true,
+        tokens: 25_000,
+        window: 200_000,
+        measuredAtIso: '2026-10-15T03:01:00.000Z',
+        source: 'transcript',
+      }),
+    });
+
+    tracker.refreshSession('claude');
+
+    expect(manager.getSession('claude')?.contextUsage).toEqual({
+      tokens: 25_000,
+      window: 200_000,
+      measuredAtIso: '2026-10-15T03:01:00.000Z',
+    });
+  });
 });

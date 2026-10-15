@@ -3,7 +3,7 @@ import { readTranscriptUsageDetails } from './transcript-usage.js';
 export type ContextSizeUnknownReason = 'no-transcript' | 'no-usage-yet' | 'unsupported-cli' | 'remote' | 'api-unavailable';
 
 export type SessionContextSize =
-  | { known: true; tokens: number; window?: number; percent?: number; measuredAtIso?: string; source: 'transcript' | 'api' }
+  | { known: true; tokens: number; window?: number; percent?: number; measuredAtIso?: string; source: 'transcript' | 'api' | 'statusline' }
   | { known: false; reason: ContextSizeUnknownReason };
 
 export type ApiSessionContextSize =
@@ -30,7 +30,7 @@ function positive(value: number | undefined): number | undefined {
 function knownContext(
   tokens: number | undefined,
   window: number | undefined,
-  source: 'transcript' | 'api',
+  source: 'transcript' | 'api' | 'statusline',
   measuredAtIso?: string,
 ): SessionContextSize {
   const validTokens = positive(tokens);
