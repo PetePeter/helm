@@ -197,6 +197,9 @@ export interface MobileChatRecord {
   contextWindow?: number;
   /** API completion rounds that returned reasoning metadata. */
   thoughtCount?: number;
+  /** Beside `contextTokens`: token counts where the graph turns amber and red. */
+  contextAmber?: number;
+  contextRed?: number;
 }
 
 /**
@@ -265,6 +268,8 @@ export interface ChatRecordInput {
   fromSessionId?: string;
   contextWindow?: number;
   thoughtCount?: number;
+  contextAmber?: number;
+  contextRed?: number;
 }
 
 /**
@@ -330,6 +335,8 @@ export function encodeChat(input: ChatRecordInput): Buffer {
   if (input.fromSessionId !== undefined) record.fromSessionId = input.fromSessionId;
   if (input.contextWindow !== undefined) record.contextWindow = input.contextWindow;
   if (input.thoughtCount !== undefined) record.thoughtCount = input.thoughtCount;
+  if (input.contextAmber !== undefined) record.contextAmber = input.contextAmber;
+  if (input.contextRed !== undefined) record.contextRed = input.contextRed;
   return encode(record);
 }
 

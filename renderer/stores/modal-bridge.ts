@@ -9,6 +9,7 @@
  */
 
 import { reactive } from 'vue';
+import { isValidContextLimits, type ContextLimits } from '../../src/session/context-limits.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import { useEscProtection } from '../composables/useEscProtection.js';
 import { useEditorPopupStore } from './editor-popup.js';
@@ -368,6 +369,8 @@ export interface ToolEditorBridgeData {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  contextWindow?: number;
+  contextLimits?: ContextLimits | null;
   /** Keep-warm ping text; blank = the default. */
   keepWarmPrompt?: string;
   mouseTracking?: boolean;
@@ -451,6 +454,8 @@ export function buildToolEditorOptions(values: Record<string, any>): {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  contextWindow?: number;
+  contextLimits?: ContextLimits | null;
   keepWarmPrompt?: string;
   mouseTracking?: boolean;
   bindingProfileId?: string;
@@ -487,6 +492,8 @@ export function buildToolEditorOptions(values: Record<string, any>): {
     ...(Number(values.cacheExpireMinutes) > 0 ? { cacheExpireMinutes: Number(values.cacheExpireMinutes) } : {}),
     mouseTracking: Boolean(values.mouseTracking),
     noPromptCache: Boolean(values.noPromptCache),
+    contextWindow: Number(values.contextWindow) > 0 ? Number(values.contextWindow) : 0,
+    contextLimits: isValidContextLimits(values.contextLimits) ? { amber: values.contextLimits.amber, red: values.contextLimits.red } : null,
     keepWarmPrompt: typeof values.keepWarmPrompt === 'string' ? values.keepWarmPrompt.trim() : '',
     bindingProfileId: typeof values.bindingProfileId === 'string' ? values.bindingProfileId : '',
     submitSuffix: typeof values.submitSuffix === 'string' ? values.submitSuffix : '\\r',

@@ -208,6 +208,8 @@ describe('HelmSessionService context size', () => {
       percent: 50,
       measuredAtIso: '2026-10-10T09:30:00.000Z',
       source: 'transcript',
+      limits: { amber: 150_000, red: 180_000 },
+      level: 'ok',
     });
     expect(service.listSessions()[0]).not.toHaveProperty('context');
   });
@@ -235,7 +237,22 @@ describe('HelmSessionService context size', () => {
       window: 10_000,
       percent: 25,
       source: 'api',
+      limits: { amber: 7_500, red: 9_000 },
+      level: 'ok',
     });
+  });
+
+  it('reports the level against the CLI type manual limits', () => {
+    const sessionManager = new SessionManager();
+    sessionManager.addSession({ id: 'hot', name: 'Hot', cliType: 'api', apiTool: true } as any, true);
+    const config = {
+      getCliTypeEntry: () => ({ contextWindow: 1_000_000, contextLimits: { amber: 1_000, red: 2_000 } }),
+      getCliTypeLabel: (cliType: string) => cliType,
+    };
+    const service = new HelmSessionService(sessionManager, makePtyManager() as any, config as any, makePlanManager() as any);
+    service.setApiContextSizeLookup(() => ({ available: true, tokens: 2_500 }));
+
+    expect(service.getSession('hot')?.context).toMatchObject({ limits: { amber: 1_000, red: 2_000 }, level: 'hot' });
   });
 });
 

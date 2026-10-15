@@ -20,6 +20,7 @@ import { peerIdFromProxySessionId } from '../peer/proxy-identity.js';
 import { deviceIdFromMobileSessionId } from '../../mobile/mobile-identity.js';
 import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
 import { resolveSessionContextSize, type ApiSessionContextSize, type SessionContextSize } from '../../session/context-size.js';
+import { contextLevel, resolveContextLimits } from '../../session/context-limits.js';
 
 /**
  * Session lifecycle: list, get, spawn, close, read terminal, set AIAGENT state.
@@ -87,7 +88,15 @@ export class HelmSessionService {
 
   getSession(sessionRef: string): SessionSummary | null {
     const session = this.findSession(sessionRef);
-    return session ? { ...this.toSessionSummary(session), context: this.contextSizeFor(session) } : null;
+    return session ? { ...this.toSessionSummary(session), context: this.contextWithLevel(session) } : null;
+  }
+
+  /** The context size plus the amber/red limits the session row draws, so an LLM sees what the user sees. */
+  private contextWithLevel(session: SessionInfo): SessionContextSize {
+    const context = this.contextSizeFor(session);
+    if (!context.known) return context;
+    const limits = resolveContextLimits(this.configLoader.getCliTypeEntry(session.cliType), context.window);
+    return limits ? { ...context, limits, level: contextLevel(context.tokens, limits) } : context;
   }
 
   getSessionContextSize(sessionId: string): SessionContextSize | undefined {

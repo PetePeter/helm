@@ -1,4 +1,5 @@
 import * as path from 'path';
+import type { ContextLimits } from '../session/context-limits.js';
 
 export interface SpawnConfig {
   command: string;
@@ -110,6 +111,10 @@ export type CliTypeOptions = {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  /** Context window in tokens; 0 clears it on update. */
+  contextWindow?: number;
+  /** Manual amber/red token warnings; null clears them on update (back to auto). */
+  contextLimits?: ContextLimits | null;
   /** Keep-warm ping text; '' clears it on update (back to the default). */
   keepWarmPrompt?: string;
   mouseTracking?: boolean;

@@ -199,6 +199,9 @@ sealed interface MobileRecord {
         val contextWindow: Long? = null,
         /** API completion rounds that returned reasoning metadata; the text is never sent. */
         val thoughtCount: Int? = null,
+        /** Token counts where the context graph turns amber and red; null from an older desktop. */
+        val contextAmber: Long? = null,
+        val contextRed: Long? = null,
     ) : MobileRecord
 
     /**

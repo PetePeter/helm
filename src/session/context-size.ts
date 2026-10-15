@@ -1,9 +1,14 @@
 import { readTranscriptUsageDetails } from './transcript-usage.js';
+import type { ContextLevel, ContextLimits } from './context-limits.js';
 
 export type ContextSizeUnknownReason = 'no-transcript' | 'no-usage-yet' | 'unsupported-cli' | 'remote' | 'api-unavailable';
 
 export type SessionContextSize =
-  | { known: true; tokens: number; window?: number; percent?: number; measuredAtIso?: string; source: 'transcript' | 'api' | 'statusline' }
+  | {
+    known: true; tokens: number; window?: number; percent?: number; measuredAtIso?: string; source: 'transcript' | 'api' | 'statusline';
+    /** Amber/red token limits and where the tokens sit against them; set on `session_get`. */
+    limits?: ContextLimits; level?: ContextLevel;
+  }
   | { known: false; reason: ContextSizeUnknownReason };
 
 export type ApiSessionContextSize =

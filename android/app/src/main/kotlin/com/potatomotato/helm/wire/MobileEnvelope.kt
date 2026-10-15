@@ -333,6 +333,8 @@ object MobileEnvelope {
             fromSessionId = record.string("fromSessionId"),
             contextWindow = (record.opt("contextWindow") as? Number)?.toLong(),
             thoughtCount = (record.opt("thoughtCount") as? Number)?.toInt(),
+            contextAmber = (record.opt("contextAmber") as? Number)?.toLong(),
+            contextRed = (record.opt("contextRed") as? Number)?.toLong(),
         )
     }
 

@@ -13,6 +13,7 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
+import { resolveContextLimits } from '../../../src/session/context-limits.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
@@ -160,6 +161,11 @@ const fadeStyle = computed(() => {
   const durationMs = warnAfterMs(cli);
   return { animationDuration: `${durationMs}ms`, animationDelay: `${-(Date.now() - at)}ms` };
 });
+
+const contextLimits = computed(() => resolveContextLimits(
+  resolveCliTypeRecord(props.session.cliType),
+  props.session.contextUsage?.window,
+));
 
 // --- Local state ---
 
@@ -501,7 +507,7 @@ function onCardClick(e: MouseEvent): void {
           @mouseenter="showContextCard"
           @mouseleave="contextCardAt = null"
         >
-          <ContextSparkline :samples="rowContextSamples()" :window="session.contextUsage?.window" />
+          <ContextSparkline :samples="rowContextSamples()" :window="session.contextUsage?.window" :limits="contextLimits" />
           {{ contextUsageText }}
         </span>
         <Teleport to="body">
@@ -514,6 +520,7 @@ function onCardClick(e: MouseEvent): void {
             <ContextSparkline
               :samples="session.contextHistory"
               :window="session.contextUsage?.window"
+              :limits="contextLimits"
               :width="280"
               :height="90"
               detailed

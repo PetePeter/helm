@@ -546,9 +546,9 @@ secret or a payload, enforced by `NoPayloadInLogsTest` scanning every call site.
 
 ## Context fill graph — built from chat replies (v1)
 
-Each session row shows a small token graph of the last 2 hours with the % full under it. The open-session header shows a strip graph of the whole history, with the window limit and guides at 70% and 85%. Colours: `Accent` normally, `CacheWarn` above 70%, `Danger` above 85%. These are the same thresholds as the desktop ([session-list-previews.md](session-list-previews.md#context-fill-graph)).
+Each session row shows a small token graph of the last 2 hours with the % full under it. The open-session header shows a strip graph of the whole history, with the window limit and amber/red guides. Colours: `Accent` normally, `CacheWarn` above the amber limit, `Danger` above the red limit. The limits are the desktop's, per CLI type ([session-list-previews.md](session-list-previews.md#warning-limits--per-cli-type)): each reply carries `contextAmber`/`contextRed`, and the phone falls back to 75% / 90% of the window for a desktop that sends none.
 
-- **Why there is no wire change:** every chat reply already carries `contextTokens`/`contextWindow`. `ContextGraph.fromThread` turns a session's stored thread into its history, so the graph comes from data the phone already keeps.
+- **Why reply stats, not a new record:** every chat reply already carries `contextTokens`/`contextWindow` and now the limits. `ContextGraph.fromThread` turns a session's stored thread into its history, so the graph comes from data the phone already keeps.
 - **Limit, stated plainly:** a session that has never replied over chat has no graph. The next step would be to send the desktop's persisted `contextHistory` with each session's details.
 
 ## Why it is built this way

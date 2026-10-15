@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ContextUsageSample } from '../../../src/types/session.js';
-import { contextFillLevel, sparklineGeometry } from '../../context-sparkline.js';
+import { sparklineGeometry } from '../../context-sparkline.js';
+import { contextLevel, type ContextLimits } from '../../../src/session/context-limits.js';
 
 const props = withDefaults(defineProps<{
   samples?: ContextUsageSample[];
   window?: number;
+  /** Amber/red token counts for this session's CLI type (see context-limits.ts). */
+  limits?: ContextLimits;
   width?: number;
   height?: number;
-  /** Large variant: dashed limit line plus faint 70% / 85% guides. */
+  /** Large variant: dashed limit line plus faint amber / red guides. */
   detailed?: boolean;
 }>(), { width: 48, height: 14, detailed: false });
 
@@ -19,10 +22,12 @@ const geometry = computed(() => sparklineGeometry(props.samples, props.window, {
 }));
 const level = computed(() => {
   const last = props.samples?.at(-1);
-  return last ? contextFillLevel({ tokens: last.tokens, window: props.window }) : 'ok';
+  return last ? contextLevel(last.tokens, props.limits) : 'ok';
 });
-const guides = computed(() => (props.detailed && props.window
-  ? [0.7, 0.85].map((fill) => ({ fill, y: (props.height - pad.value * 2) * (1 - fill) }))
+const guides = computed(() => (props.detailed && props.window && props.limits
+  ? [props.limits.amber, props.limits.red]
+    .map((tokens) => Math.min(tokens / props.window!, 1))
+    .map((fill) => ({ fill, y: (props.height - pad.value * 2) * (1 - fill) }))
   : []));
 </script>
 

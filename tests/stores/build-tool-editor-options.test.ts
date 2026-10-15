@@ -124,6 +124,9 @@ describe('buildToolEditorOptions', () => {
       messReminders: true,
       mouseTracking: true,
       noPromptCache: false,
+      // Always stated, so clearing them on update returns to the auto window / limits.
+      contextWindow: 0,
+      contextLimits: null,
       // Always stated, so blanking the field clears a stored text back to the default.
       keepWarmPrompt: '',
       bindingProfileId: '',

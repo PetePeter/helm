@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextFillLevel, sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
+import { sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
 
 describe('sparklineGeometry', () => {
   it('scales points against the context window, newest on the right edge', () => {
@@ -43,11 +43,3 @@ describe('windowSamples', () => {
   });
 });
 
-describe('contextFillLevel', () => {
-  it('turns amber above 70% and red above 85% of the window', () => {
-    expect(contextFillLevel({ tokens: 70, window: 100 })).toBe('ok');
-    expect(contextFillLevel({ tokens: 71, window: 100 })).toBe('warn');
-    expect(contextFillLevel({ tokens: 86, window: 100 })).toBe('hot');
-    expect(contextFillLevel({ tokens: 99 })).toBe('ok');
-  });
-});

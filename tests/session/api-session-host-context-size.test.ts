@@ -51,6 +51,8 @@ describe('ApiSessionHost context size', () => {
           window: 100_000,
           percent: 12,
           source: 'api',
+          limits: { amber: 75_000, red: 90_000 },
+          level: 'ok',
         });
       });
     } finally {

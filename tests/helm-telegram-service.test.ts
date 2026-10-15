@@ -176,7 +176,7 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
   }
 
   /** The service over a real broker with one recording chat surface. */
-  function chatService(session: Record<string, unknown>, cliTypes: Record<string, { contextWindow?: number }> = {}) {
+  function chatService(session: Record<string, unknown>, cliTypes: Record<string, { contextWindow?: number; contextLimits?: { amber: number; red: number } }> = {}) {
     const sent: ChatOutboundMessage[] = [];
     const broker = new ChatBroker();
     broker.register({
@@ -205,7 +205,7 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
   it('adds the CLI type\'s configured window when the transcript names none', async () => {
     const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
     await svc.sendTelegramChat('cli-1', 'done');
-    expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextWindow: 200_000 });
+    expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
   });
 
   it('keeps Codex\'s reported model window ahead of the configured fallback', async () => {
@@ -224,13 +224,13 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
     );
 
     await svc.sendTelegramChat('cli-1', 'done');
-    expect(sent[0].usage).toEqual({ contextTokens: 125_000, contextWindow: 250_000 });
+    expect(sent[0].usage).toEqual({ contextTokens: 125_000, contextWindow: 250_000, contextAmber: 187_500, contextRed: 225_000 });
   });
 
   it('keeps the usage an API session passed rather than reading a transcript', async () => {
     const { svc, sent } = chatService(cliSession(60_000), { claude: { contextWindow: 200_000 } });
     await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 1234, toolCalls: 2 });
-    expect(sent[0].usage).toEqual({ contextTokens: 1234, toolCalls: 2, contextWindow: 200_000 });
+    expect(sent[0].usage).toEqual({ contextTokens: 1234, toolCalls: 2, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
   });
 
   it('preserves API tool-call usage when the reported context count is zero', async () => {
@@ -238,7 +238,13 @@ describe('HelmTelegramService.sendTelegramChat usage badge', () => {
     const { svc, sent } = chatService(apiSession, { api: { contextWindow: 200_000 } });
 
     await svc.sendTelegramChat('cli-1', 'done', undefined, { contextTokens: 0, toolCalls: 2 });
-    expect(sent[0].usage).toEqual({ contextTokens: 0, toolCalls: 2, contextWindow: 200_000 });
+    expect(sent[0].usage).toEqual({ contextTokens: 0, toolCalls: 2, contextWindow: 200_000, contextAmber: 150_000, contextRed: 180_000 });
+  });
+
+  it('sends the CLI type’s manual amber/red limits even with no window known', async () => {
+    const { svc, sent } = chatService(cliSession(60_000), { claude: { contextLimits: { amber: 50_000, red: 80_000 } } });
+    await svc.sendTelegramChat('cli-1', 'done');
+    expect(sent[0].usage).toEqual({ contextTokens: 60_000, contextAmber: 50_000, contextRed: 80_000 });
   });
 
   it('still sends, without a badge, when the session has no transcript', async () => {

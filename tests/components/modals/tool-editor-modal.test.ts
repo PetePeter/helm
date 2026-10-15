@@ -210,6 +210,27 @@ describe('ToolEditorModal.vue', () => {
     w.unmount();
   });
 
+  it('manual context warnings: the tick box reveals amber/red, blocks red <= amber, and saves token counts', async () => {
+    const w = factory({ initialData: { ...DEFAULT_DATA, name: 'Claude' } });
+    const save = async () => { await w.findAll('button').find(b => b.text() === 'Save')!.trigger('click'); await flushPromises(); };
+    expect(w.find('#te-context-amber').exists()).toBe(false);
+    await save();
+    expect((w.emitted('save')![0][0] as Record<string, unknown>).contextLimits).toBeNull();
+
+    const tick = w.findAll('.te-checkbox-row').find(r => r.text() === 'Manual context warnings')!.find('input');
+    await tick.setValue(true);
+    await w.find('#te-context-amber').setValue(120_000);
+    await w.find('#te-context-red').setValue(100_000);
+    await save();
+    expect(w.emitted('save')).toHaveLength(1);
+    expect(w.find('[role="alert"]').text()).toContain('Red must be above amber');
+
+    await w.find('#te-context-red').setValue(150_000);
+    await save();
+    expect((w.emitted('save')![1][0] as Record<string, unknown>).contextLimits).toEqual({ amber: 120_000, red: 150_000 });
+    w.unmount();
+  });
+
   it('round-trips the Mess reminders checkbox and omits it when left on', async () => {
     const w = factory({ initialData: { ...DEFAULT_DATA } });
     const checkbox = w.findAll('.te-checkbox-row input')[2];

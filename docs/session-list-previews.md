@@ -53,7 +53,7 @@ blue for a first send, amber for a reply within the reply window.
 
 ## Context fill graph
 
-The `ctx` label on each row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS`). Every row uses the same span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the label opens a larger chart of the whole stored history, with the window limit and guides at 70% and 85%.
+The `ctx` label on each row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS`). Every row uses the same span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the label opens a larger chart of the whole stored history, with the window limit and guides at the amber and red limits.
 
 ```mermaid
 graph LR
@@ -65,5 +65,25 @@ graph LR
 
 - **Why the tracker owns the history:** every snapshot already passes through `SessionContextUsageTracker.storeUsage`, so each reading lands in `contextHistory` without a second producer. The history is capped at `CONTEXT_HISTORY_LIMIT` (120) points, and a reading equal to the last one is skipped, so idle refreshes do not flatten the trend.
 - **Why it is persisted:** a restored session keeps its trend, including any `/compact` drops, which appear as ordinary points.
-- **Colour:** the graph is `--accent`, turning `--status-blocked` (amber) above 70% and `--danger` above 85% of the window. With no known window it scales to the peak and stays green.
+- **Colour:** the graph is `--accent`, turning `--status-blocked` (amber) above the amber limit and `--danger` above the red limit. With no known window it scales to the peak; with no limits it stays green.
+
+### Warning limits — per CLI type
+
+One rule, `src/session/context-limits.ts`, serves the desktop row, `session_get` and the phone:
+
+```mermaid
+graph LR
+  Y[cli-types.yaml<br/>contextLimits?] --> R{manual limits set<br/>and red &gt; amber?}
+  W[context window<br/>CLI-reported or contextWindow] --> R
+  R -->|yes| M[amber / red tokens as set]
+  R -->|no, window known| A[75% / 90% of window]
+  R -->|no window| N[no limits: stays green]
+  M & A --> D[SessionCard sparkline]
+  M & A --> G[session_get: limits + level]
+  M & A --> P[chat reply: contextAmber / contextRed]
+```
+
+- **Auto by default:** amber above 75%, red above 90% of the window.
+- **Manual:** Settings → CLI tools → *Manual context warnings* stores `contextLimits: { amber, red }` in tokens. Absolute counts suit long-window models where 75% is far past where quality drops. The same screen edits `contextWindow`, the fallback window for CLIs that report none.
+- **Why the row resolves limits itself:** `SessionCard` already looks up its CLI type for the cache fade, so a settings change recolours rows at once, with no new field on the persisted snapshot.
 - **Hover card:** it is fixed-position and teleported to `body`, so the sidebar's scroll container cannot clip it.

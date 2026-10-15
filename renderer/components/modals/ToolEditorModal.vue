@@ -14,6 +14,7 @@ import { toolsClient } from '../../ipc/clients.js';
 import type { ToolEditorApiConfig, ToolEditorComfyUiConfig } from '../../stores/modal-bridge.js';
 import { cloneDefaultComfyUiConfig } from '../../../src/session/comfyui/comfyui-config.js';
 import { SUGGESTED_HEADLESS_COMMANDS } from '../../../src/session/headless-command.js';
+import { isValidContextLimits, type ContextLimits } from '../../../src/session/context-limits.js';
 
 const MODAL_ID = 'tool-editor-modal';
 /** Tooltip of the Headless Command field: what it is for, and a line that works. */
@@ -61,6 +62,8 @@ export interface ToolEditorData {
   cacheWarnMinutes?: number;
   cacheExpireMinutes?: number;
   noPromptCache?: boolean;
+  contextWindow?: number;
+  contextLimits?: ContextLimits;
   keepWarmPrompt?: string;
   mouseTracking?: boolean;
   bindingProfileId?: string;
@@ -96,6 +99,8 @@ const emit = defineEmits<{
     cacheWarnMinutes?: number;
     cacheExpireMinutes?: number;
     noPromptCache?: boolean;
+    contextWindow: number;
+    contextLimits: ContextLimits | null;
     keepWarmPrompt: string;
     mouseTracking?: boolean;
     bindingProfileId: string;
@@ -125,6 +130,12 @@ const messReminders = ref(true);
 const cacheWarnMinutes = ref(DEFAULT_CACHE_WARN_MINUTES);
 const cacheExpireMinutes = ref(DEFAULT_CACHE_EXPIRE_MINUTES);
 const mouseTracking = ref(false);
+const contextWindow = ref(0);
+const manualContextLimits = ref(false);
+const contextAmber = ref(0);
+const contextRed = ref(0);
+const contextLimitsValid = computed(() => !manualContextLimits.value
+  || isValidContextLimits({ amber: contextAmber.value, red: contextRed.value }));
 const noPromptCache = ref(false);
 type ToolKind = 'cli' | 'api' | 'comfyui';
 const noPromptCacheByKind = ref<Record<ToolKind, boolean>>({ cli: false, api: false, comfyui: true });
@@ -314,6 +325,10 @@ function initForm(): void {
   cacheWarnMinutes.value = d.cacheWarnMinutes || DEFAULT_CACHE_WARN_MINUTES;
   cacheExpireMinutes.value = d.cacheExpireMinutes || DEFAULT_CACHE_EXPIRE_MINUTES;
   mouseTracking.value = Boolean(d.mouseTracking);
+  contextWindow.value = d.contextWindow ?? 0;
+  manualContextLimits.value = Boolean(d.contextLimits);
+  contextAmber.value = d.contextLimits?.amber ?? 0;
+  contextRed.value = d.contextLimits?.red ?? 0;
   noPromptCacheByKind.value = {
     cli: kind === 'cli' && Boolean(d.noPromptCache),
     api: kind === 'api' && Boolean(d.noPromptCache),
@@ -374,7 +389,7 @@ function onSave(): void {
   // Validate before emitting: the host closes the modal on save, so a rejected
   // name has to stop here or the user loses the form and never sees why.
   nameError.value = props.validateName?.(name.value) ?? null;
-  if (nameError.value) return;
+  if (nameError.value || !contextLimitsValid.value) return;
   if (toolKind.value === 'comfyui') {
     if (!commitComfyProfile()) return;
     try {
@@ -405,6 +420,8 @@ function onSave(): void {
     cacheWarnMinutes: cacheWarnMinutes.value,
     cacheExpireMinutes: cacheExpireMinutes.value,
     mouseTracking: mouseTracking.value,
+    contextWindow: contextWindow.value || 0,
+    contextLimits: manualContextLimits.value ? { amber: contextAmber.value, red: contextRed.value } : null,
     noPromptCache: noPromptCache.value,
     keepWarmPrompt: keepWarmPrompt.value,
     bindingProfileId: bindingProfileId.value,
@@ -634,6 +651,14 @@ defineExpose({ handleButton });
             <div class="te-field"><label for="te-cache-warn">Short cache (minutes)</label><input id="te-cache-warn" v-model.number="cacheWarnMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <div class="te-field"><label for="te-cache-expire">Long cache (minutes)</label><input id="te-cache-expire" v-model.number="cacheExpireMinutes" :disabled="noPromptCache" type="number" min="1" step="1" class="te-input focusable" /></div>
             <p class="te-section__hint">Minutes since the last prompt. Past the short cache the row has faded, Mess reminders stop and an orange warning shows above the terminal; past the long cache it turns red. With no prompt cache, none of this applies: no fade, no warning, no auto-freeze.</p>
+            <div class="te-field"><label for="te-context-window">Context window (tokens)</label><input id="te-context-window" v-model.number="contextWindow" type="number" min="0" step="1000" placeholder="auto" class="te-input focusable" /></div>
+            <label class="te-checkbox-row"><input v-model="manualContextLimits" type="checkbox" /><span>Manual context warnings</span></label>
+            <template v-if="manualContextLimits">
+              <div class="te-field"><label for="te-context-amber">Amber above (tokens)</label><input id="te-context-amber" v-model.number="contextAmber" type="number" min="1" step="1000" class="te-input focusable" /></div>
+              <div class="te-field"><label for="te-context-red">Red above (tokens)</label><input id="te-context-red" v-model.number="contextRed" type="number" min="1" step="1000" class="te-input focusable" /></div>
+              <p v-if="!contextLimitsValid" class="te-error" role="alert">Red must be above amber, both above 0.</p>
+            </template>
+            <p class="te-section__hint">The session row's context graph turns amber and red past these limits. Unticked: 75% and 90% of the context window. The window comes from the CLI when it reports one (Claude, Codex, Copilot); otherwise from the field above.</p>
             <div class="te-field">
               <label for="te-keep-warm">Heartbeat text</label>
               <input id="te-keep-warm" v-model="keepWarmPrompt" :disabled="noPromptCache" type="text" :placeholder="KEEP_WARM_DEFAULT_TEXT" class="te-input focusable" />

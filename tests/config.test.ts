@@ -420,6 +420,18 @@ describe('ConfigLoader', () => {
       expect(loader.getSpawnConfig('claude-code')).toEqual({ command: 'cc', args: [] });
     });
 
+    it('updateCliType saves and clears the context window and manual context limits', () => {
+      loader.load();
+      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
+      expect(loader.getCliTypeEntry('claude-code')).toMatchObject({ contextWindow: 1_000_000, contextLimits: { amber: 300_000, red: 400_000 } });
+
+      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextLimits: { amber: 400_000, red: 300_000 } });
+      expect(loader.getCliTypeEntry('claude-code')?.contextLimits).toBeUndefined();
+
+      loader.updateCliType('claude-code', 'Claude Code', [], 0, { contextWindow: 0, contextLimits: null });
+      expect(loader.getCliTypeEntry('claude-code')?.contextWindow).toBeUndefined();
+    });
+
     it('updateCliType throws for non-existent key', () => {
       loader.load();
       expect(() => loader.updateCliType('nope', 'X', ''))

@@ -18,6 +18,7 @@ import { resolveSessionContextSize } from '../../session/context-size.js';
 import { validateMobileFriendlyTelegramText } from '../../telegram/utils.js';
 import { PiperTts } from '../../voice/piper-tts.js';
 import { getTempDir } from '../../utils/app-paths.js';
+import { resolveContextLimits } from '../../session/context-limits.js';
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 
@@ -169,10 +170,20 @@ export class HelmTelegramService {
    * The context-size badge for a reply. An API tool hands its own usage in; a
    * CLI cannot, so its is read from the transcript its hooks reported. The
    * window comes with the usage when the CLI logs one (Codex), else from the
-   * CLI type's `contextWindow`.
+   * CLI type's `contextWindow`. The amber/red limits ride along for the phone's graph.
    */
   private usageBadge(session: SessionInfo, reported: ChatTurnUsage | undefined): ChatTurnUsage | undefined {
     const cliEntry = this.configLoader.getCliTypeEntry(session.cliType);
+    const usage = this.contextUsage(session, reported, cliEntry);
+    const limits = usage && resolveContextLimits(cliEntry, usage.contextWindow);
+    return limits ? { ...usage, contextAmber: limits.amber, contextRed: limits.red } : usage;
+  }
+
+  private contextUsage(
+    session: SessionInfo,
+    reported: ChatTurnUsage | undefined,
+    cliEntry: ReturnType<ConfigLoader['getCliTypeEntry']>,
+  ): ChatTurnUsage | undefined {
     if (!reported && session.contextUsage?.source === 'statusline') {
       return {
         contextTokens: session.contextUsage.tokens,

@@ -56,6 +56,15 @@ describe('mobile envelope round-trips', () => {
     expect(decodeRecord(Buffer.from(encoded))).toMatchObject({ thoughtCount: 3 });
   });
 
+  it('appends the context amber/red limits after the thought count and round-trips them', () => {
+    const encoded = encodeChat({
+      sessionId: 's1', sessionName: 'work', text: 'answer', at: 1,
+      contextTokens: 1200, contextWindow: 32000, thoughtCount: 3, contextAmber: 24000, contextRed: 28800,
+    }).toString('utf8');
+    expect(encoded).toBe('{"v":1,"t":"chat","sessionId":"s1","sessionName":"work","text":"answer","at":1,"contextTokens":1200,"contextWindow":32000,"thoughtCount":3,"contextAmber":24000,"contextRed":28800}');
+    expect(decodeRecord(Buffer.from(encoded))).toMatchObject({ contextAmber: 24000, contextRed: 28800 });
+  });
+
   it('appends an alert kind last, and omits it entirely from a plain message', () => {
     // Key order is part of this format: `kind` goes after the other optional
     // keys so a record with every field set stays byte-predictable, and a

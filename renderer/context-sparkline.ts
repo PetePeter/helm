@@ -1,8 +1,7 @@
-import type { ContextUsageSample, SessionContextUsageSnapshot } from '../src/types/session.js';
+import type { ContextUsageSample } from '../src/types/session.js';
 
 export interface SparklinePoint { x: number; y: number }
 export interface SparklineGeometry { points: SparklinePoint[]; line: string; area: string }
-export type ContextFillLevel = 'ok' | 'warn' | 'hot';
 
 const round = (n: number): number => Math.round(n * 10) / 10;
 
@@ -50,8 +49,3 @@ export function windowSamples(
   return last.at < to ? [...clipped, { at: to, tokens: last.tokens }] : clipped;
 }
 
-export function contextFillLevel(usage: Pick<SessionContextUsageSnapshot, 'tokens' | 'window'>): ContextFillLevel {
-  if (!usage.window || usage.window <= 0) return 'ok';
-  const fill = usage.tokens / usage.window;
-  return fill > 0.85 ? 'hot' : fill > 0.7 ? 'warn' : 'ok';
-}

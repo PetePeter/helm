@@ -66,6 +66,8 @@ data class ChatMessage(
     val toolCalls: Int? = null,
     val contextWindow: Long? = null,
     val thoughtCount: Int? = null,
+    val contextAmber: Long? = null,
+    val contextRed: Long? = null,
     /** Selected ComfyUI profile for a retryable phone send. */
     val comfyProfileId: String? = null,
     /** Selected ComfyUI image size for a retryable phone send. */
@@ -381,6 +383,8 @@ class ChatRepository(
         toolCalls = record.toolCalls,
         contextWindow = record.contextWindow,
         thoughtCount = record.thoughtCount,
+        contextAmber = record.contextAmber,
+        contextRed = record.contextRed,
     )
 
     /**

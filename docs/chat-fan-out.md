@@ -492,7 +492,9 @@ graph LR
   [CLI hooks](cli-hooks.md). A read that fails for any reason drops the badge,
   never the message.
 
-On the wire this is `contextTokens` plus an optional trailing `contextWindow`
+On the wire this is `contextTokens` plus optional trailing `contextWindow`,
+`contextAmber` and `contextRed` (the per-CLI warning limits, see
+[session-list-previews.md](session-list-previews.md#warning-limits--per-cli-type))
 on the chat record; `toolCalls` stays API-only.
 
 ## Deleting messages

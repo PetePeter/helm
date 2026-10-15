@@ -5,8 +5,11 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ContextGraphTest {
-    private fun reply(at: Long, tokens: Long?, window: Long? = null) =
-        ChatMessage(key = "k$at", text = "r", at = at, fromPhone = false, contextTokens = tokens, contextWindow = window)
+    private fun reply(at: Long, tokens: Long?, window: Long? = null, amber: Long? = null, red: Long? = null) =
+        ChatMessage(
+            key = "k$at", text = "r", at = at, fromPhone = false,
+            contextTokens = tokens, contextWindow = window, contextAmber = amber, contextRed = red,
+        )
 
     @Test
     fun buildsHistoryFromRepliesInTimeOrderWithTheLatestWindow() {
@@ -39,10 +42,19 @@ class ContextGraphTest {
     }
 
     @Test
-    fun levelTurnsAmberAbove70AndRedAbove85Percent() {
-        assertEquals(ContextLevel.Ok, ContextGraph.level(70, 100))
-        assertEquals(ContextLevel.Warn, ContextGraph.level(71, 100))
-        assertEquals(ContextLevel.Hot, ContextGraph.level(86, 100))
-        assertEquals(ContextLevel.Ok, ContextGraph.level(99, null))
+    fun usesTheLimitsTheDesktopSentElseFallsBackTo75And90PercentOfTheWindow() {
+        assertEquals(ContextLimits(50, 80), ContextGraph.fromThread(listOf(reply(1, 10, 1000, 50, 80), reply(2, 20, 1000)))!!.limits)
+        assertEquals(ContextLimits(750, 900), ContextGraph.fromThread(listOf(reply(1, 10, 1000)))!!.limits)
+        assertNull(ContextGraph.fromThread(listOf(reply(1, 10)))!!.limits)
+    }
+
+    @Test
+    fun levelTurnsAmberAboveAmberAndRedAboveRed() {
+        val limits = ContextLimits(75, 90)
+        assertEquals(ContextLevel.Ok, ContextGraph.level(75, limits))
+        assertEquals(ContextLevel.Warn, ContextGraph.level(76, limits))
+        assertEquals(ContextLevel.Warn, ContextGraph.level(90, limits))
+        assertEquals(ContextLevel.Hot, ContextGraph.level(91, limits))
+        assertEquals(ContextLevel.Ok, ContextGraph.level(1_000_000, null))
     }
 }

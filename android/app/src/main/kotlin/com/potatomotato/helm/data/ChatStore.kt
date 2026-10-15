@@ -136,6 +136,8 @@ internal object ChatSnapshotJson {
         message.toolCalls?.let { put("toolCalls", it) }
         message.contextWindow?.let { put("contextWindow", it) }
         message.thoughtCount?.let { put("thoughtCount", it) }
+        message.contextAmber?.let { put("contextAmber", it) }
+        message.contextRed?.let { put("contextRed", it) }
         message.comfyProfileId?.let { put("comfyProfileId", it) }
         message.comfyImageSizeId?.let { put("comfyImageSizeId", it) }
         message.comfyInputImagePath?.let { put("comfyInputImagePath", it) }
@@ -204,6 +206,8 @@ internal object ChatSnapshotJson {
         toolCalls = if (row.has("toolCalls")) row.getInt("toolCalls") else null,
         contextWindow = if (row.has("contextWindow")) row.getLong("contextWindow") else null,
         thoughtCount = if (row.has("thoughtCount")) row.getInt("thoughtCount") else null,
+        contextAmber = if (row.has("contextAmber")) row.getLong("contextAmber") else null,
+        contextRed = if (row.has("contextRed")) row.getLong("contextRed") else null,
         comfyProfileId = if (row.has("comfyProfileId")) row.getString("comfyProfileId") else null,
         comfyImageSizeId = if (row.has("comfyImageSizeId")) row.getString("comfyImageSizeId") else null,
         comfyInputImagePath = if (row.has("comfyInputImagePath")) row.getString("comfyInputImagePath") else null,

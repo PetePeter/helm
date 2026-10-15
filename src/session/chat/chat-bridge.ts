@@ -45,6 +45,9 @@ export interface ChatTurnUsage {
   /** API completion rounds that returned reasoning metadata. */
   thoughtCount?: number;
   contextWindow?: number;
+  /** Token counts where the context graph turns amber and red (context-limits.ts). */
+  contextAmber?: number;
+  contextRed?: number;
 }
 
 /** Where a chat file lives once Helm owns a copy of it. */

@@ -2,6 +2,7 @@ import { headlessCommandProblem } from '../session/headless-command.js';
 import * as fs from 'fs';
 import { DEFAULT_CACHE_EXPIRE_MINUTES, DEFAULT_CACHE_WARN_MINUTES } from '../session/prompt-staleness.js';
 import * as path from 'path';
+import { isValidContextLimits, type ContextLimits } from '../session/context-limits.js';
 import { randomUUID } from 'crypto';
 import logger from '../utils/logger.js';
 import { getConfigDir, isPackaged, seedConfigIfNeeded } from '../utils/app-paths.js';
@@ -212,6 +213,9 @@ export interface CliTypeConfig {
   /** The model's context window in tokens — turns a chat reply's context badge into
    *  "% full". Unset: the badge shows the count alone, unless the CLI logs its own window (Codex). */
   contextWindow?: number;
+  /** Manual amber/red context warnings in tokens. Unset: 75% / 90% of the window
+   *  (see src/session/context-limits.ts). */
+  contextLimits?: ContextLimits;
   /** The text of a keep-warm ping (sequence syntax), sent 10 s before the short
    *  cache lapses. KeepWarmer wraps it in the heartbeat markers at send time.
    *  Default also suggests Quick Compact near 200k and checking any in-flight
@@ -1451,6 +1455,8 @@ export class ConfigLoader {
     if (options?.messReminders === false) tool.messReminders = false;
     if (options?.cacheWarnMinutes && options.cacheWarnMinutes !== DEFAULT_CACHE_WARN_MINUTES) tool.cacheWarnMinutes = options.cacheWarnMinutes;
     if (options?.cacheExpireMinutes && options.cacheExpireMinutes !== DEFAULT_CACHE_EXPIRE_MINUTES) tool.cacheExpireMinutes = options.cacheExpireMinutes;
+    if (options?.contextWindow && options.contextWindow > 0) tool.contextWindow = options.contextWindow;
+    if (options?.contextLimits && isValidContextLimits(options.contextLimits)) tool.contextLimits = { ...options.contextLimits };
     if (options?.noPromptCache === true) tool.noPromptCache = true;
     else if (options?.comfyUi) tool.noPromptCache = options.noPromptCache ?? true;
     if (options?.keepWarmPrompt) tool.keepWarmPrompt = options.keepWarmPrompt;
@@ -1544,6 +1550,14 @@ export class ConfigLoader {
         if (val === undefined) continue;
         if (!val || val === fallback) delete existing[field];
         else existing[field] = val;
+      }
+      if (options.contextWindow !== undefined) {
+        if (options.contextWindow > 0) existing.contextWindow = options.contextWindow;
+        else delete existing.contextWindow;
+      }
+      if (options.contextLimits !== undefined) {
+        if (options.contextLimits && isValidContextLimits(options.contextLimits)) existing.contextLimits = { ...options.contextLimits };
+        else delete existing.contextLimits; // null or invalid: back to auto
       }
       if (options.noPromptCache !== undefined) {
         const hasComfyUi = options.comfyUi === null ? false : options.comfyUi !== undefined ? Boolean(options.comfyUi) : Boolean(existing.comfyUi);

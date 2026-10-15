@@ -29,6 +29,7 @@ import com.potatomotato.helm.R
 import com.potatomotato.helm.data.ContextGraph
 import com.potatomotato.helm.data.ContextHistory
 import com.potatomotato.helm.data.ContextLevel
+import com.potatomotato.helm.data.ContextLimits
 import com.potatomotato.helm.data.ContextSample
 import com.potatomotato.helm.data.replyStats
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -45,22 +46,27 @@ fun ContextLevel.color(): Color = when (this) {
 fun ContextSparkline(
     samples: List<ContextSample>,
     window: Long?,
+    limits: ContextLimits?,
     modifier: Modifier = Modifier,
     detailed: Boolean = false,
 ) {
     if (samples.size < 2) return
-    val color = ContextGraph.level(samples.last().tokens, window).color()
+    val color = ContextGraph.level(samples.last().tokens, limits).color()
     Canvas(modifier) {
         val first = samples.first().at
         val span = (samples.last().at - first).coerceAtLeast(1L).toFloat()
         val ceiling = (window?.takeIf { it > 0 } ?: samples.maxOf { it.tokens }).coerceAtLeast(1L).toFloat()
         fun x(s: ContextSample) = (s.at - first) / span * size.width
         fun y(fill: Float) = size.height - fill.coerceIn(0f, 1f) * size.height
-        if (detailed && window != null) {
+        if (detailed && window != null && window > 0) {
             val dash = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
             drawLine(HelmColors.Faint, Offset(0f, y(1f)), Offset(size.width, y(1f)), pathEffect = dash)
-            drawLine(HelmColors.CacheWarn.copy(alpha = 0.3f), Offset(0f, y(0.7f)), Offset(size.width, y(0.7f)))
-            drawLine(HelmColors.Danger.copy(alpha = 0.3f), Offset(0f, y(0.85f)), Offset(size.width, y(0.85f)))
+            limits?.let {
+                val amber = y(it.amber.toFloat() / window)
+                val red = y(it.red.toFloat() / window)
+                drawLine(HelmColors.CacheWarn.copy(alpha = 0.3f), Offset(0f, amber), Offset(size.width, amber))
+                drawLine(HelmColors.Danger.copy(alpha = 0.3f), Offset(0f, red), Offset(size.width, red))
+            }
         }
         val line = Path().apply {
             samples.forEachIndexed { i, s ->
@@ -88,13 +94,13 @@ fun ContextRowGraph(history: ContextHistory, now: Long) {
         ContextSparkline(
             samples = ContextGraph.window(history.samples, now - ContextGraph.ROW_SPAN_MS, now),
             window = history.window,
+            limits = history.limits,
             modifier = Modifier.size(width = 40.dp, height = 12.dp),
         )
         history.window?.takeIf { it > 0 }?.let { window ->
             Text(
                 text = "${Math.round(last.tokens * 100.0 / window)}%",
-                color = if (ContextGraph.level(last.tokens, window) == ContextLevel.Ok) HelmColors.Dim
-                else ContextGraph.level(last.tokens, window).color(),
+                color = ContextGraph.level(last.tokens, history.limits).let { if (it == ContextLevel.Ok) HelmColors.Dim else it.color() },
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
             )
@@ -102,7 +108,7 @@ fun ContextRowGraph(history: ContextHistory, now: Long) {
     }
 }
 
-/** The open-session header strip: the whole history, limit and 70/85% guides. */
+/** The open-session header strip: the whole history, limit and amber/red guides. */
 @Composable
 fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
     val last = history.samples.last()
@@ -118,7 +124,7 @@ fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
             Text(stringResource(R.string.session_context_label), color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall)
             Text(
                 text = replyStats(last.tokens, null, history.window).orEmpty(),
-                color = ContextGraph.level(last.tokens, history.window).color(),
+                color = ContextGraph.level(last.tokens, history.limits).color(),
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
             )
@@ -126,6 +132,7 @@ fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
         ContextSparkline(
             samples = history.samples,
             window = history.window,
+            limits = history.limits,
             modifier = Modifier.fillMaxWidth().height(40.dp).padding(top = 4.dp),
             detailed = true,
         )
