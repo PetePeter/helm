@@ -62,6 +62,15 @@ describe('readTranscriptUsage', () => {
     });
   });
 
+  it('skips Copilot sub-agent usage records, which measure the sub-agent\'s context', () => {
+    const path = transcript([
+      { type: 'session.usage_record', data: { usage: { inputTokens: 40_000, outputTokens: 100, maxPromptTokens: 272_000, initiator: 'agent', interactionType: 'conversation-agent' } } },
+      { type: 'session.usage_record', agentId: 'dc127fa9', data: { usage: { inputTokens: 29_211, outputTokens: 296, maxPromptTokens: 272_000, initiator: 'sub-agent', interactionType: 'conversation-subagent', parentToolCallId: 'toolu_01' } } },
+    ]);
+
+    expect(readTranscriptUsage(path)).toEqual({ contextTokens: 40_100, contextWindow: 272_000 });
+  });
+
   it('ignores Copilot usage records without a usable prompt size or window', () => {
     const path = transcript([
       { type: 'session.usage_record', data: { usage: { inputTokens: 0, outputTokens: 5, maxPromptTokens: 272_000 } } },

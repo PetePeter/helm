@@ -233,6 +233,24 @@ describe('TimeTracker tokens', () => {
     expect(total(t)).toBe(80_000);
   });
 
+  it("counts a sub-agent's first reading in full, then its rises, apart from the main context", () => {
+    const t = tracker();
+    t.recordTokens('a1', 10_000);
+    t.recordSubagentTokens('a1', 'agent-x', 30_000);
+    t.recordSubagentTokens('a1', 'agent-x', 30_000); // re-read: nothing new
+    t.recordSubagentTokens('a1', 'agent-x', 45_000);
+    t.recordSubagentTokens('a1', 'agent-y', 5_000);
+    t.recordTokens('a1', 12_000);
+    expect(total(t)).toBe(45_000 + 5_000 + 2_000);
+  });
+
+  it('counts only the growth of a sub-agent primed from before a restart', () => {
+    const t = tracker();
+    t.primeSubagentTokens('a1', 'agent-x', 30_000);
+    t.recordSubagentTokens('a1', 'agent-x', 34_000);
+    expect(total(t)).toBe(4_000);
+  });
+
   it('adds the post-drop context when it falls (compact, /clear)', () => {
     const t = tracker();
     t.recordTokens('a1', 0);

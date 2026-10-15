@@ -91,8 +91,25 @@ export class TimeTracker {
 
   /** A context-size reading: a rise adds the growth, a drop adds the new context. */
   recordTokens(sessionId: string, tokens: number): void {
-    const prev = this.lastTokens.get(sessionId);
-    this.lastTokens.set(sessionId, tokens);
+    this.addTokens(sessionId, sessionId, tokens, undefined);
+  }
+
+  /**
+   * A sub-agent's context reading. Its whole context is new work, so the
+   * baseline is zero; each sub-agent is a stream of its own beside the main one.
+   */
+  recordSubagentTokens(sessionId: string, agentKey: string, tokens: number): void {
+    this.addTokens(sessionId, `${sessionId}#${agentKey}`, tokens, 0);
+  }
+
+  /** A sub-agent already counted before Helm started: only its later growth is new. */
+  primeSubagentTokens(sessionId: string, agentKey: string, tokens: number): void {
+    this.lastTokens.set(`${sessionId}#${agentKey}`, tokens);
+  }
+
+  private addTokens(sessionId: string, stream: string, tokens: number, baseline: number | undefined): void {
+    const prev = this.lastTokens.get(stream) ?? baseline;
+    this.lastTokens.set(stream, tokens);
     if (prev === undefined) return;
     const added = tokens >= prev ? tokens - prev : tokens;
     if (!added) return;
@@ -103,6 +120,12 @@ export class TimeTracker {
     const slot = map.get(where.projectKey) ?? { start, kind: 'tokens' as const, ...where, tokens: 0 };
     slot.tokens! += added;
     map.set(where.projectKey, slot);
+  }
+
+  private forgetTokens(sessionId: string): void {
+    for (const stream of this.lastTokens.keys()) {
+      if (stream === sessionId || stream.startsWith(`${sessionId}#`)) this.lastTokens.delete(stream);
+    }
   }
 
   /** The session was given a prompt: from now on its activity is AI work. */
@@ -125,7 +148,7 @@ export class TimeTracker {
   tick(): void {
     for (const id of this.aiActive) {
       // A closed session never reports going quiet; drop it once it cannot be placed.
-      if (!this.deps.resolve(id)) { this.aiActive.delete(id); this.aiArmed.delete(id); this.lastTokens.delete(id); }
+      if (!this.deps.resolve(id)) { this.aiActive.delete(id); this.aiArmed.delete(id); this.forgetTokens(id); }
       else if (this.aiArmed.has(id)) this.recordAi(id);
     }
     this.closeBefore(slotStart(this.now()));

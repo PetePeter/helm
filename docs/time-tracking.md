@@ -26,6 +26,7 @@ graph LR
 - **One project per user slot.** If the user touches two projects in one slot, the one with more input wins, and a tie goes to the latest. Within that project, the folder with the most input gets the slot.
 - **AI** (`ai` slots): a session whose activity dot is green earns its project one AI slot, but only once the session has been given a prompt (any delivery or user input arms it). Before that, activity is the CLI booting and is ignored, so starting a session counts nothing until something is sent. Hook turns (UserPromptSubmit → Stop) drive the same dot, which is why the AI window follows prompts. Agents genuinely run in parallel, so AI slots are per project, not exclusive.
 - **Tokens** (`tokens` slots): every context-size reading a session reports (statusline, transcript, or API loop; see [terminal-architecture](terminal-architecture.md)) feeds a per-session ledger. A rise adds the growth. A drop (compact, `/clear`, quick compact) adds the new, smaller context, because the CLI re-read that much. So 199k → compact → 50k counts 249k. A session's first reading after Helm starts is only a baseline, so nothing is backfilled. Tokens are summed per project per slot, across every CLI type that reports its context size. Remote (peer) rows are skipped, since their own machine counts them.
+- **Sub-agent tokens**: a sub-agent's work never shows in the main context, so its logs are read too (`subagent-usage.ts`). Claude writes one file per sub-agent in `<session>/subagents/`. A Codex sub-agent gets its own rollout file in the same folder, naming the parent in `parent_thread_id`. Copilot tags sub-agent `usage_record` lines in the parent's `events.jsonl` with an `agentId`. Each sub-agent is its own ledger stream with a zero baseline, so its whole context counts, then only its growth. The logs are re-read only when the main reading moves. The first read after Helm starts only primes the streams, so sub-agents counted by an earlier run are not counted twice.
 - **Project** = the session's Helm project, or its working directory when it has none.
 
 ## Storage
@@ -48,6 +49,8 @@ A chart sits above the table in both views. *You* and *AI* minutes are bars on t
 ```mermaid
 graph LR
   CU[context reading<br/>session:updated] --> TT[TimeTracker.recordTokens]
+  CU --> SA[readSubagentContexts<br/>Claude · Codex · Copilot logs] --> TS[TimeTracker.recordSubagentTokens]
+  TS --> J
   TT --> J[(time-tracking/*.jsonl)]
   J --> Q[timesheetQuery]
   Q --> C[renderTimesheetChart<br/>timesheet-chart.ts]

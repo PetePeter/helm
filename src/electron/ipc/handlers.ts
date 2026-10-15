@@ -41,6 +41,7 @@ import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
 import { ScratchpadManager } from '../../session/scratchpad-manager.js';
 import type { Scratchpad } from '../../types/scratchpad.js';
+import { readSubagentContexts } from '../../session/subagent-usage.js';
 import type { SessionUpdatedEvent } from '../../types/session.js';
 import { createScratchpadStore } from '../../session/scratchpad-persistence.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
@@ -678,9 +679,22 @@ export function registerIPCHandlers(
     timeTracker.setAiActive(sessionId, level === 'active');
   });
   // Every context reading feeds the token ledger; unchanged readings add nothing.
+  // Sub-agents run inside a main turn, so their logs are re-read only when the main reading moves.
+  const subagentReadAt = new Map<string, string | number>();
   sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
-    if (session.contextUsage && !session.remote) timeTracker.recordTokens(session.id, session.contextUsage.tokens);
+    if (!session.contextUsage || session.remote) return;
+    timeTracker.recordTokens(session.id, session.contextUsage.tokens);
+    const stamp = session.contextUsage.measuredAtIso ?? session.contextUsage.tokens;
+    const lastRead = subagentReadAt.get(session.id);
+    if (lastRead === stamp) return;
+    subagentReadAt.set(session.id, stamp);
+    // The first read after startup sees sub-agents a previous run already counted.
+    const record = lastRead === undefined ? timeTracker.primeSubagentTokens : timeTracker.recordSubagentTokens;
+    for (const [agent, tokens] of readSubagentContexts(session.cliTranscriptPath)) {
+      record.call(timeTracker, session.id, agent, tokens);
+    }
   });
+  sessionManager.on('session:removed', (event: { sessionId: string }) => subagentReadAt.delete(event.sessionId));
   // Twice per slot, so an active session never skips one.
   const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
   const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir);

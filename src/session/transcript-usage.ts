@@ -13,7 +13,7 @@
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 import type { ChatTurnUsage } from './chat/chat-bridge.js';
 
-type Json = Record<string, unknown>;
+export type Json = Record<string, unknown>;
 
 /** Enough to hold the last reply even behind a large tool result; logs run to hundreds of MB. */
 const TAIL_BYTES = 1024 * 1024;
@@ -22,14 +22,19 @@ function num(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function obj(value: unknown): Json | undefined {
+export function obj(value: unknown): Json | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : undefined;
 }
 
 /** Claude: the request's fresh + cached prompt, plus the reply it produced. */
 function claudeUsage(line: Json): ChatTurnUsage | undefined {
   // A sub-agent's reply measures the sub-agent's context, not this session's.
-  if (line.type !== 'assistant' || line.isSidechain) return undefined;
+  return line.isSidechain ? undefined : claudeReplyUsage(line);
+}
+
+/** Any Claude reply's context, sub-agent replies included (they live in their own files). */
+export function claudeReplyUsage(line: Json): ChatTurnUsage | undefined {
+  if (line.type !== 'assistant') return undefined;
   const usage = obj(obj(line.message)?.usage);
   if (!usage) return undefined;
   const contextTokens =
@@ -38,7 +43,7 @@ function claudeUsage(line: Json): ChatTurnUsage | undefined {
 }
 
 /** Codex: `last_token_usage` is the latest request; `total_token_usage` is the running bill. */
-function codexUsage(line: Json): ChatTurnUsage | undefined {
+export function codexUsage(line: Json): ChatTurnUsage | undefined {
   const payload = obj(line.payload);
   if (line.type !== 'event_msg' || payload?.type !== 'token_count') return undefined;
   const info = obj(payload.info);
@@ -50,6 +55,22 @@ function codexUsage(line: Json): ChatTurnUsage | undefined {
 
 /** Copilot: `inputTokens` is the whole prompt sent (cache reads included); `maxPromptTokens` its ceiling. */
 function copilotUsage(line: Json): ChatTurnUsage | undefined {
+  // Sub-agent calls land in the same file, tagged with the sub-agent's id.
+  if (copilotSubagentId(line)) return undefined;
+  return copilotRecordUsage(line);
+}
+
+/** The sub-agent a Copilot line belongs to, if any. */
+export function copilotSubagentId(line: Json): string | undefined {
+  if (typeof line.agentId === 'string' && line.agentId) return line.agentId;
+  const usage = obj(obj(line.data)?.usage);
+  return usage?.interactionType === 'conversation-subagent' && typeof usage.parentToolCallId === 'string'
+    ? usage.parentToolCallId
+    : undefined;
+}
+
+/** A Copilot `session.usage_record`'s context, whoever made the call. */
+export function copilotRecordUsage(line: Json): ChatTurnUsage | undefined {
   if (line.type !== 'session.usage_record') return undefined;
   const usage = obj(obj(line.data)?.usage);
   const inputTokens = num(usage?.inputTokens);
@@ -72,7 +93,7 @@ function measuredAtIso(value: unknown): string | undefined {
 }
 
 /** The last `maxBytes` of a file as lines; a line cut by the window's start is dropped. */
-function tailLines(path: string, maxBytes: number): string[] {
+export function tailLines(path: string, maxBytes: number): string[] {
   const fd = openSync(path, 'r');
   try {
     const size = fstatSync(fd).size;
