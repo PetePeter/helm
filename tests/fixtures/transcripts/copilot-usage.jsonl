@@ -1,0 +1,4 @@
+{"type":"session.start","data":{"sessionId":"copilot-context","version":1,"producer":"copilot-agent"},"timestamp":"2026-10-14T12:00:00.000Z"}
+{"type":"session.usage_info","data":{"tokenLimit":200000,"currentTokens":188000,"messagesLength":18},"timestamp":"2026-10-14T12:00:30.000Z"}
+{"type":"session.compaction_complete","data":{"success":true,"preCompactionTokens":188000,"postCompactionTokens":32000},"timestamp":"2026-10-14T12:00:45.000Z"}
+{"type":"session.usage_info","data":{"tokenLimit":200000,"currentTokens":36700,"messagesLength":5},"timestamp":"2026-10-14T12:01:00.000Z"}

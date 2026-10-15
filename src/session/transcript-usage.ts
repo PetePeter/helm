@@ -6,8 +6,8 @@
  * stamps `usage` on every reply and Codex emits a `token_count` event — so the
  * same badge can be filled without asking the CLI anything.
  *
- * Copilot is absent on purpose: it writes its context size only at
- * `session.shutdown`, so mid-session the number would be a previous run's.
+ * Copilot writes live context snapshots as `session.usage_info` events in its
+ * session event log; these report the current token count and window directly.
  */
 
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
@@ -48,7 +48,18 @@ function codexUsage(line: Json): ChatTurnUsage | undefined {
   return { contextTokens, ...(contextWindow > 0 ? { contextWindow } : {}) };
 }
 
-const READERS = [claudeUsage, codexUsage];
+/** Copilot: each `session.usage_info` is a current context snapshot, not a turn total. */
+function copilotUsage(line: Json): ChatTurnUsage | undefined {
+  if (line.type !== 'session.usage_info') return undefined;
+  const data = obj(line.data);
+  if (!data) return undefined;
+  const contextTokens = num(data.currentTokens);
+  const contextWindow = num(data.tokenLimit);
+  if (contextTokens <= 0 || contextWindow <= 0) return undefined;
+  return { contextTokens, contextWindow };
+}
+
+const READERS = [claudeUsage, codexUsage, copilotUsage];
 
 export type TranscriptUsageResult =
   | { status: 'usage'; usage: ChatTurnUsage; measuredAtIso?: string }

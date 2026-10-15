@@ -12,7 +12,7 @@ export type ApiSessionContextSize =
 
 export interface ContextSizeSession {
   cliTranscriptPath?: string;
-  provider?: string;
+  provider?: string | null;
   apiTool?: boolean;
   comfyUiTool?: boolean;
   remote?: unknown;
@@ -33,12 +33,13 @@ function knownContext(
   source: 'transcript' | 'api',
   measuredAtIso?: string,
 ): SessionContextSize {
-  if (!positive(tokens)) return { known: false, reason: 'no-usage-yet' };
+  const validTokens = positive(tokens);
+  if (validTokens === undefined) return { known: false, reason: 'no-usage-yet' };
   const contextWindow = positive(window);
   return {
     known: true,
-    tokens,
-    ...(contextWindow ? { window: contextWindow, percent: Math.round(tokens / contextWindow * 100) } : {}),
+    tokens: validTokens,
+    ...(contextWindow ? { window: contextWindow, percent: Math.round(validTokens / contextWindow * 100) } : {}),
     ...(measuredAtIso ? { measuredAtIso } : {}),
     source,
   };
@@ -57,15 +58,11 @@ export function resolveSessionContextSize(
   }
 
   if (session.comfyUiTool) return { known: false, reason: 'unsupported-cli' };
-  if (!session.cliTranscriptPath) {
-    return { known: false, reason: session.provider === 'copilot' ? 'unsupported-cli' : 'no-transcript' };
-  }
+  if (!session.cliTranscriptPath) return { known: false, reason: 'no-transcript' };
 
   const result = readTranscriptUsageDetails(session.cliTranscriptPath);
   if (result.status === 'unavailable') return { known: false, reason: 'no-transcript' };
-  if (result.status === 'no-usage') {
-    return { known: false, reason: session.provider === 'copilot' ? 'unsupported-cli' : 'no-usage-yet' };
-  }
+  if (result.status === 'no-usage') return { known: false, reason: 'no-usage-yet' };
   return knownContext(
     result.usage.contextTokens,
     positive(result.usage.contextWindow) ?? options.contextWindow,

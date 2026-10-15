@@ -29,6 +29,8 @@ function claudeReply(tokens: number, timestamp: string): Record<string, unknown>
 }
 
 describe('resolveSessionContextSize', () => {
+  const COPILOT_USAGE_FIXTURE = join(__dirname, '../fixtures/transcripts/copilot-usage.jsonl');
+
   it('uses Claude transcript tokens, the configured window, and the usage timestamp', () => {
     const path = transcript([claudeReply(100_000, '2026-10-10T09:30:00Z')]);
 
@@ -84,16 +86,26 @@ describe('resolveSessionContextSize', () => {
     )).toMatchObject({ known: true, tokens: 45_000, percent: 23, measuredAtIso: '2026-10-10T09:45:00.000Z' });
   });
 
-  it('returns server-reported API usage and marks unsupported Copilot transcripts clearly', () => {
+  it('returns server-reported API usage and treats legacy Copilot logs without usage_info as not yet measured', () => {
     const copilotLog = transcript([{ type: 'assistant', message: { content: 'done' } }]);
 
     expect(resolveSessionContextSize(
       { apiTool: true },
       { apiContext: { available: true, tokens: 321 }, contextWindow: 1_000 },
     )).toEqual({ known: true, tokens: 321, window: 1_000, percent: 32, source: 'api' });
-    expect(resolveSessionContextSize(
-      { cliTranscriptPath: copilotLog, provider: 'copilot' },
-    )).toEqual({ known: false, reason: 'unsupported-cli' });
+    expect(resolveSessionContextSize({ cliTranscriptPath: copilotLog, provider: 'copilot' }))
+      .toEqual({ known: false, reason: 'no-usage-yet' });
+  });
+
+  it('uses Copilot session.usage_info tokens and its reported context window', () => {
+    expect(resolveSessionContextSize({ cliTranscriptPath: COPILOT_USAGE_FIXTURE })).toEqual({
+      known: true,
+      tokens: 36_700,
+      window: 200_000,
+      percent: 18,
+      measuredAtIso: '2026-10-14T12:01:00.000Z',
+      source: 'transcript',
+    });
   });
 
   it('does not read a peer session transcript locally', () => {

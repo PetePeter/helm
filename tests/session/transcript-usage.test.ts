@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readTranscriptUsage } from '../../src/session/transcript-usage';
+import { readTranscriptUsage, readTranscriptUsageDetails } from '../../src/session/transcript-usage';
 
 let dir: string;
 
@@ -28,6 +28,8 @@ function codexTokenCount(info: unknown): Record<string, unknown> {
   return { type: 'event_msg', payload: { type: 'token_count', info } };
 }
 
+const COPILOT_USAGE_FIXTURE = join(__dirname, '../fixtures/transcripts/copilot-usage.jsonl');
+
 describe('readTranscriptUsage', () => {
   it('sums a Claude reply\'s fresh, cached and output tokens into the context size', () => {
     const path = transcript([
@@ -47,6 +49,27 @@ describe('readTranscriptUsage', () => {
       }),
     ]);
     expect(readTranscriptUsage(path)).toEqual({ contextTokens: 148699, contextWindow: 258400 });
+  });
+
+  it('reads Copilot\'s latest session.usage_info snapshot, including a post-compaction decrease', () => {
+    expect(readTranscriptUsage(COPILOT_USAGE_FIXTURE)).toEqual({
+      contextTokens: 36_700,
+      contextWindow: 200_000,
+    });
+    expect(readTranscriptUsageDetails(COPILOT_USAGE_FIXTURE)).toMatchObject({
+      status: 'usage',
+      measuredAtIso: '2026-10-14T12:01:00.000Z',
+    });
+  });
+
+  it('ignores Copilot usage_info with invalid or zero context values', () => {
+    const path = transcript([
+      { type: 'session.usage_info', data: { currentTokens: 0, tokenLimit: 200_000 } },
+      { type: 'session.usage_info', data: { currentTokens: 12_000, tokenLimit: 'unknown' } },
+      { type: 'session.usage_info', data: { currentTokens: '12_000', tokenLimit: 200_000 } },
+    ]);
+
+    expect(readTranscriptUsage(path)).toBeUndefined();
   });
 
   it('takes the latest reply, not an earlier one', () => {
