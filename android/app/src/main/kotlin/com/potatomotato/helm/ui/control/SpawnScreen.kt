@@ -8,9 +8,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -24,12 +28,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import com.potatomotato.helm.R
 import com.potatomotato.helm.ble.LinkState
@@ -162,14 +170,24 @@ fun SpawnScreen(
 
     val appBarTitle = when (pickerPage) {
         "projects" -> stringResource(R.string.spawn_choose_project)
-        "folders" -> stringResource(R.string.spawn_choose_folder)
+        "folders" -> selectedProject?.title ?: stringResource(R.string.spawn_title)
         "flat" -> stringResource(R.string.spawn_where)
         else -> stringResource(if (plan != null) R.string.spawn_plan_title else R.string.spawn_title)
+    }
+    val appBarSubtitle = when (pickerPage) {
+        "projects" -> stringResource(R.string.spawn_picker_project_subtitle)
+        "folders" -> stringResource(R.string.spawn_choose_folder)
+        else -> if (plan == null && pickerPage == null) {
+            stringResource(R.string.spawn_picker_form_subtitle)
+        } else {
+            null
+        }
     }
 
     Column(modifier = modifier.fillMaxSize().background(HelmColors.Bg)) {
         HelmAppBar(
             title = appBarTitle,
+            subtitle = appBarSubtitle,
             linkState = linkState,
             onBack = { if (pickerPage != null) closePicker() else onBack() },
         )
@@ -306,38 +324,61 @@ fun SpawnScreen(
                 verticalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
             ) {
                 when (pickerPage) {
-                    "projects" -> directoryGroups.orEmpty().forEach { group ->
-                        val title = if (group.key.isEmpty()) stringResource(R.string.spawn_other) else group.title
-                        Choice(
-                            label = title,
-                            detail = pluralStringResource(R.plurals.spawn_folder_count, group.directories.size, group.directories.size),
-                            selected = false,
-                            onClick = {
-                                selectedProjectKey = group.key
-                                pickerPage = "folders"
-                            },
+                    "projects" -> {
+                        PickerStepHeading(
+                            step = stringResource(R.string.spawn_picker_project_step),
+                            title = stringResource(R.string.spawn_choose_project),
+                            hint = stringResource(R.string.spawn_picker_project_hint),
                         )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            PickerDivider()
+                            directoryGroups.orEmpty().forEach { group ->
+                                val title = if (group.key.isEmpty()) stringResource(R.string.spawn_other) else group.title
+                                DirectoryPickerRow(
+                                    icon = stringResource(R.string.spawn_picker_project_icon),
+                                    title = title,
+                                    subtitle = stringResource(R.string.spawn_picker_project_label),
+                                    trailing = pluralStringResource(
+                                        R.plurals.spawn_folder_count,
+                                        group.directories.size,
+                                        group.directories.size,
+                                    ),
+                                    onClick = {
+                                        selectedProjectKey = group.key
+                                        pickerPage = "folders"
+                                    },
+                                )
+                                PickerDivider()
+                            }
+                        }
                     }
                     "folders" -> {
                         if (selectedProject != null) {
-                            FieldLabel(selectedProject.title)
-                            for (directory in selectedProject.directories) {
-                                val isMain = directory.isMainFolder()
-                                val label = if (isMain) {
-                                    "${directory.name} · ${stringResource(R.string.spawn_main_folder)}"
-                                } else {
-                                    directory.name
+                            PickerStepHeading(
+                                step = stringResource(R.string.spawn_picker_folder_step),
+                                title = stringResource(R.string.spawn_choose_folder),
+                                hint = selectedProject.title,
+                            )
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                PickerDivider()
+                                for (directory in selectedProject.directories) {
+                                    DirectoryPickerRow(
+                                        icon = stringResource(R.string.spawn_picker_folder_icon),
+                                        title = directory.name,
+                                        subtitle = directory.path,
+                                        badge = if (directory.isMainFolder()) {
+                                            stringResource(R.string.spawn_main_folder)
+                                        } else {
+                                            null
+                                        },
+                                        onClick = {
+                                            dirPath = directory.path
+                                            pickerPage = null
+                                            selectedProjectKey = null
+                                        },
+                                    )
+                                    PickerDivider()
                                 }
-                                Choice(
-                                    label = label,
-                                    detail = directory.path,
-                                    selected = directory.path == dirPath,
-                                    onClick = {
-                                        dirPath = directory.path
-                                        pickerPage = null
-                                        selectedProjectKey = null
-                                    },
-                                )
                             }
                         }
                     }
@@ -356,6 +397,124 @@ fun SpawnScreen(
             }
         }
     }
+}
+
+@Composable
+private fun PickerStepHeading(step: String, title: String, hint: String) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = HelmSpacing.Xs),
+        verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs),
+    ) {
+        Text(
+            text = step.uppercase(),
+            color = HelmColors.Accent,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+            ),
+        )
+        Text(
+            text = title,
+            color = HelmColors.Txt,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        )
+        Text(text = hint, color = HelmColors.Dim, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun DirectoryPickerRow(
+    icon: String,
+    title: String,
+    subtitle: String,
+    trailing: String? = null,
+    badge: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 66.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val tileShape = RoundedCornerShape(10.dp)
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(tileShape)
+                .border(HelmSize.Hairline, HelmColors.Line, tileShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text = icon, color = HelmColors.Accent, fontSize = 17.sp)
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(HelmSpacing.Xs / 2),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(HelmSpacing.Sm),
+            ) {
+                Text(
+                    text = title,
+                    color = HelmColors.Txt,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (badge != null) PickerBadge(badge)
+            }
+            Text(
+                text = subtitle,
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (trailing != null) {
+            Text(text = trailing, color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall)
+        }
+        Text(
+            text = stringResource(R.string.spawn_picker_chevron),
+            color = HelmColors.Faint,
+            fontSize = 22.sp,
+            lineHeight = 22.sp,
+        )
+    }
+}
+
+@Composable
+private fun PickerBadge(text: String) {
+    val shape = RoundedCornerShape(HelmRadius.Pill)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .border(HelmSize.Hairline, HelmColors.Accent.copy(alpha = 0.4f), shape)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = text.uppercase(),
+            color = HelmColors.Accent,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.3.sp,
+        )
+    }
+}
+
+@Composable
+private fun PickerDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(HelmSize.Hairline)
+            .background(HelmColors.Separator),
+    )
 }
 
 /**

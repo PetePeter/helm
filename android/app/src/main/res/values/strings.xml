@@ -439,10 +439,19 @@
 
     <string name="spawn_title">New session</string>
     <string name="spawn_where">Where</string>
-    <string name="spawn_choose_project">Choose project</string>
-    <string name="spawn_choose_folder">Choose folder</string>
+    <string name="spawn_choose_project">Choose a project</string>
+    <string name="spawn_choose_folder">Choose a folder</string>
     <string name="spawn_other">Other</string>
     <string name="spawn_main_folder">Main</string>
+    <string name="spawn_picker_project_subtitle">New session · Location</string>
+    <string name="spawn_picker_form_subtitle">Choose where it runs</string>
+    <string name="spawn_picker_project_step">New session · 1 of 2</string>
+    <string name="spawn_picker_folder_step">New session · 2 of 2</string>
+    <string name="spawn_picker_project_hint">Pick a project to see its folders.</string>
+    <string name="spawn_picker_project_label">Project</string>
+    <string name="spawn_picker_project_icon">▰</string>
+    <string name="spawn_picker_folder_icon">⌂</string>
+    <string name="spawn_picker_chevron">›</string>
     <string name="spawn_runs_on">Runs on</string>
     <string name="spawn_this_desktop">This desktop</string>
     <string name="spawn_which_cli">Which CLI</string>
