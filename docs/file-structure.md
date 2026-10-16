@@ -13,7 +13,6 @@ src/
 │       ├── handlers.ts         # Orchestrator — imports + wires 10 domain handlers, returns { cleanup, sessionManager, ptyManager }. Auto-bookmarks working dir on session:removed (when cliSessionName present)
 │       ├── session-handlers.ts
 │       ├── config-handlers.ts
-│       ├── profile-handlers.ts
 │       ├── tools-handlers.ts
 │       ├── keyboard-handlers.ts
 │       ├── pty-handlers.ts
@@ -25,6 +24,7 @@ src/
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
 │       ├── voice-handlers.ts   # voice:transcribe / voice:speak / voice:ask (desktop hold-to-talk to the operator)
 │       ├── peer-management-handlers.ts # Peer settings and peer:sessions / peer:sessions-changed renderer IPC
+│       ├── time-tracking-handlers.ts # Timesheet and token queries, charts, and CSV export
 │       └── mobile-handlers.ts  # 9 IPC channels (mobile:list/setEnabled/setAllowList/revoke/startPairing/confirmPairing/cancelPairing/pairingState/apkRelease). Secrets never cross this boundary
 ├── input/
 │   └── sequence-parser.ts      # {Enter}, {Ctrl+C}, {Wait 500}, {Mod Down/Up}, {{/}} — used by bindings + initialPrompt
@@ -38,6 +38,9 @@ src/
 │   ├── delivery-lock.ts         # Per-session gate serializing the nudge/payload/settle/submit delivery transaction
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
 │   ├── state-detector.ts       # PTY activity tracking + question markers; AIAGENT phase state is MCP-owned + markRestored() grace period for restored sessions
+│   ├── context-limits.ts       # Per-CLI amber/red context warning thresholds and level resolution
+│   ├── time-tracker.ts         # Project/folder 5-minute time and token ledgers, period queries, and token totals
+│   ├── timesheet-chart.ts      # Self-contained SVG/CSS charts for Statistics time and token views
 │   ├── mission.ts              # Session mission validator (500-char limit, trim/clear) + bar-height clamp, shared by IPC and MCP
 │   ├── handover-delivery.ts    # Holds a session_compact handover across the compaction; pastes it back on the first inactive edge (floor 15s / ceiling 5min)
 │   ├── pipeline-queue.ts       # Waiting→implementing auto-handoff queue (FIFO)
@@ -52,6 +55,9 @@ src/
 │   ├── mess-notifier.ts        # Best-effort idle reminders with append-while-idle detection, cooldown, retry, and system delivery verification
 │   ├── persistence-paths.ts    # Stable per-user app-data paths, including the UUID-keyed Mess directory and log/cursor files
 │   ├── session-alert.ts        # States ONCE which session transitions are worth a buzz, and the `kind` each maps to. Read by both Telegram and the phone
+│   ├── hooks/
+│   │   ├── context-injector.ts # Hook context, conditional reminders, mission lines, and amber/red context-pressure alerts
+│   │   └── hook-injections.ts  # Shipped editable hook-injection templates and placeholder renderer
 │   ├── chat/
 │   │   ├── chat-bridge.ts      # The interface one chat surface implements, whatever transport is underneath
 │   │   ├── chat-broker.ts      # The registry surfaces plug into; fan-out is unconditional and the registry is unbounded
@@ -94,16 +100,13 @@ src/
 ├── telegram/
 │   ├── bot.ts                  # TelegramBotCore — bot lifecycle (start/stop), long-polling, user-ID whitelist, message helpers, deleteForumTopic
 │   ├── callback-handler.ts     # Inline keyboard callback routing — session controls, spawn wizard, close all, text input
-│   ├── commands.ts             # Slash command handlers (/status, /switch, /send, /close, /spawn, /output)
+│   ├── command-handler.ts      # Slash command handlers (/help, /peek, /sessions, /spawn, /status, /rename, /close, /restart)
 │   ├── keyboards.ts            # Inline keyboard layout builders (session list, controls, commands, spawn wizard)
 │   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards. NOTE: `handleStateChange` has no production caller — orchestrator.ts takes the notifier as `_notifier`, so Telegram's state-change notifications have never fired. The live path is session-alert.ts → MobileAlertNotifier
-│   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, notifier, terminal mirror, dashboard
-│   ├── output-summarizer.ts    # PTY buffer → 3-5 line smart summary
+│   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, relay service, and dashboard
 │   ├── pinned-dashboard.ts     # Auto-updating pinned message with all-sessions status + Close All button
-│   ├── reply-keyboard.ts       # Persistent reply keyboard for most-used actions
-│   ├── terminal-mirror.ts      # Activity-gated PTY→Telegram mirror: buffers output, flushes on activity/state/question triggers, ANSI+noise stripping, dedup guard
-│   ├── text-input.ts           # Free-text input with confirmation step
-│   ├── topic-input.ts          # Topic message → PTY stdin forwarding
+│   ├── relay-service.ts        # Telegram topic relay and inbound message/attachment routing
+│   ├── topic-input.ts          # Routes topic messages to the linked session's PTY or relay service
 │   ├── topic-manager.ts        # Forum topic lifecycle: ensureTopic on session:added, deleteForumTopic on session:removed
 │   └── utils.ts                # Shared Telegram utilities
 ├── voice/                       # Local STT/TTS shared by Telegram and desktop voice. See docs/voice-operator.md
@@ -138,12 +141,13 @@ renderer/
 ├── peer-session-refresh.ts     # Shared connect/reconnect/manual peer session refresh path
 ├── dock-registry-state.ts      # Vue revision signal for runtime dock registry changes
 ├── operator-summary.ts         # operatorSummary / withoutOperator — the sidebar Helm section's selector (twin of Android OperatorSummary.kt)
+├── context-sparkline.ts        # Context usage samples, per-CLI warning levels, and SVG sparkline points
+├── onboarding-settings-topics.ts # Grouped navigation from first-run setup into existing Settings pages
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
 ├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards + overview grid.
 ├── tab-cycling.ts              # Ctrl+Tab / Ctrl+Shift+Tab terminal cycling resolver
 ├── components/
 │   ├── index.ts                # Barrel export of all Vue SFC components
-│   ├── sort-control.ts         # Reusable sort dropdown + direction toggle widget
 │   ├── chip-bar.ts             # Thin wrapper composing plan chips + chip-bar actions
 │   ├── common/
 │   │   └── QuickSpawnMachineTabs.vue # Shared machine tabs and tool loading/error state for Quick Spawn surfaces
@@ -156,6 +160,7 @@ renderer/
 │   │   ├── ContextMenu.vue
 │   │   ├── FormModal.vue
 │   │   ├── BindingEditorModal.vue
+│   │   ├── FirstRunOnboarding.vue # First-run CLI, directory, prompt, and Settings setup flow
 │   │   └── MobilePairingDialog.vue    # SAS 6-digit compare for a pairing phone; the digits are a KDF output, safe to display
 │   ├── sidebar/
 │   │   ├── index.ts
@@ -164,6 +169,7 @@ renderer/
 │   │   ├── SessionGroup.vue    # Collapsible directory group header
 │   │   ├── SpawnGrid.vue       # 2-column CLI spawn button grid
 │   │   ├── SortBar.vue         # Sort field dropdown + direction toggle
+│   │   ├── ContextSparkline.vue # Session context history and amber/red warning levels
 │   │   ├── PlansGrid.vue       # Per-directory plan buttons with badges
 │   │   ├── StatusStrip.vue     # Gamepad dot, count, profile badge
 │   │   └── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
@@ -178,6 +184,7 @@ renderer/
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
 │   │   ├── DraftPane.vue  # Draft tool window: plain textarea over the active session's pad
+│   │   ├── TimesheetPane.vue   # Statistics: Timesheet and Tokens tabs with folder drilldown and CSV export
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
 │   └── panels/
 │       ├── index.ts
@@ -201,6 +208,8 @@ renderer/
 │   ├── vad.ts                  # Vad: pure energy gate (threshold, 800ms hangover, min speech, 30s cap) for hands-free turns
 │   ├── voice-talk-binding.ts   # Press/release tracking for the `voice-talk` binding action
 │   └── browser-audio.ts        # MediaRecorder (no mic leak on release-before-open), hands-free mic (AnalyserNode RMS meter), Audio player with stop()
+├── ipc/
+│   └── clients.ts              # Typed proxies for preload API domains, with a legacy API fallback
 ├── composables/
 │   ├── index.ts                # Barrel export of all composables
 │   ├── useVoiceCall.ts         # Lazy singleton voice call with the browser MediaRecorder + Audio player
@@ -208,18 +217,17 @@ renderer/
 │   ├── useMessageFlights.ts    # Inter-session envelope flights: anchor resolve, landing ack, release on unmount
 │   ├── useSessionPreviews.ts   # Throttled passive PTY tails for Session List rows (reads PtyOutputBuffer)
 │   ├── useModalStack.ts        # Reactive push/pop modal stack replacing 11-deep if-chain
-│   ├── useIpc.ts               # Typed IPC wrappers with auto-cleanup on unmount
+│   ├── useFirstRunOnboarding.ts # First-run setup state and CLI/project/prompt flow
+│   ├── useTimesheetPane.ts     # Statistics pane state, queries, period navigation, and CSV export
 │   ├── useGamepad.ts           # Gamepad polling setup + connection events
 │   ├── usePanelResize.ts       # Splitter drag resize via template refs
 │   ├── useTerminals.ts         # Terminal create/switch/destroy lifecycle
-│   ├── useNavigation.ts        # Navigation routing: sandwich → modal stack → view → screen → config binding
 │   ├── useMessPane.ts          # Project-following Mess history, filters, append subscription, labels, and bounded backscroll
 │   ├── usePeerSessionPanes.ts  # Dynamic per-peer Sessions pane registration and lifecycle
 │   └── useMobileDevices.ts     # Module-singleton mirror for Settings → Mobile (paired phones, pairing state, APK release). Displays SAS digits — a KDF output; no PSK ever reaches the renderer
 ├── plans/
 │   ├── plan-screen.ts          # SVG canvas screen — pan/zoom (viewBox-based), node rendering with status colors, quadratic bezier arrows, click-to-select, Add Node button. Renders inside #mainArea as .plan-screen overlay
-│   ├── plan-layout.ts          # Sugiyama-style left-to-right layered auto-layout. Exports computeLayout(items, deps) → LayoutResult with nodes (id, x, y, layer, order) and width/height
-│   └── plan-chips.ts           # Plan badges on session cards (createPlanBadge) + plan chips in the chip bar (renderPlanChips with generation counter dedup). Shows ready/coding/review/blocked counts
+│   └── plan-layout.ts          # Sugiyama-style left-to-right layered auto-layout. Exports computeLayout(items, deps) → LayoutResult with nodes (id, x, y, layer, order) and width/height
 ├── terminal/
 │   ├── terminal-view.ts        # xterm.js wrapper (fit/search/weblinks addons)
 │   ├── terminal-manager.ts     # Multi-terminal orchestration (create/switch/rename/resize/destroy + tab bar + PtyOutputBuffer + right-click paste prevention + pty:markSwitching before fit)
@@ -234,11 +242,7 @@ renderer/
 ├── sidebar/
 │   └── session-services.ts     # Sidebar session services: sort preferences, rename flow, status counts
 ├── modals/
-│   ├── modal-base.ts           # Shared modal foundation (show/hide, backdrop, gamepad focus management, Tab/Shift+Tab button cycling in selection mode)
-│   ├── dir-picker.ts           # Directory picker modal (supports pre-selection via preselectedPath)
-│   ├── binding-editor.ts       # Binding editor modal
-│   ├── close-confirm.ts        # Close session confirmation popup — centered modal with Close/Cancel, gamepad + keyboard support
-│   ├── quick-spawn.ts          # Quick-spawn CLI type picker — centred modal listing available CLI types with pre-selection, gamepad + click support
+│   └── modal-base.ts           # Shared modal foundation (show/hide, backdrop, gamepad focus management, Tab/Shift+Tab button cycling in selection mode)
 └── styles/
     └── main.css
 ```
@@ -352,8 +356,7 @@ tests/                                  # 63 test files
 ├── bindings-pty.test.ts        # PTY escape helpers + routing tests
 ├── bindings-target.test.ts     # Voice binding target routing (PTY vs OS)
 ├── callback-handler.test.ts    # Telegram callback handler tests (session controls, spawn, close all)
-├── close-confirm.test.ts       # Close confirmation modal tests
-├── commands.test.ts            # Telegram slash command handler tests
+├── telegram-command-handler.test.ts # Telegram slash command handler tests
 ├── config.test.ts              # Config loading, stick config, haptic, virtual buttons, retired-binding (prompt-tree/new-draft) cleanup
 ├── context-menu.test.ts        # Context menu overlay tests
 ├── draft-manager.test.ts  # DraftManager over its real file store: stale writes, cap, lifecycle
@@ -374,10 +377,8 @@ tests/                                  # 63 test files
 ├── initial-prompt.test.ts      # Initial prompt delivery tests
 ├── keyboard.test.ts            # Keyboard simulation
 ├── modal-base.test.ts          # Modal UI base tests
-├── navigation.test.ts          # Navigation priority chain tests
 ├── navigation-store.test.ts    # Navigation store tests — view routing, session switching, overlay lifecycle, sidebar focus (61 tests)
 ├── notification-manager.test.ts # NotificationManager tests
-├── output-summarizer.test.ts   # Telegram output summarizer tests
 ├── paste-routing.test.ts       # Ctrl+V paste → PTY routing tests
 ├── persistence.test.ts         # Session persistence
 ├── pinned-dashboard.test.ts    # Telegram pinned dashboard tests
@@ -387,7 +388,6 @@ tests/                                  # 63 test files
 ├── pty-output-buffer.test.ts   # PtyOutputBuffer ring buffer tests
 ├── quick-spawn.test.ts         # Quick-spawn CLI type picker tests
 ├── quick-spawn-machines.test.ts # Shared machine/tool state, mounted surfaces, remote spawn selection, and navigation tests
-├── reply-keyboard.test.ts      # Telegram reply keyboard tests
 ├── resume-spawn.test.ts        # CLI session resume spawning tests
 ├── sequence-parser.test.ts     # Sequence format parser tests
 ├── session-groups.test.ts      # Session grouping logic tests + bookmark persistence tests
@@ -403,8 +403,6 @@ tests/                                  # 63 test files
 ├── telegram-notifier.test.ts   # Telegram notification routing tests
 ├── telegram-topic-manager.test.ts # Topic manager lifecycle tests (ensure/delete topics)
 ├── terminal-manager.test.ts    # Embedded terminal lifecycle tests (including adoptTerminal)
-├── terminal-mirror.test.ts     # Telegram terminal mirror tests
-├── text-input.test.ts          # Telegram text input tests
 ├── topic-input.test.ts         # Telegram topic input forwarding tests
 ├── plan-manager.test.ts        # PlanManager CRUD, DAG validation, cycle prevention, ready-state computation (42 tests)
 ├── plan-handlers.test.ts       # Plan IPC handler tests (23 tests)
@@ -418,8 +416,7 @@ tests/                                  # 63 test files
 ├── stores/
 │   └── stores.test.ts          # Pinia store tests (app, sessions-screen, config, plans — 20 tests)
 ├── composables/
-│   ├── composables.test.ts     # Composable unit tests (modal stack, IPC, gamepad, panel resize, keyboard relay, terminals — 21 tests)
-│   └── navigation.test.ts     # Navigation composable tests (routing, modal interception, view/screen dispatch — 31 tests)
+│   └── composables.test.ts     # Composable unit tests (modal stack, IPC, gamepad, panel resize, keyboard relay, terminals — 21 tests)
 └── components/
     ├── modals/
     │   └── modals.test.ts      # Vue SFC modal tests (@vue/test-utils — 90 tests)

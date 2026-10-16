@@ -158,7 +158,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/runtime-groups.md](docs/runtime-groups.md) | Custom cross-directory groups, exclusive membership, restore-to-group, drag/close flows |
 | [docs/recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day rolling bin, restore-with-resume |
 | [docs/session-freeze.md](docs/session-freeze.md) | Prompt-cache staleness (per-CLI short/long cache), row fade + banners, Mess dormancy, freeze / auto-freeze, `session_set_frozen` |
-| [docs/time-tracking.md](docs/time-tracking.md) | Per-project time tracking — 5-min You/AI slots, origin-tagged input, JSONL store, Timesheet pane + CSV |
+| [docs/time-tracking.md](docs/time-tracking.md) | Project time + CLI tokens — 5-minute You/AI slots, Statistics pane (Timesheet + Tokens), per-folder token totals, JSONL + CSV |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
 | [docs/draft.md](docs/draft.md) | Per-session draft — one plain-text pad the user (dock pane) and the session's LLM (`session_draft_*`) both write, stale-write refusal, 64 KB cap, deleted with the session |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
@@ -193,7 +193,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit |
 | [docs/fleet.md](docs/fleet.md) | Cross-machine peer MCP proxy — TLS-WS transport, PSK + TOFU pinning, SAS pairing, InboundCallGate |
 | [docs/remote.md](docs/remote.md) | Remote — a fleet peer's session as a local row you drive directly; adopted `PtyProcess`, attach-as-grant, notifications, `peer_attach` |
-| [docs/cli-hooks.md](docs/cli-hooks.md) | CLI lifecycle hooks — one Python shim transport (command type), /hooks endpoint, system-wide installer, G2 deny policy, G3 reported truth, G4 injection + dual-path rules delivery, G5 ranking signals (passers only), G8 Stop-block loop driving gated on autoImplement |
+| [docs/cli-hooks.md](docs/cli-hooks.md) | CLI hooks — /hooks + installer, activity/context alerts, editable hook injections, per-CLI context limits, ranking, reminders, gated loop driver |
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |
 | [docs/helm-mcp-client-guide.md](docs/helm-mcp-client-guide.md) | Guide for AI clients using the Helm MCP tools |
 | [docs/helm-session-info.md](docs/helm-session-info.md) | `session_info` surface |
