@@ -76,12 +76,12 @@ function capturePttKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <div class="settings-operator-panel">
-    <div class="settings-panel__header">
+  <div class="settings-operator-panel settings-sections">
+    <div class="settings-panel__header settings-span">
       <span class="settings-panel__title">Operator</span>
     </div>
 
-    <div class="settings-help">
+    <div class="settings-help settings-span">
       <p>A single locked session named <strong>Helm</strong> that the phone and desktop talk to.
         It only routes your instructions to work sessions and relays their answers; it never does the work itself.</p>
     </div>
@@ -131,20 +131,20 @@ function capturePttKey(event: KeyboardEvent): void {
       </select>
     </label>
 
-    <div class="settings-panel__header">
+    <div class="settings-panel__header settings-span">
       <span class="settings-panel__title">Rules</span>
     </div>
 
-    <div class="settings-help">
+    <div class="settings-help settings-span">
       <p>Built-in rules always apply. Your rules come on top, ranked highest: they can narrow what the operator does or allow more.
         They take effect from the operator's next start or clear.</p>
     </div>
 
-    <ol class="operator-rules">
+    <ol class="operator-rules settings-span">
       <li v-for="rule in OPERATOR_RULES" :key="rule">{{ rule }}</li>
     </ol>
 
-    <div class="field-group">
+    <div class="field-group settings-span">
       <label class="field-label" for="operator-user-rules">Your rules (one per line)</label>
       <textarea
         id="operator-user-rules"

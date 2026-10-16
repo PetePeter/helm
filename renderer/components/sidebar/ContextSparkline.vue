@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ContextUsageSample } from '../../../src/types/session.js';
-import { sparklineGeometry } from '../../context-sparkline.js';
+import { sparklineCeiling, sparklineGeometry } from '../../context-sparkline.js';
 import { contextLevel, type ContextLimits } from '../../../src/session/context-limits.js';
 
 const props = withDefaults(defineProps<{
@@ -16,7 +16,8 @@ const props = withDefaults(defineProps<{
 }>(), { width: 48, height: 14, detailed: false });
 
 const pad = computed(() => (props.detailed ? 4 : 2));
-const geometry = computed(() => sparklineGeometry(props.samples, props.window, {
+const ceiling = computed(() => sparklineCeiling(props.samples, props.limits, props.window));
+const geometry = computed(() => sparklineGeometry(props.samples, ceiling.value, {
   width: props.width - pad.value * 2,
   height: props.height - pad.value * 2,
 }));
@@ -24,9 +25,9 @@ const level = computed(() => {
   const last = props.samples?.at(-1);
   return last ? contextLevel(last.tokens, props.limits) : 'ok';
 });
-const guides = computed(() => (props.detailed && props.window && props.limits
+const guides = computed(() => (props.detailed && props.limits
   ? [props.limits.amber, props.limits.red]
-    .map((tokens) => Math.min(tokens / props.window!, 1))
+    .map((tokens) => Math.min(tokens / ceiling.value, 1))
     .map((fill) => ({ fill, y: (props.height - pad.value * 2) * (1 - fill) }))
   : []));
 </script>
@@ -41,8 +42,8 @@ const guides = computed(() => (props.detailed && props.window && props.limits
     :viewBox="`${-pad} ${-pad} ${width} ${height}`"
     aria-hidden="true"
   >
-    <template v-if="detailed && window">
-      <line class="limit" x1="0" :x2="width - pad * 2" y1="0" y2="0" />
+    <template v-if="detailed">
+      <line v-if="window && ceiling === window" class="limit" x1="0" :x2="width - pad * 2" y1="0" y2="0" />
       <line v-for="g in guides" :key="g.fill" class="guide" x1="0" :x2="width - pad * 2" :y1="g.y" :y2="g.y" />
     </template>
     <path class="area" :d="geometry.area" />

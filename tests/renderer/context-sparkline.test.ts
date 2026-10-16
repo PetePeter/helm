@@ -1,8 +1,11 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it } from 'vitest';
-import { sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
+import { mount } from '@vue/test-utils';
+import ContextSparkline from '../../renderer/components/sidebar/ContextSparkline.vue';
+import { sparklineCeiling, sparklineGeometry, windowSamples } from '../../renderer/context-sparkline.js';
 
 describe('sparklineGeometry', () => {
-  it('scales points against the context window, newest on the right edge', () => {
+  it('scales points against the provided ceiling, newest on the right edge', () => {
     const g = sparklineGeometry([{ at: 0, tokens: 0 }, { at: 10, tokens: 100 }], 200, { width: 100, height: 20 });
     expect(g?.points).toEqual([{ x: 0, y: 20 }, { x: 100, y: 10 }]);
     expect(g?.line).toBe('M0 20 L100 10');
@@ -14,14 +17,70 @@ describe('sparklineGeometry', () => {
     expect(g?.points.map((p) => p.x)).toEqual([0, 10, 100]);
   });
 
-  it('falls back to the peak when no window is known', () => {
-    const g = sparklineGeometry([{ at: 0, tokens: 50 }, { at: 1, tokens: 100 }], undefined, { width: 10, height: 10 });
+  it('scales a peak to the explicit ceiling', () => {
+    const g = sparklineGeometry([{ at: 0, tokens: 50 }, { at: 1, tokens: 100 }], 100, { width: 10, height: 10 });
     expect(g?.points.at(-1)?.y).toBe(0);
   });
 
   it('needs at least two samples to draw a line', () => {
     expect(sparklineGeometry([{ at: 0, tokens: 5 }], 10, { width: 10, height: 10 })).toBeUndefined();
     expect(sparklineGeometry(undefined, 10, { width: 10, height: 10 })).toBeUndefined();
+  });
+});
+
+describe('sparklineCeiling', () => {
+  it('adds headroom above the red limit and scales the peak to that ceiling', () => {
+    const samples = [{ at: 0, tokens: 0 }, { at: 10, tokens: 156_000 }];
+    const ceiling = sparklineCeiling(samples, { amber: 200_000, red: 400_000 }, 1_000_000);
+    expect(ceiling).toBe(440_000);
+    const geometry = sparklineGeometry(samples, ceiling, { width: 100, height: 100 });
+    expect(geometry?.points.at(-1)?.y).toBe(64.5);
+  });
+
+  it('adds ten percent above a peak that exceeds red', () => {
+    const samples = [{ at: 0, tokens: 100_000 }, { at: 10, tokens: 500_000 }];
+    expect(sparklineCeiling(samples, { amber: 300_000, red: 400_000 }, 1_000_000)).toBe(550_000);
+  });
+
+  it('never exceeds a known context window', () => {
+    const samples = [{ at: 0, tokens: 500_000 }, { at: 10, tokens: 950_000 }];
+    expect(sparklineCeiling(samples, { amber: 700_000, red: 900_000 }, 1_000_000)).toBe(1_000_000);
+    expect(sparklineCeiling(samples, undefined, 1_000_000)).toBe(1_000_000);
+  });
+
+  it('uses the peak when neither limits nor a window are known', () => {
+    const samples = [{ at: 0, tokens: 0 }, { at: 10, tokens: 156_000 }];
+    expect(sparklineCeiling(samples, undefined, undefined)).toBe(156_000);
+  });
+
+  it('adds ten percent above the peak when a window is known but limits are not', () => {
+    const samples = [{ at: 0, tokens: 0 }, { at: 10, tokens: 156_000 }];
+    expect(sparklineCeiling(samples, undefined, 1_000_000)).toBe(171_600);
+  });
+});
+
+describe('ContextSparkline guides', () => {
+  it('positions the line and limit guides against the same ceiling', () => {
+    const wrapper = mount(ContextSparkline, { props: {
+      samples: [{ at: 0, tokens: 0 }, { at: 10, tokens: 156_000 }],
+      window: 1_000_000, limits: { amber: 200_000, red: 400_000 },
+      width: 100, height: 100, detailed: true,
+    } });
+    expect(Number(wrapper.find('circle.now').attributes('cy'))).toBe(59.4);
+    const guides = wrapper.findAll('line.guide').map(line => Number(line.attributes('y1')));
+    expect(guides[0]).toBeCloseTo(92 * (1 - 200_000 / 440_000));
+    expect(guides[1]).toBeCloseTo(92 * (1 - 400_000 / 440_000));
+    expect(wrapper.find('line.limit').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows the top window guide only when the ceiling reaches the window', () => {
+    const wrapper = mount(ContextSparkline, { props: {
+      samples: [{ at: 0, tokens: 500_000 }, { at: 10, tokens: 950_000 }],
+      window: 1_000_000, limits: { amber: 200_000, red: 400_000 }, detailed: true,
+    } });
+    expect(wrapper.find('line.limit').exists()).toBe(true);
+    wrapper.unmount();
   });
 });
 

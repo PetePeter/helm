@@ -3073,6 +3073,17 @@ kbd {
 /* ── Settings screen: shared look for every page ─────────────────────────────
    Pages predate the redesign and share these class names, so the card / row /
    switch / ring language is applied here once instead of in each page. */
+.settings-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+  gap: var(--spacing-md);
+  align-items: start;
+}
+
+.settings-span {
+  grid-column: 1 / -1;
+}
+
 .settings-screen .focusable:focus-visible,
 .settings-screen .focusable:focus {
   outline: none;

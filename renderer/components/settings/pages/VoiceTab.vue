@@ -66,8 +66,8 @@ async function browse(field: (typeof FIELDS)[number]): Promise<void> {
 
 <template>
   <div class="settings-voice-panel">
-    <section class="voice-section">
-      <h4>Speech tools</h4>
+    <section class="voice-section settings-sections">
+      <h4 class="settings-span">Speech tools</h4>
       <label v-for="f in FIELDS" :key="f.key" class="voice-field" :data-field="f.key">
         {{ f.label }}
         <div class="voice-path-row">
@@ -87,9 +87,6 @@ async function browse(field: (typeof FIELDS)[number]): Promise<void> {
 
 <style scoped>
 .voice-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
   padding: var(--spacing-sm) 0;
 }
 

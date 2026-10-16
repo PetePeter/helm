@@ -26,12 +26,12 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
 </script>
 
 <template>
-  <div class="settings-auto-memory-panel">
-    <div class="settings-panel__header">
+  <div class="settings-auto-memory-panel settings-sections">
+    <div class="settings-panel__header settings-span">
       <span class="settings-panel__title">Auto memory</span>
     </div>
 
-    <div class="settings-help">
+    <div class="settings-help settings-span">
       <p>Helm records the key facts of every session as memories and hints at them later.
         The recording model works silently: it opens no session and never writes to your chat.</p>
     </div>
@@ -60,14 +60,14 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       >{{ store.testing ? 'Testing…' : 'Test' }}</button>
     </label>
 
-    <span v-if="offersRealCli" class="auto-memory-note">
+    <span v-if="offersRealCli" class="auto-memory-note settings-span">
       A real CLI is started once for every pass and loads its whole system prompt each time: about 28k tokens for Claude Code.
       Auto-save runs after every turn of every session, and on the same provider it draws on the quota of the sessions it serves.
       An API tool with a small model costs far less.
     </span>
-    <span v-if="store.inert" class="auto-memory-note">No recording model picked: auto-save does nothing until you pick one.</span>
-    <span v-if="store.stale" class="auto-memory-note">The picked model can no longer record, so auto-save does nothing: pick another.</span>
-    <span v-if="store.testOutcome" class="auto-memory-note">{{ store.testOutcome }}</span>
+    <span v-if="store.inert" class="auto-memory-note settings-span">No recording model picked: auto-save does nothing until you pick one.</span>
+    <span v-if="store.stale" class="auto-memory-note settings-span">The picked model can no longer record, so auto-save does nothing: pick another.</span>
+    <span v-if="store.testOutcome" class="auto-memory-note settings-span">{{ store.testOutcome }}</span>
 
     <label class="auto-memory-setting">
       <input
@@ -89,7 +89,7 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       <span>Auto-recall: hint at related memories when you send a prompt</span>
     </label>
 
-    <label class="auto-memory-prompt">
+    <label class="auto-memory-prompt settings-span">
       <span>Judge prompt: what the recording model is told before each turn it judges</span>
       <textarea
         class="auto-memory-prompt__text focusable"
@@ -109,7 +109,7 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       <span class="auto-memory-note">{{ promptEdited ? 'Using your edited prompt.' : 'Using the default prompt.' }}</span>
     </div>
 
-    <span v-if="store.error" class="auto-memory-note">{{ store.error }}</span>
+    <span v-if="store.error" class="auto-memory-note settings-span">{{ store.error }}</span>
   </div>
 </template>
 

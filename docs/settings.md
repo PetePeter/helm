@@ -34,6 +34,10 @@ Nav groups:
 - **Connections:** Telegram, Mobile, Fleet, MCP server, CLI integrations.
 - **System:** Operator, Voice, Updates, Scheduled tasks.
 
+## Layout
+
+The settings body uses the available page width. List and form pages keep a single vertical column for a clear reading order; pages with independent cards use the shared `.settings-sections` grid, which auto-fits columns at `minmax(520px, 1fr)`. `.settings-span` lets wide tables, lists, and long prompts use the full row. Intentional master-detail panes keep their own split.
+
 ## Gamepad
 
 Pages register with the screen through provide/inject (`settings-panes.ts`), not per-page wiring. The panes are the nav plus every innermost `SettingsPane` the page renders, left to right. A page opts in by wrapping its columns in `SettingsPane`, and a nested pane splits its parent into columns (as Skills does).

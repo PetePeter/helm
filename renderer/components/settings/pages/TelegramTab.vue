@@ -51,8 +51,8 @@ function immediateEmit(field: string, value: string): void {
 
 
 <template>
-  <div class="settings-telegram-panel">
-    <section class="telegram-section telegram-setup-guide">
+  <div class="settings-telegram-panel settings-sections">
+    <section class="telegram-section telegram-setup-guide settings-span">
       <details>
         <summary>Setup Guide</summary>
         <ol>

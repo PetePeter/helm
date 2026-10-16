@@ -411,7 +411,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 </template>
 
 <style scoped>
-.scheduled-tasks-tab { padding: 16px; max-width: 800px; margin: 0 auto; }
+.scheduled-tasks-tab { padding: 16px; }
 .scheduled-tasks-tab--popup { max-width: none; max-height: 78vh; overflow: auto; border: 2px solid #44cc44; border-radius: 8px; }
 .st-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .st-title { margin: 0; font-size: 1.5rem; color: var(--text-primary); }

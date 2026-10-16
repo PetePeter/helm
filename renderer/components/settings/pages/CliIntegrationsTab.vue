@@ -348,8 +348,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="settings-cli-integrations-panel">
-    <div class="tg-section">
+  <div class="settings-cli-integrations-panel settings-sections">
+    <div class="tg-section settings-span">
       <h3 class="tg-section-title">CLI Integrations</h3>
       <p class="settings-form__hint">
         Installs Helm's lifecycle hooks into each CLI's own user-level config, once per CLI —
@@ -494,7 +494,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="tg-section">
+    <div class="tg-section settings-span">
       <div class="hook-injection-heading">
         <div>
           <h3 class="tg-section-title">Hook injections</h3>
@@ -543,7 +543,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="tg-section">
+    <div class="tg-section settings-span">
       <h3 class="tg-section-title">Suggestion usage feedback</h3>
       <p class="settings-form__hint">
         When a session fetches a suggested skill or memory, Helm learns the association —

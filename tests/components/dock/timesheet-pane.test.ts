@@ -9,8 +9,8 @@ import type { Timesheet } from '../../../src/session/time-tracker.js';
 const day = new Date(2026, 8, 28, 9).getTime();
 const sheet: Timesheet = {
   columns: [day],
-  rows: [{ dir: 'C:/alpha/src', user: [10], ai: [5] }],
-  totals: { user: [10], ai: [5] },
+  rows: [{ dir: 'C:/alpha/src', user: [10], ai: [5], tokens: [1_200] }],
+  totals: { user: [10], ai: [5], tokens: [1_200] },
 };
 
 describe('TimesheetPane', () => {
@@ -48,6 +48,8 @@ describe('TimesheetPane', () => {
     await wrapper.get('button.timesheet-project').trigger('click');
     await flushPromises();
     expect(wrapper.text()).toContain('C:/alpha/src');
+    expect(wrapper.findAll('.timesheet-tokens')).toHaveLength(4);
+    expect(wrapper.text()).toContain('Tokens 1.2k');
     expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ projectKey: 'pA' }));
 
     appState.activeSessionId = 's2';

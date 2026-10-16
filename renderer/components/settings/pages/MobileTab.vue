@@ -144,7 +144,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 </script>
 
 <template>
-  <div class="mobile-tab">
+  <div class="mobile-tab settings-sections">
     <section class="mobile-section">
       <h3 class="mobile-section-title">Install on your phone</h3>
 
@@ -230,7 +230,7 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
       </template>
     </section>
 
-    <section class="mobile-section">
+    <section class="mobile-section settings-span">
       <div class="mobile-section-head">
         <h3 class="mobile-section-title">Paired phones</h3>
         <button class="btn btn-primary mobile-pair-btn" @click="startPairing()">
@@ -320,9 +320,6 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
 <style scoped>
 .mobile-tab {
   padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 .mobile-section { display: flex; flex-direction: column; gap: 6px; }
 .mobile-section-head { display: flex; align-items: center; gap: 8px; }

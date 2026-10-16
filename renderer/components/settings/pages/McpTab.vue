@@ -92,7 +92,7 @@ const statusText = computed(() => {
 </script>
 
 <template>
-  <div class="settings-mcp-panel">
+  <div class="settings-mcp-panel settings-sections">
     <!-- Connection -->
     <div class="tg-section">
       <h3 class="tg-section-title">Connection</h3>
@@ -179,6 +179,7 @@ const statusText = computed(() => {
     </div>
 
     <McpCliSetup
+      class="settings-span"
       :endpoint="endpoint"
       :token-literal="tokenLiteral"
       @run-in-shell="emit('run-in-shell', $event)"

@@ -4,10 +4,11 @@
  * A slot is "user" time for exactly one project: the one that got the most
  * user input in it (ties go to the latest). AI activity is tracked as a
  * separate "ai" kind, one per project per slot, because agents genuinely run
- * in parallel. Token use is a third kind, summed per project and CLI per slot: each
- * context reading adds its rise, and a drop (compact, /clear) adds the new,
- * smaller context. Open slots live in memory and are appended to JSONL once they
- * end (or on flush at shutdown). See docs/time-tracking.md.
+ * in parallel. Token use is a third kind, summed per project, CLI, and
+ * directory per slot. Each context reading adds its rise; a drop (compact,
+ * /clear, quick compact) adds the new, smaller context. Open slots live in
+ * memory and are appended to JSONL once they end (or on flush at shutdown).
+ * See docs/time-tracking.md.
  */
 
 import type { TimePersistence } from './time-persistence.js';
@@ -121,7 +122,7 @@ export class TimeTracker {
     if (!where) return;
     const start = slotStart(this.now());
     const map = this.slotFor().tokens;
-    const key = tokenKey(where.projectKey, where.cliType);
+    const key = tokenKey(where.projectKey, where.cliType, where.dir);
     const slot = map.get(key) ?? { start, kind: 'tokens' as const, ...where, tokens: 0 };
     slot.tokens! += added;
     map.set(key, slot);
@@ -174,7 +175,7 @@ export class TimeTracker {
     // time is presence, so the latest wins; tokens are disjoint partials, so they sum.
     const unique = new Map<string, TimeSlot>();
     for (const s of all) {
-      const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.kind === 'tokens' ? tokenKey(s.projectKey, s.cliType) : s.projectKey}`;
+      const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.kind === 'tokens' ? tokenKey(s.projectKey, s.cliType, s.dir) : s.projectKey}`;
       const seen = unique.get(key);
       unique.set(key, s.kind === 'tokens' && seen ? { ...s, tokens: (seen.tokens ?? 0) + (s.tokens ?? 0) } : s);
     }
@@ -203,8 +204,8 @@ export class TimeTracker {
   }
 }
 
-function tokenKey(projectKey: string, cliType: string | undefined): string {
-  return `${projectKey}|${cliType ?? ''}`;
+function tokenKey(projectKey: string, cliType: string | undefined, dir: string): string {
+  return `${projectKey}|${cliType ?? ''}|${dir}`;
 }
 
 function slotStart(ms: number): number {
@@ -236,7 +237,7 @@ function resolveSlot(start: number, slot: OpenSlot): TimeSlot[] {
 
 export type TimesheetPeriod = 'hour' | 'day' | 'week' | 'month';
 
-export interface TimesheetRow { dir: string; user: number[]; ai: number[] }
+export interface TimesheetRow { dir: string; user: number[]; ai: number[]; tokens: number[] }
 
 export interface Timesheet {
   /** Start of each column (local time, ms). */
@@ -279,8 +280,8 @@ function mondayOf(d: Date): Date {
 }
 
 /**
- * Minutes per directory per column for one project (null = every project),
- * plus tokens per column in the totals. Rows sorted by dir.
+ * Minutes and tokens per directory and column for one project (null = every
+ * project). Rows sorted by dir.
  */
 export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edges: number[]): Timesheet {
   const n = edges.length - 1;
@@ -291,9 +292,13 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edg
     if (projectKey !== null && slot.projectKey !== projectKey) continue;
     const col = columnOf(edges, slot.start);
     if (col < 0) continue;
-    if (slot.kind === 'tokens') { totals.tokens[col] += slot.tokens ?? 0; continue; }
     let row = rows.get(slot.dir);
-    if (!row) { row = { dir: slot.dir, user: zeros(), ai: zeros() }; rows.set(slot.dir, row); }
+    if (!row) { row = { dir: slot.dir, user: zeros(), ai: zeros(), tokens: zeros() }; rows.set(slot.dir, row); }
+    if (slot.kind === 'tokens') {
+      row.tokens[col] += slot.tokens ?? 0;
+      totals.tokens[col] += slot.tokens ?? 0;
+      continue;
+    }
     row[slot.kind][col] += SLOT_MINUTES;
     totals[slot.kind][col] += SLOT_MINUTES;
   }
@@ -362,11 +367,11 @@ function columnOf(edges: number[], t: number): number {
 }
 
 export function timesheetToCsv(sheet: Pick<Timesheet, 'columns' | 'rows'>, projectName: string): string {
-  const lines = ['period_start,project,directory,you_minutes,ai_minutes'];
+  const lines = ['period_start,project,directory,you_minutes,ai_minutes,tokens'];
   for (const row of sheet.rows) {
     sheet.columns.forEach((col, i) => {
-      if (!row.user[i] && !row.ai[i]) return;
-      lines.push([localDate(col), csvField(projectName), csvField(row.dir), row.user[i], row.ai[i]].join(','));
+      if (!row.user[i] && !row.ai[i] && !row.tokens[i]) return;
+      lines.push([localDate(col), csvField(projectName), csvField(row.dir), row.user[i], row.ai[i], row.tokens[i]].join(','));
     });
   }
   return lines.join('\n') + '\n';

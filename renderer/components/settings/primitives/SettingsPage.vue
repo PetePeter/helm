@@ -61,7 +61,7 @@ const saveLabel = computed(() => {
 .settings-page__actions { display: flex; gap: var(--spacing-sm); }
 .settings-page__body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--spacing-md) 22px; }
 .settings-page__body--flush { display: flex; padding: 0; overflow: hidden; }
-.settings-page__column { max-width: 860px; display: flex; flex-direction: column; gap: var(--spacing-md); }
+.settings-page__column { display: flex; flex-direction: column; gap: var(--spacing-md); }
 .settings-page__footer {
   display: flex; gap: 14px; align-items: center;
   padding: 8px 22px; border-top: 1px solid var(--border);

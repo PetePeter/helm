@@ -138,10 +138,12 @@ const range = computed(() => {
             <td v-for="(_, i) in sheet.columns" :key="i">
               <span class="timesheet-you">{{ formatMinutes(row.user[i]) }}</span>
               <span v-if="row.ai[i]" class="timesheet-ai">AI {{ formatMinutes(row.ai[i]) }}</span>
+              <span v-if="row.tokens[i]" class="timesheet-tokens">Tokens {{ formatTokens(row.tokens[i]) }}</span>
             </td>
             <td>
               <span class="timesheet-you">{{ formatMinutes(sum(row.user)) }}</span>
               <span class="timesheet-ai">AI {{ formatMinutes(sum(row.ai)) }}</span>
+              <span v-if="sum(row.tokens)" class="timesheet-tokens">Tokens {{ formatTokens(sum(row.tokens)) }}</span>
             </td>
           </tr>
         </tbody>
@@ -151,10 +153,12 @@ const range = computed(() => {
             <td v-for="(_, i) in sheet.columns" :key="i">
               <span class="timesheet-you">{{ formatMinutes(sheet.totals.user[i]) }}</span>
               <span v-if="sheet.totals.ai[i]" class="timesheet-ai">AI {{ formatMinutes(sheet.totals.ai[i]) }}</span>
+              <span v-if="sheet.totals.tokens[i]" class="timesheet-tokens">Tokens {{ formatTokens(sheet.totals.tokens[i]) }}</span>
             </td>
             <td>
               <span class="timesheet-you">{{ formatMinutes(sum(sheet.totals.user)) }}</span>
               <span class="timesheet-ai">AI {{ formatMinutes(sum(sheet.totals.ai)) }}</span>
+              <span v-if="sum(sheet.totals.tokens)" class="timesheet-tokens">Tokens {{ formatTokens(sum(sheet.totals.tokens)) }}</span>
             </td>
           </tr>
         </tfoot>
@@ -185,5 +189,5 @@ const range = computed(() => {
 .timesheet-table tfoot td { font-weight: 600; border-top: 1px solid var(--border); }
 .timesheet-dir { font-family: var(--font-mono); max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
 .timesheet-you { display: block; color: var(--text-primary); }
-.timesheet-ai { display: block; color: var(--info); font-size: var(--font-size-xs); }
+.timesheet-ai, .timesheet-tokens { display: block; color: var(--info); font-size: var(--font-size-xs); }
 </style>

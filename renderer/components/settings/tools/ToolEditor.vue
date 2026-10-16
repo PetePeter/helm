@@ -732,7 +732,7 @@ onMounted(async () => {
 <style scoped>
 .tool-editor { display: flex; flex-direction: column; min-height: 0; }
 .tool-editor__sections { padding: 8px 22px; border-bottom: 1px solid var(--border); }
-.tool-editor__body { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md) 22px; max-width: 860px; }
+.tool-editor__body { display: flex; flex-direction: column; gap: var(--spacing-md); padding: var(--spacing-md) 22px; }
 .te-error { margin: 0; padding: 6px 10px; border: 1px solid rgba(255, 82, 82, 0.5); border-radius: var(--radius-sm); color: var(--danger); background: rgba(255, 82, 82, 0.08); font-size: var(--font-size-sm); }
 .te-identity { margin: 0; color: var(--text-dim); font-size: 11px; font-family: var(--font-mono); user-select: text; }
 .te-params { color: var(--text-dim); font-weight: 400; font-size: 0.85em; margin-left: var(--spacing-xs); }

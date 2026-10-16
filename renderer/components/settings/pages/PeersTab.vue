@@ -131,14 +131,14 @@ function onPair(peer: DiscoveredPeer): void {
 </script>
 
 <template>
-  <div class="peers-tab">
+  <div class="peers-tab settings-sections">
     <FleetConfigPanel :config="fleetConfig" :status="fleetStatus" @update="onFleetUpdate" />
 
     <div v-if="!fleetEnabled" class="peers-off-hint">
       Fleet is off — enable it above to pair with other machines.
     </div>
 
-    <div class="peers-section">
+    <div class="peers-section settings-span">
       <div class="peers-section-head">
         <h4 class="peers-section-title">Paired peers</h4>
         <button class="btn btn--secondary btn--sm peers-audit-btn" type="button" @click="auditVisible = true">Audit</button>
@@ -202,7 +202,7 @@ function onPair(peer: DiscoveredPeer): void {
       </div>
     </div>
 
-    <div class="peers-section">
+    <div class="peers-section settings-span">
       <div class="peers-section-head">
         <h4 class="peers-section-title">Discover nearby</h4>
         <span class="peers-discovery-state" :class="`peers-discovery-state--${discoveryState}`">
@@ -250,9 +250,6 @@ function onPair(peer: DiscoveredPeer): void {
 <style scoped>
 .peers-tab {
   padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 .peers-off-hint {
   padding: 6px 8px;

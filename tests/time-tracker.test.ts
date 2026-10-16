@@ -20,6 +20,7 @@ const at = (h: number, m: number, s = 0) => DAY0 + h * 60 * MIN + m * MIN + s * 
 const SESSIONS: Record<string, SessionWhere> = {
   a1: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha', cliType: 'claude-code' },
   a2: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha/sub', cliType: 'codex' },
+  a3: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha/worktree', cliType: 'claude-code' },
   b1: { projectKey: 'pB', projectName: 'Beta', dir: 'C:/beta' },
 };
 
@@ -186,8 +187,8 @@ describe('buildTimesheet', () => {
     const sheet = buildTimesheet(t.query(edges[0], edges[7]), 'pA', edges);
     expect(sheet.columns).toHaveLength(7);
     expect(sheet.rows).toEqual([
-      { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0] },
-      { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [0, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
     ]);
     expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
   });
@@ -217,9 +218,9 @@ describe('buildTimesheet', () => {
     ]);
   });
 
-  it('exports CSV with one line per dir and day', () => {
-    const sheet = { columns: [DAY0], rows: [{ dir: 'C:/a,b', user: [15], ai: [5] }], totals: { user: [15], ai: [5] } };
-    expect(timesheetToCsv(sheet, 'Alpha')).toBe('period_start,project,directory,you_minutes,ai_minutes\n2026-09-28,Alpha,"C:/a,b",15,5\n');
+  it('exports CSV with one line per dir and day, including tokens', () => {
+    const sheet = { columns: [DAY0], rows: [{ dir: 'C:/a,b', user: [15], ai: [5], tokens: [1_200] }], totals: { user: [15], ai: [5], tokens: [1_200] } };
+    expect(timesheetToCsv(sheet, 'Alpha')).toBe('period_start,project,directory,you_minutes,ai_minutes,tokens\n2026-09-28,Alpha,"C:/a,b",15,5,1200\n');
   });
 });
 
@@ -293,6 +294,48 @@ describe('TimeTracker tokens', () => {
   });
 });
 
+describe('per-directory timesheet tokens', () => {
+  const edges = periodEdges('day', DAY0);
+  const sheetFor = (t: TimeTracker) => buildTimesheet(t.query(edges[0], edges[7]), 'pA', edges);
+
+  it('credits a token slot to its own directory row', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a1', 1_200);
+    const sheet = sheetFor(t);
+    expect(sheet.rows).toMatchObject([
+      { dir: 'C:/alpha', tokens: [1_200, 0, 0, 0, 0, 0, 0] },
+    ]);
+  });
+
+  it('keeps same-project, same-CLI directories separate within one five-minute slot', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a3', 0);
+    t.recordTokens('a1', 700); t.recordTokens('a3', 900);
+    expect(sheetFor(t).rows).toMatchObject([
+      { dir: 'C:/alpha', tokens: [700, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha/worktree', tokens: [900, 0, 0, 0, 0, 0, 0] },
+    ]);
+  });
+
+  it('sums directory token rows to the timesheet token totals', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a3', 0);
+    t.recordTokens('a1', 700); t.recordTokens('a3', 900);
+    const sheet = sheetFor(t);
+    const rows = sheet.rows as unknown as Array<{ tokens: number[] }>;
+    const rowTotals = rows.reduce((totals, row) => totals.map((value, i) => value + row.tokens[i]), new Array(7).fill(0));
+    expect(rowTotals).toEqual(sheet.totals.tokens);
+  });
+
+  it('leaves the per-CLI token sheet unchanged when directories split', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a3', 0);
+    t.recordTokens('a1', 700); t.recordTokens('a3', 900);
+    expect(buildTokenSheet(t.query(edges[0], edges[7]), edges, ['claude-code']).rows).toEqual([
+      { cliType: 'claude-code', label: 'claude-code', tokens: [1_600, 0, 0, 0, 0, 0, 0] },
+    ]);
+  });
+});
 describe('buildTokenSheet', () => {
   const edges = periodEdges('day', DAY0);
   const slots = (t: TimeTracker) => t.query(edges[0], edges[7]);

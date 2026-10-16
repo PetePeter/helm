@@ -69,7 +69,7 @@ describe('timesheetQuery (the phone Time tab)', () => {
   it("returns one project's folder grid when named", () => {
     const result = timesheetQuery(tracker, { projectKey: 'pA', period: 'hour', anchor: day }) as { sheet: { rows: unknown[]; columns: number[] } };
     expect(result.sheet.columns).toHaveLength(24);
-    expect(result.sheet.rows).toEqual([{ dir: 'C:/a', user: expect.any(Array), ai: expect.any(Array) }]);
+    expect(result.sheet.rows).toEqual([{ dir: 'C:/a', user: expect.any(Array), ai: expect.any(Array), tokens: expect.any(Array) }]);
   });
 
   it('registers the shared desktop query for the same overview and project detail', async () => {

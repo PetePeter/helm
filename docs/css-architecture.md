@@ -110,6 +110,15 @@ hiding the other. The page components predate it and share class names, so
 the switch / card / ring rules live once in `main.css` under `.settings-screen`.
 See [settings.md](settings.md).
 
+Settings content uses the available page width. The global `.settings-sections`
+grid auto-fits columns with `minmax(520px, 1fr)`; `.settings-span` lets wide
+tables, lists, and long prompts span the row. List and form pages keep a single
+column, while intentional master-detail panes retain their own split.
+
+Keep scoped `display`, `flex-direction`, and `gap` rules off `.settings-sections`.
+Vue's scoped selector is more specific than the global class, so a local flex
+rule can override and disable the shared grid.
+
 ## Buttons
 
 The `.btn` base supplies layout, typography, focus-visible treatment, and the
