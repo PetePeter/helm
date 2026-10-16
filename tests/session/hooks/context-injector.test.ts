@@ -64,8 +64,9 @@ function makeInjector(overrides: Partial<ContextInjectorDeps> = {}, base: Partia
 }
 
 function contextOf(body: unknown): string {
-  const nested = (body as { hookSpecificOutput?: { additionalContext?: string } }).hookSpecificOutput;
-  return (nested?.additionalContext ?? (body as { additionalContext?: string }).additionalContext) ?? '';
+  const value = body && typeof body === 'object' ? body as { hookSpecificOutput?: { additionalContext?: string }; additionalContext?: string } : {};
+  const nested = value.hookSpecificOutput;
+  return (nested?.additionalContext ?? value.additionalContext) ?? '';
 }
 
 describe('SessionStart injection', () => {
@@ -542,5 +543,106 @@ describe('Mission statement ([HELM_MISSION])', () => {
     const { injector } = makeInjector({ getMission: () => mission });
     const result = await injector.respond(hookEvent());
     expect(contextOf(result!.body)).toContain('Ship the mission bar');
+  });
+});
+
+describe('context pressure reminders', () => {
+  const limits = { amber: 75, red: 90 };
+
+  it('adds amber once to each user prompt while usage is above amber and below red', async () => {
+    const { injector } = makeInjector(
+      { getContextLimits: () => limits },
+      { contextUsage: { tokens: 80, window: 100 } },
+    );
+
+    for (const prompt of ['first', 'second']) {
+      const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt }));
+      const context = contextOf(result!.body);
+      expect(context).toContain('AMBER');
+      expect(context).toContain('session_compact');
+      expect(context).toContain('handover');
+      expect(context).toContain('session_quick_compact');
+    }
+
+    expect(contextOf((await injector.respond(hookEvent()))?.body)).not.toContain('AMBER');
+  });
+
+  it('adds the red quick-compact request on every hook while usage is above red', async () => {
+    const { injector } = makeInjector(
+      { getContextLimits: () => limits },
+      { contextUsage: { tokens: 91, window: 100 } },
+    );
+
+    const events = [
+      'SessionStart', 'UserPromptSubmit', 'UserPromptTransformed', 'PreToolUse', 'PostToolUse',
+      'PreCompact', 'Stop', 'SubagentStart', 'SubagentStop', 'StopFailure',
+    ] as const;
+    for (const event of events) {
+      const result = await injector.respond(hookEvent({
+        event,
+        cli: event === 'UserPromptTransformed' ? 'copilot' : 'claude',
+        prompt: 'user prompt',
+        transformedPrompt: 'model prompt',
+      }));
+      const body = JSON.stringify(result?.body);
+      expect(body).toContain('RED');
+      expect(body).toContain('session_quick_compact');
+      if (event === 'PreCompact') {
+        expect(body).not.toContain('"continue":false');
+        expect(body).not.toContain('"decision":"block"');
+      }
+    }
+  });
+
+  it('adds amber to Helm API prompt context as well as CLI prompts', async () => {
+    const { injector } = makeInjector(
+      { getContextLimits: () => limits },
+      { contextUsage: { tokens: 80, window: 100 } },
+    );
+
+    expect(await injector.promptContext('s1', 'Helm prompt')).toContain('AMBER');
+  });
+
+  it('uses the Copilot prompt-transform event for per-prompt amber guidance', async () => {
+    const { injector } = makeInjector(
+      { getContextLimits: () => limits },
+      { contextUsage: { tokens: 80, window: 100 } },
+    );
+    const result = await injector.respond(hookEvent({
+      cli: 'copilot',
+      event: 'UserPromptTransformed',
+      prompt: 'hello',
+      transformedPrompt: 'model-facing prompt',
+    }));
+
+    expect(result?.body).toMatchObject({ modifiedTransformedPrompt: expect.stringContaining('model-facing prompt') });
+    expect((result!.body as { modifiedTransformedPrompt: string }).modifiedTransformedPrompt).toContain('AMBER');
+  });
+
+  it('fails open when Copilot omits the transformed prompt text', async () => {
+    const { injector } = makeInjector(
+      { getContextLimits: () => limits },
+      { contextUsage: { tokens: 80, window: 100 } },
+    );
+    expect(await injector.respond(hookEvent({ cli: 'copilot', event: 'UserPromptTransformed', prompt: 'hello' }))).toBeNull();
+  });
+
+  it('respects editable alert text', async () => {
+    const { injector } = makeInjector({
+      getContextLimits: () => limits,
+      getHookInjectionOverrides: () => ({ amberContextAlert: 'Custom alert for {{level}}.' }),
+    }, { contextUsage: { tokens: 80, window: 100 } });
+
+    const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'hello' }));
+    expect(contextOf(result!.body)).toContain('Custom alert for amber.');
+    expect(contextOf(result!.body)).not.toContain('session_quick_compact');
+  });
+
+  it('does not alert without a measured context or valid limits', async () => {
+    const noUsage = makeInjector({ getContextLimits: () => limits });
+    const noLimits = makeInjector({ getContextLimits: () => undefined }, { contextUsage: { tokens: 99, window: 100 } });
+
+    expect(await noUsage.injector.respond(hookEvent({ event: 'UserPromptSubmit' }))).toBeNull();
+    expect(await noLimits.injector.respond(hookEvent({ event: 'UserPromptSubmit' }))).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 /**
- * ContextInjector — G4's decision brain for the non-deny hook events.
+ * ContextInjector — hook context, nudges and token-pressure reminders.
  *
- * THREE things it can say, each independently optional, SILENT when there is
+ * Its injections are independently optional, SILENT when there is
  * nothing worth saying (null — the common case must be free):
  *
  * A. SessionStart injection — the session's claimed plan and pending
@@ -17,9 +17,8 @@
  *    AIAGENT state blocks the turn ONCE; the second Stop always passes.
  *    The cap is 1 by decision and is NOT configurable.
  *
- * StopFailure is NEVER answered — a usage-limit stall must not be retried in
- * a loop. (Loop driving, if it ever lands, is a separate flag behind these
- * same events and inherits this rule.)
+ * Context pressure alerts are amber on each prompt and red on each hook.
+ * Red can accompany StopFailure, but never blocks or retries the failed turn.
  *
  * All deps are injected read functions; this class owns only the
  * once-per-session ledgers. Fail-open lives in the receiver's catch — a
@@ -29,16 +28,16 @@
 import type { SessionInfo, SessionMission } from '../../types/session.js';
 import { encodeAdditionalContext, encodeStopBlock } from './hook-encoder.js';
 import type { HookEvent } from './hook-normaliser.js';
-import { HELM_MSG_HOOK_RULES, HELM_TELEGRAM_HOOK_RULES, HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../intersession-directive.js';
 import {
   resolveReminderDelivery,
   type ReminderDeliveryMode,
   type ReminderId,
 } from '../reminder-delivery.js';
 import type { LoopDriver } from './loop-driver.js';
-import { OPERATOR_MANTRA } from '../../mcp/guides/operator-guide.js';
 import { logger } from '../../utils/logger.js';
 import { appendManifestoContext, formatManifestoContext } from '../artifact-context.js';
+import { contextLevel, type ContextLimits } from '../context-limits.js';
+import { renderHookInjection, type HookInjectionOverrides } from './hook-injections.js';
 
 /** A claimed plan reduced to what a nudge names. */
 export interface ClaimedPlanSummary {
@@ -89,6 +88,9 @@ export interface ContextInjectorDeps {
    * 'pty' means the prepend path owns the reminder and nothing is injected.
    */
   getReminderMode?(reminder: ReminderId): ReminderDeliveryMode | undefined;
+  /** Last known token thresholds and editable injection templates. */
+  getContextLimits?(session: SessionInfo): ContextLimits | undefined;
+  getHookInjectionOverrides?(): HookInjectionOverrides;
   /**
    * G8 loop driving: continuation (autoImplement-gated) and verification
    * (completionRecap-gated) on the same Stop event. Checked BEFORE the
@@ -102,8 +104,8 @@ export interface ContextInjectorDeps {
 export type InjectorResponse = { statusCode: 200; body: Record<string, unknown> } | null;
 
 // CLIs whose UserPromptSubmit command-hook output reaches the model. Copilot
-// drops that event's command-hook output entirely, so injecting there is
-// writing into the void — Copilot sessions keep the prepended rules header.
+// drops that event's output, so it keeps prepended rules; its separate
+// userPromptTransformed event is used only for prompt-specific additions.
 // Shared with hook-capability.ts: the delivery side must consult the SAME set
 // before deciding the prepended rules header is redundant.
 export const PROMPT_INJECTION_PROVIDERS = new Set(['claude', 'codex']);
@@ -130,6 +132,10 @@ export class ContextInjector {
     this.deps = deps;
   }
 
+  private injection(id: Parameters<typeof renderHookInjection>[0], values: Record<string, string | number | undefined> = {}): string {
+    return renderHookInjection(id, values, this.deps.getHookInjectionOverrides?.());
+  }
+
   /** A closed session takes its ledgers with it. */
   forgetSession(sessionId: string): void {
     this.nudged.delete(sessionId);
@@ -148,18 +154,34 @@ export class ContextInjector {
     // prepended first-contact block would be.
     if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
 
+    let response: InjectorResponse;
     switch (event.event) {
       case 'SessionStart':
-        return this.respondSessionStart(event, session);
+        response = this.respondSessionStart(event, session);
+        break;
       case 'UserPromptSubmit':
-        return this.respondUserPrompt(event, session);
+        // Copilot discards this event's command output. Its supported
+        // userPromptTransformed event carries the per-prompt injection.
+        if (event.cli === 'copilot') {
+          const alert = this.contextAlert(session, false);
+          return alert ? { statusCode: 200, body: encodeAdditionalContext(event, alert) } : null;
+        }
+        response = await this.respondUserPrompt(event, session);
+        break;
+      case 'UserPromptTransformed':
+        response = await this.respondUserPrompt(event, session);
+        break;
       case 'Stop':
-        return this.respondStop(event, session);
+        response = this.respondStop(event, session);
+        break;
       default:
-        // StopFailure and every other event: no-op, always. A died turn is
-        // reported fact, not something to retry or steer.
-        return null;
+        response = null;
+        break;
     }
+    const alert = event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed'
+      ? null
+      : this.contextAlert(session, false);
+    return alert ? this.attachAlert(event, response, alert) : response;
   }
 
   // -- A. SessionStart: plan + handover ---------------------------
@@ -167,14 +189,14 @@ export class ContextInjector {
   private respondSessionStart(event: HookEvent, session: SessionInfo): InjectorResponse {
     // Manifesto context and any already-pending handover travel together, but
     // keep the whole persistent section ahead of capped incidental context.
-    const parts: string[] = session.role === 'operator' ? [OPERATOR_MANTRA] : [];
-    const manifestoContext = formatManifestoContext(this.deps.getManifestos?.(session.id) ?? []);
+    const parts: string[] = session.role === 'operator' ? [this.injection('operatorMantra')] : [];
+    const formattedManifesto = formatManifestoContext(this.deps.getManifestos?.(session.id) ?? []);
+    const manifestoContext = formattedManifesto ? this.injection('manifestoContext', { content: formattedManifesto }) : '';
     const plan = this.deps.getClaimedPlan(session.id);
     if (plan) {
       parts.push(
         truncate(
-          `Working plan: ${plan.humanId ?? 'P-?'} "${plan.title}" (${plan.status}). ` +
-            'Complete it with plan_complete when done; session_plan_claim to put it down or take another.',
+          this.injection('workingPlan', { humanId: plan.humanId ?? 'P-?', title: plan.title, status: plan.status }),
           SOURCE_CAP_CHARS,
         ),
       );
@@ -184,8 +206,7 @@ export class ContextInjector {
     const tasks = session.role === 'operator' ? this.deps.getOpenTasks?.(session.id) ?? [] : [];
     if (tasks.length > 0) {
       parts.push(truncate(
-        `Your open tasks: ${tasks.join('; ')}. ` +
-          'Keep following each until done; when one is, plan_complete it (Helm cancels its timer).',
+        this.injection('openTasks', { tasks: tasks.join('; ') }),
         SOURCE_CAP_CHARS,
       ));
     }
@@ -193,25 +214,21 @@ export class ContextInjector {
     // who is not watching instead of the operator that is waiting.
     if (session.reportsTo) {
       parts.push(
-        `You were started by the Helm operator (session "${session.reportsTo}") and work for it. ` +
-          'Report progress, results and ANY questions to it with session_send_text ' +
-          `(sessionId "${session.reportsTo}"; expectsResponse=true for questions) — not to the user — ` +
-          'until the user messages you directly.',
+        this.injection('reportsTo', { sessionId: session.reportsTo }),
       );
     }
     const mission = this.deps.getMission?.(session.id);
-    if (mission) parts.push(truncate(missionLine(mission), SOURCE_CAP_CHARS));
+    if (mission) parts.push(truncate(this.injection('missionStart', { text: mission.text }), SOURCE_CAP_CHARS));
     const rings = session.role === 'operator' ? this.deps.getRingRequests?.(session.id) ?? [] : [];
     if (rings.length > 0) {
       parts.push(truncate(
-        `Pending ring-me requests (your ${RING_ME_PREFIX} memories): ${rings.join('; ')}. ` +
-          'Check each; when one is met, ring_user with a short reason, then memory_delete it.',
+        this.injection('ringRequests', { requests: rings.join('; ') }),
         SOURCE_CAP_CHARS,
       ));
     }
     const handover = this.deps.getHandover(session.id);
     const persistentContext = appendManifestoContext(
-      handover ? `One-shot Handover note carried across your last compaction:\n${handover}` : undefined,
+      handover ? this.injection('handover', { content: handover }) : undefined,
       manifestoContext,
     );
     if (persistentContext) {
@@ -234,10 +251,16 @@ export class ContextInjector {
   // -- B/C/E. UserPromptSubmit: rules, suggester pointer, nudges ------------
 
   private async respondUserPrompt(event: HookEvent, session: SessionInfo): Promise<InjectorResponse> {
-    // Copilot drops command-hook output for this event entirely — anything we
-    // return is written into the void. Its sessions keep the prepended rules.
+    if (event.event === 'UserPromptTransformed') {
+      // Copilot exposes transformed prompt mutation, but this new path only
+      // carries the token alert; it does not change existing prompt behavior.
+      if (event.cli !== 'copilot' || typeof event.transformedPrompt !== 'string') return null;
+      const alert = this.contextAlert(session, true);
+      return alert ? { statusCode: 200, body: encodeAdditionalContext(event, alert) } : null;
+    }
     if (!PROMPT_INJECTION_PROVIDERS.has(event.cli)) return null;
-    const context = await this.userPromptContext(session, event.prompt ?? '');
+    const hookCanCarryStandingRules = PROMPT_INJECTION_PROVIDERS.has(event.cli);
+    const context = await this.userPromptContext(session, event.prompt ?? '', () => true, true, hookCanCarryStandingRules);
     return context ? { statusCode: 200, body: encodeAdditionalContext(event, context) } : null;
   }
 
@@ -251,10 +274,16 @@ export class ContextInjector {
     const session = this.deps.getSession(sessionId);
     if (!session) return null;
     if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
-    return this.userPromptContext(session, prompt, tools ? (tool) => tools.has(tool) : () => true);
+    return this.userPromptContext(session, prompt, tools ? (tool) => tools.has(tool) : () => true, true);
   }
 
-  private async userPromptContext(session: SessionInfo, prompt: string, can: (tool: string) => boolean = () => true): Promise<string | null> {
+  private async userPromptContext(
+    session: SessionInfo,
+    prompt: string,
+    can: (tool: string) => boolean = () => true,
+    includePromptAlert = false,
+    hookCanCarryStandingRules = true,
+  ): Promise<string | null> {
     const parts: string[] = [];
 
     // The user reaching an operator-started session themselves (phone or
@@ -269,22 +298,22 @@ export class ContextInjector {
     // 'off' suppresses them, so one message never carries both forms.
     const mode = (reminder: ReminderId) => this.deps.getReminderMode?.(reminder);
     if (prompt.includes('[HELM_MSG')) {
-      if (can('chat_send') && resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), true).channel === 'hook') {
-        parts.push(HELM_MSG_HOOK_RULES);
+      if (can('chat_send') && resolveReminderDelivery('helmMsgRules', mode('helmMsgRules'), hookCanCarryStandingRules).channel === 'hook') {
+        parts.push(this.injection('helmMsgRules'));
       }
     } else if (prompt.includes('[HELM_TELEGRAM')) {
-      if (resolveReminderDelivery('telegramInstruction', mode('telegramInstruction'), true).channel === 'hook') {
-        parts.push(HELM_TELEGRAM_HOOK_RULES);
+      if (resolveReminderDelivery('telegramInstruction', mode('telegramInstruction'), hookCanCarryStandingRules).channel === 'hook') {
+        parts.push(this.injection('telegramRules'));
       }
       // The mode block is announced once per entry into Telegram mode — the
       // injected twin of the relay's first-contact prepend.
       if (
         session.interactionChannel === 'telegram' &&
         !this.telegramModeAnnounced.has(session.id) &&
-        resolveReminderDelivery('telegramModeInstructions', mode('telegramModeInstructions'), true).channel === 'hook'
+        resolveReminderDelivery('telegramModeInstructions', mode('telegramModeInstructions'), hookCanCarryStandingRules).channel === 'hook'
       ) {
         this.telegramModeAnnounced.add(session.id);
-        parts.push(HELM_TELEGRAM_MODE_INSTRUCTIONS);
+        parts.push(this.injection('telegramMode'));
       }
     }
 
@@ -294,23 +323,63 @@ export class ContextInjector {
     // Without session_mission_set the mission is a fact to read, not an instruction.
     if (this.deps.getMission) {
       const mission = this.deps.getMission(session.id);
-      if (can('session_mission_set')) parts.push(missionReminder(mission));
-      else if (mission) parts.push(missionLine(mission));
+      if (can('session_mission_set')) {
+        parts.push(mission
+          ? this.injection('missionPromptCurrent', { text: mission.text })
+          : this.injection('missionPromptUnset'));
+      } else if (mission) parts.push(this.injection('missionStart', { text: mission.text }));
     }
 
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
     const pointer = await this.deps.suggest(session.id, prompt, projectId);
-    if (pointer && (can('memory_get') || can('skill_get'))) parts.push(pointer);
+    if (pointer && (can('memory_get') || can('skill_get'))) parts.push(this.injection('suggestionPointer', { content: pointer }));
 
     const nudge = this.oneShotNudges(session, can);
     if (nudge) parts.push(nudge);
 
+    const alert = this.contextAlert(session, includePromptAlert);
+    if (alert) parts.unshift(alert);
     if (parts.length === 0) return null;
     const context = capJoined(parts, TOTAL_CAP_CHARS);
     logger.debug(
       `[HookInject] UserPromptSubmit session=${session.id}: ${parts.length} part(s), ${context.length} chars`,
     );
     return context;
+  }
+
+  private contextAlert(session: SessionInfo, promptEvent: boolean): string | null {
+    const tokens = session.contextUsage?.tokens;
+    const limits = this.deps.getContextLimits?.(session);
+    if (typeof tokens !== 'number' || tokens <= 0 || !limits) return null;
+    const level = contextLevel(tokens, limits);
+    const values = { tokens, amber: limits.amber, red: limits.red, level: level === 'hot' ? 'red' : 'amber' };
+    const overrides = this.deps.getHookInjectionOverrides?.();
+    if (level === 'hot') return renderHookInjection('redContextAlert', values, overrides);
+    if (promptEvent && level === 'warn') return renderHookInjection('amberContextAlert', values, overrides);
+    return null;
+  }
+
+  /** Attach an alert without changing the hook's allow/deny/stop decision. */
+  private attachAlert(event: HookEvent, response: InjectorResponse, alert: string): InjectorResponse {
+    if (response && event.event === 'Stop') {
+      const body = { ...response.body };
+      if (body.decision === 'block' && typeof body.reason === 'string') {
+        body.reason = `${body.reason}\n\n${alert}`;
+        return { ...response, body };
+      }
+    }
+    if (!response) return { statusCode: 200, body: encodeAdditionalContext(event, alert) };
+    const body = { ...response.body };
+    const specific = body.hookSpecificOutput;
+    if (specific && typeof specific === 'object' && !Array.isArray(specific)) {
+      const nested = specific as Record<string, unknown>;
+      const current = typeof nested.additionalContext === 'string' ? nested.additionalContext : '';
+      body.hookSpecificOutput = { ...nested, additionalContext: current ? `${current}\n\n${alert}` : alert };
+    } else {
+      const current = typeof body.additionalContext === 'string' ? body.additionalContext : '';
+      body.additionalContext = current ? `${current}\n\n${alert}` : alert;
+    }
+    return { ...response, body };
   }
 
   /**
@@ -321,9 +390,7 @@ export class ContextInjector {
     const lines: string[] = [];
     if (session.aiagentState === undefined && can('session_set_aiagent_state')) {
       if (this.markNudged(session.id, 'aiagent-state')) {
-        lines.push(
-          'Your AIAGENT state is unset — call session_set_aiagent_state so your row shows what you are doing.',
-        );
+        lines.push(this.injection('aiagentNudge'));
       }
     }
     if (can('session_plan_claim') && !this.deps.getClaimedPlan(session.id)) {
@@ -331,9 +398,7 @@ export class ContextInjector {
       for (const plan of this.deps.getStartablePlans(dirPath)) {
         const key = `startable:${plan.humanId ?? plan.title}`;
         if (!this.markNudged(session.id, key)) continue;
-        lines.push(
-          `Startable plan here: ${plan.humanId ?? '?'} "${plan.title}" — claim it with session_plan_claim if you want the work.`,
-        );
+        lines.push(this.injection('startablePlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
         break; // one pointer is a nudge; a list is a nag
       }
     }
@@ -360,7 +425,7 @@ export class ContextInjector {
     // the loop speaks, the nudge below stays silent (and its ledger intact).
     const loopBlock = this.deps.loop?.stopBlock(session);
     if (loopBlock) {
-      return { statusCode: 200, body: encodeStopBlock(event, loopBlock) };
+      return { statusCode: 200, body: encodeStopBlock(event, this.injection('loopStopBlock', { content: loopBlock })) };
     }
 
     const plan = this.deps.getClaimedPlan(session.id);
@@ -371,31 +436,14 @@ export class ContextInjector {
 
     const lines: string[] = [];
     if (plan) {
-      lines.push(
-        `You are stopping with plan item ${plan.humanId ?? '?'} "${plan.title}" still claimed and open. ` +
-          'Finish it, or complete/set it down with plan_complete or session_plan_claim, then stop again.',
-      );
+      lines.push(this.injection('stopPlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
     }
     if (unsettled) {
-      lines.push('Your AIAGENT state is unset — call session_set_aiagent_state (e.g. "completed") before stopping.');
+      lines.push(this.injection('stopAiagentNudge'));
     }
     logger.info(`[HookInject] Stop nudge session=${session.id} (${session.name}): blocked once`);
     return { statusCode: 200, body: encodeStopBlock(event, lines.join('\n')) };
   }
-}
-
-/** The SessionStart form: just the fact. */
-function missionLine(mission: SessionMission): string {
-  return `[HELM_MISSION] Current mission: "${mission.text}".`;
-}
-
-/** The per-prompt form: the fact plus the standing instruction to keep it current. */
-function missionReminder(mission: SessionMission | undefined): string {
-  if (!mission) {
-    return '[HELM_MISSION] No mission set. Call session_mission_set with a one-line TL;DR of what this session is doing.';
-  }
-  return `${missionLine(mission)} If this prompt changes the direction of work, call session_mission_set ` +
-    'with a new TL;DR (max 500 chars). Otherwise ignore.';
 }
 
 /** Join parts and cut the whole payload deterministically — never mid-line. */

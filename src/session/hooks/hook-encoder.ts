@@ -9,8 +9,8 @@
  * - additionalContext: Claude and Codex require it nested under
  *   hookSpecificOutput with hookEventName — Claude Code SILENTLY IGNORES a
  *   top-level additionalContext. Copilot wants it flat at the top level and
- *   drops command-hook output for userPromptSubmitted entirely, so injection
- *   is a SessionStart-only capability there.
+ *   drops command-hook output for userPromptSubmitted entirely; prompt-specific
+ *   additions use userPromptTransformed and modifiedTransformedPrompt instead.
  * - stop block: all three read the same flat {decision:"block", reason} for
  *   their stop events (Claude Stop and PostToolUse use the TOP-LEVEL decision
  *   field — only PermissionRequest nests decision; Codex Stop
@@ -25,6 +25,13 @@ import type { HookEvent } from './hook-normaliser.js';
  * be encoded — callers decide no-op before reaching here.
  */
 export function encodeAdditionalContext(event: HookEvent, text: string): Record<string, unknown> {
+  // Codex PreCompact supports systemMessage as a warning, not additionalContext.
+  // This leaves the native compaction decision completely untouched.
+  if (event.event === 'PreCompact' && event.cli === 'codex') return { systemMessage: text };
+  if (event.event === 'UserPromptTransformed' && event.cli === 'copilot') {
+    if (typeof event.transformedPrompt !== 'string') return {};
+    return { modifiedTransformedPrompt: `${event.transformedPrompt}\n\n${text}` };
+  }
   switch (event.cli) {
     case 'claude':
     case 'codex':

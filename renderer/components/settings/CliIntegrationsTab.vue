@@ -19,7 +19,7 @@
  * a provider (auto-migrated on load, correctable here) — that mapping is what
  * hook capability resolves against.
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { configClient, toolsClient } from '../../ipc/clients.js';
 import {
   DEFAULT_REMINDER_MODES,
@@ -27,6 +27,11 @@ import {
   type ReminderDeliveryMode,
   type ReminderId,
 } from '../../../src/session/reminder-delivery.js';
+import {
+  HOOK_INJECTION_DEFINITIONS,
+  type HookInjectionId,
+  type HookInjectionOverrides,
+} from '../../../src/session/hooks/hook-injections.js';
 
 type HookStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
@@ -169,6 +174,26 @@ function unregisterHint(item: HookIntegrationItem): string {
 
 const reminderModes = ref<Partial<Record<ReminderId, ReminderDeliveryMode>>>({});
 const reminderBusy = ref(false);
+const injectionOverrides = ref<HookInjectionOverrides>({});
+const injectionLoading = ref(true);
+const selectedInjectionId = ref<HookInjectionId>(HOOK_INJECTION_DEFINITIONS[0].id);
+const injectionStatus = ref('');
+let injectionSaveTimer: ReturnType<typeof setTimeout> | undefined;
+let injectionSaveVersion = 0;
+let injectionSaveQueue: Promise<void> = Promise.resolve();
+
+const selectedInjection = computed(() =>
+  HOOK_INJECTION_DEFINITIONS.find((item) => item.id === selectedInjectionId.value) ?? HOOK_INJECTION_DEFINITIONS[0],
+);
+const selectedInjectionText = computed({
+  get: () => injectionOverrides.value[selectedInjectionId.value] ?? selectedInjection.value.defaultTemplate,
+  set: (value: string) => updateInjection(selectedInjectionId.value, value),
+});
+const injectionGroups = computed(() => [...new Set(HOOK_INJECTION_DEFINITIONS.map((item) => item.group))]);
+
+function hasInjectionOverride(id: HookInjectionId): boolean {
+  return Object.prototype.hasOwnProperty.call(injectionOverrides.value, id);
+}
 
 const reminders = computed(() =>
   REMINDER_IDS.map((id) => ({
@@ -218,6 +243,70 @@ async function setReminderMode(id: ReminderId, mode: ReminderDeliveryMode): Prom
   }
 }
 
+async function loadHookInjections(): Promise<void> {
+  try {
+    const result = await configClient.configGetHookInjections();
+    if (result.success) injectionOverrides.value = result.overrides ?? {};
+    else injectionStatus.value = result.error ?? 'Could not read hook injections';
+  } catch (error) {
+    injectionStatus.value = String(error);
+  } finally {
+    injectionLoading.value = false;
+  }
+}
+
+function updateInjection(id: HookInjectionId, value: string): void {
+  injectionOverrides.value = { ...injectionOverrides.value, [id]: value };
+  injectionStatus.value = 'Saving…';
+  if (injectionSaveTimer) clearTimeout(injectionSaveTimer);
+  const version = ++injectionSaveVersion;
+  injectionSaveTimer = setTimeout(() => void saveInjection(id, value, version), 350);
+}
+
+function selectInjection(id: HookInjectionId): void {
+  if (injectionSaveTimer) {
+    clearTimeout(injectionSaveTimer);
+    void saveInjection(selectedInjectionId.value, selectedInjectionText.value, injectionSaveVersion);
+  }
+  selectedInjectionId.value = id;
+}
+
+async function saveInjection(id: HookInjectionId, value: string, version: number): Promise<void> {
+  injectionSaveTimer = undefined;
+  const save = injectionSaveQueue.then(async () => {
+    try {
+      const result = await configClient.configSetHookInjections({ [id]: value });
+      if (version !== injectionSaveVersion) return;
+      if (result.success) injectionStatus.value = 'Saved';
+      else injectionStatus.value = result.error ?? 'Could not save hook injection';
+    } catch (error) {
+      if (version === injectionSaveVersion) injectionStatus.value = String(error);
+    }
+  });
+  injectionSaveQueue = save.then(() => undefined, () => undefined);
+  await save;
+}
+
+async function resetHookInjections(): Promise<void> {
+  if (injectionSaveTimer) clearTimeout(injectionSaveTimer);
+  injectionSaveTimer = undefined;
+  ++injectionSaveVersion;
+  injectionStatus.value = 'Saving…';
+  const reset = injectionSaveQueue.then(async () => {
+    try {
+      const result = await configClient.configResetHookInjections();
+      if (result.success) {
+        injectionOverrides.value = {};
+        injectionStatus.value = 'Defaults restored';
+      } else injectionStatus.value = result.error ?? 'Could not reset hook injections';
+    } catch (error) {
+      injectionStatus.value = String(error);
+    }
+  });
+  injectionSaveQueue = reset.then(() => undefined, () => undefined);
+  await reset;
+}
+
 async function loadUsage(): Promise<void> {
   const result = await configClient.hooksGetSuggestionUsage();
   if (result.success) {
@@ -246,7 +335,15 @@ onMounted(() => {
   void loadStatus();
   void loadUsage();
   void loadReminderModes();
+  void loadHookInjections();
   void loadToolMapping();
+});
+
+onUnmounted(() => {
+  if (injectionSaveTimer) {
+    clearTimeout(injectionSaveTimer);
+    void saveInjection(selectedInjectionId.value, selectedInjectionText.value, injectionSaveVersion);
+  }
 });
 </script>
 
@@ -398,6 +495,55 @@ onMounted(() => {
     </div>
 
     <div class="tg-section">
+      <div class="hook-injection-heading">
+        <div>
+          <h3 class="tg-section-title">Hook injections</h3>
+          <p class="settings-form__hint">
+            Edit the text Helm adds through CLI hooks. Changes save automatically. Use the listed placeholders to keep dynamic details.
+          </p>
+        </div>
+        <div class="hook-injection-heading__actions">
+          <span class="settings-form__hint" role="status" aria-live="polite">{{ injectionStatus }}</span>
+          <button class="btn btn--secondary btn--sm focusable" :disabled="injectionLoading" @click="resetHookInjections">Reset defaults</button>
+        </div>
+      </div>
+      <div class="hook-injection-editor">
+        <nav class="hook-injection-list" aria-label="Hook injections">
+          <template v-for="group in injectionGroups" :key="group">
+            <h4 class="hook-injection-list__group">{{ group }}</h4>
+            <button
+              v-for="item in HOOK_INJECTION_DEFINITIONS.filter((entry) => entry.group === group)"
+              :key="item.id"
+              class="hook-injection-list__item focusable"
+              :class="{ 'hook-injection-list__item--selected': selectedInjectionId === item.id }"
+              :aria-current="selectedInjectionId === item.id ? 'page' : undefined"
+              @click="selectInjection(item.id)"
+            >
+              <span>{{ item.label }}</span>
+              <span v-if="hasInjectionOverride(item.id)" class="hook-injection-list__custom">Edited</span>
+            </button>
+          </template>
+        </nav>
+        <section class="hook-injection-detail" :aria-label="selectedInjection.label">
+          <h4>{{ selectedInjection.label }}</h4>
+          <p class="settings-form__hint">{{ selectedInjection.description }}</p>
+          <label class="hook-injection-detail__label" :for="`hook-injection-${selectedInjection.id}`">Injection text</label>
+          <textarea
+            :id="`hook-injection-${selectedInjection.id}`"
+            v-model="selectedInjectionText"
+            class="hook-injection-detail__textarea focusable"
+            rows="12"
+            maxlength="10000"
+            spellcheck="false"
+            :disabled="injectionLoading"
+            :aria-label="`${selectedInjection.label} template`"
+          />
+          <p class="settings-form__hint">Template placeholders such as &#123;&#123;tokens&#125;&#125;, &#123;&#123;red&#125;&#125; and &#123;&#123;content&#125;&#125; are replaced when the hook runs.</p>
+        </section>
+      </div>
+    </div>
+
+    <div class="tg-section">
       <h3 class="tg-section-title">Suggestion usage feedback</h3>
       <p class="settings-form__hint">
         When a session fetches a suggested skill or memory, Helm learns the association —
@@ -495,5 +641,89 @@ onMounted(() => {
   display: flex;
   gap: 6px;
   margin-top: 6px;
+}
+
+.hook-injection-heading,
+.hook-injection-heading__actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.hook-injection-editor {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.hook-injection-list {
+  padding: var(--spacing-sm);
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.hook-injection-list__group {
+  margin: var(--spacing-sm) 0 4px;
+  padding: 0 8px;
+  font-size: var(--font-size-sm);
+  opacity: 0.7;
+}
+
+.hook-injection-list__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 8px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.hook-injection-list__item--selected {
+  background: var(--bg-tertiary);
+}
+
+.hook-injection-list__custom {
+  font-size: var(--font-size-xs);
+  opacity: 0.65;
+}
+
+.hook-injection-detail {
+  min-width: 0;
+  padding: var(--spacing-md);
+}
+
+.hook-injection-detail__label {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.hook-injection-detail__textarea {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  padding: 10px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, "Cascadia Code", "Fira Code", monospace);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .hook-injection-heading { align-items: flex-start; flex-direction: column; }
+  .hook-injection-editor { grid-template-columns: minmax(120px, 38%) minmax(0, 1fr); }
 }
 </style>

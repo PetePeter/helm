@@ -97,6 +97,7 @@ describe('normaliseHookEvent', () => {
     const pairs: Array<[string, string]> = [
       ['sessionStart', 'SessionStart'],
       ['userPromptSubmitted', 'UserPromptSubmit'],
+      ['userPromptTransformed', 'UserPromptTransformed'],
       ['preToolUse', 'PreToolUse'],
       ['postToolUse', 'PostToolUse'],
       ['preCompact', 'PreCompact'],
@@ -104,6 +105,22 @@ describe('normaliseHookEvent', () => {
     for (const [native, canonical] of pairs) {
       expect(normalise({ cli: 'copilot', event: native, payload: {} })?.event).toBe(canonical);
     }
+  });
+
+  it('captures Copilot original and model-facing prompt text for userPromptTransformed', () => {
+    expect(normalise({
+      cli: 'copilot',
+      event: 'userPromptTransformed',
+      payload: { prompt: 'original prompt', transformedPrompt: 'model prompt' },
+    })).toMatchObject({
+      event: 'UserPromptTransformed',
+      prompt: 'original prompt',
+      transformedPrompt: 'model prompt',
+    });
+  });
+
+  it('does not accept Copilot-specific transformed prompts from other providers', () => {
+    expect(normalise({ cli: 'claude', event: 'UserPromptTransformed', payload: {} })).toBeNull();
   });
 
   it('returns null for an event no CLI in the common core knows', () => {

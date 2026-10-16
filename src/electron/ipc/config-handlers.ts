@@ -17,6 +17,7 @@ import { HOOK_PROVIDERS, getHookProviderConfig } from '../../session/hooks/hook-
 import { PROMPT_INJECTION_PROVIDERS } from '../../session/hooks/context-injector.js';
 import { REMINDER_IDS, isReminderDeliveryMode, type ReminderDeliveryMode, type ReminderId } from '../../session/reminder-delivery.js';
 import { summarizeSuggestionUsage, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
+import { isHookInjectionId, type HookInjectionOverrides } from '../../session/hooks/hook-injections.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../../session/project-identity.js';
 import { logger } from '../../utils/logger.js';
 
@@ -670,6 +671,41 @@ export function setupConfigHandlers(
       return { success: true, modes: configLoader.getReminderDelivery() };
     } catch (error) {
       logger.error(`[IPC] Failed to set reminder delivery: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:getHookInjections', () => {
+    try {
+      return { success: true, overrides: configLoader.getHookInjectionOverrides() };
+    } catch (error) {
+      logger.error(`[IPC] Failed to read hook injections: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:setHookInjections', (_event, updates: Record<string, unknown>) => {
+    try {
+      const validated: Partial<Record<keyof HookInjectionOverrides, string | null>> = {};
+      for (const [id, value] of Object.entries(updates ?? {})) {
+        if (isHookInjectionId(id) && (value === null || (typeof value === 'string' && value.length <= 10000))) {
+          validated[id] = value as string | null;
+        }
+      }
+      configLoader.setHookInjectionOverrides(validated);
+      return { success: true, overrides: configLoader.getHookInjectionOverrides() };
+    } catch (error) {
+      logger.error(`[IPC] Failed to save hook injections: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('config:resetHookInjections', () => {
+    try {
+      configLoader.resetHookInjectionOverrides();
+      return { success: true, overrides: configLoader.getHookInjectionOverrides() };
+    } catch (error) {
+      logger.error(`[IPC] Failed to reset hook injections: ${error}`);
       return { success: false, error: String(error) };
     }
   });

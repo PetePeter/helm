@@ -32,7 +32,7 @@ describe('HOOK_PROVIDERS', () => {
     const byProvider = Object.fromEntries(HOOK_PROVIDERS.map((p) => [p.provider, p.events]));
     expect(byProvider.claude).toEqual(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop', 'StopFailure']);
     expect(byProvider.codex).toEqual(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop']);
-    expect(byProvider.copilot).toEqual(['sessionStart', 'userPromptSubmitted', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop']);
+    expect(byProvider.copilot).toEqual(['sessionStart', 'userPromptSubmitted', 'userPromptTransformed', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop']);
   });
 
   it('resolves a config by provider; unknown answers null', () => {

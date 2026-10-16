@@ -161,6 +161,7 @@ import { HookReceiver } from '../../session/hooks/hook-receiver.js';
 import { HookTracker } from '../../session/hooks/hook-tracker.js';
 import { ensureOperatorHome } from '../../session/operator-home.js';
 import { ContextInjector, RING_ME_PREFIX } from '../../session/hooks/context-injector.js';
+import { resolveContextLimits } from '../../session/context-limits.js';
 import { openTaskLines } from '../../session/operator-tasks.js';
 import { RingRetry } from '../../session/ring-retry.js';
 import { LoopDriver } from '../../session/hooks/loop-driver.js';
@@ -904,6 +905,11 @@ export function registerIPCHandlers(
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
+    getContextLimits: (session) => {
+      const cli = configLoader.getCliTypeEntry(session.cliType);
+      return resolveContextLimits(cli, session.contextUsage?.window ?? cli?.contextWindow);
+    },
+    getHookInjectionOverrides: () => configLoader.getHookInjectionOverrides(),
     loop: loopDriver,
   });
   hookReceiver.setResponder((event) => contextInjector.respond(event));

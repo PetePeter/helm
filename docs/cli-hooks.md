@@ -1,6 +1,6 @@
 # CLI Hooks
 
-**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot), G4 (context injection, nudges, hint-only suggester, dual-path rules delivery), G5 (ranking signals) and G9 (reminder delivery: the inventory below, plus per-reminder hook/pty/off modes) shipped. G8 (loop driving, below) shipped after being deliberately dropped from G4 — revived only once its exit condition became a fact Helm already records.**
+**Status: G1 (transport + installer), G2 (PreToolUse deny policy), G3 (reported truth: activity, stalls, plan progress, PreCompact snapshot), G4 (context injection, nudges, hint-only suggester, dual-path rules delivery), G5 (ranking signals), G9 (reminder delivery) and context-pressure alerts with editable hook injections shipped. G8 (loop driving, below) shipped after being deliberately dropped from G4 — revived only once its exit condition became a fact Helm already records.**
 
 Helm installs lifecycle hooks into each CLI's own user-level config, once per
 CLI, system-wide. When a hooked event fires inside a Helm-spawned session, the
@@ -90,8 +90,9 @@ The normaliser (`src/session/hooks/hook-normaliser.ts`) maps per-CLI field
 names (`session_id`/`sessionId`, `tool_name`/`toolName`, …) into one
 `HookEvent`, and aliases Copilot's native camelCase event names onto the
 canonical PascalCase common-core set (`agentStop` → `Stop`,
-`userPromptSubmitted` → `UserPromptSubmit`, …). Events outside the common
-core are logged and ignored.
+`userPromptSubmitted` → `UserPromptSubmit` and
+`userPromptTransformed` → `UserPromptTransformed`, …). Events outside the
+known lifecycle set are logged and ignored.
 
 ### Thread id capture
 
@@ -271,17 +272,19 @@ session age, any pending handover note, and the PreCompact
   prompt mid-work; the PreCompact composition covers the requirement without
   agent capacity. Revisit only with evidence that the summary alone loses
   something.
-- **Compaction can only be held on Codex** (`continue:false`). Claude and
-  Copilot treat PreCompact as notification only — the snapshot is composed
-  and the handover delivered at the announcement, but nothing delays the
-  compaction on those two.
+- **Native compaction stays in control.** Codex can stop it with
+  `continue:false`; Claude can block it with `decision:"block"` or exit code
+  2; Copilot's `preCompact` is notification-only. Helm never returns those
+  stop decisions and never replaces the current transcript from inside this
+  hook. The alerts below offer Helm's quick compact as an explicit tool choice.
 
 ## Injection (G4) — the ContextInjector
 
 PreToolUse denies are one half of steering; the other half is giving the agent
 context it would otherwise not have. `ContextInjector`
-(`src/session/hooks/context-injector.ts`) answers every non-policy event and
-can say THREE things, each independently optional — and **null** (send
+(`src/session/hooks/context-injector.ts`) handles prompt/session context,
+pressure alerts and stop nudges, and can add an alert alongside a PreToolUse
+decision. Each context source is independently optional — and **null** (send
 nothing) is the common case by design:
 
 - **SessionStart** — the session's claimed plan, its
@@ -294,30 +297,54 @@ nothing) is the common case by design:
   suggester pointer; conditional one-shot nudges (unset AIAGENT state, one
   startable plan); and on EVERY prompt the `[HELM_MISSION]` line (current
   mission, or a request to set one — see [mission-statement.md](mission-statement.md)).
-  Copilot is excluded entirely — its CLI drops this event's
-  command-hook output, so injecting there is writing into the void.
+  Claude and Codex receive this output. Copilot drops
+  `userPromptSubmitted` output, so per-prompt additions use its separate
+  `userPromptTransformed` event; standing channel rules remain prepended.
 - **Stop** — the one-shot nudge: a claimed-but-open plan item or an unset
   AIAGENT state blocks the turn ONCE with a reason naming the alternative
   (`plan_complete` / `session_plan_claim` / `session_set_aiagent_state`).
   The second Stop always passes; the cap is 1 by decision and not
-  configurable. `StopFailure` is NEVER answered — a usage-limit stall is
-  reported fact, not something to retry in a loop. G8's loop decision
+  configurable. `StopFailure` is never blocked or retried — a red alert may
+  accompany the event without changing that decision. G8's loop decision
   (below) runs BEFORE this nudge on the same event; exactly one block is
   ever emitted per Stop.
 
 ```mermaid
 flowchart LR
-    H[HookEvent<br/>SessionStart / UserPromptSubmit / Stop] --> I{ContextInjector}
+    H[HookEvent] --> I{ContextInjector}
     I -->|SessionStart| A["plan + drafts + handover<br/>800/2500 caps"]
-    I -->|UserPromptSubmit| B["envelope rules<br/>+ suggester pointer<br/>+ one-shot nudges"]
+    I -->|UserPromptSubmit / Copilot transformed| B["prompt rules<br/>+ suggestions + nudges<br/>+ amber/red prompt alert"]
     I -->|Stop| C["stop block, ONCE<br/>cap = 1"]
+    I -->|other hooks| R1["red alert on every hook"]
     A --> E["encodeAdditionalContext<br/>claude/codex: nested under<br/>hookSpecificOutput.hookEventName<br/>copilot: flat"]
     B --> E
     C --> D["encodeStopBlock"]
     E --> R[200 reply body]
-    D --> R
+D --> R
+R1 --> R
     I -->|nothing worth saying| N[null → 200 {}]
 ```
+
+### Context-pressure alerts and editable injections
+
+Helm uses the session's last known token reading and the existing context
+limits: configured amber/red token counts when set, otherwise 75%/90% of the
+known context window. Amber is added once to each user or Helm prompt while
+above amber and at or below red. Red is added on every hook while above red and asks
+for `session_quick_compact` ASAP. Both reminders list `session_compact`,
+`session_compact` with `handover`, and `session_quick_compact`. They never
+deny a hook, block a stop, set Codex `continue:false`, or replace native CLI
+compaction. Hook output contracts vary: Copilot's `preCompact` ignores output,
+Claude's `StopFailure` ignores output, and Codex's `PreCompact` surfaces a
+warning instead of adding model context. Helm still emits red on those hooks,
+but those provider events cannot deliver it to the model. None of these paths
+alter compaction.
+
+Settings → CLI Integrations → **Hook injections** is a master/detail editor for
+each text injection, including dynamic wrappers and both alerts. Template values
+such as `{{tokens}}`, `{{red}}`, and `{{content}}` are replaced when the hook
+runs. Each edit autosaves to `settings.yaml`; **Reset defaults** removes the
+overrides and restores the shipped templates.
 
 The encoders (`src/session/hooks/hook-encoder.ts`) matter: Claude and Codex
 silently IGNORE a top-level `additionalContext` — it must nest under
@@ -650,10 +677,10 @@ quoting strategy can save it there.
 > not the repo working tree (invariant 4 is about the repo), but the courtesy
 > is the same: one owned block, nothing else touched.
 
-Registered events are the common core: `SessionStart`, `UserPromptSubmit`,
-`PreToolUse`, `PostToolUse`, `PreCompact`, `Stop` — plus Claude-only
-`StopFailure` (G3's reported stall; the normaliser rejects it from any other
-provider). Copilot entries run in native camelCase mode; Codex
+Registered events are `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `PreCompact`, `Stop`, plus Copilot's `userPromptTransformed`
+and Claude-only `StopFailure` (G3's reported stall; the normaliser rejects it
+from any other provider). Copilot entries run in native camelCase mode; Codex
 non-managed hooks must be reviewed via `/hooks` before they run — trust is
 keyed to the hook's hash, so changes re-trigger review.
 
@@ -700,7 +727,9 @@ never re-inferred. That top-level `provider` field is what
 `hook-capability.ts` resolves (legacy hooks blocks are the fallback); the
 shipped `cli-types.yaml` entries carry it up front so first load stays
 byte-pristine. IPC: `tools:setCliTypeProvider`.
-Below it: the **Reminder delivery** section (G9, above).
+Below it: the **Reminder delivery** section (G9, above). **Hook injections**
+provides a master/detail editor for every hook-provided text, with autosave and
+reset to shipped defaults.
 
 ## Mobile/Telegram channel affinity (G2 enabler)
 
@@ -716,9 +745,10 @@ for both surfaces.
 | Module | Role |
 |--------|------|
 | `src/session/hooks/hook-normaliser.ts` | per-CLI fields → one `HookEvent`; canonical event set; Copilot aliases; per-CLI deny encoding |
-| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; PreToolUse → policy, everything else → the (late-bound) G4 responder |
+| `src/session/hooks/hook-receiver.ts` | `EventEmitter` behind `/hooks`: correlate, log, emit `hook`; PreToolUse → policy plus alert responder, all other events → context responder |
 | `src/session/hooks/hook-policy.ts` | PURE `(event, session, rules) -> allow / deny+reason`; fail open on everything unexpected |
-| `src/session/hooks/context-injector.ts` | G4: SessionStart context, UserPromptSubmit rules + nudges, one-shot Stop block; silent when there is nothing worth saying |
+| `src/session/hooks/context-injector.ts` | SessionStart and prompt context, amber/red pressure alerts, nudges, one-shot Stop block |
+| `src/session/hooks/hook-injections.ts` | Shipped editable hook-injection templates and placeholder renderer |
 | `src/session/hooks/loop-driver.ts` | G8: Stop-block continuation (autoImplement-gated, live follow-up reads, hard stops) + the one-shot completionRecap verification block |
 | `src/session/hooks/suggestion-scorer.ts` | G4 hint-only suggester: BM25, tuples only, caps + once-per-item ledger |
 | `src/session/hooks/suggestion-candidates.ts` | The suggester's candidate list: project skills and memories, plus the asking session's own bound memories |

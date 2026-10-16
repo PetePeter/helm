@@ -217,7 +217,7 @@ describe('HookReceiver', async () => {
     });
   });
 
-  it('never consults the G4 responder for PreToolUse — the policy owns that event', async () => {
+  it('consults the responder on PreToolUse so a red alert can accompany policy output', async () => {
     let responderAsked = 0;
     const receiver = new HookReceiver({
       now: () => NOW,
@@ -227,7 +227,32 @@ describe('HookReceiver', async () => {
       },
     });
     await receiver.receive({ cli: 'claude', event: 'PreToolUse', payload: { tool_name: 'Bash' } }, 's1');
-    expect(responderAsked).toBe(0);
+    expect(responderAsked).toBe(1);
+  });
+
+  it('keeps a PreToolUse deny when merging the context alert', async () => {
+    const receiver = new HookReceiver({
+      now: () => NOW,
+      getSession: () => session({ interactionChannel: 'telegram' }),
+      getDenyRules: () => [AWAY_RULE],
+      respond: async () => ({
+        statusCode: 200,
+        body: { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: 'RED alert' } },
+      }),
+    });
+    const result = await receiver.receive(
+      { cli: 'claude', event: 'PreToolUse', payload: { tool_name: 'AskUserQuestion' } },
+      'helm-session-9',
+    );
+
+    expect(result.body).toEqual({
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: AWAY_RULE.reason,
+        additionalContext: 'RED alert',
+      },
+    });
   });
 
   it('accepts a responder bound AFTER construction — the injector is built later than the receiver', async () => {

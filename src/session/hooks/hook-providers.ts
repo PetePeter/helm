@@ -42,7 +42,7 @@ export const HOOK_PROVIDERS: HookProviderConfig[] = [
     provider: 'copilot',
     label: 'GitHub Copilot CLI',
     configPath: '~/.copilot/hooks/helm.json',
-    events: ['sessionStart', 'userPromptSubmitted', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop'],
+    events: ['sessionStart', 'userPromptSubmitted', 'userPromptTransformed', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop'],
   },
 ];
 

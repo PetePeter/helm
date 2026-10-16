@@ -53,6 +53,11 @@ import {
   type ReminderId,
 } from '../session/reminder-delivery.js';
 import { DEFAULT_MAX_AUTO_CONTINUES, type LoopConfig } from '../session/hooks/loop-driver.js';
+import {
+  isHookInjectionId,
+  type HookInjectionId,
+  type HookInjectionOverrides,
+} from '../session/hooks/hook-injections.js';
 
 export { parseCliArgs, resolveEnvWithMode, slugify } from './loader-helpers.js';
 export type { ApiToolConfig, ComfyUiToolConfig, ComfyUiProfileConfig, CliTypeOptions, EnvVarEntry, HelmActionMap, SpawnConfig } from './loader-helpers.js';
@@ -453,6 +458,8 @@ export interface SettingsConfig {
    * default, which reproduces today's behaviour exactly.
    */
   reminderDelivery?: Partial<Record<ReminderId, ReminderDeliveryMode>>;
+  /** User-edited hook injection templates. Missing entries use shipped defaults. */
+  hookInjections?: Partial<Record<HookInjectionId, string>>;
   /** Phone LAN transport (P-0752). Absent means the defaults, i.e. off. */
   mobileLan?: MobileLanConfig;
   /** Voice operator singleton. Absent means the defaults, i.e. off. */
@@ -1187,6 +1194,34 @@ export class ConfigLoader {
       if (isReminderDeliveryMode(value)) merged[id] = value;
     }
     this.settings!.reminderDelivery = merged;
+    this.saveSettings();
+  }
+
+  getHookInjectionOverrides(): HookInjectionOverrides {
+    const raw = this.settings?.hookInjections;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const result: HookInjectionOverrides = {};
+    for (const [id, value] of Object.entries(raw)) {
+      if (isHookInjectionId(id) && typeof value === 'string' && value.length <= 10000) result[id] = value;
+    }
+    return result;
+  }
+
+  setHookInjectionOverrides(updates: Partial<Record<HookInjectionId, string | null>>): void {
+    this.ensureLoaded();
+    const merged: HookInjectionOverrides = { ...this.getHookInjectionOverrides() };
+    for (const [id, value] of Object.entries(updates)) {
+      if (!isHookInjectionId(id)) continue;
+      if (value === null) delete merged[id];
+      else if (typeof value === 'string' && value.length <= 10000) merged[id] = value;
+    }
+    this.settings!.hookInjections = merged;
+    this.saveSettings();
+  }
+
+  resetHookInjectionOverrides(): void {
+    this.ensureLoaded();
+    delete this.settings!.hookInjections;
     this.saveSettings();
   }
 

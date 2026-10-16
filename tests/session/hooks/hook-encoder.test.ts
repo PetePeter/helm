@@ -36,10 +36,20 @@ describe('encodeAdditionalContext', () => {
     });
   });
 
+  it('surfaces Codex PreCompact alerts as a warning without holding compaction', () => {
+    expect(encodeAdditionalContext(event('codex', 'PreCompact'), 'RED alert')).toEqual({
+      systemMessage: 'RED alert',
+    });
+  });
+
   it('flat at the top level for Copilot', () => {
     expect(encodeAdditionalContext(event('copilot', 'sessionStart'), 'resume context')).toEqual({
       additionalContext: 'resume context',
     });
+  });
+
+  it('leaves a malformed Copilot transformed prompt unchanged', () => {
+    expect(encodeAdditionalContext(event('copilot', 'userPromptTransformed'), 'alert')).toEqual({});
   });
 });
 

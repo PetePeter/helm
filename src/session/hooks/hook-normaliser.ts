@@ -7,8 +7,8 @@
  * each CLI's field-naming whims (Copilot's camelCase payloads don't even carry
  * the name the same way).
  *
- * Only the COMMON CORE events — the ones all three CLIs support — are known
- * here. Anything else is G1 noise: the receiver logs and ignores it.
+ * The shared lifecycle events plus Copilot's supported prompt-transform event
+ * are known here. Anything else is G1 noise: the receiver logs and ignores it.
  */
 
 import { homedir } from 'node:os';
@@ -17,10 +17,11 @@ import { join } from 'node:path';
 /** The CLI families Helm can receive hooks from. */
 export type HookProvider = 'claude' | 'codex' | 'copilot';
 
-/** The common-core events shared by all three CLIs (canonical, PascalCase). */
+/** Canonical lifecycle events plus provider-specific prompt transformation. */
 export const CANONICAL_HOOK_EVENTS = [
   'SessionStart',
   'UserPromptSubmit',
+  'UserPromptTransformed',
   'PreToolUse',
   'PostToolUse',
   'PreCompact',
@@ -56,6 +57,8 @@ export interface HookEvent {
   /** The tool's arguments object (tool_input / toolInput), when present. */
   toolInput?: Record<string, unknown>;
   prompt?: string;
+  /** Copilot's model-facing prompt before a userPromptTransformed response. */
+  transformedPrompt?: string;
   /** PreCompact only: "auto" (context filled) or "manual" (/compact command). */
   trigger?: string;
   /** Path to the CLI's raw transcript. Claude and Codex send it; Copilot does
@@ -71,6 +74,7 @@ export interface HookEvent {
 const COPILOT_EVENT_ALIASES: Record<string, CanonicalHookEvent> = {
   sessionStart: 'SessionStart',
   userPromptSubmitted: 'UserPromptSubmit',
+  userPromptTransformed: 'UserPromptTransformed',
   preToolUse: 'PreToolUse',
   postToolUse: 'PostToolUse',
   preCompact: 'PreCompact',
@@ -119,6 +123,7 @@ export function normaliseHookEvent(
   input: HookInboundBody,
   now: () => number = Date.now,
 ): HookEvent | null {
+  if (input.event === 'UserPromptTransformed' && input.cli !== 'copilot') return null;
   const event = canonicalEventName(input.cli as HookProvider, input.event);
   if (input.cli !== 'claude' && input.cli !== 'codex' && input.cli !== 'copilot') return null;
   if (event === null) return null;
@@ -135,6 +140,7 @@ export function normaliseHookEvent(
     toolName: str(input.payload, ['tool_name', 'toolName']),
     toolInput: obj(input.payload, ['tool_input', 'toolInput']),
     prompt: str(input.payload, ['prompt']),
+    transformedPrompt: str(input.payload, ['transformedPrompt', 'transformed_prompt']),
     trigger: str(input.payload, ['trigger']),
     transcriptPath:
       str(input.payload, ['transcript_path', 'transcriptPath']) ??

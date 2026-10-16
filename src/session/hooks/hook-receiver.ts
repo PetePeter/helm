@@ -2,11 +2,10 @@
  * HookReceiver — the dispatch behind POST /hooks on the localhost server.
  *
  * G2: PreToolUse events route through the policy, which may DENY with a
- * reason the CLI feeds back to the model. G4: every other steerable event
- * (SessionStart, UserPromptSubmit, Stop) routes through the injected
- * responder — the ContextInjector — which may return additionalContext or a
- * one-shot stop block. Everything else stays G1: normalise, stamp the Helm
- * session id the bearer token resolved to, log the traffic, emit the event.
+ * reason the CLI feeds back to the model. The ContextInjector also responds
+ * to PreToolUse and every other known event; on a deny its alert is merged
+ * without changing the policy decision. Other events may return context or a
+ * one-shot stop block.
  *
  * FAIL OPEN on every decision path: unknown tools and events allow by
  * construction, and any error inside the decision machinery — a throwing
@@ -104,7 +103,7 @@ export class HookReceiver extends EventEmitter {
    * event allows. Everything failure-shaped degrades to allow — the policy
    * itself is pure and defensive, and this wrapper is the belt to its braces.
    */
-  private decide(event: HookEvent): HookReceiveResult {
+  private async decide(event: HookEvent): Promise<HookReceiveResult> {
     if (event.event !== 'PreToolUse') return NO_OP;
     try {
       const rules = this.deps.getDenyRules?.(event.cli) ?? [];
@@ -114,12 +113,13 @@ export class HookReceiver extends EventEmitter {
         logger.info(
           `[Hook] Denied ${event.cli} ${event.toolName} session=${event.helmSessionId ?? '?'}: ${decision.reason}`,
         );
-        return { statusCode: 200, body: encodeDenyResponse(event, decision.reason!) };
+        const denied = { statusCode: 200, body: encodeDenyResponse(event, decision.reason!) };
+        return this.mergeContext(denied, await this.safeRespond(event));
       }
-      return NO_OP;
+      return (await this.safeRespond(event)) ?? NO_OP;
     } catch (error) {
       logger.warn(`[Hook] Policy failed open for ${event.cli} ${event.toolName}: ${String(error)}`);
-      return NO_OP;
+      return (await this.safeRespond(event)) ?? NO_OP;
     }
   }
 
@@ -129,14 +129,51 @@ export class HookReceiver extends EventEmitter {
    * means "no injection this turn" and "the turn ends normally" on Stop.
    */
   private async decideContext(event: HookEvent): Promise<HookReceiveResult> {
+    return (await this.safeRespond(event)) ?? NO_OP;
+  }
+
+  private async safeRespond(event: HookEvent): Promise<HookReceiveResult | null> {
     const respond = this.respond;
-    if (!respond) return NO_OP;
+    if (!respond) return null;
     try {
-      return (await respond(event)) ?? NO_OP;
+      return (await respond(event)) ?? null;
     } catch (error) {
       logger.warn(`[Hook] Injection failed open for ${event.cli} ${event.event}: ${String(error)}`);
-      return NO_OP;
+      return null;
     }
+  }
+
+  /** Keep a policy deny intact while adding any red alert to its reply. */
+  private mergeContext(primary: HookReceiveResult, context: HookReceiveResult | null): HookReceiveResult {
+    if (!context) return primary;
+    const body = primary.body && typeof primary.body === 'object' && !Array.isArray(primary.body)
+      ? { ...(primary.body as Record<string, unknown>) }
+      : {};
+    const extra = context.body && typeof context.body === 'object' && !Array.isArray(context.body)
+      ? context.body as Record<string, unknown>
+      : {};
+    const baseSpecific = body.hookSpecificOutput;
+    const extraSpecific = extra.hookSpecificOutput;
+    if (extraSpecific && typeof extraSpecific === 'object' && !Array.isArray(extraSpecific)) {
+      const nested = extraSpecific as Record<string, unknown>;
+      const currentSpecific = baseSpecific && typeof baseSpecific === 'object' && !Array.isArray(baseSpecific)
+        ? baseSpecific as Record<string, unknown>
+        : {};
+      body.hookSpecificOutput = { ...nested, ...currentSpecific };
+      if (typeof nested.additionalContext === 'string' && typeof currentSpecific.additionalContext === 'string') {
+        (body.hookSpecificOutput as Record<string, unknown>).additionalContext =
+          `${currentSpecific.additionalContext}\n\n${nested.additionalContext}`;
+      }
+    }
+    for (const [key, value] of Object.entries(extra)) {
+      if (key === 'hookSpecificOutput') continue;
+      if (typeof value === 'string' && typeof body[key] === 'string' && key === 'additionalContext') {
+        body[key] = `${body[key]}\n\n${value}`;
+      } else if (!(key in body)) {
+        body[key] = value;
+      }
+    }
+    return { statusCode: primary.statusCode, body };
   }
 }
 

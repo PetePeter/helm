@@ -588,6 +588,12 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   configSetReminderDelivery: (modes: Record<string, string>) =>
     ipcRenderer.invoke('config:setReminderDelivery', modes),
 
+  /** User-edited hook injection templates; omitted ids use shipped defaults. */
+  configGetHookInjections: () => ipcRenderer.invoke('config:getHookInjections'),
+  configSetHookInjections: (updates: Record<string, string | null>) =>
+    ipcRenderer.invoke('config:setHookInjections', updates),
+  configResetHookInjections: () => ipcRenderer.invoke('config:resetHookInjections'),
+
   /**
    * G5 suggester usage feedback: the learned co-occurrence associations
    * (item ids + terms, never prompt text) and the recent learning events.

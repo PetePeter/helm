@@ -43,7 +43,7 @@ const CODEX: CliHooksIntegration = {
 const COPILOT: CliHooksIntegration = {
   provider: 'copilot',
   configPath: '~/.copilot/hooks/helm.json',
-  events: ['sessionStart', 'userPromptSubmitted', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop'],
+  events: ['sessionStart', 'userPromptSubmitted', 'userPromptTransformed', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop'],
 };
 
 /** Deps with an interpreter probe that always finds `python`. */
