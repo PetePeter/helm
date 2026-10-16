@@ -62,7 +62,7 @@ The chart is built once, in the main process, as self-contained SVG and CSS with
 
 ### Tokens tab
 
-Tokens per CLI per column: one row per configured CLI type, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the `time:tokens` channel; the phone does not use it yet.
+Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the `time:tokens` channel; the phone does not use it yet.
 
 ```mermaid
 flowchart LR

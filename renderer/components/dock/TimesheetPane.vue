@@ -75,7 +75,7 @@ const range = computed(() => {
           </thead>
           <tbody>
             <tr v-for="row in tokenSheet.rows" :key="row.cliType">
-              <td>{{ row.cliType }}</td>
+              <td>{{ row.label }}</td>
               <td v-for="(v, i) in row.tokens" :key="i">{{ v ? formatTokens(v) : '–' }}</td>
               <td>{{ formatTokens(sum(row.tokens)) }}</td>
             </tr>

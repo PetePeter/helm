@@ -677,7 +677,7 @@ export function registerIPCHandlers(
   sessionManager.on('session:removed', (event: { sessionId: string }) => subagentReadAt.delete(event.sessionId));
   // Twice per slot, so an active session never skips one.
   const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
-  const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes());
+  const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id));
   // Keep lightweight handler fixtures (and embedders that do not enable
   // project services) compatible with the optional Mess surface.
   const messManager = helmControlService.getMessManager?.() ?? null;

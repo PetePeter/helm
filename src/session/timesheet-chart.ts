@@ -110,7 +110,7 @@ export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now
     .join('');
 
   return `<div class="tsc"><style>${STYLE}</style><div class="toggles">`
-    + sheet.rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.cliType)} ${formatTokens(sum(row.tokens))}</label>`).join('')
+    + sheet.rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.label)} ${formatTokens(sum(row.tokens))}</label>`).join('')
     + '</div>'
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per CLI per period">`
     + `<g stroke="#222">${grid.join('')}</g>`

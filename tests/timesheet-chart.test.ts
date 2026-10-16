@@ -60,9 +60,9 @@ describe('renderTokenChart', () => {
   it('stacks one segment per CLI with tokens, with a legend per row', () => {
     const columns = [DAY0, DAY0 + 86_400_000];
     const html = renderTokenChart({ columns, rows: [
-      { cliType: 'claude-code', tokens: [1_000, 0] },
-      { cliType: 'codex', tokens: [500, 500] },
-      { cliType: 'copilot', tokens: [0, 0] },
+      { cliType: 'claude-code', label: 'claude-code', tokens: [1_000, 0] },
+      { cliType: 'codex', label: 'codex', tokens: [500, 500] },
+      { cliType: 'copilot', label: 'copilot', tokens: [0, 0] },
     ], totals: [1_500, 500] }, 'day', DAY0 + 2 * 86_400_000);
     expect(html.match(/<rect/g)).toHaveLength(3);
     expect(html).toContain('claude-code 1k');
@@ -70,7 +70,7 @@ describe('renderTokenChart', () => {
   });
 
   it('escapes CLI names in the legend', () => {
-    const html = renderTokenChart({ columns: [DAY0], rows: [{ cliType: '<b>x', tokens: [1] }], totals: [1] }, 'day', DAY0 + 1);
+    const html = renderTokenChart({ columns: [DAY0], rows: [{ cliType: '<b>x', label: '<b>x', tokens: [1] }], totals: [1] }, 'day', DAY0 + 1);
     expect(html).not.toContain('<b>x');
   });
 });

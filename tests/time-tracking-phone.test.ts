@@ -74,7 +74,7 @@ describe('timesheetQuery (the phone Time tab)', () => {
 
   it('registers the shared desktop query for the same overview and project detail', async () => {
     vi.mocked(ipcMain.handle).mockClear();
-    const cleanup = setupTimeTrackingHandlers(tracker as any, () => ({ projectKey: 'pA', projectName: 'Alpha', dir: 'C:/a' }), () => []);
+    const cleanup = setupTimeTrackingHandlers(tracker as any, () => ({ projectKey: 'pA', projectName: 'Alpha', dir: 'C:/a' }), () => [], id => id);
     const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === 'time:query')?.[1] as
       (event: unknown, params: unknown) => unknown;
 

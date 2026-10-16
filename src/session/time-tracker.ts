@@ -307,7 +307,7 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edg
 /** Tokens per CLI per column. */
 export interface TokenSheet {
   columns: number[];
-  rows: { cliType: string; tokens: number[] }[];
+  rows: { cliType: string; label: string; tokens: number[] }[];
   totals: number[];
 }
 
@@ -317,7 +317,7 @@ export const OTHER_CLI = 'other';
  * Tokens per configured CLI per column, in config order and zero-filled;
  * untagged or no-longer-configured CLIs share one trailing "other" row.
  */
-export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: string[]): TokenSheet {
+export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: string[], labelOf: (cliType: string) => string = id => id): TokenSheet {
   const n = edges.length - 1;
   const rows = new Map(cliTypes.map(cliType => [cliType, new Array<number>(n).fill(0)]));
   const totals = new Array<number>(n).fill(0);
@@ -334,7 +334,7 @@ export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: st
   const other = rows.get(OTHER_CLI);
   rows.delete(OTHER_CLI);
   if (other) rows.set(OTHER_CLI, other);
-  return { columns: edges.slice(0, n), rows: [...rows].map(([cliType, tokens]) => ({ cliType, tokens })), totals };
+  return { columns: edges.slice(0, n), rows: [...rows].map(([cliType, tokens]) => ({ cliType, label: cliType === OTHER_CLI ? OTHER_CLI : labelOf(cliType), tokens })), totals };
 }
 
 export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }

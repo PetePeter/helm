@@ -307,8 +307,8 @@ describe('buildTokenSheet', () => {
     t.recordTokens('a1', 1_300);
     const sheet = buildTokenSheet(slots(t), edges, ['claude-code', 'codex']);
     expect(sheet.rows).toEqual([
-      { cliType: 'claude-code', tokens: [1_500, 300, 0, 0, 0, 0, 0] },
-      { cliType: 'codex', tokens: [2_000, 0, 0, 0, 0, 0, 0] },
+      { cliType: 'claude-code', label: 'claude-code', tokens: [1_500, 300, 0, 0, 0, 0, 0] },
+      { cliType: 'codex', label: 'codex', tokens: [2_000, 0, 0, 0, 0, 0, 0] },
     ]);
     expect(sheet.totals).toEqual([3_500, 300, 0, 0, 0, 0, 0]);
   });
@@ -324,6 +324,14 @@ describe('buildTokenSheet', () => {
     t.recordTokens('a2', 0); t.recordTokens('a2', 100); // codex, since removed
     const sheet = buildTokenSheet(slots(t), edges, ['claude-code']);
     expect(sheet.rows.map(r => [r.cliType, r.tokens[0]])).toEqual([['claude-code', 0], ['other', 500]]);
+  });
+
+  it('labels configured rows by display name, "other" stays "other"', () => {
+    const t = tracker();
+    t.recordTokens('b1', 0); t.recordTokens('b1', 400);
+    const names: Record<string, string> = { 'claude-code': 'Claude Code' };
+    const sheet = buildTokenSheet(slots(t), edges, ['claude-code'], id => names[id] ?? 'Unknown CLI');
+    expect(sheet.rows.map(r => [r.cliType, r.label])).toEqual([['claude-code', 'Claude Code'], ['other', 'other']]);
   });
 
   it('keeps one token slot per CLI in a project slot', () => {
