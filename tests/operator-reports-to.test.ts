@@ -77,7 +77,6 @@ describe('ContextInjector and reportsTo', () => {
       getSession: () => worker,
       getClaimedPlan: () => null,
       getStartablePlans: () => [],
-      getDrafts: () => [],
       getHandover: () => undefined,
       suggest: async () => null,
       getProjectIdForDirectory: () => null,

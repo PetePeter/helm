@@ -296,7 +296,7 @@ class PlanReadTracker {
 </table>
 
 <!-- ─── Edit Panel Layout ─────────────────────── -->
-<h2>Proposed Edit Panel Layout (DraftEditor.vue)</h2>
+<h2>Proposed Edit Panel Layout (ItemEditor.vue)</h2>
 <div class="wireframe">
   <div class="wrow">
     <span class="wrl">Row 1 — Title</span>
@@ -329,7 +329,7 @@ class PlanReadTracker {
   <li><span class="fp">src/session/pty-manager.ts</span><span class="fd">Add per-session PTY write counter; expose <code>getWriteCount(sessionId)</code>; reset on session close</span></li>
   <li><span class="fp">src/session/plan-manager.ts</span><span class="fd">Pass <code>completionRecap</code> through create/update; <code>planComplete</code> returns gate outcome so caller can write PTY</span></li>
   <li><span class="fp">src/electron/ipc/plan-handlers.ts</span><span class="fd">Wire <code>PlanReadTracker.recordRead</code> on <code>plan:get</code>; run gate on <code>plan:complete</code>/<code>plan_complete</code> MCP; call <code>ptyWrite</code> with formatted block</span></li>
-  <li><span class="fp">renderer/components/panels/DraftEditor.vue</span><span class="fd">4-row layout; add <code>completionRecap</code> checkbox + tooltip; pass flag in save payload</span></li>
+  <li><span class="fp">renderer/components/panels/ItemEditor.vue</span><span class="fd">4-row layout; add <code>completionRecap</code> checkbox + tooltip; pass flag in save payload</span></li>
   <li><span class="fp">renderer/plans/plan-screen.ts</span><span class="fd">Forward <code>completionRecap</code> through <code>PlanEditorCallbacks.onSave</code></span></li>
 </ul>
 

@@ -11,7 +11,7 @@
  */
 
 import { getDockShortcutPane } from '../../dock-shortcuts.js';
-import { PANE_TERMINAL, type PaneId } from '../../dock-types.js';
+import { PANE_DRAFT, PANE_TERMINAL, type PaneId } from '../../dock-types.js';
 import type { KeyHandler } from '../router.js';
 import { createNumberKeyHandlers, type NumberKeyDeps } from './number-keys.js';
 
@@ -27,8 +27,11 @@ export interface WorkspaceKeyDeps extends NumberKeyDeps {
 export function createWorkspaceKeyHandlers(deps: WorkspaceKeyDeps): KeyHandler[] {
   return [
     {
+      // Pane jumps must work while typing — a focused field is exactly where
+      // you are when you want to leave it.
       id: 'workspace-panes',
       scope: 'global',
+      allowInEditable: true,
       handle: (ctx) => {
         const pane = getDockShortcutPane(ctx.event);
         if (!pane) return false;
@@ -40,10 +43,23 @@ export function createWorkspaceKeyHandlers(deps: WorkspaceKeyDeps): KeyHandler[]
     {
       id: 'session-cycle',
       scope: 'global',
+      allowInEditable: true,
       handle: (ctx) => {
         if (ctx.combo === 'ctrl+tab') { deps.cycleSession(1); return true; }
         if (ctx.combo === 'ctrl+shift+tab') { deps.cycleSession(-1); return true; }
         return false;
+      },
+    },
+
+    {
+      // Ctrl+G is the quick jump to the session's draft.
+      id: 'draft-jump',
+      scope: 'global',
+      allowInEditable: true,
+      handle: (ctx) => {
+        if (ctx.combo !== 'ctrl+g') return false;
+        deps.activatePane(PANE_DRAFT);
+        return true;
       },
     },
 

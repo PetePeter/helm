@@ -76,21 +76,23 @@ describe('BindingStore', () => {
     expect(store.takeLegacy()).toBeNull();
   });
 
-  it('rewrites sequence-list to prompt-tree in legacy maps (PT-7)', () => {
+  it('drops bindings to retired actions from legacy maps', () => {
     fs.writeFileSync(
       path.join(TEST_DIR, 'bindings.yaml'),
-      'cc:\n  Y:\n    action: sequence-list\n    sequenceGroup: quick-actions\n',
+      'cc:\n  Y:\n    action: sequence-list\n  X:\n    action: context-menu\n',
     );
-    expect(fresh().takeLegacy()?.cc.Y.action).toBe('prompt-tree');
+    expect(fresh().takeLegacy()?.cc).toEqual({ X: { action: 'context-menu' } });
   });
 
-  it('rewrites sequence-list to prompt-tree inside profiles and persists it (PT-7)', () => {
+  it('drops prompt-tree and new-draft bindings inside profiles and persists it', () => {
     fs.writeFileSync(
       path.join(TEST_DIR, 'bindings.yaml'),
-      'profiles:\n  p1:\n    name: P\n    bindings:\n      Y:\n        action: sequence-list\n',
+      'profiles:\n  p1:\n    name: P\n    bindings:\n      Y:\n        action: prompt-tree\n      B:\n        action: new-draft\n      X:\n        action: context-menu\n',
     );
-    expect(fresh().get('p1')?.Y.action).toBe('prompt-tree');
-    expect(fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8')).toContain('prompt-tree');
+    expect(fresh().get('p1')).toEqual({ X: { action: 'context-menu' } });
+    const saved = fs.readFileSync(path.join(TEST_DIR, 'bindings.yaml'), 'utf8');
+    expect(saved).not.toContain('prompt-tree');
+    expect(saved).not.toContain('new-draft');
   });
 
   it('importLegacy is ignored once profiles exist', () => {

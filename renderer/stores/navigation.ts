@@ -1,4 +1,4 @@
-import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, draftsClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../ipc/clients.js';
+import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../ipc/clients.js';
 /**
  * Navigation store — centralized view routing + sidebar focus.
  *
@@ -22,7 +22,7 @@ import { ref, computed } from 'vue';
 import { state } from '../state.js';
 import { setActiveSessionId } from './app.js';
 import { sessionsState } from '../screens/sessions-state.js';
-import { hideDraftEditor } from './draft-editor-registry.js';
+import { hideItemEditor } from './item-editor-registry.js';
 import {
   showView,
   onViewChange,
@@ -151,15 +151,11 @@ export const useNavigationStore = defineStore('navigation', () => {
     }
     if (!isLatestRequest()) return { kind: 'failed', sessionId, error: 'stale request' };
 
-    // 2. Clean up draft/editor/chip bar
-    const [{ hideEditorPopup }, chipBarMod] = await Promise.all([
-      import('../editor/editor-popup.js'),
-      import('../stores/chip-bar.js'),
-    ]);
+    // 2. Clean up editor/chip bar
+    const chipBarMod = await import('../stores/chip-bar.js');
     if (!isLatestRequest()) return { kind: 'failed', sessionId, error: 'stale request' };
     const chipBarStore = chipBarMod.useChipBarStore();
-    hideDraftEditor();
-    hideEditorPopup();
+    hideItemEditor();
     chipBarStore.clear();
 
     // 3. Focus snapped-out sessions via the main process so their owning

@@ -2,6 +2,7 @@
 import { nextTick, type Component } from 'vue';
 import type { DockSide, PaneId } from '../../dock-types.js';
 import { getPaneDescriptor } from '../../dock-types.js';
+import { paneShortcutHint } from '../../dock-shortcuts.js';
 import DockPane from './DockPane.vue';
 import NewItemPulse from './NewItemPulse.vue';
 
@@ -44,7 +45,8 @@ function iconFor(paneId: PaneId): string {
 function tooltipFor(paneId: PaneId): string {
   const descriptor = getPaneDescriptor(paneId);
   if (!descriptor) return paneId;
-  return descriptor.hint ? `${descriptor.title} — ${descriptor.hint}` : descriptor.title;
+  const hint = paneShortcutHint(paneId);
+  return hint ? `${descriptor.title} — ${hint}` : descriptor.title;
 }
 
 /** Middle-click closes a tab, matching every other tabbed surface. */

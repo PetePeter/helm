@@ -7,7 +7,6 @@ import { setActivePinia, createPinia } from 'pinia';
 import { useAppStore, resetActiveSessionPinForTests } from '../../renderer/stores/app.js';
 import { useSessionsScreenStore } from '../../renderer/stores/sessions-screen.js';
 import { useConfigStore } from '../../renderer/stores/config.js';
-import { useDraftsStore } from '../../renderer/stores/drafts.js';
 import { usePlansStore } from '../../renderer/stores/plans.js';
 import { useLlmNotificationsStore } from '../../renderer/stores/llmNotifications.js';
 import { state } from '../../renderer/state.js';
@@ -197,34 +196,6 @@ describe('useConfigStore', () => {
     const store = useConfigStore();
     store.setCliTypes(['a', 'b']);
     expect(state.cliTypes).toEqual(['a', 'b']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// useDraftsStore
-// ---------------------------------------------------------------------------
-
-describe('useDraftsStore', () => {
-  it('tracks draft counts per session', () => {
-    const store = useDraftsStore();
-    store.setDraftCount('s1', 3);
-    expect(store.getDraftCount('s1')).toBe(3);
-    expect(store.getDraftCount('s2')).toBe(0);
-  });
-
-  it('removes entry when count is 0', () => {
-    const store = useDraftsStore();
-    store.setDraftCount('s1', 3);
-    store.setDraftCount('s1', 0);
-    expect(store.draftCounts.size).toBe(0);
-  });
-
-  it('clearCounts empties the map', () => {
-    const store = useDraftsStore();
-    store.setDraftCount('s1', 1);
-    store.setDraftCount('s2', 2);
-    store.clearCounts();
-    expect(store.draftCounts.size).toBe(0);
   });
 });
 

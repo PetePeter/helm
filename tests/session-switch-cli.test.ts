@@ -25,8 +25,8 @@ vi.mock('../src/utils/logger.js', () => ({
 import { HelmSessionService } from '../src/mcp/services/helm-session-service.js';
 import { RuntimeGroupManager } from '../src/session/runtime-group-manager.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
-import { ScratchpadManager } from '../src/session/scratchpad-manager.js';
-import type { Scratchpad } from '../src/types/scratchpad.js';
+import { DraftManager } from '../src/session/draft-manager.js';
+import type { Draft } from '../src/types/draft.js';
 import type { SessionInfo } from '../src/types/session.js';
 
 let dir: string;
@@ -58,15 +58,15 @@ function setup(patch: Partial<SessionInfo> = {}) {
   const groups = new RuntimeGroupManager();
   service.setRuntimeGroupManager(groups);
   service.setSessionArtifactCopier((from, to) => { artifacts.copySession(from, to); });
-  const padFiles = new Map<string, Scratchpad>();
-  const pads = new ScratchpadManager({
+  const padFiles = new Map<string, Draft>();
+  const pads = new DraftManager({
     load: id => padFiles.get(id) ?? null,
     save: pad => { padFiles.set(pad.sessionId, pad); },
     remove: id => { padFiles.delete(id); },
     list: () => [...padFiles.keys()],
   });
   pads.set('old-sid', 'todo: lexer', 'user', 0);
-  service.setSessionScratchpadCopier((from, to) => pads.copySession(from, to));
+  service.setSessionDraftCopier((from, to) => pads.copySession(from, to));
   return { service, sessions, killed, groups, artifacts, pads };
 }
 
@@ -105,7 +105,7 @@ describe('HelmSessionService.switchCli', () => {
     rmSync(result.transcriptFile, { force: true });
   });
 
-  it('hands the scratchpad to the replacement, but not to a session that leaves the source open', () => {
+  it('hands the draft to the replacement, but not to a session that leaves the source open', () => {
     const switched = setup();
     switched.service.switchCli('old-sid', 'codex');
     expect(switched.pads.get('new-sid').text).toBe('todo: lexer');

@@ -8,7 +8,7 @@
  * were the bugs. There is now one answer per event, and handlers consume it.
  *
  * `isFocused` and `isVisible` are deliberately distinct: a handler that renders
- * over the terminal (Ctrl+G) cares whether the terminal is on screen, while one
+ * over the terminal cares whether the terminal is on screen, while one
  * that writes to a PTY cares whether the terminal has focus.
  */
 

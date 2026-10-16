@@ -247,17 +247,17 @@ session_mission_set(text="Port the planner canvas to Vue; keep DAG layout stable
 
 See [mission-statement.md](mission-statement.md).
 
-## The session scratchpad: `session_scratchpad_*`
+## The session draft: `session_draft_*`
 
-Every session has a scratchpad: one plain-text pad the user types in (a Helm
+Every session has a draft: one plain-text pad the user types in (a Helm
 tool window) and you can read and write too. Use it for the running notes of
 this session, such as a to-do list or something the user pasted for you.
 Lasting knowledge belongs in `memory_*`; the pad is deleted with the session.
 
 ```
-session_scratchpad_get()                              -> { text, revision, bytes, maxBytes }
-session_scratchpad_append(text="- tests green")       -> { ok, revision }
-session_scratchpad_set(text="...", revision=4)        -> { ok, revision }
+session_draft_get()                              -> { text, revision, bytes, maxBytes }
+session_draft_append(text="- tests green")       -> { ok, revision }
+session_draft_set(text="...", revision=4)        -> { ok, revision }
 ```
 
 - Helm does not show you the pad: read it when the user refers to it.
@@ -268,7 +268,7 @@ session_scratchpad_set(text="...", revision=4)        -> { ok, revision }
 - You write only your own session's pad; `get` takes a `sessionId` to read another's.
 - Max 65536 bytes; an over-limit write is refused and nothing changes.
 
-See [scratchpad.md](scratchpad.md).
+See [draft.md](draft.md).
 
 ## Checking your context size
 

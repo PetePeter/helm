@@ -24,7 +24,7 @@ vi.mock('../../../renderer/state-colors.js', () => ({
 import TerminalPane from '../../../renderer/components/panels/TerminalPane.vue';
 import OverviewCard from '../../../renderer/components/panels/OverviewCard.vue';
 import OverviewGrid from '../../../renderer/components/panels/OverviewGrid.vue';
-import DraftEditor from '../../../renderer/components/panels/DraftEditor.vue';
+import ItemEditor from '../../../renderer/components/panels/ItemEditor.vue';
 import PromptTextarea from '../../../renderer/components/common/PromptTextarea.vue';
 import PlanScreen from '../../../renderer/components/panels/PlanScreen.vue';
 import MainView from '../../../renderer/components/panels/MainView.vue';
@@ -301,43 +301,11 @@ describe('OverviewGrid', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DraftEditor
+// ItemEditor
 // ---------------------------------------------------------------------------
-describe('DraftEditor', () => {
-  it('renders draft mode with save and apply actions', () => {
-    const w = mount(DraftEditor, {
-      props: {
-        visible: true,
-        mode: 'draft',
-        sessionId: 'sess-1',
-        initialLabel: 'Scratch',
-        initialText: 'hello',
-      },
-    });
-    expect(w.find('.draft-editor-title').text()).toContain('Draft');
-    expect((w.find('.draft-editor-label').element as HTMLInputElement).value).toBe('Scratch');
-    expect(w.findAll('.draft-editor-actions button').map((btn) => btn.text())).toContain('Apply');
-  });
-
-  it('emits draft save payload', async () => {
-    const w = mount(DraftEditor, {
-      props: {
-        visible: true,
-        mode: 'draft',
-        sessionId: 'sess-1',
-        initialLabel: 'Start',
-        initialText: 'Body',
-      },
-    });
-    await w.find('.draft-editor-label').setValue('Updated');
-    await w.find('.draft-editor-content').setValue('Updated body');
-    await w.find('.draft-editor-actions button').trigger('click');
-    expect(w.emitted('save')).toEqual([[{ label: 'Updated', text: 'Updated body' }]]);
-    expect(w.emitted('close')).toHaveLength(1);
-  });
-
+describe('ItemEditor', () => {
   it('shows plan state controls and emits plan save', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -348,10 +316,10 @@ describe('DraftEditor', () => {
         planCallbacks: { onSave: vi.fn(), onDelete: vi.fn(), onApply: vi.fn(), onDone: vi.fn() },
       },
     });
-    expect(w.find('.draft-editor-status-select').exists()).toBe(true);
-    await w.find('.draft-editor-status-select').setValue('blocked');
-    await w.find('.draft-editor-plan-info').setValue('Waiting on API key');
-    await w.find('.draft-editor-actions button').trigger('click');
+    expect(w.find('.item-editor-status-select').exists()).toBe(true);
+    await w.find('.item-editor-status-select').setValue('blocked');
+    await w.find('.item-editor-plan-info').setValue('Waiting on API key');
+    await w.find('.item-editor-actions button').trigger('click');
     expect(w.emitted('plan-save')).toEqual([[
       {
         title: 'Plan task',
@@ -369,7 +337,7 @@ describe('DraftEditor', () => {
     const planAttachmentList = vi.fn().mockResolvedValue([]);
     (window as any).gamepadCli = { planAttachmentList };
 
-    mount(DraftEditor, {
+    mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -387,7 +355,7 @@ describe('DraftEditor', () => {
   });
 
   it('hydrates and emits plan type changes', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -400,17 +368,17 @@ describe('DraftEditor', () => {
       },
     });
 
-    const typeSelect = w.find('.draft-editor-type-select');
+    const typeSelect = w.find('.item-editor-type-select');
     expect((typeSelect.element as HTMLSelectElement).value).toBe('feature');
 
     await typeSelect.setValue('research');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-actions button').trigger('click');
 
     expect(w.emitted('plan-save')?.[0][0]).toMatchObject({ type: 'research' });
   });
 
   it('emits undefined type when clearing a plan type', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -423,14 +391,14 @@ describe('DraftEditor', () => {
       },
     });
 
-    await w.find('.draft-editor-type-select').setValue('');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-type-select').setValue('');
+    await w.find('.item-editor-actions button').trigger('click');
 
     expect(w.emitted('plan-save')?.[0][0]).toMatchObject({ type: undefined });
   });
 
   it('keeps blocked plan saves in the editor until a blocker reason is entered', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       attachTo: document.body,
       props: {
         visible: true,
@@ -443,18 +411,18 @@ describe('DraftEditor', () => {
       },
     });
 
-    await w.find('.draft-editor-status-select').setValue('blocked');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-status-select').setValue('blocked');
+    await w.find('.item-editor-actions button').trigger('click');
 
     expect(w.emitted('plan-save')).toBeUndefined();
     expect(w.emitted('close')).toBeUndefined();
-    expect(document.activeElement).toBe(w.find('.draft-editor-plan-info').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-plan-info').element);
 
     w.unmount();
   });
 
   it('keeps done plan saves in the editor until completion notes are entered', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       attachTo: document.body,
       props: {
         visible: true,
@@ -467,15 +435,15 @@ describe('DraftEditor', () => {
       },
     });
 
-    await w.find('.draft-editor-status-select').setValue('done');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-status-select').setValue('done');
+    await w.find('.item-editor-actions button').trigger('click');
 
     expect(w.emitted('plan-save')).toBeUndefined();
     expect(w.emitted('close')).toBeUndefined();
-    expect(document.activeElement).toBe(w.find('.draft-editor-plan-info').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-plan-info').element);
 
-    await w.find('.draft-editor-plan-info').setValue('Reviewed and completed');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-plan-info').setValue('Reviewed and completed');
+    await w.find('.item-editor-actions button').trigger('click');
 
     expect(w.emitted('plan-save')?.[0][0]).toMatchObject({
       status: 'done',
@@ -487,7 +455,7 @@ describe('DraftEditor', () => {
 
   it('does not auto-save a blocked plan before a blocker reason is entered', async () => {
     const onSave = vi.fn();
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -499,7 +467,7 @@ describe('DraftEditor', () => {
       },
     });
 
-    await w.find('.draft-editor-status-select').setValue('blocked');
+    await w.find('.item-editor-status-select').setValue('blocked');
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     expect(onSave).not.toHaveBeenCalled();
@@ -507,7 +475,7 @@ describe('DraftEditor', () => {
 
   it('does not auto-save immediately on first render', async () => {
     const onSave = vi.fn();
-    mount(DraftEditor, {
+    mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -525,7 +493,7 @@ describe('DraftEditor', () => {
   });
 
   it('updates plan action buttons when the selected status changes', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -537,18 +505,18 @@ describe('DraftEditor', () => {
       },
     });
 
-    expect(w.findAll('.draft-editor-actions button').map((btn) => btn.text())).toContain('↻ Apply Again');
-    expect(w.findAll('.draft-editor-actions button').map((btn) => btn.text())).toContain('✓ Done');
+    expect(w.findAll('.item-editor-actions button').map((btn) => btn.text())).toContain('↻ Apply Again');
+    expect(w.findAll('.item-editor-actions button').map((btn) => btn.text())).toContain('✓ Done');
 
-    await w.find('.draft-editor-status-select').setValue('blocked');
+    await w.find('.item-editor-status-select').setValue('blocked');
 
-    const labels = w.findAll('.draft-editor-actions button').map((btn) => btn.text());
+    const labels = w.findAll('.item-editor-actions button').map((btn) => btn.text());
     expect(labels).not.toContain('↻ Apply Again');
     expect(labels).not.toContain('✓ Done');
   });
 
   it('cycles focus with gamepad-style input', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       attachTo: document.body,
       props: {
         visible: true,
@@ -560,15 +528,15 @@ describe('DraftEditor', () => {
     });
     const vm = w.vm as any;
     await Promise.resolve();
-    expect(document.activeElement).toBe(w.find('.draft-editor-label').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-label').element);
     expect(vm.handleButton('DPadDown')).toBe(true);
-    expect(document.activeElement).toBe(w.find('.draft-editor-content').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-content').element);
     w.unmount();
   });
 
   // --- Context mode ---
   it('renders context mode with type and permission fields', () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -581,14 +549,14 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave: vi.fn(), onDelete: vi.fn() },
       },
     });
-    expect(w.find('.draft-editor-title').text()).toContain('Context');
-    expect((w.find('.draft-editor-label').element as HTMLInputElement).value).toBe('API Notes');
-    expect(w.find('.draft-editor-type-select').exists()).toBe(true);
-    expect(w.find('.draft-editor-status-select').exists()).toBe(false);
+    expect(w.find('.item-editor-title').text()).toContain('Context');
+    expect((w.find('.item-editor-label').element as HTMLInputElement).value).toBe('API Notes');
+    expect(w.find('.item-editor-type-select').exists()).toBe(true);
+    expect(w.find('.item-editor-status-select').exists()).toBe(false);
   });
 
   it('hides plan-only fields in context mode', () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -601,15 +569,15 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave: vi.fn(), onDelete: vi.fn() },
       },
     });
-    expect(w.find('.draft-editor-status-select').exists()).toBe(false);
-    expect(w.find('.draft-editor-plan-info').exists()).toBe(false);
-    expect(w.find('.draft-editor-plan-checkbox').exists()).toBe(false);
-    expect(w.find('.draft-editor-attachments').exists()).toBe(false);
-    expect(w.find('.draft-editor__completion-notes').exists()).toBe(false);
+    expect(w.find('.item-editor-status-select').exists()).toBe(false);
+    expect(w.find('.item-editor-plan-info').exists()).toBe(false);
+    expect(w.find('.item-editor-plan-checkbox').exists()).toBe(false);
+    expect(w.find('.item-editor-attachments').exists()).toBe(false);
+    expect(w.find('.item-editor__completion-notes').exists()).toBe(false);
   });
 
   it('hides Done and Apply buttons in context mode', () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -622,7 +590,7 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave: vi.fn(), onDelete: vi.fn(), onDone: vi.fn(), onApply: vi.fn() },
       },
     });
-    const labels = w.findAll('.draft-editor-actions button').map((btn) => btn.text());
+    const labels = w.findAll('.item-editor-actions button').map((btn) => btn.text());
     expect(labels).not.toContain('✓ Done');
     expect(labels).not.toContain('Apply');
     expect(labels).not.toContain('↻ Apply Again');
@@ -631,7 +599,7 @@ describe('DraftEditor', () => {
   });
 
   it('emits context-save with correct payload on save', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -644,9 +612,9 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave: vi.fn(), onDelete: vi.fn() },
       },
     });
-    await w.find('.draft-editor-label').setValue('New Title');
-    await w.find('.draft-editor-content').setValue('New content');
-    await w.find('.draft-editor-actions button').trigger('click');
+    await w.find('.item-editor-label').setValue('New Title');
+    await w.find('.item-editor-content').setValue('New content');
+    await w.find('.item-editor-actions button').trigger('click');
     expect(w.emitted('context-save')).toEqual([[
       { title: 'New Title', content: 'New content', type: 'Knowledge', permission: 'readonly' },
     ]]);
@@ -654,7 +622,7 @@ describe('DraftEditor', () => {
   });
 
   it('emits context-delete on delete button click', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -667,7 +635,7 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave: vi.fn(), onDelete: vi.fn() },
       },
     });
-    const deleteBtn = w.findAll('.draft-editor-actions button').find((btn) => btn.text() === 'Delete');
+    const deleteBtn = w.findAll('.item-editor-actions button').find((btn) => btn.text() === 'Delete');
     expect(deleteBtn).toBeTruthy();
     await deleteBtn!.trigger('click');
     expect(w.emitted('context-delete')).toHaveLength(1);
@@ -675,7 +643,7 @@ describe('DraftEditor', () => {
 
   it('auto-saves via contextCallbacks after 500ms debounce', async () => {
     const onSave = vi.fn();
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -688,7 +656,7 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave, onDelete: vi.fn() },
       },
     });
-    await w.find('.draft-editor-label').setValue('Changed');
+    await w.find('.item-editor-label').setValue('Changed');
     expect(onSave).not.toHaveBeenCalled();
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(onSave).toHaveBeenCalledWith({
@@ -698,7 +666,7 @@ describe('DraftEditor', () => {
 
   it('shows unsaved/saving/saved status indicator for context mode', async () => {
     const onSave = vi.fn().mockImplementation(() => Promise.resolve());
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -711,14 +679,14 @@ describe('DraftEditor', () => {
         contextCallbacks: { onSave, onDelete: vi.fn() },
       },
     });
-    await w.find('.draft-editor-label').setValue('Changed');
+    await w.find('.item-editor-label').setValue('Changed');
     expect(w.find('.plan-save-status--unsaved').exists()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(w.find('.plan-save-status--saved').exists()).toBe(true);
   });
 
   it('cycles focus through context fields with gamepad-style input', async () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       attachTo: document.body,
       props: {
         visible: true,
@@ -734,16 +702,16 @@ describe('DraftEditor', () => {
     });
     const vm = w.vm as any;
     await Promise.resolve();
-    expect(document.activeElement).toBe(w.find('.draft-editor-label').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-label').element);
     expect(vm.handleButton('DPadDown')).toBe(true);
-    expect(document.activeElement).toBe(w.find('.draft-editor-type-select').element);
+    expect(document.activeElement).toBe(w.find('.item-editor-type-select').element);
     w.unmount();
   });
 
   // --- Context bound-to chips ---
   it('renders bound-to chips for context mode', () => {
     const onUnbind = vi.fn();
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -768,7 +736,7 @@ describe('DraftEditor', () => {
   });
 
   it('hides bound-to section when no bindings exist', () => {
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -786,7 +754,7 @@ describe('DraftEditor', () => {
 
   it('calls context unbind callback when unbind button clicked', async () => {
     const onUnbind = vi.fn();
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -807,7 +775,7 @@ describe('DraftEditor', () => {
 
   it('treats pending context unbinds as unsaved changes', async () => {
     const onSave = vi.fn();
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',
@@ -827,7 +795,7 @@ describe('DraftEditor', () => {
     await w.setProps({ contextPendingUnbindCount: 1 });
 
     expect(vm.hasUnsavedChanges()).toBe(true);
-    await w.find('.draft-editor-actions .btn--primary').trigger('click');
+    await w.find('.item-editor-actions .btn--primary').trigger('click');
     expect(w.emitted('context-save')).toEqual([[{ title: 'Title', content: 'Content', type: 'Knowledge', permission: 'readonly' }]]);
   });
 
@@ -951,12 +919,12 @@ describe('DraftEditor', () => {
     w.unmount();
   });
 
-  // --- DraftEditor plan mode maxHeightPx (P-0318) ---
+  // --- ItemEditor plan mode maxHeightPx (P-0318) ---
 
   it('passes maxHeightPx to PromptTextarea in plan mode', async () => {
     (window as any).helm = { config: { configGetEditorPrefs: vi.fn().mockResolvedValue({}), configSetEditorPrefs: vi.fn().mockResolvedValue({}) } };
 
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -973,39 +941,19 @@ describe('DraftEditor', () => {
     // Plan mode should pass a maxHeightPx (75% of viewport)
     expect(promptTextarea.props('maxHeightPx')).toBeGreaterThan(0);
     expect(promptTextarea.props('maxHeightPx')).toBeLessThanOrEqual(window.innerHeight);
-    expect(w.find('.draft-editor').classes()).toContain('draft-editor--plan');
+    expect(w.find('.item-editor').classes()).toContain('item-editor--plan');
 
     delete (window as any).helm;
   });
 
-  it('does not pass maxHeightPx in draft mode', async () => {
-    (window as any).helm = { config: { configGetEditorPrefs: vi.fn().mockResolvedValue({}), configSetEditorPrefs: vi.fn().mockResolvedValue({}) } };
-
-    const w = mount(DraftEditor, {
-      props: {
-        visible: true,
-        mode: 'draft',
-        sessionId: 'sess-1',
-        initialLabel: 'Draft',
-        initialText: '',
-      },
-    });
-    await flushPromises();
-
-    const promptTextarea = w.findComponent(PromptTextarea);
-    expect(promptTextarea.props('maxHeightPx')).toBeUndefined();
-
-    delete (window as any).helm;
-  });
-
-  // --- DraftEditor resize persistence (P-0309) ---
+  // --- ItemEditor resize persistence (P-0309) ---
 
   it('applies persisted plan editor height on mount', async () => {
     const getHeight = vi.fn().mockResolvedValue({ planEditorHeight: 200 });
     const setPrefs = vi.fn().mockResolvedValue({});
     (window as any).helm = { config: { configGetEditorPrefs: getHeight, configSetEditorPrefs: setPrefs } };
 
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'plan',
@@ -1020,7 +968,7 @@ describe('DraftEditor', () => {
 
     // Config was queried for editor prefs on mount
     expect(getHeight).toHaveBeenCalled();
-    const textarea = w.find('.draft-editor-content').element as HTMLTextAreaElement;
+    const textarea = w.find('.item-editor-content').element as HTMLTextAreaElement;
     expect(textarea.style.height).toBe('200px');
 
     delete (window as any).helm;
@@ -1031,13 +979,15 @@ describe('DraftEditor', () => {
     const setPrefs = vi.fn().mockResolvedValue({});
     (window as any).helm = { config: { configGetEditorPrefs: vi.fn().mockResolvedValue({}), configSetEditorPrefs: setPrefs } };
 
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
-        mode: 'draft',
+        mode: 'plan',
         sessionId: 'sess-1',
-        initialLabel: 'Draft',
+        initialLabel: 'Task',
         initialText: '',
+        planStatus: 'coding',
+        planCallbacks: { onSave: vi.fn(), onDelete: vi.fn(), onApply: vi.fn(), onDone: vi.fn() },
       },
     });
     await flushPromises();
@@ -1049,7 +999,7 @@ describe('DraftEditor', () => {
     expect(setPrefs).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(300);
-    expect(setPrefs).toHaveBeenCalledWith({ draftEditorHeight: 250 });
+    expect(setPrefs).toHaveBeenCalledWith({ planEditorHeight: 250 });
 
     vi.useRealTimers();
     delete (window as any).helm;
@@ -1061,7 +1011,7 @@ describe('DraftEditor', () => {
     const setPrefs = vi.fn().mockResolvedValue({});
     (window as any).helm = { config: { configGetEditorPrefs: getHeight, configSetEditorPrefs: setPrefs } };
 
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: { visible: true, mode: 'plan', sessionId: 'sess-1', initialLabel: 'T', initialText: 'B', planStatus: 'ready' },
     });
     await flushPromises();
@@ -1082,7 +1032,7 @@ describe('DraftEditor', () => {
     (window as any).helm = { config: { configGetEditorPrefs: vi.fn().mockResolvedValue({}), configSetEditorPrefs: setPrefs } };
 
     // Context mode
-    const w = mount(DraftEditor, {
+    const w = mount(ItemEditor, {
       props: {
         visible: true,
         mode: 'context',

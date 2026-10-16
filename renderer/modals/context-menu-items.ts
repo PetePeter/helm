@@ -60,14 +60,6 @@ export function buildContextMenuGroups(ctx: ContextMenuContext): ContextMenuGrou
       title: 'Context',
       items: [{ id: 'quick-compact', label: '🗜️ Quick Compact', enabled: hasTarget }],
     },
-    {
-      title: 'Compose',
-      items: [
-        { id: 'editor', label: '📝 Compose in Editor', enabled: canType },
-        { id: 'prompts', label: '⚡ Prompts…', enabled: canType },
-        { id: 'drafts', label: '📝 Drafts…', enabled: canType },
-      ],
-    },
     { title: 'Session', items: buildSessionControls(ctx) },
   ];
 

@@ -35,7 +35,6 @@ describe('Chip-bar action store behavior', () => {
       },
     ];
     state.activeSessionId = 'session-1';
-    state.draftCounts.clear();
     state.planCodingCounts.clear();
     state.planStartableCounts.clear();
     setPlanEditorOpener(mockShowPlanInEditor);

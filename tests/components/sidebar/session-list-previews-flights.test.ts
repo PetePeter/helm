@@ -58,7 +58,6 @@ function mountList(overrides: Record<string, unknown> = {}) {
       editingSessionId: null,
       sessionStates: new Map(),
       sessionActivityLevels: new Map(),
-      draftCounts: new Map(),
       artifactCounts: new Map(),
       workingPlanLabels: new Map(),
       workingPlanTooltips: new Map(),

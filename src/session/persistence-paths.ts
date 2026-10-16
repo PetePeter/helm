@@ -7,7 +7,6 @@ const configDir = getConfigDir(persistenceDirname);
 
 export const SESSIONS_FILE = join(configDir, 'sessions.yaml');
 export const TELEGRAM_TOPICS_FILE = join(configDir, 'telegram-topics.yaml');
-export const DRAFTS_FILE = join(configDir, 'drafts.yaml');
 export const PLANS_FILE = join(configDir, 'plans.yaml');
 export const DEFAULT_PLANS_DIR = join(configDir, 'plans');
 export const DEFAULT_PLAN_DEPS_FILE = join(configDir, 'plan-dependencies.json');
@@ -20,7 +19,7 @@ export const SCHEDULED_TASK_HISTORY_FILE = join(configDir, 'scheduled-task-histo
 export const RECYCLE_BIN_FILE = join(configDir, 'recycle-bin.yaml');
 export const RUNTIME_GROUPS_FILE = join(configDir, 'runtime-groups.yaml');
 export const ARTIFACTS_FILE = join(configDir, 'artifacts.yaml');
-export const SCRATCHPADS_DIR = join(configDir, 'scratchpads');
+export const DRAFTS_DIR = join(configDir, 'drafts');
 export const PEERS_FILE =join(configDir, 'peers.yaml');
 export const MACHINE_IDENTITY_FILE = join(configDir, 'machine-identity.yaml');
 export const SELF_SIGNED_CERT_FILE = join(configDir, 'self-signed-cert.yaml');

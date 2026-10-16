@@ -19,8 +19,7 @@ src/
 │       ├── pty-handlers.ts
 │       ├── system-handlers.ts  # system:openLogsFolder
 │       ├── telegram-handlers.ts # Telegram bot settings CRUD, bot start/stop IPC
-│       ├── draft-handlers.ts   # 5 IPC channels (draft:create/update/delete/list/count) wired to DraftManager
-│       ├── scratchpad-handlers.ts # scratchpad:get / scratchpad:set (the user's side of the session scratchpad)
+│       ├── draft-handlers.ts # draft:get / draft:set (the user's side of the session draft)
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
@@ -34,7 +33,7 @@ src/
 ├── session/
 │   ├── manager.ts              # Session tracking (EventEmitter), calls persistence on changes
 │   ├── session-change-feed.ts  # In-memory seq of session adds/updates/removes; session_list deltas + the phone's change notices read it
-│   ├── persistence.ts          # Save/load/clear sessions to config/sessions.yaml + saveDrafts/loadDrafts to config/drafts.yaml + plan file I/O for config/plans/*.json + config/plan-dependencies.json
+│   ├── persistence.ts          # Save/load/clear sessions to config/sessions.yaml + plan file I/O for config/plans/*.json + config/plan-dependencies.json
 │   ├── pty-manager.ts          # PTY process management (node-pty: cmd.exe on Windows, bash on Unix)
 │   ├── delivery-lock.ts         # Per-session gate serializing the nudge/payload/settle/submit delivery transaction
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
@@ -44,9 +43,8 @@ src/
 │   ├── pipeline-queue.ts       # Waiting→implementing auto-handoff queue (FIFO)
 │   ├── notification-manager.ts # Windows toast notifications (Electron Notification API, activity-change triggers for implementing/planning sessions, dedup, click-to-focus)
 │   ├── initial-prompt.ts       # Sequence syntax → PTY escape codes, configurable delay, onComplete callback
-│   ├── draft-manager.ts        # Per-session draft prompt CRUD (EventEmitter, emits draft:changed, persisted to config/drafts.yaml)
-│   ├── scratchpad-manager.ts   # Per-session scratchpad shared by the user and the session's LLM (revision-checked writes, 64 KB cap)
-│   ├── scratchpad-persistence.ts # Scratchpad file store: one JSON file per session under config/scratchpads/
+│   ├── draft-manager.ts   # Per-session draft shared by the user and the session's LLM (revision-checked writes, 64 KB cap)
+│   ├── draft-persistence.ts # Draft file store: one JSON file per session under config/drafts/
 │   ├── plan-manager.ts         # Per-directory plan DAG CRUD (EventEmitter, emits plan:changed, cycle prevention via DFS, ready-state computation, persisted to config/plans/*.json)
 │   ├── mess-manager.ts         # Project-scoped durable coordination, ordered unread cursors, bounded history, and mess:appended events
 │   ├── operator-session-manager.ts # Keeps exactly one locked role=operator "Helm" session (voice router); ensure() on startup + settings save
@@ -58,10 +56,6 @@ src/
 │   │   ├── chat-bridge.ts      # The interface one chat surface implements, whatever transport is underneath
 │   │   ├── chat-broker.ts      # The registry surfaces plug into; fan-out is unconditional and the registry is unbounded
 │   │   └── chat-bindings.ts    # Provider-keyed map of where a session lives on each surface; unknown keys survive a round-trip
-│   ├── prompt-template-types.ts        # PromptFolder / PromptTemplate / PromptNode model + isFolder type guard
-│   ├── prompt-template-manager.ts      # Global nested prompt-template tree CRUD (EventEmitter, emits prompt-template:changed; folders nest, templates are leaves)
-│   ├── prompt-template-persistence.ts  # YAML load/save to config/prompt-templates.yaml (global)
-│   ├── prompt-template-migration.ts    # One-time fold of legacy per-profile sequences groups into the prompt-template tree
 │   └── power-monitor.ts        # Suspend/resume/shutdown diagnostics — session counts, PTY IDs, survival status
 ├── config/
 │   └── loader.ts               # Self-contained profile YAML config + CRUD + StickConfig + haptic settings + auto-migration + bookmark CRUD (addBookmarkedDir/removeBookmarkedDir) + ChipbarAction interface + chipActions profile field + getChipbarActions()
@@ -119,7 +113,7 @@ src/
 │   ├── voice-service.ts        # VoiceService: desktop transcribe(clip)/speak(text) over the above; temp files in app-data, always cleaned
 │   └── desktop-voice-bridge.ts # ChatBridge 'desktop-voice': forwards the operator's chat_send replies to the renderer
 ├── types/
-│   ├── session.ts              # SessionInfo (includes cliSessionName for resume), DraftPrompt, SessionChangeEvent, AnalogEvent types
+│   ├── session.ts              # SessionInfo (includes cliSessionName for resume), SessionChangeEvent, AnalogEvent types
 │   ├── plan.ts                 # PlanItem, PlanDependency, PlanStatus ('planning'|'ready'|'coding'|'review'|'blocked'|'done'), DirectoryPlan, PlanSequence types
 │   ├── mess.ts                 # Durable project Mess Entry and ordered Cursor wire/domain types
 │   └── mobile-device.ts        # Persisted paired-phone record + pairing-state wire types. Carries pskRef only, never a PSK
@@ -137,7 +131,7 @@ renderer/
 ├── utils.ts                    # DOM helpers, logEvent, showScreen, toDirection
 ├── bindings.ts                 # Config cache, binding dispatch (PTY-aware routing, voice OS-default + PTY via target: 'terminal', F1-F12 VT220 escape sequences)
 ├── paste-handler.ts            # Document-level Ctrl+V interceptor → clipboard text → active PTY (blocked during plan screen)
-├── navigation.ts               # Gamepad navigation setup, event routing. Priority chain: sandwich → dirPicker → bindingEditor → formModal → closeConfirm → quickSpawn → draftEditor → draftAction → draftSubmenu → contextMenu → promptTree → planScreen (within sessions case) → overview → screen routing → configBinding fallback
+├── navigation.ts               # Gamepad navigation setup, event routing. Priority chain: sandwich → dirPicker → bindingEditor → formModal → closeConfirm → quickSpawn → itemEditor → contextMenu → planScreen (within sessions case) → overview → screen routing → configBinding fallback
 ├── gamepad.ts                  # Browser Gamepad API wrapper + repeat engine
 ├── session-groups.ts           # Pure session grouping logic (by working directory) — types, grouping, nav list, reorder, bookmarked dirs; excludes the operator
 ├── peer-session-store.ts       # Per-peer snapshots, push updates, offline stale state, and refresh generation guards
@@ -150,18 +144,16 @@ renderer/
 ├── components/
 │   ├── index.ts                # Barrel export of all Vue SFC components
 │   ├── sort-control.ts         # Reusable sort dropdown + direction toggle widget
-│   ├── chip-bar.ts             # Thin wrapper composing draft-strip + plan-chips
+│   ├── chip-bar.ts             # Thin wrapper composing plan chips + chip-bar actions
 │   ├── common/
 │   │   └── QuickSpawnMachineTabs.vue # Shared machine tabs and tool loading/error state for Quick Spawn surfaces
 │   ├── modals/
 │   │   ├── index.ts
 │   │   ├── CloseConfirmModal.vue
 │   │   ├── PlanDeleteConfirmModal.vue
-│   │   ├── PromptTreeModal.vue        # Prompt-template picker tree (progressive disclosure; accelerators 1-9,0,a-z)
 │   │   ├── QuickSpawnModal.vue
 │   │   ├── DirPickerModal.vue
 │   │   ├── ContextMenu.vue
-│   │   ├── DraftSubmenu.vue
 │   │   ├── FormModal.vue
 │   │   ├── BindingEditorModal.vue
 │   │   └── MobilePairingDialog.vue    # SAS 6-digit compare for a pairing phone; the digits are a KDF output, safe to display
@@ -189,7 +181,7 @@ renderer/
 │   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
-│   │   ├── ScratchpadPane.vue  # Scratchpad tool window: plain textarea over the active session's pad
+│   │   ├── DraftPane.vue  # Draft tool window: plain textarea over the active session's pad
 │   │   └── PopOutTerminalPane.vue # Snap-out terminal: owns its own TerminalView + PTY attach
 │   └── panels/
 │       ├── index.ts
@@ -198,14 +190,13 @@ renderer/
 │       ├── OverviewGrid.vue    # Scrollable preview grid
 │       ├── PlanScreen.vue      # SVG DAG canvas + editor
 │       ├── MainView.vue        # Right panel view switcher
-│       └── ChipBar.vue         # Draft pills + plan chips strip (chips/ChipBar.vue; mounted via chips/TerminalChips.vue inside the terminal pane)
+│       └── ChipBar.vue         # Plan chips + chip-bar action strip (chips/ChipBar.vue; mounted via chips/TerminalChips.vue inside the terminal pane)
 ├── stores/
 │   ├── index.ts                # Barrel export of all Pinia stores
 │   ├── app.ts                  # useAppStore — currentScreen, gamepadCount, eventLog, activeProfile
 │   ├── sessions-screen.ts      # useSessionsScreenStore — zone, focusIndex, cardColumn, overviewGroup
 │   ├── quick-spawn.ts           # useQuickSpawnStore — shared machine/tool selection for dock and modal Quick Spawn
 │   ├── config.ts               # useConfigStore — cliBindingsCache, cliSequencesCache, cliToolsCache, cliTypes
-│   ├── drafts.ts               # useDraftsStore — draftCounts, activeDraft, editorVisible
 │   ├── plans.ts                # usePlansStore — planDoingCounts, planStartableCounts
 │   ├── chip-bar.ts             # useChipBarStore — chip bar action state + refresh for active session
 │   └── navigation.ts           # useNavigationStore — centralized view routing, active session, sidebar focus, overlay lifecycle
@@ -224,20 +215,15 @@ renderer/
 │   ├── useIpc.ts               # Typed IPC wrappers with auto-cleanup on unmount
 │   ├── useGamepad.ts           # Gamepad polling setup + connection events
 │   ├── usePanelResize.ts       # Splitter drag resize via template refs
-│   ├── useKeyboardRelay.ts     # Ctrl+V → PTY, Ctrl+G → Prompt Editor intercepts
-│   ├── usePromptApplyFlow.ts   # Shared prompt-template apply flow (picker tree → prefill Prompt Editor → deliverPromptSequence). Used by main + popout windows
 │   ├── useTerminals.ts         # Terminal create/switch/destroy lifecycle
 │   ├── useNavigation.ts        # Navigation routing: sandwich → modal stack → view → screen → config binding
 │   ├── useMessPane.ts          # Project-following Mess history, filters, append subscription, labels, and bounded backscroll
 │   ├── usePeerSessionPanes.ts  # Dynamic per-peer Sessions pane registration and lifecycle
 │   └── useMobileDevices.ts     # Module-singleton mirror for Settings → Mobile (paired phones, pairing state, APK release). Displays SAS digits — a KDF output; no PSK ever reaches the renderer
-├── drafts/
-│   ├── draft-strip.ts          # Draft strip above terminal — draft pills (click opens editor) + plan chips + right-aligned chip-bar action buttons (renderActionButtons, invalidateChipActionCache, resolveTemplates)
-│   └── draft-editor.ts         # Slide-down draft editor panel (title + content, Save/Apply/Delete/Cancel buttons)
 ├── plans/
 │   ├── plan-screen.ts          # SVG canvas screen — pan/zoom (viewBox-based), node rendering with status colors, quadratic bezier arrows, click-to-select, Add Node button. Renders inside #mainArea as .plan-screen overlay
 │   ├── plan-layout.ts          # Sugiyama-style left-to-right layered auto-layout. Exports computeLayout(items, deps) → LayoutResult with nodes (id, x, y, layer, order) and width/height
-│   └── plan-chips.ts           # Plan badges on session cards (createPlanBadge) + plan chips in draft strip (renderPlanChips with generation counter dedup). Shows ready/coding/review/blocked counts
+│   └── plan-chips.ts           # Plan badges on session cards (createPlanBadge) + plan chips in the chip bar (renderPlanChips with generation counter dedup). Shows ready/coding/review/blocked counts
 ├── terminal/
 │   ├── terminal-view.ts        # xterm.js wrapper (fit/search/weblinks addons)
 │   ├── terminal-manager.ts     # Multi-terminal orchestration (create/switch/rename/resize/destroy + tab bar + PtyOutputBuffer + right-click paste prevention + pty:markSwitching before fit)
@@ -255,10 +241,8 @@ renderer/
 │   ├── modal-base.ts           # Shared modal foundation (show/hide, backdrop, gamepad focus management, Tab/Shift+Tab button cycling in selection mode)
 │   ├── dir-picker.ts           # Directory picker modal (supports pre-selection via preselectedPath)
 │   ├── binding-editor.ts       # Binding editor modal
-│   ├── context-menu.ts         # Context menu overlay — Copy/Paste/Compose in Editor/New Session/New Session with Selection/⚡ Prompts…/Drafts ►/Cancel. "⚡ Prompts…" routes into the prompt-template picker (`components/modals/PromptTreeModal.vue`) → in-app Prompt Editor (`EditorPopup.vue`) flow
-│   ├── close-confirm.ts        # Close session confirmation popup — centered modal with Close/Cancel, warns about unsent drafts, gamepad + keyboard support
+│   ├── close-confirm.ts        # Close session confirmation popup — centered modal with Close/Cancel, gamepad + keyboard support
 │   ├── quick-spawn.ts          # Quick-spawn CLI type picker — centred modal listing available CLI types with pre-selection, gamepad + click support
-│   └── draft-submenu.ts        # Drafts submenu from context menu — New Draft + per-draft Apply/Edit/Delete action picker
 └── styles/
     └── main.css
 ```
@@ -355,7 +339,6 @@ android/
 config/
 ├── settings.yaml               # Active profile + hapticFeedback toggle + notifications toggle + sessionGroups prefs (order + collapsed + bookmarked)
 ├── sessions.yaml               # Persisted session state (auto-managed)
-├── drafts.yaml                 # Persisted draft prompts per session (auto-managed)
 ├── plans/                      # Individual per-plan JSON files (auto-managed, folder-level not per-profile)
 ├── plan-dependencies.json      # Directory plan dependency registry
 ├── plans/incoming/             # Inbox for importable ready plan JSON artifacts
@@ -375,14 +358,11 @@ tests/                                  # 63 test files
 ├── callback-handler.test.ts    # Telegram callback handler tests (session controls, spawn, close all)
 ├── close-confirm.test.ts       # Close confirmation modal tests
 ├── commands.test.ts            # Telegram slash command handler tests
-├── config.test.ts              # Config loading, stick config, haptic, virtual buttons, prompt-tree binding persistence, legacy sequences loader (migration input)
+├── config.test.ts              # Config loading, stick config, haptic, virtual buttons, retired-binding (prompt-tree/new-draft) cleanup
 ├── context-menu.test.ts        # Context menu overlay tests
-├── draft-editor.test.ts        # Draft editor panel tests
-├── draft-manager.test.ts       # DraftManager CRUD + events
-├── scratchpad-manager.test.ts  # ScratchpadManager over its real file store: stale writes, cap, lifecycle
-├── scratchpad-handlers.test.ts # Scratchpad IPC: user authorship, stale hand-back, unknown session refused
-├── mcp-session-scratchpad.test.ts # session_scratchpad_get/_set/_append through the dispatcher
-├── draft-persistence.test.ts   # Draft save/load persistence
+├── draft-manager.test.ts  # DraftManager over its real file store: stale writes, cap, lifecycle
+├── draft-handlers.test.ts # Draft IPC: user authorship, stale hand-back, unknown session refused
+├── mcp-session-draft.test.ts # session_draft_get/_set/_append through the dispatcher
 ├── mess-manager.test.ts        # Project membership, ordered unread cursors, visibility, and cursor-neutral history
 ├── mess-persistence.test.ts    # JSONL persistence, atomic metadata, sequence recovery, pruning, and diagnostics
 ├── mess-notifier.test.ts       # Append/idle reminder gating, cooldown, retry, verification, and cleanup
@@ -392,8 +372,6 @@ tests/                                  # 63 test files
 ├── dock-dynamic-registry.test.ts # Runtime descriptor registration and unresolved layout slots
 ├── peer-session-store.test.ts   # Peer snapshots, pushes, offline state, and refresh generation guards
 ├── use-peer-session-panes.test.ts # Dynamic peer pane lifecycle, subscriptions, fetches, and persisted layout behavior
-├── draft-strip.test.ts         # Draft strip pill rendering + badge
-├── draft-submenu.test.ts       # Draft submenu + action picker tests
 ├── gamepad-repeat.test.ts      # D-pad/stick key repeat engine tests
 ├── group-overview.test.ts      # Group overview grid tests
 ├── handlers-restore.test.ts    # Session restore on startup tests
@@ -416,7 +394,6 @@ tests/                                  # 63 test files
 ├── reply-keyboard.test.ts      # Telegram reply keyboard tests
 ├── resume-spawn.test.ts        # CLI session resume spawning tests
 ├── sequence-parser.test.ts     # Sequence format parser tests
-├── components/modals/prompt-tree-modal.test.ts  # PromptTreeModal picker tests (tree disclosure, selection, gamepad navigation, apply flow)
 ├── session-groups.test.ts      # Session grouping logic tests + bookmark persistence tests
 ├── session-handlers.test.ts    # session:close → PtyManager routing tests
 ├── session.test.ts             # Session management
@@ -443,7 +420,7 @@ tests/                                  # 63 test files
 ├── utils.test.ts               # Utility function tests
 ├── pinia-setup.ts              # Global Vitest setup — creates fresh Pinia for each test
 ├── stores/
-│   └── stores.test.ts          # Pinia store tests (app, sessions-screen, config, drafts, plans — 20 tests)
+│   └── stores.test.ts          # Pinia store tests (app, sessions-screen, config, plans — 20 tests)
 ├── composables/
 │   ├── composables.test.ts     # Composable unit tests (modal stack, IPC, gamepad, panel resize, keyboard relay, terminals — 21 tests)
 │   └── navigation.test.ts     # Navigation composable tests (routing, modal interception, view/screen dispatch — 31 tests)

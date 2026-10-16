@@ -28,7 +28,6 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   dialogClient: {
     dialogOpenFolder: mocks.dialogOpenFolder,
   },
-  draftsClient: {},
   eventsClient: {},
   incomingClient: {},
   keyboardClient: {},

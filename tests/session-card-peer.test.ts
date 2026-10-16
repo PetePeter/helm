@@ -17,7 +17,6 @@ function baseProps(session: Record<string, unknown>) {
     sessionState: 'idle',
     activityLevel: 'idle',
     displayName: 'Session',
-    draftCount: 0,
     artifactCount: 0,
     elapsedText: '',
     workingPlanLabel: '',

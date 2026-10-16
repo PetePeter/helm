@@ -10,7 +10,7 @@ import { state } from '../renderer/state.js';
 import { useChipBarStore } from '../renderer/stores/chip-bar.js';
 import { executeSequenceForSession } from '../renderer/bindings.js';
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
   showPlanInEditor: vi.fn(),
 }));
 
@@ -82,7 +82,6 @@ describe('useChipBarStore', () => {
       },
     ];
     state.activeSessionId = 's1';
-    state.draftCounts.clear();
     state.planCodingCounts.clear();
     state.planStartableCounts.clear();
     (globalThis as typeof globalThis & { window: any }).window = {

@@ -21,7 +21,7 @@ import {
   PANE_MEMORIES,
   PANE_MESS,
   PANE_TIMESHEET,
-  PANE_SCRATCHPAD,
+  PANE_DRAFT,
   PANE_QUICK_SPAWN,
   PANE_SCHEDULER,
   PANE_SESSIONS,
@@ -88,7 +88,7 @@ const DEFAULT_DOCK_MODES: Partial<Record<DockSide, DockMode>> = { right: 'autohi
 /**
  * The Classic layout — a close reproduction of the pre-docking UI: session list
  * and tool windows on the left, the view group in the centre, and Artifacts with
- * the Scratchpad as a collapsed right-edge rail.
+ * the Draft as a collapsed right-edge rail.
  *
  * Kept as a literal rather than derived: the left column's split between the
  * session list and the stacked tool windows is a hand-tuned arrangement that no
@@ -103,7 +103,7 @@ function createClassicLayout(): DockWorkspaceLayout {
         group([PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES], PANE_SCHEDULER),
       ], [0.6, 0.4])),
       group([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], PANE_TERMINAL),
-      dock('right', 'autohide', group([PANE_ARTIFACTS, PANE_SCRATCHPAD], PANE_ARTIFACTS)),
+      dock('right', 'autohide', group([PANE_ARTIFACTS, PANE_DRAFT], PANE_ARTIFACTS)),
     ], [0.22, 0.56, 0.22]),
     closed: [],
   };
@@ -811,14 +811,21 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
  */
 const RETIRED_PANE_IDS: ReadonlySet<string> = new Set(['overview']);
 
+/** Pane ids that were renamed; a saved layout keeps the pane under its new id. */
+const RENAMED_PANE_IDS: Readonly<Record<string, PaneId>> = { scratchpad: PANE_DRAFT };
+const renamePane = (id: unknown): unknown => RENAMED_PANE_IDS[id as string] ?? id;
+
 /** Drop retired panes from a raw node; null when nothing is left of it. */
 function pruneRetiredNode(raw: unknown): unknown {
   if (!isRecord(raw)) return raw;
   if (raw.type === 'group' && Array.isArray(raw.tabs)) {
-    const tabs = raw.tabs.filter(tab => !RETIRED_PANE_IDS.has(tab as string));
-    if (tabs.length === raw.tabs.length) return raw;
+    const named = raw.tabs.map(renamePane);
+    const tabs = named.filter(tab => !RETIRED_PANE_IDS.has(tab as string));
+    const renamed = named.some((tab, i) => tab !== (raw.tabs as unknown[])[i]);
+    if (!renamed && tabs.length === raw.tabs.length) return raw;
     if (tabs.length === 0) return null;
-    return { ...raw, tabs, activeTab: tabs.includes(raw.activeTab) ? raw.activeTab : tabs[0] };
+    const activeTab = renamePane(raw.activeTab);
+    return { ...raw, tabs, activeTab: tabs.includes(activeTab) ? activeTab : tabs[0] };
   }
   if (raw.type === 'dock') {
     const child = pruneRetiredNode(raw.child);
@@ -843,7 +850,7 @@ function pruneRetiredPanes(raw: unknown): unknown {
   if (!isRecord(raw)) return raw;
   const root = pruneRetiredNode(raw.root);
   const closed = Array.isArray(raw.closed)
-    ? raw.closed.filter(id => !RETIRED_PANE_IDS.has(id as string))
+    ? raw.closed.map(renamePane).filter(id => !RETIRED_PANE_IDS.has(id as string))
     : raw.closed;
   return { ...raw, root: root ?? { type: 'empty' }, closed };
 }

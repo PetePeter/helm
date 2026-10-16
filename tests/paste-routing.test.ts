@@ -2,8 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockShowEditorPopup, mockState, mockGetTerminalManager } = vi.hoisted(() => ({
-  mockShowEditorPopup: vi.fn(),
+const { mockState, mockGetTerminalManager } = vi.hoisted(() => ({
   mockState: {
     sessions: [] as Array<{ id: string; cliType: string }>,
     cliToolsCache: {} as Record<string, { submitSuffix?: string }>,
@@ -69,10 +68,6 @@ vi.mock('../renderer/bindings', () => ({
   },
 }));
 
-vi.mock('../renderer/editor/editor-popup.js', () => ({
-  showEditorPopup: mockShowEditorPopup,
-}));
-
 vi.mock('../renderer/state.js', () => ({
   state: mockState,
 }));
@@ -119,7 +114,6 @@ describe('terminal keys', () => {
       writePty: (sessionId, data) => { void (window as any).gamepadCli.ptyWrite(sessionId, data); },
       deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
       readClipboardText: () => navigator.clipboard.readText(),
-      openPromptEditor: (sessionId) => { void mockShowEditorPopup(sessionId); },
       isEscProtectionArmed: () => false,
       openEscProtection: () => {},
       clearNotifications,
@@ -142,8 +136,6 @@ describe('terminal keys', () => {
     mockState.sessions = [];
     mockState.cliToolsCache = {};
     mockGetTerminalManager.mockReturnValue(null);
-    mockShowEditorPopup.mockReset();
-    mockShowEditorPopup.mockResolvedValue('editor text');
 
     (window as any).gamepadCli = { ptyWrite: mockPtyWrite };
 

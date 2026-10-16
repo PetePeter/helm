@@ -9,7 +9,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import type { RecycleBinManager } from '../../session/recycle-bin-manager.js';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
-import type { ScratchpadManager } from '../../session/scratchpad-manager.js';
+import type { DraftManager } from '../../session/draft-manager.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { WindowManager } from '../window-manager.js';
 import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
@@ -28,7 +28,7 @@ export function setupRecycleBinHandlers(
   chatJournal?: Pick<MobileChatJournal, 'pruneSession'>,
   /** Re-applies bin-carried session fields (the mission) once the re-spawn is back. */
   onRestoreCommitted?: (entry: RecycleBinEntry) => void,
-  scratchpadManager?: Pick<ScratchpadManager, 'clearSession'>,
+  draftManager?: Pick<DraftManager, 'clearSession'>,
 ): void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   /**
@@ -62,7 +62,7 @@ export function setupRecycleBinHandlers(
   /** What a binned session keeps under its id for a restore; dropped once the entry is gone. */
   const clearPreserved = (sessionId: string): void => {
     artifactManager.clearSession(sessionId);
-    scratchpadManager?.clearSession(sessionId);
+    draftManager?.clearSession(sessionId);
     tempRegistry.drain(sessionId);
   };
 
@@ -73,7 +73,7 @@ export function setupRecycleBinHandlers(
   });
 
   // An entry that ages out of the retention window at runtime takes its preserved
-  // artifacts and scratchpad with it — same effect as a Forget.
+  // artifacts and draft with it — same effect as a Forget.
   // Temp copies opened externally go too — a session that ages out is never
   // coming back, so nothing can still legitimately reference them.
   recycleBin.on('recycle-bin:expired', (expired: RecycleBinEntry[]) => {

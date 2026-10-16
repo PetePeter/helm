@@ -152,7 +152,7 @@ flowchart LR
      one-line user rule, not a default.
 
   `outsideSessionDir` is SUPPORTED but likewise not shipped on by default. A
-  session legitimately reaches outside its cwd — its own scratchpad lives in the
+  session legitimately reaches outside its cwd — its own draft lives in the
   per-user temp dir, and cross-repo work is normal — so denying every such write
   blocked ordinary working behaviour, not just the mistakes it was aimed at. The
   rule remains available for anyone who wants it; it is a user choice, not a
@@ -248,7 +248,7 @@ is broken by construction: PreCompact fires because the context is FULL, the
 one moment the agent has no room to help. So Helm composes the snapshot
 itself, entirely from data it already holds: the claimed plan and its state,
 tools run and files touched (accumulated from PostToolUse), turn count and
-session age, draft memos, any pending handover note, and the PreCompact
+session age, any pending handover note, and the PreCompact
 `trigger` (`auto` = context filled, `manual` = `/compact`).
 
 - The **transcript is ATTACHED, never inlined** (`transcript.jsonl`).
@@ -284,7 +284,7 @@ context it would otherwise not have. `ContextInjector`
 can say THREE things, each independently optional — and **null** (send
 nothing) is the common case by design:
 
-- **SessionStart** — the session's claimed plan, its draft memos, its
+- **SessionStart** — the session's claimed plan, its
   mission, and any pending handover note, out-of-band at startup. Nothing is preloaded
   wholesale; each source is capped at 800 chars, the whole payload at 2500,
   and whole parts are dropped from the end before anything is cut mid-line.

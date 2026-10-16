@@ -7,7 +7,6 @@
 import { ipcMain } from 'electron';
 import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
-import type { DraftManager } from '../../session/draft-manager.js';
 import type { WindowManager } from '../window-manager.js';
 import type { ConfigLoader } from '../../config/loader.js';
 import type { SessionInfo } from '../../types/session.js';
@@ -31,7 +30,6 @@ export interface TranscriptActions {
 export function setupSessionHandlers(
   sessionManager: SessionManager,
   ptyManager: PtyManager,
-  draftManager: DraftManager,
   windowManager: WindowManager,
   configLoader?: ConfigLoader,
   transcriptActions?: TranscriptActions,
@@ -240,7 +238,6 @@ export function setupSessionHandlers(
       }
 
       sessionManager.removeSession(id);
-      draftManager.clearSession(id);
 
       return { success: true };
     } catch (error) {

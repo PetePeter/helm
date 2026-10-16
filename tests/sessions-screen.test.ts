@@ -37,7 +37,7 @@ const mockGetCliDisplayName = vi.fn((type: string) => type || 'Unknown');
 const mockRenderFooterBindings = vi.fn();
 const mockSwitchTo = vi.fn();
 const mockSetCloseConfirmCallback = vi.fn();
-const mockCloseConfirm = { visible: false, sessionId: '', sessionName: '', draftCount: 0 };
+const mockCloseConfirm = { visible: false, sessionId: '', sessionName: '' };
 const mockHidePlanScreen = vi.fn();
 const mockShowPlanScreen = vi.fn();
 let mockPlanScreenVisible = false;

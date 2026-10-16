@@ -54,7 +54,6 @@ describe('PendingHandoverModal keyboard containment', () => {
       writePty: (id, data) => { ptyWrites.push({ sessionId: id, data }); },
       deliverText: async () => {},
       readClipboardText: async () => '',
-      openPromptEditor: () => {},
       isEscProtectionArmed: () => false,
       openEscProtection: () => {},
     })) {

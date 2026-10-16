@@ -135,15 +135,6 @@ def create_deploy_configs():
         yaml.dump([], f)
     print("    sessions.yaml -> config-deploy/sessions.yaml (empty)")
 
-    # Empty prompt-templates.yaml seed stub. Guarantees the global file is
-    # shipped in the packaged config source regardless of the dev machine's
-    # runtime config/ state. First launch migrates profile sequences over it
-    # (migration treats an empty tree as "not yet migrated").
-    with open(deploy_dir / "prompt-templates.yaml", "w", encoding="utf-8") as f:
-        yaml.dump({"folders": [], "templates": []}, f, default_flow_style=False, sort_keys=False)
-    print("    prompt-templates.yaml -> config-deploy/prompt-templates.yaml (empty seed)")
-
-
 def cleanup_deploy_configs():
     """Remove the config-deploy/ staging directory."""
     deploy_dir = Path("config-deploy")

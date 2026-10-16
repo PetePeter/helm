@@ -475,7 +475,7 @@ describe('setupCallbackHandler', () => {
       setupCallbackHandler(
         bot as any, createMockTopicManager(), sessionManager as any,
         ptyManager as any, configLoader as any,
-        undefined, mockProjectStore as any,
+        mockProjectStore as any,
       );
       handler = (bot.on as any).mock.calls.at(-1)[1];
 

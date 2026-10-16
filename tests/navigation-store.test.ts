@@ -59,18 +59,16 @@ vi.mock('../renderer/session-groups.js', async (importActual) => ({
   }),
 }));
 
-// Dynamic imports — draft-editor, editor-popup, chip-bar, group-overview
+// Dynamic imports — item-editor, chip-bar, group-overview
 const {
-  mockHideDraftEditor,
-  mockHideEditorPopup,
+  mockHideItemEditor,
   mockChipBarClear,
   mockChipBarRefresh,
   mockSetSelectedOnExit,
   mockHideOverview,
   mockSessionSetActive,
 } = vi.hoisted(() => ({
-  mockHideDraftEditor: vi.fn(),
-  mockHideEditorPopup: vi.fn(),
+  mockHideItemEditor: vi.fn(),
   mockChipBarClear: vi.fn(),
   mockChipBarRefresh: vi.fn(),
   mockSetSelectedOnExit: vi.fn(),
@@ -78,14 +76,10 @@ const {
   mockSessionSetActive: vi.fn(),
 }));
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
-  hideDraftEditor: mockHideDraftEditor,
-  showDraftEditor: vi.fn(),
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
+  hideItemEditor: mockHideItemEditor,
+  showItemEditor: vi.fn(),
   showPlanInEditor: vi.fn(),
-}));
-
-vi.mock('../renderer/editor/editor-popup.js', () => ({
-  hideEditorPopup: mockHideEditorPopup,
 }));
 
 vi.mock('../renderer/stores/chip-bar.js', () => ({
@@ -340,8 +334,7 @@ describe('useNavigationStore', () => {
     it('cleans up draft editor and chip bar', async () => {
       await store.navigateToSession('sess-1');
 
-      expect(mockHideDraftEditor).toHaveBeenCalled();
-      expect(mockHideEditorPopup).toHaveBeenCalled();
+      expect(mockHideItemEditor).toHaveBeenCalled();
       expect(mockChipBarClear).toHaveBeenCalled();
     });
 
@@ -451,8 +444,7 @@ describe('useNavigationStore', () => {
     it('does NOT clean up drafts or chip bar', () => {
       store.activateSession('sess-1');
 
-      expect(mockHideDraftEditor).not.toHaveBeenCalled();
-      expect(mockHideEditorPopup).not.toHaveBeenCalled();
+      expect(mockHideItemEditor).not.toHaveBeenCalled();
       expect(mockChipBarClear).not.toHaveBeenCalled();
     });
 

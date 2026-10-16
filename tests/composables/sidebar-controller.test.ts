@@ -8,7 +8,6 @@ import { ref } from 'vue';
 const mocks = vi.hoisted(() => ({
   state: {
     activeSessionId: 's1',
-    draftCounts: new Map<string, number>(),
     projects: [] as Array<{ canonicalPath: string; alternatePaths: string[]; id: string; name: string }>,
     cliToolsCache: {} as Record<string, { displayName?: string; name?: string }>,
   },
@@ -53,7 +52,7 @@ vi.mock('../../renderer/stores/modal-bridge.js', async () => {
   return {
     ...actual,
     isAnyBridgeModalVisible: () => false,
-    closeConfirm: { visible: false, sessionId: '', sessionName: '', draftCount: 0 },
+    closeConfirm: { visible: false, sessionId: '', sessionName: '' },
     setCloseConfirmCallback: vi.fn(),
   };
 });
@@ -122,7 +121,6 @@ describe('useSidebarController', () => {
     vi.clearAllMocks();
     closeDirPicker();
     mocks.state.activeSessionId = 's1';
-    mocks.state.draftCounts = new Map();
     mocks.state.projects = [];
     mocks.sessionsState.directories = [];
     mocks.spawnTargets.value = [];

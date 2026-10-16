@@ -137,17 +137,6 @@ describe('CloseConfirmModal.vue', () => {
     w.unmount();
   });
 
-  it('shows draft warning when draftCount > 0', () => {
-    const w = factory({ draftCount: 3 });
-    expect(w.text()).toContain('3 unsent drafts will be deleted');
-    w.unmount();
-  });
-
-  it('no draft warning when draftCount is 0', () => {
-    const w = factory({ draftCount: 0 });
-    expect(w.find('.draft-warning').exists()).toBe(false);
-    w.unmount();
-  });
 
   it('pushes onto modal stack when visible', async () => {
     const w = factory();
@@ -228,12 +217,6 @@ describe('CloseConfirmModal.vue', () => {
     w.unmount();
   });
 
-  it('singular draft warning for count 1', () => {
-    const w = factory({ draftCount: 1 });
-    expect(w.text()).toContain('1 unsent draft will be deleted');
-    expect(w.text()).not.toContain('drafts');
-    w.unmount();
-  });
 });
 
 // ============================================================================
@@ -833,7 +816,7 @@ describe('ContextMenu.vue', () => {
     const w = factory();
     const items = w.findAll('.context-menu-item');
     expect(items.map(item => item.text().replace(/^\d+\s*/, ''))).toEqual([
-      '› Context', '› Compose', '› Session', '› Cursor', '✖ Cancel',
+      '› Context', '› Session', '› Cursor', '✖ Cancel',
     ]);
     expect(w.find('[role="menu"]').attributes('aria-label')).toBe('Terminal actions');
     w.unmount();
@@ -884,11 +867,6 @@ describe('ContextMenu.vue', () => {
     expect(w.find('[data-action="toggle-freeze"]').text()).toMatch(/unfreeze/i);
     expect(w.find('[data-action="rename-session"]').attributes('aria-disabled')).toBe('false');
     expect(w.find('[data-action="move-to-group"]').attributes('aria-disabled')).toBe('false');
-    await w.find('[data-action="back"]').trigger('click');
-    await w.find('[data-action="group:Compose"]').trigger('click');
-    for (const id of ['editor', 'prompts', 'drafts']) {
-      expect(w.find(`[data-action="${id}"]`).attributes('aria-disabled')).toBe('true');
-    }
     w.unmount();
   });
 
@@ -952,115 +930,6 @@ describe('ContextMenu.vue', () => {
   it('does not render when not visible', () => {
     const w = factory({ visible: false });
     expect(w.find('.context-menu').exists()).toBe(false);
-    w.unmount();
-  });
-});
-
-// ============================================================================
-// DraftSubmenu
-// ============================================================================
-
-import DraftSubmenu from '../../../renderer/components/modals/DraftSubmenu.vue';
-
-describe('DraftSubmenu.vue', () => {
-  const drafts = [
-    { id: 'd1', label: 'Draft 1', text: 'Hello' },
-    { id: 'd2', label: 'Draft 2', text: 'World' },
-  ];
-
-  let modalStack: ReturnType<typeof useModalStack>;
-
-  beforeEach(() => {
-    modalStack = useModalStack();
-    modalStack.clear();
-  });
-
-  function factory(props: Record<string, any> = {}) {
-    return mount(DraftSubmenu, {
-      props: { visible: true, drafts, ...props },
-      attachTo: document.body,
-      global: { stubs: GLOBAL_STUBS },
-    });
-  }
-
-  it('renders New Draft + existing drafts', () => {
-    const w = factory();
-    const items = w.findAll('.context-menu-item');
-    expect(items).toHaveLength(3); // New Draft + 2 drafts
-    expect(items[0].text()).toContain('New Draft');
-    expect(items[1].text()).toContain('Draft 1');
-    expect(items[2].text()).toContain('Draft 2');
-    w.unmount();
-  });
-
-  it('gamepad A on New Draft emits new-draft', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    vm.handleSubmenuButton('A');
-    expect(w.emitted('new-draft')).toHaveLength(1);
-    w.unmount();
-  });
-
-  it('gamepad navigation wraps through items', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    expect(vm.selectedIndex).toBe(0);
-    vm.handleSubmenuButton('DPadDown');
-    expect(vm.selectedIndex).toBe(1);
-    vm.handleSubmenuButton('DPadDown');
-    expect(vm.selectedIndex).toBe(2);
-    vm.handleSubmenuButton('DPadDown');
-    expect(vm.selectedIndex).toBe(0); // wrap
-    w.unmount();
-  });
-
-  it('gamepad A on draft opens action picker', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    vm.handleSubmenuButton('DPadDown'); // index 1 = Draft 1
-    vm.handleSubmenuButton('A');
-    expect(vm.showActions).toBe(true);
-    expect(vm.activeDraft?.id).toBe('d1');
-    expect(modalStack.has('draft-action')).toBe(true);
-    w.unmount();
-  });
-
-  it('action picker emits apply', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    vm.handleSubmenuButton('DPadDown'); // select Draft 1
-    vm.handleSubmenuButton('A'); // open actions
-    // Apply is index 0
-    vm.handleActionButton('A');
-    expect(w.emitted('apply')?.[0]?.[0]).toEqual(drafts[0]);
-    w.unmount();
-  });
-
-  it('action picker B goes back to submenu', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    vm.handleSubmenuButton('DPadDown');
-    vm.handleSubmenuButton('A');
-    expect(vm.showActions).toBe(true);
-    vm.handleActionButton('B');
-    expect(vm.showActions).toBe(false);
-    expect(modalStack.has('draft-action')).toBe(false);
-    w.unmount();
-  });
-
-  it('gamepad B on submenu cancels', () => {
-    const w = factory();
-    const vm = w.vm as any;
-    vm.handleSubmenuButton('B');
-    expect(w.emitted('cancel')).toHaveLength(1);
-    w.unmount();
-  });
-
-  it('pushes/pops modal stack', async () => {
-    const w = factory();
-    expect(modalStack.has('draft-submenu')).toBe(true);
-    await w.setProps({ visible: false });
-    expect(modalStack.has('draft-submenu')).toBe(false);
     w.unmount();
   });
 });
@@ -1385,220 +1254,5 @@ describe('BindingEditorModal.vue', () => {
     await overlay.trigger('keydown', { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(saveButton);
     w.unmount();
-  });
-});
-
-// ============================================================================
-// EditorPopup — Enter/Ctrl+Enter textarea tests
-// ============================================================================
-
-vi.mock('../../../renderer/editor/editor-history.js', () => ({
-  loadEditorHistory: vi.fn().mockResolvedValue([]),
-  addEditorHistoryEntry: vi.fn().mockResolvedValue(undefined),
-  getEditorHistoryPreview: (s: string) => s.slice(0, 40),
-}));
-
-import EditorPopup from '../../../renderer/components/modals/EditorPopup.vue';
-
-describe('EditorPopup.vue', () => {
-  let modalStack: ReturnType<typeof useModalStack>;
-
-  beforeEach(() => {
-    modalStack = useModalStack();
-    modalStack.clear();
-    (window as any).gamepadCli = {
-      configGetEditorPrefs: vi.fn().mockResolvedValue({}),
-      configSetEditorPrefs: vi.fn().mockResolvedValue(undefined),
-      draftList: vi.fn().mockResolvedValue([]),
-      draftCreate: vi.fn().mockResolvedValue({ id: 'draft-1' }),
-      draftUpdate: vi.fn().mockResolvedValue(undefined),
-      draftDelete: vi.fn().mockResolvedValue(undefined),
-    };
-  });
-
-  function factory(props: Record<string, any> = {}) {
-    return mount(EditorPopup, {
-      props: { visible: true, ...props },
-      attachTo: document.body,
-      global: { stubs: GLOBAL_STUBS },
-    });
-  }
-
-  it('renders when visible', async () => {
-    const w = factory();
-    await flushPromises();
-    expect(w.find('.editor-popup').exists()).toBe(true);
-    w.unmount();
-  });
-
-  it('Ctrl+Enter in textarea emits send', async () => {
-    const w = factory({ initialText: 'hello', hasPrefill: true });
-    await flushPromises();
-    const textarea = w.find('.editor-popup__textarea');
-    await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true });
-    await flushPromises();
-    expect(w.emitted('send')?.[0]?.[0]).toBe('hello');
-    w.unmount();
-  });
-
-  it('plain Enter in textarea does NOT emit send (allows newline)', async () => {
-    const w = factory({ initialText: 'hello' });
-    await flushPromises();
-    const textarea = w.find('.editor-popup__textarea');
-    await textarea.trigger('keydown', { key: 'Enter' });
-    expect(w.emitted('send')).toBeUndefined();
-    w.unmount();
-  });
-
-  it('Escape in textarea emits close', async () => {
-    const w = factory();
-    await flushPromises();
-    const textarea = w.find('.editor-popup__textarea');
-    await textarea.trigger('keydown', { key: 'Escape' });
-    expect(w.emitted('close')).toHaveLength(1);
-    w.unmount();
-  });
-
-  it('gamepad B closes editor', async () => {
-    const w = factory();
-    await flushPromises();
-    const vm = w.vm as any;
-    vm.handleButton('B');
-    expect(w.emitted('close')).toHaveLength(1);
-    w.unmount();
-  });
-
-  it('pushes/pops modal stack', async () => {
-    const w = factory();
-    await flushPromises();
-    expect(modalStack.has('editor-popup')).toBe(true);
-    await w.setProps({ visible: false });
-    expect(modalStack.has('editor-popup')).toBe(false);
-    w.unmount();
-  });
-
-  it('uses shared confirm dialog for unsent close actions', async () => {
-    const w = factory({ initialText: 'draft text', hasPrefill: true });
-    await flushPromises();
-    await w.find('.icon-button').trigger('click');
-    await flushPromises();
-    expect(w.findComponent(ConfirmDialog).exists()).toBe(true);
-    await w.findAll('button').find(b => b.text() === 'Keep Editing')!.trigger('click');
-    expect(w.emitted('close')).toBeUndefined();
-    w.unmount();
-  });
-
-  it('auto-saves programmatic text changes and treats saved text as clean', async () => {
-    vi.useFakeTimers();
-    const { state } = await import('../../../renderer/state.js');
-    state.activeSessionId = 'session-1';
-    state.sessions = [{ id: 'session-1', name: 'main', cliType: 'codex', processId: 1, workingDir: 'X:\\coding\\project' }];
-    const w = factory();
-    await flushPromises();
-
-    (w.vm as any).text = 'from history';
-    await vi.advanceTimersByTimeAsync(2000);
-    await flushPromises();
-
-    expect((window as any).gamepadCli.draftCreate).toHaveBeenCalledWith('X:\\coding\\project', 'ctrl-g-draft', 'from history');
-    await w.find('.icon-button').trigger('click');
-    await flushPromises();
-    expect(w.find('.editor-popup-confirm-dialog').exists()).toBe(false);
-    expect(w.emitted('close')).toHaveLength(1);
-    state.activeSessionId = null;
-    state.sessions = [];
-    vi.useRealTimers();
-    w.unmount();
-  });
-
-  it('reopens blank after sent content when no draft remains', async () => {
-    const w = factory({ initialText: 'send me', hasPrefill: true });
-    await flushPromises();
-
-    await w.find('.btn--primary').trigger('click');
-    await flushPromises();
-
-    await w.setProps({ visible: false });
-    await flushPromises();
-    await w.setProps({ visible: true, initialText: '' });
-    await flushPromises();
-
-    const textarea = w.find('textarea');
-    expect((textarea.element as HTMLTextAreaElement).value).toBe('');
-    w.unmount();
-  });
-});
-
-// ============================================================================
-// EditorPopup — explicit prefill signal vs saved ctrl-g draft (PT-6 regression)
-// ============================================================================
-
-describe('EditorPopup.vue prefill signal', () => {
-  let modalStack: ReturnType<typeof useModalStack>;
-
-  beforeEach(async () => {
-    const { state } = await import('../../../renderer/state.js');
-    state.activeSessionId = 'session-1';
-    state.sessions = [{ id: 'session-1', name: 'main', cliType: 'codex', processId: 1, workingDir: 'X:\\coding\\project' }];
-    modalStack = useModalStack();
-    modalStack.clear();
-    (window as any).gamepadCli = {
-      configGetEditorPrefs: vi.fn().mockResolvedValue({}),
-      configSetEditorPrefs: vi.fn().mockResolvedValue(undefined),
-      // A saved ctrl-g draft is present for the active scope.
-      draftList: vi.fn().mockResolvedValue([
-        { id: 'draft-9', label: 'ctrl-g-draft', text: 'STALE DRAFT' },
-      ]),
-      draftCreate: vi.fn().mockResolvedValue({ id: 'draft-9' }),
-      draftUpdate: vi.fn().mockResolvedValue(undefined),
-      draftDelete: vi.fn().mockResolvedValue(undefined),
-    };
-  });
-
-  function factory(props: Record<string, any> = {}) {
-    return mount(EditorPopup, {
-      props: { visible: true, ...props },
-      attachTo: document.body,
-      global: { stubs: GLOBAL_STUBS },
-    });
-  }
-
-  function value(w: VueWrapper<any>): string {
-    return (w.find('textarea').element as HTMLTextAreaElement).value;
-  }
-
-  it('applying an empty template body opens EMPTY (saved draft does not leak in)', async () => {
-    const w = factory({ initialText: '', hasPrefill: true });
-    await flushPromises();
-    expect(value(w)).toBe('');
-    w.unmount();
-  });
-
-  it('failed-lookup/empty prefill path opens empty', async () => {
-    // usePromptApplyFlow falls back to body='' with hasPrefill=true on lookup failure.
-    const w = factory({ initialText: '', hasPrefill: true });
-    await flushPromises();
-    expect(value(w)).toBe('');
-    w.unmount();
-  });
-
-  it('plain Ctrl+G open (no prefill) restores the saved draft', async () => {
-    const w = factory(); // no initialText, no hasPrefill
-    await flushPromises();
-    expect(value(w)).toBe('STALE DRAFT');
-    w.unmount();
-  });
-
-  it('non-empty template body prefills and overrides the saved draft', async () => {
-    const w = factory({ initialText: 'TEMPLATE BODY', hasPrefill: true });
-    await flushPromises();
-    expect(value(w)).toBe('TEMPLATE BODY');
-    w.unmount();
-  });
-
-  afterEach(async () => {
-    const { state } = await import('../../../renderer/state.js');
-    state.activeSessionId = null;
-    state.sessions = [];
   });
 });

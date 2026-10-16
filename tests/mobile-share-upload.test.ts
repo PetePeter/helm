@@ -1,10 +1,10 @@
 /**
- * Share-to-Helm — a file shared from the phone lands in the Helm inbox and a
- * draft on the picked session names it.
+ * Share-to-Helm — a file shared from the phone lands in the Helm inbox and its
+ * path is typed into the picked session's CLI.
  *
- * Real MobileGate → real dispatcher → real upload service → real inbox and
- * DraftManager on a throwaway dir. The only stand-in is the service facade's
- * session lookup, because standing up a SessionManager proves nothing here.
+ * Real MobileGate → real dispatcher → real upload service → real inbox on a
+ * throwaway dir. The service facade's session lookup and text delivery are
+ * stand-ins: standing up a SessionManager + PTY proves nothing here.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,7 +19,6 @@ import { callMcpTool } from '../src/mcp/tools/dispatcher.js';
 import { MobileArtifactUploadService, UPLOAD_MAX_SLICE_BYTES } from '../src/mobile/mobile-artifact-upload.js';
 import { MobileShareInbox, safeShareFilename } from '../src/mobile/mobile-share-inbox.js';
 import { MAX_ATTACHMENT_BYTES } from '../src/session/artifact-attachment-manager.js';
-import { DraftManager } from '../src/session/draft-manager.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -39,16 +38,24 @@ afterEach(() => {
 });
 
 function build(allow: string[] = ['*']) {
-  const drafts = new DraftManager();
+  const state = { ptyDown: false };
+  const sent: Array<{ sessionId: string; text: string; options: Record<string, unknown> }> = [];
   const uploads = new MobileArtifactUploadService({
     attachments: { add: () => { throw new Error('a share must never become an attachment'); } },
-    shares: new MobileShareInbox(inboxDir, drafts),
+    shares: new MobileShareInbox(inboxDir),
   });
   const service = {
     getSession: (id: string) => (id === SESSION ? { id } : null),
     openShareUpload: (target: string, deviceId: string, input: Record<string, unknown>) =>
       uploads.openShare(deviceId, { ...(input as { filename: string; sizeBytes: number; sha256: string }), sessionId: target }),
-    commitShareUpload: (deviceId: string, uploadId: string, draft?: boolean) => uploads.commitShare(deviceId, uploadId, draft),
+    commitShareUpload: (deviceId: string, uploadId: string) => uploads.commitShare(deviceId, uploadId),
+    markShareUploadDelivered: (deviceId: string, uploadId: string) => uploads.markShareDelivered(deviceId, uploadId),
+    listSessions: () => [{ id: SESSION, name: 'target' }],
+    sendTextToSession: async (sessionId: string, text: string, options: Record<string, unknown>) => {
+      if (state.ptyDown) throw new Error('Session PTY is not running');
+      sent.push({ sessionId, text, options });
+      return { ok: true };
+    },
     commitArtifactAttachmentUpload: (_caller: string, deviceId: string, uploadId: string) =>
       uploads.commit(deviceId, uploadId),
   };
@@ -65,7 +72,7 @@ function build(allow: string[] = ['*']) {
       ),
     rateLimiter: new PeerRateLimiter({ capacity: 100, refillPerMs: 1, now: () => 0 }),
   });
-  return { gate, uploads, drafts, deviceId: device.id };
+  return { gate, uploads, sent, state, deviceId: device.id };
 }
 
 type Offer = { uploadId: string; maxSliceBytes: number; total: number };
@@ -88,7 +95,7 @@ function sendWhole(built: ReturnType<typeof build>, uploadId: string, bytes = FI
 }
 
 describe('share-to-Helm through the mobile gate', () => {
-  it('lands the file in the inbox and adds a draft naming its path, without sending it', async () => {
+  it('lands the file in the inbox and types its path into the session as a phone prompt', async () => {
     const built = build();
     const offer = await open(built);
     expect(offer.maxSliceBytes).toBe(UPLOAD_MAX_SLICE_BYTES);
@@ -96,17 +103,46 @@ describe('share-to-Helm through the mobile gate', () => {
 
     const receipt = await built.gate.handle(built.deviceId, 'session_share_file_commit', {
       uploadId: offer.uploadId,
-    }) as { sessionId: string; path: string; draftId: string };
+    }) as { sessionId: string; path: string };
 
     expect(receipt.sessionId).toBe(SESSION);
     expect(receipt.path.startsWith(inboxDir)).toBe(true);
     expect(readFileSync(receipt.path)).toEqual(FILE);
-    const [draft] = built.drafts.getForSession(SESSION);
-    expect(draft.id).toBe(receipt.draftId);
-    expect(draft.text).toBe(`Attached: receipt.pdf at ${receipt.path}`);
+    expect(built.sent).toEqual([{
+      sessionId: SESSION,
+      text: `Attached: receipt.pdf at ${receipt.path}`,
+      options: { senderSessionId: `mobile:${built.deviceId}`, senderSessionName: expect.any(String), userPromptSource: 'phone' },
+    }]);
   });
 
-  it('lands a chat attachment without a draft when the commit says draft:false', async () => {
+  it('types the path once even when the phone retries the commit', async () => {
+    const built = build();
+    const offer = await open(built);
+    sendWhole(built, offer.uploadId);
+
+    const first = await built.gate.handle(built.deviceId, 'session_share_file_commit', { uploadId: offer.uploadId });
+    const retry = await built.gate.handle(built.deviceId, 'session_share_file_commit', { uploadId: offer.uploadId });
+
+    expect(retry).toEqual(first);
+    expect(built.sent).toHaveLength(1);
+  });
+
+  it('delivers on retry when the first hand-off to the CLI failed', async () => {
+    const built = build();
+    const offer = await open(built);
+    sendWhole(built, offer.uploadId);
+
+    built.state.ptyDown = true;
+    await expect(
+      built.gate.handle(built.deviceId, 'session_share_file_commit', { uploadId: offer.uploadId }),
+    ).rejects.toThrow(/PTY is not running/);
+    built.state.ptyDown = false;
+    await built.gate.handle(built.deviceId, 'session_share_file_commit', { uploadId: offer.uploadId });
+
+    expect(built.sent).toHaveLength(1);
+  });
+
+  it('lands a chat attachment without sending it when the commit says draft:false', async () => {
     const built = build();
     const offer = await open(built);
     sendWhole(built, offer.uploadId);
@@ -114,12 +150,11 @@ describe('share-to-Helm through the mobile gate', () => {
     const receipt = await built.gate.handle(built.deviceId, 'session_share_file_commit', {
       uploadId: offer.uploadId,
       draft: false,
-    }) as { path: string; draftId?: string };
+    }) as { path: string };
 
-    // The chat composer carries the path itself; a draft too would say it twice.
+    // The chat composer carries the path itself; sending it too would say it twice.
     expect(readFileSync(receipt.path)).toEqual(FILE);
-    expect(receipt.draftId).toBeUndefined();
-    expect(built.drafts.getForSession(SESSION)).toEqual([]);
+    expect(built.sent).toEqual([]);
   });
 
   it('is on the permitted surface a wildcard phone discovers', async () => {
@@ -143,7 +178,7 @@ describe('share-to-Helm through the mobile gate', () => {
     await expect(open(built, { sizeBytes: MAX_ATTACHMENT_BYTES + 1 })).rejects.toThrow(/upload cap/);
   });
 
-  it('leaves no file and no draft when the bytes miss their checksum', async () => {
+  it('leaves no file and sends nothing when the bytes miss their checksum', async () => {
     const built = build();
     const offer = await open(built);
     sendWhole(built, offer.uploadId, Buffer.from('X'.repeat(FILE.byteLength)));
@@ -151,7 +186,7 @@ describe('share-to-Helm through the mobile gate', () => {
       built.gate.handle(built.deviceId, 'session_share_file_commit', { uploadId: offer.uploadId }),
     ).rejects.toThrow(/checksum/);
     expect(readdirSync(inboxDir)).toEqual([]);
-    expect(built.drafts.getForSession(SESSION)).toEqual([]);
+    expect(built.sent).toEqual([]);
   });
 
   it('never lets an artifact commit finish a share slot', async () => {

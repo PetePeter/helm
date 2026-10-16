@@ -24,7 +24,6 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
       activityLevel: 'idle',
       loopContinues: 0,
       pendingSubagents: 0,
-      draftCount: 0,
       artifactCount: 0,
       elapsedText: '0:00:00:00',
       workingPlanLabel: '',

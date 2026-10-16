@@ -21,7 +21,15 @@
 import { computed, onMounted, onUnmounted, watch } from 'vue';
 import { useArtifactViewer } from '../../composables/useArtifactViewer.js';
 import { useToast } from '../../composables/useToast.js';
-import { buildArtifactDocument, buildMarkdownDocument, OPEN_URL_MESSAGE, READY_MESSAGE } from '../../artifacts/build-artifact-document.js';
+import {
+  buildArtifactDocument,
+  buildMarkdownDocument,
+  OPEN_URL_MESSAGE,
+  READY_MESSAGE,
+  SCROLL_MESSAGE,
+  SCROLL_TO_MESSAGE,
+} from '../../artifacts/build-artifact-document.js';
+import { artifactScrollPositions } from '../../artifacts/artifact-scroll-positions.js';
 import { formatHelmRef } from '../../lib/helm-ref.js';
 import { artifactsClient, systemClient } from '../../ipc/clients.js';
 import { clipboardFileInput } from '../../artifacts/clipboard-file.js';
@@ -89,6 +97,13 @@ const isViewingOlder = computed(() =>
 const frameSrc = ref('');
 const frameRef = ref<HTMLIFrameElement | null>(null);
 let frameRequest = 0;
+/**
+ * `artifactId:version` of the document the frame has reported ready, else null.
+ * Scroll reports only count against it: the iframe element (and so its
+ * contentWindow) is reused across documents, and a late report from the old
+ * one must not overwrite the new one's position.
+ */
+let frameDocKey: string | null = null;
 
 /**
  * A frame that never reports itself ready is a blank panel with nothing to
@@ -121,6 +136,7 @@ watch(() => {
   return [artifact.id, version.version, version.content, artifact.kind, artifact.source] as const;
 }, async (documentIdentity) => {
   const request = ++frameRequest;
+  frameDocKey = null;
   if (!documentIdentity) {
     stopReadyWatch();
     frameFailed.value = false;
@@ -147,10 +163,19 @@ watch(() => {
  */
 function onFrameMessage(e: MessageEvent): void {
   if (e.source !== frameRef.value?.contentWindow) return;
-  const data = e.data as { type?: string; url?: string } | null;
+  const data = e.data as { type?: string; url?: string; y?: number } | null;
   if (data?.type === READY_MESSAGE) {
     stopReadyWatch();
     frameFailed.value = false;
+    const a = selected.value;
+    const v = shownVersion.value;
+    frameDocKey = a && v ? `${a.id}:${v.version}` : null;
+    const y = frameDocKey ? artifactScrollPositions.get(frameDocKey) : undefined;
+    if (y) frameRef.value?.contentWindow?.postMessage({ type: SCROLL_TO_MESSAGE, y }, '*');
+    return;
+  }
+  if (data?.type === SCROLL_MESSAGE) {
+    if (frameDocKey && typeof data.y === 'number') artifactScrollPositions.set(frameDocKey, data.y);
     return;
   }
   if (data?.type === OPEN_URL_MESSAGE) openArtifactLink(data.url ?? '');

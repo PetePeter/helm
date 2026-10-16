@@ -12,7 +12,6 @@ import { reactive } from 'vue';
 import { isValidContextLimits, type ContextLimits } from '../../src/session/context-limits.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import { useEscProtection } from '../composables/useEscProtection.js';
-import { useEditorPopupStore } from './editor-popup.js';
 
 // ============================================================================
 // Close Confirm
@@ -22,7 +21,6 @@ export const closeConfirm = reactive({
   visible: false,
   sessionId: '',
   sessionName: '',
-  draftCount: 0,
   /** Sessions about to be closed together (folder mode only). */
   count: 0,
   mode: 'session' as 'session' | 'app' | 'folder',
@@ -36,7 +34,6 @@ export function showAppCloseConfirm(onConfirm: () => void, onCancel?: () => void
   closeConfirm.visible = true;
   closeConfirm.sessionId = '';
   closeConfirm.sessionName = 'Helm';
-  closeConfirm.draftCount = 0;
   closeConfirm.mode = 'app';
   setCloseConfirmCallback(() => onConfirm());
   _closeConfirmOnCancel = onCancel ?? null;
@@ -53,7 +50,6 @@ export function showFolderCloseConfirm(folderName: string, count: number, onConf
   closeConfirm.visible = true;
   closeConfirm.sessionId = '';
   closeConfirm.sessionName = folderName;
-  closeConfirm.draftCount = 0;
   closeConfirm.count = count;
   closeConfirm.mode = 'folder';
   setCloseConfirmCallback(() => onConfirm());
@@ -174,40 +170,6 @@ export function getBulkCleanupCallback(): (() => void) | null { return _bulkClea
 
 
 // ============================================================================
-// Prompt Tree Picker
-// ============================================================================
-
-import type { TreeNode } from '../../src/session/prompt-template-manager.js';
-import { promptTemplatesClient } from '../ipc/clients.js';
-
-export const promptTree = reactive({
-  visible: false,
-  tree: { id: '__root__', name: '', order: -1, kind: 'folder', children: [] } as TreeNode,
-});
-
-let _promptTreeOnSelect: ((templateId: string) => void) | null = null;
-export function setPromptTreeCallback(cb: ((templateId: string) => void) | null): void { _promptTreeOnSelect = cb; }
-export function getPromptTreeCallback(): ((templateId: string) => void) | null { return _promptTreeOnSelect; }
-
-export async function showPromptTree(onSelect: (templateId: string) => void): Promise<void> {
-  try {
-    const tree = await promptTemplatesClient.promptTemplateList();
-    if (!tree || tree.children.length === 0) return;
-    promptTree.visible = true;
-    promptTree.tree = tree;
-    setPromptTreeCallback(onSelect);
-  } catch {
-    // IPC failed — silently skip opening the modal
-  }
-}
-
-export function hidePromptTree(): void {
-  promptTree.visible = false;
-  promptTree.tree = { id: '__root__', name: '', order: -1, kind: 'folder', children: [] };
-  setPromptTreeCallback(null);
-}
-
-// ============================================================================
 // Quick Spawn
 // ============================================================================
 
@@ -280,15 +242,6 @@ export function closeDirPicker(): void {
   dirPicker.loading = false;
   dirPicker.error = '';
 }
-
-// ============================================================================
-// Draft Submenu
-// ============================================================================
-
-export const draftSubmenu = reactive({
-  visible: false,
-  items: [] as Array<{ id: string; label: string; text: string }>,
-});
 
 // ============================================================================
 // Form Modal
@@ -637,12 +590,11 @@ export function closeRuntimeGroupCloseModal(): void {
 
 export function isAnyBridgeModalVisible(): boolean {
   const escProtection = useEscProtection();
-  const editorPopupStore = useEditorPopupStore();
 
   return closeConfirm.visible || contextMenu.visible || planDeleteConfirm.visible ||
     bulkCleanup.visible || quickSpawn.visible || dirPicker.visible ||
-    draftSubmenu.visible || formModal.visible || editorPopupStore.visible || toolEditor.visible ||
-    planHelp.visible || promptTree.visible || runtimeGroupName.visible || runtimeGroupClose.visible ||
+    formModal.visible || toolEditor.visible ||
+    planHelp.visible || runtimeGroupName.visible || runtimeGroupClose.visible ||
     runtimeGroupMove.visible || escProtection.isProtecting.value;
 }
 

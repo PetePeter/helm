@@ -189,8 +189,9 @@ vi.mock('../src/telegram/orchestrator.js', () => ({
 
 vi.mock('../src/session/draft-manager.js', () => ({
   DraftManager: vi.fn(function (this: any) {
-    this.importAll = vi.fn();
     this.on = vi.fn();
+    this.pruneOrphans = vi.fn();
+    this.clearSession = vi.fn();
   }),
 }));
 
@@ -243,7 +244,7 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setApiContextSizeLookup = vi.fn();
     this.sessionChangeFeed = { attach: vi.fn(), on: vi.fn(), off: vi.fn(), seq: 0 };
     this.setArtifactManager = vi.fn();
-    this.setScratchpadManager = vi.fn();
+    this.setDraftManager = vi.fn();
     this.setArtifactUploadService = vi.fn();
     this.setMemoryManager = vi.fn();
     this.setHandoverDelivery = vi.fn();

@@ -58,7 +58,7 @@ and the View menu all read one allow-list.
 | Profile | Panes | Window |
 |---------|-------|--------|
 | `main` | every registered pane (derived, never re-listed), including runtime panes | `MainWindowApp.vue` |
-| `popout` | terminal, plans, memories, mess, artifacts, scratchpad | `SnapOutWindow.vue` |
+| `popout` | terminal, plans, memories, mess, artifacts, draft | `SnapOutWindow.vue` |
 
 The pop-out omits the session list, quick spawn, scheduler and projects: those
 act on things the main shell owns.
@@ -164,9 +164,20 @@ cancel the click that is about to select a session. The `overview` *view mode*
 still exists for the legacy fullscreen group-overview grid; it has no pane of
 its own, so the `activeView` watcher has nothing to reconcile for it.
 
-Global shortcuts are `Ctrl+Shift+T` Terminal, `Ctrl+Shift+M` Memories, `Ctrl+Shift+P` Plans, `Ctrl+Shift+S` Sessions, and
-`Ctrl+Shift+A` Artifacts. The Artifact shortcut shows/focuses the pane; it does
-not toggle visibility. `Ctrl+Shift+N` remains the new-session shortcut.
+Every pane declares its own `Ctrl+Shift+<letter>` as `shortcut` on its
+`DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, P plans, M
+memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F
+projects, A artifacts, D draft. Declaring it on the descriptor means a new pane
+cannot ship without a key, and the router and the tab tooltip
+(`paneShortcutHint`, `renderer/dock-shortcuts.ts`) read one source. The keys
+work from anywhere, text fields included — Ctrl+Shift+letter types nothing, so
+claiming it costs the field nothing. A shortcut shows/focuses its pane; it does
+not toggle visibility. `Ctrl+Shift+N` remains the new-session shortcut, and
+Ctrl+G is an alias for the Draft pane.
+
+**Caret on focus.** A pane field marked `data-autofocus` takes the caret when
+the dock focuses that pane (`DockPane.vue`), so a jump lands ready to type. The
+Draft textarea uses it.
 
 Pane content does not provide a second close control. The dock tab close button
 is the close action, the View menu restores closed panes, and rails reveal
@@ -238,7 +249,7 @@ projection before normalizing the persisted tree.
 The Classic default is one horizontal root split with three tracks: the left
 tool dock (session list over the stacked tool windows), the view group
 (Terminal / Plans / Memories / Mess, Terminal active), and Artifacts with the
-[Scratchpad](scratchpad.md) as a collapsed right-edge rail.
+[Draft](draft.md) as a collapsed right-edge rail.
 
 **Retired panes.** A saved layout may name a pane that no longer exists — the
 `overview` pane (Team View, replaced by
@@ -246,6 +257,11 @@ tool dock (session list over the stacked tool windows), the view group
 retired ids before validating and hands the freed share back to the
 neighbouring panes, rather than rejecting the layout and discarding the user's
 whole arrangement for one missing pane.
+
+**Renamed panes.** `RENAMED_PANE_IDS` in `renderer/dock-layout.ts` maps an old
+id to its new one (`scratchpad` → `draft`) before validation, so a rename keeps
+the pane where the user put it instead of pruning it and re-adding it at the
+default spot.
 
 ## Related
 

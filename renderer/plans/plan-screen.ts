@@ -87,8 +87,8 @@ let overlayMounted = false;
 
 interface WindowCallbacks {
   planEditorOpener: ((sessionId: string, plan: PlanItem, callbacks: PlanEditorCallbacks) => void) | null;
-  draftEditorCloser: (() => void) | null;
-  draftEditorVisibilityChecker: (() => boolean) | null;
+  itemEditorCloser: (() => void) | null;
+  itemEditorVisibilityChecker: (() => boolean) | null;
   contextEditorOpener: ((context: { id: string; title: string; type: string; permission: 'readonly' | 'writable'; content: string; planIds?: string[]; sequenceIds?: string[] }, callbacks: { onSave: (updates: { title: string; content: string; type: string; permission: 'readonly' | 'writable' }) => void; onDelete: () => void; onUnbind?: (targetType: ContextBindingTargetType, targetId: string) => void; onClose?: () => void }) => void) | null;
   planChangesChecker: (() => boolean) | null;
 }
@@ -102,8 +102,8 @@ function getWindowCallbacks(): WindowCallbacks {
     if (!callbackRegistry.has(key)) {
     callbackRegistry.set(key, {
       planEditorOpener: null,
-      draftEditorCloser: null,
-      draftEditorVisibilityChecker: null,
+      itemEditorCloser: null,
+      itemEditorVisibilityChecker: null,
       contextEditorOpener: null,
       planChangesChecker: null,
     });
@@ -187,8 +187,8 @@ void loadFilterPreferences();
 export function setPlanScreenFitCallback(fn: () => void): void { fitActiveCallback = fn; }
 export function setPlanScreenCloseCallback(fn: () => void): void { closeCallback = fn; }
 export function setPlanEditorOpener(fn: WindowCallbacks['planEditorOpener']) { getWindowCallbacks().planEditorOpener = fn; }
-export function setDraftEditorCloser(fn: WindowCallbacks['draftEditorCloser']) { getWindowCallbacks().draftEditorCloser = fn; }
-export function setDraftEditorVisibilityChecker(fn: WindowCallbacks['draftEditorVisibilityChecker']) { getWindowCallbacks().draftEditorVisibilityChecker = fn; }
+export function setItemEditorCloser(fn: WindowCallbacks['itemEditorCloser']) { getWindowCallbacks().itemEditorCloser = fn; }
+export function setItemEditorVisibilityChecker(fn: WindowCallbacks['itemEditorVisibilityChecker']) { getWindowCallbacks().itemEditorVisibilityChecker = fn; }
 export function setPlanChangesChecker(fn: WindowCallbacks['planChangesChecker']) { getWindowCallbacks().planChangesChecker = fn; }
 export function setPlanScreenContextEditorOpener(fn: WindowCallbacks['contextEditorOpener']) { getWindowCallbacks().contextEditorOpener = fn; }
 
@@ -592,7 +592,7 @@ function planScreenKeyHandler(ctx: KeyContext): boolean {
       return true;
     }
     if (planScreenState.editingId || planScreenState.editingContextId) {
-      getWindowCallbacks().draftEditorCloser?.();
+      getWindowCallbacks().itemEditorCloser?.();
       planScreenState.selectedId = null;
       planScreenState.selectedContextId = null;
       planScreenState.editingId = null;
@@ -621,7 +621,7 @@ function planScreenKeyHandler(ctx: KeyContext): boolean {
 
   // The draft editor is a full panel over the canvas; while it is up the
   // planner's bare-letter keys would collide with typing.
-  if (getWindowCallbacks().draftEditorVisibilityChecker?.() ?? false) return false;
+  if (getWindowCallbacks().itemEditorVisibilityChecker?.() ?? false) return false;
 
   if (ctx.key === 'f' || ctx.key === 'F') {
     toggleRelatedFocus();
@@ -668,7 +668,7 @@ export async function bindPlanScreenToDir(dirPath: string | null, context?: View
   planScreenState.editingId = null;
   planScreenState.editingContextId = null;
   hidePlanDeleteConfirm();
-  getWindowCallbacks().draftEditorCloser?.();
+  getWindowCallbacks().itemEditorCloser?.();
   await loadPlanData(dirPath, context);
 }
 
@@ -687,14 +687,14 @@ async function mountPlanScreen(params?: unknown, context?: ViewMountContext): Pr
   overlayMounted = true;
   planScreenState.visible = true;
   hidePlanDeleteConfirm();
-  getWindowCallbacks().draftEditorCloser?.();
+  getWindowCallbacks().itemEditorCloser?.();
   await loadFilterPreferences();
   await bindPlanScreenToDir(requestedDir || null, context);
   if (context && !context.isActive()) return;
 }
 
 function unmountPlanScreen(): void {
-  getWindowCallbacks().draftEditorCloser?.();
+  getWindowCallbacks().itemEditorCloser?.();
   ++latestPlanDataLoadToken;
   closePlannerOverlay();
   if (fitActiveCallback) {
@@ -825,7 +825,7 @@ async function handleDelete(id: string): Promise<void> {
     await plansClient.planDelete(id);
     planScreenState.selectedId = null;
     planScreenState.editingId = null;
-    getWindowCallbacks().draftEditorCloser?.();
+    getWindowCallbacks().itemEditorCloser?.();
     await refreshCanvas();
   } catch (err) {
     console.error('[PlanScreen] Delete failed:', err);
@@ -854,7 +854,7 @@ async function handleApplyFromCanvas(item: PlanItem): Promise<void> {
     planScreenState.selectedId = null;
     planScreenState.editingId = null;
     hidePlanDeleteConfirm();
-    getWindowCallbacks().draftEditorCloser?.();
+    getWindowCallbacks().itemEditorCloser?.();
     await refreshCanvas();
   } catch (err) {
     console.error('[PlanScreen] Apply failed:', err);
@@ -893,7 +893,7 @@ async function handleAddNode(options?: { fromShortcut?: boolean; kind?: 'plan' |
       setRelatedTransientIds([...planScreenState.relatedTransientIds, createdId]);
     }
     if (planScreenState.editingId) {
-      getWindowCallbacks().draftEditorCloser?.();
+      getWindowCallbacks().itemEditorCloser?.();
       planScreenState.editingId = null;
     }
 

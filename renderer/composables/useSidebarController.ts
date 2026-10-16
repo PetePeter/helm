@@ -67,7 +67,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   function onRequestClose(sessionId: string, displayName: string): void {
     closeConfirm.sessionId = sessionId;
     closeConfirm.sessionName = displayName;
-    closeConfirm.draftCount = state.draftCounts.get(sessionId) ?? 0;
     closeConfirm.visible = true;
     setCloseConfirmCallback((targetSessionId: string) => {
       void deps.doCloseSession(targetSessionId);

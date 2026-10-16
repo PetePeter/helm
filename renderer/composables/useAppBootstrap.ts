@@ -34,7 +34,6 @@ import { getTabCycleSessionIds, updateSessionsFocus } from '../screens/sessions.
 import {
   artifactsClient,
   configClient,
-  draftsClient,
   eventsClient,
   plansClient,
   projectsClient,
@@ -233,7 +232,6 @@ export async function refreshSessions(): Promise<void> {
   );
 
   // Refresh draft counts
-  await refreshDraftCounts();
   await refreshArtifactCounts();
   await refreshPlanCounts();
 }
@@ -246,18 +244,6 @@ async function refreshArtifactCounts(): Promise<void> {
     state.artifactCounts.clear();
     for (const [sessionId, n] of Object.entries(counts)) {
       if (n > 0) state.artifactCounts.set(sessionId, n);
-    }
-  } catch { /* ignore */ }
-}
-
-async function refreshDraftCounts(): Promise<void> {
-  if (!draftsClient.draftList) return;
-  try {
-    const allDrafts = await draftsClient.draftList();
-    state.draftCounts.clear();
-    for (const draft of allDrafts) {
-      const count = state.draftCounts.get(draft.sessionId) ?? 0;
-      state.draftCounts.set(draft.sessionId, count + 1);
     }
   } catch { /* ignore */ }
 }
@@ -458,7 +444,6 @@ function cleanupRendererSession(sessionId: string, detachTerminal = false): void
   state.sessionStates.delete(sessionId);
   state.sessionActivityLevels.delete(sessionId);
   state.lastOutputTimes.delete(sessionId);
-  state.draftCounts.delete(sessionId);
   state.artifactCounts.delete(sessionId);
   state.planCodingCounts.delete(sessionId);
   state.planStartableCounts.delete(sessionId);

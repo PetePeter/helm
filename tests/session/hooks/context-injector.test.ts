@@ -52,7 +52,6 @@ function makeInjector(overrides: Partial<ContextInjectorDeps> = {}, base: Partia
     getSession: () => session(base),
     getClaimedPlan: () => null,
     getStartablePlans: () => [],
-    getDrafts: () => [],
     getHandover: () => undefined,
     suggest: async (sessionId, prompt, projectId) => {
       calls.suggest.push([sessionId, prompt, projectId]);
@@ -117,21 +116,19 @@ describe('SessionStart injection', () => {
     expect(getOpenTasks).not.toHaveBeenCalled();
   });
 
-  it('sends NOTHING when there is no plan, draft or handover', async () => {
+  it('sends NOTHING when there is no plan or handover', async () => {
     const { injector } = makeInjector();
     expect(await injector.respond(hookEvent())).toBeNull();
   });
 
-  it('injects plan, drafts and handover in one additionalContext', async () => {
+  it('injects plan and handover in one additionalContext', async () => {
     const { injector } = makeInjector({
       getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }),
-      getDrafts: () => [{ label: 'apply next', text: 'run the lint pass first' }],
       getHandover: () => 'you were mid-checkpoint on the encoders',
     });
     const result = await injector.respond(hookEvent());
     const context = contextOf(result!.body);
     expect(context).toContain('Working plan: P-0785 "Hook G4" (coding)');
-    expect(context).toContain('Draft memo "apply next": run the lint pass first');
     expect(context).toContain('Handover note');
     expect(context).toContain('mid-checkpoint');
   });
@@ -153,16 +150,21 @@ describe('SessionStart injection', () => {
   });
 
   it('truncates an oversized source deterministically and caps the whole payload', async () => {
+    const big = 'x'.repeat(5000);
     const { injector } = makeInjector({
-      getDrafts: () => [1, 2, 3, 4].map((n) => ({ label: `big-${n}`, text: 'x'.repeat(5000) })),
-    });
+      getClaimedPlan: () => ({ humanId: 'P-1', title: big, status: 'coding' }),
+      getOpenTasks: () => [big],
+      getRingRequests: () => [big],
+      getHandover: () => big,
+    }, { role: 'operator' });
     const result = await injector.respond(hookEvent());
     const context = contextOf(result!.body);
     expect(context.length).toBeLessThanOrEqual(2500);
-    for (const n of [1, 2, 3]) expect(context).toContain(`Draft memo "big-${n}"`);
-    // Deterministic precedence: the draft is kept whole-at-cap, the handover
-    // that no longer fits is dropped WHOLE — no half-cut lines.
-    expect(context).not.toContain('big-4');
+    expect(context).toContain('Working plan: P-1');
+    expect(context).toContain('Your open tasks');
+    // Deterministic precedence: each source is cut at its own cap, and the
+    // trailing one that no longer fits is dropped WHOLE — no half-cut lines.
+    expect(context).not.toContain('Handover note');
   });
 
   it('still injects for Copilot (flat shape) on SessionStart', async () => {
@@ -526,7 +528,7 @@ describe('Mission statement ([HELM_MISSION])', () => {
     expect(await injector.respond(hookEvent({ cli: 'copilot', event: 'UserPromptSubmit', prompt: 'x' }))).toBeNull();
   });
 
-  it('SessionStart injects the mission alongside drafts and handover', async () => {
+  it('SessionStart injects the mission alongside the handover', async () => {
     const { injector } = makeInjector({
       getMission: () => mission,
       getHandover: () => 'mid-refactor',

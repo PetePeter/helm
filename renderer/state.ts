@@ -103,7 +103,6 @@ export interface AppState {
   /** Per-session last output timestamp (for elapsed timer) */
   lastOutputTimes: Map<string, number>;
   /** Per-session draft count cache */
-  draftCounts: Map<string, number>;
   /** Per-session artifact count cache (version-agnostic — number of artifacts) */
   artifactCounts: Map<string, number>;
   /** Per-session plan coding count cache */

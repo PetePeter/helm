@@ -87,7 +87,6 @@ function userPromptElapsedText(sessionId: string): string {
       :editing-session-id="sessionsState.editingSessionId"
       :session-states="state.sessionStates"
       :session-activity-levels="state.sessionActivityLevels"
-      :draft-counts="state.draftCounts"
       :artifact-counts="state.artifactCounts"
       :working-plan-labels="state.workingPlanLabels"
       :working-plan-tooltips="state.workingPlanTooltips"

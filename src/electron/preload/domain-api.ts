@@ -1,14 +1,14 @@
 import { ipcRenderer } from 'electron';
 import type { PtyWriteOptions } from '../../session/delivery-context.js';
 import type { SessionMessageFlight } from '../../session/message-flight.js';
-import type { DraftPrompt, SessionMission } from '../../types/session.js';
+import type { SessionMission } from '../../types/session.js';
 import type { ScheduledTaskHistoryEntry } from '../../types/scheduled-task.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
-import type { Scratchpad, ScratchpadWriteResult } from '../../types/scratchpad.js';
+import type { Draft, DraftWriteResult } from '../../types/draft.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult } from '../../session/time-tracker.js';
@@ -95,13 +95,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   sessionSetMissionBarHeight: (id: string, px: number): Promise<{ success: boolean; height?: number; error?: string }> =>
     ipcRenderer.invoke('session:setMissionBarHeight', id, px),
 
-  /** Read a session's scratchpad (empty at revision 0 when never written). */
-  scratchpadGet: (sessionId: string): Promise<Scratchpad> =>
-    ipcRenderer.invoke('scratchpad:get', sessionId),
+  /** Read a session's draft (empty at revision 0 when never written). */
+  draftGet: (sessionId: string): Promise<Draft> =>
+    ipcRenderer.invoke('draft:get', sessionId),
 
-  /** Replace the scratchpad text as the user; refused when `baseRevision` is no longer current. */
-  scratchpadSet: (sessionId: string, text: string, baseRevision: number): Promise<ScratchpadWriteResult> =>
-    ipcRenderer.invoke('scratchpad:set', sessionId, text, baseRevision),
+  /** Replace the draft text as the user; refused when `baseRevision` is no longer current. */
+  draftSet: (sessionId: string, text: string, baseRevision: number): Promise<DraftWriteResult> =>
+    ipcRenderer.invoke('draft:set', sessionId, text, baseRevision),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>
@@ -310,8 +310,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   }) =>
     ipcRenderer.invoke('config:setSessionGroupPrefs', prefs),
 
-  editorGetHistory: (): Promise<string[]> => ipcRenderer.invoke('editor:getHistory'),
-  editorSetHistory: (entries: string[]) => ipcRenderer.invoke('editor:setHistory', entries),
 
   configRemoveBookmarkedDir: (dirPath: string) =>
     ipcRenderer.invoke('config:removeBookmarkedDir', dirPath),
@@ -341,17 +339,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('config:setWorkspaceLayout', layout, profile),
 
   configGetEditorPrefs: () => ipcRenderer.invoke('config:getEditorPrefs') as Promise<{
-    draftEditorHeight?: number;
     contextEditorHeight?: number;
     planEditorHeight?: number;
-    editorPopupWidth?: number;
-    editorPopupHeight?: number;
     sequenceModalWidth?: number;
     sequenceModalHeight?: number;
     sequenceModalBounds?: { left: number; top: number; right: number; bottom: number };
   }>,
 
-  configSetEditorPrefs: (prefs: { draftEditorHeight?: number; contextEditorHeight?: number; planEditorHeight?: number; editorPopupWidth?: number; editorPopupHeight?: number; sequenceModalWidth?: number; sequenceModalHeight?: number; sequenceModalBounds?: { left: number; top: number; right: number; bottom: number } }) =>
+  configSetEditorPrefs: (prefs: { contextEditorHeight?: number; planEditorHeight?: number; sequenceModalWidth?: number; sequenceModalHeight?: number; sequenceModalBounds?: { left: number; top: number; right: number; bottom: number } }) =>
     ipcRenderer.invoke('config:setEditorPrefs', prefs),
 
   // ========================================================================
@@ -832,10 +827,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return Promise.resolve();
   },
 
-  /** Open external editor (Notepad) for prompt composition */
-  editorOpenExternal: (): Promise<{ success: boolean; text?: string; error?: string }> =>
-    ipcRenderer.invoke('editor:openExternal'),
-
   /** Write text to a temp file for draft/plan apply — returns file path on success */
   writeTempContent: (content: string): Promise<{ success: boolean; path?: string; error?: string }> =>
     ipcRenderer.invoke('temp:writeContent', content),
@@ -872,30 +863,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** Test telegram bot connection (validates token) */
   telegramTestConnection: () => ipcRenderer.invoke('telegram:testConnection'),
-
-  // ========================================================================
-  // Draft Prompts
-  // ========================================================================
-
-  /** Create a new draft prompt for a session */
-  draftCreate: (sessionId: string, label: string, text: string) =>
-    ipcRenderer.invoke('draft:create', sessionId, label, text) as Promise<DraftPrompt>,
-
-  /** Update an existing draft */
-  draftUpdate: (draftId: string, updates: { label?: string; text?: string }) =>
-    ipcRenderer.invoke('draft:update', draftId, updates) as Promise<DraftPrompt | null>,
-
-  /** Delete a draft */
-  draftDelete: (draftId: string) =>
-    ipcRenderer.invoke('draft:delete', draftId),
-
-  /** Get all drafts for a session */
-  draftList: (sessionId: string) =>
-    ipcRenderer.invoke('draft:list', sessionId),
-
-  /** Get draft count for a session */
-  draftCount: (sessionId: string) =>
-    ipcRenderer.invoke('draft:count', sessionId),
 
   // ─── Directory Plans ────────────────────────────────────
 
@@ -1412,11 +1379,11 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     return () => ipcRenderer.removeListener('memory:changed', listener);
   },
 
-  /** Subscribe to scratchpad changes; the event carries the whole new pad. */
-  onScratchpadChanged: (callback: (scratchpad: Scratchpad) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: Scratchpad) => callback(data);
-    ipcRenderer.on('scratchpad:changed', listener);
-    return () => ipcRenderer.removeListener('scratchpad:changed', listener);
+  /** Subscribe to draft changes; the event carries the whole new pad. */
+  onDraftChanged: (callback: (draft: Draft) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: Draft) => callback(data);
+    ipcRenderer.on('draft:changed', listener);
+    return () => ipcRenderer.removeListener('draft:changed', listener);
   },
 
   /** Subscribe to artifact reveal (bring-forward) events */
@@ -1472,51 +1439,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = () => callback();
     ipcRenderer.on('runtime-group:changed', listener);
     return () => ipcRenderer.removeListener('runtime-group:changed', listener);
-  },
-
-  // ========================================================================
-  // Prompt Templates
-  // ========================================================================
-
-  /** Get the full prompt-template tree */
-  promptTemplateList: () => ipcRenderer.invoke('prompt-template:list'),
-
-  /** Get a single node (folder or template) by id */
-  promptTemplateGetNode: (id: string) => ipcRenderer.invoke('prompt-template:getNode', id),
-
-  /** Create a folder (root-level if parentId omitted) */
-  promptTemplateCreateFolder: (name: string, parentId?: string | null) =>
-    ipcRenderer.invoke('prompt-template:createFolder', name, parentId ?? null),
-
-  /** Create a template (root-level if parentId omitted) */
-  promptTemplateCreateTemplate: (name: string, body: string, parentId?: string | null) =>
-    ipcRenderer.invoke('prompt-template:createTemplate', name, body, parentId ?? null),
-
-  /** Update a template's name and/or body */
-  promptTemplateUpdate: (id: string, changes: { name?: string; body?: string }) =>
-    ipcRenderer.invoke('prompt-template:update', id, changes),
-
-  /** Rename any node (folder or template) */
-  promptTemplateRename: (id: string, name: string) =>
-    ipcRenderer.invoke('prompt-template:rename', id, name),
-
-  /** Delete nodes (cascades for folders) */
-  promptTemplateDelete: (ids: string[]) =>
-    ipcRenderer.invoke('prompt-template:delete', ids),
-
-  /** Move a node to a new parent folder (or root via null) */
-  promptTemplateMove: (id: string, newParentId?: string | null) =>
-    ipcRenderer.invoke('prompt-template:move', id, newParentId ?? null),
-
-  /** Reorder a node among its siblings */
-  promptTemplateReorder: (id: string, newOrder: number) =>
-    ipcRenderer.invoke('prompt-template:reorder', id, newOrder),
-
-  /** Subscribe to prompt-template change events */
-  onPromptTemplateChanged: (callback: () => void) => {
-    const listener = () => callback();
-    ipcRenderer.on('prompt-template:changed', listener);
-    return () => ipcRenderer.removeListener('prompt-template:changed', listener);
   },
 
   /** Subscribe to main-process requests to confirm closing the app window. */

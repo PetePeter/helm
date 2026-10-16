@@ -4,8 +4,8 @@
  * THREE things it can say, each independently optional, SILENT when there is
  * nothing worth saying (null — the common case must be free):
  *
- * A. SessionStart injection — the session's claimed plan, draft memos and
- *    pending handover note, out-of-band, directory-scoped, size-capped,
+ * A. SessionStart injection — the session's claimed plan and pending
+ *    handover note, out-of-band, directory-scoped, size-capped,
  *    logged. Nothing is preloaded wholesale.
  * B. UserPromptSubmit — the inter-session rules as additionalContext instead
  *    of prompt text (prompt with a [HELM_MSG] / [HELM_TELEGRAM] envelope),
@@ -57,8 +57,6 @@ export interface ContextInjectorDeps {
   getClaimedPlan(sessionId: string): ClaimedPlanSummary | null;
   /** Startable (unclaimed, unblocked) plans in a directory. */
   getStartablePlans(dirPath: string): ClaimedPlanSummary[];
-  /** Draft memos for the session. */
-  getDrafts(sessionId: string): { label: string; text: string }[];
   /** Persistent artifact context; every selected manifesto is included. */
   getManifestos?(sessionId: string): Array<{ title: string; content: string }>;
   /** Handover text pending across a compaction, when armed. */
@@ -164,7 +162,7 @@ export class ContextInjector {
     }
   }
 
-  // -- A. SessionStart: plan + drafts + handover ---------------------------
+  // -- A. SessionStart: plan + handover ---------------------------
 
   private respondSessionStart(event: HookEvent, session: SessionInfo): InjectorResponse {
     // Manifesto context and any already-pending handover travel together, but
@@ -200,9 +198,6 @@ export class ContextInjector {
           `(sessionId "${session.reportsTo}"; expectsResponse=true for questions) — not to the user — ` +
           'until the user messages you directly.',
       );
-    }
-    for (const draft of this.deps.getDrafts(session.id)) {
-      parts.push(truncate(`Draft memo "${draft.label}": ${draft.text}`, SOURCE_CAP_CHARS));
     }
     const mission = this.deps.getMission?.(session.id);
     if (mission) parts.push(truncate(missionLine(mission), SOURCE_CAP_CHARS));

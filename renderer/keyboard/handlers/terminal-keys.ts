@@ -1,12 +1,9 @@
 /**
  * Terminal key handlers — the keys that belong to the active session's PTY.
  *
- * Split into four handlers rather than one, because they answer *different*
+ * Split into three handlers rather than one, because they answer *different*
  * eligibility questions and fusing them is what produced the bugs:
  *
- *  - `terminal-compose` (Ctrl+G) renders a prompt editor OVER the terminal, so
- *    it asks whether the terminal is VISIBLE. It is the one deliberate
- *    exception to focus ownership.
  *  - `terminal-escape` and `terminal-paste` send to the PTY, so they ask
  *    whether the terminal is FOCUSED. They intercept even when xterm holds DOM
  *    focus, because ESC protection and managed paste must pre-empt xterm.
@@ -32,7 +29,6 @@ export interface TerminalKeyDeps {
   /** Managed delivery — bracketed-paste framing and chunking, not a raw write. */
   deliverText: (sessionId: string, text: string) => Promise<void>;
   readClipboardText: () => Promise<string>;
-  openPromptEditor: (sessionId: string) => void;
   /** Is the Escape-protection setting turned on for this session's CLI? */
   isEscProtectionArmed: () => boolean;
   /**
@@ -68,17 +64,6 @@ export function createTerminalKeyHandlers(deps: TerminalKeyDeps): KeyHandler[] {
           return true;
         }
         return false;
-      },
-    },
-
-    {
-      id: 'terminal-compose',
-      scope: 'global',
-      claims: (ctx) => ctx.isVisible(PANE_TERMINAL) && ctx.activeSessionId !== null,
-      handle: (ctx) => {
-        if (ctx.combo !== 'ctrl+g') return false;
-        deps.openPromptEditor(ctx.activeSessionId!);
-        return true;
       },
     },
 

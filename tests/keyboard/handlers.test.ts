@@ -16,6 +16,7 @@ import { installKeyRouter, registerKeyHandler, resetKeyHandlers } from '../../re
 import { type KeyEnvironment } from '../../renderer/keyboard/key-context.js';
 import {
   PANE_ARTIFACTS,
+  PANE_DRAFT,
   PANE_MEMORIES,
   PANE_TERMINAL,
   type PaneId,
@@ -37,12 +38,11 @@ function fakeWorkspace() {
 }
 
 function fakeTerminal() {
-  const calls = { pty: [] as string[], pasted: [] as string[], editors: [] as string[], escProtection: 0 };
+  const calls = { pty: [] as string[], pasted: [] as string[], escProtection: 0 };
   const deps: TerminalKeyDeps = {
     writePty: (_sessionId, data) => { calls.pty.push(data); },
     deliverText: async (_sessionId, text) => { calls.pasted.push(text); },
     readClipboardText: async () => 'clipboard text',
-    openPromptEditor: (sessionId) => { calls.editors.push(sessionId); },
     isEscProtectionArmed: () => false,
     openEscProtection: () => { calls.escProtection += 1; },
   };
@@ -69,6 +69,16 @@ function pressInTerminal(init: KeyboardEventInit): KeyboardEvent {
   const helper = document.querySelector('.xterm-helper-textarea')!;
   const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
   helper.dispatchEvent(event);
+  return event;
+}
+
+/** Dispatch from a focused plain textarea — the draft pad, a form field. */
+function pressInField(init: KeyboardEventInit): KeyboardEvent {
+  document.body.innerHTML = '<textarea id="field"></textarea>';
+  const field = document.querySelector('#field') as HTMLTextAreaElement;
+  field.focus();
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+  field.dispatchEvent(event);
   return event;
 }
 
@@ -121,17 +131,60 @@ describe('dock pane shortcuts', () => {
     expect(workspace.calls.activated).toEqual([PANE_ARTIFACTS]);
   });
 
-  it('a real text field still swallows the shortcut', () => {
+  // Pane shortcuts are navigation, not editing: typing in the draft pad (or any
+  // field) must not trap you there.
+  it('Ctrl+Shift+M activates Memories while typing in a text field', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
     install();
 
-    document.body.innerHTML = '<input id="field" />';
-    const field = document.querySelector('#field') as HTMLInputElement;
-    field.focus();
-    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'O', code: 'KeyO', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    const event = pressInField({ key: 'M', code: 'KeyM', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.activated).toEqual([PANE_MEMORIES]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('Ctrl+Shift+D activates the draft pane', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    pressInTerminal({ key: 'D', code: 'KeyD', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.activated).toEqual([PANE_DRAFT]);
+  });
+
+  it('an unmapped Ctrl+Shift chord in a text field is left to the field', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    const event = pressInField({ key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true });
 
     expect(workspace.calls.activated).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('Ctrl+G', () => {
+  it('opens the draft pane from a terminal', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    pressInTerminal({ key: 'g', code: 'KeyG', ctrlKey: true });
+
+    expect(workspace.calls.activated).toEqual([PANE_DRAFT]);
+  });
+
+  it('opens the draft pane while typing in a text field', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    pressInField({ key: 'g', code: 'KeyG', ctrlKey: true });
+
+    expect(workspace.calls.activated).toEqual([PANE_DRAFT]);
   });
 });
 
@@ -166,6 +219,16 @@ describe('session cycling', () => {
     install();
 
     pressInTerminal({ key: 'Tab', code: 'Tab', ctrlKey: true });
+
+    expect(workspace.calls.cycled).toEqual([1]);
+  });
+
+  it('cycles while typing in a text field', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    pressInField({ key: 'Tab', code: 'Tab', ctrlKey: true });
 
     expect(workspace.calls.cycled).toEqual([1]);
   });
@@ -274,32 +337,6 @@ describe('session lifecycle shortcuts', () => {
 });
 
 // ── Terminal keys ───────────────────────────────────────────────────────────
-
-describe('Ctrl+G prompt editor', () => {
-  // Ctrl+G renders OVER the terminal, so it is gated on the terminal being
-  // visible rather than focused — the one deliberate exception to focus
-  // ownership.
-  it('opens while the terminal is visible but Memories has focus', () => {
-    const terminal = fakeTerminal();
-    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
-    install({ getFocusedPane: () => PANE_MEMORIES, isPaneVisible: (pane) => pane === PANE_TERMINAL || pane === PANE_MEMORIES });
-
-    press({ key: 'g', code: 'KeyG', ctrlKey: true });
-
-    expect(terminal.calls.editors).toEqual(['session-1']);
-  });
-
-  it('is a no-op when no terminal is on screen', () => {
-    const terminal = fakeTerminal();
-    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
-    install({ getFocusedPane: () => PANE_MEMORIES, isPaneVisible: (pane) => pane !== PANE_TERMINAL });
-
-    const event = press({ key: 'g', code: 'KeyG', ctrlKey: true });
-
-    expect(terminal.calls.editors).toEqual([]);
-    expect(event.defaultPrevented).toBe(false);
-  });
-});
 
 describe('Escape', () => {
   // Escape was `preventDefault`ed at the top of the relay and then dropped by

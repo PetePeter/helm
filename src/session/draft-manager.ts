@@ -1,115 +1,121 @@
 import { EventEmitter } from 'node:events';
-import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
-import type { DraftPrompt } from '../types/session.js';
+import {
+  DRAFT_MAX_BYTES,
+  draftBytes,
+  type Draft,
+  type DraftAuthor,
+  type DraftWriteResult,
+} from '../types/draft.js';
 
+/** Where pads live. One record per session id, so one session's churn never rewrites another's text. */
+export interface DraftStore {
+  load(sessionId: string): Draft | null;
+  save(draft: Draft): void;
+  remove(sessionId: string): void;
+  list(): string[];
+}
+
+/**
+ * DraftManager: the single owner of every session's draft.
+ *
+ * Two writers share one pad (the user typing in the pane, the session's LLM
+ * through MCP), so a replace names the revision it was based on and a stale one
+ * is refused with the current pad. That is the whole concurrency model: no
+ * merge, no CRDT. An append needs no revision because it cannot drop anything.
+ *
+ * The pad is keyed by the Helm session id, so it survives compaction and a
+ * recycle-bin restore; `clearSession` is called only when the session can never
+ * come back.
+ */
 export class DraftManager extends EventEmitter {
-  private drafts = new Map<string, DraftPrompt[]>(); // sessionId -> drafts
+  private readonly pads = new Map<string, Draft>();
 
-  constructor(private readonly persist?: (drafts: Record<string, DraftPrompt[]>) => void) {
+  constructor(
+    private readonly store: DraftStore,
+    private readonly now: () => number = Date.now,
+  ) {
     super();
   }
 
-  /** Create a new draft for a session. Returns the created draft. */
-  create(sessionId: string, label: string, text: string): DraftPrompt {
-    const draft: DraftPrompt = {
-      id: randomUUID(),
-      sessionId,
-      label,
-      text,
-      createdAt: Date.now(),
-    };
-    if (!this.drafts.has(sessionId)) {
-      this.drafts.set(sessionId, []);
+  get(sessionId: string): Draft {
+    return { ...this.current(sessionId) };
+  }
+
+  /** Replace the whole text. `baseRevision` is the revision the writer last saw. */
+  set(sessionId: string, text: string, by: DraftAuthor, baseRevision: number): DraftWriteResult {
+    const current = this.current(sessionId);
+    if (baseRevision !== current.revision) {
+      return {
+        ok: false,
+        reason: 'stale',
+        message: `The draft changed since revision ${baseRevision}; it is now at revision ${current.revision}. Re-apply your change to the current text.`,
+        draft: { ...current },
+      };
     }
-    this.drafts.get(sessionId)!.push(draft);
-    this.markChanged(sessionId);
-    logger.info(`[DraftManager] Created draft "${label}" for session ${sessionId}`);
-    return draft;
+    return this.write(current, text, by);
   }
 
-  /** Update an existing draft's label and/or text. Returns updated draft or null. */
-  update(draftId: string, updates: { label?: string; text?: string }): DraftPrompt | null {
-    for (const [sessionId, drafts] of this.drafts) {
-      const idx = drafts.findIndex(d => d.id === draftId);
-      if (idx >= 0) {
-        if (updates.label !== undefined) drafts[idx].label = updates.label;
-        if (updates.text !== undefined) drafts[idx].text = updates.text;
-        this.markChanged(sessionId);
-        logger.info(`[DraftManager] Updated draft ${draftId}`);
-        return drafts[idx];
-      }
-    }
-    return null;
+  /** Add text on a new line at the end. Never drops what is already there. */
+  append(sessionId: string, text: string, by: DraftAuthor): DraftWriteResult {
+    const current = this.current(sessionId);
+    const separator = current.text && !current.text.endsWith('\n') ? '\n' : '';
+    return this.write(current, text ? `${current.text}${separator}${text}` : current.text, by);
   }
 
-  /** Delete a draft by ID. Returns true if found and deleted. */
-  delete(draftId: string): boolean {
-    for (const [sessionId, drafts] of this.drafts) {
-      const idx = drafts.findIndex(d => d.id === draftId);
-      if (idx >= 0) {
-        drafts.splice(idx, 1);
-        if (drafts.length === 0) this.drafts.delete(sessionId);
-        this.markChanged(sessionId);
-        logger.info(`[DraftManager] Deleted draft ${draftId}`);
-        return true;
-      }
-    }
-    return false;
+  /**
+   * A session that continues under a new id (Switch CLI) takes its notes
+   * along. The source keeps its own copy for a recycle-bin restore.
+   */
+  copySession(fromSessionId: string, toSessionId: string): void {
+    const source = this.current(fromSessionId);
+    if (source.text) this.write(this.current(toSessionId), source.text, source.updatedBy ?? 'user');
   }
 
-  /** Get all drafts for a session, ordered by creation time. */
-  getForSession(sessionId: string): DraftPrompt[] {
-    return [...(this.drafts.get(sessionId) ?? [])];
-  }
-
-  /** Get a single draft by ID. */
-  get(draftId: string): DraftPrompt | null {
-    for (const drafts of this.drafts.values()) {
-      const found = drafts.find(d => d.id === draftId);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  /** Get count of drafts for a session. */
-  count(sessionId: string): number {
-    return this.drafts.get(sessionId)?.length ?? 0;
-  }
-
-  /** Remove all drafts for a session (called on session close). */
+  /** The session is gone for good: drop its pad. */
   clearSession(sessionId: string): void {
-    if (this.drafts.has(sessionId)) {
-      this.drafts.delete(sessionId);
-      this.markChanged(sessionId);
-      logger.info(`[DraftManager] Cleared all drafts for session ${sessionId}`);
-    }
+    this.pads.delete(sessionId);
+    this.store.remove(sessionId);
   }
 
-  /** Export all drafts for persistence. */
-  exportAll(): Record<string, DraftPrompt[]> {
-    const result: Record<string, DraftPrompt[]> = {};
-    for (const [sessionId, drafts] of this.drafts) {
-      if (drafts.length > 0) {
-        result[sessionId] = [...drafts];
-      }
-    }
-    return result;
+  /** Startup reclamation after a crash: drop pads whose session is neither live nor in the recycle bin. */
+  pruneOrphans(keep: ReadonlySet<string>): string[] {
+    const pruned = this.store.list().filter(sessionId => !keep.has(sessionId));
+    for (const sessionId of pruned) this.clearSession(sessionId);
+    if (pruned.length) logger.info(`[Draft] Pruned ${pruned.length} orphaned draft(s)`);
+    return pruned;
   }
 
-  /** Import drafts from persisted data (called on startup). */
-  importAll(data: Record<string, DraftPrompt[]>): void {
-    this.drafts.clear();
-    for (const [sessionId, drafts] of Object.entries(data)) {
-      if (Array.isArray(drafts) && drafts.length > 0) {
-        this.drafts.set(sessionId, [...drafts]);
-      }
+  private current(sessionId: string): Draft {
+    let pad = this.pads.get(sessionId);
+    if (!pad) {
+      pad = this.store.load(sessionId) ?? { sessionId, text: '', revision: 0 };
+      this.pads.set(sessionId, pad);
     }
-    logger.info(`[DraftManager] Imported drafts for ${Object.keys(data).length} session(s)`);
+    return pad;
   }
 
-  private markChanged(sessionId: string): void {
-    this.persist?.(this.exportAll());
-    this.emit('draft:changed', sessionId);
+  private write(current: Draft, text: string, by: DraftAuthor): DraftWriteResult {
+    if (text === current.text) return { ok: true, draft: { ...current } };
+    const bytes = draftBytes(text);
+    if (bytes > DRAFT_MAX_BYTES) {
+      return {
+        ok: false,
+        reason: 'too_large',
+        message: `The draft holds at most ${DRAFT_MAX_BYTES} bytes; this write would make it ${bytes}. Nothing was changed.`,
+        draft: { ...current },
+      };
+    }
+    const next: Draft = {
+      sessionId: current.sessionId,
+      text,
+      revision: current.revision + 1,
+      updatedAt: this.now(),
+      updatedBy: by,
+    };
+    this.pads.set(next.sessionId, next);
+    this.store.save(next);
+    this.emit('draft:changed', { ...next });
+    return { ok: true, draft: { ...next } };
   }
 }

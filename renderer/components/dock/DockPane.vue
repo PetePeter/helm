@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue';
+import { nextTick, ref, watch, type Component } from 'vue';
 import type { PaneId } from '../../dock-types.js';
 
 const props = defineProps<{
@@ -29,6 +29,15 @@ function focusedItemId(target: EventTarget | null): string | undefined {
 function onFocusIn(event: FocusEvent): void {
   emit('focus', props.paneId, focusedItemId(event.target));
 }
+
+// A pane jump (shortcut, focus cycle) moves the dock's focus, not the caret.
+// Panes whose point is typing mark their field `data-autofocus` to take it.
+watch(() => props.focused, async (focused) => {
+  if (!focused) return;
+  await nextTick();
+  if (paneRef.value?.contains(document.activeElement)) return;
+  paneRef.value?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+});
 </script>
 
 <template>

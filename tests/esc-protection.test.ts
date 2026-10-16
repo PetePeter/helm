@@ -136,7 +136,6 @@ describe('Escape routing', () => {
       writePty: (id, data) => { ptyWrites.push({ sessionId: id, data }); },
       deliverText: async () => {},
       readClipboardText: async () => '',
-      openPromptEditor: () => {},
       isEscProtectionArmed: () => escProtectionEnabled,
       openEscProtection: (id) => protection.openProtection(id, () => {
         ptyWrites.push({ sessionId: id, data: '\x1b' });

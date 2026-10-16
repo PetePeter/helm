@@ -44,7 +44,7 @@ const GLOBAL_PREFIXES = [
   // by multiple sibling components; the ownership rationale is documented.
   '.settings-workspace-overlay', '.sessions-screen-section',
   '.status-', '.profile-', '.icon-button', '.sidebar-content',
-  '#screen-', '.screen', '.editor-popup',
+  '#screen-', '.screen',
   '.sessions-', '.group-', '.runtime-', '.session-', '.snap-indicator',
   '.jump-key', '.sort-', '.spawn-', '.plans-', '.recycle-bin-',
   '.nav-hint', 'kbd', '.empty-state', '.hint', '.focusable',

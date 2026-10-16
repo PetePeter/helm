@@ -24,7 +24,6 @@ function makeCardProps(overrides: Record<string, any> = {}) {
     sessionState: 'idle',
     activityLevel: 'active',
     displayName: 'Claude',
-    draftCount: 0,
     artifactCount: 0,
     elapsedText: '',
     workingPlanLabel: '',
@@ -71,16 +70,6 @@ describe('SessionCard', () => {
   it('adds focused class when isFocused', () => {
     const w = mount(SessionCard, { props: makeCardProps({ isFocused: true }) });
     expect(w.find('.session-card').classes()).toContain('focused');
-  });
-
-  it('shows draft badge when draftCount > 0', () => {
-    const w = mount(SessionCard, { props: makeCardProps({ draftCount: 3 }) });
-    expect(w.find('.draft-badge').text()).toContain('3');
-  });
-
-  it('hides draft badge when draftCount is 0', () => {
-    const w = mount(SessionCard, { props: makeCardProps({ draftCount: 0 }) });
-    expect(w.find('.draft-badge').exists()).toBe(false);
   });
 
   it('shows elapsed text', () => {
@@ -515,7 +504,6 @@ function makeSessionListProps(overrides: Record<string, any> = {}) {
     editingSessionId: null,
     sessionStates: new Map([['s1', 'idle']]),
     sessionActivityLevels: new Map([['s1', 'active']]),
-    draftCounts: new Map([['s1', 2]]),
     artifactCounts: new Map<string, number>(),
     workingPlanLabels: new Map([['s1', 'Plan A']]),
     workingPlanTooltips: new Map([['s1', 'Plan A tooltip']]),

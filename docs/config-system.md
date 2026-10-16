@@ -6,7 +6,6 @@
 config/
 ├── settings.yaml               # Active profile name, hapticFeedback toggle, notifications toggle, sidebar prefs, sorting, sessionGroups (order + collapsed + bookmarked), mcp (enabled/port/token)
 ├── sessions.yaml               # Persisted session state (auto-managed)
-├── drafts.yaml                 # Persisted draft prompts per session (auto-managed)
 ├── plans/                      # Individual per-plan JSON files and incoming plan artifacts
 ├── plan-dependencies.json      # Persisted directory plan dependency registry
 ├── mcp/
@@ -124,24 +123,12 @@ profiles:
 
 `{ action: 'context-menu' }` — Opens the context menu overlay. Gamepad binding centers the menu in the viewport (mode: 'gamepad'). Right-click on any terminal pane shows at mouse position (mode: 'mouse').
 
-Menu items: Copy, Paste, Compose in Editor ✏️, New Session, New Session with Selection, Prompts ⚡, Drafts ►, Cancel.
+Menu items: Copy, Paste, New Session, New Session with Selection, Cancel.
 
 - Copy and "New Session with Selection" are disabled when no text is selected
 - "New Session" / "New Session with Selection" open a quick-spawn CLI type picker (pre-selects active session's type), then the directory picker (pre-selects active session's working directory), then spawns
-- "⚡ Prompts…" is enabled when there is an active session — opens the global prompt-template picker tree (`PromptTreeModal`), then prefills the in-app Prompt Editor with the chosen template (see `prompt-tree` below)
-- "Drafts ►" opens a submenu listing New Draft + existing drafts with per-draft Apply/Edit/Delete actions
 
-### prompt-tree
-
-`{ action: 'prompt-tree' }` (renamed from the removed `sequence-list` action)
-
-Opens the global **prompt-template** picker tree (`PromptTreeModal.vue`) — a progressive-disclosure tree of folders + template leaves backed by `PromptTemplateManager` and persisted to `%APPDATA%/Helm/config/prompt-templates.yaml`. Navigation: D-pad up/down cycles visible nodes, left/right expand/collapse folders, A picks, B cancels; keyboard accelerators index visible nodes `1-9,0` then `a-z`.
-
-Picking a template does NOT send directly — it opens the in-app Prompt Editor (`EditorPopup.vue`) prefilled with the template body (caret at end) so the user can amend it. Only Ctrl+Enter / Send delivers the composed text to the active PTY via `deliverPromptSequence()`. Template bodies use the sequence-parser syntax (`{Enter}`, `{Wait 500}`, plain text). The apply flow is shared by the main window and the popout via the `usePromptApplyFlow` composable. (The legacy per-CLI `sequences` groups, `SequencePicker` modal, and `sequence-list` action were removed in PT-7; the executor/delivery layer that parses the syntax is retained.)
-
-### new-draft
-
-`{ action: 'new-draft' }` — Opens the draft editor for the active session, allowing the user to compose a draft prompt memo while the CLI is busy. Drafts can be applied (sent to PTY) via the Apply button in the editor or through the Drafts submenu in the context menu.
+> **Removed actions:** `prompt-tree` (prompt-template picker) and `new-draft` (prompt memos) no longer exist. The binding store deletes any saved binding using them on load, so an old profile cannot leave a dead button. Compose longer prompts in the session's [Draft pane](draft.md) (Ctrl+G or Ctrl+Shift+D).
 
 ## Chip-Bar Action Buttons
 
@@ -205,7 +192,7 @@ No `terminal` field — all CLIs run as embedded PTY sessions (no external windo
 
 `renameCommand` runs **before** the `initialPrompt` items, onto a guaranteed-empty composer, and only once the PTY's output has been quiet for a beat (`waitForQuiet`): a full-screen TUI re-render landing mid-paste (e.g. a SessionStart hook reply) splits the paste and submits its tail as a stray user message. A wedge-proof second CR follows the rename for composers that swallow the submit after a paste.
 
-> **Note:** The legacy per-CLI `sequences:` block (named groups of sequence items) was removed in PT-7 and replaced by the global **prompt-template** library (`%APPDATA%/Helm/config/prompt-templates.yaml`, see the [`prompt-tree`](#prompt-tree) action). Any `sequences:` block still present in an old profile is read once as migration input and folded into the prompt-template tree.
+> **Note:** The legacy per-CLI `sequences:` block and its successor, the global prompt-template library, are both gone. A `sequences:` block in an old profile is ignored.
 
 ## Pattern Rules (`patterns`)
 

@@ -23,7 +23,6 @@ const files = [
   'sessions.yaml',
   'recycle-bin.yaml',
   'artifacts.yaml',
-  'drafts.yaml',
   'telegram-topics.yaml',
   'scheduled-tasks.yaml',
   'scheduled-task-history.yaml',

@@ -21,7 +21,7 @@ const mockPlanDeps = vi.fn();
 
 const mockComputeLayout = vi.fn();
 const mockShowPlanInEditor = vi.fn();
-const mockHideDraftEditor = vi.fn();
+const mockHideItemEditor = vi.fn();
 
 // Spread the real module: a bare stub breaks any transitive import that needs
 // another Vue export (modal-bridge pulls in composables that call `ref`).
@@ -45,11 +45,11 @@ vi.mock('../renderer/plans/plan-layout.js', () => ({
   computeLayout: (...args: unknown[]) => mockComputeLayout(...args),
 }));
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
   showPlanInEditor: (...args: unknown[]) => mockShowPlanInEditor(...args),
-  hideDraftEditor: () => mockHideDraftEditor(),
-  isDraftEditorVisible: () => false,
-  handleDraftEditorButton: vi.fn(),
+  hideItemEditor: () => mockHideItemEditor(),
+  isItemEditorVisible: () => false,
+  handleItemEditorButton: vi.fn(),
 }));
 
 vi.mock('../renderer/state.js', () => ({
@@ -58,7 +58,6 @@ vi.mock('../renderer/state.js', () => ({
     sessions: [
       { id: 'session-1', name: 'Test Session', cliType: 'claude-code', processId: 1, workingDir: '/test/dir' },
     ],
-    draftCounts: new Map(),
     planCodingCounts: new Map(),
     planStartableCounts: new Map(),
   },
@@ -204,7 +203,7 @@ describe('Project Planner canvas gamepad navigation', () => {
     mockPlanDeps.mockReset();
     mockComputeLayout.mockReset();
     mockShowPlanInEditor.mockReset();
-    mockHideDraftEditor.mockReset();
+    mockHideItemEditor.mockReset();
 
     (window as any).gamepadCli = {
       planList: mockPlanList,

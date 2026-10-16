@@ -16,7 +16,7 @@ import { buildSplashHtml } from './splash-html.js';
 import { resolveSplashLogoUrl } from './splash-logo.js';
 import { migrateOldPlans } from '../session/plan-migration.js';
 import { migrateProjects } from '../session/project-migration.js';
-import { migratePromptTemplates } from '../session/prompt-template-migration.js';
+import { migrateLegacyDraftStore } from '../session/draft-persistence.js';
 import { migrateUserDataFolder } from './user-data-migration.js';
 import { configureElectronAppIdentity } from './app-identity.js';
 import { ConfigLoader } from '../config/loader.js';
@@ -357,6 +357,7 @@ app.whenReady().then(async () => {
     : join(process.cwd(), 'src', 'config');
   const target = getConfigDir(__dirname);
   seedConfigIfNeeded(bundled, target);
+  migrateLegacyDraftStore(target);
 
   // Migrate monolithic plans.yaml → individual files if still present
   try {
@@ -375,14 +376,6 @@ app.whenReady().then(async () => {
     }
   } catch (err) {
     logger.error(`[Main] Project migration failed: ${err}`);
-  }
-
-  // One-time: merge profile `sequences` into the global prompt-templates.yaml.
-  // Runs after seeding so seeded profiles are present; idempotent on reboot.
-  try {
-    migratePromptTemplates();
-  } catch (err) {
-    logger.error(`[Main] Prompt-template migration failed: ${err}`);
   }
 
   // Register IPC handlers (passes __dirname for temp file cleanup on startup)

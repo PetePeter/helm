@@ -20,7 +20,7 @@
  *
  * Share-to-Helm rides the same slots: `session_share_file_add` opens a slot
  * whose commit (`session_share_file_commit`) hands the verified bytes to a
- * `ShareSink` — the inbox + draft — instead of the attachment store. The slot's
+ * `ShareSink` — the inbox — instead of the attachment store. The slot's
  * kind is fixed at open; a commit of the other kind answers not-found.
  *
  * That keeps the boundary sentence true by construction rather than by
@@ -85,17 +85,15 @@ export interface ArtifactUploadOpenInput extends UploadOpenInput {
   artifactId: string;
 }
 
-/** A file shared from the phone's share sheet into a session's draft. */
+/** A file shared from the phone's share sheet to a session. */
 export interface ShareUploadOpenInput extends UploadOpenInput {
   sessionId: string;
 }
 
-/** Where a committed share landed: the inbox path and the draft naming it. */
+/** Where a committed share landed: the inbox path. */
 export interface ShareReceipt {
   sessionId: string;
   path: string;
-  /** Absent when the commit asked for no draft (a chat attachment). */
-  draftId?: string;
 }
 
 export type ShareCancelResult =
@@ -105,7 +103,7 @@ export type ShareCancelResult =
 
 /** The sink a committed share is handed to — `MobileShareInbox` in production. */
 export interface ShareSink {
-  receive(sessionId: string, filename: string, content: Buffer, draft?: boolean): ShareReceipt;
+  receive(sessionId: string, filename: string, content: Buffer): ShareReceipt;
 }
 
 export interface ArtifactUploadOffer {
@@ -258,7 +256,7 @@ export interface ArtifactUploadDeps {
 export class MobileArtifactUploadService {
   private readonly entries = new Map<string, SlotEntry>();
   /** Bounded receipts let a cancel racing a delayed commit answer truthfully. */
-  private readonly committedShares = new Map<string, { owner: string; receipt: ShareReceipt }>();
+  private readonly committedShares = new Map<string, { owner: string; receipt: ShareReceipt; delivered: boolean }>();
   private readonly now: () => number;
   private readonly ttlMs: number;
 
@@ -273,7 +271,7 @@ export class MobileArtifactUploadService {
     return this.openSlot(deviceId, common, { kind: 'artifact', artifactId });
   }
 
-  /** Move 1, share flavour: the file will land in a session's draft. */
+  /** Move 1, share flavour: the file will be handed to a session. */
   openShare(deviceId: string, input: ShareUploadOpenInput): ArtifactUploadOffer {
     if (!this.deps.shares) throw new Error('File sharing is not available on this hub');
     const { sessionId, ...common } = input;
@@ -333,22 +331,29 @@ export class MobileArtifactUploadService {
   }
 
   /**
-   * Move 3, share flavour: the file lands in the inbox and — unless [draft] is
-   * false, as for a chat attachment whose message names the path — a draft
-   * names it.
+   * Move 3, share flavour: the file lands in the inbox. A retried commit
+   * answers the same receipt; `delivered` says whether the caller already
+   * handed it to the session (see markShareDelivered), so a retry after a
+   * failed hand-off tries again and one after a good hand-off does not repeat it.
    */
-  commitShare(deviceId: string, uploadId: string, draft = true): ShareReceipt {
+  commitShare(deviceId: string, uploadId: string): { receipt: ShareReceipt; delivered: boolean } {
     const committed = this.committedShares.get(uploadId);
-    if (committed?.owner === deviceId) return { ...committed.receipt };
+    if (committed?.owner === deviceId) return { receipt: { ...committed.receipt }, delivered: committed.delivered };
 
     const { target, input, whole } = this.verified(deviceId, uploadId, 'share');
-    const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole, draft);
-    this.committedShares.set(uploadId, { owner: deviceId, receipt: { ...receipt } });
+    const receipt = this.deps.shares!.receive(target.sessionId, input.filename, whole);
+    this.committedShares.set(uploadId, { owner: deviceId, receipt: { ...receipt }, delivered: false });
     while (this.committedShares.size > MAX_COMMITTED_SHARE_RECEIPTS) {
       this.committedShares.delete(this.committedShares.keys().next().value!);
     }
     logger.info(`[mobile-artifact-upload] shared file landed for session ${target.sessionId}`);
-    return receipt;
+    return { receipt, delivered: false };
+  }
+
+  /** Record that a committed share reached its session, so a retried commit does not resend it. */
+  markShareDelivered(deviceId: string, uploadId: string): void {
+    const committed = this.committedShares.get(uploadId);
+    if (committed?.owner === deviceId) committed.delivered = true;
   }
 
   /** Cancel an unfinished share, or return its receipt if commit already won the race. */

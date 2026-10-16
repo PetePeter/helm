@@ -59,7 +59,7 @@ macOS and Linux branches untested on a Windows CI host.
 | `getUserDataDir(appData?)` | `<appData>/Helm` |
 | `getConfigDir(_dirname, appData?)` | `<appData>/Helm/config` |
 | `getLogDir(_dirname, appData?)` | `<appData>/Helm/logs` |
-| `getTempDir(_dirname, appData?)` | `<appData>/Helm/tmp` (e.g. Ctrl+G external editor prompts, large-text temp files) |
+| `getTempDir(_dirname, appData?)` | `<appData>/Helm/tmp` (e.g. large-text temp files, the phone-share inbox) |
 | `getSessionDataDir(_dirname, appData?)` | `<appData>/Helm/session-data` (Electron/Chromium runtime data) |
 | `getRendererHtmlPath(dirname)` | `dist/renderer/index.html` — Vite output, relative to `dist-electron/` |
 | `getAppRootDir(dirname)` | One level up from `dist-electron/`; works in dev and inside asar |
@@ -91,10 +91,8 @@ Seed stubs shipped in `src/config/`:
 |---|---|
 | `settings.yaml` | App settings |
 | `sessions.yaml` | Empty session list |
-| `drafts.yaml` | Empty draft store |
 | `cli-types.yaml` | Default CLI types — Claude Code, Codex, GitHub Copilot CLI, cmd |
 | `scheduled-tasks.yaml` | Empty scheduled-task list |
-| `prompt-templates.yaml` | Empty prompt-template tree |
 | `peers.yaml` | Empty fleet peer registry |
 | `skills.yaml`, `skill-analytics.json` | Skill store stubs |
 
@@ -124,6 +122,14 @@ Its guarantees, all enforced in the code:
 
 It must run **before** `configureElectronAppIdentity` / `seedConfigIfNeeded`, since
 those create the new dirs and would make the destination-exists check fail.
+
+### Draft store rename
+
+`migrateLegacyDraftStore` (`src/session/draft-persistence.ts`, called from `main.ts`)
+renames the old `config/scratchpads/` dir to `config/drafts/` (the scratchpad
+feature became "Draft") and deletes the stale `drafts.yaml` (retired prompt memos)
+and `prompt-templates.yaml` (retired template library). Those features were removed
+outright, so their files are dead weight rather than data to carry forward.
 
 ## Startup order
 

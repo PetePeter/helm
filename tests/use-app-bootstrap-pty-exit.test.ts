@@ -105,8 +105,8 @@ vi.mock('../renderer/screens/sessions.js', () => ({
   getTabCycleSessionIds: vi.fn(() => []),
 }));
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
-  initDraftEditor: vi.fn(),
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
+  initItemEditor: vi.fn(),
 }));
 
 vi.mock('../renderer/screens/sessions-plans.js', () => ({
@@ -138,7 +138,6 @@ describe('useAppBootstrap PTY exit cleanup', () => {
     state.sessionStates.clear();
     state.sessionActivityLevels.clear();
     state.lastOutputTimes.clear();
-    state.draftCounts.clear();
     state.planCodingCounts.clear();
     state.planStartableCounts.clear();
     state.workingPlanLabels.clear();

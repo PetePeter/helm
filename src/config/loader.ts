@@ -63,7 +63,7 @@ export type { ResolvedCliType } from './cli-type-store.js';
 // Action & Binding Types
 // ============================================================================
 
-export type ActionType = 'keyboard' | 'voice' | 'voice-talk' | 'voice-call' | 'scroll' | 'context-menu' | 'prompt-tree' | 'new-draft';
+export type ActionType = 'keyboard' | 'voice' | 'voice-talk' | 'voice-call' | 'scroll' | 'context-menu';
 
 interface BaseBinding {
   action: ActionType;
@@ -106,15 +106,7 @@ export interface SequenceListItem {
   sequence: string;
 }
 
-interface PromptTreeBinding extends BaseBinding {
-  action: 'prompt-tree';
-}
-
-interface NewDraftBinding extends BaseBinding {
-  action: 'new-draft';
-}
-
-export type Binding = KeyboardBinding | VoiceBinding | VoiceTalkBinding | VoiceCallBinding | ScrollBinding | ContextMenuBinding | PromptTreeBinding | NewDraftBinding;
+export type Binding = KeyboardBinding | VoiceBinding | VoiceTalkBinding | VoiceCallBinding | ScrollBinding | ContextMenuBinding;
 
 // ============================================================================
 // Pattern Rules
@@ -413,11 +405,8 @@ function normalizeCompactMinutes(value: unknown): number {
 }
 
 export interface EditorPrefs {
-  draftEditorHeight?: number;
   contextEditorHeight?: number;
   planEditorHeight?: number;
-  editorPopupWidth?: number;
-  editorPopupHeight?: number;
   sequenceModalWidth?: number;
   sequenceModalHeight?: number;
   sequenceModalBounds?: { left: number; top: number; right: number; bottom: number };
@@ -438,7 +427,6 @@ export interface SettingsConfig {
   sorting?: SortingConfig;
   planFilters?: PlanFilterConfig;
   sessionGroups?: SessionGroupPrefs;
-  editorHistory?: string[];
   editorPrefs?: EditorPrefs;
   /**
    * The persisted dock workspace tree. Deliberately opaque here: the schema is
@@ -1104,19 +1092,6 @@ export class ConfigLoader {
   setSessionGroupPrefs(prefs: SessionGroupPrefs): void {
     this.ensureLoaded();
     this.settings!.sessionGroups = prefs;
-    this.saveSettings();
-  }
-
-  getEditorHistory(): string[] {
-    this.ensureLoaded();
-    return Array.isArray(this.settings!.editorHistory)
-      ? this.settings!.editorHistory.filter((entry): entry is string => typeof entry === 'string')
-      : [];
-  }
-
-  setEditorHistory(entries: string[]): void {
-    this.ensureLoaded();
-    this.settings!.editorHistory = entries;
     this.saveSettings();
   }
 

@@ -1,9 +1,6 @@
 <script setup lang="ts">
 /**
- * DraftEditor.vue — Slide-down editor panel for drafts and plans.
- *
- * Replaces draft-editor.ts with a reactive Vue component.
- * Handles both draft mode (per-session memos) and plan mode (plan item editing).
+ * ItemEditor.vue — Slide-down editor panel for plan items and contexts.
  */
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import type { PlanStatus } from '../../src/types/plan.js';
@@ -37,11 +34,10 @@ export interface ContextCallbacks {
   onClose?: () => void;
 }
 
-export interface DraftEditorProps {
+export interface ItemEditorProps {
   visible: boolean;
-  mode: 'draft' | 'plan' | 'context';
+  mode: 'plan' | 'context';
   sessionId: string;
-  draftId?: string | null;
   initialLabel?: string;
   initialText?: string;
   planId?: string | null;
@@ -64,8 +60,7 @@ export interface DraftEditorProps {
   completionNotes?: string;
 }
 
-const props = withDefaults(defineProps<DraftEditorProps>(), {
-  draftId: null,
+const props = withDefaults(defineProps<ItemEditorProps>(), {
   initialLabel: '',
   initialText: '',
   planId: null,
@@ -90,9 +85,6 @@ const props = withDefaults(defineProps<DraftEditorProps>(), {
 
 const emit = defineEmits<{
   'update:visible': [visible: boolean];
-  save: [{ label: string; text: string }];
-  apply: [{ label: string; text: string }];
-  delete: [];
   close: [];
   'plan-save': [updates: { title: string; description: string; status: PlanStatus; stateInfo?: string; type?: 'bug' | 'feature' | 'research'; autoImplement?: boolean; completionRecap?: boolean }];
   'plan-apply': [];
@@ -142,12 +134,11 @@ const attachmentBusyId = ref<string | null>(null);
 const attachmentError = ref('');
 
 const heightDebounceTimer = ref<ReturnType<typeof setTimeout> | null>(null);
-const editorHeightKey = computed(() => isDraft.value ? 'draftEditorHeight' : isContext.value ? 'contextEditorHeight' : 'planEditorHeight');
-// Plan and context editors are large content editors — let the body textarea
-// grow up to 75% of the viewport when dragged. Draft memos stay compact.
-const tallEditorMaxHeightPx = computed(() => (isPlan.value || isContext.value) ? Math.round(window.innerHeight * 0.75) : undefined);
+const editorHeightKey = computed(() => isContext.value ? 'contextEditorHeight' : 'planEditorHeight');
+// Plans and contexts are large content editors — let the body textarea grow up
+// to 75% of the viewport when dragged.
+const tallEditorMaxHeightPx = computed(() => Math.round(window.innerHeight * 0.75));
 
-const isDraft = computed(() => props.mode === 'draft');
 const isPlan = computed(() => props.mode === 'plan');
 const isContext = computed(() => props.mode === 'context');
 const hasContextBindings = computed(() =>
@@ -158,7 +149,6 @@ const activePlanStatus = computed<PlanStatus>(() => (
 ));
 
 const titleText = computed(() => {
-  if (isDraft.value) return props.draftId ? '📝 Edit Draft' : '📝 New Draft';
   if (isContext.value) return 'Edit Context';
   const statusLabels: Record<string, string> = {
     planning: '⏸ Planning', ready: '▶ Ready', coding: '🔄 Coding', review: '⏳ Review', blocked: '⛔ Blocked', done: '✓ Done',
@@ -176,8 +166,8 @@ const canSavePlan = computed(() => {
 });
 
 const showDoneButton = computed(() => isPlan.value && !!props.planCallbacks?.onDone && (activePlanStatus.value === 'coding' || activePlanStatus.value === 'review'));
-const showApplyButton = computed(() => isDraft.value || (!!props.planCallbacks?.onApply && (activePlanStatus.value === 'ready' || activePlanStatus.value === 'coding' || activePlanStatus.value === 'review')));
-const applyButtonText = computed(() => isDraft.value ? 'Apply' : (activePlanStatus.value === 'coding' || activePlanStatus.value === 'review') ? '↻ Apply Again' : '▶ Apply');
+const showApplyButton = computed(() => (!!props.planCallbacks?.onApply && (activePlanStatus.value === 'ready' || activePlanStatus.value === 'coding' || activePlanStatus.value === 'review')));
+const applyButtonText = computed(() => (activePlanStatus.value === 'coding' || activePlanStatus.value === 'review') ? '↻ Apply Again' : '▶ Apply');
 
 const STATUS_ICONS: Record<PlanStatus, string> = {
   planning: '⚪',
@@ -189,7 +179,6 @@ const STATUS_ICONS: Record<PlanStatus, string> = {
 };
 
 const hasUnsavedChanges = computed(() => {
-  if (isDraft.value) return label.value.trim() !== origLabel.value || text.value !== origText.value;
   if (isContext.value) return label.value !== origLabel.value || text.value !== origText.value || ctxType.value !== origCtxType.value || ctxPermission.value !== origCtxPermission.value || props.contextPendingUnbindCount > 0;
   return label.value !== origLabel.value || text.value !== origText.value || status.value !== origStatus.value || stateInfo.value !== origStateInfo.value || type.value !== origType.value || autoImplement.value !== origAutoImplement.value || completionRecap.value !== origCompletionRecap.value;
 });
@@ -325,11 +314,7 @@ function handleButton(button: string): boolean {
 }
 
 function onSave(): void {
-  if (isDraft.value) {
-    if (!label.value.trim()) return;
-    emit('save', { label: label.value.trim(), text: text.value });
-    emit('close');
-  } else if (isContext.value) {
+  if (isContext.value) {
     emit('context-save', { title: label.value, content: text.value, type: ctxType.value, permission: ctxPermission.value });
     emit('close');
   } else {
@@ -340,8 +325,7 @@ function onSave(): void {
 }
 
 function onApply(): void {
-  if (isDraft.value) emit('apply', { label: label.value.trim(), text: text.value });
-  else emit('plan-apply');
+  emit('plan-apply');
 }
 
 function onDone(): void {
@@ -352,8 +336,7 @@ function onDone(): void {
 }
 
 function onDelete(): void {
-  if (isDraft.value) emit('delete');
-  else if (isContext.value) emit('context-delete');
+  if (isContext.value) emit('context-delete');
   else emit('plan-delete');
 }
 
@@ -380,12 +363,7 @@ function scheduleAutoSave(): void {
 }
 
 function doAutoSave(): void {
-  if (isDraft.value) {
-    if (!label.value.trim()) return;
-    saveStatus.value = 'saving';
-    emit('save', { label: label.value.trim(), text: text.value });
-    origLabel.value = label.value.trim(); origText.value = text.value; saveStatus.value = 'saved';
-  } else if (isContext.value) {
+  if (isContext.value) {
     if (!props.contextCallbacks?.onSave) return;
     saveStatus.value = 'saving';
     props.contextCallbacks.onSave({ title: label.value, content: text.value, type: ctxType.value, permission: ctxPermission.value });
@@ -490,12 +468,12 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
 <template>
   <div
     v-if="visible"
-    class="draft-editor"
-    :class="{ 'draft-editor--plan': isPlan, 'draft-editor--context': isContext }"
+    class="item-editor"
+    :class="{ 'item-editor--plan': isPlan, 'item-editor--context': isContext }"
   >
-    <div class="draft-editor-header">
-      <span class="draft-editor-title">{{ titleText }}</span>
-      <div class="draft-editor-actions">
+    <div class="item-editor-header">
+      <span class="item-editor-title">{{ titleText }}</span>
+      <div class="item-editor-actions">
         <span v-if="saveStatus !== 'clean'" class="plan-save-status" :class="`plan-save-status--${saveStatus}`">{{ saveStatusText }}</span>
         <button v-if="isPlan && planHumanId" class="btn btn--secondary btn--sm" :title="`Copy reference ${planHumanId}`" @click="copyPlanRef(planHumanId, label)">⧉ Copy ref</button>
         <button class="btn btn--primary btn--sm" @click="onSave">Save</button>
@@ -505,38 +483,38 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
         <button class="btn btn--secondary btn--sm" @click="onCancel">Cancel</button>
       </div>
     </div>
-    <div v-if="planMetaText" class="draft-editor-plan-meta">{{ planMetaText }}</div>
+    <div v-if="planMetaText" class="item-editor-plan-meta">{{ planMetaText }}</div>
 
     <div class="plan-edit-rows">
       <!-- Row 1: Title -->
       <div class="plan-edit-row-title">
-        <input ref="labelInputRef" v-model="label" type="text" class="draft-editor-label" placeholder="Title..." maxlength="100" @keydown="onLabelKeyDown" />
+        <input ref="labelInputRef" v-model="label" type="text" class="item-editor-label" placeholder="Title..." maxlength="100" @keydown="onLabelKeyDown" />
       </div>
 
       <!-- Row 2: Controls — Feature | State | State context | Auto-implement | Completion recap -->
       <div class="plan-edit-row-controls">
-        <select v-if="isPlan" ref="typeSelectRef" v-model="type" class="draft-editor-plan-select draft-editor-type-select">
+        <select v-if="isPlan" ref="typeSelectRef" v-model="type" class="item-editor-plan-select item-editor-type-select">
           <option :value="undefined">None</option><option value="bug">Bug</option><option value="feature">Feature</option><option value="research">Research</option>
         </select>
-        <select v-if="showPlanStateSelect" ref="stateSelectRef" v-model="status" class="draft-editor-plan-select draft-editor-status-select" @change="onStateSelectChange">
+        <select v-if="showPlanStateSelect" ref="stateSelectRef" v-model="status" class="item-editor-plan-select item-editor-status-select" @change="onStateSelectChange">
           <option value="planning">⏸ Planning</option><option value="ready">▶ Ready</option><option value="coding">🔄 Coding</option><option value="review">⏳ Review</option><option value="blocked">⛔ Blocked</option><option value="done">✓ Done</option>
         </select>
-        <input v-if="showPlanStateInfo" ref="stateInfoRef" v-model="stateInfo" type="text" class="draft-editor-plan-info" :placeholder="status === 'done' ? 'Required completion notes...' : requiresStateInfo ? 'Required blocker reason...' : 'Add state context...'" maxlength="200" />
-        <label v-if="isPlan" class="draft-editor-plan-checkbox">
+        <input v-if="showPlanStateInfo" ref="stateInfoRef" v-model="stateInfo" type="text" class="item-editor-plan-info" :placeholder="status === 'done' ? 'Required completion notes...' : requiresStateInfo ? 'Required blocker reason...' : 'Add state context...'" maxlength="200" />
+        <label v-if="isPlan" class="item-editor-plan-checkbox">
           <input ref="autoImplementRef" v-model="autoImplement" type="checkbox">
           <span>Auto-implement</span>
         </label>
-        <label v-if="isPlan" class="draft-editor-plan-checkbox" title="When this plan is marked done, the hub verifies you recently read the plan, then writes its Acceptance Criteria into your terminal — forcing re-verification">
+        <label v-if="isPlan" class="item-editor-plan-checkbox" title="When this plan is marked done, the hub verifies you recently read the plan, then writes its Acceptance Criteria into your terminal — forcing re-verification">
           <input ref="completionRecapRef" v-model="completionRecap" type="checkbox">
           <span>Completion recap <span class="tooltip-icon">ⓘ</span></span>
         </label>
         <!-- Context type (free text with datalist) -->
-        <input v-if="isContext" ref="ctxTypeInputRef" v-model="ctxType" type="text" class="draft-editor-plan-select draft-editor-type-select" placeholder="Type..." maxlength="50" list="context-type-options" />
+        <input v-if="isContext" ref="ctxTypeInputRef" v-model="ctxType" type="text" class="item-editor-plan-select item-editor-type-select" placeholder="Type..." maxlength="50" list="context-type-options" />
         <datalist id="context-type-options">
           <option value="Testing" /><option value="Coding" /><option value="Review" /><option value="Knowledge" />
         </datalist>
         <!-- Context permission select -->
-        <select v-if="isContext" ref="ctxPermissionSelectRef" v-model="ctxPermission" class="draft-editor-plan-select draft-editor-permission-select">
+        <select v-if="isContext" ref="ctxPermissionSelectRef" v-model="ctxPermission" class="item-editor-plan-select item-editor-permission-select">
           <option value="readonly">readonly</option><option value="writable">writable</option>
         </select>
       </div>
@@ -550,7 +528,7 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
         :min-rows="4"
         :max-rows="18"
         :max-height-px="tallEditorMaxHeightPx"
-        textarea-class="draft-editor-content"
+        textarea-class="item-editor-content"
         @resized="scheduleHeightSave"
       />
     </div>
@@ -576,29 +554,29 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
       </div>
     </div>
 
-    <div v-if="isPlan && planId" class="draft-editor-attachments">
-      <div class="draft-editor-attachments__header"><span class="draft-editor-attachments__title">Attachments</span><button class="btn btn--secondary btn--sm" @click="addAttachment">Attach File</button></div>
-      <div v-if="attachmentError" class="draft-editor-attachments__error">{{ attachmentError }}</div>
-      <div v-if="attachmentsLoading" class="draft-editor-attachments__empty">Loading…</div>
-      <div v-else-if="attachments.length === 0" class="draft-editor-attachments__empty">No attachments</div>
-      <div v-else class="draft-editor-attachments__list">
-        <div v-for="att in attachments" :key="att.id" class="draft-editor-attachments__row">
-          <span class="draft-editor-attachments__name">{{ att.filename }}</span><span class="draft-editor-attachments__size">{{ formatAttachmentSize(att.sizeBytes) }}</span>
+    <div v-if="isPlan && planId" class="item-editor-attachments">
+      <div class="item-editor-attachments__header"><span class="item-editor-attachments__title">Attachments</span><button class="btn btn--secondary btn--sm" @click="addAttachment">Attach File</button></div>
+      <div v-if="attachmentError" class="item-editor-attachments__error">{{ attachmentError }}</div>
+      <div v-if="attachmentsLoading" class="item-editor-attachments__empty">Loading…</div>
+      <div v-else-if="attachments.length === 0" class="item-editor-attachments__empty">No attachments</div>
+      <div v-else class="item-editor-attachments__list">
+        <div v-for="att in attachments" :key="att.id" class="item-editor-attachments__row">
+          <span class="item-editor-attachments__name">{{ att.filename }}</span><span class="item-editor-attachments__size">{{ formatAttachmentSize(att.sizeBytes) }}</span>
           <button class="btn btn--secondary btn--sm" :disabled="attachmentBusyId === att.id" @click="openAttachment(att)">Open</button>
           <button class="btn btn--danger btn--sm" :disabled="attachmentBusyId === att.id" @click="deleteAttachment(att)">Delete</button>
         </div>
       </div>
     </div>
 
-    <div v-if="mode === 'plan' && planStatus === 'done' && completionNotes" class="draft-editor__completion-notes">
+    <div v-if="mode === 'plan' && planStatus === 'done' && completionNotes" class="item-editor__completion-notes">
       <label>Completion Notes</label>
-      <p class="draft-editor__completion-notes-text">{{ completionNotes }}</p>
+      <p class="item-editor__completion-notes-text">{{ completionNotes }}</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-.draft-editor {
+.item-editor {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -612,56 +590,56 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
   overflow-y: auto;
 }
 
-.draft-editor--plan,
-.draft-editor--context {
+.item-editor--plan,
+.item-editor--context {
   max-height: 82vh;
 }
 
-.draft-editor-header {
+.item-editor-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.draft-editor-title {
+.item-editor-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.draft-editor-plan-meta {
+.item-editor-plan-meta {
   color: var(--text-secondary);
   font-size: 11px;
   margin: 0 0 8px;
 }
 
-.draft-editor-actions {
+.item-editor-actions {
   display: flex;
   gap: 4px;
 }
 
-.draft-editor-plan-state {
+.item-editor-plan-state {
   display: flex;
   gap: 6px;
 }
 
-.draft-editor-title-row {
+.item-editor-title-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.draft-editor-title-row .draft-editor-plan-select {
+.item-editor-title-row .item-editor-plan-select {
   min-width: 110px;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
 }
 
-.draft-editor-title-row .draft-editor-label { flex: 1; }
+.item-editor-title-row .item-editor-label { flex: 1; }
 
-.draft-editor-plan-select,
-.draft-editor-plan-info {
+.item-editor-plan-select,
+.item-editor-plan-info {
   padding: 4px 8px;
   background: #252535;
   border: 1px solid var(--border);
@@ -671,15 +649,15 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
   outline: none;
 }
 
-.draft-editor-plan-select:focus,
-.draft-editor-plan-info:focus {
+.item-editor-plan-select:focus,
+.item-editor-plan-info:focus {
   border-color: var(--accent);
 }
 
-.draft-editor-plan-select { min-width: 150px; }
-.draft-editor-plan-info { flex: 1; min-width: 0; }
+.item-editor-plan-select { min-width: 150px; }
+.item-editor-plan-info { flex: 1; min-width: 0; }
 
-.draft-editor-label {
+.item-editor-label {
   padding: 4px 8px;
   background: #252535;
   border: 1px solid var(--border);
@@ -689,7 +667,7 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
   outline: none;
 }
 
-.draft-editor-label:focus { border-color: var(--accent); }
+.item-editor-label:focus { border-color: var(--accent); }
 
 .plan-save-status {
   font-size: 11px;
@@ -707,20 +685,20 @@ defineExpose({ handleButton, hasUnsavedChanges: getHasUnsavedChanges });
 .plan-edit-row-title input { width: 100%; }
 .plan-edit-row-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tooltip-icon { color: var(--text-dim); font-size: 11px; cursor: help; }
-.draft-editor-plan-checkbox:hover .tooltip-icon { color: var(--accent, #58a6ff); }
-.draft-editor-attachments { border-top: 1px solid #2a2a2a; padding-top: 10px; margin-top: 4px; display: flex; flex-direction: column; gap: 6px; }
-.draft-editor-attachments__header { display: flex; align-items: center; justify-content: space-between; }
-.draft-editor-attachments__title { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-.draft-editor-attachments__empty, .draft-editor-attachments__error { font-size: 12px; color: #666; }
-.draft-editor-attachments__error { color: #ff9a9a; }
-.draft-editor-attachments__list { display: flex; flex-direction: column; gap: 4px; }
-.draft-editor-attachments__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; padding: 5px 8px; background: #151515; border: 1px solid #2a2a2a; border-radius: 4px; }
-.draft-editor-attachments__name { font-size: 12px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.draft-editor-attachments__size { font-size: 11px; color: #666; white-space: nowrap; }
-.draft-editor-plan-checkbox { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
-.draft-editor__completion-notes { margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid var(--status-coding); }
-.draft-editor__completion-notes label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-.draft-editor__completion-notes-text { margin: 0; font-size: 0.9rem; color: var(--text-primary); white-space: pre-wrap; line-height: 1.5; }
+.item-editor-plan-checkbox:hover .tooltip-icon { color: var(--accent, #58a6ff); }
+.item-editor-attachments { border-top: 1px solid #2a2a2a; padding-top: 10px; margin-top: 4px; display: flex; flex-direction: column; gap: 6px; }
+.item-editor-attachments__header { display: flex; align-items: center; justify-content: space-between; }
+.item-editor-attachments__title { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.item-editor-attachments__empty, .item-editor-attachments__error { font-size: 12px; color: #666; }
+.item-editor-attachments__error { color: #ff9a9a; }
+.item-editor-attachments__list { display: flex; flex-direction: column; gap: 4px; }
+.item-editor-attachments__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; padding: 5px 8px; background: #151515; border: 1px solid #2a2a2a; border-radius: 4px; }
+.item-editor-attachments__name { font-size: 12px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-editor-attachments__size { font-size: 11px; color: #666; white-space: nowrap; }
+.item-editor-plan-checkbox { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.item-editor__completion-notes { margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid var(--status-coding); }
+.item-editor__completion-notes label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.item-editor__completion-notes-text { margin: 0; font-size: 0.9rem; color: var(--text-primary); white-space: pre-wrap; line-height: 1.5; }
 .context-bound { border-top: 1px solid #2a2a2a; padding-top: 10px; margin-top: 4px; }
 .context-bound__header { display: flex; align-items: center; justify-content: space-between; }
 .context-bound__title { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }

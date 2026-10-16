@@ -18,7 +18,6 @@ import { PtyManager } from '../../session/pty-manager.js';
 import { StateDetector } from '../../session/state-detector.js';
 import { PipelineQueue } from '../../session/pipeline-queue.js';
 import { NotificationManager } from '../../session/notification-manager.js';
-import { DraftManager } from '../../session/draft-manager.js';
 import { PlanManager } from '../../session/plan-manager.js';
 import { ProjectStore } from '../../session/project-store.js';
 import { ContextManager } from '../../session/context-manager.js';
@@ -39,11 +38,11 @@ import { ArtifactManager } from '../../session/artifact-manager.js';
 import { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
 import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence.js';
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
-import { ScratchpadManager } from '../../session/scratchpad-manager.js';
-import type { Scratchpad } from '../../types/scratchpad.js';
+import { DraftManager } from '../../session/draft-manager.js';
+import type { Draft } from '../../types/draft.js';
 import { readSubagentContexts } from '../../session/subagent-usage.js';
 import type { SessionUpdatedEvent } from '../../types/session.js';
-import { createScratchpadStore } from '../../session/scratchpad-persistence.js';
+import { createDraftStore } from '../../session/draft-persistence.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
 import { MemoryPersistence } from '../../session/memory-persistence.js';
 import { MemoryAttachmentManager } from '../../session/memory-attachment-manager.js';
@@ -67,7 +66,6 @@ import { initTelegramModules } from '../../telegram/orchestrator.js';
 
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
-import { setupEditorHandlers } from './editor-handlers.js';
 import { setupAutoMemoryHandlers } from './auto-memory-handlers.js';
 import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
@@ -85,13 +83,12 @@ import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.
 import { CliAutoMemory } from '../../session/cli-auto-memory.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
-import { setupDraftHandlers } from './draft-handlers.js';
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
 import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
-import { setupScratchpadHandlers } from './scratchpad-handlers.js';
+import { setupDraftHandlers } from './draft-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from './time-tracking-handlers.js';
@@ -101,8 +98,6 @@ import { TIME_TRACKING_DIR } from '../../session/persistence-paths.js';
 import { setDeliveryObserver } from '../../session/sequence-delivery.js';
 import { setupProjectHandlers } from './project-handlers.js';
 import { setupSkillHandlers } from './skill-handlers.js';
-import { setupPromptTemplateHandlers } from './prompt-template-handlers.js';
-import { loadDrafts, saveDrafts } from '../../session/persistence.js';
 import { IncomingPlansWatcher } from '../../session/incoming-plans-watcher.js';
 import { WindowManager } from '../window-manager.js';
 import { HelmControlService } from '../../mcp/helm-control-service.js';
@@ -157,9 +152,7 @@ import { PinnedCertStore } from '../../mcp/peer/pinned-cert-store.js';
 import { SecretStore } from '../../mcp/peer/secret-store.js';
 import { loadPeerPins, savePeerPins, loadPeerSecrets, savePeerSecrets } from '../../mcp/peer/peer-secret-persistence.js';
 import { asRecord } from '../../mcp/tools/validation.js';
-import { PromptTemplateManager } from '../../session/prompt-template-manager.js';
 import { MessNotifier } from '../../session/mess-notifier.js';
-import { loadPromptTemplates } from '../../session/prompt-template-persistence.js';
 import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
 import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
 import { basename, join } from 'node:path';
@@ -234,7 +227,6 @@ export function registerIPCHandlers(
   const ptyManager = new PtyManager();
   const stateDetector = new StateDetector();
   const pipelineQueue = new PipelineQueue();
-  const draftManager = new DraftManager(saveDrafts);
   const artifactAttachmentManager = new ArtifactAttachmentManager();
   const artifactManager = new ArtifactManager(
     (all) => saveArtifacts(all),
@@ -242,7 +234,7 @@ export function registerIPCHandlers(
     (artifactId) => artifactAttachmentManager.deleteForArtifact(artifactId),
   );
   artifactManager.importAll(loadArtifacts());
-  const scratchpadManager = new ScratchpadManager(createScratchpadStore());
+  const draftManager = new DraftManager(createDraftStore());
   const memoryPersistence = new MemoryPersistence();
   const memoryAttachmentManager = new MemoryAttachmentManager();
   // PlanManager is constructed before MemoryManager so provenance can be
@@ -282,15 +274,15 @@ export function registerIPCHandlers(
   helmControlService.setRuntimeGroupManager(runtimeGroupManager);
   helmControlService.sessionChangeFeed.attach(sessionManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
-  helmControlService.setScratchpadManager(scratchpadManager);
+  helmControlService.setDraftManager(draftManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
   // desktop's own imports use.
   const artifactUploadService = new MobileArtifactUploadService({
     attachments: artifactAttachmentManager,
-    // Share-to-Helm: shared files land in the per-user tmp inbox + a draft.
-    shares: new MobileShareInbox(join(getTempDir(dirname ?? process.cwd()), 'inbox'), draftManager),
+    // Share-to-Helm: shared files land in the per-user tmp inbox; the path is typed into the session.
+    shares: new MobileShareInbox(join(getTempDir(dirname ?? process.cwd()), 'inbox')),
   });
   helmControlService.setArtifactUploadService(artifactUploadService);
   helmControlService.setMemoryManager(memoryManager, memoryAttachmentManager, artifactTempRegistry);
@@ -317,7 +309,7 @@ export function registerIPCHandlers(
   // Initialize all telegram modules (Phase 1+2+3)
   const telegramModules = initTelegramModules(
     telegramBot, topicManager, telegramNotifier,
-    sessionManager, ptyManager, configLoader, helmControlService, draftManager, projectStore,
+    sessionManager, ptyManager, configLoader, helmControlService, projectStore,
   );
 
   // The chat broker: Telegram and the phone are two registrations in an
@@ -399,8 +391,8 @@ export function registerIPCHandlers(
     binSessionIds,
     id => artifactManager.clearSession(id),
   );
-  // Scratchpads follow the same rule: kept for a live or binned session, dropped otherwise.
-  scratchpadManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
+  // Drafts follow the same rule: kept for a live or binned session, dropped otherwise.
+  draftManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
 
   // Prune orphan attachment directories (artifacts deleted in a previous crash)
   const allArtifactIds = new Set(
@@ -408,17 +400,7 @@ export function registerIPCHandlers(
   );
   artifactAttachmentManager.pruneOrphans(allArtifactIds);
 
-  draftManager.importAll(loadDrafts());
   // PlanManager loads from disk in its constructor — no explicit importAll needed
-
-  // PromptTemplateManager: global tree, persisted to prompt-templates.yaml
-  const promptTemplateManager = new PromptTemplateManager();
-  const promptTemplatesPath = dirname
-    ? join(getConfigDir(dirname), 'prompt-templates.yaml')
-    : undefined;
-  if (promptTemplatesPath) {
-    loadPromptTemplates(promptTemplatesPath, promptTemplateManager);
-  }
 
   const incomingWatcher = new IncomingPlansWatcher(planManager);
   // The shim is seeded into the user config dir alongside the other shipped
@@ -592,7 +574,7 @@ export function registerIPCHandlers(
     },
   );
 
-  const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, draftManager, windowManager, configLoader, {
+  const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
     quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
     switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
     clone: (sessionId) => helmControlService.cloneSession(sessionId),
@@ -613,7 +595,6 @@ export function registerIPCHandlers(
     hookDeps,
     suggestionUsage,
   );
-  setupEditorHandlers(configLoader);
   setupAutoMemoryHandlers(configLoader, recordingModelRunner);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
@@ -651,7 +632,6 @@ export function registerIPCHandlers(
   } catch (error) {
     logger.error(`[IPC] Operator ensure failed: ${error}`);
   }
-  setupDraftHandlers(draftManager);
   setupProjectHandlers(projectStore, planManager, contextManager, windowManager);
   setupSkillHandlers(skillManager, skillAnalyticsManager);
   setupPlanHandlers(planManager, contextManager, windowManager, incomingWatcher, dirname);
@@ -723,15 +703,15 @@ export function registerIPCHandlers(
     recycleBinManager, artifactManager, windowManager, artifactTempRegistry, memoryManager, messManager ?? undefined, mobileChatJournal,
     // Restore reuses the original session id, so the mission lands back on the same session.
     (entry) => sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight),
-    scratchpadManager,
+    draftManager,
   );
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
   recycleBinManager.pruneExpired();
   setupRuntimeGroupHandlers(runtimeGroupManager, windowManager);
   setupArtifactHandlers(artifactManager, artifactAttachmentManager, windowManager, dirname, artifactTempRegistry);
-  setupScratchpadHandlers(
-    scratchpadManager,
+  setupDraftHandlers(
+    draftManager,
     (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
   );
   setupMemoryHandlers(memoryManager, memoryAttachmentManager, sessionManager, windowManager, artifactTempRegistry);
@@ -777,9 +757,9 @@ export function registerIPCHandlers(
     }
   });
   // The pad itself rides the event: an LLM edit shows in the pane without a second round trip.
-  scratchpadManager.on('scratchpad:changed', (scratchpad: Scratchpad) => {
-    for (const win of artifactWindowsFor(scratchpad.sessionId)) {
-      win.webContents.send('scratchpad:changed', scratchpad);
+  draftManager.on('draft:changed', (draft: Draft) => {
+    for (const win of artifactWindowsFor(draft.sessionId)) {
+      win.webContents.send('draft:changed', draft);
     }
   });
   setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordUser(data.includes('\r') ? SUBMIT_WEIGHT : 1, sessionId), patternMatcher, recycleBinManager);
@@ -860,7 +840,6 @@ export function registerIPCHandlers(
     planManager,
     flashAttention: (sessionId) => notificationManager.flashAttention(sessionId),
     handoverDelivery,
-    draftManager,
     artifactManager,
     artifactAttachments: artifactAttachmentManager,
     onTurnEnded: (sessionId) => { void cliAutoMemory.turnEnded(sessionId); },
@@ -911,7 +890,6 @@ export function registerIPCHandlers(
     getStartablePlans: (dirPath) => planManager.getStartableForDirectory(dirPath).map((plan) => ({
       humanId: plan.humanId, title: plan.title, status: plan.status,
     })),
-    getDrafts: (sessionId) => draftManager.getForSession(sessionId).map((draft) => ({ label: draft.label, text: draft.text })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
@@ -950,9 +928,6 @@ export function registerIPCHandlers(
   telegramModules.relayService.setReminderDelivery(reminderDelivery);
 
   const cleanupMess = setupMessHandlers(messManager, projectStore, windowManager, sessionManager);
-  const cleanupPromptTemplates = promptTemplatesPath
-    ? setupPromptTemplateHandlers(promptTemplateManager, promptTemplatesPath)
-    : () => {};
 
   // Wire events ONCE (no-ops when bot not running — notifier checks isRunning).
   // AIAGENT phase changes are now explicit MCP state updates, not PTY text
@@ -1036,7 +1011,7 @@ export function registerIPCHandlers(
         logger.error(`[IPC] Failed to purge memories for removed session ${event.sessionId}: ${error}`);
       }
       artifactManager.clearSession(event.sessionId);
-      scratchpadManager.clearSession(event.sessionId);
+      draftManager.clearSession(event.sessionId);
       // No bin entry means no way back, so the phone's replay of this
       // conversation goes now too — same rule the bin's purge paths enforce.
       try {
@@ -1542,7 +1517,6 @@ export function registerIPCHandlers(
       cleanupTelegram();
       telegramModules.cleanup();
       cleanupSession();
-      cleanupPromptTemplates();
       cancelAllPrompts();
       messNotifier?.dispose();
       autoFreezer.dispose();

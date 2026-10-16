@@ -9,7 +9,7 @@
  * Deciding WHICH keys get here is not this module's job — see
  * `keyboard/router.ts` and `keyboard/handlers/terminal-keys.ts`. This file used
  * to own a capture-phase `document` listener as well, which is how a stale
- * planner check in the middle of it could silently kill Escape and Ctrl+G.
+ * planner check in the middle of it could silently kill Escape.
  */
 
 import { keyToPtyEscape } from './bindings.js';

@@ -1,25 +1,25 @@
 /**
- * useScratchpad: the renderer mirror of one session's scratchpad.
+ * useDraft: the renderer mirror of one session's draft.
  *
- * Main owns the pad (ScratchpadManager); this keeps the pane's text in step
+ * Main owns the pad (DraftManager); this keeps the pane's text in step
  * with it in both directions. The user's edits are saved after a short pause,
  * each naming the revision it was based on. An edit from elsewhere (the
  * session's LLM, or the same session in another window) replaces the text when
  * the user has nothing unsaved; when they do, nothing is overwritten on either
- * side and `conflict` asks the user to pick. See docs/scratchpad.md.
+ * side and `conflict` asks the user to pick. See docs/draft.md.
  */
 
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { eventsClient, sessionsClient } from '../ipc/clients.js';
-import { scratchpadBytes, type Scratchpad } from '../../src/types/scratchpad.js';
+import { draftBytes, type Draft } from '../../src/types/draft.js';
 
-export const SCRATCHPAD_SAVE_DELAY_MS = 400;
+export const DRAFT_SAVE_DELAY_MS = 400;
 
 /** One session's sync state. The composable's refs are a view of the one on screen. */
 interface Sync {
   sessionId: string;
   /** The pad as main last reported it. Revision -1 until the first load. */
-  pad: Scratchpad;
+  pad: Draft;
   /** What the user has in the editor for this session. */
   draft: string;
   /** Someone else changed the pad under unsaved typing. Nothing is saved until the user picks. */
@@ -44,13 +44,13 @@ const syncs = new Map<string, Sync>();
 
 const message = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const isDirty = (target: Sync): boolean => target.draft !== target.pad.text;
-const isOwnWrite = (target: Sync, next: Scratchpad): boolean =>
+const isOwnWrite = (target: Sync, next: Draft): boolean =>
   next.updatedBy === 'user' && target.sending === next.text;
 
-export function useScratchpad(sessionId: () => string | null) {
+export function useDraft(sessionId: () => string | null) {
   const text = ref('');
   /** The pad as main last reported it; null while it loads. */
-  const pad = ref<Scratchpad | null>(null);
+  const pad = ref<Draft | null>(null);
   const conflict = ref(false);
   const error = ref('');
 
@@ -59,7 +59,7 @@ export function useScratchpad(sessionId: () => string | null) {
 
   const loading = computed(() => pad.value === null);
   const dirty = computed(() => pad.value !== null && text.value !== pad.value.text);
-  const bytes = computed(() => scratchpadBytes(text.value));
+  const bytes = computed(() => draftBytes(text.value));
 
   /** Push one session's state to the refs, if it is the one on screen. */
   function show(target: Sync): void {
@@ -75,7 +75,7 @@ export function useScratchpad(sessionId: () => string | null) {
    * A clean editor follows it. Unsaved typing stays, and becomes a conflict when
    * the pad really moved and the move was not this window's own save.
    */
-  function adopt(target: Sync, next: Scratchpad): void {
+  function adopt(target: Sync, next: Draft): void {
     if (next.revision < target.pad.revision) return;
     const moved = next.revision > target.pad.revision;
     const wasClean = !isDirty(target);
@@ -93,10 +93,10 @@ export function useScratchpad(sessionId: () => string | null) {
     if (target.conflict || !isDirty(target)) return;
     target.sending = target.draft;
     try {
-      const result = await sessionsClient.scratchpadSet(target.sessionId, target.sending, target.pad.revision);
+      const result = await sessionsClient.draftSet(target.sessionId, target.sending, target.pad.revision);
       target.error = result.ok || result.reason === 'stale' ? '' : result.message;
       // A too-large refusal changed nothing in main: there is no newer pad to take.
-      if (result.ok || result.reason === 'stale') adopt(target, result.scratchpad);
+      if (result.ok || result.reason === 'stale') adopt(target, result.draft);
     } catch (err) {
       target.error = message(err);
     } finally {
@@ -108,7 +108,7 @@ export function useScratchpad(sessionId: () => string | null) {
 
   async function load(target: Sync): Promise<void> {
     try {
-      adopt(target, await sessionsClient.scratchpadGet(target.sessionId));
+      adopt(target, await sessionsClient.draftGet(target.sessionId));
     } catch (err) {
       target.error = message(err);
       show(target);
@@ -122,7 +122,7 @@ export function useScratchpad(sessionId: () => string | null) {
 
   function schedule(): void {
     cancelTimer();
-    timer = setTimeout(() => { void flush(); }, SCRATCHPAD_SAVE_DELAY_MS);
+    timer = setTimeout(() => { void flush(); }, DRAFT_SAVE_DELAY_MS);
   }
 
   /** Save what is typed now (queued behind anything already in flight). */
@@ -171,7 +171,7 @@ export function useScratchpad(sessionId: () => string | null) {
     sync = null;
   }
 
-  const stopListening = eventsClient.onScratchpadChanged?.((next) => {
+  const stopListening = eventsClient.onDraftChanged?.((next) => {
     const target = syncs.get(next.sessionId);
     if (target && next.revision > target.pad.revision) adopt(target, next);
   });

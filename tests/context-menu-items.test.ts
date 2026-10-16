@@ -25,9 +25,6 @@ describe('buildContextMenuGroups', () => {
     const terminal = groups({ mode: 'terminal' });
 
     expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
-    expect(findItem(session, 'editor').enabled).toBe(true);
-    expect(findItem(session, 'prompts').enabled).toBe(true);
-    expect(findItem(session, 'drafts').enabled).toBe(true);
     expect(findItem(session, 'new-session').enabled).toBe(true);
   });
 
@@ -55,7 +52,6 @@ describe('buildContextMenuGroups', () => {
     for (const id of ['rename-session', 'toggle-lock', 'toggle-keep-warm', 'toggle-overview', 'move-to-group', 'remove-from-group']) {
       expect(findItem(session, id).enabled).toBe(true);
     }
-    for (const id of ['editor', 'prompts', 'drafts']) expect(findItem(session, id).enabled).toBe(false);
     expect(findItem(terminal, 'copy').enabled).toBe(true);
     expect(findItem(terminal, 'new-session-with-selection').enabled).toBe(true);
     expect(findItem(terminal, 'paste').enabled).toBe(false);
@@ -63,7 +59,7 @@ describe('buildContextMenuGroups', () => {
 
   it('disables session-targeted actions when the selected target no longer exists', () => {
     const missing = groups({ targetSessionId: null });
-    for (const id of ['quick-compact', 'editor', 'prompts', 'drafts', 'clone-session', 'switch-cli', 'rename-session', 'move-to-group']) {
+    for (const id of ['quick-compact', 'clone-session', 'switch-cli', 'rename-session', 'move-to-group']) {
       expect(findItem(missing, id).enabled).toBe(false);
     }
     expect(findItem(missing, 'new-session').enabled).toBe(true);

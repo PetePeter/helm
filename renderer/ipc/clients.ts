@@ -33,7 +33,6 @@ export const contextsClient = domainClient('contexts');
 export const memoryClient = domainClient('memory');
 export const attachmentsClient = domainClient('attachments');
 export const incomingClient = domainClient('incoming');
-export const draftsClient = domainClient('drafts');
 const baseSchedulerClient = domainClient('scheduler');
 
 /**
@@ -63,7 +62,6 @@ export const dialogClient = domainClient('dialog');
 export const systemClient = domainClient('system');
 export const updateClient = domainClient('update');
 export const eventsClient = domainClient('events');
-export const promptTemplatesClient = domainClient('promptTemplates');
 export const peersClient = domainClient('peers');
 export const mobileClient = domainClient('mobile');
 export const voiceClient = domainClient('voice');

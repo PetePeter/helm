@@ -2,7 +2,7 @@
 /**
  * Binding editor modal — complex form for editing gamepad button bindings.
  *
- * Action types: keyboard, voice, scroll, context-menu, prompt-tree, new-draft.
+ * Action types: keyboard, voice, voice-talk, voice-call, scroll, context-menu.
  * Each action type renders different parameter fields.
  */
 import { ref, watch, computed } from 'vue';
@@ -19,8 +19,6 @@ const ACTION_TYPES = [
   { value: 'voice-call', label: 'Call Helm (hands-free)' },
   { value: 'scroll', label: 'Scroll' },
   { value: 'context-menu', label: 'Context menu' },
-  { value: 'prompt-tree', label: 'Prompt tree' },
-  { value: 'new-draft', label: 'New draft' },
 ] as const;
 
 interface Binding {
@@ -200,8 +198,8 @@ defineExpose({ handleButton });
             </div>
           </template>
 
-          <!-- Context menu / prompt-tree / new-draft / voice-talk / voice-call — no extra params -->
-          <template v-if="actionType === 'context-menu' || actionType === 'prompt-tree' || actionType === 'new-draft' || actionType === 'voice-talk' || actionType === 'voice-call'">
+          <!-- Context menu / voice-talk / voice-call — no extra params -->
+          <template v-if="actionType === 'context-menu' || actionType === 'voice-talk' || actionType === 'voice-call'">
             <div class="binding-editor-field">
               <span class="form-help">No additional parameters needed.</span>
             </div>

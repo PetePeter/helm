@@ -46,7 +46,7 @@ Every feature manager follows the same shape: an `EventEmitter` class in `src/se
 Gamepad → Browser Gamepad API (renderer polling, 16ms)
   → IPC gamepad:event → debounce (250ms)
     → Resolve binding (the CLI type's binding profile)
-      → Execute action (keyboard/voice/spawn/switch/prompt-tree)
+      → Execute action (keyboard/voice/spawn/switch/context-menu)
 
 D-pad / left stick navigates sessions and auto-selects the terminal.
 Keyboard input routes to the active terminal (PTY stdin), blocked while a
@@ -63,7 +63,7 @@ These hold repo-wide. Breaking one is a design change, not a refactor.
 2. **CLIs run in embedded PTYs, never external windows** — node-pty + xterm.js. All keyboard, paste, and sequence input reaches a CLI through PTY stdin. API tools (Helm-hosted agent loops, no CLI) are adopted into PtyManager as a `PtyProcess`, so input still takes the same path — see [docs/api-tools.md](docs/api-tools.md).
 3. **Context isolation is enforced** — the renderer never touches Node APIs. New capability = a typed channel in `preload.ts` via `contextBridge` plus a handler in the matching `src/electron/ipc/` domain file. See [docs/preload-api-boundary.md](docs/preload-api-boundary.md).
 4. **Config boundary: the repo ships defaults only** — all writable config, logs, and temp files resolve to the per-user app-data dir in BOTH dev and packaged mode. Never write to the repo working tree. See [docs/config-boundary.md](docs/config-boundary.md).
-5. **Input is expressed as sequence syntax** — `{Enter}`, `{Ctrl+C}`, `{Wait 500}`, plain text — parsed to PTY escape codes rather than simulating keys. One parser serves bindings, initial prompts, prompt templates, and plan delivery.
+5. **Input is expressed as sequence syntax** — `{Enter}`, `{Ctrl+C}`, `{Wait 500}`, plain text — parsed to PTY escape codes rather than simulating keys. One parser serves bindings, initial prompts, chip actions, and plan delivery.
 6. **A session's identity survives restarts** — `cliSessionName` (UUID v4) maps 1:1 between a hub session and the CLI's own session. Fresh spawn chain `spawnCommand → command`; resume chain `resumeCommand → continueCommand → command`. Persistence is an explicit allow-list: a new `SessionInfo` field must be added to `serializeSession` or it will not survive a restart.
 7. **PTY errors never kill the PTY** — session state lives in the main process, so the renderer can crash and reload freely. All PTY operations are wrapped in try-catch that logs and continues; the process may still be alive.
 8. **Dots reflect activity, not pipeline state** — green/blue/grey are derived from PTY I/O timing, or from hook-reported activity when CLI hooks are installed (hooks are a second producer of the same events; timing stays as the fallback). Colours stay centralized in `renderer/state-colors.ts`. Never hardcode a dot colour. See [docs/terminal-architecture.md](docs/terminal-architecture.md) and [docs/cli-hooks.md](docs/cli-hooks.md).
@@ -157,14 +157,12 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/runtime-groups.md](docs/runtime-groups.md) | Custom cross-directory groups, exclusive membership, restore-to-group, drag/close flows |
 | [docs/recycle-bin.md](docs/recycle-bin.md) | Closed recoverable sessions — 30-day rolling bin, restore-with-resume |
 | [docs/session-freeze.md](docs/session-freeze.md) | Prompt-cache staleness (per-CLI short/long cache), row fade + banners, Mess dormancy, freeze / auto-freeze, `session_set_frozen` |
-| [docs/drafts.md](docs/drafts.md) | Per-session draft prompt memos |
 | [docs/time-tracking.md](docs/time-tracking.md) | Per-project time tracking — 5-min You/AI slots, origin-tagged input, JSONL store, Timesheet pane + CSV |
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
-| [docs/scratchpad.md](docs/scratchpad.md) | Per-session scratchpad — one plain-text pad the user (dock pane) and the session's LLM (`session_scratchpad_*`) both write, stale-write refusal, 64 KB cap, deleted with the session |
+| [docs/draft.md](docs/draft.md) | Per-session draft — one plain-text pad the user (dock pane) and the session's LLM (`session_draft_*`) both write, stale-write refusal, 64 KB cap, deleted with the session |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
 | [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Quick Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |
 | [docs/mess.md](docs/mess.md) | Durable local project conversation, ordered cursors, best-effort reminders, and read-only observer pane |
-| [docs/prompt-templates.md](docs/prompt-templates.md) | Global nested prompt-template library and the prompt editor apply flow |
 | [docs/artifact-viewer.md](docs/artifact-viewer.md) | Ephemeral per-session versioned md/html reports, sanitized render, `helm-img://` protocol |
 | [docs/flash-attention.md](docs/flash-attention.md) | The grab-the-user session flash — accent colour, contrast, pulse/solid phases |
 

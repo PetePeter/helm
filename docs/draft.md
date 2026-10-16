@@ -1,28 +1,30 @@
-# Session Scratchpad
+# Session Draft
 
 One plain-text pad per session that **you and the session's LLM both write**.
-You type in the Scratchpad tool window; the LLM reads and writes the same text
+You type in the Draft tool window; the LLM reads and writes the same text
 through MCP, and its edits show up in the pane as they land.
 
 ## Why this exists
 
-A session had no shared working surface. The neighbours each do a different job:
+A session had no shared working surface, and composing a prompt had three
+competing homes (prompt memos, a prompt-template library, a Ctrl+G editor
+popup). All three were removed: this pad is the one place to write, notes or a
+prompt, and **Send** turns it into input. The neighbours each do a different job:
 
 | Feature | What it holds | Who writes |
 |---|---|---|
-| [Drafts](drafts.md) | Prompts you have not sent yet | You |
 | [Mission](mission-statement.md) | One TL;DR of what the session is for | You and the AI |
 | [Artifacts](artifact-viewer.md) | Finished, versioned reports | The AI (you can edit) |
 | [Memory](memory.md) | Knowledge that outlives the session | The AI |
-| **Scratchpad** | The running notes of this one session: a to-do list, a pasted error, numbers to remember | You and the AI |
+| **Draft** | The running notes of this one session: a to-do list, a pasted error, numbers to remember | You and the AI |
 
 ## Model
 
 ```
-Scratchpad { sessionId, text, revision, updatedAt?, updatedBy?: 'user' | 'ai' }
+Draft { sessionId, text, revision, updatedAt?, updatedBy?: 'user' | 'ai' }
 
-ScratchpadManager: sessionId -> Scratchpad   (loaded on first use)
-  -> %APPDATA%/Helm/config/scratchpads/<sessionId>.json
+DraftManager: sessionId -> Draft   (loaded on first use)
+  -> %APPDATA%/Helm/config/drafts/<sessionId>.json
 ```
 
 A pad never written is `{ text: '', revision: 0 }` and has no file. Every change
@@ -34,21 +36,21 @@ so a writer holding an old revision stays stale.
 ```mermaid
 graph TB
     subgraph Main["Main process"]
-        SM["ScratchpadManager<br/>EventEmitter<br/>get / set / append / copySession / clearSession / pruneOrphans"]
-        ST["scratchpad-persistence<br/>one JSON file per session<br/>atomic write"]
-        SH["scratchpad-handlers<br/>scratchpad:get / scratchpad:set (author: user)"]
-        MCP["MCP dispatcher -> HelmControlService<br/>session_scratchpad_get / _set / _append (author: ai)"]
+        SM["DraftManager<br/>EventEmitter<br/>get / set / append / copySession / clearSession / pruneOrphans"]
+        ST["draft-persistence<br/>one JSON file per session<br/>atomic write"]
+        SH["draft-handlers<br/>draft:get / draft:set (author: user)"]
+        MCP["MCP dispatcher -> HelmControlService<br/>session_draft_get / _set / _append (author: ai)"]
         SM -->|"injected store"| ST
         SH --> SM
         MCP --> SM
     end
     subgraph Renderer
-        PANE["ScratchpadPane.vue<br/>a textarea, nothing rendered"]
-        US["useScratchpad<br/>reactive mirror, debounced save, conflict"]
+        PANE["DraftPane.vue<br/>a textarea, nothing rendered"]
+        US["useDraft<br/>reactive mirror, debounced save, conflict"]
         PANE --> US
     end
-    US -->|"scratchpadGet / scratchpadSet"| SH
-    SM -->|"scratchpad:changed (the whole pad)"| US
+    US -->|"draftGet / draftSet"| SH
+    SM -->|"draft:changed (the whole pad)"| US
     LLM["The session's LLM"] --> MCP
     RM["session:removed (not recoverable)"] -->|clearSession| SM
     RB["Recycle bin: Forget / Empty / expiry"] -->|clearSession| SM
@@ -65,14 +67,14 @@ trust than a merge that guesses.
 ```mermaid
 sequenceDiagram
     participant U as You (pane)
-    participant M as ScratchpadManager
+    participant M as DraftManager
     participant A as LLM (MCP)
     A->>M: get -> text, revision 3
     U->>M: set(text, base 3) -> revision 4
     A->>M: set(text, base 3)
     M-->>A: ok=false, reason=stale, current text, revision 4
     A->>M: set(redone on the current text, base 4) -> revision 5
-    M-->>U: scratchpad:changed
+    M-->>U: draft:changed
 ```
 
 - **Append needs no revision.** It only adds a line at the end, so it cannot
@@ -100,7 +102,7 @@ sequenceDiagram
 
 ## Limits
 
-- **64 KB of UTF-8** (`SCRATCHPAD_MAX_BYTES`). A larger write is refused and the
+- **64 KB of UTF-8** (`DRAFT_MAX_BYTES`). A larger write is refused and the
   old text is kept. The cap bounds the file, the IPC payload and what an LLM
   pulls into its context on a read.
 - **Plain text, never rendered.** What the LLM writes is untrusted (invariant
@@ -129,9 +131,9 @@ cannot create a pad nothing will ever read or delete.
 
 | Tool | Arguments | Notes |
 |---|---|---|
-| `session_scratchpad_get` | `sessionId?` | Yours by default; another session's pad can be read by id or exact name. Returns `text`, `revision`, `bytes`, `maxBytes`. |
-| `session_scratchpad_set` | `text`, `revision` | Your own pad only. A stale revision returns `ok: false, reason: "stale"` with the current `text` and `revision`. |
-| `session_scratchpad_append` | `text` | Your own pad only. Adds the text on a new line at the end. |
+| `session_draft_get` | `sessionId?` | Yours by default; another session's pad can be read by id or exact name. Returns `text`, `revision`, `bytes`, `maxBytes`. |
+| `session_draft_set` | `text`, `revision` | Your own pad only. A stale revision returns `ok: false, reason: "stale"` with the current `text` and `revision`. |
+| `session_draft_append` | `text` | Your own pad only. Adds the text on a new line at the end. |
 
 Writes are always the **caller's own** session, taken from the server-derived
 identity; naming another session is an error rather than a silent write to your
@@ -142,7 +144,7 @@ proxy identity is not a session, so they have no pad to write.
 
 ## UI
 
-`renderer/components/dock/ScratchpadPane.vue`, the `scratchpad` pane: a tool
+`renderer/components/dock/DraftPane.vue`, the `draft` pane: a tool
 window homed on the right edge next to Artifacts, in the main window and in a
 snapped-out session window. It follows the active session.
 
@@ -152,8 +154,12 @@ snapped-out session window. It follows the active session.
 - **Send** (button or Ctrl+Enter) types the pad into the session's CLI through
   the normal paste path, submits it, then clears and saves the empty pad — the
   pad doubles as a prompt composer. Plain Enter is a new line; an empty pad sends nothing.
+- **Ctrl+G** or **Ctrl+Shift+D** jumps here from anywhere, even mid-typing in
+  another field. The textarea carries `data-autofocus`, so the caret lands in it
+  whenever the dock focuses the pane.
 - A layout saved before this pane existed gets it as a closed pane in the
-  **View** menu ([docking.md](docking.md)).
+  **View** menu; one saved with the old `scratchpad` tab id is renamed to
+  `draft` on load ([docking.md](docking.md)).
 - Typing counts as your time on the session's project ([time-tracking.md](time-tracking.md)).
 - No gamepad binding.
 
@@ -161,7 +167,7 @@ snapped-out session window. It follows the active session.
 
 | Aspect | Detail |
 |---|---|
-| Path | `%APPDATA%/Helm/config/scratchpads/<sessionId>.json` (`SCRATCHPADS_DIR`), one file per session so one session's edits never rewrite another's text |
+| Path | `%APPDATA%/Helm/config/drafts/<sessionId>.json` (`DRAFTS_DIR`), one file per session so one session's edits never rewrite another's text |
 | Write | `atomicWriteFileSync` |
 | Read | Field-checked; a damaged file reads as an empty pad |
 | Failure mode | Save and load errors are logged, never thrown. A pad that could not be saved lives in memory until Helm exits. |

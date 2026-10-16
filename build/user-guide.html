@@ -175,7 +175,7 @@
   <a href="#keyboard-shortcuts">Keyboard Shortcuts</a>
   <a href="#sessions">Sessions</a>
   <a href="#notifications">Notifications</a>
-  <a href="#drafts">Drafts</a>
+  <a href="#drafts">Draft</a>
   <a href="#plans">Plans</a>
   <a href="#settings-profiles">Settings &amp; Profiles</a>
   <a href="#pattern-matcher">Pattern Matcher</a>
@@ -225,7 +225,6 @@
     <tr><td><kbd>A</kbd></td><td>Select / confirm / activate terminal</td></tr>
     <tr><td><kbd>B</kbd></td><td>Back / cancel / close modal</td></tr>
     <tr><td><kbd>Start</kbd></td><td>Open context menu</td></tr>
-    <tr><td><kbd>Back / Select</kbd></td><td>Open the prompt-template picker tree</td></tr>
     <tr><td><kbd>Left Stick</kbd></td><td>Cursor mode &mdash; scroll or mouse movement</td></tr>
     <tr><td><kbd>Right Stick</kbd></td><td>Scroll terminal output</td></tr>
     <tr><td><kbd>LB</kbd> / <kbd>RB</kbd></td><td>Previous / next session</td></tr>
@@ -248,7 +247,9 @@
   </thead>
   <tbody>
     <tr><td><kbd>Ctrl+V</kbd></td><td>Paste clipboard to active terminal (works regardless of DOM focus)</td></tr>
-    <tr><td><kbd>Ctrl+G</kbd></td><td>Open the in-app Prompt Editor (textarea + recent-prompts + prompt-template tree) &mdash; Ctrl+Enter sends to active terminal</td></tr>
+    <tr><td><kbd>Ctrl+G</kbd></td><td>Jump to the active session&rsquo;s Draft pane (works even while typing in a field)</td></tr>
+    <tr><td><kbd>Ctrl+Shift+&lt;letter&gt;</kbd></td><td>Focus a pane from anywhere: T terminal, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft (hover a tab to see its letter)</td></tr>
+    <tr><td><kbd>Ctrl+Tab</kbd> / <kbd>Ctrl+Shift+Tab</kbd></td><td>Next / previous session (also from inside a text field)</td></tr>
     <tr><td><kbd>Ctrl+Shift+R</kbd></td><td>Rename active session</td></tr>
     <tr><td><kbd>Ctrl+Shift+B</kbd></td><td>Clear all notifications for active session</td></tr>
     <tr><td><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>Cycle focus between buttons within modal overlays</td></tr>
@@ -257,7 +258,7 @@
 </table>
 
 <div class="callout">
-  Clipboard paste and Ctrl+G are blocked when a modal overlay is visible to prevent accidental input.
+  Clipboard paste is blocked when a modal overlay is visible to prevent accidental input.
 </div>
 
 <!-- ═══════════════════ 4. Sessions ═══════════════════ -->
@@ -282,7 +283,6 @@
   </li>
   <li><strong>Elapsed timer</strong> &mdash; time since last CLI output, refreshed every 10 seconds</li>
   <li><strong>Plan badges</strong> &mdash; coding + ready/blocked/review counts</li>
-  <li><strong>Draft badge</strong> &mdash; count of unsent drafts</li>
 </ul>
 
 <h3>Groups</h3>
@@ -314,39 +314,15 @@
 </div>
 
 <!-- ═══════════════════ 6. Drafts ═══════════════════ -->
-<h2 id="drafts">6. Drafts</h2>
+<h2 id="drafts">6. Draft</h2>
 
-<p>Drafts are per-session prompt memos for composing prompts while the CLI is busy.</p>
-
-<h3>Managing drafts</h3>
-<table>
-  <thead>
-    <tr><th>Action</th><th>How</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>Create</td><td>Context menu &rarr; New Draft, or press <kbd>A</kbd> on "new-draft" binding</td></tr>
-    <tr><td>Edit</td><td>Click the &128221; pill above the terminal, or context menu &rarr; Edit Draft</td></tr>
-    <tr><td>Apply</td><td>Sends draft content to terminal and deletes the draft</td></tr>
-    <tr><td>Delete</td><td>Context menu &rarr; Delete, or delete button in editor</td></tr>
-  </tbody>
-</table>
-
-<h3>Draft editor shortcuts</h3>
-<table>
-  <thead>
-    <tr><th>Input</th><th>Action</th></tr>
-  </thead>
-  <tbody>
-    <tr><td><kbd>D-Pad &uarr;&darr;</kbd></td><td>Cycle focus: Title → Content → Save → Apply → Delete → Cancel</td></tr>
-    <tr><td><kbd>A</kbd></td><td>Activate focused button</td></tr>
-    <tr><td><kbd>B</kbd></td><td>Cancel / close editor</td></tr>
-  </tbody>
-</table>
+<p>Each session has one <strong>Draft</strong>: a plain-text pad (the Draft pane, right edge next to Artifacts) that you and the session&rsquo;s AI both write. Use it for running notes or to compose a prompt while the CLI is busy.</p>
 
 <ul>
-  <li>Drafts persist to <code>config/drafts.yaml</code> (survive restarts)</li>
-  <li>Session cards show a &128221; badge with the draft count</li>
-  <li>Close-confirm dialog warns about unsent drafts</li>
+  <li><kbd>Ctrl+G</kbd> or <kbd>Ctrl+Shift+D</kbd> jumps to it from anywhere</li>
+  <li><strong>Send</strong> or <kbd>Ctrl+Enter</kbd> types the pad into the CLI, submits it, then clears the pad</li>
+  <li>Saved automatically to <code>config/drafts/&lt;sessionId&gt;.json</code>; kept across restarts and the recycle bin</li>
+  <li>If the AI edits while you have unsaved text, a bar offers <em>Keep mine</em> or <em>Take theirs</em> &mdash; nothing is lost silently</li>
 </ul>
 
 <!-- ═══════════════════ 7. Plans ═══════════════════ -->
@@ -379,7 +355,7 @@
   <li>Canvas shows nodes with dependency arrows, pan/zoom via mouse</li>
   <li>Click a node to select it; editor panel at the bottom for title, description, and actions</li>
   <li>Session cards display plan badges (coding + ready/blocked/review counts)</li>
-  <li>Claim a ready plan from the draft strip &mdash; click the ready chip to send its description to the terminal and transition to <em>coding</em></li>
+  <li>Claim a ready plan from the chip bar &mdash; click the ready chip to send its description to the terminal and transition to <em>coding</em></li>
 </ul>
 
 <!-- ═══════════════════ 8. Settings & Profiles ═══════════════════ -->
@@ -612,12 +588,12 @@
   <tbody>
     <tr><td>Share</td><td>In any app, <strong>Share &rarr; Helm</strong></td></tr>
     <tr><td>Pick a session</td><td>The phone lists your sessions; tap one</td></tr>
-    <tr><td>Result</td><td>The file is saved in Helm's inbox on this PC and the session's <strong>draft</strong> gains <code>Attached: &lt;name&gt; at &lt;path&gt;</code>. Nothing is sent to the AI until you send the draft</td></tr>
+    <tr><td>Result</td><td>The file is saved in Helm's inbox on this PC and <code>Attached: &lt;name&gt; at &lt;path&gt;</code> is sent to the session's AI as your prompt</td></tr>
   </tbody>
 </table>
 
 <div class="callout">
-  Size limit: <strong>10&nbsp;MB</strong> over Wi-Fi, <strong>2&nbsp;MB</strong> over Bluetooth. Bigger files are refused on the phone before anything is sent.
+  Size limit: <strong>10&nbsp;MB</strong> over Wi-Fi or Bluetooth (Bluetooth is slow). Bigger files are refused on the phone before anything is sent.
 </div>
 
 <!-- ═══════════════════ 15. Helm Operator & Voice ═══════════════════ -->

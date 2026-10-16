@@ -1068,14 +1068,14 @@ describe('HelmControlService.getPlan', () => {
 
     const contextManager = (service as any).contextManager;
     const seqContext = contextManager.create('project-1', { title: 'Testing Strategy', type: 'Testing', permission: 'readonly' });
-    const planContext = contextManager.create('project-1', { title: 'Scratchpad', type: 'Coding', permission: 'writable' });
+    const planContext = contextManager.create('project-1', { title: 'Draft', type: 'Coding', permission: 'writable' });
     contextManager.bind(seqContext.id, 'sequence', 'seq-1');
     contextManager.bind(planContext.id, 'plan', 'plan-1');
 
     const result = service.getPlan('P-0001') as any;
 
     expect(result.sequenceContextMetadata).toEqual([
-      { id: planContext.id, title: 'Scratchpad', type: 'Coding', permission: 'writable' },
+      { id: planContext.id, title: 'Draft', type: 'Coding', permission: 'writable' },
       { id: seqContext.id, title: 'Testing Strategy', type: 'Testing', permission: 'readonly' },
     ]);
   });

@@ -259,10 +259,10 @@ describe('plan screen window-keyed callbacks', () => {
     const popoutCloser = vi.fn();
 
     Object.defineProperty(window, 'location', { value: { search: '' }, writable: true });
-    mod.setDraftEditorCloser(mainCloser);
+    mod.setItemEditorCloser(mainCloser);
 
     Object.defineProperty(window, 'location', { value: { search: '?plannerPopOut=1&dirPath=/test/dir' }, writable: true });
-    mod.setDraftEditorCloser(popoutCloser);
+    mod.setItemEditorCloser(popoutCloser);
 
     // Trigger Escape key handler in main window
     Object.defineProperty(window, 'location', { value: { search: '' }, writable: true });

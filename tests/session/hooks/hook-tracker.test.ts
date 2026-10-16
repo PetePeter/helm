@@ -1,7 +1,7 @@
 /**
  * HookTracker tests — hook events become session truth.
  *
- * Real StateDetector / SessionManager / PlanManager / DraftManager /
+ * Real StateDetector / SessionManager / PlanManager /
  * ArtifactManager / ArtifactAttachmentManager / HandoverDelivery against the
  * temp APPDATA the vitest setup installs; the only fakes are the flash sink
  * (a recording object — the real NotificationManager drags Electron in) and
@@ -27,7 +27,6 @@ import { normaliseHookEvent, type HookEvent } from '../../../src/session/hooks/h
 import { StateDetector, type ActivityChange } from '../../../src/session/state-detector.js';
 import { SessionManager } from '../../../src/session/manager.js';
 import { PlanManager } from '../../../src/session/plan-manager.js';
-import { DraftManager } from '../../../src/session/draft-manager.js';
 import { ArtifactManager } from '../../../src/session/artifact-manager.js';
 import { ArtifactAttachmentManager, MAX_ATTACHMENT_BYTES } from '../../../src/session/artifact-attachment-manager.js';
 import { HandoverDelivery } from '../../../src/session/handover-delivery.js';
@@ -66,7 +65,6 @@ interface Setup {
   activity: ActivityChange[];
   sessionManager: SessionManager;
   planManager: PlanManager;
-  draftManager: DraftManager;
   artifactManager: ArtifactManager;
   attachments: ArtifactAttachmentManager;
   handover: HandoverDelivery;
@@ -95,7 +93,6 @@ function setup(): Setup {
   sessionManager.on('session:updated', (e: SessionInfo) => updates.push(e));
 
   const planManager = new PlanManager();
-  const draftManager = new DraftManager();
   const artifactManager = new ArtifactManager();
   const attachmentDir = mkdtempSync(join(tmpdir(), 'helm-tracker-attachments-'));
   const attachments = new ArtifactAttachmentManager(attachmentDir);
@@ -116,7 +113,6 @@ function setup(): Setup {
     planManager,
     flashAttention: (sessionId: string) => { flashes.push(sessionId); },
     handoverDelivery: handover,
-    draftManager,
     artifactManager,
     artifactAttachments: attachments,
     onTurnEnded: (sessionId) => { turnsEnded.push({ sessionId, transcript: sessionManager.getSession(sessionId)?.cliTranscriptPath }); },
@@ -151,7 +147,7 @@ function setup(): Setup {
 
   return {
     tracker, hookReceiver, stateDetector, activity, sessionManager, planManager,
-    draftManager, artifactManager, attachments, handover, flashes, turnsEnded, delivered, updates,
+    artifactManager, attachments, handover, flashes, turnsEnded, delivered, updates,
     addSession, claimPlan, dispose,
   };
 }
@@ -434,7 +430,6 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
     s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: 'more work' }));
     s.hookReceiver.emit('hook', hookEvent('claude', 'PostToolUse', { tool_name: 'Edit', tool_input: { file_path: 'src/x.ts' } }));
     s.hookReceiver.emit('hook', hookEvent('claude', 'PostToolUse', { tool_name: 'Bash', tool_input: { command: 'npm test' } }));
-    s.draftManager.create('s1', 'Next step', 'run the full suite');
     s.handover.arm('s1', 'remember the handover note');
     s.updates.length = 0;
     s.activity.length = 0;
@@ -462,7 +457,6 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
       expect(body).toContain('Bash ×1');
       expect(body).toContain('Edit ×1');
       expect(body).toContain('src/x.ts');
-      expect(body).toContain('**Next step** — run the full suite');
       expect(body).toContain('remember the handover note');
       expect(body).toContain('transcript.jsonl');
 
@@ -552,7 +546,6 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
     plan: { title: 'Hook G3', status: 'coding' },
     toolCounts: [['Bash', 8], ['Edit', 3], ['Read', 1]] as Array<[string, number]>,
     filesTouched: ['src/b.ts', 'src/a.ts'],
-    drafts: [{ label: 'Follow-up', text: 'remember to rerun tests' }],
     pendingHandover: 'the pre-written note',
     transcriptAttached: true,
   };
@@ -566,7 +559,6 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
     expect(md).toContain('Bash ×8');
     expect(md).toContain('Edit ×3');
     expect(md).toContain('`src/a.ts`, `src/b.ts`');
-    expect(md).toContain('**Follow-up** — remember to rerun tests');
     expect(md).toContain('the pre-written note');
     expect(md).toContain('transcript.jsonl');
   });
@@ -579,14 +571,12 @@ describe('composePreCompactSnapshot — pure renderer of Helm-held state', () =>
       plan: null,
       toolCounts: [],
       filesTouched: [],
-      drafts: [],
       transcriptAttached: false,
     });
     expect(md).toContain('trigger: **unknown**');
     expect(md).toContain('none claimed');
     expect(md).toContain('0 turn(s)');
     expect(md).toContain('none recorded');
-    expect(md).toContain('No draft memo');
     expect(md).toContain('No pending handover note');
     expect(md).toContain('No transcript was available to attach');
   });

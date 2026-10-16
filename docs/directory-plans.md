@@ -48,7 +48,7 @@ graph TB
 
     subgraph "Renderer Process"
         PS[plan-screen.ts<br/>SVG canvas]
-        PE[DraftEditor.vue<br/>Plan edit panel]
+        PE[ItemEditor.vue<br/>Plan edit panel]
         PL[plan-layout.ts<br/>Sugiyama layout]
         PC[plan-chips.ts<br/>Badges + chips]
         SR[SessionList.vue / PlansGrid.vue<br/>🗺️ button + badges]
@@ -262,7 +262,7 @@ Dependency arrows use quadratic bezier curves:
 
 ## Editor Panel
 
-`renderer/components/panels/DraftEditor.vue` — Vue editor panel used for plan edits when a node is selected.
+`renderer/components/panels/ItemEditor.vue` — Vue editor panel used for plan edits when a node is selected.
 
 ### Components
 

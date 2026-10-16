@@ -13,12 +13,12 @@ import { setPlanEditorOpener, useChipBarStore } from '../renderer/stores/chip-ba
 import { state } from '../renderer/state.js';
 
 const mockShowPlanInEditor = vi.fn();
-const mockHideDraftEditor = vi.fn();
+const mockHideItemEditor = vi.fn();
 const mockDeliverBulkText = vi.fn();
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
-  showDraftEditor: vi.fn(),
-  hideDraftEditor: (...args: unknown[]) => mockHideDraftEditor(...args),
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
+  showItemEditor: vi.fn(),
+  hideItemEditor: (...args: unknown[]) => mockHideItemEditor(...args),
 }));
 
 vi.mock('../renderer/paste-handler.js', () => ({
@@ -42,7 +42,6 @@ describe('Plan chip components', () => {
   it('renders plan chips through ChipBar and emits planChipClick', async () => {
     const wrapper = mount(ChipBar, {
       props: {
-        drafts: [],
         planChips: [
           { id: 'p1', humanId: 'P-0001', title: 'Setup DB', status: 'planning' },
           { id: 'p2', humanId: 'P-0002', title: 'Write API', status: 'coding' },
@@ -76,7 +75,6 @@ describe('Plan chip components', () => {
   it('ChipBar re-emits planChipCopy with the human reference', async () => {
     const wrapper = mount(ChipBar, {
       props: {
-        drafts: [],
         planChips: [{ id: 'p1', humanId: 'P-7', title: 'Setup DB', status: 'coding' }],
         actions: [],
         visible: true,
@@ -102,7 +100,6 @@ describe('Plan chip store integration', () => {
       },
     ];
     state.activeSessionId = 'session-1';
-    state.draftCounts.clear();
     state.planCodingCounts.clear();
     state.planStartableCounts.clear();
     setPlanEditorOpener(mockShowPlanInEditor);

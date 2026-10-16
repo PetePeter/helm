@@ -58,17 +58,6 @@ export {
 
 const sessionStates = new Map<string, string>();
 
-// Draft count cache — updated on session load and draft changes
-const draftCounts = new Map<string, number>();
-
-export function getDraftCountCache(sessionId: string): number {
-  return draftCounts.get(sessionId) ?? 0;
-}
-
-export function setDraftCountCache(sessionId: string, count: number): void {
-  draftCounts.set(sessionId, count);
-}
-
 // Plan count caches — updated when plan chips refresh
 const planCodingCounts = new Map<string, number>();
 const planStartableCounts = new Map<string, number>();
@@ -142,7 +131,6 @@ export function getSessionActivity(sessionId: string): string {
 
 function cleanupRendererSession(sessionId: string): void {
   removeSessionState(sessionId);
-  draftCounts.delete(sessionId);
   planCodingCounts.delete(sessionId);
   planStartableCounts.delete(sessionId);
   state.sessionActivityLevels.delete(sessionId);
@@ -335,7 +323,6 @@ export function confirmCloseSessionById(sessionId: string): void {
   closeConfirm.visible = true;
   closeConfirm.sessionId = session.id;
   closeConfirm.sessionName = displayName;
-  closeConfirm.draftCount = getDraftCountCache(session.id) ?? 0;
   setCloseConfirmCallback(doCloseSession);
 }
 

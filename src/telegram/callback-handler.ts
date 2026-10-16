@@ -52,7 +52,6 @@ export function setupCallbackHandler(
   sessionManager: SessionManager,
   ptyManager: PtyManager,
   configLoader: ConfigLoader,
-  draftManager?: { clearSession(sessionId: string): void },
   projectStore?: ProjectStore,
 ): () => void {
   const handler = async (query: TelegramBot.CallbackQuery) => {
@@ -63,7 +62,7 @@ export function setupCallbackHandler(
       await routeCallback(
         data, query, bot, topicManager,
         sessionManager, ptyManager, configLoader,
-        draftManager, projectStore,
+        projectStore,
       );
     } catch (err) {
       logger.error(`[CallbackHandler] Error processing ${data}: ${err}`);
@@ -102,7 +101,6 @@ async function routeCallback(
   sessionManager: SessionManager,
   ptyManager: PtyManager,
   configLoader: ConfigLoader,
-  draftManager?: { clearSession(sessionId: string): void },
   projectStore?: ProjectStore,
 ): Promise<void> {
   const [action, ...rest] = data.split(':');
@@ -149,10 +147,10 @@ async function routeCallback(
       await handleStatus(bot, sessionManager, query);
       break;
     case 'close_session':
-      await handleCloseSession(bot, sessionManager, ptyManager, draftManager, payload, query);
+      await handleCloseSession(bot, sessionManager, ptyManager, payload, query);
       break;
     case 'closeall':
-      await handleCloseAll(bot, sessionManager, ptyManager, draftManager, query);
+      await handleCloseAll(bot, sessionManager, ptyManager, query);
       break;
     case 'peek':
       await handlePeek(bot, sessionManager, ptyManager, payload, query);
@@ -660,7 +658,6 @@ async function handleCloseSession(
   bot: TelegramBotCore,
   sessionManager: SessionManager,
   ptyManager: PtyManager,
-  draftManager: { clearSession(sessionId: string): void } | undefined,
   sessionId: string,
   query: TelegramBot.CallbackQuery,
 ): Promise<void> {
@@ -678,7 +675,6 @@ async function handleCloseSession(
   if (sessionManager.hasSession(sessionId)) {
     sessionManager.removeSession(sessionId);
   }
-  draftManager?.clearSession(sessionId);
 }
 
 // ---------------------------------------------------------------------------
@@ -689,7 +685,6 @@ async function handleCloseAll(
   bot: TelegramBotCore,
   sessionManager: SessionManager,
   ptyManager: PtyManager,
-  draftManager: { clearSession(sessionId: string): void } | undefined,
   query: TelegramBot.CallbackQuery,
 ): Promise<void> {
   const sessions = sessionManager.getAllSessions();
@@ -708,7 +703,6 @@ async function handleCloseAll(
       if (sessionManager.hasSession(session.id)) {
         sessionManager.removeSession(session.id);
       }
-      draftManager?.clearSession(session.id);
       closed++;
     } catch (err) {
       logger.error(`[CloseAll] Failed to close session ${session.id}: ${err}`);

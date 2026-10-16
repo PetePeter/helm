@@ -36,8 +36,8 @@ export interface InputRouterDeps {
   settingsVisible: Ref<boolean>;
   activeView: Ref<MainViewState>;
   bindingEditorVisible: Ref<boolean>;
-  draftEditorVisible: Ref<boolean>;
-  draftEditorRef: Ref<ButtonTarget | null>;
+  itemEditorVisible: Ref<boolean>;
+  itemEditorRef: Ref<ButtonTarget | null>;
   settingsPanelRef: Ref<ButtonTarget | null>;
   settingsTab: Ref<string>;
   overviewCollapsedIds: Ref<Set<string>>;
@@ -105,8 +105,8 @@ export function useInputRouter(deps: InputRouterDeps) {
     if (isAnyBridgeModalVisible()) return;
     if (deps.bindingEditorVisible.value) return;
 
-    if (deps.draftEditorVisible.value) {
-      deps.draftEditorRef.value?.handleButton?.(button);
+    if (deps.itemEditorVisible.value) {
+      deps.itemEditorRef.value?.handleButton?.(button);
       return;
     }
 

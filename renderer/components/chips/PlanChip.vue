@@ -54,7 +54,7 @@ function onKeyActivate(): void {
 </template>
 
 <style scoped>
-/* Two-row layout is scoped here so DraftEditor's single-line .plan-chip spans
+/* Two-row layout is scoped here so ItemEditor's single-line .plan-chip spans
    keep the shared global styling. */
 .plan-chip--two-line {
   flex-direction: column;

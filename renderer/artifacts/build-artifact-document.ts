@@ -39,6 +39,15 @@ export const OPEN_URL_MESSAGE = 'helm-artifact-open-url';
 export const READY_MESSAGE = 'helm-artifact-ready';
 
 /**
+ * Scroll memory: the frame reports where it is scrolled to (throttled), and the
+ * parent hands that position back after the next READY, so leaving an artifact
+ * and coming back lands where you were. The parent keeps the positions; the
+ * frame is a fresh document every time.
+ */
+export const SCROLL_MESSAGE = 'helm-artifact-scroll';
+export const SCROLL_TO_MESSAGE = 'helm-artifact-scroll-to';
+
+/**
  * Links inside the frame are inert by design — the sandbox blocks navigation
  * and `default-src 'none'` blocks loads — so without this they would silently
  * do nothing. The parent decides what a reported URL may do (open https
@@ -51,6 +60,21 @@ document.addEventListener('click', function (e) {
   e.preventDefault();
   parent.postMessage({ type: '${OPEN_URL_MESSAGE}', url: a.href }, '*');
 }, true);
+var scrollTimer = 0;
+addEventListener('scroll', function () {
+  if (scrollTimer) return;
+  scrollTimer = setTimeout(function () {
+    scrollTimer = 0;
+    parent.postMessage({ type: '${SCROLL_MESSAGE}', y: scrollY }, '*');
+  }, 150);
+}, { passive: true });
+addEventListener('message', function (e) {
+  if (e.source !== parent || !e.data || e.data.type !== '${SCROLL_TO_MESSAGE}') return;
+  var y = Number(e.data.y) || 0;
+  scrollTo(0, y);
+  // Images and diagrams still loading would clamp the jump short; retry once laid out.
+  if (document.readyState !== 'complete') addEventListener('load', function () { scrollTo(0, y); }, { once: true });
+});
 parent.postMessage({ type: '${READY_MESSAGE}' }, '*');
 `.trim();
 

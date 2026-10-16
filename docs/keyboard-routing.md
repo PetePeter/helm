@@ -19,7 +19,7 @@ consequences were user-visible bugs:
   `querySelector('.plan-screen.visible')` matches a pane that is merely
   *mounted* — dock panes use `v-show`, so inactive tabs stay in the DOM. Once the
   planner became a dock pane, that check was permanently true, which killed
-  Ctrl+Tab, Ctrl+G and the managed Ctrl+V.
+  Ctrl+Tab and the managed Ctrl+V.
 
 Four separate copies of "is this an editable field?" had also drifted apart. The
 copy in the shell checked `closest('input, textarea')` *before* asking whether
@@ -113,7 +113,7 @@ key actually does:
 
 | Question | Use | Because |
 |----------|-----|---------|
-| Does this key **render** something over a pane? | `isVisible(pane)` | Ctrl+G opens the prompt editor over the terminal; it works from any pane while a terminal is on screen, and no-ops when none is. |
+| Does this key **render** something over a pane? | `isVisible(pane)` | Ctrl+Shift+W acts on a terminal that is on screen, even while another pane has focus. |
 | Does this key **send input** to a pane? | `isFocused(pane)` | Esc, Ctrl+V and the key relay write to a PTY. Typing into Memories must never reach a CLI. |
 
 Ctrl+Shift+W follows the visible rule: you routinely close a session from the
@@ -145,9 +145,9 @@ you keep looking at the same aspect of the next session.
 | `renderer/keyboard/key-context.ts` | Resolves scope once per event via `input-ownership.ts` + dock state |
 | `renderer/keyboard/router.ts` | Registry, declared precedence, the single listener, event suppression |
 | `renderer/keyboard/install.ts` | Builds the `KeyEnvironment` for the dock window and single-pane pop-outs |
-| `renderer/keyboard/handlers/workspace-keys.ts` | Dock pane shortcuts, Ctrl+Tab, spawn, close |
+| `renderer/keyboard/handlers/workspace-keys.ts` | Dock pane shortcuts (Ctrl+Shift+&lt;letter&gt;, declared as `shortcut` on each `DockPaneDescriptor`), Ctrl+G `draft-jump`, Ctrl+Tab, spawn, close |
 | `renderer/keyboard/handlers/number-keys.ts` | Ctrl+&lt;n&gt; session jump, Alt+&lt;n&gt; chip actions |
-| `renderer/keyboard/handlers/terminal-keys.ts` | Ctrl+G, Esc, Ctrl+V, key relay → PTY |
+| `renderer/keyboard/handlers/terminal-keys.ts` | Esc, Ctrl+V, key relay → PTY |
 
 Screens register their own keys next to their own code: `plans/plan-screen.ts`,
 `modals/modal-base.ts`, `composables/useModalKeyboardBridge.ts`.

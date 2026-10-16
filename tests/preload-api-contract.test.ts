@@ -73,7 +73,6 @@ describe('preload API boundary contract', () => {
       'tools',
       'projects',
       'plans',
-      'drafts',
       'contexts',
       'memory',
       'attachments',
@@ -103,7 +102,7 @@ describe('preload API boundary contract', () => {
     expect(helmApi.sessions.sessionSetActive).toBe(methodImplementations.sessionSetActive);
     expect(helmApi.terminal.ptySpawn).toBe(methodImplementations.ptySpawn);
     expect(helmApi.plans.planCreate).toBe(methodImplementations.planCreate);
-    expect(helmApi.drafts.draftCreate).toBe(methodImplementations.draftCreate);
+    expect(helmApi.sessions.draftGet).toBe(methodImplementations.draftGet);
     expect(helmApi.scheduler.scheduledTaskCreate).toBe(methodImplementations.scheduledTaskCreate);
     expect(helmApi.scheduler.scheduledTaskListHistory).toBe(methodImplementations.scheduledTaskListHistory);
     expect(helmApi.scheduler.scheduledTaskClearHistory).toBe(methodImplementations.scheduledTaskClearHistory);

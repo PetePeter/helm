@@ -134,7 +134,6 @@ describe('useAppBootstrap autoResumeSessions', () => {
     state.sessionStates.clear();
     state.sessionActivityLevels.clear();
     state.lastOutputTimes.clear();
-    state.draftCounts.clear();
     state.planCodingCounts.clear();
     state.planStartableCounts.clear();
     state.workingPlanLabels.clear();

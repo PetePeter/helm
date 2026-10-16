@@ -67,7 +67,6 @@ export interface SessionCardProps {
   sessionState: string;
   activityLevel: string;
   displayName: string;
-  draftCount: number;
   artifactCount: number;
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
@@ -381,9 +380,6 @@ function onCardClick(e: MouseEvent): void {
         </button>
       </div>
 
-      <!-- Draft badge -->
-      <span v-if="draftCount > 0" class="draft-badge">📝{{ draftCount }}</span>
-
       <!-- G8 loop badge — an in-progress auto-continue loop must never be invisible -->
       <span
         v-if="loopContinues > 0"
@@ -644,22 +640,7 @@ function onCardClick(e: MouseEvent): void {
   background-image: repeating-linear-gradient(45deg, rgba(140, 190, 255, 0.18) 0 6px, transparent 6px 12px);
 }
 
-.draft-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
-  background: #2a2a3a;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 10px;
-  color: var(--text-secondary);
-  margin-left: auto;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-/* Same badge anatomy as the draft badge, but accent-tinted: an active loop
+/* Same badge anatomy as the artifact badge, but accent-tinted: an active loop
    is machinery running on the user's behalf and deserves the eye. */
 .loop-badge {
   display: inline-flex;
@@ -694,7 +675,6 @@ function onCardClick(e: MouseEvent): void {
 }
 
 .artifact-badge:hover { border-color: var(--accent); color: var(--accent); }
-.draft-badge + .artifact-badge { margin-left: 4px; }
 
 /* Five clipped lines, constant mid grey — no fade, no brighter last line. */
 .session-preview {

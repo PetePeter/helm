@@ -36,7 +36,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 const { RecycleBinManager } = await import('../src/session/recycle-bin-manager.js');
 const { ArtifactManager } = await import('../src/session/artifact-manager.js');
-const { ScratchpadManager } = await import('../src/session/scratchpad-manager.js');
+const { DraftManager } = await import('../src/session/draft-manager.js');
 const { setupRecycleBinHandlers } = await import('../src/electron/ipc/recycle-bin-handlers.js');
 
 function getHandler(channel: string): Function {
@@ -139,9 +139,9 @@ describe('recycle-bin handlers — artifact lifecycle', () => {
   });
 });
 
-describe('recycle-bin handlers: scratchpad lifecycle', () => {
+describe('recycle-bin handlers: draft lifecycle', () => {
   let bin: InstanceType<typeof RecycleBinManager>;
-  let pads: InstanceType<typeof ScratchpadManager>;
+  let pads: InstanceType<typeof DraftManager>;
   let files: Map<string, unknown>;
   let nowVal: number;
 
@@ -151,7 +151,7 @@ describe('recycle-bin handlers: scratchpad lifecycle', () => {
     nowVal = 1_700_000_000_000;
     files = new Map();
     bin = new RecycleBinManager(() => nowVal);
-    pads = new ScratchpadManager({
+    pads = new DraftManager({
       load: (id) => (files.get(id) as never) ?? null,
       save: (pad) => { files.set(pad.sessionId, pad); },
       remove: (id) => { files.delete(id); },

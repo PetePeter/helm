@@ -199,11 +199,11 @@ describe('ConfigLoader', () => {
 
     it('editing a shared profile changes every tool using it, and persists', () => {
       loader.load();
-      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'X', { action: 'prompt-tree' });
+      loader.setBinding(DEFAULT_BINDING_PROFILE_ID, 'X', { action: 'context-menu' });
       const reloaded = new ConfigLoader(TEST_DIR);
       reloaded.load();
-      expect(reloaded.getBindings('claude-code')!.X).toEqual({ action: 'prompt-tree' });
-      expect(reloaded.getBindings('copilot-cli')!.X).toEqual({ action: 'prompt-tree' });
+      expect(reloaded.getBindings('claude-code')!.X).toEqual({ action: 'context-menu' });
+      expect(reloaded.getBindings('copilot-cli')!.X).toEqual({ action: 'context-menu' });
     });
 
     it('setBinding on an unknown profile throws', () => {

@@ -3,7 +3,7 @@
  * ChipbarActionsTab.vue — Chip bar actions CRUD with reordering.
  */
 import { ref, watch } from 'vue';
-import { CHIPBAR_TEMPLATE_DEFINITIONS } from '../../drafts/chipbar-templates.js';
+import { CHIPBAR_TEMPLATE_DEFINITIONS } from '../../chipbar-templates.js';
 
 export interface ChipbarAction {
   label: string;

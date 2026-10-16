@@ -14,7 +14,6 @@ const props = defineProps<{
   visible: boolean;
   /** Session name, or the folder name in folder mode. */
   sessionName: string;
-  draftCount?: number;
   /** Sessions about to close together (folder mode). */
   count?: number;
   mode?: 'session' | 'app' | 'folder';
@@ -26,7 +25,6 @@ const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
 }>();
 
-const hasDrafts = computed(() => (props.draftCount ?? 0) > 0);
 const isAppClose = computed(() => props.mode === 'app');
 const isFolderClose = computed(() => props.mode === 'folder');
 const sessionCount = computed(() => props.count ?? 0);
@@ -95,9 +93,6 @@ defineExpose({ handleButton, selectedIndex });
           session{{ sessionCount === 1 ? '' : 's' }} in <strong>{{ sessionName }}</strong>?
         </template>
         <template v-else>Close session <strong>{{ sessionName }}</strong>?</template>
-      </div>
-      <div v-if="hasDrafts" class="draft-warning">
-        ⚠ {{ draftCount }} unsent draft{{ draftCount === 1 ? '' : 's' }} will be deleted
       </div>
     </div>
   </ConfirmDialog>

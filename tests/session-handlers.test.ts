@@ -42,7 +42,6 @@ vi.mock('../src/utils/logger.js', () => ({
 import { setupSessionHandlers } from '../src/electron/ipc/session-handlers.js';
 import type { SessionManager } from '../src/session/manager.js';
 import type { PtyManager } from '../src/session/pty-manager.js';
-import type { DraftManager } from '../src/session/draft-manager.js';
 import type { WindowManager } from '../src/electron/window-manager.js';
 import type { ConfigLoader } from '../src/config/loader.js';
 
@@ -67,20 +66,6 @@ function createMockPtyManager(): PtyManager {
     spawn: vi.fn(),
     killAll: vi.fn(),
   } as unknown as PtyManager;
-}
-
-function createMockDraftManager(): DraftManager {
-  return {
-    clearSession: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-    getSessionDrafts: vi.fn(() => []),
-    exportAll: vi.fn(() => ({})),
-    importAll: vi.fn(),
-    on: vi.fn(),
-    emit: vi.fn(),
-  } as unknown as DraftManager;
 }
 
 function createMockWindowManager(): WindowManager {
@@ -112,7 +97,6 @@ function createMockConfigLoader(): ConfigLoader {
 describe('session:close IPC handler', () => {
   let sessionManager: ReturnType<typeof createMockSessionManager>;
   let ptyManager: ReturnType<typeof createMockPtyManager>;
-  let draftManager: ReturnType<typeof createMockDraftManager>;
   let windowManager: ReturnType<typeof createMockWindowManager>;
   let configLoader: ReturnType<typeof createMockConfigLoader>;
   let mainWindowSend: ReturnType<typeof vi.fn>;
@@ -126,11 +110,10 @@ describe('session:close IPC handler', () => {
   function setup(sessions: Record<string, any> = {}) {
     sessionManager = createMockSessionManager(sessions);
     ptyManager = createMockPtyManager();
-    draftManager = createMockDraftManager();
     windowManager = createMockWindowManager();
     mainWindowSend = (windowManager.getMainWindow as any)().webContents.send;
     configLoader = createMockConfigLoader();
-    setupSessionHandlers(sessionManager, ptyManager, draftManager, windowManager, configLoader);
+    setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader);
   }
 
   it('calls ptyManager.kill() with session id', async () => {
@@ -142,7 +125,6 @@ describe('session:close IPC handler', () => {
     const result = await handler({}, 'sess-1');
 
     expect(ptyManager.kill).toHaveBeenCalledWith('sess-1');
-    expect(draftManager.clearSession).toHaveBeenCalledWith('sess-1');
     expect(result).toEqual({ success: true });
   });
 
@@ -160,7 +142,6 @@ describe('session:close IPC handler', () => {
 
     expect(ptyManager.kill).toHaveBeenCalledWith('sess-1');
     expect(sessionManager.removeSession).toHaveBeenCalledWith('sess-1');
-    expect(draftManager.clearSession).toHaveBeenCalledWith('sess-1');
     expect(result).toEqual({ success: true });
   });
 
@@ -191,7 +172,7 @@ describe('session:close IPC handler', () => {
       'sess-1': { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 },
     });
 
-    const action = { id: 'drafts', targetSessionId: 'sess-1', selectedText: '' };
+    const action = { id: 'rename-session', targetSessionId: 'sess-1', selectedText: '' };
     const handler = electronMockState.handlers.get('session:dispatchContextMenuAction')!;
     const result = await handler({}, action);
 
@@ -204,9 +185,9 @@ describe('session:close IPC handler', () => {
     setup();
     const handler = electronMockState.handlers.get('session:dispatchContextMenuAction')!;
 
-    expect(handler({}, { id: 'drafts', targetSessionId: null, selectedText: '' }))
+    expect(handler({}, { id: 'rename-session', targetSessionId: null, selectedText: '' }))
       .toEqual({ success: false, error: 'Context-menu action requires a target session' });
-    expect(handler({}, { id: 'drafts', targetSessionId: 'missing', selectedText: '' }))
+    expect(handler({}, { id: 'rename-session', targetSessionId: 'missing', selectedText: '' }))
       .toEqual({ success: false, error: 'Session not found' });
     expect(mainWindowSend).not.toHaveBeenCalled();
   });

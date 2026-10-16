@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * ScratchpadPane: the `scratchpad` tool window, one pad per session.
+ * DraftPane: the `draft` tool window, one pad per session.
  *
  * Bound to the active session like the Artifacts pane. You type here; the
  * session's LLM reads and writes the same pad through MCP, and its edits show
- * up as they land (docs/scratchpad.md).
+ * up as they land (docs/draft.md).
  *
  * The pad may hold AI-authored text, so it is only ever a <textarea> value,
  * never markup (invariant 9). A plain <textarea> outside `.xterm` is also what
@@ -13,21 +13,21 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
 import { useAppStore } from '../../stores/app.js';
-import { useScratchpad } from '../../composables/useScratchpad.js';
+import { useDraft } from '../../composables/useDraft.js';
 import { useTimeActivity } from '../../composables/useTimeActivity.js';
-import { SCRATCHPAD_MAX_BYTES } from '../../../src/types/scratchpad.js';
+import { DRAFT_MAX_BYTES } from '../../../src/types/draft.js';
 import { deliverBulkText } from '../../paste-handler.js';
 
 const state = useAppStore().state;
 const { text, pad, loading, dirty, conflict, error, bytes, edit, flush, keepMine, takeTheirs } =
-  useScratchpad(() => state.activeSessionId);
-// Typing in a session's scratchpad is the user's time on that session's project.
+  useDraft(() => state.activeSessionId);
+// Typing in a session's draft is the user's time on that session's project.
 const timeActivity = useTimeActivity(() => (state.activeSessionId ? { sessionId: state.activeSessionId } : null));
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
 
 const kb = (n: number) => (n / 1024).toFixed(1);
-const size = computed(() => `${kb(bytes.value)} / ${kb(SCRATCHPAD_MAX_BYTES)} KB`);
+const size = computed(() => `${kb(bytes.value)} / ${kb(DRAFT_MAX_BYTES)} KB`);
 const status = computed(() => {
   if (loading.value) return 'Loading';
   if (dirty.value) return conflict.value ? 'Not saved' : 'Saving';
@@ -69,47 +69,48 @@ function onKeydown(event: KeyboardEvent): void {
 <template>
   <section
     v-if="state.activeSessionId"
-    class="scratchpad-pane"
-    aria-label="Session scratchpad"
+    class="draft-pane"
+    aria-label="Session draft"
     @keydown="timeActivity.onKeydown"
   >
-    <div v-if="conflict" class="scratchpad-pane__conflict" role="alert">
-      <span>The scratchpad was changed while you were typing.</span>
-      <button type="button" class="btn btn--sm" data-scratchpad-keep-mine @click="keepMine">Keep mine</button>
-      <button type="button" class="btn btn--sm" data-scratchpad-take-theirs @click="takeTheirs">Take theirs</button>
+    <div v-if="conflict" class="draft-pane__conflict" role="alert">
+      <span>The draft was changed while you were typing.</span>
+      <button type="button" class="btn btn--sm" data-draft-keep-mine @click="keepMine">Keep mine</button>
+      <button type="button" class="btn btn--sm" data-draft-take-theirs @click="takeTheirs">Take theirs</button>
     </div>
     <textarea
       ref="inputRef"
-      class="scratchpad-pane__input"
+      class="draft-pane__input"
+      data-autofocus
       :value="text"
       :disabled="loading"
       spellcheck="false"
-      aria-label="Scratchpad text"
+      aria-label="Draft text"
       placeholder="Notes for this session. You type here; the session's AI can read and write it too."
       @input="onInput"
       @keydown="onKeydown"
       @blur="flush"
     ></textarea>
-    <footer class="scratchpad-pane__status">
-      <span v-if="error" class="scratchpad-pane__error" role="alert">{{ error }}</span>
+    <footer class="draft-pane__status">
+      <span v-if="error" class="draft-pane__error" role="alert">{{ error }}</span>
       <span v-else>{{ status }}</span>
-      <span class="scratchpad-pane__size" :class="{ 'is-over': bytes > SCRATCHPAD_MAX_BYTES }">{{ size }}</span>
+      <span class="draft-pane__size" :class="{ 'is-over': bytes > DRAFT_MAX_BYTES }">{{ size }}</span>
       <button
         type="button"
         class="btn btn--primary btn--sm"
-        data-scratchpad-send
+        data-draft-send
         title="Send to the session's CLI and clear (Ctrl+Enter)"
         :disabled="loading || !text.trim()"
         @click="send"
       >Send</button>
     </footer>
   </section>
-  <EmptyState v-else title="No session selected" hint="Each session has its own scratchpad." icon="🗒" />
+  <EmptyState v-else title="No session selected" hint="Each session has its own draft." icon="🗒" />
 </template>
 
 <style scoped>
-.scratchpad-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); }
-.scratchpad-pane__conflict {
+.draft-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); }
+.draft-pane__conflict {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -120,7 +121,7 @@ function onKeydown(event: KeyboardEvent): void {
   color: var(--text-primary);
   font-size: var(--font-size-sm);
 }
-.scratchpad-pane__input {
+.draft-pane__input {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -134,8 +135,8 @@ function onKeydown(event: KeyboardEvent): void {
   font-size: var(--font-size-sm);
   line-height: 1.5;
 }
-.scratchpad-pane__input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
-.scratchpad-pane__status {
+.draft-pane__input:focus { outline: none; box-shadow: inset 0 0 0 1px var(--accent); }
+.draft-pane__status {
   display: flex;
   justify-content: space-between;
   gap: var(--spacing-sm);
@@ -144,7 +145,7 @@ function onKeydown(event: KeyboardEvent): void {
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
 }
-.scratchpad-pane__size { margin-left: auto; white-space: nowrap; }
-.scratchpad-pane__error,
-.scratchpad-pane__size.is-over { color: var(--danger); }
+.draft-pane__size { margin-left: auto; white-space: nowrap; }
+.draft-pane__error,
+.draft-pane__size.is-over { color: var(--danger); }
 </style>

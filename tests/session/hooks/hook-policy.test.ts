@@ -164,7 +164,7 @@ describe('decideHookPolicy — writes outside the session directory', () => {
 
   it('does NOT guard writes in the shipped defaults — a session legitimately reaches outside its cwd', () => {
     // Pinned after the guard shipped on and immediately blocked a session from
-    // writing to its OWN scratchpad, which lives in the per-user temp dir. The
+    // writing to its OWN draft, which lives in the per-user temp dir. The
     // rule cannot tell "my scratch space" from "someone else's project", and
     // cross-repo work is normal. Same call as git push: mechanism stays, the
     // default goes.

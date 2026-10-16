@@ -136,7 +136,7 @@ export function getAppRootDir(dirname: string): string {
 
 /**
  * Return a writable temp directory for app-specific scratch files
- * (e.g. Ctrl+G external editor prompts).
+ * (e.g. large-text handovers, the phone share inbox).
  * Always: <appData>/Helm/tmp
  */
 export function getTempDir(_dirname: string, appData?: string): string {

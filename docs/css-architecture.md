@@ -57,8 +57,8 @@ Four cases make a global rule safer than a superficially tidy scoped rule:
 
 3. **Genuinely shared classes.** A class rendered by multiple components has no
    single scoped owner. The context-menu family is rendered by
-   `ContextMenu.vue`, `DraftSubmenu.vue`, `RuntimeGroupMoveSubmenu.vue`,
-   `PromptTreeModal.vue`, `BindingEditorModal.vue`, and `AppModalHost.vue`.
+   `ContextMenu.vue`, `RuntimeGroupMoveSubmenu.vue`, `BindingEditorModal.vue`,
+   and `AppModalHost.vue`.
    The `.tg-*` family is shared by the MCP and fleet settings components.
    The session/group navigation and common settings-list families are also
    shared by sibling components and their navigation helpers. Keep these
@@ -70,7 +70,7 @@ Four cases make a global rule safer than a superficially tidy scoped rule:
    `plan-header__chip` remains global across `PlanScreen.vue` and `SkillsTab.vue`.
 
 The remaining explicit compatibility families in `main.css` are the plan-chip
-family (`.plan-chip` is also a plain span in `DraftEditor.vue`), terminal and
+family (`.plan-chip` is also a plain span in `ItemEditor.vue`), terminal and
 xterm classes, the teleported editor/modal families, and legacy session,
 settings, picker, and overview classes that are shared across component
 boundaries or queried by the navigation bridge. The structural CSS test keeps

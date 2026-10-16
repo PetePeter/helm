@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue';
 import PlanScreen from './panels/PlanScreen.vue';
-import DraftEditor from './panels/DraftEditor.vue';
-import { useDraftPlanContextEditor } from '../composables/useDraftPlanContextEditor.js';
+import ItemEditor from './panels/ItemEditor.vue';
+import { useItemEditor } from '../composables/useItemEditor.js';
 import { eventsClient, sessionsClient } from '../ipc/clients.js';
 import {
   showPlanScreen,
@@ -44,8 +44,8 @@ import {
   toggleTypeFilter,
   resetFilters,
   setPlanEditorOpener,
-  setDraftEditorCloser,
-  setDraftEditorVisibilityChecker,
+  setItemEditorCloser,
+  setItemEditorVisibilityChecker,
   setPlanChangesChecker,
   setPlanScreenContextEditorOpener,
   onPlanContextEdit,
@@ -57,33 +57,33 @@ const props = defineProps<{ dirPath: string }>();
 const appStore = useAppStore();
 
 const {
-  draftEditorVisible,
-  draftEditorMode,
-  draftEditorSessionId,
-  draftEditorLabel,
-  draftEditorText,
-  draftEditorPlanId,
-  draftEditorPlanStatus,
-  draftEditorPlanStateInfo,
-  draftEditorPlanType,
-  draftEditorPlanAutoImplement,
-  draftEditorPlanCompletionRecap,
-  draftEditorPlanHumanId,
-  draftEditorPlanCreatedAt,
-  draftEditorPlanStateUpdatedAt,
-  draftEditorPlanCallbacks,
-  draftEditorCompletionNotes,
-  draftEditorContextId,
-  draftEditorContextType,
-  draftEditorContextPermission,
-  draftEditorContextCallbacks,
-  draftEditorContextBoundPlans,
-  draftEditorContextBoundSequences,
-  draftEditorPendingContextUnbinds,
-  draftEditorRef,
+  itemEditorVisible,
+  itemEditorMode,
+  itemEditorSessionId,
+  itemEditorLabel,
+  itemEditorText,
+  itemEditorPlanId,
+  itemEditorPlanStatus,
+  itemEditorPlanStateInfo,
+  itemEditorPlanType,
+  itemEditorPlanAutoImplement,
+  itemEditorPlanCompletionRecap,
+  itemEditorPlanHumanId,
+  itemEditorPlanCreatedAt,
+  itemEditorPlanStateUpdatedAt,
+  itemEditorPlanCallbacks,
+  itemEditorCompletionNotes,
+  itemEditorContextId,
+  itemEditorContextType,
+  itemEditorContextPermission,
+  itemEditorContextCallbacks,
+  itemEditorContextBoundPlans,
+  itemEditorContextBoundSequences,
+  itemEditorPendingContextUnbinds,
+  itemEditorRef,
   openPlanEditor,
   openContextEditor,
-  closeDraftEditor,
+  closeItemEditor,
   saveContextEditor,
   onPlanSave,
   onPlanApply,
@@ -91,7 +91,7 @@ const {
   onPlanDelete,
   onContextDelete,
   hasUnsavedChanges,
-} = useDraftPlanContextEditor({
+} = useItemEditor({
   saveContext: (id, updates, pendingUnbinds) => onPlanContextSave(id, updates, pendingUnbinds),
 });
 
@@ -113,8 +113,8 @@ onMounted(async () => {
   document.title = `${props.dirPath} - Plans`;
   setPlanEditorOpener(openPlanEditor);
   setPlanScreenContextEditorOpener(openContextEditor);
-  setDraftEditorCloser(closeDraftEditor);
-  setDraftEditorVisibilityChecker(() => draftEditorVisible.value);
+  setItemEditorCloser(closeItemEditor);
+  setItemEditorVisibilityChecker(() => itemEditorVisible.value);
   setPlanChangesChecker(hasUnsavedChanges);
 
   await loadSessions();
@@ -141,45 +141,45 @@ onUnmounted(() => {
   offSessionUpdated?.();
   offSessionSpawned?.();
   window.removeEventListener('focus', loadSessions);
-  closeDraftEditor();
+  closeItemEditor();
   hidePlanScreen();
 });
 </script>
 
 <template>
   <div class="planner-popout-window">
-    <DraftEditor
-      v-if="draftEditorVisible"
-      ref="draftEditorRef"
-      :visible="draftEditorVisible"
-      :mode="draftEditorMode"
-      :session-id="draftEditorSessionId"
-      :initial-label="draftEditorLabel"
-      :initial-text="draftEditorText"
-      :plan-id="draftEditorPlanId"
-      :plan-status="draftEditorPlanStatus"
-      :plan-state-info="draftEditorPlanStateInfo"
-      :plan-type="draftEditorPlanType"
-      :plan-auto-implement="draftEditorPlanAutoImplement"
-      :plan-completion-recap="draftEditorPlanCompletionRecap"
-      :plan-human-id="draftEditorPlanHumanId"
-      :plan-created-at="draftEditorPlanCreatedAt"
-      :plan-state-updated-at="draftEditorPlanStateUpdatedAt"
-      :plan-callbacks="draftEditorPlanCallbacks"
-      :completion-notes="draftEditorCompletionNotes"
-      :context-id="draftEditorContextId"
-      :context-type="draftEditorContextType"
-      :context-permission="draftEditorContextPermission"
-      :context-callbacks="draftEditorContextCallbacks"
-      :context-bound-plans="draftEditorContextBoundPlans"
-      :context-bound-sequences="draftEditorContextBoundSequences"
-      :context-pending-unbind-count="draftEditorPendingContextUnbinds.length"
-      @close="closeDraftEditor"
+    <ItemEditor
+      v-if="itemEditorVisible"
+      ref="itemEditorRef"
+      :visible="itemEditorVisible"
+      :mode="itemEditorMode"
+      :session-id="itemEditorSessionId"
+      :initial-label="itemEditorLabel"
+      :initial-text="itemEditorText"
+      :plan-id="itemEditorPlanId"
+      :plan-status="itemEditorPlanStatus"
+      :plan-state-info="itemEditorPlanStateInfo"
+      :plan-type="itemEditorPlanType"
+      :plan-auto-implement="itemEditorPlanAutoImplement"
+      :plan-completion-recap="itemEditorPlanCompletionRecap"
+      :plan-human-id="itemEditorPlanHumanId"
+      :plan-created-at="itemEditorPlanCreatedAt"
+      :plan-state-updated-at="itemEditorPlanStateUpdatedAt"
+      :plan-callbacks="itemEditorPlanCallbacks"
+      :completion-notes="itemEditorCompletionNotes"
+      :context-id="itemEditorContextId"
+      :context-type="itemEditorContextType"
+      :context-permission="itemEditorContextPermission"
+      :context-callbacks="itemEditorContextCallbacks"
+      :context-bound-plans="itemEditorContextBoundPlans"
+      :context-bound-sequences="itemEditorContextBoundSequences"
+      :context-pending-unbind-count="itemEditorPendingContextUnbinds.length"
+      @close="closeItemEditor"
       @plan-save="onPlanSave"
       @plan-apply="onPlanApply"
       @plan-done="onPlanDone"
       @plan-delete="onPlanDelete"
-      @context-save="(u) => draftEditorContextId && saveContextEditor(draftEditorContextId, u)"
+      @context-save="(u) => itemEditorContextId && saveContextEditor(itemEditorContextId, u)"
       @context-delete="onContextDelete"
     />
     <PlanScreen

@@ -387,6 +387,16 @@ helm-artifact:` above).
 - **No network.** Artifacts must inline assets or use `data:` / `helm-img:`.
 - **No auto-height.** The frame fills the panel and scrolls internally.
 
+### Scroll memory
+
+Switching artifacts, or away and back, returns each one to where it was read.
+The opaque-origin frame owns its scroll, so the parent cannot read it: the frame
+posts `helm-artifact-scroll` (throttled), the parent records it per
+**artifact + version** (`renderer/artifacts/artifact-scroll-positions.ts`), and
+replies `helm-artifact-scroll-to` once the frame reports ready. Keyed by version
+because a new version's layout differs — it opens at the top. Memory only: a
+reading position is not worth a write to disk.
+
 ## Selection & copy
 
 Artifact text is fully selectable. The selection lives inside the frame, and

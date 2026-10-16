@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { state } from '../state.js';
-import { resolveChipbarTemplates } from '../drafts/chipbar-templates.js';
+import { resolveChipbarTemplates } from '../chipbar-templates.js';
 import { executeSequenceForSession } from '../bindings.js';
 import type { PlanStatus, PlanType } from '../../src/types/plan.js';
 import { configClient, plansClient } from '../ipc/clients.js';

@@ -245,9 +245,9 @@ defineExpose({ focus, focusEnd, setHeight });
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* DraftEditor passes this class to the textarea rendered here. Keeping its
+/* ItemEditor passes this class to the textarea rendered here. Keeping its
    style with the DOM owner preserves it under scoped CSS. */
-.draft-editor-content {
+.item-editor-content {
   padding: 6px 8px;
   background: #252535;
   border: 1px solid var(--border);
@@ -260,7 +260,7 @@ defineExpose({ focus, focusEnd, setHeight });
   line-height: 1.4;
 }
 
-.draft-editor-content:focus { border-color: var(--accent); }
+.item-editor-content:focus { border-color: var(--accent); }
 
 .prompt-textarea__info {
   position: absolute;

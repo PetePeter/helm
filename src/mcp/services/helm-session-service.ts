@@ -58,11 +58,11 @@ export class HelmSessionService {
   }
   private copySessionArtifacts: ((fromSessionId: string, toSessionId: string) => void) | null = null;
 
-  /** Late-bound: carries a session's scratchpad to the session that replaces it. */
-  setSessionScratchpadCopier(copier: (fromSessionId: string, toSessionId: string) => void): void {
-    this.copySessionScratchpad = copier;
+  /** Late-bound: carries a session's draft to the session that replaces it. */
+  setSessionDraftCopier(copier: (fromSessionId: string, toSessionId: string) => void): void {
+    this.copySessionDraft = copier;
   }
-  private copySessionScratchpad: ((fromSessionId: string, toSessionId: string) => void) | null = null;
+  private copySessionDraft: ((fromSessionId: string, toSessionId: string) => void) | null = null;
 
   private requireRuntimeGroupManager(): RuntimeGroupManager {
     if (!this.runtimeGroupManager) {
@@ -234,7 +234,7 @@ export class HelmSessionService {
     const closeSource = opts.closeSource !== false && !source.locked;
     // The notes follow the work: a replacement takes them over, while a clone
     // (or a source that stays open) starts empty so two live pads never fork.
-    if (closeSource) this.copySessionScratchpad?.(source.id, created.id);
+    if (closeSource) this.copySessionDraft?.(source.id, created.id);
     if (closeSource) this.closeSession(source.id);
     logger.info(`[HelmControlService] session_switch_cli "${source.name}" ${source.cliType} → ${cliType} (${created.id})`);
     return { ok: true, oldSessionId: source.id, newSessionId: created.id, transcriptFile, sourceClosed: closeSource };

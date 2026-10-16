@@ -42,7 +42,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
 
 import ArtifactViewer from '../../../renderer/components/panels/ArtifactViewer.vue';
 import { useArtifactViewer } from '../../../renderer/composables/useArtifactViewer.js';
-import { READY_MESSAGE } from '../../../renderer/artifacts/build-artifact-document.js';
+import { READY_MESSAGE, SCROLL_MESSAGE, SCROLL_TO_MESSAGE } from '../../../renderer/artifacts/build-artifact-document.js';
 
 const FRAME_READY_TIMEOUT_MS = 1500;
 
@@ -71,12 +71,13 @@ function htmlArtifact(over: Partial<Artifact> = {}): Artifact {
   });
 }
 
-async function mountWith(list: Artifact[]) {
+async function mountWith(list: Artifact[], attach = false) {
   artifactList.mockResolvedValue(list);
   const viewer = useArtifactViewer();
   // Reset the module-singleton state between tests.
   await viewer.setActiveSession(null);
-  const w = mount(ArtifactViewer, { props: { sessionId: 'sess-1' } });
+  // Attaching gives the iframe a real contentWindow, for frame-message tests.
+  const w = mount(ArtifactViewer, { props: { sessionId: 'sess-1' }, ...(attach ? { attachTo: document.body } : {}) });
   await flushPromises();
   return { w, viewer };
 }
@@ -286,5 +287,48 @@ describe('ArtifactViewer — blank HTML frame fallback', () => {
     await flushPromises();
 
     expect(w.find('.ap-frame-fallback').exists()).toBe(false);
+  });
+});
+
+describe('ArtifactViewer — scroll memory', () => {
+  function frameOf(w: ReturnType<typeof mount>): Window {
+    return (w.find('iframe.ap-frame').element as HTMLIFrameElement).contentWindow!;
+  }
+  /** Post a frame message exactly as the injected script does. */
+  function fromFrame(w: ReturnType<typeof mount>, data: Record<string, unknown>): void {
+    window.dispatchEvent(new MessageEvent('message', { data, source: frameOf(w) }));
+  }
+  function scrollTargets(spy: ReturnType<typeof vi.spyOn>): unknown[] {
+    return spy.mock.calls.map(([msg]) => msg).filter((msg) => (msg as { type?: string }).type === SCROLL_TO_MESSAGE);
+  }
+
+  it('lands where you left off when the artifact is shown again', async () => {
+    const first = await mountWith([makeArtifact({ id: 'scroll-1' })], true);
+    fromFrame(first.w, { type: READY_MESSAGE });
+    fromFrame(first.w, { type: SCROLL_MESSAGE, y: 840 });
+    first.w.unmount();
+
+    const again = await mountWith([makeArtifact({ id: 'scroll-1' })], true);
+    const post = vi.spyOn(frameOf(again.w), 'postMessage');
+    fromFrame(again.w, { type: READY_MESSAGE });
+
+    expect(scrollTargets(post)).toEqual([{ type: SCROLL_TO_MESSAGE, y: 840 }]);
+    again.w.unmount();
+  });
+
+  it('opens a different version at the top', async () => {
+    const first = await mountWith([makeArtifact({ id: 'scroll-2' })], true);
+    fromFrame(first.w, { type: READY_MESSAGE });
+    fromFrame(first.w, { type: SCROLL_MESSAGE, y: 500 });
+
+    first.viewer.setVersion(1);
+    await flushPromises();
+    const post = vi.spyOn(frameOf(first.w), 'postMessage');
+    // A late report from the old document must not be pinned on the new one.
+    fromFrame(first.w, { type: SCROLL_MESSAGE, y: 999 });
+    fromFrame(first.w, { type: READY_MESSAGE });
+
+    expect(scrollTargets(post)).toEqual([]);
+    first.w.unmount();
   });
 });

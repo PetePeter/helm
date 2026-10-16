@@ -1,4 +1,4 @@
-import { getCliDisplayName } from '../utils.js';
+import { getCliDisplayName } from './utils.js';
 
 export interface ChipbarTemplateContext {
   cwd: string;

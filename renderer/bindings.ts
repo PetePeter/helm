@@ -11,7 +11,6 @@ import { executeSequenceString, keyToPtySequence, comboToPtySequence } from '../
 import type { Binding } from '../src/config/loader.js';
 import { getTerminalManager } from './runtime/terminal-provider.js';
 import { deliverBulkText } from './paste-handler.js';
-import { showDraftEditor } from './stores/draft-editor-registry.js';
 import { configClient, keyboardClient, terminalClient, toolsClient } from './ipc/clients.js';
 import { createVoiceTalkHolds } from './voice/voice-talk-binding.js';
 import { useVoiceCall } from './composables/useVoiceCall.js';
@@ -181,19 +180,6 @@ async function executeCliBinding(button: string, binding: Binding): Promise<void
         if (tm) showContextMenu(state.activeSessionId || '');
         break;
       }
-      case 'prompt-tree': {
-        // PT-7: renamed from 'sequence-list'; opens the prompt-template picker tree (apply flow).
-        const { usePromptApplyFlow } = await import('./composables/usePromptApplyFlow.js');
-        const { openPromptPicker } = usePromptApplyFlow(() => state.activeSessionId);
-        await openPromptPicker();
-        break;
-      }
-      case 'new-draft':
-        if (state.activeSessionId) {
-          showDraftEditor(state.activeSessionId);
-          logEvent('New draft from binding');
-        }
-        break;
       default:
         console.warn(`[Renderer] Unknown CLI action: ${binding.action}`);
     }

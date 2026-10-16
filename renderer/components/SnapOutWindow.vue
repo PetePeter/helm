@@ -17,11 +17,6 @@ import { registerKeyHandler } from '../keyboard/router.js';
 import { installDockKeyRouter } from '../keyboard/install.js';
 import { PANE_ARTIFACTS, PANE_TERMINAL, type DockMode, type DockSide, type DropTarget, type PaneId } from '../dock-types.js';
 import { useAppStore } from '../stores/app.js';
-import { useChipBarStore } from '../stores/chip-bar.js';
-import { deliverPromptSequence } from '../sequence-delivery.js';
-import { promptTree, hidePromptTree } from '../stores/modal-bridge.js';
-import { useEditorPopupStore } from '../stores/editor-popup.js';
-import { usePromptApplyFlow } from '../composables/usePromptApplyFlow.js';
 import { useModalKeyboardBridge } from '../composables/useModalKeyboardBridge.js';
 import { useToast } from '../composables/useToast.js';
 import { useArtifactViewer } from '../composables/useArtifactViewer.js';
@@ -32,24 +27,12 @@ import { provideHelmPaneContext } from '../dock-pane-context.js';
 import DockViewMenu from './dock/DockViewMenu.vue';
 import DockWorkspace from './dock/DockWorkspace.vue';
 import PopOutTerminalPane from './dock/PopOutTerminalPane.vue';
-import EditorPopup from './modals/EditorPopup.vue';
-import PromptTreeModal from './modals/PromptTreeModal.vue';
 import EscProtectionModal from './modals/EscProtectionModal.vue';
-import DraftEditor from './panels/DraftEditor.vue';
 import { loadStoredSessions } from '../session-store.js';
 import { refreshProjects } from '../projects-sync.js';
 import { getCliDisplayName } from '../utils.js';
 import { setPlanEditorOpener as setChipBarPlanEditorOpener } from '../stores/chip-bar.js';
-import {
-  setDraftEditorOpener as setDraftEditorCompatibilityOpener,
-  setPlanEditorOpener as setPlanEditorCompatibilityOpener,
-  setDraftEditorCloser as setDraftEditorCompatibilityCloser,
-  setDraftEditorVisibilityChecker as setDraftEditorCompatibilityVisibilityChecker,
-  setDraftEditorButtonHandler as setDraftEditorCompatibilityButtonHandler,
-  setPlanChangesChecker as setPlanCompatibilityChangesChecker,
-} from '../stores/draft-editor-registry.js';
-import { saveDraftWithStableId } from '../drafts/draft-save.js';
-import { configClient, draftsClient, eventsClient } from '../ipc/clients.js';
+import { configClient, eventsClient } from '../ipc/clients.js';
 
 const props = defineProps<{ sessionId: string }>();
 
@@ -59,17 +42,10 @@ const appStore = useAppStore();
 // session. From here the window's session can never change, which is why no pane
 // needs to know it is in a pop-out.
 appStore.pinActiveSession(props.sessionId);
-const chipBarStore = useChipBarStore();
-const editorPopupStore = useEditorPopupStore();
 const { addToast } = useToast();
 const artifactViewer = useArtifactViewer();
 const planWorkspaceController = usePlanWorkspaceController();
 const { handler: handleModalKeyboardBridge } = useModalKeyboardBridge();
-
-// Prompt-template apply flow — same picker → editor → deliver path as the main
-// window (shared composable, no duplicated logic). The pinned session is always
-// the target.
-const { handlePromptTreeSelect } = usePromptApplyFlow(() => props.sessionId);
 
 // One shared pop-out layout for every snapped-out window: the panes are the
 // same everywhere, so a per-session tree would only fragment the user's
@@ -99,17 +75,6 @@ const sessionInfo = computed(() => appStore.state.sessions.find(session => sessi
  * only once the record has loaded is what makes the single binding pass correct.
  */
 const sessionLoaded = ref(false);
-
-const draftEditorVisible = ref(false);
-const draftEditorMode = ref<'draft' | 'plan'>('draft');
-const draftEditorSessionId = ref('');
-const draftEditorDraftId = ref<string | null>(null);
-const draftEditorLabel = ref('');
-const draftEditorText = ref('');
-const draftEditorPlanStatus = ref<import('../../src/types/plan.js').PlanStatus>('planning');
-const draftEditorPlanStateInfo = ref('');
-const draftEditorPlanCallbacks = ref<import('./panels/DraftEditor.vue').PlanCallbacks | null>(null);
-const draftEditorRef = ref<InstanceType<typeof DraftEditor> | null>(null);
 
 let unsubSessionUpdated: (() => void) | null = null;
 let uninstallKeyRouter: (() => void) | null = null;
@@ -145,64 +110,6 @@ function updateWindowTitle(): void {
 }
 
 watch(sessionInfo, updateWindowTitle, { deep: true });
-
-function openDraftEditor(sessionId: string, draft?: { id: string; label: string; text: string }) {
-  draftEditorMode.value = 'draft';
-  draftEditorSessionId.value = sessionId;
-  draftEditorDraftId.value = draft?.id ?? null;
-  draftEditorLabel.value = draft?.label ?? '';
-  draftEditorText.value = draft?.text ?? '';
-  draftEditorPlanCallbacks.value = null;
-  draftEditorVisible.value = true;
-}
-
-function closeDraftEditor() {
-  draftEditorPlanCallbacks.value?.onClose?.();
-  draftEditorVisible.value = false;
-}
-
-async function onDraftSave(payload: { label: string; text: string }): Promise<void> {
-  const sessionId = draftEditorSessionId.value;
-  const draftId = draftEditorDraftId.value;
-  try {
-    const savedDraftId = await saveDraftWithStableId(draftsClient, sessionId, draftId, payload);
-    if (!draftId && savedDraftId) draftEditorDraftId.value = savedDraftId;
-  } catch (err) {
-    console.error('[SnapOut] Failed to save draft:', err);
-  }
-  await chipBarStore.refresh(sessionId);
-}
-
-async function onDraftApply(payload: { label: string; text: string }): Promise<void> {
-  const sessionId = draftEditorSessionId.value;
-  const draftId = draftEditorDraftId.value;
-  closeDraftEditor();
-  if (payload.text && sessionId) {
-    try {
-      await deliverPromptSequence(sessionId, payload.text);
-    } catch (err) {
-      console.error('[SnapOut] Failed to apply draft:', err);
-    }
-  }
-  if (draftId) {
-    try { await draftsClient.draftDelete(draftId); }
-    catch (err) { console.error('[SnapOut] Failed to delete draft after apply:', err); }
-  }
-  await chipBarStore.refresh(sessionId);
-}
-
-async function onDraftDelete(): Promise<void> {
-  const sessionId = draftEditorSessionId.value;
-  const draftId = draftEditorDraftId.value;
-  closeDraftEditor();
-  if (draftId) {
-    try { await draftsClient.draftDelete(draftId); }
-    catch (err) { console.error('[SnapOut] Failed to delete draft:', err); }
-  }
-  await chipBarStore.refresh(sessionId);
-}
-
-function onDraftClose(): void { closeDraftEditor(); }
 
 // ── Dock plumbing ──────────────────────────────────────────────────────────
 // A pop-out has no view-transition manager to reconcile with, so pane
@@ -322,12 +229,6 @@ onMounted(async () => {
     appStore.upsertSession(updatedSession);
   }) ?? null;
 
-  setDraftEditorCompatibilityOpener(openDraftEditor);
-  setPlanEditorCompatibilityOpener(() => {});
-  setDraftEditorCompatibilityCloser(closeDraftEditor);
-  setDraftEditorCompatibilityVisibilityChecker(() => draftEditorVisible.value && draftEditorRef.value !== null);
-  setDraftEditorCompatibilityButtonHandler((button: string) => { draftEditorRef.value?.handleButton(button); });
-  setPlanCompatibilityChangesChecker(() => draftEditorRef.value?.hasUnsavedChanges?.() ?? false);
   setChipBarPlanEditorOpener(() => {});
 
   // The modal bridge registers at `modal` scope, which is what guarantees an
@@ -341,7 +242,7 @@ onMounted(async () => {
     getActiveSessionId: () => appStore.state.activeSessionId ?? null,
     getFocusedPane: () => dockWorkspace.focusedPaneId.value,
     isPaneVisible: (pane) => dockWorkspace.isVisible(pane),
-    isPanelOpen: () => draftEditorVisible.value,
+    isPanelOpen: () => false,
   });
 });
 
@@ -356,23 +257,6 @@ onUnmounted(() => {
 
 <template>
   <div class="snap-out-window" id="mainArea">
-    <DraftEditor
-      v-if="draftEditorVisible"
-      ref="draftEditorRef"
-      :visible="draftEditorVisible"
-      :mode="draftEditorMode"
-      :session-id="draftEditorSessionId"
-      :draft-id="draftEditorDraftId"
-      :initial-label="draftEditorLabel"
-      :initial-text="draftEditorText"
-      :plan-status="draftEditorPlanStatus"
-      :plan-state-info="draftEditorPlanStateInfo"
-      :plan-callbacks="draftEditorPlanCallbacks"
-      @save="onDraftSave"
-      @apply="onDraftApply"
-      @delete="onDraftDelete"
-      @close="onDraftClose"
-    />
     <header class="app-header">
       <span class="sidebar-brand">
         <span class="sidebar-title">{{ identity?.name ?? 'Snapped Out' }}</span>
@@ -409,21 +293,6 @@ onUnmounted(() => {
         @dock-pane-edge="onDockPaneEdge"
       />
     </div>
-    <PromptTreeModal
-      v-model:visible="promptTree.visible"
-      :tree="promptTree.tree"
-      @select="handlePromptTreeSelect"
-      @cancel="hidePromptTree()"
-    />
-    <EditorPopup
-      :visible="editorPopupStore.visible"
-      :initial-text="editorPopupStore.initialText"
-      :has-prefill="editorPopupStore.hasPrefill"
-      :select-node-id="editorPopupStore.selectNodeId"
-      @update:visible="editorPopupStore.setVisible"
-      @send="editorPopupStore.handleSend"
-      @close="editorPopupStore.handleClose"
-    />
     <EscProtectionModal />
   </div>
 </template>

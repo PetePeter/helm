@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
@@ -60,14 +61,14 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
 }
 
 /**
- * A scratchpad is written only by its own session (and its user). Naming
+ * A draft is written only by its own session (and its user). Naming
  * another session is refused out loud: silently writing the caller's pad
  * instead would look like success.
  */
-function requireOwnScratchpad(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+function requireOwnDraft(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
   const own = requireCallerSession(authContext, tool);
   if (args.sessionId !== undefined && args.sessionId !== own) {
-    throw new Error(`${tool} only writes your own session's scratchpad. Read another session's with session_scratchpad_get.`);
+    throw new Error(`${tool} only writes your own session's draft. Read another session's with session_draft_get.`);
   }
   return own;
 }
@@ -726,21 +727,21 @@ export async function callMcpTool(
           : requireCallerSession(authContext, 'session_mission_set');
         return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
       }
-      case 'session_scratchpad_get': {
+      case 'session_draft_get': {
         const target = typeof args.sessionId === 'string' && args.sessionId.trim()
           ? args.sessionId
-          : requireCallerSession(authContext, 'session_scratchpad_get');
-        return service.getSessionScratchpad(target);
+          : requireCallerSession(authContext, 'session_draft_get');
+        return service.getSessionDraft(target);
       }
-      case 'session_scratchpad_set':
-        return service.setSessionScratchpad(
-          requireOwnScratchpad(authContext, args, 'session_scratchpad_set'),
+      case 'session_draft_set':
+        return service.setSessionDraft(
+          requireOwnDraft(authContext, args, 'session_draft_set'),
           asStringValue(args.text, 'text is required'),
-          asFiniteNumber(args.revision, 'revision is required: pass the revision from session_scratchpad_get'),
+          asFiniteNumber(args.revision, 'revision is required: pass the revision from session_draft_get'),
         );
-      case 'session_scratchpad_append':
-        return service.appendSessionScratchpad(
-          requireOwnScratchpad(authContext, args, 'session_scratchpad_append'),
+      case 'session_draft_append':
+        return service.appendSessionDraft(
+          requireOwnDraft(authContext, args, 'session_draft_append'),
           asString(args.text, 'text is required'),
         );
       case 'session_rename':
@@ -1087,7 +1088,19 @@ export async function callMcpTool(
         if (deviceId === undefined) {
           throw new Error('session_share_file_commit is the paired-phone upload surface');
         }
-        return service.commitShareUpload(deviceId, asString(args.uploadId, 'uploadId is required'), args.draft !== false);
+        const uploadId = asString(args.uploadId, 'uploadId is required');
+        const { receipt, delivered } = service.commitShareUpload(deviceId, uploadId);
+        // `draft: false` is a chat attachment: the phone's own message carries the path.
+        if (args.draft !== false && !delivered) {
+          const { senderSessionId, senderSessionName } = resolveSenderIdentity(() => service.listSessions(), args, authContext);
+          await service.sendTextToSession(receipt.sessionId, `Attached: ${basename(receipt.path)} at ${receipt.path}`, {
+            senderSessionId,
+            senderSessionName,
+            userPromptSource: 'phone',
+          });
+          service.markShareUploadDelivered(deviceId, uploadId);
+        }
+        return receipt;
       }
       case 'session_share_file_cancel': {
         const deviceId = deviceIdFromMobileSessionId(authContext.sessionId);

@@ -33,7 +33,7 @@ import {
   PANE_MESS,
   PANE_TIMESHEET,
   PANE_QUICK_SPAWN,
-  PANE_SCRATCHPAD,
+  PANE_DRAFT,
   PANE_SCHEDULER,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -107,7 +107,19 @@ describe('default Classic layout', () => {
     expect(loaded.closed).toEqual([]);
   });
 
-  it('places sessions/tools left, views centre, artifacts and scratchpad right', () => {
+  it('keeps a saved scratchpad tab under its new draft id', () => {
+    const saved = JSON.parse(JSON.stringify(layout));
+    const draftGroup = findPaneGroup(saved.root, PANE_DRAFT)!;
+    draftGroup.tabs = draftGroup.tabs.map((tab: string) => (tab === PANE_DRAFT ? 'scratchpad' : tab));
+    draftGroup.activeTab = 'scratchpad';
+
+    const loaded = validateLayout(saved);
+
+    expect(listPanes(loaded.root)).toContain(PANE_DRAFT);
+    expect(listPanes(loaded.root)).not.toContain('scratchpad');
+  });
+
+  it('places sessions/tools left, views centre, artifacts and draft right', () => {
     // Deterministic left-to-right, top-to-bottom order mirrors the current UI.
     expect(listPanes(layout.root)).toEqual([
       PANE_SESSIONS,
@@ -120,9 +132,9 @@ describe('default Classic layout', () => {
       PANE_MESS,
       PANE_TIMESHEET,
       PANE_ARTIFACTS,
-      PANE_SCRATCHPAD,
+      PANE_DRAFT,
     ]);
-    expect(findPaneGroup(layout.root, PANE_SCRATCHPAD)).toMatchObject({ activeTab: PANE_ARTIFACTS });
+    expect(findPaneGroup(layout.root, PANE_DRAFT)).toMatchObject({ activeTab: PANE_ARTIFACTS });
   });
 
   it('keeps the terminal active and artifacts collapsed to an edge rail', () => {

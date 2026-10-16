@@ -72,8 +72,8 @@ export interface DockPaneDescriptor {
    * advertising only the first.
    */
   icon: string;
-  /** Optional keyboard hint, surfaced as the tab's tooltip. */
-  hint?: string;
+  /** Ctrl+Shift+<letter> that reveals the pane from anywhere, typing included. */
+  shortcut?: string;
   /** Panes that may be closed to the View menu and recovered later. */
   closable: boolean;
   /**
@@ -137,32 +137,33 @@ export const PANE_PLAN_DIRECTORIES = 'plan-directories';
 export const PANE_ARTIFACTS = 'artifacts';
 export const PANE_MESS = 'mess';
 export const PANE_TIMESHEET = 'timesheet';
-export const PANE_SCRATCHPAD = 'scratchpad';
+export const PANE_DRAFT = 'draft';
 
 /**
  * The pane registry. Registration is id-keyed data, so a later renderer plan can
  * map ids to components without the model knowing about them.
  */
 export const DOCK_PANES: readonly DockPaneDescriptor[] = Object.freeze([
-  Object.freeze({ id: PANE_TERMINAL, kind: 'view', title: 'Terminal', icon: '▶', hint: 'Ctrl+Shift+T', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_PLAN_SCREEN, kind: 'view', title: 'Plans', icon: '🗺', hint: 'Ctrl+Shift+P', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_MEMORIES, kind: 'view', title: 'Memories', icon: '🧠', hint: 'Ctrl+Shift+M', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_MESS, kind: 'view', title: 'Mess', icon: '🍽', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_TIMESHEET, kind: 'view', title: 'Timesheet', icon: '⏱', closable: true, home: 'center' }),
-  Object.freeze({ id: PANE_SESSIONS, kind: 'tool', title: 'Sessions', icon: '🗂', hint: 'Ctrl+Shift+S', closable: true, home: 'left' }),
-  Object.freeze({ id: PANE_SCHEDULER, kind: 'tool', title: 'Scheduler', icon: '🕘', closable: true, home: 'left' }),
+  Object.freeze({ id: PANE_TERMINAL, kind: 'view', title: 'Terminal', icon: '▶', shortcut: 't', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_PLAN_SCREEN, kind: 'view', title: 'Plans', icon: '🗺', shortcut: 'p', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_MEMORIES, kind: 'view', title: 'Memories', icon: '🧠', shortcut: 'm', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_MESS, kind: 'view', title: 'Mess', icon: '🍽', shortcut: 'e', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_TIMESHEET, kind: 'view', title: 'Timesheet', icon: '⏱', shortcut: 'l', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_SESSIONS, kind: 'tool', title: 'Sessions', icon: '🗂', shortcut: 's', closable: true, home: 'left' }),
+  Object.freeze({ id: PANE_SCHEDULER, kind: 'tool', title: 'Scheduler', icon: '🕘', shortcut: 'h', closable: true, home: 'left' }),
   Object.freeze({
     id: PANE_QUICK_SPAWN,
     kind: 'tool',
     title: 'Quick Spawn',
     icon: '✦',
-    hint: 'Ctrl+Shift+N / Ctrl+Shift+W',
+    shortcut: 'q',
+   
     closable: true,
     home: 'left',
   }),
-  Object.freeze({ id: PANE_PLAN_DIRECTORIES, kind: 'tool', title: 'Projects', icon: '📁', closable: true, home: 'left' }),
-  Object.freeze({ id: PANE_ARTIFACTS, kind: 'tool', title: 'Artifacts', icon: '📄', hint: 'Ctrl+Shift+A', closable: true, home: 'right' }),
-  Object.freeze({ id: PANE_SCRATCHPAD, kind: 'tool', title: 'Scratchpad', icon: '🗒', closable: true, home: 'right' }),
+  Object.freeze({ id: PANE_PLAN_DIRECTORIES, kind: 'tool', title: 'Projects', icon: '📁', shortcut: 'f', closable: true, home: 'left' }),
+  Object.freeze({ id: PANE_ARTIFACTS, kind: 'tool', title: 'Artifacts', icon: '📄', shortcut: 'a', closable: true, home: 'right' }),
+  Object.freeze({ id: PANE_DRAFT, kind: 'tool', title: 'Draft', icon: '🗒', shortcut: 'd', closable: true, home: 'right' }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -181,7 +182,7 @@ export const DOCK_PROFILE_PANES: Readonly<Record<DockProfileId, readonly PaneId[
   // Derived, never re-listed: a pane added to the registry is in the main
   // profile by construction.
   main: Object.freeze(DOCK_PANES.map(p => p.id)),
-  popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_SCRATCHPAD]),
+  popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT]),
 });
 
 /** Mutable registry for descriptors that exist only while their owner exists. */

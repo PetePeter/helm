@@ -57,7 +57,7 @@ vi.mock('../renderer/plans/plan-screen.js', () => ({
 }));
 vi.mock('../renderer/screens/sessions-spawn.js', () => ({ setTerminalManagerGetter() {} }));
 vi.mock('../renderer/screens/sessions.js', () => ({ updateSessionsFocus() {}, getTabCycleSessionIds: () => [] }));
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({ initDraftEditor() {} }));
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({ initItemEditor() {} }));
 vi.mock('../renderer/screens/sessions-plans.js', () => ({ refreshPlanBadges: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../renderer/stores/chip-bar.js', () => ({ useChipBarStore: () => ({ refresh: vi.fn() }) }));
 vi.mock('../renderer/stores/navigation.js', () => ({

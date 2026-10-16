@@ -1189,9 +1189,9 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'session_scratchpad_get',
-    title: 'Read Session Scratchpad',
-    description: 'Read a session scratchpad: one plain-text pad per session that the user types in (a Helm tool window) and that session\'s own LLM writes too. Use it for the running notes of this session: a to-do list, numbers to remember, something the user pasted for you. It lives and dies with the session; lasting knowledge belongs in memory_*. Omit sessionId to read your own. Returns text and the revision to pass to session_scratchpad_set.',
+    name: 'session_draft_get',
+    title: 'Read Session Draft',
+    description: 'Read a session draft: one plain-text pad per session that the user types in (a Helm tool window) and that session\'s own LLM writes too. Use it for the running notes of this session: a to-do list, numbers to remember, something the user pasted for you. It lives and dies with the session; lasting knowledge belongs in memory_*. Omit sessionId to read your own. Returns text and the revision to pass to session_draft_set.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1201,9 +1201,9 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'session_scratchpad_set',
-    title: 'Replace Session Scratchpad',
-    description: 'Replace the whole text of YOUR OWN session scratchpad. Pass the revision you got from session_scratchpad_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_scratchpad_append.',
+    name: 'session_draft_set',
+    title: 'Replace Session Draft',
+    description: 'Replace the whole text of YOUR OWN session draft. Pass the revision you got from session_draft_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_draft_append.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1215,9 +1215,9 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
-    name: 'session_scratchpad_append',
-    title: 'Append To Session Scratchpad',
-    description: 'Add text on a new line at the end of YOUR OWN session scratchpad. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
+    name: 'session_draft_append',
+    title: 'Append To Session Draft',
+    description: 'Add text on a new line at the end of YOUR OWN session draft. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1808,11 +1808,11 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_share_file_add',
     title: 'Open Share-to-Session Upload',
     description:
-      'Open an upload slot for a file a PAIRED PHONE is sharing into a NAMED session (Android share sheet). Same slot protocol as session_artifact_attachment_add: returns { uploadId, maxSliceBytes, total }; the phone streams blob records keyed by uploadId and finishes with session_share_file_commit. The file lands in the Helm temp inbox and a draft naming its path is added to the session — nothing is sent to the CLI. Not for local callers.',
+      'Open an upload slot for a file a PAIRED PHONE is sharing into a NAMED session (Android share sheet). Same slot protocol as session_artifact_attachment_add: returns { uploadId, maxSliceBytes, total }; the phone streams blob records keyed by uploadId and finishes with session_share_file_commit. The file lands in the Helm temp inbox and its path is typed into the session CLI and submitted. Not for local callers.',
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: '[TARGET] The session whose draft will name the file.' },
+        sessionId: { type: 'string', description: '[TARGET] The session the file is handed to.' },
         filename: { type: 'string', description: "The shared file's display name." },
         contentType: { type: 'string', description: 'Optional MIME type, e.g. application/pdf.' },
         sizeBytes: { type: 'number', description: "The whole file's size in bytes — the upload's hard ceiling." },
@@ -1826,12 +1826,12 @@ export const MCP_TOOLS: McpTool[] = [
     name: 'session_share_file_commit',
     title: 'Commit Share-to-Session Upload',
     description:
-      'Finish one share upload: verify every declared byte arrived and matched its sha256, write the file under the Helm temp inbox, and add a draft "Attached: <name> at <path>" to the session the slot was opened for. Answers { sessionId, path, draftId }; a short or mismatched upload answers an error and leaves nothing behind.',
+      'Finish one share upload: verify every declared byte arrived and matched its sha256, write the file under the Helm temp inbox, and send "Attached: <name> at <path>" to the CLI of the session the slot was opened for, as a phone prompt. A retried commit answers the same receipt without sending again. Answers { sessionId, path }; a short or mismatched upload answers an error and leaves nothing behind.',
     inputSchema: {
       type: 'object',
       properties: {
         uploadId: { type: 'string', description: 'The uploadId session_share_file_add returned.' },
-        draft: { type: 'boolean', description: 'Default true. false = no draft (a chat attachment whose message carries the returned path).' },
+        draft: { type: 'boolean', description: 'Default true. false = do not send the path to the CLI (a chat attachment whose message carries the returned path).' },
       },
       required: ['uploadId'],
       additionalProperties: false,

@@ -2,7 +2,7 @@
 /**
  * RuntimeGroupMoveSubmenu — the "🗂️ Move to group" picker opened from the session
  * context menu. Lists existing runtime groups (✓ marks the current one) plus a
- * "＋ New group…" entry. Mirrors DraftSubmenu's single-level menu + gamepad model
+ * "＋ New group…" entry. A single-level menu + gamepad model
  * (D-pad up/down cycles, A picks, B cancels, number/letter jump keys).
  */
 import { ref, watch, computed } from 'vue';

@@ -74,8 +74,8 @@ function createRouter(overrides: Partial<Parameters<typeof useInputRouter>[0]> =
     settingsVisible: ref(false),
     activeView: ref<'terminal' | 'overview' | 'plan'>('terminal'),
     bindingEditorVisible: ref(false),
-    draftEditorVisible: ref(false),
-    draftEditorRef: ref<{ handleButton?: (button: string) => void } | null>(null),
+    itemEditorVisible: ref(false),
+    itemEditorRef: ref<{ handleButton?: (button: string) => void } | null>(null),
     settingsPanelRef: ref<{ handleButton?: (button: string) => void } | null>(null),
     settingsTab: ref('tools'),
     overviewCollapsedIds: ref(new Set<string>()),
@@ -185,8 +185,8 @@ describe('useInputRouter', () => {
   it('routes draft editor buttons before sessions and bindings', () => {
     const handleDraftButton = vi.fn();
     const { router } = createRouter({
-      draftEditorVisible: ref(true),
-      draftEditorRef: ref({ handleButton: handleDraftButton }),
+      itemEditorVisible: ref(true),
+      itemEditorRef: ref({ handleButton: handleDraftButton }),
     });
 
     router.handleButton('DPadUp');

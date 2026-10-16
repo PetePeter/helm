@@ -29,8 +29,8 @@ routes through a single ownership chain
 | Session switching, session card columns | Memories pane |
 | Group overview grid | Artifacts pane |
 | Plan canvas (nodes, edit, add, delete) | Scheduler pane |
-| Draft editor + drafts submenu | Plan Directories pane |
-| Context menu, prompt-template tree | Quick Spawn as a pane |
+| Item editor (plan / context) | Plan Directories pane |
+| Context menu | Quick Spawn as a pane |
 | Terminal scroll | Recycle bin / restore |
 | Two hardcoded spawns (LT, RB) | Runtime group management |
 | Profile switch, window focus | Dock pane focus and layout |

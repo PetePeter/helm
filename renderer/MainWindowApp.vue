@@ -37,43 +37,38 @@ import { useArtifactViewer } from './composables/useArtifactViewer.js';
 import { useArtifactSessionBinding } from './composables/useArtifactSessionBinding.js';
 import { useRuntimeGroups } from './composables/useRuntimeGroups.js';
 import { useRuntimeGroupActions } from './composables/useRuntimeGroupActions.js';
-import { useDraftPlanContextEditor } from './composables/useDraftPlanContextEditor.js';
+import { useItemEditor } from './composables/useItemEditor.js';
 import { usePlanWorkspaceController } from './composables/usePlanWorkspaceController.js';
-import { appClient, configClient, deliveryClient, dialogClient, draftsClient, eventsClient, projectsClient, sessionsClient, systemClient } from './ipc/clients.js';
+import { appClient, configClient, deliveryClient, dialogClient, eventsClient, projectsClient, sessionsClient, systemClient } from './ipc/clients.js';
 import {
   contextMenu,
   openQuickSpawn,
-  draftSubmenu,
   toolEditor,
   isAnyBridgeModalVisible,
   showAppCloseConfirm,
   showFolderCloseConfirm,
   openRuntimeGroupMoveSubmenu,
 } from './stores/modal-bridge.js';
-import { showEditorPopup } from './editor/editor-popup.js';
-import { usePromptApplyFlow } from './composables/usePromptApplyFlow.js';
-import DraftEditor from './components/panels/DraftEditor.vue';
+import ItemEditor from './components/panels/ItemEditor.vue';
 import type { ScheduledTask } from '../../src/types/scheduled-task.js';
 import {
-  setDraftEditorOpener as setDraftEditorCompatibilityOpener,
   setPlanEditorOpener as setPlanEditorCompatibilityOpener,
-  setDraftEditorCloser as setDraftEditorCompatibilityCloser,
-  setDraftEditorVisibilityChecker as setDraftEditorCompatibilityVisibilityChecker,
-  setDraftEditorButtonHandler as setDraftEditorCompatibilityButtonHandler,
+  setItemEditorCloser as setItemEditorCompatibilityCloser,
+  setItemEditorVisibilityChecker as setItemEditorCompatibilityVisibilityChecker,
+  setItemEditorButtonHandler as setItemEditorCompatibilityButtonHandler,
   setPlanChangesChecker as setPlanCompatibilityChangesChecker,
-} from './stores/draft-editor-registry.js';
+} from './stores/item-editor-registry.js';
 import {
   setPlanEditorOpener as setChipBarPlanEditorOpener,
 } from './stores/chip-bar.js';
 import {
   setPlanEditorOpener as setPlanScreenPlanEditorOpener,
-  setDraftEditorCloser as setPlanScreenDraftEditorCloser,
-  setDraftEditorVisibilityChecker as setPlanScreenDraftEditorVisibilityChecker,
+  setItemEditorCloser as setPlanScreenItemEditorCloser,
+  setItemEditorVisibilityChecker as setPlanScreenItemEditorVisibilityChecker,
   setPlanChangesChecker as setPlanScreenPlanChangesChecker,
   setPlanScreenContextEditorOpener,
 } from './plans/plan-screen.js';
 import { deliverBulkText } from './paste-handler.js';
-import { deliverPromptSequence } from './sequence-delivery.js';
 import type { ContextMenuAction } from '../src/types/context-menu.js';
 
 // Docking workspace — every view/tool window is resolved through the registry.
@@ -81,6 +76,7 @@ import { provideHelmPaneContext } from './dock-pane-context.js';
 import { setPaneVisibilityBridge } from './dock-visibility-bridge.js';
 import {
   PANE_ARTIFACTS,
+  PANE_DRAFT,
   PANE_PLAN_SCREEN,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -321,50 +317,44 @@ const onWindowFocusClearFlash = (): void => {
 };
 
 const {
-  draftEditorVisible,
-  draftEditorMode,
-  draftEditorSessionId,
-  draftEditorDraftId,
-  draftEditorLabel,
-  draftEditorText,
-  draftEditorPlanId,
-  draftEditorPlanStatus,
-  draftEditorPlanStateInfo,
-  draftEditorPlanType,
-  draftEditorPlanAutoImplement,
-  draftEditorPlanCompletionRecap,
-  draftEditorPlanHumanId,
-  draftEditorPlanCreatedAt,
-  draftEditorPlanStateUpdatedAt,
-  draftEditorPlanCallbacks,
-  draftEditorCompletionNotes,
-  draftEditorContextId,
-  draftEditorContextType,
-  draftEditorContextPermission,
-  draftEditorContextCallbacks,
-  draftEditorContextBoundPlans,
-  draftEditorContextBoundSequences,
-  draftEditorPendingContextUnbinds,
-  draftEditorRef,
-  openDraftEditor,
+  itemEditorVisible,
+  itemEditorMode,
+  itemEditorSessionId,
+  itemEditorLabel,
+  itemEditorText,
+  itemEditorPlanId,
+  itemEditorPlanStatus,
+  itemEditorPlanStateInfo,
+  itemEditorPlanType,
+  itemEditorPlanAutoImplement,
+  itemEditorPlanCompletionRecap,
+  itemEditorPlanHumanId,
+  itemEditorPlanCreatedAt,
+  itemEditorPlanStateUpdatedAt,
+  itemEditorPlanCallbacks,
+  itemEditorCompletionNotes,
+  itemEditorContextId,
+  itemEditorContextType,
+  itemEditorContextPermission,
+  itemEditorContextCallbacks,
+  itemEditorContextBoundPlans,
+  itemEditorContextBoundSequences,
+  itemEditorPendingContextUnbinds,
+  itemEditorRef,
   openPlanEditor,
   openContextEditor,
-  closeDraftEditor,
+  closeItemEditor,
   saveContextEditor,
-  onDraftSave,
-  onDraftApply,
-  onDraftDelete,
-  onDraftClose,
+  onItemEditorClose,
   onPlanSave,
   onPlanApply,
   onPlanDone,
   onPlanDelete,
   onContextDelete,
   hasUnsavedChanges,
-  handleButton: handleDraftEditorButton,
-} = useDraftPlanContextEditor({
+  handleButton: handleItemEditorButton,
+} = useItemEditor({
   saveContext: (id, updates, pendingUnbinds) => onPlanContextSave(id, updates, pendingUnbinds),
-  refreshDraftSession: (sessionId) => chipBarStore.refresh(sessionId),
 });
 let unsubSnapOut: (() => void) | null = null;
 let unsubSnapBack: (() => void) | null = null;
@@ -562,8 +552,8 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   settingsVisible,
   activeView,
   bindingEditorVisible,
-  draftEditorVisible,
-  draftEditorRef,
+  itemEditorVisible,
+  itemEditorRef,
   settingsPanelRef,
   settingsTab,
   overviewCollapsedIds,
@@ -577,8 +567,6 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
 const keyHandlerCleanups: Array<() => void> = [];
 let uninstallKeyRouter: (() => void) | null = null;
 
-// Prompt-template apply flow (picker → editor → deliverPromptSequence).
-const { openPromptPicker } = usePromptApplyFlow(() => state.activeSessionId);
 
 /**
  * Workspace keys, owned by the router.
@@ -589,7 +577,7 @@ const { openPromptPicker } = usePromptApplyFlow(() => state.activeSessionId);
  * Artifacts; it never toggles.
  */
 const workspaceKeyHandlers = createWorkspaceKeyHandlers({
-  activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS); },
+  activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT); },
   cycleSession: (direction) => { cycleActiveSession(direction); },
   jumpToSession: (slot) => {
     for (const [sessionId, assignedSlot] of sessionsScreenStore.sessionShortcutMap) {
@@ -612,7 +600,7 @@ const workspaceKeyHandlers = createWorkspaceKeyHandlers({
   },
 });
 
-// Terminal-owned keys (Esc, Ctrl+V, Ctrl+G, key relay). Rename and
+// Terminal-owned keys (Esc, Ctrl+V, key relay). Rename and
 // notification-clear are passed straight in; they used to travel as window
 // CustomEvents purely because the relay had no way to reach the shell.
 useTerminalKeys({
@@ -651,8 +639,6 @@ async function runTranscriptAction(pending: Promise<{ success: boolean; error?: 
 }
 
 // Context menu
-const draftSubmenuSessionId = ref<string | null>(null);
-
 function onContextMenuAction(action: ContextMenuAction): void {
   contextMenu.visible = false;
   const sessionId = action.targetSessionId;
@@ -683,11 +669,6 @@ function onContextMenuAction(action: ContextMenuAction): void {
         if (text && sessionId) void deliverBulkText(sessionId, text);
       });
       break;
-    case 'editor':
-      void showEditorPopup((text) => {
-        if (sessionId) void deliverPromptSequence(sessionId, text);
-      });
-      break;
     case 'new-session':
       setPendingContextText(null);
       openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
@@ -697,18 +678,6 @@ function onContextMenuAction(action: ContextMenuAction): void {
       openQuickSpawn((cliType, machineId) => { void onSpawn(cliType, machineId); }, undefined, true);
       break;
     }
-    case 'prompts':
-      if (sessionId) void openPromptPicker(sessionId);
-      break;
-    case 'drafts':
-      if (sessionId) {
-        draftSubmenuSessionId.value = sessionId;
-        void draftsClient.draftList(sessionId).then(drafts => {
-          draftSubmenu.visible = true;
-          draftSubmenu.items = [...(drafts ?? [])];
-        });
-      }
-      break;
     case 'quick-compact': {
       if (sessionId) void runTranscriptAction(sessionsClient.sessionQuickCompact(sessionId), 'Quick compact');
       break;
@@ -803,35 +772,6 @@ watch(schedulerPopupVisible, (visible) => {
 
 async function onScheduledTaskCancelled(taskId: string): Promise<void> {
   console.log('[App] Scheduled task cancelled:', taskId);
-}
-
-// Draft submenu actions
-function onDraftNewDraft(): void {
-  draftSubmenu.visible = false;
-  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
-  if (!sessionId) return;
-  openDraftEditor(sessionId);
-}
-
-async function onDraftSubmenuApply(draft: { id: string; text: string }): Promise<void> {
-  draftSubmenu.visible = false;
-  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
-  if (sessionId && draft.text) {
-    void deliverPromptSequence(sessionId, draft.text);
-  }
-  await draftsClient.draftDelete(draft.id);
-}
-
-function onDraftSubmenuEdit(draft: { id: string; label: string; text: string }): void {
-  draftSubmenu.visible = false;
-  const sessionId = draftSubmenuSessionId.value || state.activeSessionId;
-  if (!sessionId) return;
-  openDraftEditor(sessionId, draft);
-}
-
-async function onDraftSubmenuDelete(draft: { id: string }): Promise<void> {
-  draftSubmenu.visible = false;
-  await draftsClient.draftDelete(draft.id);
 }
 
 // Binding editor handlers
@@ -992,7 +932,7 @@ onMounted(async () => {
     getActiveSessionId: () => state.activeSessionId ?? null,
     getFocusedPane: () => dockWorkspace.focusedPaneId.value,
     isPaneVisible: (pane) => dockWorkspace.isVisible(pane),
-    isPanelOpen: () => settingsVisible.value || draftEditorVisible.value || bindingEditorVisible.value,
+    isPanelOpen: () => settingsVisible.value || itemEditorVisible.value || bindingEditorVisible.value,
   });
 
   if (!terminalContainerRef.value) {
@@ -1089,19 +1029,18 @@ onMounted(async () => {
     });
 
     // Wire draft/plan editor callbacks
-    setDraftEditorCompatibilityOpener(openDraftEditor);
     setPlanEditorCompatibilityOpener(openPlanEditor);
-    setDraftEditorCompatibilityCloser(closeDraftEditor);
-    setDraftEditorCompatibilityVisibilityChecker(() => draftEditorVisible.value);
-    setDraftEditorCompatibilityButtonHandler(handleDraftEditorButton);
+    setItemEditorCompatibilityCloser(closeItemEditor);
+    setItemEditorCompatibilityVisibilityChecker(() => itemEditorVisible.value);
+    setItemEditorCompatibilityButtonHandler(handleItemEditorButton);
     setPlanCompatibilityChangesChecker(hasUnsavedChanges);
 
     setChipBarPlanEditorOpener(openPlanEditor);
 
     setPlanScreenPlanEditorOpener(openPlanEditor);
     setPlanScreenContextEditorOpener(openContextEditor);
-    setPlanScreenDraftEditorCloser(closeDraftEditor);
-    setPlanScreenDraftEditorVisibilityChecker(() => draftEditorVisible.value);
+    setPlanScreenItemEditorCloser(closeItemEditor);
+    setPlanScreenItemEditorVisibilityChecker(() => itemEditorVisible.value);
     setPlanScreenPlanChangesChecker(hasUnsavedChanges);
 
     await chipBarStore.refresh(state.activeSessionId ?? null);
@@ -1175,42 +1114,38 @@ onUnmounted(() => {
     />
     <div class="app-workspace">
       <div class="app-main-area">
-        <DraftEditor
-          v-if="draftEditorVisible"
-          ref="draftEditorRef"
-          :visible="draftEditorVisible"
-          :mode="draftEditorMode"
-          :session-id="draftEditorSessionId"
-          :draft-id="draftEditorDraftId"
-          :initial-label="draftEditorLabel"
-          :initial-text="draftEditorText"
-          :plan-id="draftEditorPlanId"
-          :plan-status="draftEditorPlanStatus"
-          :plan-state-info="draftEditorPlanStateInfo"
-          :plan-type="draftEditorPlanType"
-          :plan-auto-implement="draftEditorPlanAutoImplement"
-          :plan-completion-recap="draftEditorPlanCompletionRecap"
-          :plan-human-id="draftEditorPlanHumanId"
-          :plan-created-at="draftEditorPlanCreatedAt"
-          :plan-state-updated-at="draftEditorPlanStateUpdatedAt"
-          :plan-callbacks="draftEditorPlanCallbacks"
-          :completion-notes="draftEditorCompletionNotes"
-          :context-id="draftEditorContextId"
-          :context-type="draftEditorContextType"
-          :context-permission="draftEditorContextPermission"
-          :context-callbacks="draftEditorContextCallbacks"
-          :context-bound-plans="draftEditorContextBoundPlans"
-          :context-bound-sequences="draftEditorContextBoundSequences"
-          :context-pending-unbind-count="draftEditorPendingContextUnbinds.length"
-          @save="onDraftSave"
-          @apply="onDraftApply"
-          @delete="onDraftDelete"
-          @close="onDraftClose"
+        <ItemEditor
+          v-if="itemEditorVisible"
+          ref="itemEditorRef"
+          :visible="itemEditorVisible"
+          :mode="itemEditorMode"
+          :session-id="itemEditorSessionId"
+          :initial-label="itemEditorLabel"
+          :initial-text="itemEditorText"
+          :plan-id="itemEditorPlanId"
+          :plan-status="itemEditorPlanStatus"
+          :plan-state-info="itemEditorPlanStateInfo"
+          :plan-type="itemEditorPlanType"
+          :plan-auto-implement="itemEditorPlanAutoImplement"
+          :plan-completion-recap="itemEditorPlanCompletionRecap"
+          :plan-human-id="itemEditorPlanHumanId"
+          :plan-created-at="itemEditorPlanCreatedAt"
+          :plan-state-updated-at="itemEditorPlanStateUpdatedAt"
+          :plan-callbacks="itemEditorPlanCallbacks"
+          :completion-notes="itemEditorCompletionNotes"
+          :context-id="itemEditorContextId"
+          :context-type="itemEditorContextType"
+          :context-permission="itemEditorContextPermission"
+          :context-callbacks="itemEditorContextCallbacks"
+          :context-bound-plans="itemEditorContextBoundPlans"
+          :context-bound-sequences="itemEditorContextBoundSequences"
+          :context-pending-unbind-count="itemEditorPendingContextUnbinds.length"
+          @close="onItemEditorClose"
           @plan-save="onPlanSave"
           @plan-apply="onPlanApply"
           @plan-done="onPlanDone"
           @plan-delete="onPlanDelete"
-          @context-save="(u) => draftEditorContextId && saveContextEditor(draftEditorContextId, u)"
+          @context-save="(u) => itemEditorContextId && saveContextEditor(itemEditorContextId, u)"
           @context-delete="onContextDelete"
         />
         <DockWorkspace
@@ -1365,10 +1300,6 @@ onUnmounted(() => {
       :scheduler-popup-prefill="recreatePrefill"
       @close-session="(sessionId) => void doCloseSession(sessionId)"
       @context-menu-action="onContextMenuAction"
-      @draft-new-draft="onDraftNewDraft"
-      @draft-apply="onDraftSubmenuApply"
-      @draft-edit="onDraftSubmenuEdit"
-      @draft-delete="onDraftSubmenuDelete"
       @dir-select="onDirPickerSelect"
       @binding-save="onBindingEditorSave"
       @task-created="onScheduledTaskCreated"

@@ -59,18 +59,19 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+Shift+A | Show/focus the Artifacts pane; never toggles it |
 | Ctrl+Shift+N | Terminal: open machine-first Quick Spawn / Sessions: create a new plan for the current directory |
 | Ctrl+Shift+W | Close the active session; needs a terminal **visible**, not focused |
-| Ctrl+Tab / Ctrl+Shift+Tab | Cycle the selected session forward/back. Moves the session spine only — the focused pane stays put and re-points at the new session |
+| Ctrl+Tab / Ctrl+Shift+Tab | Cycle the selected session forward/back (also from inside a text field). Moves the session spine only — the focused pane stays put and re-points at the new session |
 | Arrow keys | Navigate the focused pane (mapped to D-pad equivalents). In Quick Spawn, left/right cycle machine tabs while a tab has focus; in the modal they cycle tabs directly. xterm owns arrows when the keystroke lands in it |
 | Enter | Mapped to A button |
 | Escape | Focused terminal: ESC protection (see below), else ESC to the PTY. Any other pane: the pane's own business (mapped to B button) |
 | Delete | Mapped to X button |
 | F5 | Mapped to Y button |
 | Ctrl+V | Focused terminal: managed paste to PTY stdin (bracketed-paste framing, chunking). Focused Artifacts pane: creates a new artifact from the clipboard |
-| Ctrl+G | Open in-app Prompt Editor (`EditorPopup.vue`) — multi-line textarea + recent-prompts list + prompt-template tree pane; Ctrl+Enter / Send delivers to active terminal via `deliverPromptSequence()`. Works from any pane while a terminal is **visible**; a no-op when none is |
+| Ctrl+G | Jump to the active session's Draft pane, caret in the pad. Works from anywhere, including while typing in a field |
+| Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft. Each tab's tooltip shows its letter |
 | Ctrl+1-9, Ctrl+0 | Jump directly to the Nth session in sidebar order (badge: `^n`) |
 | Alt+1-9 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`) |
 | Ctrl+Shift+Space | Talk to Helm: press to start, press again to send (a toggle — the router is keydown-only and key repeat makes a keyboard hold unreliable). Global scope, so a modal blocks it like the other workspace keys |
-| Tab / Shift+Tab (selection-mode modal) | Cycle buttons in close-confirm, context-menu, prompt-tree picker, or quick-spawn |
+| Tab / Shift+Tab (selection-mode modal) | Cycle buttons in close-confirm, context-menu, or quick-spawn |
 
 ## Keyboard Ownership
 
@@ -124,32 +125,17 @@ When a button is pressed, the navigation system checks handlers in this order:
 4. Form modal (A/B only)
 5. Close confirmation modal (Arrow keys + Tab/Shift+Tab for button cycling)
 6. Quick-spawn picker
-7. Draft editor panel (D-pad/A/B field navigation)
-8. Draft action picker (per-draft Apply/Edit/Delete — accessed via context menu Drafts ► submenu)
-9. Draft submenu (Drafts list from context menu)
-10. Context menu (Arrow keys + Tab/Shift+Tab for button cycling)
-11. Prompt-template picker tree (`PromptTreeModal`)
-12. Screen-specific routing (sessions / settings)
+7. Item editor panel (plan / context; D-pad/A/B field navigation)
+8. Context menu (Arrow keys + Tab/Shift+Tab for button cycling)
+9. Screen-specific routing (sessions / settings)
     - **Sessions case:** Plan screen overlay (when visible, B exits) → Group overview → Session/spawn navigation
-13. Config binding fallback (the active tool's binding profile)
+10. Config binding fallback (the active tool's binding profile)
 
 The first handler that returns `true` (consumed) stops the chain.
 
-## Draft Prompts
+## Draft
 
-The `new-draft` action type can be bound to any gamepad button to open the draft editor for the active session. Drafts can also be accessed via the **Drafts ►** submenu in the context menu, which provides New Draft, and per-draft Apply (send to PTY) / Edit / Delete actions.
-
-### Draft Editor Gamepad Navigation
-
-When the draft editor panel is visible, all gamepad input is captured (like a modal):
-
-| Input | Action |
-|-------|--------|
-| D-Pad Up/Down | Cycle focus: Title → Content → Save → Apply → Delete → Cancel (wraps) |
-| A | Activate focused element (click Save/Apply/Delete/Cancel buttons) |
-| B | Cancel and close the editor |
-
-Keyboard input flows through to the focused field normally — only gamepad navigation is intercepted.
+Prompt memos, the prompt-template picker and the Ctrl+G Prompt Editor popup were removed: three places to compose a prompt became one, the session's [Draft pane](draft.md) — a plain pad (also writable by the session's LLM) with **Send** / Ctrl+Enter. Ctrl+G now just jumps there. It has no gamepad binding.
 
 ## Directory Plans
 

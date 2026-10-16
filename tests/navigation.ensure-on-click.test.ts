@@ -51,27 +51,21 @@ vi.mock('../renderer/session-groups.js', async (importActual) => ({
 }));
 
 const {
-  mockHideDraftEditor,
-  mockHideEditorPopup,
+  mockHideItemEditor,
   mockChipBarClear,
   mockChipBarRefresh,
   mockSessionSetActive,
 } = vi.hoisted(() => ({
-  mockHideDraftEditor: vi.fn(),
-  mockHideEditorPopup: vi.fn(),
+  mockHideItemEditor: vi.fn(),
   mockChipBarClear: vi.fn(),
   mockChipBarRefresh: vi.fn(),
   mockSessionSetActive: vi.fn(),
 }));
 
-vi.mock('../renderer/stores/draft-editor-registry.js', () => ({
-  hideDraftEditor: mockHideDraftEditor,
-  showDraftEditor: vi.fn(),
+vi.mock('../renderer/stores/item-editor-registry.js', () => ({
+  hideItemEditor: mockHideItemEditor,
+  showItemEditor: vi.fn(),
   showPlanInEditor: vi.fn(),
-}));
-
-vi.mock('../renderer/editor/editor-popup.js', () => ({
-  hideEditorPopup: mockHideEditorPopup,
 }));
 
 vi.mock('../renderer/stores/chip-bar.js', () => ({

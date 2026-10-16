@@ -36,7 +36,6 @@ export function initTelegramModules(
   ptyManager: PtyManager,
   configLoader: ConfigLoader,
   helmControlService: HelmControlService,
-  draftManager?: { clearSession(sessionId: string): void },
   projectStore?: ProjectStore,
 ): TelegramModules {
   // CLI types are keyed by UUID; Telegram must render labels, never ids.
@@ -48,7 +47,7 @@ export function initTelegramModules(
 
   const cleanupCallbacks = setupCallbackHandler(
     bot, topicManager, sessionManager, ptyManager,
-    configLoader, draftManager, projectStore,
+    configLoader, projectStore,
   );
 
   const cleanupTopicInput = setupTopicInput(

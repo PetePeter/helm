@@ -41,7 +41,6 @@ import type { StateDetector } from '../state-detector.js';
 import type { SessionManager } from '../manager.js';
 import type { PlanManager } from '../plan-manager.js';
 import type { HandoverDelivery } from '../handover-delivery.js';
-import type { DraftManager } from '../draft-manager.js';
 import type { ArtifactManager } from '../artifact-manager.js';
 import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
 import { MAX_ATTACHMENT_BYTES } from '../artifact-attachment-manager.js';
@@ -85,7 +84,6 @@ export interface HookTrackerDeps {
   /** Normally `notificationManager.flashAttention.bind(notificationManager)`. */
   flashAttention: FlashSink;
   handoverDelivery: Pick<HandoverDelivery, 'deliverFromPreCompact' | 'peek'>;
-  draftManager: Pick<DraftManager, 'getForSession'>;
   artifactManager: Pick<ArtifactManager, 'create'>;
   artifactAttachments: Pick<ArtifactAttachmentManager, 'add'>;
   /** A turn of the session's own agent finished (Stop); auto memory judges it. */
@@ -102,7 +100,6 @@ export interface PreCompactSnapshotInput {
   plan: { title: string; status: string } | null;
   toolCounts: Array<[string, number]>;
   filesTouched: string[];
-  drafts: Array<{ label: string; text: string }>;
   pendingHandover?: string;
   transcriptAttached: boolean;
 }
@@ -339,7 +336,6 @@ export class HookTracker {
       plan: claimed ? { title: claimed.title, status: claimed.status } : null,
       toolCounts: [...facts.toolCounts.entries()],
       filesTouched: [...facts.filesTouched],
-      drafts: this.deps.draftManager.getForSession(sessionId).map(d => ({ label: d.label, text: d.text })),
       pendingHandover,
       transcriptAttached,
     });
@@ -435,15 +431,6 @@ export function composePreCompactSnapshot(input: PreCompactSnapshotInput): strin
     `- Tools run: ${formatToolCounts(input.toolCounts)}`,
     `- Files touched: ${input.filesTouched.length > 0 ? input.filesTouched.sort().map(f => `\`${f}\``).join(', ') : '`none recorded`'}`,
   ];
-
-  if (input.drafts.length > 0) {
-    lines.push('', '## Draft memo(s)');
-    for (const draft of input.drafts) {
-      lines.push(`- **${draft.label}** — ${draft.text}`);
-    }
-  } else {
-    lines.push('', '## Draft memo(s)', '- No draft memo');
-  }
 
   lines.push('', '## Pending handover note', input.pendingHandover ?? '- No pending handover note');
   return lines.join('\n');

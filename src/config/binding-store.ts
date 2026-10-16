@@ -31,13 +31,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** PT-7: 'sequence-list' was renamed to 'prompt-tree'. Returns true if anything changed. */
+/** Actions whose feature was removed: the prompt-template picker and draft memos. */
+const RETIRED_ACTIONS: ReadonlySet<string> = new Set(['sequence-list', 'prompt-tree', 'new-draft']);
+
+/** Drop bindings to retired actions, leaving the button unbound. Returns true if anything changed. */
 function migrateLegacyActions(maps: Iterable<ButtonBindings>): boolean {
   let changed = false;
   for (const bindings of maps) {
-    for (const binding of Object.values(bindings ?? {})) {
-      if ((binding as { action?: string }).action === 'sequence-list') {
-        (binding as { action: string }).action = 'prompt-tree';
+    for (const [button, binding] of Object.entries(bindings ?? {})) {
+      if (RETIRED_ACTIONS.has((binding as { action?: string }).action ?? '')) {
+        delete bindings[button];
         changed = true;
       }
     }

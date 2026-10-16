@@ -16,7 +16,7 @@ import {
   PANE_MEMORIES,
   PANE_MESS,
   PANE_PLAN_SCREEN,
-  PANE_SCRATCHPAD,
+  PANE_DRAFT,
   PANE_SESSIONS,
   PANE_TERMINAL,
   isProfilePane,
@@ -33,7 +33,7 @@ import {
 import { loadDockLayout, LEGACY_SIDEBAR_WIDTH_KEY } from '../renderer/dock-persistence.js';
 import { listRegisteredPanes } from '../renderer/composables/useDockWorkspace.js';
 
-const POPOUT_PANES = [PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_SCRATCHPAD];
+const POPOUT_PANES = [PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT];
 
 describe('dock profiles', () => {
   it('derives the main profile from the registry rather than re-listing it', () => {
@@ -80,7 +80,7 @@ describe('createDefaultLayout(profile)', () => {
     // The profile's tool panes are per-session ones, and both home right.
     const edge = children.find((child): child is DockDockNode => child.type === 'dock');
     expect(edge?.side).toBe('right');
-    expect(listPanes(edge ?? null)).toEqual([PANE_ARTIFACTS, PANE_SCRATCHPAD]);
+    expect(listPanes(edge ?? null)).toEqual([PANE_ARTIFACTS, PANE_DRAFT]);
   });
 
   it('validates against its own profile', () => {

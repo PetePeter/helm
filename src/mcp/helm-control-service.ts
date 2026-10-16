@@ -70,8 +70,8 @@ import {
 } from '../session/artifact-download.js';
 import type { ArtifactAttachmentManager } from '../session/artifact-attachment-manager.js';
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
-import type { ScratchpadManager } from '../session/scratchpad-manager.js';
-import { SCRATCHPAD_MAX_BYTES, scratchpadBytes, type Scratchpad, type ScratchpadRefusal, type ScratchpadWriteResult } from '../types/scratchpad.js';
+import type { DraftManager } from '../session/draft-manager.js';
+import { DRAFT_MAX_BYTES, draftBytes, type Draft, type DraftRefusal, type DraftWriteResult } from '../types/draft.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
 import { MessManager } from '../session/mess-manager.js';
@@ -275,16 +275,16 @@ interface McpSkillSummary {
  * The constructor signature and public method names are preserved for backward compatibility.
  */
 /**
- * What a scratchpad write tells the LLM. A success omits the text (the caller
+ * What a draft write tells the LLM. A success omits the text (the caller
  * just sent it); a stale refusal carries it, since that is what must be redone.
  */
-export type McpScratchpadWrite =
+export type McpDraftWrite =
   | { ok: true; revision: number; bytes: number; maxBytes: number }
-  | { ok: false; reason: ScratchpadRefusal; message: string; revision: number; bytes: number; maxBytes: number; text?: string };
+  | { ok: false; reason: DraftRefusal; message: string; revision: number; bytes: number; maxBytes: number; text?: string };
 
-function toMcpScratchpadWrite(result: ScratchpadWriteResult): McpScratchpadWrite {
-  const { text, revision } = result.scratchpad;
-  const size = { revision, bytes: scratchpadBytes(text), maxBytes: SCRATCHPAD_MAX_BYTES };
+function toMcpDraftWrite(result: DraftWriteResult): McpDraftWrite {
+  const { text, revision } = result.draft;
+  const size = { revision, bytes: draftBytes(text), maxBytes: DRAFT_MAX_BYTES };
   if (result.ok) return { ok: true, ...size };
   return { ok: false, reason: result.reason, message: result.message, ...size, ...(result.reason === 'stale' ? { text } : {}) };
 }
@@ -309,7 +309,7 @@ export class HelmControlService extends EventEmitter {
   private ringRetry: RingRetry | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
-  private scratchpadManager?: ScratchpadManager;
+  private draftManager?: DraftManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
   private artifactAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
@@ -501,10 +501,10 @@ export class HelmControlService extends EventEmitter {
     this.sessionService.setRuntimeGroupManager(manager);
   }
 
-  /** Wire the ScratchpadManager behind the session_scratchpad_* MCP tools. */
-  setScratchpadManager(manager: ScratchpadManager): void {
-    this.scratchpadManager = manager;
-    this.sessionService.setSessionScratchpadCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
+  /** Wire the DraftManager behind the session_draft_* MCP tools. */
+  setDraftManager(manager: DraftManager): void {
+    this.draftManager = manager;
+    this.sessionService.setSessionDraftCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
   }
 
   /** Wire the ArtifactManager so the artifact_* MCP tools can produce session reports. */
@@ -818,8 +818,8 @@ export class HelmControlService extends EventEmitter {
   }
 
   /**
-   * Move 1 of a phone SHARE: open a slot whose bytes will land in the named
-   * session's draft. The session must exist; the slot is bound to the device.
+   * Move 1 of a phone SHARE: open a slot whose file will be handed to the
+   * named session. The session must exist; the slot is bound to the device.
    */
   openShareUpload(
     targetSessionId: string,
@@ -829,9 +829,13 @@ export class HelmControlService extends EventEmitter {
     return this.requireArtifactUploadService().openShare(deviceId, { ...input, sessionId: targetSessionId });
   }
 
-  /** Move 3 of a phone SHARE: verify, write to the inbox, add the draft. */
-  commitShareUpload(deviceId: string, uploadId: string, draft = true): import('../mobile/mobile-artifact-upload.js').ShareReceipt {
-    return this.requireArtifactUploadService().commitShare(deviceId, uploadId, draft);
+  /** Move 3 of a phone SHARE: verify and write to the inbox. */
+  commitShareUpload(deviceId: string, uploadId: string): { receipt: import('../mobile/mobile-artifact-upload.js').ShareReceipt; delivered: boolean } {
+    return this.requireArtifactUploadService().commitShare(deviceId, uploadId);
+  }
+
+  markShareUploadDelivered(deviceId: string, uploadId: string): void {
+    this.requireArtifactUploadService().markShareDelivered(deviceId, uploadId);
   }
 
   cancelShareUpload(deviceId: string, uploadId: string): import('../mobile/mobile-artifact-upload.js').ShareCancelResult {
@@ -1530,31 +1534,31 @@ export class HelmControlService extends EventEmitter {
   }
 
   // ---------------------------------------------------------------------------
-  // Session scratchpad (one plain-text pad per session, shared with the user)
+  // Session draft (one plain-text pad per session, shared with the user)
   // ---------------------------------------------------------------------------
 
-  private scratchpadOf(sessionRef: string): { manager: ScratchpadManager; sessionId: string } {
-    if (!this.scratchpadManager) throw new Error('Scratchpads are not available: ScratchpadManager is not configured.');
+  private draftOf(sessionRef: string): { manager: DraftManager; sessionId: string } {
+    if (!this.draftManager) throw new Error('Drafts are not available: DraftManager is not configured.');
     const session = this.sessionService.getSession(sessionRef);
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
-    return { manager: this.scratchpadManager, sessionId: session.id };
+    return { manager: this.draftManager, sessionId: session.id };
   }
 
-  getSessionScratchpad(sessionRef: string): Scratchpad & { bytes: number; maxBytes: number } {
-    const { manager, sessionId } = this.scratchpadOf(sessionRef);
-    const scratchpad = manager.get(sessionId);
-    return { ...scratchpad, bytes: scratchpadBytes(scratchpad.text), maxBytes: SCRATCHPAD_MAX_BYTES };
+  getSessionDraft(sessionRef: string): Draft & { bytes: number; maxBytes: number } {
+    const { manager, sessionId } = this.draftOf(sessionRef);
+    const draft = manager.get(sessionId);
+    return { ...draft, bytes: draftBytes(draft.text), maxBytes: DRAFT_MAX_BYTES };
   }
 
-  setSessionScratchpad(sessionRef: string, text: string, revision: number): McpScratchpadWrite {
+  setSessionDraft(sessionRef: string, text: string, revision: number): McpDraftWrite {
     if (!Number.isInteger(revision) || revision < 0) throw new Error('revision must be a whole number, 0 or more');
-    const { manager, sessionId } = this.scratchpadOf(sessionRef);
-    return toMcpScratchpadWrite(manager.set(sessionId, text, 'ai', revision));
+    const { manager, sessionId } = this.draftOf(sessionRef);
+    return toMcpDraftWrite(manager.set(sessionId, text, 'ai', revision));
   }
 
-  appendSessionScratchpad(sessionRef: string, text: string): McpScratchpadWrite {
-    const { manager, sessionId } = this.scratchpadOf(sessionRef);
-    return toMcpScratchpadWrite(manager.append(sessionId, text, 'ai'));
+  appendSessionDraft(sessionRef: string, text: string): McpDraftWrite {
+    const { manager, sessionId } = this.draftOf(sessionRef);
+    return toMcpDraftWrite(manager.append(sessionId, text, 'ai'));
   }
 
   // ---------------------------------------------------------------------------
@@ -1769,7 +1773,7 @@ export class HelmControlService extends EventEmitter {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean },
+    options?: Parameters<HelmSessionDeliveryService['sendTextToSession']>[2],
   ) {
     return this.sessionDelivery.sendTextToSession(sessionRef, text, options);
   }

@@ -1,8 +1,8 @@
 /**
- * ScratchpadPane.vue + useScratchpad: the user's side of the per-session pad.
+ * DraftPane.vue + useDraft: the user's side of the per-session pad.
  *
  * The preload surface is faked, but what answers behind it is the real
- * ScratchpadManager (in-memory store), so stale-write refusals, the size cap
+ * DraftManager (in-memory store), so stale-write refusals, the size cap
  * and the change events are the production ones.
  *
  * @vitest-environment jsdom
@@ -11,34 +11,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import type { Scratchpad } from '../../../src/types/scratchpad.js';
+import type { Draft } from '../../../src/types/draft.js';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const { ScratchpadManager } = await import('../../../src/session/scratchpad-manager.js');
-const { SCRATCHPAD_MAX_BYTES } = await import('../../../src/types/scratchpad.js');
-const { SCRATCHPAD_SAVE_DELAY_MS } = await import('../../../renderer/composables/useScratchpad.js');
+const { DraftManager } = await import('../../../src/session/draft-manager.js');
+const { DRAFT_MAX_BYTES } = await import('../../../src/types/draft.js');
+const { DRAFT_SAVE_DELAY_MS } = await import('../../../renderer/composables/useDraft.js');
 
-describe('ScratchpadPane.vue', () => {
-  let main: InstanceType<typeof ScratchpadManager>;
+describe('DraftPane.vue', () => {
+  let main: InstanceType<typeof DraftManager>;
   let wrapper: VueWrapper | null;
   /** Lets a test hold the user's save "on the wire" while something else happens in main. */
   let holdSaves: Promise<void> | null;
   /** What reached the session's PTY stdin. */
   let ptyWrites: Array<{ sessionId: string; data: string }>;
-  let ScratchpadPane: typeof import('../../../renderer/components/dock/ScratchpadPane.vue').default;
+  let DraftPane: typeof import('../../../renderer/components/dock/DraftPane.vue').default;
   let setActiveSessionId: typeof import('../../../renderer/stores/app.js').setActiveSessionId;
 
   beforeEach(async () => {
     // A fresh renderer per test: typing parked behind an open conflict lives for the window's lifetime.
     vi.resetModules();
-    ({ default: ScratchpadPane } = await import('../../../renderer/components/dock/ScratchpadPane.vue'));
+    ({ default: DraftPane } = await import('../../../renderer/components/dock/DraftPane.vue'));
     ({ setActiveSessionId } = await import('../../../renderer/stores/app.js'));
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const files = new Map<string, Scratchpad>();
-    main = new ScratchpadManager({
+    const files = new Map<string, Draft>();
+    main = new DraftManager({
       load: id => files.get(id) ?? null,
       save: pad => { files.set(pad.sessionId, pad); },
       remove: id => { files.delete(id); },
@@ -48,16 +48,16 @@ describe('ScratchpadPane.vue', () => {
     wrapper = null;
     (window as unknown as { helm: unknown }).helm = {
       sessions: {
-        scratchpadGet: async (sessionId: string) => main.get(sessionId),
-        scratchpadSet: async (sessionId: string, text: string, baseRevision: number) => {
+        draftGet: async (sessionId: string) => main.get(sessionId),
+        draftSet: async (sessionId: string, text: string, baseRevision: number) => {
           await holdSaves;
           return main.set(sessionId, text, 'user', baseRevision);
         },
       },
       events: {
-        onScratchpadChanged: (callback: (pad: Scratchpad) => void) => {
-          main.on('scratchpad:changed', callback);
-          return () => main.off('scratchpad:changed', callback);
+        onDraftChanged: (callback: (pad: Draft) => void) => {
+          main.on('draft:changed', callback);
+          return () => main.off('draft:changed', callback);
         },
       },
       time: { timeActivity: vi.fn() },
@@ -74,7 +74,7 @@ describe('ScratchpadPane.vue', () => {
 
   async function open(sessionId: string | null = 's1') {
     setActiveSessionId(sessionId);
-    wrapper = mount(ScratchpadPane, { global: { plugins: [createPinia()] }, attachTo: document.body });
+    wrapper = mount(DraftPane, { global: { plugins: [createPinia()] }, attachTo: document.body });
     await flushPromises();
     return wrapper;
   }
@@ -86,7 +86,7 @@ describe('ScratchpadPane.vue', () => {
   }
 
   async function pause() {
-    vi.advanceTimersByTime(SCRATCHPAD_SAVE_DELAY_MS);
+    vi.advanceTimersByTime(DRAFT_SAVE_DELAY_MS);
     await flushPromises();
   }
 
@@ -137,7 +137,7 @@ describe('ScratchpadPane.vue', () => {
     expect(main.get('s1').text).toBe('base + AI rewrite');
     expect(wrapper!.find('[role="alert"]').text()).toContain('changed while you were typing');
 
-    await wrapper!.find('[data-scratchpad-keep-mine]').trigger('click');
+    await wrapper!.find('[data-draft-keep-mine]').trigger('click');
     await flushPromises();
     expect(main.get('s1')).toMatchObject({ text: 'base + my half-typed thought', updatedBy: 'user' });
     expect(wrapper!.find('[role="alert"]').exists()).toBe(false);
@@ -149,7 +149,7 @@ describe('ScratchpadPane.vue', () => {
     main.set('s1', 'theirs', 'ai', 0);
     await flushPromises();
 
-    await wrapper!.find('[data-scratchpad-take-theirs]').trigger('click');
+    await wrapper!.find('[data-draft-take-theirs]').trigger('click');
     await pause();
     expect(input().value).toBe('theirs');
     expect(main.get('s1')).toMatchObject({ text: 'theirs', updatedBy: 'ai' });
@@ -214,7 +214,7 @@ describe('ScratchpadPane.vue', () => {
     await open('s1');
     expect(input().value).toBe('base + mine');
 
-    await wrapper!.find('[data-scratchpad-keep-mine]').trigger('click');
+    await wrapper!.find('[data-draft-keep-mine]').trigger('click');
     await flushPromises();
     expect(main.get('s1').text).toBe('base + mine');
 
@@ -247,24 +247,24 @@ describe('ScratchpadPane.vue', () => {
   it('keeps an over-size pad that could not be saved when the user leaves and comes back', async () => {
     main.set('s1', 'keep', 'user', 0);
     await open('s1');
-    const big = 'x'.repeat(SCRATCHPAD_MAX_BYTES + 1);
+    const big = 'x'.repeat(DRAFT_MAX_BYTES + 1);
     await type(big);
     setActiveSessionId('s2'); // before the pause is over
     await flushPromises();
     expect(input().value).toBe('');
-    expect(wrapper!.find('.scratchpad-pane__error').exists()).toBe(false);
+    expect(wrapper!.find('.draft-pane__error').exists()).toBe(false);
 
     wrapper!.unmount();
     await open('s1');
     expect(input().value).toBe(big);
-    expect(wrapper!.find('.scratchpad-pane__error').text()).toContain(String(SCRATCHPAD_MAX_BYTES));
-    expect(wrapper!.find('[data-scratchpad-keep-mine]').exists()).toBe(false); // nobody else changed it
+    expect(wrapper!.find('.draft-pane__error').text()).toContain(String(DRAFT_MAX_BYTES));
+    expect(wrapper!.find('[data-draft-keep-mine]').exists()).toBe(false); // nobody else changed it
     expect(main.get('s1').text).toBe('keep');
 
     await type('short enough now');
     await pause();
     expect(main.get('s1').text).toBe('short enough now');
-    expect(wrapper!.find('.scratchpad-pane__error').exists()).toBe(false);
+    expect(wrapper!.find('.draft-pane__error').exists()).toBe(false);
   });
 
   it('does not mistake its own save for someone else\'s edit, and saves what was typed meanwhile', async () => {
@@ -312,13 +312,13 @@ describe('ScratchpadPane.vue', () => {
   it('says why an over-size pad was not saved and keeps the typed text', async () => {
     main.set('s1', 'keep', 'user', 0);
     await open();
-    const big = 'x'.repeat(SCRATCHPAD_MAX_BYTES + 1);
+    const big = 'x'.repeat(DRAFT_MAX_BYTES + 1);
     await type(big);
     await pause();
 
     expect(main.get('s1').text).toBe('keep');
-    expect(wrapper!.find('.scratchpad-pane__error').text()).toContain(String(SCRATCHPAD_MAX_BYTES));
-    expect(wrapper!.find('.scratchpad-pane__size').classes()).toContain('is-over');
+    expect(wrapper!.find('.draft-pane__error').text()).toContain(String(DRAFT_MAX_BYTES));
+    expect(wrapper!.find('.draft-pane__size').classes()).toContain('is-over');
     expect(input().value).toBe(big);
   });
 
@@ -333,7 +333,7 @@ describe('ScratchpadPane.vue', () => {
     it('the Send button types the pad into the session\'s CLI, submits it and clears the pad', async () => {
       await open();
       await type('please review the diff');
-      await wrapper!.find('[data-scratchpad-send]').trigger('click');
+      await wrapper!.find('[data-draft-send]').trigger('click');
       await settle();
 
       expect(sent()).toContain('please review the diff');
@@ -358,7 +358,7 @@ describe('ScratchpadPane.vue', () => {
     it('an empty pad sends nothing', async () => {
       await open();
       await type('   ');
-      await wrapper!.find('[data-scratchpad-send]').trigger('click');
+      await wrapper!.find('[data-draft-send]').trigger('click');
       await settle();
       expect(ptyWrites).toHaveLength(0);
       expect(input().value).toBe('   ');

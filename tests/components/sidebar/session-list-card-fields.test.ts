@@ -32,7 +32,6 @@ describe('SessionList → SessionCard fields', () => {
         editingSessionId: null,
         sessionStates: new Map<string, string>(),
         sessionActivityLevels: new Map<string, string>(),
-        draftCounts: new Map<string, number>(),
         artifactCounts: new Map<string, number>(),
         workingPlanLabels: new Map<string, string>(),
         workingPlanTooltips: new Map<string, string>(),

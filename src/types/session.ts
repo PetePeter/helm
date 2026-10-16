@@ -223,19 +223,3 @@ export interface SessionStateChangeEvent {
   timestamp: number;
 }
 
-/**
- * A draft prompt memo attached to a session.
- * Composed while the CLI is busy, sent later when ready.
- */
-export interface DraftPrompt {
-  /** Unique draft identifier (UUID v4) */
-  id: string;
-  /** Owning session ID */
-  sessionId: string;
-  /** Short title for pill display */
-  label: string;
-  /** Full prompt content (sequence parser syntax) */
-  text: string;
-  /** Creation timestamp */
-  createdAt: number;
-}

@@ -1,15 +1,12 @@
 <script setup lang="ts">
-import { useEditorPopupStore } from '../../stores/editor-popup.js';
 import {
   closeConfirm, getCloseConfirmCallback, setCloseConfirmCallback,
   getCloseConfirmCancelCallback, setCloseConfirmCancelCallback,
   contextMenu,
   planDeleteConfirm, getPlanDeleteCallback, setPlanDeleteCallback,
   bulkCleanup, getBulkCleanupCallback,
-  promptTree, getPromptTreeCallback, hidePromptTree,
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
   dirPicker, closeDirPicker,
-  draftSubmenu,
   formModal, getFormModalResolve,
   toolEditor, getToolEditorCallback,
   planHelp, hidePlanHelpModal,
@@ -21,14 +18,11 @@ import { useRuntimeGroupActions } from '../../composables/useRuntimeGroupActions
 import type { ScheduledTask, ScheduledTaskHistoryEntry } from '../../../src/types/scheduled-task.js';
 import CloseConfirmModal from '../modals/CloseConfirmModal.vue';
 import PlanDeleteConfirmModal from '../modals/PlanDeleteConfirmModal.vue';
-import PromptTreeModal from '../modals/PromptTreeModal.vue';
 import QuickSpawnModal from '../modals/QuickSpawnModal.vue';
 import ContextMenu from '../modals/ContextMenu.vue';
-import DraftSubmenu from '../modals/DraftSubmenu.vue';
 import DirPickerModal from '../modals/DirPickerModal.vue';
 import FormModal from '../modals/FormModal.vue';
 import ToolEditorModal from '../modals/ToolEditorModal.vue';
-import EditorPopup from '../modals/EditorPopup.vue';
 import BindingEditorModal from '../modals/BindingEditorModal.vue';
 import EscProtectionModal from '../modals/EscProtectionModal.vue';
 import PlanHelpModal from '../modals/PlanHelpModal.vue';
@@ -62,10 +56,6 @@ defineProps<{
 const emit = defineEmits<{
   'close-session': [sessionId: string];
   'context-menu-action': [action: ContextMenuAction];
-  'draft-new-draft': [];
-  'draft-apply': [draft: { id: string; text: string }];
-  'draft-edit': [draft: { id: string; label: string; text: string }];
-  'draft-delete': [draft: { id: string }];
   'dir-select': [path: string, cliType: string, machineId: string];
   'update:bindingEditorVisible': [visible: boolean];
   'binding-save': [binding: any];
@@ -75,7 +65,6 @@ const emit = defineEmits<{
   'task-cancelled': [taskId: string];
 }>();
 
-const editorPopupStore = useEditorPopupStore();
 
 function onCancelClose(): void {
   closeConfirm.visible = false;
@@ -116,14 +105,6 @@ function onBulkCleanupConfirm(): void {
 }
 
 
-
-function onPromptTreeSelect(templateId: string): void {
-  // Capture the callback BEFORE hiding — hidePromptTree() clears the stored
-  // callback, so reading it afterwards would lose the caller's onSelect.
-  const cb = getPromptTreeCallback();
-  hidePromptTree();
-  cb?.(templateId);
-}
 
 function onQuickSpawnSelect(cliType: string, machineId?: string): void {
   const cb = getQuickSpawnCallback();
@@ -195,7 +176,6 @@ function onRuntimeGroupMoveCancel(): void {
   <CloseConfirmModal
     v-model:visible="closeConfirm.visible"
     :session-name="closeConfirm.sessionName"
-    :draft-count="closeConfirm.draftCount"
     :count="closeConfirm.count"
     :mode="closeConfirm.mode"
     @confirm="onConfirmClose"
@@ -222,13 +202,6 @@ function onRuntimeGroupMoveCancel(): void {
     @cancel="bulkCleanup.visible = false"
   />
 
-  <PromptTreeModal
-    v-model:visible="promptTree.visible"
-    :tree="promptTree.tree"
-    @select="onPromptTreeSelect"
-    @cancel="hidePromptTree()"
-  />
-
   <QuickSpawnModal
     v-model:visible="quickSpawn.visible"
     :cli-types="cliTypes"
@@ -250,16 +223,6 @@ function onRuntimeGroupMoveCancel(): void {
     :session-flags="contextMenuSessionFlags"
     @action="emit('context-menu-action', $event)"
     @cancel="contextMenu.visible = false"
-  />
-
-  <DraftSubmenu
-    v-model:visible="draftSubmenu.visible"
-    :drafts="draftSubmenu.items"
-    @new-draft="emit('draft-new-draft')"
-    @apply="emit('draft-apply', $event)"
-    @edit="emit('draft-edit', $event)"
-    @delete="emit('draft-delete', $event)"
-    @cancel="draftSubmenu.visible = false"
   />
 
   <DirPickerModal
@@ -291,16 +254,6 @@ function onRuntimeGroupMoveCancel(): void {
     :validate-name="toolEditor.validateName ?? undefined"
     @save="onToolEditorSave"
     @cancel="toolEditor.visible = false"
-  />
-
-  <EditorPopup
-    :visible="editorPopupStore.visible"
-    :initial-text="editorPopupStore.initialText"
-    :has-prefill="editorPopupStore.hasPrefill"
-    :select-node-id="editorPopupStore.selectNodeId"
-    @update:visible="editorPopupStore.setVisible"
-    @send="editorPopupStore.handleSend"
-    @close="editorPopupStore.handleClose"
   />
 
   <BindingEditorModal

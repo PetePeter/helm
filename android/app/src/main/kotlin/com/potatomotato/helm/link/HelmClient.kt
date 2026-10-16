@@ -955,13 +955,15 @@ class HelmClient(
     }
 
     /**
-     * Share one staged file into [sessionId]'s DRAFT (share-to-Helm). The same
+     * Share one staged file into [sessionId] (share-to-Helm). The same
      * open → slices → commit chain as an artifact attachment, against the
      * `session_share_file_*` pair: the desktop writes the file to its inbox and
-     * adds a draft naming the path. Progress and the outcome land on [shares].
+     * sends "Attached: <name> at <path>" to the session's CLI as a phone prompt.
+     * Progress and the outcome land on [shares].
      *
-     * With [onLanded] it is a CHAT attachment instead: the commit asks for no
-     * draft, and the desktop path is handed back for the composer to carry.
+     * With [onLanded] it is a CHAT attachment instead: the commit sends `draft:false`
+     * (nothing sent to the CLI), and the desktop path is handed back for the
+     * composer to carry.
      */
     fun shareFile(
         sessionId: String,
@@ -2267,7 +2269,7 @@ class HelmClient(
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_ADD = "session_artifact_attachment_add"
         private const val METHOD_SESSION_ARTIFACT_ATTACHMENT_COMMIT = "session_artifact_attachment_commit"
 
-        /** Share-to-Helm: the same slot protocol, landing in a session's draft. */
+        /** Share-to-Helm: the same slot protocol, sent to a session's CLI as a prompt. */
         private const val METHOD_SESSION_SHARE_FILE_ADD = "session_share_file_add"
         private const val METHOD_SESSION_SHARE_FILE_COMMIT = "session_share_file_commit"
         private const val METHOD_SESSION_SHARE_FILE_CANCEL = "session_share_file_cancel"
