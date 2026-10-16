@@ -570,6 +570,9 @@ export class ApiSessionHost {
    */
   private async onTurnEnd(sessionId: string, auth: AuthContext, cwd: string | undefined, outcome: ApiTurnOutcome): Promise<void> {
     this.hook(sessionId, outcome.error && outcome.error !== 'aborted' ? 'StopFailure' : 'Stop', cwd);
+    if (!outcome.error && outcome.contextTokens !== undefined) {
+      this.deps.onContextUsageChanged?.(sessionId);
+    }
     const replied = this.repliedThisTurn.get(sessionId) ?? new Set<string>();
     this.repliedThisTurn.delete(sessionId);
     // A subagent's answer belongs to the parent that is waiting on it, not to the user's chat.

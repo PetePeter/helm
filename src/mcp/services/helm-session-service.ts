@@ -6,7 +6,7 @@ import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { TerminalReadMode, TerminalTail } from '../../session/terminal-output-buffer.js';
 import type { SessionInfo } from '../../types/session.js';
-import type { SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
+import type { SessionDetails, SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { HelmSessionPlanService } from './helm-session-plan-service.js';
 import { normalizeProjectPath } from '../../session/project-identity.js';
@@ -86,9 +86,11 @@ export class HelmSessionService {
       .map((session) => this.toSessionSummary(session));
   }
 
-  getSession(sessionRef: string): SessionSummary | null {
+  getSession(sessionRef: string): SessionDetails | null {
     const session = this.findSession(sessionRef);
-    return session ? { ...this.toSessionSummary(session), context: this.contextWithLevel(session) } : null;
+    if (!session) return null;
+    const context = this.contextWithLevel(session);
+    return { ...this.toSessionSummary(session, context), context };
   }
 
   /** The context size plus the amber/red limits the session row draws, so an LLM sees what the user sees. */
@@ -96,12 +98,16 @@ export class HelmSessionService {
     const context = this.contextSizeFor(session);
     if (!context.known) return context;
     const limits = resolveContextLimits(this.configLoader.getCliTypeEntry(session.cliType), context.window);
-    return limits ? { ...context, limits, level: contextLevel(context.tokens, limits) } : context;
+    return {
+      ...context,
+      ...(limits ? { limits } : {}),
+      level: contextLevel(context.tokens, limits),
+    };
   }
 
   getSessionContextSize(sessionId: string): SessionContextSize | undefined {
     const session = this.sessionManager.getSession(sessionId);
-    return session ? this.contextSizeFor(session) : undefined;
+    return session ? this.contextWithLevel(session) : undefined;
   }
 
   spawnCli(
@@ -365,7 +371,7 @@ export class HelmSessionService {
     return this.planService.claimPlan(sessionRef, planId);
   }
 
-  private toSessionSummary(session: SessionInfo): SessionSummary {
+  private toSessionSummary(session: SessionInfo, context = this.contextWithLevel(session)): SessionSummary {
     // While the dot is green, the session is active right now, so report "now".
     // Otherwise report the frozen last-active moment (fall back to createdAt).
     const isActive = session.activityLevel === 'active';
@@ -403,6 +409,11 @@ export class HelmSessionService {
       ...(session.lastPromptAt != null ? { lastPromptAtEpochMs: session.lastPromptAt } : {}),
       cacheWarnMinutes: warnAfterMs(cliEntry) / 60_000,
       cacheExpireMinutes: expireAfterMs(cliEntry) / 60_000,
+      ...(context.known ? { context: {
+        tokens: context.tokens,
+        ...(context.window !== undefined ? { window: context.window } : {}),
+        ...(context.level ? { level: context.level } : {}),
+      } } : {}),
       ...(cliEntry?.noPromptCache ? { noPromptCache: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
       ...(session.role ? { role: session.role } : {}),

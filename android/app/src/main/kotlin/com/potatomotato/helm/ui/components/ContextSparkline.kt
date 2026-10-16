@@ -51,7 +51,7 @@ fun ContextSparkline(
     detailed: Boolean = false,
 ) {
     if (samples.size < 2) return
-    val color = ContextGraph.level(samples.last().tokens, limits).color()
+    val color = ContextGraph.level(samples.last(), limits).color()
     Canvas(modifier) {
         val first = samples.first().at
         val span = (samples.last().at - first).coerceAtLeast(1L).toFloat()
@@ -100,7 +100,7 @@ fun ContextRowGraph(history: ContextHistory, now: Long) {
         history.window?.takeIf { it > 0 }?.let { window ->
             Text(
                 text = "${Math.round(last.tokens * 100.0 / window)}%",
-                color = ContextGraph.level(last.tokens, history.limits).let { if (it == ContextLevel.Ok) HelmColors.Dim else it.color() },
+                color = ContextGraph.level(last, history.limits).let { if (it == ContextLevel.Ok) HelmColors.Dim else it.color() },
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
             )
@@ -124,7 +124,7 @@ fun ContextStrip(history: ContextHistory, modifier: Modifier = Modifier) {
             Text(stringResource(R.string.session_context_label), color = HelmColors.Dim, style = MaterialTheme.typography.labelSmall)
             Text(
                 text = replyStats(last.tokens, null, history.window).orEmpty(),
-                color = ContextGraph.level(last.tokens, history.limits).color(),
+                color = ContextGraph.level(last, history.limits).color(),
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
             )

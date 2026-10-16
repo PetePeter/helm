@@ -90,6 +90,10 @@ removes.
   `mission.text`) on one ellipsized line in `HelmColors.Terminal`; no mission, no
   line. It refreshes with the session list, which an open session watches like
   the list screen does (paused while an attachment is being pulled).
+  The context strip below the bar uses the latest compact `session_list.context`
+  reading; when the desktop has none, it falls back to the latest reply's usage.
+  Reply samples still provide the history graph, with the row reading appended
+  as its newest sample.
 - **Chat** (tab) — one session's thread. Sending marks `Sending` → `Sent`/`Failed`.
   Threads survive an app restart (saved with their catch-up cursor; a send still
   `Sending` when the app died comes back `Failed`), so only newer messages are

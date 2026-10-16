@@ -21,6 +21,7 @@ export type UserPromptSource = 'terminal' | 'phone';
 export interface SessionContextUsageSnapshot {
   tokens: number;
   window?: number;
+  level?: 'ok' | 'warn' | 'hot';
   measuredAtIso?: string;
   source?: 'transcript' | 'api' | 'statusline';
 }

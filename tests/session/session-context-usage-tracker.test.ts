@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionInfo } from '../../src/types/session.js';
 import type { HookEvent } from '../../src/session/hooks/hook-normaliser.js';
+import type { SessionContextSize } from '../../src/session/context-size.js';
 import { SessionContextUsageTracker } from '../../src/session/session-context-usage-tracker.js';
 
 function makeSession(id: string, extra: Partial<SessionInfo> = {}): SessionInfo {
@@ -31,6 +32,7 @@ function fakeSessionManager(sessions: SessionInfo[]) {
       if (session) {
         Object.assign(session, value);
         updates.push({ id, value });
+        events.emit('session:updated', session);
       }
     },
   };
@@ -180,6 +182,31 @@ describe('SessionContextUsageTracker', () => {
     tracker.refreshSession('api');
 
     expect(manager.getSession('api')?.contextUsage).toEqual({ tokens: 1200, window: 100_000 });
+  });
+
+  it('emits API session updates only when tokens or level change', () => {
+    const manager = fakeSessionManager([makeSession('api', {
+      apiTool: true,
+      contextUsage: { tokens: 1_000, level: 'ok' },
+    })]);
+    const events: string[] = [];
+    manager.on('session:updated', (session) => events.push(session.id));
+    let context: SessionContextSize = { known: true, tokens: 1_000, source: 'api', level: 'ok' };
+    const tracker = new SessionContextUsageTracker({ sessionManager: manager, resolve: () => context });
+
+    tracker.refreshSession('api');
+    expect(events).toEqual([]);
+
+    context = { known: true, tokens: 1_000, source: 'api', level: 'warn' };
+    tracker.refreshSession('api');
+    expect(events).toEqual(['api']);
+
+    tracker.refreshSession('api');
+    expect(events).toEqual(['api']);
+
+    context = { known: true, tokens: 1_200, source: 'api', level: 'warn' };
+    tracker.refreshSession('api');
+    expect(events).toEqual(['api', 'api']);
   });
 
   it('stores live statusline usage and clears it when Claude reports an empty window', () => {

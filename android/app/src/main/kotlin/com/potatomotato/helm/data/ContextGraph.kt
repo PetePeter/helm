@@ -1,7 +1,7 @@
 package com.potatomotato.helm.data
 
-/** One context-size reading taken from a reply's stats. */
-data class ContextSample(val at: Long, val tokens: Long)
+/** One context-size reading from a reply or the latest session row. */
+data class ContextSample(val at: Long, val tokens: Long, val level: ContextLevel? = null)
 
 /** Token counts where the graph turns amber and red. */
 data class ContextLimits(val amber: Long, val red: Long)
@@ -13,20 +13,28 @@ enum class ContextLevel { Ok, Warn, Hot }
 
 /**
  * The token-fill graph's model, built from the stats every reply already
- * carries (tokens, window, amber/red limits); a session that has never
- * replied over chat simply has no graph.
+ * carries (tokens, window, amber/red limits), plus the latest session-list
+ * reading when available.
  */
 object ContextGraph {
     /** The list row's fixed span, so rows share one time scale. Mirrors the desktop row. */
     const val ROW_SPAN_MS = 2L * 60 * 60 * 1000
 
-    fun fromThread(thread: List<ChatMessage>): ContextHistory? {
+    fun fromThread(
+        thread: List<ChatMessage>,
+        latest: SessionContext? = null,
+        now: Long = System.currentTimeMillis(),
+    ): ContextHistory? {
         val replies = thread.filter { !it.fromPhone && it.contextTokens != null }.sortedBy { it.at }
-        if (replies.isEmpty()) return null
-        val window = replies.lastOrNull { it.contextWindow != null && it.contextWindow > 0 }?.contextWindow
+        val rowContext = latest?.takeIf { it.tokens > 0 }
+        if (replies.isEmpty() && rowContext == null) return null
+        val window = rowContext?.window?.takeIf { it > 0 }
+            ?: replies.lastOrNull { it.contextWindow != null && it.contextWindow > 0 }?.contextWindow
         val sent = replies.lastOrNull { it.contextAmber != null && it.contextRed != null }
+        val samples = replies.map { ContextSample(it.at, it.contextTokens!!) }.toMutableList()
+        rowContext?.let { samples += ContextSample(maxOf(now, samples.lastOrNull()?.at ?: now), it.tokens, it.level) }
         return ContextHistory(
-            samples = replies.map { ContextSample(it.at, it.contextTokens!!) },
+            samples = samples,
             window = window,
             limits = sent?.let { ContextLimits(it.contextAmber!!, it.contextRed!!) } ?: autoLimits(window),
         )
@@ -41,10 +49,12 @@ object ContextGraph {
         val known = samples.filter { it.at <= to }
         if (known.isEmpty()) return emptyList()
         val before = known.lastOrNull { it.at < from }
-        val clipped = listOfNotNull(before?.let { ContextSample(from, it.tokens) }) + known.filter { it.at >= from }
+        val clipped = listOfNotNull(before?.let { ContextSample(from, it.tokens, it.level) }) + known.filter { it.at >= from }
         val last = clipped.last()
-        return if (last.at < to) clipped + ContextSample(to, last.tokens) else clipped
+        return if (last.at < to) clipped + ContextSample(to, last.tokens, last.level) else clipped
     }
+
+    fun level(sample: ContextSample, limits: ContextLimits?): ContextLevel = sample.level ?: level(sample.tokens, limits)
 
     fun level(tokens: Long, limits: ContextLimits?): ContextLevel = when {
         limits == null -> ContextLevel.Ok

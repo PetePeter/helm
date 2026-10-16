@@ -860,7 +860,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_get',
     title: 'Get Session',
-    description: 'Get one Helm session by session ID or exact display name. Returns its current context size and working-plan pointer along with session details. Context size uses the API session report or reads the selected CLI transcript; session_list omits it to avoid a read for every row.',
+    description: 'Get one Helm session by session ID or exact display name. Returns its current context size and working-plan pointer along with session details. Context size uses the API session report or selected CLI transcript; session_list carries compact tokens/window/level when known.',
     inputSchema: {
       type: 'object',
       properties: {

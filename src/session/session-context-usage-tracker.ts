@@ -150,11 +150,12 @@ export class SessionContextUsageTracker {
         ? {
           tokens: context.tokens,
           ...(context.window !== undefined ? { window: context.window } : {}),
+          ...(context.level ? { level: context.level } : {}),
           ...(context.measuredAtIso ? { measuredAtIso: context.measuredAtIso } : {}),
           ...(context.source === 'statusline' ? { source: 'statusline' as const } : {}),
         }
         : undefined;
-      if (sameSnapshot(session.contextUsage, contextUsage)) return;
+      if (sameSnapshot(session.contextUsage, contextUsage, session.apiTool === true)) return;
       this.storeUsage(session, contextUsage);
     } catch (error) {
       logger.warn(`[SessionContextUsage] Refresh failed for ${sessionId}: ${String(error)}`);
@@ -225,8 +226,11 @@ export class SessionContextUsageTracker {
 function sameSnapshot(
   current: SessionContextUsageSnapshot | undefined,
   next: SessionContextUsageSnapshot | undefined,
+  apiTool = false,
 ): boolean {
-  return current?.tokens === next?.tokens
+  const sameTokensAndLevel = current?.tokens === next?.tokens && current?.level === next?.level;
+  if (apiTool) return sameTokensAndLevel;
+  return sameTokensAndLevel
     && current?.window === next?.window
     && current?.measuredAtIso === next?.measuredAtIso
     && current?.source === next?.source;

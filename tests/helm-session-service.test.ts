@@ -179,7 +179,7 @@ describe('HelmSessionService.closeSession', () => {
 });
 
 describe('HelmSessionService context size', () => {
-  it('adds context to session_get while keeping the session_list row light', () => {
+  it('adds compact context to session_list and retains full context in session_get', () => {
     const cliTranscriptPath = join(contextDir, 'transcript.jsonl');
     writeFileSync(cliTranscriptPath, JSON.stringify({
       type: 'assistant',
@@ -211,7 +211,10 @@ describe('HelmSessionService context size', () => {
       limits: { amber: 150_000, red: 180_000 },
       level: 'ok',
     });
-    expect(service.listSessions()[0]).not.toHaveProperty('context');
+    expect(service.listSessions()[0].context).toEqual({ tokens: 100_000, window: 200_000, level: 'ok' });
+
+    sessionManager.addSession({ id: 'context-unknown', name: 'Unknown', cliType: 'claude' } as any, true);
+    expect(service.listSessions().find((summary) => summary.id === 'context-unknown')).not.toHaveProperty('context');
   });
 
   it('uses the API host’s server-reported token count for an API session', () => {
@@ -240,6 +243,7 @@ describe('HelmSessionService context size', () => {
       limits: { amber: 7_500, red: 9_000 },
       level: 'ok',
     });
+    expect(service.listSessions()[0].context).toEqual({ tokens: 2_500, window: 10_000, level: 'ok' });
   });
 
   it('reports the level against the CLI type manual limits', () => {

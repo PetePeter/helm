@@ -19,12 +19,13 @@ describe('session context usage persistence', () => {
 
     saveSessions([{
       id: 's1', name: 'worker', cliType: 'claude-code', processId: 1,
-      contextUsage: { tokens: 18_400, window: 200_000, measuredAtIso: '2026-10-15T00:00:00.000Z' },
+      contextUsage: { tokens: 18_400, window: 200_000, level: 'warn', measuredAtIso: '2026-10-15T00:00:00.000Z' },
     }], file);
 
     expect(loadSessions(file)[0]?.contextUsage).toEqual({
       tokens: 18_400,
       window: 200_000,
+      level: 'warn',
       measuredAtIso: '2026-10-15T00:00:00.000Z',
     });
   });

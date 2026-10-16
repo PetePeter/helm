@@ -39,6 +39,8 @@ data class HelmSession(
      * THAT a plan is claimed, never which one.
      */
     val currentPlanId: String? = null,
+    /** Latest compact context reading from session_list, when the desktop knows it. */
+    val context: SessionContext? = null,
     /** The session's mission TL;DR (desktop caps it at 500 chars); null when unset or blank. */
     val mission: String? = null,
     /** The desktop's session role — `operator` marks the one "Helm" session. Null for every other. */
@@ -118,6 +120,8 @@ enum class CacheStage { Fresh, Warn, Expired, Frozen }
 
 data class ComfyUiProfile(val id: String, val name: String, val kind: String, val supportsImageSize: Boolean = false, val maxReferenceImages: Int = 1)
 data class ComfyUiImageSize(val id: String, val name: String, val width: Int, val height: Int)
+
+data class SessionContext(val tokens: Long, val window: Long?, val level: ContextLevel?)
 
 /**
  * Where this phone has got to in Helm's session change feed. [epoch] names one
@@ -214,6 +218,7 @@ object SessionWire {
             // org.json hands back Integer or Long by magnitude; both are the number.
             lastActiveAtEpochMs = (summary.opt("lastActiveAtEpochMs") as? Number)?.toLong(),
             currentPlanId = summary.opt("currentPlanId") as? String,
+            context = parseContext(summary.optJSONObject("context")),
             mission = ((summary.opt("mission") as? JSONObject)?.opt("text") as? String)
                 ?.takeIf { it.isNotBlank() },
             role = (summary.opt("role") as? String)?.takeIf { it.isNotBlank() },
@@ -268,5 +273,18 @@ object SessionWire {
         "active" -> SessionState.Active
         "inactive" -> SessionState.Waiting
         else -> SessionState.Idle
+    }
+
+    private fun parseContext(value: JSONObject?): SessionContext? {
+        value ?: return null
+        val tokens = (value.opt("tokens") as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
+        val window = (value.opt("window") as? Number)?.toLong()?.takeIf { it > 0 }
+        val level = when (value.opt("level") as? String) {
+            "ok" -> ContextLevel.Ok
+            "warn" -> ContextLevel.Warn
+            "hot" -> ContextLevel.Hot
+            else -> null
+        }
+        return SessionContext(tokens, window, level)
     }
 }

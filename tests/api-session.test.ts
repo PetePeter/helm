@@ -17,9 +17,10 @@ const { DiscardTable, lookupKey: lookupKeyOf } = await import('../src/session/ap
 
 type Msg = import('../src/session/api/api-agent-loop.js').ChatMessage;
 type Result = import('../src/session/api/api-agent-loop.js').CompletionResult;
+type ScriptedReply = Result | Result['message'];
 
 /** A scripted model: each complete() returns the next reply and records what it was sent. */
-function scriptedClient(replies: Result['message'][]) {
+function scriptedClient(replies: ScriptedReply[]) {
   const calls: Array<{ messages: Msg[]; toolNames: string[] }> = [];
   return {
     calls,
@@ -27,7 +28,7 @@ function scriptedClient(replies: Result['message'][]) {
       calls.push({ messages: structuredClone(messages), toolNames: tools.map((t) => t.name) });
       const next = replies.shift();
       if (!next) throw new Error('script exhausted');
-      return { message: next };
+      return next && 'message' in next ? next : { message: next };
     },
   };
 }
@@ -849,7 +850,7 @@ describe('ApiSessionHost', () => {
   beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-host-')); });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  function makeHost(replies: Result['message'][], extra: Partial<ConstructorParameters<typeof ApiSessionHost>[0]> = {}) {
+  function makeHost(replies: ScriptedReply[], extra: Partial<ConstructorParameters<typeof ApiSessionHost>[0]> = {}) {
     const client = scriptedClient(replies);
     const dispatched: Array<{ name: string; args: Record<string, unknown>; sessionId?: string }> = [];
     const hooks: string[] = [];
@@ -889,6 +890,25 @@ describe('ApiSessionHost', () => {
     await vi.waitFor(() => expect(dispatched).toEqual([{ name: 'chat_send', args: { message: 'fine thanks' }, sessionId: 's1' }]));
     expect(hooks).toEqual(['UserPromptSubmit', 'Stop']);
     expect(usages[0]).toMatchObject({ thoughtCount: 1, toolCalls: 0 });
+  });
+
+  it('refreshes API context after each successful turn, even when the count repeats', async () => {
+    const changed = vi.fn();
+    const { host, usages } = makeHost([
+      { message: { content: 'first' }, usage: { total_tokens: 8_000 } },
+      { message: { content: 'second' }, usage: { total_tokens: 8_000 } },
+    ], { onContextUsageChanged: changed });
+    const proc = host.create({ sessionId: 's1', sessionName: 'n', cliSessionName: 'refresh-context', api });
+
+    proc.write(`${mobileMsg}\r`);
+    await vi.waitFor(() => expect(usages).toHaveLength(1));
+    proc.write(`${mobileMsg}\r`);
+    await vi.waitFor(() => expect(usages).toHaveLength(2));
+
+    expect(usages.map((usage) => usage.contextTokens)).toEqual([8_000, 8_000]);
+    expect(changed).toHaveBeenCalledTimes(2);
+    expect(changed).toHaveBeenNthCalledWith(1, 's1');
+    expect(changed).toHaveBeenNthCalledWith(2, 's1');
   });
 
   it('/clear refreshes desktop context usage after resetting API history', async () => {

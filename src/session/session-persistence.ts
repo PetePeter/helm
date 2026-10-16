@@ -83,6 +83,7 @@ function isContextUsageSnapshot(value: unknown): value is SessionContextUsageSna
   return isRecord(value)
     && isNumber(value.tokens) && value.tokens > 0
     && (value.window === undefined || (isNumber(value.window) && value.window > 0))
+    && (value.level === undefined || value.level === 'ok' || value.level === 'warn' || value.level === 'hot')
     && (value.measuredAtIso === undefined || isString(value.measuredAtIso))
     && (value.source === undefined || value.source === 'transcript' || value.source === 'api' || value.source === 'statusline');
 }

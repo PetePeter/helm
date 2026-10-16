@@ -206,8 +206,10 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
     val pulls by client.chats.pulls.collectAsState()
     val excludedComfyReferenceIds by client.chats.excludedComfyReferenceIds.collectAsState()
     val unreadCounts by client.chats.unreadCounts.collectAsState()
-    val contextHistories = remember(threads) {
-        threads.mapNotNull { (id, thread) -> ContextGraph.fromThread(thread)?.let { id to it } }.toMap()
+    val contextHistories = remember(threads, sessions) {
+        sessions.mapNotNull { session ->
+            ContextGraph.fromThread(threads[session.id].orEmpty(), session.context)?.let { session.id to it }
+        }.toMap()
     }
     val capabilities by client.capabilities.state.collectAsState()
     val snapshot by client.control.snapshot.collectAsState()

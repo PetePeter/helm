@@ -95,6 +95,26 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun `compact context parses tokens window and level while bad context degrades to absent`() {
+        val parsed = SessionWire.parseList(
+            JSONArray()
+                .put(JSONObject(mapOf("id" to "known", "context" to JSONObject(mapOf(
+                    "tokens" to 12_500,
+                    "window" to 100_000,
+                    "level" to "warn",
+                )))))
+                .put(JSONObject(mapOf("id" to "bad", "context" to JSONObject(mapOf(
+                    "tokens" to "many",
+                    "window" to -1,
+                    "level" to "unknown",
+                ))))),
+        )!!
+
+        assertEquals(SessionContext(12_500, 100_000, ContextLevel.Warn), parsed[0].context)
+        assertNull(parsed[1].context)
+    }
+
+    @Test
     fun `the three row fields degrade to absent, never to a crash`() {
         val parsed = SessionWire.parseList(
             listOf(

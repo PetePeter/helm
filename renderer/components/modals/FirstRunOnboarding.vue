@@ -33,7 +33,7 @@ interface WorkspaceGuideItem {
 }
 
 const WORKSPACE_GUIDE: WorkspaceGuideItem[] = [
-  { id: 'draft', title: 'Draft', description: 'A text pad you and the session's agent both write.', paneId: PANE_DRAFT },
+  { id: 'draft', title: 'Draft', description: "A text pad you and the session's agent both write.", paneId: PANE_DRAFT },
   { id: 'mission-bar', title: 'Mission bar', description: 'Pinned one-line TL;DR of what the session is doing.', paneId: PANE_TERMINAL },
   { id: 'artifacts', title: 'Artifacts', description: 'Reports and pages the agent produces for you.', paneId: PANE_ARTIFACTS },
   { id: 'mess', title: 'Mess', description: 'Project-wide conversation between your sessions.', paneId: PANE_MESS },

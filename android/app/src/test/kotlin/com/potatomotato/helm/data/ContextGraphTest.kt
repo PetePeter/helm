@@ -31,6 +31,30 @@ class ContextGraphTest {
     }
 
     @Test
+    fun aSessionRowContextIsTheLatestSampleAndCarriesItsServerLevel() {
+        val history = ContextGraph.fromThread(
+            listOf(reply(10, 1_200, 10_000)),
+            SessionContext(8_500, 10_000, ContextLevel.Hot),
+            now = 50,
+        )!!
+
+        assertEquals(
+            listOf(ContextSample(10, 1_200), ContextSample(50, 8_500, ContextLevel.Hot)),
+            history.samples,
+        )
+        assertEquals(10_000L, history.window)
+        assertEquals(ContextLevel.Hot, ContextGraph.level(history.samples.last(), history.limits))
+    }
+
+    @Test
+    fun aSessionRowContextCanCreateHistoryBeforeAnyReplyArrives() {
+        val history = ContextGraph.fromThread(emptyList(), SessionContext(1_200, null, null), now = 50)!!
+
+        assertEquals(listOf(ContextSample(50, 1_200)), history.samples)
+        assertNull(history.window)
+    }
+
+    @Test
     fun windowCarriesTheEarlierLevelInAndTheLatestOutToNow() {
         val samples = listOf(ContextSample(0, 10), ContextSample(50, 20), ContextSample(80, 30))
         assertEquals(

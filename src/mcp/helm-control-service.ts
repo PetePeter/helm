@@ -38,6 +38,7 @@ import type { RingRetry } from '../session/ring-retry.js';
 import type { CreateScheduledTaskParams, ScheduledTask, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
 import type { ContextBindingTargetType, ContextNode, ContextPermission, PlanContextRef } from '../types/context.js';
 import type { ApiSessionContextSize, SessionContextSize } from '../session/context-size.js';
+import type { ContextLevel } from '../session/context-limits.js';
 import type { Skill, SkillCreateInput, SkillReview, SkillSummary, SkillUpdateInput } from '../types/skill.js';
 import { ContextManager } from '../session/context-manager.js';
 import { SkillManager } from '../session/skill-manager.js';
@@ -126,8 +127,8 @@ export interface SessionSummary {
   /** Human label for cliType. Use this in anything a person reads. */
   cliTypeName: string;
   workingDir?: string;
-  /** Read only by session_get; session_list deliberately omits transcript-backed usage. */
-  context?: SessionContextSize;
+  /** Compact current context for mobile rows; omitted when usage is unknown. */
+  context?: SessionContextSummary;
   /** Current local git branch; omitted for main/master and non-repositories. */
   gitBranch?: string;
   projectId?: string;
@@ -186,6 +187,15 @@ export interface SessionSummary {
   /** Subagents this session is waiting on — clients show a 🔥 count. */
   pendingSubagents?: number;
 }
+
+export interface SessionContextSummary {
+  tokens: number;
+  window?: number;
+  level?: ContextLevel;
+}
+
+/** session_get keeps its detailed context metadata while sharing summary fields. */
+export type SessionDetails = Omit<SessionSummary, 'context'> & { context: SessionContextSize };
 
 export interface CliSummary {
   cliType: string;
@@ -1831,7 +1841,7 @@ export class HelmControlService extends EventEmitter {
     return getSessionInfo(this.sessionManager, authContext, context);
   }
 
-  /** Current context size for a desktop row cache; session_list stays transcript-free. */
+  /** Current context size with its alert level, shared by row summaries and session info. */
   getSessionContextSize(sessionId: string): SessionContextSize | undefined {
     return this.sessionService.getSessionContextSize(sessionId);
   }
