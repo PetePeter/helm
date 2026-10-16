@@ -8,11 +8,13 @@ import org.junit.Assert.assertTrue
 class AlertTest {
 
     @Test
-    fun `the notification id is keyed on the session and nothing else`() {
-        // This is what makes ten buzzes collapse to one row. Key it on the kind
-        // or the timestamp and the phone stacks instead of replacing.
-        assertEquals(Alert.notificationId("s1"), Alert.notificationId("s1"))
-        assertNotEquals(Alert.notificationId("s1"), Alert.notificationId("s2"))
+    fun `the notification id is keyed on the session and row kind`() {
+        val message = Alert.notificationId("s1", AlertKind.Message)
+        val attention = Alert.notificationId("s1", AlertKind.Attention)
+
+        assertEquals(message, Alert.notificationId("s1", AlertKind.Message))
+        assertNotEquals(message, attention)
+        assertNotEquals(message, Alert.notificationId("s2", AlertKind.Message))
     }
 
     @Test
@@ -35,18 +37,18 @@ class AlertTest {
     }
 
     @Test
-    fun `a session alert without an artifact keeps the id it always had`() {
-        // The session-only derivation is unchanged: notifications posted by the
-        // previous build must still be reachable by this one.
-        assertEquals(Alert.notificationId("s1"), Alert.of("s1", "work", "x", AlertKind.Idle).notificationId)
+    fun `a session row keeps its id when its body is updated`() {
+        val before = Alert.of("s1", "work", "x", AlertKind.Idle)
+        val after = Alert.of("s1", "work", "updated", AlertKind.Idle)
+
+        assertEquals(before.notificationId, after.notificationId)
     }
 
     @Test
-    fun `the notification id never collides with the foreground service`() {
-        // HelmLinkService owns id 1 permanently; colliding would replace the
-        // ongoing link notification with an alert and take the service's row away.
-        val ids = listOf("s1", "s2", "a-much-longer-session-uuid", "").map(Alert::notificationId)
-        assertTrue(ids.none { it == FOREGROUND_SERVICE_NOTIFICATION_ID })
+    fun `all alert ids stay above the fixed reserved range`() {
+        val ids = AlertKind.entries.map { Alert.notificationId("s1", it) }
+
+        assertTrue(ids.all { it > Alert.RESERVED_NOTIFICATION_ID_MAX })
     }
 
     @Test
@@ -90,8 +92,4 @@ class AlertTest {
         assertEquals(AlertKind.Artifact, AlertKind.fromWire("artifact"))
     }
 
-    private companion object {
-        /** Mirrors HelmLinkService's NOTIFICATION_ID; see the collision test. */
-        const val FOREGROUND_SERVICE_NOTIFICATION_ID = 1
-    }
 }

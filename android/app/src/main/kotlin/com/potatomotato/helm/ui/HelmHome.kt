@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.compose.ui.res.stringResource
@@ -1906,13 +1907,15 @@ private fun WatchSessions(client: HelmClient, active: Boolean) {
     }
 }
 
-/** Tell the notifier which chat thread is actually visible to the user. */
+/** Report a thread as visible only while the app is resumed and its window has focus. */
 @Composable
 private fun ReportViewedChat(client: HelmClient, viewedChat: String?) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
 
-    LaunchedEffect(client, lifecycle, viewedChat) {
-        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+    LaunchedEffect(client, lifecycle, viewedChat, windowFocused) {
+        if (!windowFocused) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             client.alerts.viewed(viewedChat)
             try {
                 awaitCancellation()

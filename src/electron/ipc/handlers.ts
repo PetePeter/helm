@@ -1352,6 +1352,9 @@ export function registerIPCHandlers(
     },
     journal: mobileChatJournal,
   });
+  const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
+  mobileChatBridge.setChatMessageObserver(sessionId => mobileAlertNotifier.recordChatMessage(sessionId));
+
   registerComfyUiSessionHost(new ComfyUiSessionHost({
     tempDir: getTempDir(dirname ?? process.cwd()),
     artifacts: artifactManager,
@@ -1491,7 +1494,6 @@ export function registerIPCHandlers(
   // The phone's notification path: a state change, a notify_user or a flash
   // reaches a pocketed phone over the already-open BLE link. Fed in ADDITION to
   // Telegram, never instead of it — see docs/chat-fan-out.md.
-  const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
   notificationManager.setMobileNotifier(mobileAlertNotifier);
   const observeForAlerts = (session: ObservedSession) => mobileAlertNotifier.observe(session);
   const forgetForAlerts = (event: { sessionId: string }) => mobileAlertNotifier.forget(event.sessionId);

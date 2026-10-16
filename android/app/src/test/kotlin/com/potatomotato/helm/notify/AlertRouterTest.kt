@@ -58,16 +58,30 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `a change of channel cancels before posting so the notification does not strand`() {
+    fun `a status alert is dropped beside existing attention content`() {
         router.onAlert(alert(kind = "attention"))
         port.calls.clear()
 
         router.onAlert(alert(kind = "completion"))
 
-        // Android will not move a live notification to another channel; without
-        // the cancel the old row survives under the old channel forever.
-        assertEquals(listOf("cancel:s1", "post:s1:Completion"), port.calls)
+        assertTrue(port.calls.isEmpty())
         assertEquals(1, port.shade.size)
+        assertEquals(AlertKind.Attention, port.showing("s1", AlertKind.Attention)?.kind)
+    }
+
+    @Test
+    fun `message and attention rows coexist but status adds no noise`() {
+        router.onMessage(message())
+        router.onAlert(alert(kind = "attention"))
+        port.calls.clear()
+
+        router.onAlert(alert(kind = "idle"))
+        router.onAlert(alert(kind = "completion"))
+
+        assertTrue(port.calls.isEmpty())
+        assertEquals(2, port.shade.size)
+        assertEquals(AlertKind.Message, port.showing("s1", AlertKind.Message)?.kind)
+        assertEquals(AlertKind.Attention, port.showing("s1", AlertKind.Attention)?.kind)
     }
 
     @Test
@@ -106,6 +120,7 @@ class AlertRouterTest {
         router.onAlert(alert())
 
         assertTrue(port.shade.isEmpty())
+        assertTrue(port.calls.isEmpty())
     }
 
     @Test
@@ -157,7 +172,7 @@ class AlertRouterTest {
     }
 
     @Test
-    fun `a channel change is forgotten when the notification is cleared`() {
+    fun `clearing content allows a later status row`() {
         router.onAlert(alert(kind = "attention"))
         router.viewed("s1")
         router.viewed(null)
@@ -165,20 +180,34 @@ class AlertRouterTest {
 
         router.onAlert(alert(kind = "completion"))
 
-        // No stale cancel for a row the user already dismissed by reading it.
+        // The status row may appear once no content row remains.
         assertEquals(listOf("post:s1:Completion"), port.calls)
     }
 
     @Test
-    fun `alerts are dropped, not queued, while no port is attached`() {
+    fun `alerts received before port attachment are replayed once`() {
         val detached = AlertRouter()
+        val attached = FakeNotificationPort()
 
         detached.onAlert(alert())
-        detached.port = port
+        detached.port = attached
+        detached.port = attached
 
-        // A notification for something that happened before the app had a
-        // notification surface is stale by the time it could be shown.
-        assertTrue(port.shade.isEmpty())
+        assertEquals(1, attached.shade.size)
+        assertEquals("Needs a decision", attached.showing("s1")?.text)
+    }
+
+    @Test
+    fun `queued status is dropped when content arrives before the port attaches`() {
+        val detached = AlertRouter()
+        val attached = FakeNotificationPort()
+        detached.onAlert(alert(kind = "completion"))
+        detached.onMessage(message())
+
+        detached.port = attached
+
+        assertEquals(1, attached.shade.size)
+        assertEquals(AlertKind.Message, attached.showing("s1", AlertKind.Message)?.kind)
     }
 
     @Test

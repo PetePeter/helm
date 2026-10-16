@@ -135,6 +135,19 @@ describe('MobileChatBridge as a chat surface', () => {
     });
   });
 
+  it('reports delivered chat messages to the alert notifier, but not alerts or offline messages', async () => {
+    const observed: string[] = [];
+    bridge.setChatMessageObserver(sessionId => observed.push(sessionId));
+
+    await bridge.sendToSession({ sessionId: 's1', text: 'offline' });
+    links.online.add('phone-machine');
+    await bridge.sendToSession({ sessionId: 's1', text: 'hello' });
+    bridge.recordDesktopTurn('s1', 'desktop voice turn', 'turn-1');
+    bridge.sendAlert('s1', 'completion', 'Finished');
+
+    expect(observed).toEqual(['s1', 's1']);
+  });
+
   it('journals a message once with its seq, before and regardless of delivery', async () => {
     // No phone online: the fan-out row will say not-sent, the journal must not care.
     await bridge.sendToSession({ sessionId: 's1', text: 'nobody heard this' });

@@ -54,10 +54,16 @@ export interface ObservedSession {
 /** The body for a flash, which carries no text of its own by design. */
 export const FLASH_ALERT_TEXT = 'Needs your attention';
 
+const RECENT_CHAT_STATUS_SUPPRESSION_MS = 5_000;
+
 export class MobileAlertNotifier {
   private readonly lastState = new Map<string, SessionState>();
+  private readonly recentChatMessagesAt = new Map<string, number>();
 
-  constructor(private readonly sink: MobileAlertSink) {}
+  constructor(
+    private readonly sink: MobileAlertSink,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   /**
    * One `session:updated`. Pushes only on an active → non-active transition of
@@ -70,12 +76,20 @@ export class MobileAlertNotifier {
     else this.lastState.delete(session.id);
 
     const kind = alertKindForTransition(previous, next);
-    if (kind) this.push(session.id, kind, alertText(kind));
+    if (!kind) return;
+    if ((kind === 'idle' || kind === 'completion') && this.hasRecentChatMessage(session.id)) return;
+    this.push(session.id, kind, alertText(kind));
+  }
+
+  /** Record a chat row carried to the phone so a near-simultaneous status is redundant. */
+  recordChatMessage(sessionId: string): void {
+    this.recentChatMessagesAt.set(sessionId, this.now());
   }
 
   /** A gone session must not leave a state behind for a reused id to transition from. */
   forget(sessionId: string): void {
     this.lastState.delete(sessionId);
+    this.recentChatMessagesAt.delete(sessionId);
   }
 
   /**
@@ -99,5 +113,16 @@ export class MobileAlertNotifier {
     } catch (error) {
       logger.warn(`[MobileAlert] Could not push a ${kind} alert: ${error}`);
     }
+  }
+
+  private hasRecentChatMessage(sessionId: string): boolean {
+    const sentAt = this.recentChatMessagesAt.get(sessionId);
+    if (sentAt === undefined) return false;
+    const elapsed = this.now() - sentAt;
+    if (elapsed < 0 || elapsed > RECENT_CHAT_STATUS_SUPPRESSION_MS) {
+      this.recentChatMessagesAt.delete(sessionId);
+      return false;
+    }
+    return true;
   }
 }

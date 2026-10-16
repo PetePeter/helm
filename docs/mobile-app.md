@@ -476,6 +476,19 @@ notification is how you learn it arrived while you were elsewhere. That is the
 same shape as the ratified Telegram/app duplication: one message, told once on
 each surface.
 
+Rows are keyed by session and kind, with artifacts also keyed by artifact id.
+Message and Attention rows can coexist; an Idle or Completion row is suppressed
+while either is showing. Reposting the same row updates it without cancelling a
+different channel, and Android alerts only on its first post. Alert ids start
+above the reserved range 1–1,000,001.
+
+The app reports a thread as viewed only while its lifecycle is **RESUMED** and
+its window has focus. Incoming alerts for that thread are ignored without
+cancelling rows; opening it clears its existing rows. Alerts received before the
+notification surface is attached are queued and replayed once. On desktop, an
+Idle or Completion alert is also suppressed for five seconds after a chat row
+for the same session is delivered to a phone.
+
 Four decisions worth keeping:
 
 - **Only a `Message` carries a reply box.** The other kinds report that something
@@ -622,14 +635,15 @@ graph LR
     SA[session-alert.ts<br/>what counts as 'something happened'] --> CB[ChatBroker]
     CB --> TG[Telegram bridge]
     CB --> MB[MobileChatBridge]
-    MB -->|BLE| PH[Phone notification<br/>keyed on session id]
+    MB -->|BLE| PH[Phone notification<br/>keyed on session and row kind]
 ```
 
 The **definition** of a worthwhile transition is stated once in
 `session-alert.ts` and read by both surfaces; only the per-transport toggles
-differ. The phone does no deduplication, deliberately: its notification id is
-keyed on the session, so ten alerts from one session replace into one row, which
-is a better mechanism than a suppression window.
+differ. The phone keeps one row per session and kind, so repeats update in place.
+Idle and Completion are omitted when a Message or Attention row already tells
+the user about that session; a short desktop window also omits status immediately
+after a delivered chat row. Telegram and phone delivery remain independent.
 
 > Note: Telegram's own state-change notifications have **never fired** —
 > `TelegramNotifier.handleStateChange` has no production caller. The live signal

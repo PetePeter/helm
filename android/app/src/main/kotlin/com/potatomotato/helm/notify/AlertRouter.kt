@@ -34,32 +34,37 @@ import kotlinx.coroutines.flow.asStateFlow
  * give is a switch one tap from the screen the user is on. Turning it off takes
  * down what is already showing — see [setEnabled].
  *
- * ONE ROW PER SESSION — OR PER ARTIFACT WITHIN IT. The notification id is the
- * session's, so a session that buzzes ten times replaces its own row nine times.
- * An ARTIFACT notice instead keys on the artifact id: distinct artifacts from one
- * session stack (two reports revised at once are two things to read) while the
- * same artifact revised twice replaces its own row. This is deliberately NOT the
- * same thing as the ratified duplication between Telegram and the app — that one
- * is two surfaces telling you once each, which is the point; ten rows from one
- * session is one surface telling you the same thing ten times, which is noise.
+ * ONE ROW PER SESSION AND KIND — OR PER ARTIFACT WITHIN IT. Repeats of one kind
+ * update in place, while Message and Attention may coexist. Artifact rows also
+ * key on artifact id so distinct artifacts stack and revisions replace their own.
  *
- * NOTHING FOR WHAT YOU ARE LOOKING AT. An alert for the session already open in
- * the foreground is dropped: the user is reading the thing it would tell them
- * about. Backgrounded, the same alert posts — being out of the room is exactly
- * when this feature is for. Opening the session clears its rows too, artifact
- * rows included.
+ * NOTHING FOR WHAT YOU ARE LOOKING AT. The UI reports a session as viewed only
+ * while RESUMED and window-focused. An alert in that session is ignored without
+ * cancelling rows; viewing the thread itself clears its existing rows.
  *
- * A CHANNEL CHANGE IS A CANCEL FIRST. Android will not move a live notification
- * between channels, so a row going Attention -> Completion must take the old
- * row down or it strands under a channel the user may have silenced.
+ * CONTENT BEFORE STATUS. Message and Attention rows may coexist. Idle and
+ * Completion rows are dropped while either content row is showing. Row kinds
+ * have separate ids, so posting one never evicts another or crosses channels.
  *
  * Deliberately free of Android types. [port] is assigned once the app has a
  * Context, the same way [com.potatomotato.helm.ble.HelmLink.sender] is.
  */
 class AlertRouter {
 
-    /** Null until the app is up. Alerts that arrive before then are DROPPED. */
+    /** Alerts held until the app attaches the notification surface. */
+    private val pending = linkedMapOf<Int, Alert>()
+
+    /** Null until the app is up; queued rows are replayed once when it attaches. */
     var port: NotificationPort? = null
+        set(value) {
+            field = value
+            if (value != null && pending.isNotEmpty()) {
+                val queued = pending.values.toList()
+                pending.clear()
+                queued.filter { it.kind.isContent }.forEach(::post)
+                queued.filterNot { it.kind.isContent }.forEach(::post)
+            }
+        }
 
     private var viewedSessionId: String? = null
 
@@ -94,7 +99,10 @@ class AlertRouter {
     fun setEnabled(value: Boolean) {
         _enabled.value = value
         settings.enabled = value
-        if (!value) clearAll()
+        if (!value) {
+            pending.clear()
+            clearAll()
+        }
     }
 
     /** Which session each live row belongs to, what it is showing, and whose it is. */
@@ -102,8 +110,8 @@ class AlertRouter {
 
     /**
      * What is on the shade right now, keyed by notification id — the id IS the
-     * row's identity, which is exactly what lets a session hold one row of its
-     * own plus one per artifact without any second bookkeeping.
+     * row's identity, so a session can hold content rows and artifact rows without
+     * any second bookkeeping.
      */
     private val showing = mutableMapOf<Int, Row>()
 
@@ -142,22 +150,24 @@ class AlertRouter {
     }
 
     private fun post(record: MobileRecord.Chat, kind: AlertKind) {
-        val surface = port ?: return
         if (!_enabled.value) return
         if (record.sessionId.isBlank() || record.sessionName.isBlank() || record.text.isBlank()) return
         if (kind == AlertKind.Artifact && record.artifactId.isNullOrBlank()) return
 
-        if (viewedSessionId == record.sessionId) {
-            // The thread is visible. Clear anything left over from before it was viewed.
-            clearSession(surface, record.sessionId)
+        post(Alert.of(record.sessionId, record.sessionName, record.text, kind, record.artifactId))
+    }
+
+    private fun post(alert: Alert) {
+        if (!_enabled.value || viewedSessionId == alert.sessionId) return
+        if (alert.kind.isStatus && hasContentRow(alert.sessionId)) return
+
+        val surface = port
+        if (surface == null) {
+            pending[alert.notificationId] = alert
             return
         }
-
-        val alert = Alert.of(record.sessionId, record.sessionName, record.text, kind, record.artifactId)
-        val shown = showing[alert.notificationId]
-        if (shown != null && shown.kind != kind) surface.cancel(alert)
         surface.post(alert)
-        showing[alert.notificationId] = Row(record.sessionId, kind, record.artifactId)
+        showing[alert.notificationId] = Row(alert.sessionId, alert.kind, alert.artifactId)
     }
 
     /**
@@ -169,6 +179,7 @@ class AlertRouter {
      * for that session would cancel a row that was not there.
      */
     fun replySent(sessionId: String) {
+        pending.entries.removeAll { it.value.sessionId == sessionId }
         val surface = port ?: return
         clearSession(surface, sessionId)
     }
@@ -191,11 +202,17 @@ class AlertRouter {
     /** The chat thread actually displayed to the user, or null when none is visible. */
     fun viewed(sessionId: String?) {
         viewedSessionId = sessionId
+        if (sessionId == null) return
+        pending.entries.removeAll { it.value.sessionId == sessionId }
         val surface = port ?: return
-        if (sessionId != null) clearSession(surface, sessionId)
+        clearSession(surface, sessionId)
     }
 
-    /** Every row this session currently holds — its own, and one per artifact. */
+    private fun hasContentRow(sessionId: String): Boolean =
+        showing.values.any { it.sessionId == sessionId && it.kind.isContent } ||
+            pending.values.any { it.sessionId == sessionId && it.kind.isContent }
+
+    /** Every row this session currently holds: each kind and each artifact. */
     private fun clearSession(surface: NotificationPort, sessionId: String) =
         clear(surface, showing.filterValues { it.sessionId == sessionId })
 
@@ -219,3 +236,9 @@ class AlertRouter {
         }
     }
 }
+
+private val AlertKind.isContent: Boolean
+    get() = this == AlertKind.Message || this == AlertKind.Attention
+
+private val AlertKind.isStatus: Boolean
+    get() = this == AlertKind.Idle || this == AlertKind.Completion

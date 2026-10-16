@@ -150,6 +150,7 @@ export class MobileChatBridge implements ChatBridge {
     });
   };
   private listening = false;
+  private chatMessageObserver?: (sessionId: string) => void;
   /**
    * Phones owed a session-list notice, with the seq each one already holds.
    * A phone is here from its delta fetch until its one notice goes out.
@@ -165,6 +166,11 @@ export class MobileChatBridge implements ChatBridge {
   constructor(deps: MobileChatBridgeDeps) {
     this.deps = deps;
     this.now = deps.now ?? Date.now;
+  }
+
+  /** Observe chat rows accepted by at least one phone. */
+  setChatMessageObserver(observer: (sessionId: string) => void): void {
+    this.chatMessageObserver = observer;
   }
 
   /** Begin accepting inbound records. Idempotent. */
@@ -300,7 +306,9 @@ export class MobileChatBridge implements ChatBridge {
 
     // Every linked phone gets it; one refusing does not cancel the others.
     const sent = machines.map(machineId => this.deps.links.send(machineId, payload));
-    return sent.some(Boolean)
+    const carried = sent.some(Boolean);
+    if (carried && input.kind === undefined) this.chatMessageObserver?.(input.sessionId);
+    return carried
       ? { sent: true }
       : { sent: false, reason: 'No linked phone accepted the message' };
   }

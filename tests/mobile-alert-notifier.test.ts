@@ -24,10 +24,12 @@ class RecordingSink {
 
 let sink: RecordingSink;
 let notifier: MobileAlertNotifier;
+let currentTime: number;
 
 beforeEach(() => {
   sink = new RecordingSink();
-  notifier = new MobileAlertNotifier(sink);
+  currentTime = 1_000;
+  notifier = new MobileAlertNotifier(sink, () => currentTime);
 });
 
 describe('MobileAlertNotifier', () => {
@@ -90,6 +92,30 @@ describe('MobileAlertNotifier', () => {
     notifier.observe({ id: 's1', aiagentState: 'completed' });
 
     expect(sink.alerts).toHaveLength(2);
+  });
+
+  it('drops idle and completion alerts shortly after a chat message for that session', () => {
+    notifier.recordChatMessage('s1');
+    notifier.observe({ id: 's1', aiagentState: 'implementing' });
+    notifier.observe({ id: 's1', aiagentState: 'idle' });
+    notifier.observe({ id: 's1', aiagentState: 'implementing' });
+    notifier.observe({ id: 's1', aiagentState: 'completed' });
+
+    expect(sink.alerts).toEqual([]);
+  });
+
+  it('sends status alerts after the window and for other sessions', () => {
+    notifier.recordChatMessage('s1');
+    currentTime += 5_001;
+    notifier.observe({ id: 's1', aiagentState: 'implementing' });
+    notifier.observe({ id: 's1', aiagentState: 'completed' });
+    notifier.observe({ id: 's2', aiagentState: 'implementing' });
+    notifier.observe({ id: 's2', aiagentState: 'idle' });
+
+    expect(sink.alerts.map(alert => [alert.sessionId, alert.kind])).toEqual([
+      ['s1', 'completion'],
+      ['s2', 'idle'],
+    ]);
   });
 
   it('pushes notify_user as the agent wrote it', () => {

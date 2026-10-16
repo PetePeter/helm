@@ -75,8 +75,8 @@ data class Alert(
      */
     val artifactId: String? = null,
 ) {
-    /** Stable per SESSION, or per ARTIFACT within one — see [Companion.notificationId]. */
-    val notificationId: Int get() = notificationId(sessionId, artifactId)
+    /** Stable per SESSION and row kind, or per ARTIFACT within one. */
+    val notificationId: Int get() = notificationId(sessionId, kind, artifactId)
 
     companion object {
         /**
@@ -88,23 +88,26 @@ data class Alert(
 
         const val ELLIPSIS = "…"
 
+        /** Notification ids 1..1,000,001 belong to other app surfaces or are reserved. */
+        const val RESERVED_NOTIFICATION_ID_MAX = 1_000_001
+
         /**
-         * The notification id is derived from the SESSION ID — plus the artifact
-         * id, when the row belongs to one artifact rather than the session.
+         * Each kind has a disjoint id range; rows within it are keyed by session
+         * and artifact id. Reposting one row updates it in place, while different
+         * kinds can never evict each other.
          *
-         * That is the whole mechanism behind "ten buzzes from one session replace
-         * rather than stack": Android replaces a notification posted with an id it
-         * already holds. Keying on the kind or the timestamp would stack them, and
-         * a phone showing ten rows for one session is worse than showing none.
-         * The session-only derivation is unchanged so notifications posted by a
-         * build before artifacts existed remain reachable by this one.
-         *
-         * Offset past [FOREGROUND_ID] so an alert can never displace the ongoing
-         * link notification the foreground service owns.
+         * The generated range starts after the fixed ids used by foreground,
+         * call, ring and other notification surfaces.
          */
-        fun notificationId(sessionId: String, artifactId: String? = null): Int {
-            val key = if (artifactId == null) sessionId else sessionId + ARTIFACT_KEY_JOINER + artifactId
-            return FOREGROUND_ID + 1 + (key.hashCode().toLong() - Int.MIN_VALUE).mod(ID_SPAN).toInt()
+        fun notificationId(sessionId: String, kind: AlertKind, artifactId: String? = null): Int {
+            val key = if (artifactId == null) {
+                "$sessionId$ARTIFACT_KEY_JOINER${kind.wire}"
+            } else {
+                "$sessionId$ARTIFACT_KEY_JOINER${kind.wire}$ARTIFACT_KEY_JOINER$artifactId"
+            }
+            val kindOffset = kind.ordinal.toLong() * ID_SPAN
+            return RESERVED_NOTIFICATION_ID_MAX + 1 + kindOffset.toInt() +
+                (key.hashCode().toLong() - Int.MIN_VALUE).mod(ID_SPAN).toInt()
         }
 
         fun of(
@@ -131,18 +134,14 @@ data class Alert(
             return if (flat.length <= MAX_BODY) flat else flat.take(MAX_BODY - 1).trimEnd() + ELLIPSIS
         }
 
-        /** Mirrors HelmLinkService's own notification id. */
-        private const val FOREGROUND_ID = 1
-
         /**
-         * Joins a session id and an artifact id into one hashed key. It cannot
-         * appear in either (both are UUIDs on the wire), so "session `a`, artifact
-         * `b`" can never collide with "session `ab`".
+         * Separates the parts of a hashed key. Session and artifact ids are UUIDs
+         * on the wire, so this cannot occur in either value.
          */
         private const val ARTIFACT_KEY_JOINER = "#"
 
-        /** Room for far more sessions than a phone will ever hold at once. */
-        private const val ID_SPAN = 1_000_000L
+        /** Disjoint notification-id range per kind; five current kinds fit safely in Int. */
+        private const val ID_SPAN = 400_000_000L
 
         private val WHITESPACE = Regex("\\s+")
     }

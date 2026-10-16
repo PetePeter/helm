@@ -18,9 +18,9 @@ import com.potatomotato.helm.ui.theme.HelmColors
  * [NotificationPort] against the real system shade. TRANSLATION ONLY — every
  * decision about whether, when and what to post is [AlertRouter]'s.
  *
- * Three channels, created once, so the user can silence "a session went idle"
- * without silencing "a session needs you". That split is the whole reason there
- * is more than one channel; Android gives the user no way to filter within one.
+ * One channel per kind, created once, so the user can silence "a session went
+ * idle" without silencing "a session needs you". Android gives no way to filter
+ * different event kinds within one channel.
  *
  * Nothing here throws into the link: a notification that cannot be posted (the
  * user revoked POST_NOTIFICATIONS while the app was running) is logged and
@@ -81,6 +81,7 @@ class AndroidNotifications(private val context: Context) : NotificationPort {
             .setColorized(false)
             .setContentIntent(openSession(alert))
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
             .setShowWhen(true)
 
     private fun show(alert: Alert, notification: Notification) {
