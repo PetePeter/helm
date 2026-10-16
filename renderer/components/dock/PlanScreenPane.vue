@@ -7,7 +7,7 @@
  * The pane owns the rendered-canvas lifecycle and keeps the shared canvas bound
  * to the selected session, so docked and pop-out rendering share one contract.
  */
-import { onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import PlanScreen from '../panels/PlanScreen.vue';
 import { useNavigationStore } from '../../stores/navigation.js';
 import { useAppStore } from '../../stores/app.js';
@@ -46,10 +46,17 @@ import {
 } from '../../plans/plan-screen.js';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
 import { useTimeActivity } from '../../composables/useTimeActivity.js';
+import { sessionsState } from '../../screens/sessions-state.js';
+import { buildPlannerDirectories, buildPlannerDirectorySource } from '../../screens/planner-directories.js';
 
 const planWorkspace = useHelmPaneContext().planWorkspace;
 const navStore = useNavigationStore();
 const appStore = useAppStore();
+
+// Same directory list as the plan-projects pane, for the header's project switcher.
+const directories = computed(() => buildPlannerDirectories(
+  buildPlannerDirectorySource(sessionsState.directories, appStore.state.projects ?? []),
+));
 
 onMounted(() => {
   setPlanScreenPaneMounted(true);
@@ -94,6 +101,8 @@ const timeActivity = useTimeActivity(() => (planScreenState.currentDir ? { dirPa
     :attachment-has-any="planScreenState.attachmentHasAny"
     :task-next-checks="planScreenState.taskNextChecks"
     :session-names="planSessionNames()"
+    :directories="directories"
+    @switch-dir="navStore.openPlan($event)"
     @task-watch="openPlanRef"
     @task-builder="navStore.navigateToSession($event)"
     @close="navStore.closePlan()"

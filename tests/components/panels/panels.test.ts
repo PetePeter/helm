@@ -1152,6 +1152,19 @@ describe('PlanScreen', () => {
     expect(w.find('.panel-header__subtitle').text()).toBe('/home/project');
   });
 
+  it('offers the planner directories as a project switcher and emits the pick', async () => {
+    const directories = [
+      { name: 'project', path: '/home/project' },
+      { name: 'other', path: '/home/other' },
+    ];
+    const w = mount(PlanScreen, { props: { ...baseProps, directories } });
+    const select = w.find('select.plan-header__project');
+    expect(select.findAll('option').map((o) => o.text())).toEqual(['project', 'other']);
+    expect((select.element as HTMLSelectElement).value).toBe('/home/project');
+    await select.setValue('/home/other');
+    expect(w.emitted('switchDir')).toEqual([['/home/other']]);
+  });
+
   it('renders plan nodes', () => {
     const w = mount(PlanScreen, { props: baseProps });
     const nodes = w.findAll('.plan-node');

@@ -63,8 +63,11 @@ const props = withDefaults(defineProps<{
   /** False where no session can be switched to (the pop-out): the builder shows as text. */
   canOpenSession?: boolean;
   canPopOut?: boolean;
+  /** Planner directories for the header's project switcher; none hides it. */
+  directories?: Array<{ name: string; path: string }>;
 }>(), {
   sequences: () => [],
+  directories: () => [],
   contexts: () => [],
   selectedContextId: null,
   selectedIds: () => new Set<string>(),
@@ -85,6 +88,7 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   close: [];
+  switchDir: [dirPath: string];
   addNode: [];
   addContext: [];
   exportDir: [];
@@ -695,6 +699,16 @@ function taskCardOf(item: PlanItem) {
     @mousedown="focusPlanScreen"
   >
     <PanelHeader title="Plans" :subtitle="dirPath" icon="📋">
+      <template v-if="directories.length" #subtitle>
+        <select
+          class="plan-header__project"
+          :value="dirPath"
+          title="Switch project"
+          @change="emit('switchDir', ($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="dir in directories" :key="dir.path" :value="dir.path" :title="dir.path">{{ dir.name }}</option>
+        </select>
+      </template>
       <template #actions>
         <div class="plan-header__controls">
           <button class="plan-header__btn" @click="emit('close')">← Back</button>
@@ -1068,7 +1082,8 @@ function taskCardOf(item: PlanItem) {
   display: flex;
 }
 
-.plan-header__btn {
+.plan-header__btn,
+.plan-header__project {
   padding: 4px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -1077,7 +1092,8 @@ function taskCardOf(item: PlanItem) {
   cursor: pointer;
   font-size: 12px;
 }
-.plan-header__btn:focus-visible {
+.plan-header__btn:focus-visible,
+.plan-header__project:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }

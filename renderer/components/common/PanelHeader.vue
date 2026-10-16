@@ -12,7 +12,9 @@ defineProps<{
       <div class="panel-header__identity">
         <span v-if="icon" class="panel-header__icon" aria-hidden="true">{{ icon }}</span>
         <h2>{{ title }}</h2>
-        <span v-if="subtitle" class="panel-header__subtitle">{{ subtitle }}</span>
+        <slot name="subtitle">
+          <span v-if="subtitle" class="panel-header__subtitle">{{ subtitle }}</span>
+        </slot>
       </div>
       <div class="panel-header__spacer" aria-hidden="true"></div>
       <div v-if="$slots.actions" class="panel-header__actions">
