@@ -86,26 +86,24 @@ const DEFAULT_EDGE_RATIO = 0.22;
 const DEFAULT_DOCK_MODES: Partial<Record<DockSide, DockMode>> = { right: 'autohide' };
 
 /**
- * The Classic layout — a close reproduction of the pre-docking UI: session list
- * and tool windows on the left, the view group in the centre, and Artifacts with
- * the Draft as a collapsed right-edge rail.
+ * The Classic layout: sessions and the scheduler tabbed on the left, every
+ * view tabbed in the centre with the Draft beneath it. Quick spawn and Plan
+ * directories start closed and can be reopened from the restore menu.
  *
- * Kept as a literal rather than derived: the left column's split between the
- * session list and the stacked tool windows is a hand-tuned arrangement that no
- * descriptor records, and reproducing the pre-docking UI exactly is the point.
+ * Kept as a literal rather than derived from pane descriptors: it is a
+ * hand-tuned arrangement that no descriptor records.
  */
 function createClassicLayout(): DockWorkspaceLayout {
   return {
     version: DOCK_LAYOUT_VERSION,
     root: split('horizontal', [
-      dock('left', 'pinned', split('vertical', [
-        group([PANE_SESSIONS]),
-        group([PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES], PANE_SCHEDULER),
-      ], [0.6, 0.4])),
-      group([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], PANE_TERMINAL),
-      dock('right', 'autohide', group([PANE_ARTIFACTS, PANE_DRAFT], PANE_ARTIFACTS)),
-    ], [0.22, 0.56, 0.22]),
-    closed: [],
+      dock('left', 'pinned', group([PANE_SESSIONS, PANE_SCHEDULER], PANE_SESSIONS)),
+      split('vertical', [
+        group([PANE_TERMINAL, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], PANE_TERMINAL),
+        group([PANE_DRAFT]),
+      ], [0.8, 0.2]),
+    ], [0.28, 0.72]),
+    closed: [PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES],
   };
 }
 

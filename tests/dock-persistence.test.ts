@@ -9,6 +9,7 @@ import {
   serializeDockLayout,
 } from '../renderer/dock-persistence';
 import { createDefaultLayout, listPanes } from '../renderer/dock-layout';
+import { edgeDockLayout } from './helpers/dock-fixtures';
 import { PANE_ARTIFACTS, PANE_MESS } from '../renderer/dock-types';
 
 function storage(values: Record<string, string>) {
@@ -56,7 +57,7 @@ describe('dock persistence', () => {
     const result = loadDockLayout(older);
 
     expect(result.source).toBe('persisted');
-    expect(result.layout.closed).toEqual([PANE_MESS]);
+    expect(result.layout.closed).toEqual([...createDefaultLayout().closed, PANE_MESS]);
   });
 
   it('falls back to the Classic layout for an unsupported version', () => {
@@ -66,20 +67,18 @@ describe('dock persistence', () => {
     expect(result.layout).toEqual(createDefaultLayout());
   });
 
-  it('migrates legacy sidebar and artifact settings into one layout', () => {
-    const result = loadDockLayout(undefined, {
-      legacy: {
-        sidebarWidth: 400,
-        artifactWidth: 200,
-        artifactVisible: false,
-      },
-      viewportWidth: 1400,
-    });
-    const root = result.layout.root;
-    const artifactDock = findArtifactDock(root);
-
+  it('reports a load with legacy settings as migrated', () => {
+    const result = loadDockLayout(undefined, { legacy: { sidebarWidth: 400 }, viewportWidth: 1400 });
     expect(result.source).toBe('migrated');
     expect(result.migrated).toBe(true);
+    expect(() => serializeDockLayout(result.layout)).not.toThrow();
+  });
+
+  it('migrates legacy sidebar and artifact settings into a layout with an artifact column', () => {
+    const legacy = { sidebarWidth: 400, artifactWidth: 200, artifactVisible: false };
+    const root = migrateLegacyDockPreferences(edgeDockLayout(), legacy, 1400).root;
+    const artifactDock = findArtifactDock(root);
+
     expect(root.type).toBe('split');
     if (root.type === 'split') expect(root.sizes).toEqual([400 / 1400, 800 / 1400, 200 / 1400]);
     expect(artifactDock?.mode).toBe('hidden');
@@ -103,7 +102,7 @@ describe('dock persistence', () => {
   });
 
   it('validates direct legacy migration output', () => {
-    const migrated = migrateLegacyDockPreferences(createDefaultLayout(), { artifactVisible: true });
+    const migrated = migrateLegacyDockPreferences(edgeDockLayout(), { artifactVisible: true });
     expect(findArtifactDock(migrated.root)?.mode).toBe('autohide');
   });
 });

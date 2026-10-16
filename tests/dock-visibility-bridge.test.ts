@@ -12,6 +12,7 @@ import {
   setPaneVisibilityBridge,
 } from '../renderer/dock-visibility-bridge';
 import { useDockWorkspace } from '../renderer/composables/useDockWorkspace';
+import { edgeDockLayout } from './helpers/dock-fixtures';
 import { PANE_ARTIFACTS, PANE_QUICK_SPAWN, PANE_SCHEDULER } from '../renderer/dock-types';
 
 afterEach(() => resetPaneVisibilityBridge());
@@ -28,7 +29,7 @@ describe('pane visibility bridge', () => {
   });
 
   it('reports the real workspace: a background tab and a collapsed dock are not visible', () => {
-    const workspace = useDockWorkspace();
+    const workspace = useDockWorkspace(edgeDockLayout());
     setPaneVisibilityBridge(workspace.isVisible);
 
     // Classic puts Scheduler, Quick Spawn and Directories in one left group.

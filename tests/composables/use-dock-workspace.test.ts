@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { useDockWorkspace } from '../../renderer/composables/useDockWorkspace';
 import { createDefaultLayout, listPanes } from '../../renderer/dock-layout';
+import { edgeDockLayout } from '../helpers/dock-fixtures';
 import {
   PANE_ARTIFACTS,
   PANE_MEMORIES,
@@ -20,7 +21,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('focusing a background tab activates it in its own group', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.focusPane(PANE_MEMORIES);
     expect(ws.isVisible(PANE_MEMORIES)).toBe(true);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(false);
@@ -28,7 +29,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('cycles focus in deterministic tree order and wraps', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.focusPane(PANE_SESSIONS);
     ws.cycleFocus(-1);
     expect(ws.focusedPaneId.value).toBe(PANE_TIMESHEET); // autohide panes are not focus targets
@@ -37,7 +38,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('revealing an autohide pane makes it visible, focusable, and focused', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     expect(ws.focusablePaneOrder.value).not.toContain(PANE_ARTIFACTS);
     expect(ws.isVisible(PANE_ARTIFACTS)).toBe(false);
 
@@ -50,7 +51,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('collapsing a revealed pane hands focus back to a reachable pane', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.reveal(PANE_ARTIFACTS);
 
     ws.unreveal(PANE_ARTIFACTS);
@@ -62,7 +63,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('closing a revealed pane drops the reveal so focus cannot strand on it', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.reveal(PANE_ARTIFACTS);
 
     ws.close(PANE_ARTIFACTS);
@@ -72,7 +73,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('restores a closed view pane and focuses it — the view-transition reconcile path', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.close(PANE_MEMORIES);
     expect(ws.isOpen(PANE_MEMORIES)).toBe(false);
 
@@ -86,7 +87,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('resizes a recursive split through the workspace facade', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.resize([], [0.3, 0.56, 0.14]);
 
     expect(ws.layout.value.root).toMatchObject({
@@ -96,7 +97,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('remembers pane-local focus identity while cycling between panes', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.setFocusedItemId(PANE_SESSIONS, 'session:s1');
     ws.focusPane(PANE_MEMORIES, 'card:s2');
 
@@ -109,7 +110,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('moves focus off a pane that gets closed', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.focusPane(PANE_ARTIFACTS);
     ws.close(PANE_ARTIFACTS);
     expect(ws.closedPanes.value).toEqual([PANE_ARTIFACTS]);
@@ -121,7 +122,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('falls back to Classic when an invalid layout is loaded', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.close(PANE_ARTIFACTS);
 
     expect(ws.load({ version: 99 })).toBe(false);
@@ -131,7 +132,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('clones a typed initial layout and does not expose writable layout state', () => {
-    const initial = createDefaultLayout();
+    const initial = edgeDockLayout();
     const ws = useDockWorkspace(initial);
     initial.closed.push(PANE_ARTIFACTS);
     expect(ws.closedPanes.value).toEqual([]);
@@ -139,7 +140,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('skips panes under hidden docks during focus cycling', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.setMode(PANE_ARTIFACTS, 'hidden');
     ws.focusPane(PANE_SESSIONS);
     ws.cycleFocus(-1);
@@ -148,7 +149,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('moves focus away when the focused pane becomes auto-hidden', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
     ws.setMode(PANE_ARTIFACTS, 'pinned');
     ws.focusPane(PANE_ARTIFACTS);
     ws.setMode(PANE_ARTIFACTS, 'autohide');
@@ -158,7 +159,7 @@ describe('useDockWorkspace', () => {
   });
 
   it('does not focus a pane explicitly while it is auto-hidden', () => {
-    const ws = useDockWorkspace();
+    const ws = useDockWorkspace(edgeDockLayout());
 
     ws.focusPane(PANE_ARTIFACTS);
 
@@ -178,7 +179,7 @@ describe('useDockWorkspace', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(result.source).toBe('fallback');
-    expect(ws.closedPanes.value).toEqual([]);
+    expect(ws.closedPanes.value).toEqual(createDefaultLayout().closed);
     expect(saved).toHaveLength(1);
     expect(saved[0]).toEqual(createDefaultLayout());
 

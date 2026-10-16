@@ -42,6 +42,7 @@ import {
   type DockSplitNode,
   type DockWorkspaceLayout,
 } from '../renderer/dock-types';
+import { edgeDockLayout } from './helpers/dock-fixtures';
 
 function group(tabs: string[], activeTab = tabs[0]): DockNode {
   return { type: 'group', tabs, activeTab };
@@ -70,14 +71,38 @@ describe('default Classic layout', () => {
 
   it('registers every pane exactly once', () => {
     const panes = listPanes(layout.root);
-    expect([...panes].sort()).toEqual(DOCK_PANES.map(p => p.id).sort());
-    expect(layout.closed).toEqual([]);
+    expect([...panes, ...layout.closed].sort()).toEqual(DOCK_PANES.map(p => p.id).sort());
     expect(layout.version).toBe(DOCK_LAYOUT_VERSION);
+  });
+
+  it('opens sessions and scheduler on the left, views in the centre and the draft below them', () => {
+    expect(layout.root).toMatchObject({
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'dock', side: 'left', mode: 'pinned', child: { type: 'group', tabs: [PANE_SESSIONS, PANE_SCHEDULER] } },
+        {
+          type: 'split',
+          direction: 'vertical',
+          children: [
+            { type: 'group', tabs: [PANE_TERMINAL, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], activeTab: PANE_TERMINAL },
+            { type: 'group', tabs: [PANE_DRAFT] },
+          ],
+        },
+      ],
+    });
+    expect(layout.closed).toEqual([PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES]);
   });
 
   it('validates as a well-formed layout', () => {
     expect(() => validateLayout(JSON.parse(JSON.stringify(layout)))).not.toThrow();
   });
+
+});
+
+// Dock behaviour on a layout with an autohide right edge dock, independent of the shipped default.
+describe('edge dock layout', () => {
+  const layout = edgeDockLayout();
 
   it('drops the retired Team View pane from a saved layout instead of rejecting it', () => {
     // A layout saved while Team View existed: its own column beside the view
@@ -117,31 +142,6 @@ describe('default Classic layout', () => {
 
     expect(listPanes(loaded.root)).toContain(PANE_DRAFT);
     expect(listPanes(loaded.root)).not.toContain('scratchpad');
-  });
-
-  it('places sessions/tools left, views centre, artifacts and draft right', () => {
-    // Deterministic left-to-right, top-to-bottom order mirrors the current UI.
-    expect(listPanes(layout.root)).toEqual([
-      PANE_SESSIONS,
-      PANE_SCHEDULER,
-      PANE_QUICK_SPAWN,
-      PANE_PLAN_DIRECTORIES,
-      PANE_TERMINAL,
-      PANE_PLAN_SCREEN,
-      PANE_MEMORIES,
-      PANE_MESS,
-      PANE_TIMESHEET,
-      PANE_ARTIFACTS,
-      PANE_DRAFT,
-    ]);
-    expect(findPaneGroup(layout.root, PANE_DRAFT)).toMatchObject({ activeTab: PANE_ARTIFACTS });
-  });
-
-  it('keeps the terminal active and artifacts collapsed to an edge rail', () => {
-    const terminalGroup = findPaneGroup(layout.root, PANE_TERMINAL);
-    expect(terminalGroup?.activeTab).toBe(PANE_TERMINAL);
-    const artifactsDock = findDock(layout.root, PANE_ARTIFACTS);
-    expect(artifactsDock).toMatchObject({ side: 'right', mode: 'autohide' });
   });
 
   it('walks only pinned panes for focus cycling', () => {
@@ -246,14 +246,14 @@ describe('movePane', () => {
   });
 
   it('rejects unknown panes, unknown targets and self-drops', () => {
-    const layout = createDefaultLayout();
+    const layout = edgeDockLayout();
     expect(() => movePane(layout, 'nope', { paneId: PANE_TERMINAL, zone: 'center' })).toThrow(/unknown pane/i);
     expect(() => movePane(layout, PANE_TERMINAL, { paneId: 'nope', zone: 'center' })).toThrow(/unknown pane/i);
     expect(() => movePane(layout, PANE_TERMINAL, { paneId: PANE_TERMINAL, zone: 'center' })).toThrow(/itself/i);
   });
 
   it('leaves the layout valid after a move out of a nested dock', () => {
-    const layout = createDefaultLayout();
+    const layout = edgeDockLayout();
     const next = movePane(layout, PANE_ARTIFACTS, { paneId: PANE_TERMINAL, zone: 'center' });
     expect(() => validateLayout(next)).not.toThrow();
     expect(findPaneGroup(next.root, PANE_ARTIFACTS)?.tabs).toContain(PANE_TERMINAL);
@@ -395,7 +395,7 @@ describe('close and restore', () => {
   });
 
   it('restores a closed pane into the live dock on its home side', () => {
-    const layout = closePane(createDefaultLayout(), PANE_SCHEDULER);
+    const layout = closePane(edgeDockLayout(), PANE_SCHEDULER);
     const restored = restorePane(layout, PANE_SCHEDULER);
     expect(restored.closed).toEqual([]);
     expect(findDockSideOf(restored.root, PANE_SCHEDULER)).toBe('left');
@@ -407,7 +407,7 @@ describe('close and restore', () => {
   // live pane — dropping the tool window into the centre group behind Terminal.
   it('recreates the home edge dock when every pane of it was closed', () => {
     const emptied = [PANE_SESSIONS, PANE_SCHEDULER, PANE_QUICK_SPAWN, PANE_PLAN_DIRECTORIES]
-      .reduce(closePane, createDefaultLayout());
+      .reduce(closePane, edgeDockLayout());
     expect(findDockSideOf(emptied.root, PANE_SESSIONS)).toBeNull();
 
     const restored = restorePane(emptied, PANE_SESSIONS);
@@ -417,21 +417,21 @@ describe('close and restore', () => {
   });
 
   it('restores each tool window to its own home side', () => {
-    const closed = closePane(closePane(createDefaultLayout(), PANE_ARTIFACTS), PANE_SCHEDULER);
+    const closed = closePane(closePane(edgeDockLayout(), PANE_ARTIFACTS), PANE_SCHEDULER);
     const restored = restorePane(restorePane(closed, PANE_ARTIFACTS), PANE_SCHEDULER);
     expect(findDockSideOf(restored.root, PANE_ARTIFACTS)).toBe('right');
     expect(findDockSideOf(restored.root, PANE_SCHEDULER)).toBe('left');
   });
 
   it('restores a centre-homed view into the centre group, never a dock', () => {
-    const layout = closePane(createDefaultLayout(), PANE_MESS);
+    const layout = closePane(edgeDockLayout(), PANE_MESS);
     const restored = restorePane(layout, PANE_MESS);
     expect(findDockSideOf(restored.root, PANE_MESS)).toBeNull();
     expect(findPaneGroup(restored.root, PANE_MESS)?.tabs).toContain(PANE_TERMINAL);
   });
 
   it('refuses to restore or move a pane that is not closed', () => {
-    const layout = createDefaultLayout();
+    const layout = edgeDockLayout();
     expect(() => restorePane(layout, PANE_ARTIFACTS)).toThrow(/not closed/i);
     expect(() => movePane(layoutOf(group([PANE_TERMINAL])), PANE_MESS, {
       paneId: PANE_TERMINAL,
@@ -440,40 +440,40 @@ describe('close and restore', () => {
   });
 
   it('restores into a caller-supplied target when given one', () => {
-    const layout = closePane(createDefaultLayout(), PANE_ARTIFACTS);
+    const layout = closePane(edgeDockLayout(), PANE_ARTIFACTS);
     const restored = restorePane(layout, PANE_ARTIFACTS, { paneId: PANE_TERMINAL, zone: 'bottom' });
     expect(findPaneGroup(restored.root, PANE_ARTIFACTS)?.tabs).toEqual([PANE_ARTIFACTS]);
     expect(restored.closed).toEqual([]);
   });
 
   it('rejects an explicit restore target that is not live', () => {
-    const layout = closePane(closePane(createDefaultLayout(), PANE_ARTIFACTS), PANE_MESS);
+    const layout = closePane(closePane(edgeDockLayout(), PANE_ARTIFACTS), PANE_MESS);
     expect(() => restorePane(layout, PANE_ARTIFACTS, { paneId: PANE_MESS, zone: 'center' })).toThrow(/not docked/i);
     expect(() => restorePane(layout, PANE_ARTIFACTS, { paneId: 'nope', zone: 'center' })).toThrow(/unknown pane/i);
   });
 
   it('rejects restoring a pane that is not closed', () => {
-    expect(() => restorePane(createDefaultLayout(), PANE_ARTIFACTS)).toThrow(/not closed/i);
+    expect(() => restorePane(edgeDockLayout(), PANE_ARTIFACTS)).toThrow(/not closed/i);
   });
 });
 
 describe('dock mode', () => {
   it('sets the mode of the dock containing a pane', () => {
-    const next = setDockMode(createDefaultLayout(), PANE_ARTIFACTS, 'pinned');
+    const next = setDockMode(edgeDockLayout(), PANE_ARTIFACTS, 'pinned');
     expect(findDock(next.root, PANE_ARTIFACTS)?.mode).toBe('pinned');
   });
 
   it('throws when the pane is not inside a dock node', () => {
-    expect(() => setDockMode(createDefaultLayout(), PANE_TERMINAL, 'hidden')).toThrow(/not docked/i);
+    expect(() => setDockMode(edgeDockLayout(), PANE_TERMINAL, 'hidden')).toThrow(/not docked/i);
   });
 
   it('keeps the left dock pinned — it resizes but never collapses', () => {
-    const next = setDockMode(createDefaultLayout(), PANE_SESSIONS, 'autohide');
+    const next = setDockMode(edgeDockLayout(), PANE_SESSIONS, 'autohide');
     expect(findDock(next.root, PANE_SESSIONS)?.mode).toBe('pinned');
   });
 
   it('repairs a persisted layout whose left dock was saved collapsed', () => {
-    const saved = JSON.parse(JSON.stringify(createDefaultLayout()));
+    const saved = JSON.parse(JSON.stringify(edgeDockLayout()));
     findDock(saved.root, PANE_SESSIONS)!.mode = 'autohide';
     expect(findDock(validateLayout(saved).root, PANE_SESSIONS)?.mode).toBe('pinned');
   });
@@ -654,8 +654,8 @@ describe('normalizeNode', () => {
 
 describe('validateLayout', () => {
   it('accepts a round-tripped layout', () => {
-    const parsed = validateLayout(JSON.parse(JSON.stringify(createDefaultLayout())));
-    expect(listPanes(parsed.root)).toEqual(listPanes(createDefaultLayout().root));
+    const parsed = validateLayout(JSON.parse(JSON.stringify(edgeDockLayout())));
+    expect(listPanes(parsed.root)).toEqual(listPanes(edgeDockLayout().root));
   });
 
   it('accepts the canonical all-closed root', () => {
@@ -724,7 +724,7 @@ describe('validateLayout', () => {
   });
 
   it('clones parsed arrays instead of aliasing untrusted input', () => {
-    const raw = JSON.parse(JSON.stringify(createDefaultLayout())) as any;
+    const raw = JSON.parse(JSON.stringify(edgeDockLayout())) as any;
     const parsed = validateLayout(raw);
     const parsedTerminalTabs = findPaneGroup(parsed.root, PANE_TERMINAL)?.tabs;
     raw.closed.push(PANE_MESS);
@@ -735,7 +735,7 @@ describe('validateLayout', () => {
   });
 
   it('returns detached group snapshots', () => {
-    const layout = createDefaultLayout();
+    const layout = edgeDockLayout();
     const snapshot = findPaneGroup(layout.root, PANE_TERMINAL);
     snapshot?.tabs.push(PANE_ARTIFACTS);
     expect(findPaneGroup(layout.root, PANE_TERMINAL)?.tabs).not.toContain(PANE_ARTIFACTS);

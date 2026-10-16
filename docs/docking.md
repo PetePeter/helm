@@ -246,10 +246,13 @@ the share assigned to hidden children. A split with one visible child collapses
 in the view; an empty dock disappears. `pruneUnregisteredPanes()` uses the same
 projection before normalizing the persisted tree.
 
-The Classic default is one horizontal root split with three tracks: the left
-tool dock (session list over the stacked tool windows), the view group
-(Terminal / Plans / Memories / Mess, Terminal active), and Artifacts with the
-[Draft](draft.md) as a collapsed right-edge rail.
+The Classic default is one horizontal root split with two tracks: a pinned
+left dock with Sessions and Scheduler as tabs, and a centre column split top
+and bottom: the view group (Terminal / Artifacts / Statistics / Mess /
+Memories / Plans, Terminal active) above the [Draft](draft.md). Quick spawn
+and Plan directories start closed and come back from the restore menu. Dock
+behaviour tests use their own edge-dock fixture, so the default can change
+without rewriting them.
 
 **Retired panes.** A saved layout may name a pane that no longer exists — the
 `overview` pane (Team View, replaced by

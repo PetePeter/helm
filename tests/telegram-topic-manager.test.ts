@@ -273,6 +273,29 @@ describe('TopicManager', () => {
       await tm.renameSessionTopic(session);
       expect(bot.editForumTopic).not.toHaveBeenCalled();
     });
+
+    // Regression: every session:updated retried a failed or timed-out rename,
+    // logging thousands of editForumTopic errors a day.
+    it('does not retry the same name after a failed edit', async () => {
+      session.topicId = 42;
+      bot.editForumTopic.mockResolvedValue(false);
+
+      await tm.renameSessionTopic(session);
+      await tm.renameSessionTopic(session);
+
+      expect(bot.editForumTopic).toHaveBeenCalledTimes(1);
+    });
+
+    it('tries again once the name actually changes', async () => {
+      session.topicId = 42;
+      bot.editForumTopic.mockResolvedValue(false);
+      await tm.renameSessionTopic(session);
+
+      session.name = 'renamed';
+      await tm.renameSessionTopic(session);
+
+      expect(bot.editForumTopic).toHaveBeenCalledTimes(2);
+    });
   });
 
   // =========================================================================

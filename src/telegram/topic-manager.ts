@@ -180,8 +180,10 @@ export class TopicManager {
     if (!session.topicId) return;
     const newName = this.formatTopicName(session.name, session.workingDir);
     if (this.topicNames.get(session.topicId) === newName) return;
-    const ok = await this.bot.editForumTopic(session.topicId, newName);
-    if (ok) this.topicNames.set(session.topicId, newName);
+    // Record before editing: a failed or timed-out edit must not be retried on
+    // every session update. The next real rename tries again.
+    this.topicNames.set(session.topicId, newName);
+    await this.bot.editForumTopic(session.topicId, newName);
   }
 
   /**

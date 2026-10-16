@@ -457,6 +457,8 @@ export class TelegramBotCore extends EventEmitter {
       await this.withTimeout(this.bot.editForumTopic(this.chatId, topicId, { name }), 'editForumTopic');
       return true;
     } catch (err) {
+      // The topic already has this name: the edit's goal is met.
+      if (String(err).includes('TOPIC_NOT_MODIFIED')) return true;
       logger.error(`[Telegram] editForumTopic failed: ${err}`);
       return false;
     }
