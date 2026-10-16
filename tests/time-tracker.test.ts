@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT, buildTimesheet, summarizeProjects, periodEdges, timesheetToCsv, type SessionWhere } from '../src/session/time-tracker.js';
+import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT, buildTimesheet, buildTokenSheet, summarizeProjects, periodEdges, timesheetToCsv, type SessionWhere } from '../src/session/time-tracker.js';
 import { TimePersistence } from '../src/session/time-persistence.js';
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -18,8 +18,8 @@ const DAY0 = new Date(2026, 8, 28).getTime();
 const at = (h: number, m: number, s = 0) => DAY0 + h * 60 * MIN + m * MIN + s * 1000;
 
 const SESSIONS: Record<string, SessionWhere> = {
-  a1: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha' },
-  a2: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha/sub' },
+  a1: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha', cliType: 'claude-code' },
+  a2: { projectKey: 'pA', projectName: 'Alpha', dir: 'C:/alpha/sub', cliType: 'codex' },
   b1: { projectKey: 'pB', projectName: 'Beta', dir: 'C:/beta' },
 };
 
@@ -290,5 +290,47 @@ describe('TimeTracker tokens', () => {
     expect(all.totals.tokens[0]).toBe(5_000);
     expect(all.totals.user[0]).toBe(5);
     expect(summarizeProjects(slots).map(p => [p.projectKey, p.tokens])).toEqual([['pA', 2_000], ['pB', 3_000]]);
+  });
+});
+
+describe('buildTokenSheet', () => {
+  const edges = periodEdges('day', DAY0);
+  const slots = (t: TimeTracker) => t.query(edges[0], edges[7]);
+
+  it('splits tokens per configured CLI per column, sub-agents credited to the parent CLI', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a2', 0);
+    t.recordTokens('a1', 1_000);
+    t.recordSubagentTokens('a1', 'agent-x', 500);
+    t.recordTokens('a2', 2_000);
+    clock = at(9, 0) + 24 * 60 * MIN;
+    t.recordTokens('a1', 1_300);
+    const sheet = buildTokenSheet(slots(t), edges, ['claude-code', 'codex']);
+    expect(sheet.rows).toEqual([
+      { cliType: 'claude-code', tokens: [1_500, 300, 0, 0, 0, 0, 0] },
+      { cliType: 'codex', tokens: [2_000, 0, 0, 0, 0, 0, 0] },
+    ]);
+    expect(sheet.totals).toEqual([3_500, 300, 0, 0, 0, 0, 0]);
+  });
+
+  it('keeps a row of zeros for a configured CLI with no use', () => {
+    const sheet = buildTokenSheet([], edges, ['claude-code', 'copilot']);
+    expect(sheet.rows.map(r => [r.cliType, r.tokens.every(v => v === 0)])).toEqual([['claude-code', true], ['copilot', true]]);
+  });
+
+  it('groups untagged and no-longer-configured CLIs into one "other" row, last', () => {
+    const t = tracker();
+    t.recordTokens('b1', 0); t.recordTokens('b1', 400); // no cliType (pre-change slot)
+    t.recordTokens('a2', 0); t.recordTokens('a2', 100); // codex, since removed
+    const sheet = buildTokenSheet(slots(t), edges, ['claude-code']);
+    expect(sheet.rows.map(r => [r.cliType, r.tokens[0]])).toEqual([['claude-code', 0], ['other', 500]]);
+  });
+
+  it('keeps one token slot per CLI in a project slot', () => {
+    const t = tracker();
+    t.recordTokens('a1', 0); t.recordTokens('a2', 0);
+    t.recordTokens('a1', 10); t.recordTokens('a2', 20);
+    expect(slots(t).filter(s => s.kind === 'tokens').map(s => [s.projectKey, s.cliType, s.tokens]))
+      .toEqual([['pA', 'claude-code', 10], ['pA', 'codex', 20]]);
   });
 });

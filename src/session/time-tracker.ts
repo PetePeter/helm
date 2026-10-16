@@ -4,7 +4,7 @@
  * A slot is "user" time for exactly one project: the one that got the most
  * user input in it (ties go to the latest). AI activity is tracked as a
  * separate "ai" kind, one per project per slot, because agents genuinely run
- * in parallel. Token use is a third kind, summed per project per slot: each
+ * in parallel. Token use is a third kind, summed per project and CLI per slot: each
  * context reading adds its rise, and a drop (compact, /clear) adds the new,
  * smaller context. Open slots live in memory and are appended to JSONL once they
  * end (or on flush at shutdown). See docs/time-tracking.md.
@@ -32,6 +32,8 @@ export interface TimeSlot {
   dir: string;
   /** Kind 'tokens' only. */
   tokens?: number;
+  /** Kind 'tokens' only; absent on slots written before it was recorded. */
+  cliType?: string;
 }
 
 /** Where a session's time is credited. projectKey is the Helm project id, else the dir. */
@@ -39,6 +41,8 @@ export interface SessionWhere {
   projectKey: string;
   projectName: string;
   dir: string;
+  /** The session's CLI type; only token slots keep it. */
+  cliType?: string;
 }
 
 interface UserTally { name: string; count: number; last: number; dirs: Map<string, number> }
@@ -86,7 +90,7 @@ export class TimeTracker {
     if (!where) return;
     const start = slotStart(this.now());
     const ai = this.slotFor().ai;
-    if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', ...where });
+    if (!ai.has(where.projectKey)) ai.set(where.projectKey, { start, kind: 'ai', projectKey: where.projectKey, projectName: where.projectName, dir: where.dir });
   }
 
   /** A context-size reading: a rise adds the growth, a drop adds the new context. */
@@ -117,9 +121,10 @@ export class TimeTracker {
     if (!where) return;
     const start = slotStart(this.now());
     const map = this.slotFor().tokens;
-    const slot = map.get(where.projectKey) ?? { start, kind: 'tokens' as const, ...where, tokens: 0 };
+    const key = tokenKey(where.projectKey, where.cliType);
+    const slot = map.get(key) ?? { start, kind: 'tokens' as const, ...where, tokens: 0 };
     slot.tokens! += added;
-    map.set(where.projectKey, slot);
+    map.set(key, slot);
   }
 
   private forgetTokens(sessionId: string): void {
@@ -169,7 +174,7 @@ export class TimeTracker {
     // time is presence, so the latest wins; tokens are disjoint partials, so they sum.
     const unique = new Map<string, TimeSlot>();
     for (const s of all) {
-      const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.projectKey}`;
+      const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.kind === 'tokens' ? tokenKey(s.projectKey, s.cliType) : s.projectKey}`;
       const seen = unique.get(key);
       unique.set(key, s.kind === 'tokens' && seen ? { ...s, tokens: (seen.tokens ?? 0) + (s.tokens ?? 0) } : s);
     }
@@ -196,6 +201,10 @@ export class TimeTracker {
     }
     if (closed.length) this.deps.persistence.append(closed);
   }
+}
+
+function tokenKey(projectKey: string, cliType: string | undefined): string {
+  return `${projectKey}|${cliType ?? ''}`;
 }
 
 function slotStart(ms: number): number {
@@ -293,6 +302,39 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edg
     rows: [...rows.values()].sort((a, b) => a.dir.localeCompare(b.dir)),
     totals,
   };
+}
+
+/** Tokens per CLI per column. */
+export interface TokenSheet {
+  columns: number[];
+  rows: { cliType: string; tokens: number[] }[];
+  totals: number[];
+}
+
+export const OTHER_CLI = 'other';
+
+/**
+ * Tokens per configured CLI per column, in config order and zero-filled;
+ * untagged or no-longer-configured CLIs share one trailing "other" row.
+ */
+export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: string[]): TokenSheet {
+  const n = edges.length - 1;
+  const rows = new Map(cliTypes.map(cliType => [cliType, new Array<number>(n).fill(0)]));
+  const totals = new Array<number>(n).fill(0);
+  for (const slot of slots) {
+    if (slot.kind !== 'tokens' || !slot.tokens) continue;
+    const col = columnOf(edges, slot.start);
+    if (col < 0) continue;
+    const cliType = slot.cliType && rows.has(slot.cliType) ? slot.cliType : OTHER_CLI;
+    let row = rows.get(cliType);
+    if (!row) { row = new Array<number>(n).fill(0); rows.set(cliType, row); }
+    row[col] += slot.tokens;
+    totals[col] += slot.tokens;
+  }
+  const other = rows.get(OTHER_CLI);
+  rows.delete(OTHER_CLI);
+  if (other) rows.set(OTHER_CLI, other);
+  return { columns: edges.slice(0, n), rows: [...rows].map(([cliType, tokens]) => ({ cliType, tokens })), totals };
 }
 
 export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }

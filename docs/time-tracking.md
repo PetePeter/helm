@@ -25,17 +25,17 @@ graph LR
 - **What never counts:** Programmatic sends (background deliveries, AI-to-AI `session_send_text`, the scheduler, initial prompts) are `system` origin and never count.
 - **One project per user slot.** If the user touches two projects in one slot, the one with more input wins, and a tie goes to the latest. Within that project, the folder with the most input gets the slot.
 - **AI** (`ai` slots): a session whose activity dot is green earns its project one AI slot, but only once the session has been given a prompt (any delivery or user input arms it). Before that, activity is the CLI booting and is ignored, so starting a session counts nothing until something is sent. Hook turns (UserPromptSubmit → Stop) drive the same dot, which is why the AI window follows prompts. Agents genuinely run in parallel, so AI slots are per project, not exclusive.
-- **Tokens** (`tokens` slots): every context-size reading a session reports (statusline, transcript, or API loop; see [terminal-architecture](terminal-architecture.md)) feeds a per-session ledger. A rise adds the growth. A drop (compact, `/clear`, quick compact) adds the new, smaller context, because the CLI re-read that much. So 199k → compact → 50k counts 249k. A session's first reading after Helm starts is only a baseline, so nothing is backfilled. Tokens are summed per project per slot, across every CLI type that reports its context size. Remote (peer) rows are skipped, since their own machine counts them.
+- **Tokens** (`tokens` slots): every context-size reading a session reports (statusline, transcript, or API loop; see [terminal-architecture](terminal-architecture.md)) feeds a per-session ledger. A rise adds the growth. A drop (compact, `/clear`, quick compact) adds the new, smaller context, because the CLI re-read that much. So 199k → compact → 50k counts 249k. A session's first reading after Helm starts is only a baseline, so nothing is backfilled. Tokens are summed per project and CLI type per slot, so the Tokens tab can split them per CLI. Every CLI type that reports its context size counts. Remote (peer) rows are skipped, since their own machine counts them.
 - **Sub-agent tokens**: a sub-agent's work never shows in the main context, so its logs are read too (`subagent-usage.ts`). Claude writes one file per sub-agent in `<session>/subagents/`. A Codex sub-agent gets its own rollout file in the same folder, naming the parent in `parent_thread_id`. Copilot tags sub-agent `usage_record` lines in the parent's `events.jsonl` with an `agentId`. Each sub-agent is its own ledger stream with a zero baseline, so its whole context counts, then only its growth. The logs are re-read only when the main reading moves. The first read after Helm starts only primes the streams, so sub-agents counted by an earlier run are not counted twice.
 - **Project** = the session's Helm project, or its working directory when it has none.
 
 ## Storage
 
-Append-only JSONL, one file per local month under the app-data `time-tracking/` dir (config boundary). Each line is one closed slot `{start, kind, projectKey, projectName, dir}`, plus `tokens` on `kind: 'tokens'`. The open slot is written once it ends, or on shutdown. A corrupt line is skipped. A slot written at shutdown and reopened after a restart is deduplicated on read. For time the later record wins, because a slot is presence. Token records are disjoint partial counts, so they are summed. Appending survives crashes without a native DB dependency.
+Append-only JSONL, one file per local month under the app-data `time-tracking/` dir (config boundary). Each line is one closed slot `{start, kind, projectKey, projectName, dir}`, plus `tokens` and `cliType` on `kind: 'tokens'` (slots written before `cliType` existed have none). The open slot is written once it ends, or on shutdown. A corrupt line is skipped. A slot written at shutdown and reopened after a restart is deduplicated on read. For time the later record wins, because a slot is presence. Token records are disjoint partial counts, so they are summed per project and CLI. Appending survives crashes without a native DB dependency.
 
-## Timesheet pane
+## Statistics pane
 
-Dock pane **Timesheet** (⏱) starts with totals for every project in the selected period, like the Android Time tab. Choose a project to drill into its folder rows; Back returns to the project list. The selected session never changes the timesheet scope. Project totals are ordered by user time, then AI time, then project name. The views are:
+Dock pane **Statistics** (📊, shortcut `l`) has two tabs that share the period toggle and ◀ ▶ stepping. The **Timesheet** tab starts with totals for every project in the selected period, like the Android Time tab. Choose a project to drill into its folder rows; Back returns to the project list. The selected session never changes the timesheet scope. Project totals are ordered by user time, then AI time, then project name. The views are:
 
 | View  | Columns |
 |-------|---------|
@@ -60,6 +60,18 @@ graph LR
 
 The chart is built once, in the main process, as self-contained SVG and CSS with no script. Both hosts draw the same markup, so they cannot drift apart. It is Helm's own markup with no AI-authored content, so the pane inlines it directly. Each folder cell shows *You* time plus *AI* time underneath. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes`).
 
-All arithmetic (`periodEdges`, `buildTimesheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. Desktop queries use the same main-process `timesheetQuery` path as the phone Time tab; both responses carry `sheet` (the overview's covers every project) and `chartHtml`. An older phone ignores the extra fields.
+### Tokens tab
+
+Tokens per CLI per column: one row per configured CLI type, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the `time:tokens` channel; the phone does not use it yet.
+
+```mermaid
+flowchart LR
+  S[token slots<br/>projectKey + cliType] --> B[buildTokenSheet<br/>configured CLIs + other]
+  B --> C[renderTokenChart<br/>stacked bars]
+  B --> T[Tokens tab table]
+  C --> T
+```
+
+All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. Desktop queries use the same main-process `timesheetQuery` path as the phone Time tab; both responses carry `sheet` (the overview's covers every project) and `chartHtml`. An older phone ignores the extra fields.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).

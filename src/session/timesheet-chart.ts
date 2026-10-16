@@ -3,13 +3,16 @@
  * so the desktop Timesheet pane and the phone's WebView draw the same thing.
  * You/AI minutes are bars on the left axis; tokens a line on the right axis.
  * The series toggles are CSS-only checkboxes, which works in either host.
+ * The token chart stacks one bar segment per CLI.
  */
 
-import type { Timesheet, TimesheetPeriod } from './time-tracker.js';
+import type { Timesheet, TimesheetPeriod, TokenSheet } from './time-tracker.js';
 
 const W = 700, H = 290, L = 60, R = 640, TOP = 20, BOTTOM = 260;
 const GRID = 4;
 const COLORS = { you: '#5aa9ff', ai: '#4fd08b', tok: '#f0b34a' };
+/** Per-CLI series, in row order; cycles past the end. */
+const SERIES = [COLORS.tok, COLORS.you, COLORS.ai, '#c58af0', '#f07a7a', '#5fd3d3', '#9aa0a6'];
 
 const STYLE = `
 .tsc{font-family:Consolas,'Cascadia Mono',monospace;font-size:12px;color:#eee}
@@ -75,6 +78,48 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
     + '</svg></div>';
 }
 
+export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now = Date.now()): string {
+  const n = Math.max(1, sheet.columns.filter(col => col <= now).length);
+  const columns = sheet.columns.slice(0, n);
+  const max = niceCeil(Math.max(0, ...sheet.totals.slice(0, n)));
+  const y = (v: number) => BOTTOM - (v / max) * (BOTTOM - TOP);
+  const step = (R - L) / n;
+  const barW = Math.max(2, Math.min(36, step * 0.6));
+  const labelEvery = Math.ceil(n / 12);
+  const color = (i: number) => SERIES[i % SERIES.length];
+  const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
+
+  const grid: string[] = [], axis: string[] = [];
+  for (let g = 0; g <= GRID; g++) {
+    const gy = TOP + ((BOTTOM - TOP) * g) / GRID;
+    grid.push(`<line x1="${L}" y1="${gy}" x2="${R}" y2="${gy}"${g === GRID ? ' stroke="#555"' : ''}/>`);
+    axis.push(`<text x="${L - 6}" y="${gy + 3}">${formatTokens(max * (1 - g / GRID))}</text>`);
+  }
+  const stacked = new Array<number>(n).fill(0);
+  const bars = sheet.rows.map((row, r) => {
+    const rects = row.tokens.slice(0, n).map((v, i) => {
+      if (v <= 0) return '';
+      const top = y(stacked[i] + v), bottom = y(stacked[i]);
+      stacked[i] += v;
+      return `<rect x="${fx(L + step * (i + 0.5) - barW / 2)}" y="${fx(top)}" width="${fx(barW)}" height="${fx(bottom - top)}"/>`;
+    }).join('');
+    return `<g fill="${color(r)}">${rects}</g>`;
+  }).join('');
+  const labels = columns
+    .map((col, i) => i % labelEvery ? '' : `<text x="${fx(L + step * (i + 0.5))}" y="${BOTTOM + 18}">${columnLabel(period, col)}</text>`)
+    .join('');
+
+  return `<div class="tsc"><style>${STYLE}</style><div class="toggles">`
+    + sheet.rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.cliType)} ${formatTokens(sum(row.tokens))}</label>`).join('')
+    + '</div>'
+    + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per CLI per period">`
+    + `<g stroke="#222">${grid.join('')}</g>`
+    + `<g text-anchor="end">${axis.join('')}</g>`
+    + `<g text-anchor="middle">${labels}</g>`
+    + bars
+    + '</svg></div>';
+}
+
 /**
  * Smallest grid of GRID clock-friendly steps (5m … 12h, then whole days)
  * covering v. Parallel AI time can pass 24h a day, so the steps keep going.
@@ -90,6 +135,11 @@ function niceCeil(v: number): number {
   if (v <= 0) return 1;
   const base = 10 ** Math.floor(Math.log10(v));
   return ([1, 2, 2.5, 5, 10].find(m => m * base >= v) ?? 10) * base;
+}
+
+/** CLI type names come from user config and land in v-html. */
+function escapeHtml(v: string): string {
+  return v.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 }
 
 function fx(v: number): string {

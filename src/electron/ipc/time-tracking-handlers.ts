@@ -1,7 +1,7 @@
 /** Read-only timesheet queries over the TimeTracker (docs/time-tracking.md). */
 import { ipcMain } from 'electron';
-import { renderTimesheetChart } from '../../session/timesheet-chart.js';
-import { buildTimesheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker } from '../../session/time-tracker.js';
+import { renderTimesheetChart, renderTokenChart } from '../../session/timesheet-chart.js';
+import { buildTimesheet, buildTokenSheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker, type TokenSheet } from '../../session/time-tracker.js';
 
 const PERIODS: readonly TimesheetPeriod[] = ['hour', 'day', 'week', 'month'];
 
@@ -43,6 +43,14 @@ export function timesheetQuery(tracker: SlotSource, params: unknown): TimesheetQ
   return { projects: summarizeProjects(slots), sheet, chartHtml: renderTimesheetChart(sheet, p) };
 }
 
+/** The Statistics pane's Tokens tab: tokens per configured CLI per column, with its chart. */
+export function tokenQuery(tracker: SlotSource, cliTypes: string[], period: unknown, anchor: unknown): { sheet: TokenSheet; chartHtml: string } {
+  const [p, a] = validatePeriod(period, anchor);
+  const edges = periodEdges(p, a);
+  const sheet = buildTokenSheet(tracker.query(edges[0], edges[edges.length - 1]), edges, cliTypes);
+  return { sheet, chartHtml: renderTokenChart(sheet, p) };
+}
+
 /** Phone calls that only look (read/list/search/download) are not the user working. */
 const PHONE_READ_ONLY = /_(get|list|read_terminal|info|search|graph|export|summary|status|check|history|download|tools)$/;
 /** Credited by the delivery path itself (origin 'user'), so never twice. */
@@ -76,8 +84,10 @@ export interface TimeActivityTarget { sessionId?: string; dirPath?: string; subm
 export function setupTimeTrackingHandlers(
   tracker: TimeTracker,
   whereIsDir: (dir: string) => SessionWhere,
+  cliTypes: () => string[],
 ): () => void {
   ipcMain.handle('time:query', (_event, params: unknown) => timesheetQuery(tracker, params));
+  ipcMain.handle('time:tokens', (_event, period: unknown, anchor: unknown) => tokenQuery(tracker, cliTypes(), period, anchor));
   ipcMain.handle('time:timesheet', (_event, projectKey: unknown, period: unknown, anchor: unknown) =>
     sheetFor(tracker, ...validate(projectKey, period, anchor)));
 
@@ -96,6 +106,7 @@ export function setupTimeTrackingHandlers(
   return () => {
     ipcMain.removeHandler('time:activity');
     ipcMain.removeHandler('time:query');
+    ipcMain.removeHandler('time:tokens');
     ipcMain.removeHandler('time:timesheet');
     ipcMain.removeHandler('time:csv');
   };

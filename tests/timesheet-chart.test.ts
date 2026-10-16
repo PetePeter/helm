@@ -1,6 +1,6 @@
 /** The shared timesheet chart: one markup for the desktop pane and the phone WebView. */
 import { describe, expect, it } from 'vitest';
-import { renderTimesheetChart } from '../src/session/timesheet-chart.js';
+import { renderTimesheetChart, renderTokenChart } from '../src/session/timesheet-chart.js';
 import type { Timesheet } from '../src/session/time-tracker.js';
 
 const DAY0 = new Date(2026, 8, 28).getTime();
@@ -53,5 +53,24 @@ describe('renderTimesheetChart', () => {
       expect(html).toContain(`#tsc-${s}:not(:checked)~svg .s-${s}{display:none}`);
     }
     expect(html).toMatch(/<g[^>]*class="s-tok"[^>]*text-anchor="start"|<g[^>]*text-anchor="start"[^>]*class="s-tok"/);
+  });
+});
+
+describe('renderTokenChart', () => {
+  it('stacks one segment per CLI with tokens, with a legend per row', () => {
+    const columns = [DAY0, DAY0 + 86_400_000];
+    const html = renderTokenChart({ columns, rows: [
+      { cliType: 'claude-code', tokens: [1_000, 0] },
+      { cliType: 'codex', tokens: [500, 500] },
+      { cliType: 'copilot', tokens: [0, 0] },
+    ], totals: [1_500, 500] }, 'day', DAY0 + 2 * 86_400_000);
+    expect(html.match(/<rect/g)).toHaveLength(3);
+    expect(html).toContain('claude-code 1k');
+    expect(html).toContain('copilot 0');
+  });
+
+  it('escapes CLI names in the legend', () => {
+    const html = renderTokenChart({ columns: [DAY0], rows: [{ cliType: '<b>x', tokens: [1] }], totals: [1] }, 'day', DAY0 + 1);
+    expect(html).not.toContain('<b>x');
   });
 });

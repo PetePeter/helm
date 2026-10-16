@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * TimesheetPane — project totals with drilldown to a project's folders,
- * independent of the selected session. See docs/time-tracking.md.
+ * TimesheetPane — the Statistics pane: a Timesheet tab (project totals with
+ * drilldown to a project's folders) and a Tokens tab (tokens per configured
+ * CLI), independent of the selected session. See docs/time-tracking.md.
  */
 import { computed } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
@@ -17,7 +18,7 @@ const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ];
 
-const { projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
+const { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const range = computed(() => {
@@ -35,10 +36,14 @@ const range = computed(() => {
 </script>
 
 <template>
-  <section class="timesheet-pane" aria-label="Timesheet">
-    <PanelHeader title="Timesheet" icon="⏱" :subtitle="selectedProject?.projectName ?? 'All projects'">
+  <section class="timesheet-pane" aria-label="Statistics">
+    <PanelHeader title="Statistics" icon="📊" :subtitle="tab === 'tokens' ? 'Tokens per CLI' : selectedProject?.projectName ?? 'All projects'">
       <template #toolbar>
         <div class="timesheet-toolbar">
+          <div class="timesheet-toggle" role="tablist" aria-label="Statistics">
+            <button type="button" role="tab" :aria-selected="tab === 'timesheet'" :class="{ 'is-active': tab === 'timesheet' }" @click="tab = 'timesheet'">⏱ Timesheet</button>
+            <button type="button" role="tab" :aria-selected="tab === 'tokens'" :class="{ 'is-active': tab === 'tokens' }" @click="tab = 'tokens'">🪙 Tokens</button>
+          </div>
           <div class="timesheet-toggle" role="group" aria-label="View">
             <button
               v-for="p in PERIODS"
@@ -51,12 +56,41 @@ const range = computed(() => {
           <button type="button" aria-label="Previous" @click="step(-1)">◀</button>
           <button type="button" @click="step(0)">{{ range }}</button>
           <button type="button" aria-label="Next" @click="step(1)">▶</button>
-          <button type="button" :disabled="!selectedProject || !sheet?.rows.length" @click="exportCsv">⬇ CSV</button>
+          <button v-if="tab === 'timesheet'" type="button" :disabled="!selectedProject || !sheet?.rows.length" @click="exportCsv">⬇ CSV</button>
         </div>
       </template>
     </PanelHeader>
 
-    <EmptyState v-if="projects === null && sheet === null" title="Loading timesheet" loading />
+    <template v-if="tab === 'tokens'">
+      <EmptyState v-if="!tokenSheet" title="Loading tokens" loading />
+      <div v-else class="timesheet-scroll">
+        <div class="timesheet-chart" v-html="chartHtml" />
+        <table class="timesheet-table">
+          <thead>
+            <tr>
+              <th>CLI</th>
+              <th v-for="col in tokenSheet.columns" :key="col">{{ columnLabel(period, col) }}</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in tokenSheet.rows" :key="row.cliType">
+              <td>{{ row.cliType }}</td>
+              <td v-for="(v, i) in row.tokens" :key="i">{{ v ? formatTokens(v) : '–' }}</td>
+              <td>{{ formatTokens(sum(row.tokens)) }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td v-for="(v, i) in tokenSheet.totals" :key="i">{{ v ? formatTokens(v) : '–' }}</td>
+              <td>{{ formatTokens(sum(tokenSheet.totals)) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </template>
+    <EmptyState v-else-if="projects === null && sheet === null" title="Loading timesheet" loading />
     <EmptyState v-else-if="projects !== null && !projects.length" title="No time recorded" hint="Time is counted in 5-minute slots while you work across projects." icon="⏱" />
     <div v-else-if="projects !== null" class="timesheet-scroll">
       <div class="timesheet-chart" v-html="chartHtml" />

@@ -1,14 +1,18 @@
 /**
- * Timesheet pane state: all-project totals with drilldown to one project's
- * folder grid. All arithmetic lives in the main process (time-tracker.ts).
+ * Statistics pane state. Timesheet tab: all-project totals with drilldown to
+ * one project's folder grid. Tokens tab: tokens per configured CLI. Both share
+ * the period and anchor. All arithmetic lives in the main process (time-tracker.ts).
  */
 import { onUnmounted, ref, watch } from 'vue';
-import type { ProjectTotal, Timesheet, TimesheetPeriod } from '../../src/session/time-tracker.js';
+import type { ProjectTotal, Timesheet, TimesheetPeriod, TokenSheet } from '../../src/session/time-tracker.js';
 import { timeClient } from '../ipc/clients.js';
 
 const REFRESH_MS = 60_000;
 
+export type StatisticsTab = 'timesheet' | 'tokens';
+
 export function useTimesheetPane() {
+  const tab = ref<StatisticsTab>('timesheet');
   const period = ref<TimesheetPeriod>('day');
   const anchor = ref(Date.now());
   const sheet = ref<Timesheet | null>(null);
@@ -16,11 +20,19 @@ export function useTimesheetPane() {
   const chartHtml = ref('');
   const projects = ref<ProjectTotal[] | null>(null);
   const selectedProject = ref<ProjectTotal | null>(null);
+  const tokenSheet = ref<TokenSheet | null>(null);
 
   let generation = 0;
   async function refresh(): Promise<void> {
     const target = selectedProject.value;
     const ticket = ++generation;
+    if (tab.value === 'tokens') {
+      const tokens = await timeClient.timeTokens(period.value, anchor.value);
+      if (ticket !== generation) return;
+      tokenSheet.value = tokens.sheet;
+      chartHtml.value = tokens.chartHtml;
+      return;
+    }
     const next = await timeClient.timeQuery({
       period: period.value,
       anchor: anchor.value,
@@ -71,11 +83,11 @@ export function useTimesheetPane() {
     URL.revokeObjectURL(url);
   }
 
-  watch([() => selectedProject.value?.projectKey, period, anchor], () => { void refresh(); }, { immediate: true });
+  watch([tab, () => selectedProject.value?.projectKey, period, anchor], () => { void refresh(); }, { immediate: true });
   const timer = setInterval(() => { void refresh(); }, REFRESH_MS);
   onUnmounted(() => clearInterval(timer));
 
-  return { projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv };
+  return { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv };
 }
 
 /** Minutes as "3h05"; zero renders as an en dash. */

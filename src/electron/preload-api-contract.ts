@@ -138,6 +138,7 @@ export const PRELOAD_API_DOMAINS = {
   time: [
     'timeQuery',
     'timeTimesheet',
+    'timeTokens',
     'timeCsv',
     'timeActivity',
   ],
