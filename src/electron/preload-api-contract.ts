@@ -353,6 +353,11 @@ export const PRELOAD_API_DOMAINS = {
     'voiceDeleteAttachmentMessages',
     'onVoiceOperatorChat',
   ],
+  chat: [
+    'chatHistory',
+    'chatSend',
+    'onChatEntry',
+  ],
   update: [
     'updateCheck',
     'updateInstall',

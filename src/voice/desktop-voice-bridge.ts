@@ -35,6 +35,9 @@ export class DesktopVoiceBridge implements ChatBridge {
   }
 
   async sendToSession(message: ChatOutboundMessage): Promise<ChatSendResult> {
+    if (message.source === 'desktop') {
+      return { sent: false, reason: 'desktop-originated messages are already on this surface' };
+    }
     if (message.sessionId !== this.deps.getOperatorId()) {
       return { sent: false, reason: 'desktop voice only carries the Helm operator' };
     }

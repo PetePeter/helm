@@ -35,6 +35,18 @@ describe('DesktopVoiceBridge', () => {
     expect(replies).toEqual([]);
   });
 
+  it('does not echo a desktop-originated chat turn back into the desktop voice surface', async () => {
+    const result = await bridge.sendToSession({
+      sessionId: 'op-1',
+      text: 'A desktop message',
+      source: 'desktop',
+      originId: 'desktop:t1',
+    });
+
+    expect(result.sent).toBe(false);
+    expect(replies).toEqual([]);
+  });
+
   it('declines an attachment-only message (nothing to speak)', async () => {
     const result = await bridge.sendToSession({ sessionId: 'op-1', text: '  ', filePath: 'x.png' });
 

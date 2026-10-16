@@ -62,6 +62,16 @@ function tempAttachmentPath(fileName: string): string {
 }
 
 describe('TelegramRelayService', () => {
+  it('labels desktop-originated chat turns on Telegram', async () => {
+    const { relay, bot } = makeRelay();
+
+    const result = await relay.sendToSession({ sessionId: 's1', text: 'Need a decision?', source: 'desktop' });
+
+    expect(result.sent).toBe(true);
+    expect(bot.sendToTopic).toHaveBeenCalledWith(42, expect.stringContaining('[Desktop]'), { parse_mode: 'HTML' });
+    expect(bot.sendToTopic.mock.calls[0][1]).toContain('Need a decision?');
+  });
+
   it('sendToUser() creates topic if none exists and sends message', async () => {
     const { relay, bot, topicManager } = makeRelay();
 

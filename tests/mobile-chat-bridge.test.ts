@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SessionChangeFeed } from '../src/session/session-change-feed';
 import { EventEmitter } from 'node:events';
 import { MobileChatBridge } from '../src/mobile/mobile-chat-bridge';
+import { ChatBroker } from '../src/session/chat/chat-broker';
 import { MobileChatJournal } from '../src/mobile/mobile-chat-journal';
 import { MobileDeviceStore } from '../src/mobile/mobile-device-store';
 import { MobileGate, MOBILE_DENY_MESSAGE, createDefaultMobileRateLimiter } from '../src/mobile/mobile-gate';
@@ -113,6 +114,32 @@ beforeEach(() => {
 });
 
 describe('MobileChatBridge as a chat surface', () => {
+  it('fans a desktop turn out once to the phone and Telegram and journals one echo', async () => {
+    links.online.add(phone.machineId);
+    const telegram = {
+      provider: 'telegram',
+      isAvailable: () => true,
+      sendToSession: vi.fn(async () => ({ sent: true })),
+    };
+    const broker = new ChatBroker();
+    broker.register(bridge);
+    broker.register(telegram);
+
+    const results = await broker.send({
+      sessionId: 's1',
+      text: 'from desktop',
+      source: 'desktop',
+      originId: 'desktop:turn-1',
+    });
+
+    expect(results.filter(result => result.sent)).toHaveLength(2);
+    expect(links.records().filter(record => record.t === 'chat')).toHaveLength(1);
+    expect(links.records().find(record => record.t === 'chat')).toMatchObject({ text: 'from desktop', originId: 'desktop:turn-1' });
+    expect(journal.sessionEntries('s1')).toHaveLength(1);
+    expect(telegram.sendToSession).toHaveBeenCalledTimes(1);
+    expect(telegram.sendToSession).toHaveBeenCalledWith(expect.objectContaining({ source: 'desktop', originId: 'desktop:turn-1' }));
+  });
+
   it('stays available with no phone linked, so the journal still takes the message', async () => {
     expect(bridge.isAvailable()).toBe(true);
     await expect(bridge.sendToSession({ sessionId: 's1', text: 'hello' }))

@@ -219,6 +219,14 @@ export class HelmSessionDeliveryService {
     }
   }
 
+  /** The user typing in the desktop Chat pane: no envelope, no sender session, counted as user input. */
+  async sendDesktopChatTextToSession(
+    sessionRef: string,
+    text: string,
+  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
+    return this.sendTextToSession(sessionRef, text, { source: 'desktop' });
+  }
+
   /**
    * Send text to a session's PTY with optional [HELM_MSG] envelope.
    * The envelope carries sender metadata and reply-routing instructions.
@@ -226,7 +234,7 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[] },
+    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' },
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -235,10 +243,11 @@ export class HelmSessionDeliveryService {
     if (!this.ptyManager.has(session.id)) {
       throw new Error(`Session PTY is not running: ${session.id}`);
     }
-    if (!options?.senderSessionId || !options?.senderSessionName) {
+    const desktopOrigin = options?.source === 'desktop';
+    if (!desktopOrigin && (!options?.senderSessionId || !options?.senderSessionName)) {
       throw new Error('senderSessionId and senderSessionName are required — anonymous messages are not allowed');
     }
-    if (session.id === options.senderSessionId) {
+    if (!desktopOrigin && session.id === options?.senderSessionId) {
       throw new Error('Cannot send a message from a session to itself — sender and receiver must be different sessions');
     }
     assertSessionWritable(session);
@@ -273,13 +282,15 @@ export class HelmSessionDeliveryService {
       if (!text.trim() && !comfyInputImagePath && comfyInputAttachmentIds.length === 0) {
         throw new Error('Enter a prompt or attach a reference image');
       }
-      await this.runMessageFlight(session, options);
+      if (!desktopOrigin) await this.runMessageFlight(session, options);
       if (text.trim() === '/cancel') {
         const cancelled = await getComfyUiSessionHost().cancel(session.id);
         if (!cancelled) throw new Error('This ComfyUI session has no active generation to cancel');
       } else {
         // Only a local session needs telling: a phone already sees the chat.
-        const requesterSessionId = this.sessionManager.getSession(options.senderSessionId) ? options.senderSessionId : undefined;
+        const requesterSessionId = options.senderSessionId && this.sessionManager.getSession(options.senderSessionId)
+          ? options.senderSessionId
+          : undefined;
         getComfyUiSessionHost().submit(
           session.id, text, options.comfyProfileId, options.comfyImageSizeId, requesterSessionId, comfyInputImagePath, comfyInputAttachmentIds,
         );
@@ -298,10 +309,11 @@ export class HelmSessionDeliveryService {
     // to it (Helm posts its answer to chat itself). It gets the text, plus the
     // sender's name when that is another session rather than the user's phone.
     const isApiTool = Boolean(recipientEntry?.api);
+    const mobileOrigin = Boolean(options.senderSessionId && isMobileSessionId(options.senderSessionId));
     // Read before delivery: the paste itself turns the dot green.
     const busyReport = reportTargetBusy(session, isApiTool);
-    const usePreamble = !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
-    let deliveryText = isApiTool && !isMobileSessionId(options.senderSessionId)
+    const usePreamble = !desktopOrigin && !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
+    let deliveryText = isApiTool && !mobileOrigin && !desktopOrigin
       ? formatSenderTag({
         sessionId: options.senderSessionId,
         sessionName: options.senderSessionName,
@@ -321,7 +333,7 @@ export class HelmSessionDeliveryService {
 
     // Fly the envelope before any bytes reach the composer — the paste is
     // held until the renderer acks the landing (or the timeout releases it).
-    await this.runMessageFlight(session, options);
+    if (!desktopOrigin) await this.runMessageFlight(session, options);
 
     if (usePreamble) {
       // Send with [HELM_MSG] envelope
@@ -366,7 +378,7 @@ export class HelmSessionDeliveryService {
         ptyManager: this.ptyManager,
         sessionManager: this.sessionManager,
         configLoader: this.configLoader,
-        origin: isMobileSessionId(options.senderSessionId) ? 'user' : 'system',
+        origin: mobileOrigin || desktopOrigin ? 'user' : 'system',
         verifyDelivery: {
           label: 'inter-session message',
           delayMs: getDeliveryVerifyDelayMs(),
@@ -381,7 +393,7 @@ export class HelmSessionDeliveryService {
         ptyManager: this.ptyManager,
         sessionManager: this.sessionManager,
         configLoader: this.configLoader,
-        origin: isMobileSessionId(options.senderSessionId) ? 'user' : 'system',
+        origin: mobileOrigin || desktopOrigin ? 'user' : 'system',
         verifyDelivery: {
           label: 'inter-session message',
           delayMs: getDeliveryVerifyDelayMs(),

@@ -246,7 +246,7 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
   async sendToSession(message: ChatOutboundMessage): Promise<ChatSendResult> {
     const { sent, reason } = await this.sendToUser({
       sessionId: message.sessionId,
-      text: message.text,
+      text: message.source === 'desktop' ? `[Desktop]\n${message.text}` : message.text,
       ...(message.filePath ? { filePath: message.filePath } : {}),
       ...(message.asVoice ? { asVoice: true } : {}),
     });

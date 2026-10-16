@@ -73,6 +73,7 @@ import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js'
 import { setupUpdateHandlers } from './update-handlers.js';
 import { setupOperatorHandlers } from './operator-handlers.js';
 import { setupVoiceHandlers } from './voice-handlers.js';
+import { setupChatHandlers } from './chat-handlers.js';
 import { VoiceService } from '../../voice/voice-service.js';
 import { DesktopVoiceBridge } from '../../voice/desktop-voice-bridge.js';
 import { CapabilityDetector } from '../../session/capability-detector.js';
@@ -692,11 +693,13 @@ export function registerIPCHandlers(
     || sessionManager.getSession(sessionId)?.comfyUiTool === true;
   const mobileChatJournal = new MobileChatJournal({
     persist: saveMobileChatJournal,
-    // The desktop chat pane (operator + API tools) renders the same conversation the phone does.
+    // The desktop Chat pane renders the same journal as the phone for every session.
     onAppend: (entry) => {
-      if (!isChatPaneSession(entry.record.sessionId)) return;
       const win = windowManager.getMainWindow();
-      if (win && !win.isDestroyed()) win.webContents.send('voice:operatorChat', entry);
+      if (!win || win.isDestroyed()) return;
+      win.webContents.send('chat:entry', entry);
+      // Keep the old operator overlay alive until the dock migration removes it.
+      if (isChatPaneSession(entry.record.sessionId)) win.webContents.send('voice:operatorChat', entry);
     },
   });
   mobileChatJournal.hydrate(loadMobileChatJournal());
@@ -1362,7 +1365,7 @@ export function registerIPCHandlers(
     onAttachmentDeleted: (sessionId, artifactId, attachmentId) =>
       mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId),
     postChat: async (sessionId, text, attachment) => {
-      await mobileChatBridge.sendToSession({
+      await chatBroker.send({
         sessionId,
         text,
         ...(attachment?.filePath ? { filePath: attachment.filePath } : {}),
@@ -1468,6 +1471,29 @@ export function registerIPCHandlers(
       mobileChatBridge.recordDesktopTurn(operatorId, withFile, randomUUID());
       return { ok: true };
     },
+  });
+
+  setupChatHandlers({
+    history: sessionId => sessionManager.getSession(sessionId)
+      ? mobileChatJournal.sessionEntries(sessionId)
+      : [],
+    deliver: async ({ sessionId, text, filePath }) => {
+      const target = sessionManager.getSession(sessionId);
+      if (!target) throw new Error(`Session not found: ${sessionId}`);
+      if (target.comfyUiTool) {
+        if (text.trim() === '/cancel') {
+          if (filePath) throw new Error('Remove the attached file before cancelling a ComfyUI generation');
+          if (!await getComfyUiSessionHost().cancel(target.id)) throw new Error('No ComfyUI generation is running');
+        } else {
+          getComfyUiSessionHost().submit(target.id, text, undefined, undefined, undefined, filePath);
+        }
+        sessionManager.updateSession(target.id, { lastPromptAt: Date.now() });
+        return;
+      }
+      const prompt = filePath ? `${text}\r\n\r\n[Attached file: ${filePath}]` : text;
+      await helmControlService.sendDesktopChatTextToSession(target.id, prompt);
+    },
+    fanOut: async message => { await chatBroker.send(message); },
   });
 
   // Where to dial this desktop, pushed down the authenticated link (P-0752).

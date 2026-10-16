@@ -1788,6 +1788,10 @@ export class HelmControlService extends EventEmitter {
     return this.sessionDelivery.sendTextToSession(sessionRef, text, options);
   }
 
+  async sendDesktopChatTextToSession(sessionRef: string, text: string) {
+    return this.sessionDelivery.sendDesktopChatTextToSession(sessionRef, text);
+  }
+
   async sendInputToSession(
     sessionRef: string,
     sequence: string,

@@ -212,6 +212,7 @@ export class MobileChatBridge implements ChatBridge {
       sessionName: session.name,
       text: message.text,
       at: this.now(),
+      ...(message.originId ? { originId: message.originId } : {}),
       ...(message.filePath ? { filePath: message.filePath } : {}),
       ...(message.asVoice ? { voice: true } : {}),
       // The ids are what the phone can actually act on; the path beside them is

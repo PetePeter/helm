@@ -14,7 +14,7 @@ import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../..
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenSheet } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
-import type { ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
+import type { ChatJournalEntry, ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
 import {
   createPreloadDomains,
   type HelmPreloadApi,
@@ -1761,6 +1761,23 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: Electron.IpcRendererEvent, reply: { sessionId: string; text: string }) => callback(reply);
     ipcRenderer.on('voice:operatorReply', listener);
     return () => ipcRenderer.removeListener('voice:operatorReply', listener);
+  },
+
+  // ---- desktop Chat tab -----------------------------------------------------
+
+  /** One session's journaled conversation, oldest first. */
+  chatHistory: (sessionId: string): Promise<ChatJournalEntry[]> =>
+    ipcRenderer.invoke('chat:history', sessionId),
+
+  /** Send a desktop Chat turn; successful delivery is mirrored to chat surfaces. */
+  chatSend: (input: { sessionId: string; text: string; filePath?: string }): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('chat:send', input),
+
+  /** Every appended journal entry across all sessions. Returns an unsubscribe. */
+  onChatEntry: (callback: (entry: ChatJournalEntry) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, entry: ChatJournalEntry) => callback(entry);
+    ipcRenderer.on('chat:entry', listener);
+    return () => ipcRenderer.removeListener('chat:entry', listener);
   },
 } as const;
 

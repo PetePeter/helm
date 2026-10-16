@@ -16,6 +16,10 @@ export interface ChatOutboundMessage {
   /** The hub session the message belongs to. Every bridge routes from this. */
   sessionId: string;
   text: string;
+  /** Desktop chat turns are mirrored to users and must not be voiced back to the same desktop. */
+  source?: 'desktop';
+  /** Stable source id used by a surface to reconcile an echoed user turn. */
+  originId?: string;
   /** Absolute path to an attachment. Bridges that cannot carry files skip it. */
   filePath?: string;
   /**

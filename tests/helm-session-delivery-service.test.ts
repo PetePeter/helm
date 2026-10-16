@@ -11,6 +11,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTempDir } from '../src/utils/app-paths.js';
+import { setDeliveryObserver } from '../src/session/sequence-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -93,6 +94,29 @@ describe('HelmSessionDeliveryService', () => {
         lastUserPromptAt: expect.any(Number),
         lastUserPromptSource: 'phone',
       });
+    });
+
+    it('delivers a desktop chat turn through the shared prompt path without an inter-session envelope', async () => {
+      const { service, ptyManager, receiver } = makeDeps();
+      const origins: string[] = [];
+      setDeliveryObserver((_sessionId, origin) => origins.push(origin));
+
+      try {
+        await service.sendDesktopChatTextToSession(receiver.id, 'hello from Chat');
+      } finally {
+        setDeliveryObserver(null);
+      }
+
+      expect(getSentText(ptyManager)).toBe('hello from Chat');
+      expect(origins).toEqual(['user']);
+    });
+
+    it('sends desktop chat text to an API session without adding a session sender tag', async () => {
+      const { service, ptyManager, receiver } = makeDeps({ api: true });
+
+      await service.sendDesktopChatTextToSession(receiver.id, 'hello API');
+
+      expect(getSentText(ptyManager)).toBe('hello API');
     });
 
     it('refuses a frozen recipient before anything reaches its PTY', async () => {
