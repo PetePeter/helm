@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { useFirstRunOnboarding } from '../renderer/composables/useFirstRunOnboarding';
+import { PANE_DRAFT } from '../renderer/dock-types';
 
 function setup(overrides: Record<string, unknown> = {}) {
   const deps = {
@@ -12,6 +13,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     createProject: vi.fn().mockResolvedValue({ success: true }),
     spawnSession: vi.fn().mockResolvedValue(true),
     openSettings: vi.fn(),
+    openPane: vi.fn(),
     ...overrides,
   };
   return { onboarding: useFirstRunOnboarding(deps), deps };
@@ -70,5 +72,15 @@ describe('useFirstRunOnboarding', () => {
 
     expect(deps.openSettings).toHaveBeenCalledWith('cli-integrations');
     expect(onboarding.visible.value).toBe(false);
+  });
+
+  it('hides onboarding and delegates dock pane activation', () => {
+    const { onboarding, deps } = setup();
+    onboarding.visible.value = true;
+
+    onboarding.openPane(PANE_DRAFT);
+
+    expect(onboarding.visible.value).toBe(false);
+    expect(deps.openPane).toHaveBeenCalledWith(PANE_DRAFT);
   });
 });

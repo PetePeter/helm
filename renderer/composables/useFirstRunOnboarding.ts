@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import type { PaneId } from '../dock-types.js';
 import { normalizeDirPath } from '../utils.js';
 
 export type OnboardingStage = 'cli' | 'directory' | 'prompt' | 'success' | 'configure';
@@ -28,6 +29,7 @@ export interface FirstRunOnboardingDeps {
   createProject(dirPath: string): Promise<{ success: boolean; error?: string }>;
   spawnSession(cliType: string, dirPath: string, prompt: string): Promise<boolean>;
   openSettings(tabId: string): void;
+  openPane(paneId: PaneId): void;
 }
 
 const FIRST_PROMPT = 'Look through this project and explain how it works.';
@@ -215,6 +217,11 @@ export function useFirstRunOnboarding(deps: FirstRunOnboardingDeps) {
     deps.openSettings(tabId);
   }
 
+  function openPane(paneId: PaneId): void {
+    visible.value = false;
+    deps.openPane(paneId);
+  }
+
   function back(): void {
     error.value = '';
     if (stage.value === 'directory') stage.value = 'cli';
@@ -227,7 +234,7 @@ export function useFirstRunOnboarding(deps: FirstRunOnboardingDeps) {
     selectedDirectory, prompt, busy, error, hasTools, hasDirectories,
     initialize, open, chooseCli, continueFromCli, chooseExistingDirectory,
     browseForDirectory, continueFromDirectory, startSession, showConfiguration,
-    finish, openSettings, back,
+    finish, openSettings, openPane, back,
   };
 }
 

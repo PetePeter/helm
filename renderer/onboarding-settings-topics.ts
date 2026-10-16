@@ -16,13 +16,14 @@ export const ONBOARDING_SETTING_GROUPS: OnboardingSettingGroup[] = [
     topics: [
       { title: 'CLI tools', description: 'Commands, launch prompts and environment', tabId: 'tools' },
       { title: 'MCP server', description: 'Connect agents to Helm tools', tabId: 'mcp' },
-      { title: 'CLI hooks', description: 'Integrations and activity reporting', tabId: 'cli-integrations' },
+      { title: 'CLI hooks', description: 'Activity reporting, context alerts, and editable context injections', tabId: 'cli-integrations' },
       { title: 'Operator', description: 'Configure Helm’s voice operator', tabId: 'operator' },
     ],
   },
   {
     label: 'Workflows',
     topics: [
+      { title: 'Session List', description: 'Choose how session output previews appear', tabId: 'session-list' },
       { title: 'Projects and folders', description: 'Organize repositories and working directories', tabId: 'projects' },
       { title: 'Profiles and controls', description: 'Choose reusable keyboard and gamepad bindings', tabId: 'bindings' },
       { title: 'Skills', description: 'Reusable agent instructions', tabId: 'skills' },

@@ -451,6 +451,9 @@ const firstRunOnboarding = useFirstRunOnboarding({
   browseDirectory: () => dialogClient.dialogOpenFolder(),
   createProject: (dirPath) => projectsClient.projectCreate(dirPath),
   spawnSession: (cliType, dirPath, prompt) => doSpawn(cliType, dirPath, prompt),
+  openPane: (paneId) => {
+    void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT);
+  },
   openSettings: (tabId) => {
     if (tabId === 'scheduled-tasks') {
       schedulerPopupTaskId.value = null;
