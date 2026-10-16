@@ -180,6 +180,13 @@ removes.
   `peer_call(peer, "directory_list")`, the spawn is `peer_spawn`, and the
   desktop opens the result as a Remote row whose local id the phone opens —
   see [remote.md](remote.md). A refused `peer_list` just hides the row.
+  Ordinary new sessions use four pages: **Name + machine → CLI → Project →
+  Folder**. The Project page groups folders by project; Folder shows the
+  selected project's paths, with its canonical folder marked **Main** and
+  first. Ungrouped folders — or all folders when an older desktop has no
+  project metadata — appear under **Other**. Changing machines clears the
+  chosen CLI, project, and folder. Plan spawns keep their plan's folder fixed
+  and use a compact form.
 - **Session list by machine** — a Remote row (`remote.machineName` on
   `session_list`) groups under 🖥 its machine, after the desktop's own
   project groups (`HelmSession.groupLabel`).
