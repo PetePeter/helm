@@ -309,14 +309,16 @@ export class HelmSessionDeliveryService {
     // to it (Helm posts its answer to chat itself). It gets the text, plus the
     // sender's name when that is another session rather than the user's phone.
     const isApiTool = Boolean(recipientEntry?.api);
-    const mobileOrigin = Boolean(options.senderSessionId && isMobileSessionId(options.senderSessionId));
+    // Validated above: every non-desktop send names its sender session.
+    const sender = desktopOrigin ? undefined : { id: options.senderSessionId!, name: options.senderSessionName! };
+    const mobileOrigin = Boolean(sender && isMobileSessionId(sender.id));
     // Read before delivery: the paste itself turns the dot green.
     const busyReport = reportTargetBusy(session, isApiTool);
-    const usePreamble = !desktopOrigin && !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
-    let deliveryText = isApiTool && !mobileOrigin && !desktopOrigin
+    const usePreamble = sender !== undefined && !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
+    let deliveryText = isApiTool && sender && !mobileOrigin
       ? formatSenderTag({
-        sessionId: options.senderSessionId,
-        sessionName: options.senderSessionName,
+        sessionId: sender.id,
+        sessionName: sender.name,
         awaitingReply: options.expectsResponse ?? false,
       }) + text
       : text;
@@ -347,7 +349,7 @@ export class HelmSessionDeliveryService {
       });
 
       const tag = expectsResponse
-        ? buildExpectsResponseTag(options.senderSessionId)
+        ? buildExpectsResponseTag(sender.id)
         : '[HELM_MSG]';
       // Envelope JSON braces will be smart-escaped by escapeUnrecognizedBraces
       // (unrecognized brace groups get {{/}}), while user text tokens like {Send}
@@ -369,7 +371,7 @@ export class HelmSessionDeliveryService {
       const channel = this.reminderDelivery
         ? (await this.reminderDelivery(session, 'helmMsgRules')).channel
         : 'pty';
-      const directive = channel === 'pty' ? buildNonBlockingDirective(options.senderSessionId) : '';
+      const directive = channel === 'pty' ? buildNonBlockingDirective(sender.id) : '';
       const message = `${tag}${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({
