@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
-import CliIntegrationsTab from '../../../renderer/components/settings/CliIntegrationsTab.vue';
+import CliIntegrationsTab from '../../../renderer/components/settings/pages/CliIntegrationsTab.vue';
 
 const setCalls: Array<Record<string, string>> = [];
 let modes: Record<string, string> = {};

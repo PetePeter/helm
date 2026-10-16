@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import AutoMemoryTab from '../../../renderer/components/sidebar/AutoMemoryTab.vue';
+import AutoMemoryTab from '../../../renderer/components/settings/pages/AutoMemoryTab.vue';
 import { DEFAULT_JUDGE_PROMPT } from '../../../src/types/auto-memory.js';
 
 const ALL_MODELS = [

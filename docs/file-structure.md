@@ -161,22 +161,18 @@ renderer/
 │   │   ├── index.ts
 │   │   ├── SessionCard.vue     # Session card (activity dot, badges, timer, rename, close, 5-line PTY preview)
 │   │   ├── SessionList.vue     # Grouped session list; hosts the message-flight envelopes
-│   │   ├── SessionListSettings.vue  # Tools-tab section: PTY preview mode (on / selected-only / off)
-│   │   ├── VoiceTab.vue  # Settings tab: OpenWhispr / Piper / ffmpeg paths
 │   │   ├── SessionGroup.vue    # Collapsible directory group header
 │   │   ├── SpawnGrid.vue       # 2-column CLI spawn button grid
 │   │   ├── SortBar.vue         # Sort field dropdown + direction toggle
 │   │   ├── PlansGrid.vue       # Per-directory plan buttons with badges
 │   │   ├── StatusStrip.vue     # Gamepad dot, count, profile badge
-│   │   ├── SettingsPanel.vue   # Settings slide-over with tab switching
-│   │   ├── ProfilesTab.vue     # Profile list CRUD
-│   │   ├── BindingsTab.vue     # Binding profile picker + button list
-│   │   ├── ToolsTab.vue        # CLI type management
-│   │   ├── TelegramTab.vue     # Telegram bot configuration
-│   │   ├── MobileTab.vue       # Paired phones (enable / allow-list / revoke) + the APK QR and version-pinned URL
-│   │   ├── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
-│   │   ├── AutoMemoryTab.vue   # Settings → Auto memory: recording model picker, auto-save / auto-recall switches, Test
-│   │   └── OperatorTab.vue     # Settings → Operator: enable, CLI type dropdown, working dir for the "Helm" operator
+│   │   └── OperatorSection.vue # Pinned "Helm" section above the session list: dot, last reply, Call/Hang up, live call transcript
+│   ├── settings/              # Full-screen settings (docs/settings.md)
+│   │   ├── settings-registry.ts # Pages, nav groups, icons, legacy tab-id mapping
+│   │   ├── SettingsScreen.vue  # Grouped nav + gamepad pane model
+│   │   ├── primitives/         # SettingsPage, MasterDetail, PillTabs, SettingsCard, FieldRow
+│   │   ├── tools/              # ToolsPage (CLI type list) + ToolEditor (inline, autosaving)
+│   │   └── pages/              # Every other page (*Tab.vue, SessionListSettings, McpCliSetup, FleetConfigPanel, QrCode)
 │   ├── dock/
 │   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane

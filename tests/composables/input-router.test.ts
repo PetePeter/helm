@@ -77,9 +77,7 @@ function createRouter(overrides: Partial<Parameters<typeof useInputRouter>[0]> =
     itemEditorVisible: ref(false),
     itemEditorRef: ref<{ handleButton?: (button: string) => void } | null>(null),
     settingsPanelRef: ref<{ handleButton?: (button: string) => void } | null>(null),
-    settingsTab: ref('tools'),
     overviewCollapsedIds: ref(new Set<string>()),
-    buildSettingsTabs: vi.fn(() => [{ id: 'tools' }, { id: 'bindings' }]),
     navStore,
     ...overrides,
   };

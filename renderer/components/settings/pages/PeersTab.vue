@@ -10,9 +10,9 @@
  * clear "fleet is off" hint rather than a blank tab.
  */
 import { computed, onMounted, ref } from 'vue';
-import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig, type PeerSession } from '../../composables/usePeers.js';
-import { getPeerStatusColor } from '../../state-colors.js';
-import PeerAuditModal from '../modals/PeerAuditModal.vue';
+import { usePeers, type ConfiguredPeer, type DiscoveredPeer, type FleetConfig, type PeerSession } from '../../../composables/usePeers.js';
+import { getPeerStatusColor } from '../../../state-colors.js';
+import PeerAuditModal from '../../modals/PeerAuditModal.vue';
 import FleetConfigPanel from './FleetConfigPanel.vue';
 
 const {

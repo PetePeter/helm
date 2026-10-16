@@ -5,8 +5,8 @@
  * session row, nothing in the chat.
  */
 import { computed, onMounted } from 'vue';
-import { useAutoMemoryStore } from '../../stores/auto-memory.js';
-import { DEFAULT_JUDGE_PROMPT, type RecordingModelOption } from '../../../src/types/auto-memory.js';
+import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
+import { DEFAULT_JUDGE_PROMPT, type RecordingModelOption } from '../../../../src/types/auto-memory.js';
 
 const store = useAutoMemoryStore();
 

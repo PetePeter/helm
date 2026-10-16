@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../../ipc/clients.js';
+import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../../../ipc/clients.js';
 /**
  * McpCliSetup.vue — Extracts Global CLI Setup section from McpTab.vue
  * with env var awareness, copy button, and a run-in-shell button per snippet.
@@ -11,7 +11,7 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * registration; see quoteArg() below for why that differs per shell.
  */
 import { ref, computed, onMounted } from 'vue';
-import { isWindows as detectWindows, getPlatform } from '../../utils/platform.js';
+import { isWindows as detectWindows, getPlatform } from '../../../utils/platform.js';
 
 const isWindows = detectWindows();
 const shellName = isWindows ? 'cmd.exe' : (getPlatform() === 'darwin' ? 'zsh' : 'bash');

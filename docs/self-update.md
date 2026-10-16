@@ -95,4 +95,4 @@ Domain `update` in the preload contract; renderer client
 | `src/session/update-checker.ts` | Pure decisions: version compare, asset pick, release parse, update script text |
 | `src/electron/ipc/update-handlers.ts` | `update:check` / `update:install` handlers, streamed download, detached spawn |
 | `renderer/composables/useUpdateCheck.ts` | Mode-gated launch check (toast offer), Check now (in-place `updateOffer`), install with progress |
-| `renderer/components/sidebar/UpdatesTab.vue` | Settings tab: mode select + Check now + Update button + running version |
+| `renderer/components/settings/pages/UpdatesTab.vue` | Settings tab: mode select + Check now + Update button + running version |

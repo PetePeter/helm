@@ -6,7 +6,8 @@
  * Quick Spawn and Folder Planner sections outside this component so they stay
  * pinned below the scrolling list.
  */
-import { ref } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
+import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import SessionGroup from './SessionGroup.vue';
 import SessionCard from './SessionCard.vue';
 import { isNavItemFocused, type SessionPreviewMode } from '../../session-groups.js';
@@ -119,6 +120,16 @@ const emit = defineEmits<{
   attachPeerSession: [sessionId: string];
 }>();
 
+const scheduledTaskIndicators = useScheduledTaskIndicatorsStore();
+const usesScheduledTaskIndicators = props.source !== 'peer';
+
+onMounted(() => {
+  if (usesScheduledTaskIndicators) scheduledTaskIndicators.start();
+});
+
+onUnmounted(() => {
+  if (usesScheduledTaskIndicators) scheduledTaskIndicators.stop();
+});
 function onSessionClick(sessionId: string): void {
   if (props.source === 'peer') {
     const session = props.groups.flatMap(group => group.sessions).find(row => row.id === sessionId);
@@ -293,6 +304,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :is-editing="editingSessionId === session.id"
               :is-hidden-from-overview="isSessionHiddenFromOverview(session)"
               :scheduled-at="pendingSchedules.get(session.id) ?? null"
+              :scheduled-task-indicator-enabled="usesScheduledTaskIndicators"
               :is-snapped-out="snappedOutSessions.has(session.id)"
               :llm-notifications="llmNotifications.get(session.id) ?? []"
               :flash-entry="flashEntries?.get(session.id) ?? null"

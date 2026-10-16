@@ -20,18 +20,18 @@
  * hook capability resolves against.
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { configClient, toolsClient } from '../../ipc/clients.js';
+import { configClient, toolsClient } from '../../../ipc/clients.js';
 import {
   DEFAULT_REMINDER_MODES,
   REMINDER_IDS,
   type ReminderDeliveryMode,
   type ReminderId,
-} from '../../../src/session/reminder-delivery.js';
+} from '../../../../src/session/reminder-delivery.js';
 import {
   HOOK_INJECTION_DEFINITIONS,
   type HookInjectionId,
   type HookInjectionOverrides,
-} from '../../../src/session/hooks/hook-injections.js';
+} from '../../../../src/session/hooks/hook-injections.js';
 
 type HookStatus = 'installed' | 'outdated' | 'not-installed' | 'interpreter-missing';
 
@@ -690,7 +690,8 @@ onUnmounted(() => {
 }
 
 .hook-injection-list__item--selected {
-  background: var(--bg-tertiary);
+  background: var(--accent-tint);
+  color: var(--accent);
 }
 
 .hook-injection-list__custom {

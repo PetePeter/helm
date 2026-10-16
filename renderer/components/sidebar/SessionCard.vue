@@ -19,6 +19,7 @@ import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextSparkline from './ContextSparkline.vue';
 import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
+import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 
 function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
@@ -82,6 +83,7 @@ export interface SessionCardProps {
   isEditing: boolean;
   isHiddenFromOverview: boolean;
   scheduledAt?: string | null;
+  scheduledTaskIndicatorEnabled?: boolean;
   isSnappedOut?: boolean;
   llmNotifications?: Array<{ id: string; title: string; content: string; createdAt?: number }>;
   flashEntry?: { phase: 'pulse' | 'solid' } | null;
@@ -111,6 +113,11 @@ const STATES = ['implementing', 'waiting', 'planning', 'completed', 'idle'];
 // --- Props & Emits ---
 
 const props = defineProps<SessionCardProps>();
+
+const scheduledTaskIndicators = useScheduledTaskIndicatorsStore();
+const scheduledTaskTooltip = computed(() => props.scheduledTaskIndicatorEnabled === false
+  ? null
+  : scheduledTaskIndicators.tooltipFor(props.session.id));
 
 const canOpenSessionMenu = computed(() => !props.isEditing && !props.readOnly);
 
@@ -222,7 +229,8 @@ const statusIcons = computed(() => [
   props.session.frozen && { icon: '❄️', title: 'Frozen — no input reaches it' },
   props.session.keepWarmUntil !== undefined && props.session.keepWarmUntil > Date.now()
     && { icon: '⏰', title: `Keeping cache warm until ${new Date(props.session.keepWarmUntil).toLocaleTimeString()}` },
-].filter((x): x is { icon: string; title: string } => !!x));
+  scheduledTaskTooltip.value && { icon: '🕒', title: scheduledTaskTooltip.value, className: 'session-status-scheduled-task' },
+].filter((x): x is { icon: string; title: string; className?: string } => !!x));
 const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
@@ -343,7 +351,7 @@ function onCardClick(e: MouseEvent): void {
     <span v-if="fadeStyle" :key="session.lastPromptAt" class="session-prompt-fade" :style="fadeStyle" />
     <!-- Status at a glance, centred on the row: every one that applies, side by side. -->
     <span v-if="statusIcons.length || isHiddenFromOverview" class="session-status-icons" aria-hidden="true">
-      <span v-for="s in statusIcons" :key="s.icon" :title="s.title">{{ s.icon }}</span>
+      <span v-for="s in statusIcons" :key="s.icon" :class="s.className" :title="s.title">{{ s.icon }}</span>
       <!-- No emoji for a closed eye: a drawn one, in the row's text colour. -->
       <span v-if="isHiddenFromOverview" class="session-status-hidden" title="Hidden from the overview">
         <svg width="16" height="10" viewBox="0 0 16 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">

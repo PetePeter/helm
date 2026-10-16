@@ -154,6 +154,7 @@ snapped-out session window. It follows the active session.
 - **Send** (button or Ctrl+Enter) types the pad into the session's CLI through
   the normal paste path, submits it, then clears and saves the empty pad — the
   pad doubles as a prompt composer. Plain Enter is a new line; an empty pad sends nothing.
+  A frozen session takes no input, so Send does nothing and the pad keeps its text.
 - **Ctrl+G** or **Ctrl+Shift+D** jumps here from anywhere, even mid-typing in
   another field. The textarea carries `data-autofocus`, so the caret lands in it
   whenever the dock focuses the pane.

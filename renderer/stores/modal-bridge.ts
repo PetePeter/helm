@@ -333,35 +333,6 @@ export interface ToolEditorBridgeData {
   initialPrompt: Array<{ label: string; sequence: string }>;
 }
 
-const EMPTY_TOOL_DATA: ToolEditorBridgeData = {
-  name: '', env: [], initialPromptDelay: 2000,
-  spawnCommand: '', resumeCommand: '', continueCommand: '',
-  renameCommand: '', helmPreambleForInterSession: true,
-  largeTextAsTempFile: false, messReminders: true, mouseTracking: false,
-  submitSuffix: '\\r', helmActions: { clear: '', compact: '', export: '' }, initialPrompt: [],
-  api: null,
-  comfyUi: null,
-};
-
-export const toolEditor = reactive({
-  visible: false,
-  mode: 'add' as 'add' | 'edit' | 'clone',
-  editKey: '',
-  /** Inline name check owned by the settings controller (blocks duplicate labels). */
-  validateName: null as ((name: string) => string | null) | null,
-  initialData: { ...EMPTY_TOOL_DATA } as ToolEditorBridgeData,
-  /** Profiles offered by the Binding Profile picker; refreshed each time the editor opens. */
-  bindingProfiles: [] as Array<{ id: string; name: string }>,
-});
-
-let _toolEditorOnSave: ((values: any) => void) | null = null;
-export function setToolEditorCallback(cb: ((values: any) => void) | null): void { _toolEditorOnSave = cb; }
-export function getToolEditorCallback(): ((values: any) => void) | null { return _toolEditorOnSave; }
-
-// Deep-copy the nested/array fields so callers never share (and mutate) the frozen default.
-export function resetToolEditorData(): ToolEditorBridgeData {
-  return { ...EMPTY_TOOL_DATA, env: [], initialPrompt: [], helmActions: { clear: '', compact: '', export: '' } };
-}
 
 /**
  * Normalise the editor's API block for saving: trimmed strings, blank optionals
@@ -593,7 +564,7 @@ export function isAnyBridgeModalVisible(): boolean {
 
   return closeConfirm.visible || contextMenu.visible || planDeleteConfirm.visible ||
     bulkCleanup.visible || quickSpawn.visible || dirPicker.visible ||
-    formModal.visible || toolEditor.visible ||
+    formModal.visible ||
     planHelp.visible || runtimeGroupName.visible || runtimeGroupClose.visible ||
     runtimeGroupMove.visible || escProtection.isProtecting.value;
 }

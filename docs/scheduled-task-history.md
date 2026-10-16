@@ -106,7 +106,7 @@ the YAML stays free of `undefined` noise.
 | `src/session/scheduled-task-manager.ts` | `recordHistory()` — the fire-time snapshot |
 | `src/electron/ipc/scheduled-task-handlers.ts` | `scheduled_task:listHistory` / `clearHistory`, forwards `scheduled-task-history:changed` |
 | `renderer/components/sidebar/ScheduledTaskHistoryModal.vue` | Past Schedules UI |
-| `renderer/components/sidebar/ScheduledTasksTab.vue` | Create popup (target of Recreate) |
+| `renderer/components/settings/pages/ScheduledTasksTab.vue` | Create popup (target of Recreate) |
 
 ## Events and IPC
 

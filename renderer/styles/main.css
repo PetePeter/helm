@@ -19,6 +19,10 @@
   --text-dim: #555;
   --border: #222222;
   --focus: rgba(79, 208, 139, 0.3);
+  /* Selected / active surfaces: a tinted fill plus accent text, never a
+     coloured edge bar. Gamepad focus is a separate inset ring. */
+  --accent-tint: rgba(79, 208, 139, 0.12);
+  --focus-ring: inset 0 0 0 1.5px var(--accent);
 
   /* Semantic colours. One red and one blue, so the same meaning cannot drift
      into four different literals across the app. */
@@ -626,7 +630,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   font-size: var(--font-size-sm);
 }
 
-
 /* Session Cards (sidebar vertical list) */
 .sessions-list-shell {
   display: flex;
@@ -780,7 +783,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* ── Runtime (custom) groups ──────────────────────────────── */
 
-
 /* Runtime group actions. Overview is a dock pane, not a sidebar button. */
 .runtime-list-actions {
   display: flex;
@@ -867,7 +869,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   background: rgba(120, 130, 150, 0.2);
   color: var(--text-primary);
 }
-
 
 /* ── Session cards ────────────────────────────────────────── */
 
@@ -1469,53 +1470,6 @@ kbd {
   font-weight: 600;
 }
 
-/* Settings Screen */
-.settings-content {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: var(--spacing-lg);
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.settings-display {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--spacing-sm) var(--spacing-md);
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.settings-panel--shell {
-  position: absolute;
-  inset: 0;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.settings-action-bar {
-  flex-shrink: 0;
-}
-
-.settings-display--shell {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-/* Ensure nested settings panels take full width */
-.settings-display .settings-panel {
-  width: 100% !important;
-  min-width: 0 !important;
-}
-
 .controller-preview {
   padding: var(--spacing-xl);
   background: var(--bg-secondary);
@@ -1635,7 +1589,6 @@ kbd {
   position: relative;
 }
 
-
 .focusable:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1644,41 +1597,6 @@ kbd {
 .focusable.gamepad-focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--focus);
-}
-
-/* Settings Tabs (compact, wrapping for 320px sidebar) */
-.settings-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-bottom: var(--spacing-sm);
-  border-bottom: 2px solid var(--border);
-  padding-bottom: var(--spacing-xs);
-}
-
-.settings-tab {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  color: var(--text-secondary);
-  font-weight: 500;
-  font-size: 11px;
-  white-space: nowrap;
-  transition: background 0.15s, color 0.15s;
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-.settings-tab:hover,
-.settings-tab:focus {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-}
-
-.settings-tab--active {
-  color: var(--accent);
-  border-bottom: 2px solid var(--accent);
-  margin-bottom: -2px;
 }
 
 .binding-action-bar {
@@ -1984,7 +1902,6 @@ kbd {
   flex-shrink: 0;
 }
 
-
 .btn--success {
   background: rgba(68, 204, 68, 0.15);
   color: #44cc44;
@@ -2003,36 +1920,12 @@ kbd {
 }
 
 /* Settings Panel Styles */
-.settings-panel {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  gap: var(--spacing-md);
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
 
 .settings-panel__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: var(--spacing-sm);
-}
-
-.settings-back-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-size-sm);
-}
-
-.settings-back-btn:hover {
-  background: var(--bg-hover);
 }
 
 .settings-panel__title {
@@ -2078,7 +1971,8 @@ kbd {
 }
 
 .settings-list-item--active {
-  border-color: var(--accent);
+  background: var(--accent-tint);
+  border-color: transparent;
 }
 
 .settings-list-item__name {
@@ -2270,7 +2164,6 @@ kbd {
 /* ── Settings Tab Panels ─────────────────────────────────────────────────── */
 
 .settings-profiles-panel,
-.settings-tools-panel,
 .settings-telegram-panel,
 .settings-directories-panel,
 .settings-chipbar-panel,
@@ -2347,7 +2240,8 @@ kbd {
 }
 
 .settings-skill-item--active {
-  border-color: var(--accent);
+  background: var(--accent-tint);
+  border-color: transparent;
 }
 
 .skill-item-header {
@@ -2396,7 +2290,6 @@ kbd {
   white-space: nowrap;
 }
 
-
 .skill-list-rating {
   color: #c8963e;
   font-size: var(--font-size-xs);
@@ -2416,7 +2309,7 @@ kbd {
 .skill-tab {
   background: transparent;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-radius: 999px;
   color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--font-size-sm);
@@ -2424,7 +2317,7 @@ kbd {
 }
 
 .skill-tab--active {
-  border-bottom-color: var(--accent);
+  background: var(--accent-tint);
   color: var(--accent);
 }
 
@@ -2572,7 +2465,8 @@ kbd {
 }
 
 .settings-skill-project-option--selected {
-  border-color: var(--accent);
+  background: var(--accent-tint);
+  border-color: transparent;
   color: var(--accent);
 }
 
@@ -2690,38 +2584,6 @@ kbd {
   display: flex;
   gap: var(--spacing-sm);
   flex-shrink: 0;
-}
-
-/* Tools tab */
-.tool-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.tool-name {
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-command {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  font-family: monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.tool-prompt-badge {
-  font-size: var(--font-size-sm);
-  color: var(--text-dim);
 }
 
 .tool-actions {
@@ -3206,4 +3068,98 @@ kbd {
   0% { box-shadow: 0 0 0 0 var(--focus); }
   70% { box-shadow: 0 0 0 8px rgba(79, 208, 139, 0); }
   100% { box-shadow: 0 0 0 0 rgba(79, 208, 139, 0); }
+}
+
+/* ── Settings screen: shared look for every page ─────────────────────────────
+   Pages predate the redesign and share these class names, so the card / row /
+   switch / ring language is applied here once instead of in each page. */
+.settings-screen .focusable:focus-visible,
+.settings-screen .focusable:focus {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* A page's own heading duplicates the page title; one that carries actions stays as its toolbar. */
+.settings-page__column > * > .settings-panel__header:first-child:has(> .settings-panel__title:only-child) {
+  display: none;
+}
+
+.settings-screen .settings-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: 0 2px;
+  margin: var(--spacing-sm) 0 6px;
+}
+
+.settings-screen .settings-panel__title {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.settings-screen .settings-help {
+  margin: 0 2px var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.settings-screen .settings-form,
+.settings-screen .settings-readonly-card,
+.settings-screen .settings-list-item {
+  background: var(--bg-primary);
+  border-radius: 10px;
+}
+
+.settings-screen .settings-list-item:hover {
+  border-color: var(--border);
+  background: var(--bg-tertiary);
+}
+
+/* Checkboxes read as switches. Options inside lists (tool ticks) keep the box. */
+.settings-screen input[type='checkbox']:not(.te-api-tool input) {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 18px;
+  margin: 0;
+  border-radius: 9px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.settings-screen input[type='checkbox']:not(.te-api-tool input)::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.settings-screen input[type='checkbox']:not(.te-api-tool input):checked {
+  background: var(--accent);
+}
+
+.settings-screen input[type='checkbox']:not(.te-api-tool input):checked::after {
+  transform: translateX(16px);
+  background: var(--accent-contrast);
+}
+
+.settings-screen input[type='checkbox']:not(.te-api-tool input):focus-visible,
+.settings-screen input[type='checkbox'].focusable:not(.te-api-tool input):focus {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 3.5px var(--accent);
+}
+
+.settings-screen input[type='checkbox']:disabled {
+  opacity: 0.45;
+  cursor: default;
 }

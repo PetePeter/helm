@@ -17,7 +17,7 @@
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { mount } from '@vue/test-utils';
-import McpCliSetup from '../../../renderer/components/sidebar/McpCliSetup.vue';
+import McpCliSetup from '../../../renderer/components/settings/pages/McpCliSetup.vue';
 
 function setPlatform(value: NodeJS.Platform): void {
   (window as any).helmPlatform = value;

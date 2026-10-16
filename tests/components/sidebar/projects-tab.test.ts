@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
-import ProjectsTab from '../../../renderer/components/sidebar/ProjectsTab.vue';
+import ProjectsTab from '../../../renderer/components/settings/pages/ProjectsTab.vue';
 
 const mocks = vi.hoisted(() => ({
   projectList: vi.fn(),

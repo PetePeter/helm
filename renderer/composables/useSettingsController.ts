@@ -7,15 +7,12 @@ import { state } from '../state.js';
 import { getCliDisplayName, logEvent, showFormModal } from '../utils.js';
 import { sortBindingEntries, type BindingSortField, type SortDirection } from '../sort-logic.js';
 import { CONTROLLER_BUTTONS } from '../controller-buttons.js';
-import {
-  buildToolEditorOptions,
-  setToolEditorCallback,
-  toolEditor,
-  type ToolEditorBridgeData,
-} from '../stores/modal-bridge.js';
+import { buildToolEditorOptions, type ToolEditorBridgeData } from '../stores/modal-bridge.js';
 import { useChipBarStore } from '../stores/chip-bar.js';
 import { useToast } from './useToast.js';
+import { trackSave } from './useAutosave.js';
 import { headlessCommandToEdit } from '../../src/session/headless-command.js';
+import { resolveSettingsPage } from '../components/settings/settings-registry.js';
 
 export interface SettingsBindingProfile {
   id: string;
@@ -105,8 +102,6 @@ export interface SettingsBindingEntry {
   detail: string;
 }
 
-const SETTINGS_TABS = new Set(['bindings', 'tools', 'chipbar-actions', 'directories', 'projects', 'skills', 'telegram', 'mcp', 'peers', 'mobile', 'cli-integrations', 'updates', 'operator', 'voice']);
-
 function emptySkillDraft(): SettingsSkillDraft {
   return {
     id: '',
@@ -134,6 +129,8 @@ export function useSettingsController(options: {
 }) {
   const settingsTab = ref(state.settingsTab || 'tools');
   const settingsTools = ref<SettingsToolItem[]>([]);
+  /** Binding profiles offered by the tool editor's picker; refreshed when a tool opens. */
+  const toolEditorBindingProfiles = ref<Array<{ id: string; name: string }>>([]);
   const settingsDirectories = ref<SettingsDirectoryItem[]>([]);
   const settingsProjects = computed(() => state.projects);
   const settingsChipbarActions = ref<SettingsChipbarAction[]>([]);
@@ -165,9 +162,7 @@ export function useSettingsController(options: {
   });
 
   async function loadSettingsData(): Promise<void> {
-    if (!SETTINGS_TABS.has(settingsTab.value)) {
-      settingsTab.value = 'tools';
-    }
+    settingsTab.value = resolveSettingsPage(settingsTab.value).id;
 
     await Promise.all([
       loadTools(),
@@ -208,25 +203,6 @@ export function useSettingsController(options: {
       label: binding.label || binding.action || '',
       detail: binding.sequence || binding.command || '',
     }));
-  }
-
-  function buildSettingsTabs() {
-    return [
-      { id: 'tools', label: '🔧 Tools' },
-      { id: 'bindings', label: '🎮 Bindings' },
-      { id: 'chipbar-actions', label: '⚡ Quick Actions' },
-      { id: 'projects', label: '📁 Projects' },
-      { id: 'skills', label: '🧠 Skills' },
-      { id: 'auto-memory', label: '💾 Auto memory' },
-      { id: 'telegram', label: '📨 Telegram' },
-      { id: 'mcp', label: '🧩 MCP' },
-      { id: 'peers', label: '🔗 Fleet' },
-      { id: 'mobile', label: '📱 Mobile' },
-      { id: 'operator', label: '🎙 Operator' },
-      { id: 'voice', label: '🔊 Voice' },
-      { id: 'cli-integrations', label: '🪝 CLI Integrations' },
-      { id: 'updates', label: '⬆ Updates' },
-    ];
   }
 
   /**
@@ -298,7 +274,7 @@ export function useSettingsController(options: {
     state.availableSpawnTypes = state.cliTypes;
     await initConfigCache();
     options.reloadSessions?.();
-    await loadSettingsData();
+    await loadTools();
   }
 
   async function loadTools(): Promise<void> {
@@ -416,13 +392,18 @@ export function useSettingsController(options: {
     }
   }
 
-  async function onToolAdd(): Promise<void> {
-    await loadToolEditorProfiles();
-    toolEditor.mode = 'add';
-    toolEditor.editKey = '';
-    toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate);
-    toolEditor.initialData = {
-      name: '',
+  /** Display name not yet taken by any CLI type, e.g. "New CLI type 2". */
+  function makeUniqueName(baseName: string): string {
+    for (let index = 1; ; index++) {
+      const candidate = index === 1 ? baseName : `${baseName} ${index}`;
+      if (!validateCliTypeName(candidate)) return candidate;
+    }
+  }
+
+  /** Add creates the type at once (autosave model); returns the new id to select. */
+  async function onToolAdd(): Promise<string | null> {
+    return addToolFrom({
+      name: makeUniqueName('New CLI type'),
       env: [],
       initialPromptDelay: 0,
       spawnCommand: '',
@@ -441,117 +422,73 @@ export function useSettingsController(options: {
       helmActions: { clear: '', compact: '', export: '' },
       initialPrompt: [],
       api: null,
-    };
-    setToolEditorCallback(async (values) => {
-      const name = values.name?.trim();
-      const nameError = validateCliTypeName(name ?? '');
-      if (nameError) {
-        logEvent(`Add CLI type: ${nameError}`);
-        return;
-      }
-      const validItems = (values._promptItems || []).filter((item: { sequence: string }) => item.sequence.trim());
-      const initialPromptDelay = values.initialPromptDelay || 0;
-      // The loader mints the uuid identity; there is no slug to invent here.
-      const addResult = await toolsClient.toolsAddCliType(
-        name,
-        name,
-        validItems,
-        initialPromptDelay,
-        buildToolEditorOptions(values),
-      );
-      if (addResult.success) {
-        logEvent(`Added CLI type: ${name}`);
-        await refreshAfterToolChange();
-        return;
-      }
-      logEvent(`Failed to add CLI type: ${addResult.error || 'unknown error'}`);
-    });
-    toolEditor.visible = true;
+    }, 'Added');
   }
 
-  async function onToolEdit(key: string): Promise<void> {
+  /** Clone writes the copy at once, binding profile included; returns its id. */
+  async function onToolClone(key: string): Promise<string | null> {
     try {
       const toolsData = await toolsClient.toolsGetAll();
       const value = toolsData?.cliTypes?.[key];
-      if (!value) return;
-
-      await loadToolEditorProfiles();
-      toolEditor.mode = 'edit';
-      toolEditor.editKey = key;
-      toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate, key);
-      toolEditor.initialData = buildToolEditorData(value, key);
-      setToolEditorCallback(async (values) => {
-        const name = values.name?.trim();
-        const nameError = validateCliTypeName(name ?? '', key);
-        if (nameError) {
-          logEvent(`Update CLI type: ${nameError}`);
-          return;
-        }
-        const validItems = (values._promptItems || []).filter((item: { sequence: string }) => item.sequence.trim());
-        const initialPromptDelay = values.initialPromptDelay || 0;
-        // `key` is the uuid identity — a rename changes displayName only.
-        const updateResult = await toolsClient.toolsUpdateCliType(
-          key,
-          name,
-          validItems,
-          initialPromptDelay,
-          buildToolEditorOptions(values),
-        );
-        if (updateResult.success) {
-          logEvent(`Updated CLI type: ${key}`);
-          await refreshAfterToolChange();
-          return;
-        }
-        logEvent(`Failed to update CLI type: ${updateResult.error || 'unknown error'}`);
-      });
-      toolEditor.visible = true;
-    } catch (error) {
-      console.error('Failed to load tool for edit:', error);
-    }
-  }
-
-  async function onToolClone(key: string): Promise<void> {
-    try {
-      const toolsData = await toolsClient.toolsGetAll();
-      const value = toolsData?.cliTypes?.[key];
-      if (!value) return;
-
-      await loadToolEditorProfiles();
-      toolEditor.mode = 'clone';
-      toolEditor.editKey = key;
-      toolEditor.validateName = (candidate: string) => validateCliTypeName(candidate);
-      toolEditor.initialData = {
+      if (!value) return null;
+      return addToolFrom({
         ...buildToolEditorData(value, key),
         name: makeUniqueCloneName(value.displayName || value.name || key),
-      };
-      setToolEditorCallback(async (values) => {
-        const name = values.name?.trim();
-        const nameError = validateCliTypeName(name ?? '');
-        if (nameError) {
-          logEvent(`Clone CLI type: ${nameError}`);
-          return;
-        }
-        const validItems = (values._promptItems || []).filter((item: { sequence: string }) => item.sequence.trim());
-        const initialPromptDelay = values.initialPromptDelay || 0;
-        const addResult = await toolsClient.toolsAddCliType(
-          name,
-          name,
-          validItems,
-          initialPromptDelay,
-          buildToolEditorOptions(values),
-        );
-        // The binding profile travels in the form, so the clone shares it.
-        if (addResult.success && addResult.id) {
-          logEvent(`Cloned CLI type ${getCliDisplayName(key)} to ${name}`);
-          await refreshAfterToolChange();
-          return;
-        }
-        logEvent(`Failed to clone CLI type: ${addResult.error || 'unknown error'}`);
-      });
-      toolEditor.visible = true;
+      }, `Cloned ${getCliDisplayName(key)} to`);
     } catch (error) {
-      console.error('Failed to load tool for clone:', error);
+      console.error('Failed to clone CLI type:', error);
+      return null;
     }
+  }
+
+  async function addToolFrom(data: ToolEditorBridgeData, verb: string): Promise<string | null> {
+    // The loader mints the uuid identity; there is no slug to invent here.
+    const result = await toolsClient.toolsAddCliType(
+      data.name,
+      data.name,
+      data.initialPrompt.filter((item) => item.sequence.trim()),
+      data.initialPromptDelay || 0,
+      buildToolEditorOptions(data),
+    );
+    if (result.success && result.id) {
+      logEvent(`${verb} CLI type: ${data.name}`);
+      await refreshAfterToolChange();
+      return result.id;
+    }
+    logEvent(`Failed to add CLI type: ${result.error || 'unknown error'}`);
+    return null;
+  }
+
+  /** The inline editor's starting values for one tool, or null when it is gone. */
+  async function loadToolForEdit(key: string): Promise<ToolEditorBridgeData | null> {
+    try {
+      const toolsData = await toolsClient.toolsGetAll();
+      const value = toolsData?.cliTypes?.[key];
+      if (!value) return null;
+      await loadToolEditorProfiles();
+      return buildToolEditorData(value, key);
+    } catch (error) {
+      console.error('Failed to load tool for edit:', error);
+      return null;
+    }
+  }
+
+  /** Autosave target of the inline editor. `key` is the uuid identity; a rename changes displayName only. */
+  async function saveTool(key: string, values: Record<string, any>): Promise<boolean> {
+    const name = values.name?.trim();
+    const nameError = validateCliTypeName(name ?? '', key);
+    if (nameError) throw new Error(nameError);
+    const validItems = (values._promptItems || []).filter((item: { sequence: string }) => item.sequence.trim());
+    const result = await toolsClient.toolsUpdateCliType(
+      key,
+      name,
+      validItems,
+      values.initialPromptDelay || 0,
+      buildToolEditorOptions(values),
+    );
+    if (!result.success) throw new Error(result.error || 'Could not save the CLI type');
+    await refreshAfterToolChange();
+    return true;
   }
 
   async function onToolDelete(key: string): Promise<void> {
@@ -722,7 +659,7 @@ export function useSettingsController(options: {
   }
 
   async function onTelegramUpdateField(field: string, value: string | boolean): Promise<void> {
-    try {
+    await trackSave(async () => {
       if (field === 'notificationsEnabled') {
         await telegramClient.telegramSetConfig({ enabled: Boolean(value) });
         settingsTelegramConfig.value.notificationsEnabled = Boolean(value);
@@ -762,9 +699,7 @@ export function useSettingsController(options: {
           key: 'voice-capability-changed',
         });
       }
-    } catch (error) {
-      console.error('Failed to update Telegram config:', error);
-    }
+    });
   }
 
   async function onTelegramStartBot(): Promise<void> {
@@ -786,7 +721,7 @@ export function useSettingsController(options: {
   }
 
   async function onMcpUpdate(updates: Partial<{ enabled: boolean; port: number; authToken: string }>): Promise<void> {
-    try {
+    await trackSave(async () => {
       const result = await configClient.configSetMcpConfig(updates);
       if (result?.success === false) {
         throw new Error(result.error || 'MCP config update failed');
@@ -797,9 +732,7 @@ export function useSettingsController(options: {
         port: saved?.port ?? 47373,
         authToken: saved?.authToken || '',
       };
-    } catch (error) {
-      console.error('Failed to update MCP config:', error);
-    }
+    });
   }
 
   async function onMcpGenerateToken(): Promise<void> {
@@ -874,31 +807,27 @@ export function useSettingsController(options: {
   }
 
   async function onSkillSave(draft: SettingsSkillDraft): Promise<void> {
-    const name = draft.name.trim();
-    if (!name) {
-      logEvent('Skill name is required');
-      return;
-    }
-    const payload = toRaw({
-      name,
-      description: draft.description,
-      body: draft.body,
-      aiAmendable: draft.aiAmendable,
-      allProjects: draft.allProjects,
-      projectIds: draft.allProjects ? [] : [...toRaw(draft.projectIds)],
-      type: draft.type,
+    await trackSave(async () => {
+      const name = draft.name.trim();
+      if (!name) throw new Error('Skill name is required');
+      const payload = toRaw({
+        name,
+        description: draft.description,
+        body: draft.body,
+        aiAmendable: draft.aiAmendable,
+        allProjects: draft.allProjects,
+        projectIds: draft.allProjects ? [] : [...toRaw(draft.projectIds)],
+        type: draft.type,
+      });
+      const result = draft.id
+        ? await skillsClient.skillUpdate(draft.id, payload)
+        : await skillsClient.skillCreate(payload);
+      if (result?.success === false) throw new Error(`Failed to save skill: ${result.error || 'unknown error'}`);
+      await loadSkills();
+      const savedId = result?.skill?.id;
+      if (savedId) await onSkillSelect(savedId);
+      logEvent(`Saved skill: ${name}`);
     });
-    const result = draft.id
-      ? await skillsClient.skillUpdate(draft.id, payload)
-      : await skillsClient.skillCreate(payload);
-    if (result?.success === false) {
-      logEvent(`Failed to save skill: ${result.error || 'unknown error'}`);
-      return;
-    }
-    await loadSkills();
-    const savedId = result?.skill?.id;
-    if (savedId) await onSkillSelect(savedId);
-    logEvent(`Saved skill: ${name}`);
   }
 
   async function onSkillDelete(id: string): Promise<void> {
@@ -956,7 +885,7 @@ export function useSettingsController(options: {
 
   async function loadToolEditorProfiles(): Promise<void> {
     const profiles = await configClient.configGetBindingProfiles();
-    toolEditor.bindingProfiles = (profiles ?? []).map(({ id, name }) => ({ id, name }));
+    toolEditorBindingProfiles.value = (profiles ?? []).map(({ id, name }) => ({ id, name }));
   }
 
   /** After any profile write: refresh the settings view and the runtime per-CLI cache. */
@@ -1074,10 +1003,11 @@ export function useSettingsController(options: {
     settingsBindingProfileId,
     loadSettingsData,
     loadBindingProfiles,
-    buildSettingsTabs,
     validateCliTypeName,
     onToolAdd,
-    onToolEdit,
+    loadToolForEdit,
+    saveTool,
+    toolEditorBindingProfiles,
     onToolClone,
     onToolDelete,
     onToolReorder,

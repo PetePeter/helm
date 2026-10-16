@@ -14,9 +14,9 @@
  * sits waiting for a button that does not exist on this side.
  */
 import { onMounted, ref } from 'vue';
-import { useMobileDevices, type MobileDeviceItem } from '../../composables/useMobileDevices.js';
-import { ALLOW_PRESETS } from '../../lib/mobile-allow-presets.js';
-import { getPeerStatusColor } from '../../state-colors.js';
+import { useMobileDevices, type MobileDeviceItem } from '../../../composables/useMobileDevices.js';
+import { ALLOW_PRESETS } from '../../../lib/mobile-allow-presets.js';
+import { getPeerStatusColor } from '../../../state-colors.js';
 import QrCode from './QrCode.vue';
 
 const {

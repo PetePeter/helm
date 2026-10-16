@@ -30,6 +30,16 @@ graph LR
   `selected-only` (one preview, for gamepad density) or `off` (compact rows).
   Persisted as `sessionPreviewMode` with the session-group prefs.
 
+## Scheduled-task indicator
+
+Local session rows show a clock when a pending direct-mode task targets that session.
+If several tasks target one session, the tooltip shows the one with the nearest next
+run. Spawn-mode tasks, disabled tasks, and tasks with `scheduleKind: none` are hidden.
+
+`SessionList` loads task data through the scheduler preload API and refreshes from
+the existing `onScheduledTaskChanged` event, which covers creation, edits, runs,
+cancellation, completion, and deletion. Peer session lists do not load local tasks.
+
 ## Message flights
 
 The delivery service broadcasts a flight **before** it pastes an inter-session

@@ -43,7 +43,6 @@ import { appClient, configClient, deliveryClient, dialogClient, eventsClient, pr
 import {
   contextMenu,
   openQuickSpawn,
-  toolEditor,
   isAnyBridgeModalVisible,
   showAppCloseConfirm,
   showFolderCloseConfirm,
@@ -90,27 +89,31 @@ import { isSessionHiddenFromOverview } from './session-groups.js';
 // Sidebar components
 import StatusStrip from './components/sidebar/StatusStrip.vue';
 import RecycleBinModal from './components/sidebar/RecycleBinModal.vue';
-import SettingsPanel from './components/sidebar/SettingsPanel.vue';
+import SettingsScreen from './components/settings/SettingsScreen.vue';
+import SettingsPage from './components/settings/primitives/SettingsPage.vue';
+import { resolveSettingsPage } from './components/settings/settings-registry.js';
 import FirstRunOnboarding from './components/modals/FirstRunOnboarding.vue';
 
 // Settings tab components
-import BindingsTab from './components/sidebar/BindingsTab.vue';
-import ToolsTab from './components/sidebar/ToolsTab.vue';
-import TelegramTab from './components/sidebar/TelegramTab.vue';
-import ProjectsTab from './components/sidebar/ProjectsTab.vue';
-import ChipbarActionsTab from './components/sidebar/ChipbarActionsTab.vue';
-import McpTab from './components/sidebar/McpTab.vue';
-import PeersTab from './components/sidebar/PeersTab.vue';
-import VoiceTab from './components/sidebar/VoiceTab.vue';
-import UpdatesTab from './components/sidebar/UpdatesTab.vue';
-import OperatorTab from './components/sidebar/OperatorTab.vue';
-import AutoMemoryTab from './components/sidebar/AutoMemoryTab.vue';
+import BindingsTab from './components/settings/pages/BindingsTab.vue';
+import ToolsPage from './components/settings/tools/ToolsPage.vue';
+import SessionListSettings from './components/settings/pages/SessionListSettings.vue';
+import ScheduledTasksTab from './components/settings/pages/ScheduledTasksTab.vue';
+import TelegramTab from './components/settings/pages/TelegramTab.vue';
+import ProjectsTab from './components/settings/pages/ProjectsTab.vue';
+import ChipbarActionsTab from './components/settings/pages/ChipbarActionsTab.vue';
+import McpTab from './components/settings/pages/McpTab.vue';
+import PeersTab from './components/settings/pages/PeersTab.vue';
+import VoiceTab from './components/settings/pages/VoiceTab.vue';
+import UpdatesTab from './components/settings/pages/UpdatesTab.vue';
+import OperatorTab from './components/settings/pages/OperatorTab.vue';
+import AutoMemoryTab from './components/settings/pages/AutoMemoryTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
-import MobileTab from './components/sidebar/MobileTab.vue';
-import CliIntegrationsTab from './components/settings/CliIntegrationsTab.vue';
+import MobileTab from './components/settings/pages/MobileTab.vue';
+import CliIntegrationsTab from './components/settings/pages/CliIntegrationsTab.vue';
 import MobilePairingDialog from './components/modals/MobilePairingDialog.vue';
 import { usePeers } from './composables/usePeers.js';
-import SkillsTab from './components/sidebar/SkillsTab.vue';
+import SkillsTab from './components/settings/pages/SkillsTab.vue';
 
 import { loadSessions } from './screens/sessions.js';
 
@@ -391,9 +394,11 @@ const {
   settingsBindingProfileId,
   loadSettingsData,
   loadBindingProfiles,
-  buildSettingsTabs,
+  validateCliTypeName,
+  toolEditorBindingProfiles,
+  loadToolForEdit,
+  saveTool,
   onToolAdd,
-  onToolEdit,
   onToolClone,
   onToolDelete,
   onToolReorder,
@@ -555,9 +560,7 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   itemEditorVisible,
   itemEditorRef,
   settingsPanelRef,
-  settingsTab,
   overviewCollapsedIds,
-  buildSettingsTabs,
   navStore,
   focusedPaneId: dockWorkspace.focusedPaneId,
   getFocusedItemId: dockWorkspace.getFocusedItemId,
@@ -734,18 +737,12 @@ function onOpenSettings(): void {
 function openSettingsTab(tabId: string): void {
   settingsVisible.value = true;
   navStore.openSettings();
-  settingsTab.value = tabId;
+  settingsTab.value = resolveSettingsPage(tabId).id;
   void loadSettingsData();
 }
 
 watch(settingsTab, () => {
   state.settingsTab = settingsTab.value;
-});
-
-watch(() => toolEditor.visible, (visible) => {
-  if (!visible && settingsVisible.value) {
-    void loadSettingsData();
-  }
 });
 
 function onCloseSettings(): void {
@@ -1166,109 +1163,125 @@ onUnmounted(() => {
       </div>
 
       <div v-if="settingsVisible" class="settings-workspace-overlay">
-        <SettingsPanel
+        <SettingsScreen
           ref="settingsPanelRef"
-          :visible="settingsVisible"
-          :tabs="buildSettingsTabs()"
           :active-tab="settingsTab"
           @update:active-tab="settingsTab = $event"
           @close="onCloseSettings"
         >
           <template #default="{ activeTab }">
-            <ToolsTab
-              v-if="activeTab === 'tools'"
-              :tools="settingsTools"
-              @add="onToolAdd"
-              @edit="onToolEdit"
-              @clone="onToolClone"
-              @delete="onToolDelete"
-              @move="onToolReorder"
-            />
-            <ProjectsTab
-              v-else-if="activeTab === 'projects'"
-              @changed="refreshSessions"
-            />
-            <ChipbarActionsTab
-              v-else-if="activeTab === 'chipbar-actions'"
-              :actions="settingsChipbarActions"
-              @add="onChipbarActionAdd"
-              @edit="onChipbarActionEdit"
-              @delete="onChipbarActionDelete"
-              @move="onChipbarActionMove"
-            />
-            <TelegramTab
-              v-else-if="activeTab === 'telegram'"
-              :config="settingsTelegramConfig"
-              :bot-running="settingsTelegramBotRunning"
-              @update-field="onTelegramUpdateField"
-              @start-bot="onTelegramStartBot"
-              @stop-bot="onTelegramStopBot"
-            />
-            <VoiceTab
-              v-else-if="activeTab === 'voice'"
-              :config="settingsTelegramConfig"
-              @update-field="onTelegramUpdateField"
-            />
-            <McpTab
-              v-else-if="activeTab === 'mcp'"
-              :config="settingsMcpConfig"
-              @update="onMcpUpdate"
-              @generate-token="onMcpGenerateToken"
-              @run-in-shell="onMcpRunInShell"
-            />
-            <SkillsTab
-              v-else-if="activeTab === 'skills'"
-              :skills="settingsSkills"
-              :draft="settingsSkillDraft"
-              :projects="settingsProjects"
-              :body-cache="skillBodyCache"
-              @select="onSkillSelect"
-              @new="onSkillNew"
-              @save="onSkillSave"
-              @delete="onSkillDelete"
-              @clone="onSkillClone"
-              @clear-reviews="onSkillClearReviews"
-              @reset-use-count="onSkillResetUseCount"
-              @reset-all-counts="onSkillResetAllCounts"
-              @load-bodies="onSkillLoadBodies"
-            />
-            <PeersTab
-              v-else-if="activeTab === 'peers'"
-            />
-            <MobileTab
-              v-else-if="activeTab === 'mobile'"
-            />
-            <CliIntegrationsTab
-              v-else-if="activeTab === 'cli-integrations'"
-            />
-            <UpdatesTab
-              v-else-if="activeTab === 'updates'"
-            />
-            <OperatorTab
-              v-else-if="activeTab === 'operator'"
-            />
-            <AutoMemoryTab
-              v-else-if="activeTab === 'auto-memory'"
-            />
-            <BindingsTab
-              v-else
-              :bindings="settingsBindings"
-              :profiles="settingsBindingProfiles"
-              :profile-id="settingsBindingProfileId"
-              :addable-buttons="settingsAddableButtons"
-              :sort-field="settingsBindingSortField"
-              :sort-direction="settingsBindingSortDirection"
-              @add-binding="onBindingAdd"
-              @edit-binding="onEditBinding($event, settingsBindingProfileId)"
-              @delete-binding="onBindingDelete"
-              @select-profile="onBindingProfileSelect"
-              @create-profile="onBindingProfileCreate"
-              @rename-profile="onBindingProfileRename"
-              @delete-profile="onBindingProfileDelete"
-              @sort-change="onBindingSortChange"
-            />
+            <SettingsPage
+              :key="activeTab"
+              :title="resolveSettingsPage(activeTab).label"
+              :flush="activeTab === 'tools'"
+            >
+              <ToolsPage
+                v-if="activeTab === 'tools'"
+                :tools="settingsTools"
+                :binding-profiles="toolEditorBindingProfiles"
+                :validate-name="validateCliTypeName"
+                :load="loadToolForEdit"
+                :save="saveTool"
+                :add="onToolAdd"
+                :clone="onToolClone"
+                :remove="onToolDelete"
+                :move="onToolReorder"
+              />
+              <ProjectsTab
+                v-else-if="activeTab === 'projects'"
+                @changed="refreshSessions"
+              />
+              <ChipbarActionsTab
+                v-else-if="activeTab === 'chipbar-actions'"
+                :actions="settingsChipbarActions"
+                @add="onChipbarActionAdd"
+                @edit="onChipbarActionEdit"
+                @delete="onChipbarActionDelete"
+                @move="onChipbarActionMove"
+              />
+              <TelegramTab
+                v-else-if="activeTab === 'telegram'"
+                :config="settingsTelegramConfig"
+                :bot-running="settingsTelegramBotRunning"
+                @update-field="onTelegramUpdateField"
+                @start-bot="onTelegramStartBot"
+                @stop-bot="onTelegramStopBot"
+              />
+              <VoiceTab
+                v-else-if="activeTab === 'voice'"
+                :config="settingsTelegramConfig"
+                @update-field="onTelegramUpdateField"
+              />
+              <McpTab
+                v-else-if="activeTab === 'mcp'"
+                :config="settingsMcpConfig"
+                @update="onMcpUpdate"
+                @generate-token="onMcpGenerateToken"
+                @run-in-shell="onMcpRunInShell"
+              />
+              <SkillsTab
+                v-else-if="activeTab === 'skills'"
+                :skills="settingsSkills"
+                :draft="settingsSkillDraft"
+                :projects="settingsProjects"
+                :body-cache="skillBodyCache"
+                @select="onSkillSelect"
+                @new="onSkillNew"
+                @save="onSkillSave"
+                @delete="onSkillDelete"
+                @clone="onSkillClone"
+                @clear-reviews="onSkillClearReviews"
+                @reset-use-count="onSkillResetUseCount"
+                @reset-all-counts="onSkillResetAllCounts"
+                @load-bodies="onSkillLoadBodies"
+              />
+              <PeersTab
+                v-else-if="activeTab === 'peers'"
+              />
+              <MobileTab
+                v-else-if="activeTab === 'mobile'"
+              />
+              <CliIntegrationsTab
+                v-else-if="activeTab === 'cli-integrations'"
+              />
+              <UpdatesTab
+                v-else-if="activeTab === 'updates'"
+              />
+              <OperatorTab
+                v-else-if="activeTab === 'operator'"
+              />
+              <AutoMemoryTab
+                v-else-if="activeTab === 'auto-memory'"
+              />
+              <SessionListSettings
+                v-else-if="activeTab === 'session-list'"
+              />
+              <ScheduledTasksTab
+                v-else-if="activeTab === 'scheduled-tasks'"
+                @task-created="onScheduledTaskCreated"
+                @task-updated="onScheduledTaskUpdated"
+                @task-cancelled="onScheduledTaskCancelled"
+              />
+              <BindingsTab
+                v-else-if="activeTab === 'bindings'"
+                :bindings="settingsBindings"
+                :profiles="settingsBindingProfiles"
+                :profile-id="settingsBindingProfileId"
+                :addable-buttons="settingsAddableButtons"
+                :sort-field="settingsBindingSortField"
+                :sort-direction="settingsBindingSortDirection"
+                @add-binding="onBindingAdd"
+                @edit-binding="onEditBinding($event, settingsBindingProfileId)"
+                @delete-binding="onBindingDelete"
+                @select-profile="onBindingProfileSelect"
+                @create-profile="onBindingProfileCreate"
+                @rename-profile="onBindingProfileRename"
+                @delete-profile="onBindingProfileDelete"
+                @sort-change="onBindingSortChange"
+              />
+            </SettingsPage>
           </template>
-          </SettingsPanel>
+        </SettingsScreen>
         </div>
 
       </div>

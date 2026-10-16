@@ -18,7 +18,8 @@ import { useTimeActivity } from '../../composables/useTimeActivity.js';
 import { DRAFT_MAX_BYTES } from '../../../src/types/draft.js';
 import { deliverBulkText } from '../../paste-handler.js';
 
-const state = useAppStore().state;
+const appStore = useAppStore();
+const state = appStore.state;
 const { text, pad, loading, dirty, conflict, error, bytes, edit, flush, keepMine, takeTheirs } =
   useDraft(() => state.activeSessionId);
 // Typing in a session's draft is the user's time on that session's project.
@@ -49,11 +50,15 @@ function onInput(event: Event): void {
   edit((event.target as HTMLTextAreaElement).value);
 }
 
-/** Send the pad to the session's CLI as a prompt (submitted), then clear it. */
+/**
+ * Send the pad to the session's CLI as a prompt (submitted), then clear it.
+ * A frozen session takes no input (docs/session-freeze.md), so the send is
+ * silently dropped and the pad keeps its text for after the thaw.
+ */
 async function send(): Promise<void> {
   const sessionId = state.activeSessionId;
   const prompt = text.value;
-  if (!sessionId || !prompt.trim()) return;
+  if (!sessionId || !prompt.trim() || appStore.activeSession?.frozen) return;
   await deliverBulkText(sessionId, prompt, { withReturn: true });
   edit('');
   await flush();

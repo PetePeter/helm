@@ -45,7 +45,7 @@ export interface KeyHandler {
   scope: KeyHandlerScope;
   /**
    * Opt back in while an input/textarea has focus. Only for shortcuts that
-   * must work mid-typing (Ctrl+Shift+N spawns a session from anywhere).
+   * must work mid-typing (Ctrl+Shift+N spawns a session or Ctrl+digit switches it).
    */
   allowInEditable?: boolean;
   /** Eligibility. Ask the context whether you are focused, visible, or neither. */

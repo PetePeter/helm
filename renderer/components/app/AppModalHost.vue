@@ -8,7 +8,6 @@ import {
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
   dirPicker, closeDirPicker,
   formModal, getFormModalResolve,
-  toolEditor, getToolEditorCallback,
   planHelp, hidePlanHelpModal,
   runtimeGroupName, getRuntimeGroupNameCallback, closeRuntimeGroupNameModal,
   runtimeGroupClose, getRuntimeGroupCloseCallback, closeRuntimeGroupCloseModal,
@@ -22,7 +21,6 @@ import QuickSpawnModal from '../modals/QuickSpawnModal.vue';
 import ContextMenu from '../modals/ContextMenu.vue';
 import DirPickerModal from '../modals/DirPickerModal.vue';
 import FormModal from '../modals/FormModal.vue';
-import ToolEditorModal from '../modals/ToolEditorModal.vue';
 import BindingEditorModal from '../modals/BindingEditorModal.vue';
 import EscProtectionModal from '../modals/EscProtectionModal.vue';
 import PlanHelpModal from '../modals/PlanHelpModal.vue';
@@ -30,7 +28,7 @@ import BulkCleanupModal from '../modals/BulkCleanupModal.vue';
 import RuntimeGroupNameModal from '../modals/RuntimeGroupNameModal.vue';
 import RuntimeGroupCloseDialog from '../modals/RuntimeGroupCloseDialog.vue';
 import RuntimeGroupMoveSubmenu from '../modals/RuntimeGroupMoveSubmenu.vue';
-import ScheduledTasksTab from '../sidebar/ScheduledTasksTab.vue';
+import ScheduledTasksTab from '../settings/pages/ScheduledTasksTab.vue';
 import ToastNotification from '../ToastNotification.vue';
 import type { ContextMenuAction } from '../../../src/types/context-menu.js';
 
@@ -126,11 +124,6 @@ function onFormModalSave(values: Record<string, string>): void {
 function onFormModalCancel(): void {
   formModal.visible = false;
   getFormModalResolve()?.(null);
-}
-
-function onToolEditorSave(values: any): void {
-  toolEditor.visible = false;
-  getToolEditorCallback()?.(values);
 }
 
 function onRuntimeGroupNameSubmit(name: string, color?: string): void {
@@ -245,16 +238,6 @@ function onRuntimeGroupMoveCancel(): void {
     @cancel="onFormModalCancel"
   />
 
-  <ToolEditorModal
-    v-model:visible="toolEditor.visible"
-    :mode="toolEditor.mode"
-    :edit-key="toolEditor.editKey"
-    :initial-data="toolEditor.initialData"
-    :binding-profiles="toolEditor.bindingProfiles"
-    :validate-name="toolEditor.validateName ?? undefined"
-    @save="onToolEditorSave"
-    @cancel="toolEditor.visible = false"
-  />
 
   <BindingEditorModal
     :visible="bindingEditorVisible"

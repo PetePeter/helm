@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
-import McpTab from '../../../renderer/components/sidebar/McpTab.vue';
+import McpTab from '../../../renderer/components/settings/pages/McpTab.vue';
 
 describe('McpTab.vue', () => {
   beforeEach(() => {

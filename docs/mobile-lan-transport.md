@@ -277,7 +277,7 @@ different kinds of peer, so one firewall rule never means two things at once.
 
 There is **no host field**, following `FleetConfigPanel.vue`'s precedent — the
 bind is a wildcard in every real deployment, and the only thing a user can act
-on is the concrete address to type into the phone. Settings → 📱 Mobile shows
+on is the concrete address to type into the phone. Settings → Mobile shows
 the same addresses the phone is told to dial, as copy-to-clipboard chips.
 
 Changes hot-apply: toggling or changing the port rebinds the listener and

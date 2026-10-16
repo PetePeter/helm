@@ -18,7 +18,7 @@ import type { PaneId } from '../dock-types.js';
 type MainViewState = 'terminal' | 'overview' | 'plan';
 
 interface ButtonTarget {
-  handleButton?: (button: string) => void;
+  handleButton?: (button: string) => boolean | void;
 }
 
 interface NavigationController {
@@ -28,10 +28,6 @@ interface NavigationController {
   navigateToSession(sessionId: string): Promise<void> | void;
 }
 
-interface SettingsTab {
-  id: string;
-}
-
 export interface InputRouterDeps {
   settingsVisible: Ref<boolean>;
   activeView: Ref<MainViewState>;
@@ -39,9 +35,7 @@ export interface InputRouterDeps {
   itemEditorVisible: Ref<boolean>;
   itemEditorRef: Ref<ButtonTarget | null>;
   settingsPanelRef: Ref<ButtonTarget | null>;
-  settingsTab: Ref<string>;
   overviewCollapsedIds: Ref<Set<string>>;
-  buildSettingsTabs: () => SettingsTab[];
   navStore: NavigationController;
   /** Identity of the dock pane that owns gamepad input. */
   focusedPaneId?: Ref<PaneId | null>;
@@ -111,32 +105,11 @@ export function useInputRouter(deps: InputRouterDeps) {
     }
 
     if (deps.settingsVisible.value) {
-      if (button === 'B') {
+      // SettingsScreen owns the pane model; B from its nav emits close.
+      const handled = deps.settingsPanelRef.value?.handleButton?.(button);
+      if (!handled && button === 'B') {
         deps.settingsVisible.value = false;
         deps.navStore.closeSettings();
-      } else if (button === 'A') {
-        const active = document.activeElement as HTMLElement;
-        if (active?.classList.contains('focusable')) {
-          active.click();
-        }
-      } else {
-        const dir = toDirection(button);
-        if (dir === 'left' || dir === 'right') {
-          if (deps.settingsPanelRef.value?.handleButton) {
-            deps.settingsPanelRef.value.handleButton(button);
-          } else {
-            const tabs = deps.buildSettingsTabs();
-            const idx = tabs.findIndex(t => t.id === deps.settingsTab.value);
-            let nextIdx = idx + (dir === 'left' ? -1 : 1);
-            if (nextIdx < 0) nextIdx = tabs.length - 1;
-            if (nextIdx >= tabs.length) nextIdx = 0;
-            deps.settingsTab.value = tabs[nextIdx].id;
-          }
-        } else if (dir === 'up' || dir === 'down') {
-          navigateFocus(dir === 'up' ? -1 : 1);
-        } else if (deps.settingsPanelRef.value?.handleButton) {
-          deps.settingsPanelRef.value.handleButton(button);
-        }
       }
       return;
     }

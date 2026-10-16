@@ -3,8 +3,8 @@
  * UpdatesTab.vue: self-update settings — launch-time check on/off + Check now.
  */
 import { onMounted, ref } from 'vue';
-import { appClient, updateClient } from '../../ipc/clients.js';
-import { checkForAppUpdateNow, installStatus, installUpdate, updateOffer } from '../../composables/useUpdateCheck.js';
+import { appClient, updateClient } from '../../../ipc/clients.js';
+import { checkForAppUpdateNow, installStatus, installUpdate, updateOffer } from '../../../composables/useUpdateCheck.js';
 
 type UpdateCheckMode = 'auto' | 'manual';
 

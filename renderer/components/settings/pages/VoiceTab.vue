@@ -6,7 +6,7 @@
  * config block for backward compatibility.
  */
 import { ref, watch } from 'vue';
-import { dialogClient } from '../../ipc/clients.js';
+import { dialogClient } from '../../../ipc/clients.js';
 
 export interface VoiceConfig {
   openWhisprPath: string;

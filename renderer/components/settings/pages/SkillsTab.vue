@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import SettingsPane from '../primitives/SettingsPane.vue';
+import { useSettingsSubTabs } from '../settings-panes.js';
 
 export interface SkillSummary {
   id: string;
@@ -113,9 +115,10 @@ const origAllProjects = ref(props.draft.allProjects);
 const origProjectIds = ref([...props.draft.projectIds]);
 
 const hydratingFromProps = ref(false);
-const saveStatus = ref<'clean' | 'unsaved' | 'saving' | 'saved'>('clean');
 const autoSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null);
-const activeTab = ref<'definition' | 'reviews'>('definition');
+const SKILL_TABS = ['definition', 'reviews'] as const;
+const activeTab = ref<typeof SKILL_TABS[number]>('definition');
+useSettingsSubTabs(() => SKILL_TABS, () => activeTab.value, (id) => { activeTab.value = id as typeof SKILL_TABS[number]; });
 
 watch(() => props.draft, (draft) => {
   hydratingFromProps.value = true;
@@ -126,7 +129,6 @@ watch(() => props.draft, (draft) => {
   origAiAmendable.value = draft.aiAmendable;
   origAllProjects.value = draft.allProjects;
   origProjectIds.value = [...draft.projectIds];
-  saveStatus.value = 'clean';
   confirmDelete.value = false;
   if (autoSaveTimer.value) { clearTimeout(autoSaveTimer.value); autoSaveTimer.value = null; }
   nextTick(() => { hydratingFromProps.value = false; });
@@ -141,13 +143,8 @@ const hasUnsavedChanges = computed(() =>
   JSON.stringify(localDraft.value.projectIds) !== JSON.stringify(origProjectIds.value),
 );
 
-const saveStatusText = computed(() =>
-  ({ unsaved: '● Unsaved', saving: '◑ Saving…', saved: '✓ Saved' }[saveStatus.value] ?? ''),
-);
-
 watch(localDraft, () => {
   if (hydratingFromProps.value) return;
-  if (saveStatus.value === 'clean' || saveStatus.value === 'saved') saveStatus.value = 'unsaved';
   scheduleAutoSave();
 }, { deep: true, flush: 'post' });
 
@@ -161,7 +158,6 @@ function scheduleAutoSave(): void {
 
 function doAutoSave(): void {
   if (isSystemSkill.value || !localDraft.value.name.trim()) return;
-  saveStatus.value = 'saving';
   emit('save', { ...localDraft.value });
   origName.value = localDraft.value.name;
   origDescription.value = localDraft.value.description;
@@ -169,14 +165,11 @@ function doAutoSave(): void {
   origAiAmendable.value = localDraft.value.aiAmendable;
   origAllProjects.value = localDraft.value.allProjects;
   origProjectIds.value = [...localDraft.value.projectIds];
-  saveStatus.value = 'saved';
-  setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = 'clean'; }, 2000);
 }
 
 const selectedId = computed(() => localDraft.value.id);
 const canDelete = computed(() => Boolean(localDraft.value.id));
 const confirmDelete = ref(false);
-const saveLabel = computed(() => localDraft.value.id ? 'Save Skill' : 'Create Skill');
 const isSystemSkill = computed(() => localDraft.value.source === 'system');
 const canEdit = computed(() => !isSystemSkill.value && Boolean(localDraft.value.id));
 const canClone = computed(() => isSystemSkill.value && Boolean(localDraft.value.type));
@@ -197,19 +190,6 @@ const selectedProjects = computed(() => {
   const names = new Map(props.projects.map((project) => [project.id, project.name || project.canonicalPath]));
   return localDraft.value.projectIds.map((id) => ({ id, name: names.get(id) || id }));
 });
-
-function onSave(): void {
-  if (autoSaveTimer.value) { clearTimeout(autoSaveTimer.value); autoSaveTimer.value = null; }
-  emit('save', { ...localDraft.value });
-  origName.value = localDraft.value.name;
-  origDescription.value = localDraft.value.description;
-  origBody.value = localDraft.value.body;
-  origAiAmendable.value = localDraft.value.aiAmendable;
-  origAllProjects.value = localDraft.value.allProjects;
-  origProjectIds.value = [...localDraft.value.projectIds];
-  saveStatus.value = 'saved';
-  setTimeout(() => { if (saveStatus.value === 'saved') saveStatus.value = 'clean'; }, 2000);
-}
 
 function selectAllProjects(): void {
   localDraft.value.allProjects = true;
@@ -232,7 +212,7 @@ function formatReviewDate(timestamp: string): string {
 
 <template>
   <div class="settings-skills-panel">
-    <div class="settings-skills-list">
+    <SettingsPane class="settings-skills-list">
       <div class="skill-filter-bar">
         <input
           v-model="filterText"
@@ -300,13 +280,14 @@ function formatReviewDate(timestamp: string): string {
           Reset All Counts
         </button>
       </div>
-    </div>
+    </SettingsPane>
 
-    <div class="settings-skill-editor">
+    <SettingsPane class="settings-skill-editor">
       <div class="skill-tabs">
         <button
           class="skill-tab focusable"
           :class="{ 'skill-tab--active': activeTab === 'definition' }"
+          :aria-selected="String(activeTab === 'definition')"
           @click="activeTab = 'definition'"
         >
           Definition
@@ -314,6 +295,7 @@ function formatReviewDate(timestamp: string): string {
         <button
           class="skill-tab focusable"
           :class="{ 'skill-tab--active': activeTab === 'reviews' }"
+          :aria-selected="String(activeTab === 'reviews')"
           @click="activeTab = 'reviews'"
         >
           Reviews
@@ -407,14 +389,6 @@ function formatReviewDate(timestamp: string): string {
           <button v-if="canClone" class="btn btn--secondary focusable" @click="emit('clone', localDraft.id)">
             Clone as Override
           </button>
-          <button
-            v-else
-            class="btn btn--primary focusable"
-            @click="onSave"
-            :disabled="isSystemSkill"
-          >
-            {{ saveLabel }}
-          </button>
           <template v-if="!isSystemSkill">
             <button
               v-if="!confirmDelete"
@@ -430,7 +404,6 @@ function formatReviewDate(timestamp: string): string {
               <button class="btn btn--secondary focusable" @click="confirmDelete = false">No</button>
             </template>
           </template>
-          <span v-if="saveStatusText" class="skill-save-status">{{ saveStatusText }}</span>
         </div>
       </template>
 
@@ -474,6 +447,6 @@ function formatReviewDate(timestamp: string): string {
           </div>
         </div>
       </div>
-    </div>
+    </SettingsPane>
   </div>
 </template>

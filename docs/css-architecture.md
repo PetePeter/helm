@@ -103,6 +103,13 @@ list. The canvas uses an accent outline because it selects an object on a
 surface; an inset bar has no meaningful edge there. Hover must remain visibly
 distinct from selected in both languages.
 
+Settings uses a third language and no edge bar: selected/active is a tinted
+fill (`--accent-tint`) with accent text, and gamepad focus is a separate inset
+ring (`--focus-ring`), so selection and focus can show at once without one
+hiding the other. The page components predate it and share class names, so
+the switch / card / ring rules live once in `main.css` under `.settings-screen`.
+See [settings.md](settings.md).
+
 ## Buttons
 
 The `.btn` base supplies layout, typography, focus-visible treatment, and the

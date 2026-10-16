@@ -3,9 +3,9 @@
  * SessionListSettings.vue: Session List display settings (PTY preview density).
  */
 import { computed } from 'vue';
-import { sessionsState } from '../../screens/sessions-state.js';
-import { setSessionPreviewMode } from '../../screens/sessions.js';
-import { SESSION_PREVIEW_MODES, type SessionPreviewMode } from '../../session-groups.js';
+import { sessionsState } from '../../../screens/sessions-state.js';
+import { setSessionPreviewMode } from '../../../screens/sessions.js';
+import { SESSION_PREVIEW_MODES, type SessionPreviewMode } from '../../../session-groups.js';
 
 const MODE_LABELS: Record<SessionPreviewMode, string> = {
   on: 'Every session',

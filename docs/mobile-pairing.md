@@ -188,7 +188,7 @@ Deny messages stay **uniform**, so a device can never probe what exists.
 | `src/mobile/mobile-pairing.ts` | the coordinator + trust lifecycle |
 | `src/electron/ipc/mobile-handlers.ts` | the `mobile:*` channels |
 | `renderer/composables/useMobileDevices.ts` | the reactive mirror |
-| `renderer/components/sidebar/MobileTab.vue` | Settings → 📱 Mobile |
+| `renderer/components/settings/pages/MobileTab.vue` | Settings → Mobile |
 | `renderer/components/modals/MobilePairingDialog.vue` | the SAS comparison dialog |
 
 Secrets never cross the IPC boundary: the registry is secret-free by construction,

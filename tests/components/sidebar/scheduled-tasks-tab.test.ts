@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import ScheduledTasksTab from '../../../renderer/components/sidebar/ScheduledTasksTab.vue';
+import ScheduledTasksTab from '../../../renderer/components/settings/pages/ScheduledTasksTab.vue';
 import QuickSpawnModal from '../../../renderer/components/modals/QuickSpawnModal.vue';
 import DirPickerModal from '../../../renderer/components/modals/DirPickerModal.vue';
 import { FORM_KEYS, useModalStack } from '../../../renderer/composables/useModalStack.js';

@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import ChipbarActionsTab from '../../../renderer/components/sidebar/ChipbarActionsTab.vue';
+import ChipbarActionsTab from '../../../renderer/components/settings/pages/ChipbarActionsTab.vue';
 
 const ACTIONS = [
   { label: 'One', sequence: 'one{Enter}' },

@@ -53,7 +53,6 @@ vi.mock('../../renderer/ipc/clients.js', () => ({
 import { useSettingsController } from '../../renderer/composables/useSettingsController.js';
 import { sessionsState } from '../../renderer/screens/sessions-state.js';
 import { state } from '../../renderer/state.js';
-import { getToolEditorCallback, toolEditor } from '../../renderer/stores/modal-bridge.js';
 import { useToast } from '../../renderer/composables/useToast.js';
 
 const CODEX_ID = '11111111-2222-4333-8444-555566667777';
@@ -160,6 +159,14 @@ describe('useSettingsController', () => {
     expect(refreshProjects).toHaveBeenCalled();
   });
 
+  it.each(['session-list', 'scheduled-tasks'])('preserves registered settings page %s when reopened', async (pageId) => {
+    state.settingsTab = pageId;
+    const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
+    await controller.loadSettingsData();
+
+    expect(controller.settingsTab.value).toBe(pageId);
+  });
+
   it('keeps tools loaded when optional Telegram and MCP loading fail', async () => {
     mocks.telegramGetConfig.mockRejectedValue(new Error('telegram down'));
     mocks.configGetMcpConfig.mockRejectedValue(new Error('mcp down'));
@@ -185,31 +192,35 @@ describe('useSettingsController', () => {
       return controller;
     }
 
-    it('rejects a duplicate display name on add, ignoring case and whitespace', async () => {
+    it('rejects a duplicate display name, ignoring case and whitespace', async () => {
       const controller = await loadedController();
-      await controller.onToolAdd();
 
-      expect(toolEditor.validateName?.('Codex')).toMatch(/already exists/i);
-      expect(toolEditor.validateName?.('  cODEx  ')).toMatch(/already exists/i);
-      expect(toolEditor.validateName?.('')).toMatch(/required/i);
-      expect(toolEditor.validateName?.('Gemini')).toBeNull();
-    });
-
-    it('rejects a duplicate display name on clone', async () => {
-      const controller = await loadedController();
-      await controller.onToolClone(CODEX_ID);
-
-      expect(toolEditor.validateName?.('claude')).toMatch(/already exists/i);
-      expect(toolEditor.validateName?.('Codex Copy')).toBeNull();
+      expect(controller.validateCliTypeName('Codex')).toMatch(/already exists/i);
+      expect(controller.validateCliTypeName('  cODEx  ')).toMatch(/already exists/i);
+      expect(controller.validateCliTypeName('')).toMatch(/required/i);
+      expect(controller.validateCliTypeName('Gemini')).toBeNull();
     });
 
     it('rejects a rename onto another type but allows a type to keep its own name', async () => {
       const controller = await loadedController();
-      await controller.onToolEdit(CODEX_ID);
 
-      expect(toolEditor.validateName?.('Claude')).toMatch(/already exists/i);
-      expect(toolEditor.validateName?.('CODEX')).toBeNull();
-      expect(toolEditor.validateName?.('Codex Next')).toBeNull();
+      expect(controller.validateCliTypeName('Claude', CODEX_ID)).toMatch(/already exists/i);
+      expect(controller.validateCliTypeName('CODEX', CODEX_ID)).toBeNull();
+    });
+
+    it('add writes a uniquely named type at once and returns its id', async () => {
+      const controller = await loadedController();
+      mocks.toolsAddCliType.mockResolvedValue({ success: true, id: 'new-id' });
+
+      await expect(controller.onToolAdd()).resolves.toBe('new-id');
+      expect(mocks.toolsAddCliType.mock.calls[0][0]).toBe('New CLI type');
+    });
+
+    it('saveTool refuses a clashing rename without writing', async () => {
+      const controller = await loadedController();
+
+      await expect(controller.saveTool(CODEX_ID, { name: 'Claude', _promptItems: [] })).rejects.toThrow(/already exists/i);
+      expect(mocks.toolsUpdateCliType).not.toHaveBeenCalled();
     });
   });
 
@@ -220,18 +231,18 @@ describe('useSettingsController', () => {
     const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
     await controller.loadSettingsData();
 
-    await controller.onToolEdit(CODEX_ID);
-    await getToolEditorCallback()?.({
+    await expect(controller.saveTool(CODEX_ID, {
       name: 'Codex Next',
       env: [],
       initialPromptDelay: 0,
-      _promptItems: [],
+      _promptItems: [{ label: 'x', sequence: '  ' }, { label: 'y', sequence: 'go' }],
       helmActions: {},
-    });
+    })).resolves.toBe(true);
 
-    const [key, name, , , options] = mocks.toolsUpdateCliType.mock.calls[0];
+    const [key, name, items] = mocks.toolsUpdateCliType.mock.calls[0];
     expect(key).toBe(CODEX_ID);
     expect(name).toBe('Codex Next');
+    expect(items).toEqual([{ label: 'y', sequence: 'go' }]);
   });
 
   it('reorders by the uuid-keyed position in state.cliTypes', async () => {
@@ -257,18 +268,8 @@ describe('useSettingsController', () => {
     const controller = useSettingsController({ refreshProjects: vi.fn().mockResolvedValue(undefined) });
     await controller.loadSettingsData();
 
-    await controller.onToolClone(CODEX_ID);
-    expect(toolEditor.initialData.bindingProfileId).toBe('p1');
-    expect(toolEditor.bindingProfiles).toEqual([{ id: 'p1', name: 'Default' }]);
-    await getToolEditorCallback()?.({
-      name: 'Codex Copy',
-      env: [],
-      initialPromptDelay: 0,
-      _promptItems: [],
-      helmActions: {},
-      bindingProfileId: 'p1',
-    });
-
+    await expect(controller.onToolClone(CODEX_ID)).resolves.toBe(cloneId);
+    expect(mocks.toolsAddCliType.mock.calls[0][0]).toBe('Codex Copy');
     expect(mocks.toolsAddCliType.mock.calls[0][4].bindingProfileId).toBe('p1');
   });
 

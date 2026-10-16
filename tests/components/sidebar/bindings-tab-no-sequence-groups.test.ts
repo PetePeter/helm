@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import BindingsTab from '../../../renderer/components/sidebar/BindingsTab.vue';
+import BindingsTab from '../../../renderer/components/settings/pages/BindingsTab.vue';
 
 function mountTab() {
   return mount(BindingsTab, {

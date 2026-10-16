@@ -447,7 +447,7 @@ Partial enforcement is not duplication; the text stays.
 
 ### Delivery modes
 
-Per reminder, in Settings → 🪝 CLI Integrations → **Reminder delivery**:
+Per reminder, in Settings → CLI integrations → **Reminder delivery**:
 
 - **hook** — injected out-of-band; costs nothing per message. Falls back to
   prepend when the recipient's CLI cannot inject (no hooks installed, or a
@@ -547,7 +547,7 @@ identify, failed fetches — records nothing.
 
 - Storage: one JSON file, `<configDir>/suggestion-usage.json` (the per-user
   app-data dir — never the repo, invariant 4). Every write is fail-open.
-- Inspect and reset: Settings → 🪝 CLI Integrations → "Suggestion usage
+- Inspect and reset: Settings → CLI integrations → "Suggestion usage
   feedback" shows the strongest associations, the recent learning events, and
   a reset button. Reset empties the store; nothing is re-learned until new
   fetches correlate with new suggestions.
@@ -697,7 +697,7 @@ be a few lines later — deliberately not built (YAGNI).
 
 ## Settings pane
 
-Settings → 🪝 CLI Integrations (`renderer/components/settings/CliIntegrationsTab.vue`):
+Settings → CLI integrations (`renderer/components/settings/pages/CliIntegrationsTab.vue`):
 one row per canonical provider — Claude Code, Codex, Copilot — **owned by
 code** (`src/session/hooks/hook-providers.ts`), not by cli-types config.
 The hooks block used to live on each CLI type entry, so a machine whose CLI

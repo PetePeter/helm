@@ -127,7 +127,7 @@ When a button is pressed, the navigation system checks handlers in this order:
 6. Quick-spawn picker
 7. Item editor panel (plan / context; D-pad/A/B field navigation)
 8. Context menu (Arrow keys + Tab/Shift+Tab for button cycling)
-9. Screen-specific routing (sessions / settings)
+9. Screen-specific routing (sessions / settings — inside settings, `SettingsScreen` owns ◀▶ panes, ▲▼, A, B-back and LB/RB sub-tabs; see [settings.md](settings.md))
     - **Sessions case:** Plan screen overlay (when visible, B exits) → Group overview → Session/spawn navigation
 10. Config binding fallback (the active tool's binding profile)
 

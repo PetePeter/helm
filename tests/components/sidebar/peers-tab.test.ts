@@ -71,7 +71,7 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
   },
 }));
 
-import PeersTab from '../../../renderer/components/sidebar/PeersTab.vue';
+import PeersTab from '../../../renderer/components/settings/pages/PeersTab.vue';
 import { getPeerStatusColor } from '../../../renderer/state-colors.js';
 import { resetPeersStateForTesting } from '../../../renderer/composables/usePeers.js';
 

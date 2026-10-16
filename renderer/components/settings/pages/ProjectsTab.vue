@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../../ipc/clients.js';
+import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient, toolsClient } from '../../../ipc/clients.js';
 /**
  * ProjectsTab.vue — Project list CRUD with expandable directory management.
  *
@@ -8,7 +8,7 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * are opened; this tab lets users rename, reorganise directories, and delete projects.
  */
 import { ref, onMounted } from 'vue';
-import { useAppStore } from '../../stores/app.js';
+import { useAppStore } from '../../../stores/app.js';
 
 interface ProjectRecord {
   id: string;

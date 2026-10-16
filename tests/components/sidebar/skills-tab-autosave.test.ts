@@ -1,11 +1,11 @@
 /**
- * SkillsTab auto-save and unsaved-indicator tests.
+ * SkillsTab auto-save tests. The save status itself lives in the settings footer.
  *
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, flushPromises } from '@vue/test-utils';
-import SkillsTab, { type SkillDraft, type SkillProject, type SkillSummary } from '../../../renderer/components/sidebar/SkillsTab.vue';
+import SkillsTab, { type SkillDraft, type SkillProject, type SkillSummary } from '../../../renderer/components/settings/pages/SkillsTab.vue';
 
 const baseSkill: SkillSummary = {
   id: 'skill-1',
@@ -37,7 +37,7 @@ function makeWrapper(draft: SkillDraft = baseDraft) {
   });
 }
 
-describe('SkillsTab unsaved indicator + auto-save', () => {
+describe('SkillsTab auto-save', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -46,33 +46,17 @@ describe('SkillsTab unsaved indicator + auto-save', () => {
     vi.useRealTimers();
   });
 
-  it('shows no status badge on mount (clean state)', () => {
-    const wrapper = makeWrapper();
-    expect(wrapper.find('.skill-save-status').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('shows ● Unsaved badge when body changes', async () => {
-    const wrapper = makeWrapper();
-    await wrapper.find('textarea.settings-skill-body').setValue('New body content');
-    await flushPromises();
-    expect(wrapper.find('.skill-save-status').text()).toBe('● Unsaved');
-    wrapper.unmount();
-  });
-
-  it('shows ● Unsaved badge when aiAmendable checkbox changes', async () => {
+  it('toggles and project scope changes autosave too, not just text', async () => {
     const wrapper = makeWrapper();
     await wrapper.find('input[type="checkbox"]').setValue(true);
-    await flushPromises();
-    expect(wrapper.find('.skill-save-status').text()).toBe('● Unsaved');
-    wrapper.unmount();
-  });
-
-  it('shows ● Unsaved badge when project scope changes', async () => {
-    const wrapper = makeWrapper();
     await wrapper.find('.settings-skill-project-option:not([disabled])').trigger('click');
     await flushPromises();
-    expect(wrapper.find('.skill-save-status').text()).toBe('● Unsaved');
+    vi.advanceTimersByTime(500);
+    await flushPromises();
+
+    const saves = wrapper.emitted('save') as SkillDraft[][];
+    expect(saves).toHaveLength(1);
+    expect(saves[0][0]).toMatchObject({ aiAmendable: true });
     wrapper.unmount();
   });
 
@@ -92,32 +76,6 @@ describe('SkillsTab unsaved indicator + auto-save', () => {
       body: 'Auto-saved body',
       aiAmendable: false,
     });
-    wrapper.unmount();
-  });
-
-  it('resets to clean after auto-save completes', async () => {
-    const wrapper = makeWrapper();
-    await wrapper.find('textarea.settings-skill-body').setValue('Changed');
-    await flushPromises();
-
-    vi.advanceTimersByTime(500);
-    await flushPromises();
-
-    expect(wrapper.find('.skill-save-status').text()).toBe('✓ Saved');
-    wrapper.unmount();
-  });
-
-  it('clears saveStatus to clean after 2s', async () => {
-    const wrapper = makeWrapper();
-    await wrapper.find('textarea.settings-skill-body').setValue('Changed');
-    await flushPromises();
-
-    vi.advanceTimersByTime(500);
-    await flushPromises();
-    vi.advanceTimersByTime(2000);
-    await flushPromises();
-
-    expect(wrapper.find('.skill-save-status').exists()).toBe(false);
     wrapper.unmount();
   });
 
@@ -142,19 +100,6 @@ describe('SkillsTab unsaved indicator + auto-save', () => {
     wrapper.unmount();
   });
 
-  it('resets to clean (no badge, no save) when props.draft changes', async () => {
-    const wrapper = makeWrapper();
-    await wrapper.find('textarea.settings-skill-body').setValue('Unsaved edit');
-    await flushPromises();
-
-    const newDraft: SkillDraft = { ...baseDraft, id: 'skill-2', name: 'Another Skill', body: 'Other body' };
-    await wrapper.setProps({ draft: newDraft });
-    await flushPromises();
-
-    expect(wrapper.find('.skill-save-status').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
   it('does not emit save when props.draft changes (no spurious auto-save)', async () => {
     const wrapper = makeWrapper();
     const newDraft: SkillDraft = { ...baseDraft, id: 'skill-2', name: 'Other', body: 'Other' };
@@ -165,20 +110,6 @@ describe('SkillsTab unsaved indicator + auto-save', () => {
     await flushPromises();
 
     expect(wrapper.emitted('save')).toBeUndefined();
-    wrapper.unmount();
-  });
-
-  it('emits save immediately on explicit Save button click', async () => {
-    const wrapper = makeWrapper();
-    await wrapper.find('textarea.settings-skill-body').setValue('Manual save');
-    await flushPromises();
-
-    await wrapper.find('.btn--primary').trigger('click');
-    await flushPromises();
-
-    const saves = wrapper.emitted('save') as SkillDraft[][];
-    expect(saves.length).toBeGreaterThanOrEqual(1);
-    expect(saves[saves.length - 1][0]).toMatchObject({ body: 'Manual save' });
     wrapper.unmount();
   });
 

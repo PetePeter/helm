@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient } from '../../ipc/clients.js';
+import { appClient, attachmentsClient, configClient, contextsClient, deliveryClient, dialogClient, eventsClient, incomingClient, keyboardClient, patternsClient, plansClient, projectsClient, schedulerClient, sessionsClient, systemClient, telegramClient, terminalClient } from '../../../ipc/clients.js';
 /**
  * ScheduledTasksTab.vue -- UI for creating and managing scheduled tasks.
  */
 import { ref, computed, onMounted, onUnmounted, watch, ref as templateRef } from 'vue';
-import type { ScheduledTask, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../src/types/scheduled-task.js';
-import { CronEngine } from '../../../src/utils/cron-engine.js';
-import QuickSpawnModal from '../modals/QuickSpawnModal.vue';
-import DirPickerModal from '../modals/DirPickerModal.vue';
-import PromptTextarea from '../common/PromptTextarea.vue';
-import { useFocusTrap } from '../../composables/useFocusTrap.js';
-import { FORM_KEYS, useModalStack } from '../../composables/useModalStack.js';
-import { loadStoredSessions } from '../../session-store.js';
-import { getCliDisplayName, normalizeDirPath } from '../../utils.js';
+import type { ScheduledTask, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../../src/types/scheduled-task.js';
+import { CronEngine } from '../../../../src/utils/cron-engine.js';
+import QuickSpawnModal from '../../modals/QuickSpawnModal.vue';
+import DirPickerModal from '../../modals/DirPickerModal.vue';
+import PromptTextarea from '../../common/PromptTextarea.vue';
+import { useFocusTrap } from '../../../composables/useFocusTrap.js';
+import { FORM_KEYS, useModalStack } from '../../../composables/useModalStack.js';
+import { loadStoredSessions } from '../../../session-store.js';
+import { getCliDisplayName, normalizeDirPath } from '../../../utils.js';
 
 const emit = defineEmits<{
   'task-created': [task: ScheduledTask];
@@ -449,12 +449,9 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
 .st-btn--danger:hover:not(:disabled) { background: #cc0000; }
 .st-empty { text-align: center; padding: 40px; color: var(--text-secondary); }
 .st-task-list { display: flex; flex-direction: column; gap: 12px; }
-.st-task-card { background: var(--bg-secondary); border-radius: 8px; padding: 16px; border-left: 4px solid var(--text-secondary); }
-.st-task-card--pending { border-left-color: #4488ff; }
-.st-task-card--executing { border-left-color: #ff9f1a; }
-.st-task-card--completed { border-left-color: #44cc44; opacity: 0.6; }
-.st-task-card--cancelled { border-left-color: #555; opacity: 0.5; }
-.st-task-card--failed { border-left-color: #ff4444; }
+.st-task-card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.st-task-card--completed { opacity: 0.6; }
+.st-task-card--cancelled { opacity: 0.5; }
 .st-task-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
 .st-task-title { margin: 0; font-size: 1.1rem; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-task-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 3px; font-weight: 500; flex-shrink: 0; }

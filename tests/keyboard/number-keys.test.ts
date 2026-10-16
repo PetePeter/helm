@@ -63,6 +63,42 @@ describe('number accelerators', () => {
     expect(jumpToSession.mock.calls.map(call => call[0])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
+  it('ctrl: session jump works while an editable textarea has focus', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    const event = new KeyboardEvent('keydown', {
+      key: '3',
+      code: 'Digit3',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    textarea.dispatchEvent(event);
+
+    expect(jumpToSession).toHaveBeenCalledWith(3);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('leaves plain typing and Ctrl+Enter available to an editable textarea', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    const received = vi.fn();
+    textarea.addEventListener('keydown', received);
+
+    const typing = new KeyboardEvent('keydown', { key: 'x', bubbles: true, cancelable: true });
+    textarea.dispatchEvent(typing);
+    const send = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true });
+    textarea.dispatchEvent(send);
+
+    expect(typing.defaultPrevented).toBe(false);
+    expect(send.defaultPrevented).toBe(false);
+    expect(received).toHaveBeenCalledTimes(2);
+    expect(jumpToSession).not.toHaveBeenCalled();
+  });
+
   it('ctrl: digit 0 emits slot 0', () => {
     press({ key: '0', code: 'Digit0', ctrlKey: true });
 

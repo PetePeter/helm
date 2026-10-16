@@ -44,8 +44,9 @@ graph TB
 ```
 
 An **editable field** short-circuits the chain after `modal`: ordinary handlers
-are skipped unless they opt in with `allowInEditable`. A **terminal is never an
-editable field**, however much its helper textarea resembles one.
+are skipped unless they opt in with `allowInEditable`. The Ctrl+digit session-jump
+handler opts in so a session can be changed while typing in Draft. A **terminal
+is never an editable field**, however much its helper textarea resembles one.
 
 ## The contract
 

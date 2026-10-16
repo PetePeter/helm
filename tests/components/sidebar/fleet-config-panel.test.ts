@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
-import FleetConfigPanel from '../../../renderer/components/sidebar/FleetConfigPanel.vue';
+import FleetConfigPanel from '../../../renderer/components/settings/pages/FleetConfigPanel.vue';
 
 type Status = { enabled: boolean; running: boolean; error: string | null; addresses: string[]; allInterfaces: boolean };
 

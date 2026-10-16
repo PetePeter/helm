@@ -363,6 +363,20 @@ describe('DraftPane.vue', () => {
       expect(ptyWrites).toHaveLength(0);
       expect(input().value).toBe('   ');
     });
+
+    it('a frozen session refuses the send silently and keeps the pad', async () => {
+      await open();
+      const { useAppStore } = await import('../../../renderer/stores/app.js');
+      useAppStore().state.sessions.push({ id: 's1', name: 's1', cliType: 'claude-code', processId: 1, frozen: true } as never);
+      await type('hold this thought');
+      await wrapper!.find('[data-draft-send]').trigger('click');
+      await wrapper!.find('textarea').trigger('keydown', { key: 'Enter', ctrlKey: true });
+      await settle();
+
+      expect(ptyWrites).toHaveLength(0);
+      expect(input().value).toBe('hold this thought');
+      expect(main.get('s1').text).toBe('hold this thought');
+    });
   });
 
   it('keeps AI-written markup as text in the editor, never as elements', async () => {

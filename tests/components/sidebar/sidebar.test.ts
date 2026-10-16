@@ -885,81 +885,10 @@ describe('StatusStrip', () => {
 });
 
 // ============================================================================
-// SettingsPanel
-// ============================================================================
-
-import SettingsPanel from '../../../renderer/components/sidebar/SettingsPanel.vue';
-
-describe('SettingsPanel', () => {
-  const tabs = [
-    { id: 'profiles', label: 'Profiles' },
-    { id: 'bindings', label: 'Bindings' },
-    { id: 'tools', label: 'Tools' },
-    { id: 'telegram', label: 'Telegram' },
-  ];
-
-  it('renders when visible', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'profiles' } });
-    expect(w.find('.settings-panel').exists()).toBe(true);
-  });
-
-  it('does not render when hidden', () => {
-    const w = mount(SettingsPanel, { props: { visible: false, tabs, activeTab: 'profiles' } });
-    expect(w.find('.settings-panel').exists()).toBe(false);
-  });
-
-  it('renders all tabs', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'profiles' } });
-    const tabBtns = w.findAll('.settings-tab');
-    expect(tabBtns.length).toBe(4);
-  });
-
-  it('marks active tab', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'bindings' } });
-    const tabBtns = w.findAll('.settings-tab');
-    expect(tabBtns[1].classes()).toContain('settings-tab--active');
-    expect(tabBtns[0].classes()).not.toContain('settings-tab--active');
-  });
-
-  it('emits update:activeTab on tab click', async () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'profiles' } });
-    await w.findAll('.settings-tab')[2].trigger('click');
-    expect(w.emitted('update:activeTab')).toEqual([['tools']]);
-  });
-
-  it('handleButton navigates left', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'bindings' } });
-    const result = (w.vm as any).handleButton('DPadLeft');
-    expect(result).toBe(true);
-    expect(w.emitted('update:activeTab')).toEqual([['profiles']]);
-  });
-
-  it('handleButton navigates right', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'bindings' } });
-    const result = (w.vm as any).handleButton('DPadRight');
-    expect(result).toBe(true);
-    expect(w.emitted('update:activeTab')).toEqual([['tools']]);
-  });
-
-  it('handleButton emits close on B', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'profiles' } });
-    const result = (w.vm as any).handleButton('B');
-    expect(result).toBe(true);
-    expect(w.emitted('close')).toBeTruthy();
-  });
-
-  it('handleButton does not navigate past bounds', () => {
-    const w = mount(SettingsPanel, { props: { visible: true, tabs, activeTab: 'profiles' } });
-    (w.vm as any).handleButton('DPadLeft');
-    expect(w.emitted('update:activeTab')).toEqual([['telegram']]);
-  });
-});
-
-// ============================================================================
 // BindingsTab
 // ============================================================================
 
-import BindingsTab from '../../../renderer/components/sidebar/BindingsTab.vue';
+import BindingsTab from '../../../renderer/components/settings/pages/BindingsTab.vue';
 
 describe('BindingsTab', () => {
   const bindings = [
@@ -1049,84 +978,10 @@ describe('BindingsTab', () => {
 });
 
 // ============================================================================
-// ToolsTab
-// ============================================================================
-
-import ToolsTab from '../../../renderer/components/sidebar/ToolsTab.vue';
-
-describe('ToolsTab', () => {
-  const tools = [
-    { key: 'claude-code', name: 'Claude Code', command: 'claude', hasInitialPrompt: true, initialPromptCount: 2 },
-    { key: 'copilot-cli', name: 'Copilot CLI', command: 'copilot', hasInitialPrompt: false, initialPromptCount: 0 },
-  ];
-
-  it('renders tool items', () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    expect(w.findAll('.settings-list-item').length).toBe(2);
-  });
-
-  it('hosts the Session List output-preview setting (folded in from its own tab)', () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    expect(w.find('.session-list-setting select').exists()).toBe(true);
-  });
-
-  it('shows tool name and command', () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    expect(w.find('.tool-name').text()).toBe('Claude Code');
-    expect(w.find('.tool-command').text()).toBe('claude');
-  });
-
-  it('shows prompt badge when hasInitialPrompt', () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    const items = w.findAll('.settings-list-item');
-    expect(items[0].find('.tool-prompt-badge').text()).toContain('2 prompts');
-    expect(items[1].find('.tool-prompt-badge').exists()).toBe(false);
-  });
-
-  it('shows empty message when no tools', () => {
-    const w = mount(ToolsTab, { props: { tools: [] } });
-    expect(w.find('.tools-empty').text()).toContain('No CLI types configured');
-  });
-
-  it('emits add on add button click', async () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    await w.find('.settings-tool-actions button').trigger('click');
-    expect(w.emitted('add')).toBeTruthy();
-  });
-
-  it('emits edit on edit button click', async () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    const items = w.findAll('.settings-list-item');
-    await items[0].findAll('button')[3].trigger('click');
-    expect(w.emitted('edit')).toEqual([['claude-code']]);
-  });
-
-  it('emits delete on delete button click', async () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    const items = w.findAll('.settings-list-item');
-    await items[0].findAll('button')[4].trigger('click');
-    expect(w.emitted('delete')).toEqual([['claude-code']]);
-  });
-
-  it('emits move on up/down buttons', async () => {
-    const w = mount(ToolsTab, { props: { tools } });
-    const items = w.findAll('.settings-list-item');
-    // First item: Up is disabled (index 0), Down is enabled (index 1)
-    expect(items[0].findAll('button')[0].attributes('disabled')).toBeDefined();
-    await items[0].findAll('button')[1].trigger('click');
-    expect(w.emitted('move')).toEqual([['claude-code', 'down']]);
-    // Second item: Up is enabled (index 0), Down is disabled (index 1)
-    expect(items[1].findAll('button')[1].attributes('disabled')).toBeDefined();
-    await items[1].findAll('button')[0].trigger('click');
-    expect(w.emitted('move')).toEqual([['claude-code', 'down'], ['copilot-cli', 'up']]);
-  });
-});
-
-// ============================================================================
 // ChipbarActionsTab
 // ============================================================================
 
-import ChipbarActionsTab from '../../../renderer/components/sidebar/ChipbarActionsTab.vue';
+import ChipbarActionsTab from '../../../renderer/components/settings/pages/ChipbarActionsTab.vue';
 
 describe('ChipbarActionsTab', () => {
   const actions = [
@@ -1221,7 +1076,7 @@ describe('ChipbarActionsTab', () => {
 // TelegramTab
 // ============================================================================
 
-import TelegramTab from '../../../renderer/components/sidebar/TelegramTab.vue';
+import TelegramTab from '../../../renderer/components/settings/pages/TelegramTab.vue';
 
 describe('TelegramTab', () => {
   const config = {
@@ -1293,7 +1148,7 @@ describe('TelegramTab', () => {
 // VoiceTab
 // ============================================================================
 
-import VoiceTab from '../../../renderer/components/sidebar/VoiceTab.vue';
+import VoiceTab from '../../../renderer/components/settings/pages/VoiceTab.vue';
 
 describe('VoiceTab', () => {
   const config = { openWhisprPath: 'C:\ow', piperPath: 'piper.exe', piperVoicePath: 'v.onnx', ffmpegPath: 'ffmpeg.exe' };

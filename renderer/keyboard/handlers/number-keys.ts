@@ -37,6 +37,7 @@ export function createNumberKeyHandlers(deps: NumberKeyDeps): KeyHandler[] {
     {
       id: 'session-jump',
       scope: 'global',
+      allowInEditable: true,
       handle: (ctx) => {
         const slot = slotFor(ctx, 'ctrl');
         return slot === null ? false : deps.jumpToSession(slot);

@@ -5,17 +5,21 @@
  * its rules: the built-ins (read-only, the exact text the guide sends) plus
  * the user's own.
  */
-import { onMounted, ref } from 'vue';
-import { configClient } from '../../ipc/clients.js';
-import { getCliDisplayName } from '../../utils.js';
-import { OPERATOR_RULES } from '../../../src/mcp/guides/operator-guide.js';
-import { toCombo } from '../../keyboard/key-combo.js';
-import { operatorPttKey } from '../../composables/useOperatorChat.js';
+import { onMounted, ref, watch } from 'vue';
+import { configClient } from '../../../ipc/clients.js';
+import { getCliDisplayName } from '../../../utils.js';
+import { OPERATOR_RULES } from '../../../../src/mcp/guides/operator-guide.js';
+import { toCombo } from '../../../keyboard/key-combo.js';
+import { operatorPttKey } from '../../../composables/useOperatorChat.js';
+import { trackSave, useAutosave } from '../../../composables/useAutosave.js';
 
 interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string; pttKey: string }
 
 const config = ref<OperatorConfig>({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '', pttKey: 'f9' });
-/** Edited locally; persisted only on Save, since every save re-runs ensure(). */
+/**
+ * Edited locally and autosaved on a long pause or on leaving the field, since
+ * every save re-runs ensure().
+ */
 const rulesDraft = ref('');
 const COMPACT_CHOICES = [
   { minutes: 0, label: 'Off' },
@@ -25,7 +29,7 @@ const COMPACT_CHOICES = [
   { minutes: 240, label: 'Every 4 hours' },
 ];
 const cliTypes = ref<string[]>([]);
-const status = ref('');
+const RULES_DEBOUNCE_MS = 1500;
 
 onMounted(async () => {
   const [loaded, types] = await Promise.all([
@@ -37,25 +41,27 @@ onMounted(async () => {
   cliTypes.value = types ?? [];
 });
 
-async function save(updates: Partial<OperatorConfig>): Promise<void> {
-  const result = await configClient.configSetOperatorConfig(updates);
-  if (result.success) {
-    config.value = { ...config.value, ...updates };
-    operatorPttKey.value = config.value.pttKey;
-    status.value = '';
-  } else {
+function save(updates: Partial<OperatorConfig>): Promise<boolean> {
+  return trackSave(async () => {
+    const result = await configClient.configSetOperatorConfig(updates);
+    if (result.success) {
+      config.value = { ...config.value, ...updates };
+      operatorPttKey.value = config.value.pttKey;
+      return;
+    }
     // The controls bind one-way: re-read so a failed save does not leave the
     // checkbox or dropdowns showing a value that was never stored.
     config.value = await configClient.configGetOperatorConfig();
-    status.value = result.error ?? 'Could not save setting';
-  }
+    throw new Error(result.error ?? 'Could not save setting');
+  });
 }
 
-async function saveRules(): Promise<void> {
-  await save({ rules: rulesDraft.value.trim() });
-  // Keep the user's text on a failed save; on success show what was stored.
-  if (!status.value) rulesDraft.value = config.value.rules;
-}
+// The draft is never rewritten from the stored (trimmed) value: that would eat
+// the space or newline the user just typed.
+const rulesAutosave = useAutosave(() => save({ rules: rulesDraft.value.trim() }), { debounceMs: RULES_DEBOUNCE_MS });
+watch(rulesDraft, (draft) => {
+  if (draft.trim() !== config.value.rules) rulesAutosave.schedule();
+});
 
 const selectValue = (event: Event): string => (event.target as HTMLSelectElement).value;
 
@@ -146,16 +152,9 @@ function capturePttKey(event: KeyboardEvent): void {
         class="field-input focusable"
         rows="6"
         placeholder="e.g. Never message the build session."
+        @blur="rulesAutosave.flush()"
       />
     </div>
-    <button
-      type="button"
-      class="btn btn--primary btn--sm focusable"
-      :disabled="rulesDraft.trim() === config.rules"
-      @click="saveRules"
-    >Save rules</button>
-
-    <span v-if="status" class="operator-status">{{ status }}</span>
   </div>
 </template>
 
@@ -180,8 +179,4 @@ function capturePttKey(event: KeyboardEvent): void {
   padding: 2px 0;
 }
 
-.operator-status {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-}
 </style>
