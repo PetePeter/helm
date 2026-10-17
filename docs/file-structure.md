@@ -10,7 +10,7 @@ src/
 │   ├── main.ts                 # Electron main: window creation, IPC setup, lifecycle, renderer crash recovery, delegates power monitoring to setupPowerMonitor()
 │   ├── preload.ts              # Context bridge (renderer ↔ main IPC)
 │   └── ipc/
-│       ├── handlers.ts         # Orchestrator — imports + wires 10 domain handlers, returns { cleanup, sessionManager, ptyManager }. Auto-bookmarks working dir on session:removed (when cliSessionName present)
+│       ├── handlers.ts         # Orchestrator — imports + wires domain handlers, returns { cleanup, sessionManager, ptyManager }. Auto-bookmarks working dir on session:removed (when cliSessionName present)
 │       ├── session-handlers.ts
 │       ├── config-handlers.ts
 │       ├── tools-handlers.ts
@@ -18,11 +18,12 @@ src/
 │       ├── pty-handlers.ts
 │       ├── system-handlers.ts  # system:openLogsFolder
 │       ├── telegram-handlers.ts # Telegram bot settings CRUD, bot start/stop IPC
+│       ├── chat-handlers.ts    # Desktop chat history/send IPC; deliver to the target before broker fan-out
 │       ├── draft-handlers.ts # draft:get / draft:set (the user's side of the session draft)
 │       ├── plan-handlers.ts   # 12 IPC channels (plan:list/create/update/delete/addDep/removeDep/apply/complete/startableForDir/doingForSession/deps/getItem) wired to PlanManager; startable/doing names are legacy ready/coding query names
 │       ├── mess-handlers.ts   # Cursor-neutral mess:history plus project-scoped mess:appended push; read-only renderer boundary
 │       ├── handover-handlers.ts # handover:cancel/pending + armed/delivered/lost forwarding for the compaction terminal lock
-│       ├── voice-handlers.ts   # voice:transcribe / voice:speak / voice:ask (desktop hold-to-talk to the operator)
+│       ├── voice-handlers.ts   # voice:transcribe / voice:speak / voice:ask for desktop operator calls
 │       ├── peer-management-handlers.ts # Peer settings and peer:sessions / peer:sessions-changed renderer IPC
 │       ├── time-tracking-handlers.ts # Timesheet and token queries, charts, and CSV export
 │       └── mobile-handlers.ts  # 9 IPC channels (mobile:list/setEnabled/setAllowList/revoke/startPairing/confirmPairing/cancelPairing/pairingState/apkRelease). Secrets never cross this boundary
@@ -61,7 +62,8 @@ src/
 │   ├── chat/
 │   │   ├── chat-bridge.ts      # The interface one chat surface implements, whatever transport is underneath
 │   │   ├── chat-broker.ts      # The registry surfaces plug into; fan-out is unconditional and the registry is unbounded
-│   │   └── chat-bindings.ts    # Provider-keyed map of where a session lives on each surface; unknown keys survive a round-trip
+│   │   ├── chat-bindings.ts    # Provider-keyed map of where a session lives on each surface; unknown keys survive a round-trip
+│   │   └── chat-attachment-registrar.ts # Registers outbound files once before bridge fan-out
 │   └── power-monitor.ts        # Suspend/resume/shutdown diagnostics — session counts, PTY IDs, survival status
 ├── config/
 │   └── loader.ts               # Self-contained profile YAML config + CRUD + StickConfig + haptic settings + auto-migration + bookmark CRUD (addBookmarkedDir/removeBookmarkedDir) + ChipbarAction interface + chipActions profile field + getChipbarActions()
@@ -94,7 +96,8 @@ src/
 │   ├── mobile-envelope.ts      # The application records (call/result/error/chat/lan/changes + binary blob). Deterministic encoding; a field or key-order change is a wire break
 │   ├── mobile-call-interruption.ts  # Renders spoken progress into the report prepended to the user's phone message
 │   ├── mobile-envelope-vectors.ts  # Generates tests/fixtures/mobile-envelope-vectors.json — regenerating is a WIRE BREAK
-│   ├── mobile-chat-bridge.ts   # The phone as a ChatBridge, and the ONE inbound path from a phone into Helm's tools (always via MobileGate)
+│   ├── mobile-chat-bridge.ts   # The phone as a ChatBridge, the inbound path via MobileGate, and outbound journal/push
+│   ├── mobile-chat-journal.ts  # Persisted session-lifetime message sequence for phone catch-up and desktop Chat history
 │   ├── mobile-alert-notifier.ts    # Session state / notify_user / flash_attention → a kind-bearing chat record over the open link. No dedup, deliberately
 │   └── apk-release.ts          # Resolves the GitHub release asset URL for the RUNNING version, never `latest`. Availability is three-valued
 ├── telegram/
@@ -105,7 +108,7 @@ src/
 │   ├── notifier.ts             # State change → Telegram notification messages with inline keyboards. NOTE: `handleStateChange` has no production caller — orchestrator.ts takes the notifier as `_notifier`, so Telegram's state-change notifications have never fired. The live path is session-alert.ts → MobileAlertNotifier
 │   ├── orchestrator.ts         # Telegram module factory — wires bot, topic manager, relay service, and dashboard
 │   ├── pinned-dashboard.ts     # Auto-updating pinned message with all-sessions status + Close All button
-│   ├── relay-service.ts        # Telegram topic relay and inbound message/attachment routing
+│   ├── relay-service.ts        # Telegram topic relay and inbound routing; desktop-sourced sends display a [Desktop] prefix
 │   ├── topic-input.ts          # Routes topic messages to the linked session's PTY or relay service
 │   ├── topic-manager.ts        # Forum topic lifecycle: ensureTopic on session:added, deleteForumTopic on session:removed
 │   └── utils.ts                # Shared Telegram utilities
@@ -114,7 +117,7 @@ src/
 │   ├── piper-tts.ts            # Piper text → WAV → OGG/Opus
 │   ├── ffmpeg.ts               # ffmpeg resolution (configured path → OpenWhispr bundle) + the shared process runner
 │   ├── voice-service.ts        # VoiceService: desktop transcribe(clip)/speak(text) over the above; temp files in app-data, always cleaned
-│   └── desktop-voice-bridge.ts # ChatBridge 'desktop-voice': forwards the operator's chat_send replies to the renderer
+│   └── desktop-voice-bridge.ts # ChatBridge 'desktop-voice': forwards the operator's chat_send replies to the renderer voice path
 ├── types/
 │   ├── session.ts              # SessionInfo (includes cliSessionName for resume), SessionChangeEvent, AnalogEvent types
 │   ├── plan.ts                 # PlanItem, PlanDependency, PlanStatus ('planning'|'ready'|'coding'|'review'|'blocked'|'done'), DirectoryPlan, PlanSequence types
@@ -142,6 +145,7 @@ renderer/
 ├── dock-registry-state.ts      # Vue revision signal for runtime dock registry changes
 ├── operator-summary.ts         # operatorSummary / withoutOperator — the sidebar Helm section's selector (twin of Android OperatorSummary.kt)
 ├── context-sparkline.ts        # Context usage samples, per-CLI warning levels, and SVG sparkline points
+├── chat-view.ts               # Pure Chat pane origin labels, safe-link splitting, and attachment size formatting
 ├── onboarding-settings-topics.ts # Grouped navigation from first-run setup into existing Settings pages
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
 ├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards + overview grid.
@@ -180,6 +184,7 @@ renderer/
 │   │   ├── tools/              # ToolsPage (CLI type list) + ToolEditor (inline, autosaving)
 │   │   └── pages/              # Every other page (*Tab.vue, SessionListSettings, McpCliSetup, FleetConfigPanel, QrCode)
 │   ├── dock/
+│   │   ├── ChatPane.vue        # Top-level session journal conversations, context header, origin tags, and desktop composer
 │   │   ├── PeerSessionsPane.vue # Per-peer Sessions list reusing SessionList with stale/offline and attach state
 │   │   ├── MessPane.vue        # Read-only project Mess observer pane
 │   │   ├── MissionBar.vue      # Session mission TL;DR bar above the terminal (edit, resize, plain-text render)
@@ -197,6 +202,7 @@ renderer/
 ├── stores/
 │   ├── index.ts                # Barrel export of all Pinia stores
 │   ├── app.ts                  # useAppStore — currentScreen, gamepadCount, eventLog, activeProfile
+│   ├── chat.ts                 # useChatStore — journal history/live merge, per-session drafts, send status, and unread cursors
 │   ├── sessions-screen.ts      # useSessionsScreenStore — zone, focusIndex, cardColumn, overviewGroup
 │   ├── quick-spawn.ts           # useQuickSpawnStore — shared machine/tool selection for dock and modal Quick Spawn
 │   ├── config.ts               # useConfigStore — cliBindingsCache, cliSequencesCache, cliToolsCache, cliTypes
@@ -351,7 +357,7 @@ config/
 ## Tests (`tests/`)
 
 ```
-tests/                                  # 63 test files
+tests/
 ├── app-paths.test.ts           # Application path resolution tests
 ├── bindings-pty.test.ts        # PTY escape helpers + routing tests
 ├── bindings-target.test.ts     # Voice binding target routing (PTY vs OS)
@@ -360,6 +366,10 @@ tests/                                  # 63 test files
 ├── config.test.ts              # Config loading, stick config, haptic, virtual buttons, retired-binding (prompt-tree/new-draft) cleanup
 ├── context-menu.test.ts        # Context menu overlay tests
 ├── draft-manager.test.ts  # DraftManager over its real file store: stale writes, cap, lifecycle
+├── chat-handlers.test.ts      # Desktop chat IPC validation, target delivery, and broker fan-out
+├── chat-store.test.ts         # Chat history/live merge, unread cursors, drafts, send and retry
+├── chat-view.test.ts          # Origin labels, safe-link splitting, and file-size formatting
+├── mobile-chat-journal.test.ts # Shared chat journal sequencing, persistence, and retention
 ├── draft-handlers.test.ts # Draft IPC: user authorship, stale hand-back, unknown session refused
 ├── mcp-session-draft.test.ts # session_draft_get/_set/_append through the dispatcher
 ├── mess-manager.test.ts        # Project membership, ordered unread cursors, visibility, and cursor-neutral history

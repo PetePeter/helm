@@ -93,14 +93,14 @@ no call is live; any session is still callable from its own chat. The phone matc
 
 ## The operator session — "Helm"
 
-One locked session named **Helm** that every voice client (phone now, desktop
-later) talks to. It answers questions about Helm state and general questions (including web
+One locked session named **Helm** that the phone and desktop Chat pane talk to.
+It answers questions about Helm state and general questions (including web
 searches and page fetches)
 itself; for work, it is a router: it passes an instruction to the right work
 session, acknowledges at once, and speaks a short summary when the reply comes
 back. It never edits files, runs commands, reads repo code or restarts Helm —
-coding stays in the sessions that own it, and there is one conversation for
-phone and desktop to share.
+coding stays in the sessions that own it. The phone and desktop Chat pane read
+and write the same journaled conversation.
 
 **It manages Helm itself.** Every other Helm MCP tool is open to it: schedules
 (a "remind me" is a `scheduler_create` direct task with `targetSession:"caller"`),
@@ -407,34 +407,25 @@ Instead it is the pinned first gamepad nav item (`buildFlatNavList` →
 restores/activates/reveals the Sessions pane, so the Hang up button is always
 on screen.
 
-### The operator chat view
+### The desktop Chat pane
 
-Opening the operator shows `OperatorChat.vue` over its terminal (the xterm
-stays mounted underneath; **Terminal** / **Chat** flip between them). It is the
-phone's operator thread on the PC: the conversation IS the chat journal.
+The old `OperatorChat.vue` overlay inside the terminal has been removed. The
+standalone **Chat** dock pane (`Ctrl+Shift+J`) lists sessions, including Helm,
+and reads their shared chat journal. Select Helm in the list to open its thread;
+the sidebar's Helm section remains the place to see operator status and control
+the voice call. See [chat-tab.md](chat-tab.md) for the pane, send path, and
+origin labels.
 
-```mermaid
-flowchart LR
-    C[OperatorChat.vue] -- voice:operatorHistory --> J[(chat journal)]
-    J -- onAppend → voice:operatorChat --> C
-    C -- voice:ask text + filePath --> M[main: deliver to operator PTY<br/>+ recordDesktopTurn]
-    M --> J
-    O[operator chat_send] --> B[ChatBroker] --> MB[MobileChatBridge] --> J
-```
+The pane uses `chat:history` and the journal's `chat:entry` feed. Desktop sends
+go through `chat:send`: target delivery must succeed before `ChatBroker` fans
+the turn out to Telegram and linked phones. Telegram displays desktop turns
+with a `[Desktop]` prefix. Operator replies use the normal `chat_send` broker
+path and return to the same journal; voice-call controls remain separate from
+the chat composer.
 
-- **Bubbles.** User turns (desktop or phone, `originId` set) on the right in
-  the accent green; the operator's messages on the left. Alerts are skipped.
-- **Composer.** Enter sends, Shift/Ctrl+Enter is a newline. 📎 attaches a local
-  file: the path is appended to the prompt — the operator is a local CLI and can
-  read it.
-- **Push-to-talk dictates** — hold 🎤 or the PTT key (Settings → Operator,
-  default `f9`, captured as a canonical combo) and the transcript lands in the
-  composer to edit and send. No spoken replies; **Call** in the header is the
-  same hands-free call as the sidebar's. The key press goes through the one key
-  router (`operator-chat-ptt`, global, allowed in fields); release is its keyup.
-- **Born as the operator.** `spawnConfiguredSession` takes `role`/`locked`, so
-  the operator is added with its role in the same `addSession` — no list ever
-  sees it as a plain row, even for a frame.
+`spawnConfiguredSession` gives Helm its `role` and `locked` fields during
+`addSession`, so it stays out of the ordinary session list while remaining
+available in the Chat pane's session list.
 
 ### Hands-free call
 

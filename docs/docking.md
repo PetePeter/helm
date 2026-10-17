@@ -165,7 +165,7 @@ still exists for the legacy fullscreen group-overview grid; it has no pane of
 its own, so the `activeView` watcher has nothing to reconcile for it.
 
 Every pane declares its own `Ctrl+Shift+<letter>` as `shortcut` on its
-`DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, P plans, M
+`DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, J Chat (`Ctrl+Shift+J`), P plans, M
 memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F
 projects, A artifacts, D draft. Declaring it on the descriptor means a new pane
 cannot ship without a key, and the router and the tab tooltip

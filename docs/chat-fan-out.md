@@ -12,11 +12,15 @@ the concept is lifted out into a bridge interface and a broker.
 | `src/session/chat/chat-bindings.ts` | Per-provider session bindings + `topicId` migration |
 | `src/telegram/relay-service.ts` | `provider: 'telegram'` — the first implementation |
 | `src/mobile/mobile-chat-bridge.ts` | `provider: 'mobile'` — the phone, and the inbound call path |
-| `src/mobile/mobile-chat-journal.ts` | The session-lifetime rolling record every phone catches up from |
+| `src/mobile/mobile-chat-journal.ts` | The session-lifetime rolling record used by phones and the desktop Chat pane |
 | `src/mobile/mobile-envelope.ts` | The records that cross the BLE wire |
+| `renderer/components/dock/ChatPane.vue` | Desktop top-level session threads over the shared journal |
+| `src/electron/ipc/chat-handlers.ts` | Desktop history/send IPC; target delivery precedes broker fan-out |
 
 ```mermaid
 graph TB
+    DESK[Desktop Chat pane] -->|chat:send| IPC[chat IPC]
+    IPC -->|after target delivery succeeds| BROKER
     CLI[AI CLI] -->|chat_send MCP tool| SVC[HelmTelegramService]
     SVC --> BROKER[ChatBroker<br/>unconditional fan-out]
     BROKER --> TG[TelegramRelayService<br/>provider: telegram]
@@ -47,6 +51,12 @@ changes. The MCP tool names (`chat_send` / `telegram_chat`,
 the transport-neutral name and `telegram_chat` is its long-standing alias, so a
 CLI keeps calling what it always called and the extra surfaces appear behind
 them.
+
+The desktop pane is also a broker source. `chat:send` delivers to the target
+session first; only a successful delivery is sent through `ChatBroker` with
+`source: 'desktop'` and a stable `desktop:` origin id. Telegram renders that
+source with a `[Desktop]` prefix; the phone and journal keep the unprefixed text
+and origin id.
 
 ## chatBindings — where a session lives on each surface
 
@@ -240,8 +250,8 @@ journal (`mobile-chat-journal.json`, under the user config dir) before anyone is
 told, and the wire record gains its `seq`. The mobile bridge is therefore
 **always available** to the broker — whether or not a phone is linked right
 now — so a message sent while every phone is offline is still journaled (the
-live push reports not-sent honestly). The desktop operator chat reads the same
-journal. The journal keeps **delivered**
+live push reports not-sent honestly). The desktop Chat pane reads the same
+journal for every top-level session. The journal keeps **delivered**
 entries too, because a fresh APK install is *designed* to refetch its history.
 Retention is the session's lifetime, not an age: entries survive until their
 session is permanently gone — purged from the recycle bin (expiry, Forget,
