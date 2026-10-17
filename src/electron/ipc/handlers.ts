@@ -652,13 +652,12 @@ export function registerIPCHandlers(
       return session?.workingDir ? { ...whereIsDir(session.workingDir, session.projectId), cliType: session.cliType } : null;
     },
   });
-  // Any prompt arms the session's AI time; only a human's prompt is the user's time.
+  // Only user-originated prompts start a turn. System pings count only after a hook proves real work.
   setDeliveryObserver((sessionId, origin) => {
-    if (origin === 'user') timeTracker.recordUser(SUBMIT_WEIGHT, sessionId);
-    else timeTracker.armAi(sessionId);
+    timeTracker.recordPrompt(sessionId, origin);
   });
   stateDetector.on('activity-change', ({ sessionId, level }: { sessionId: string; level: string }) => {
-    timeTracker.setAiActive(sessionId, level === 'active');
+    if (level === 'idle' && !stateDetector.hasObservedHooks(sessionId)) timeTracker.disarmAi(sessionId);
   });
   // Every context reading feeds the token ledger; unchanged readings add nothing.
   // Sub-agents run inside a main turn, so their logs are re-read only when the main reading moves.
@@ -759,7 +758,7 @@ export function registerIPCHandlers(
       win.webContents.send('draft:changed', draft);
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordUser(data.includes('\r') ? SUBMIT_WEIGHT : 1, sessionId), patternMatcher, recycleBinManager);
+  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager);
   // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
   const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
   autoFreezer.start();
@@ -839,7 +838,11 @@ export function registerIPCHandlers(
     handoverDelivery,
     artifactManager,
     artifactAttachments: artifactAttachmentManager,
-    onTurnEnded: (sessionId) => { void cliAutoMemory.turnEnded(sessionId); },
+    onTurnWorking: (sessionId) => timeTracker.armAi(sessionId),
+    onTurnEnded: (sessionId) => {
+      timeTracker.disarmAi(sessionId);
+      void cliAutoMemory.turnEnded(sessionId);
+    },
   });
   hookTracker.watch(hookReceiver);
 

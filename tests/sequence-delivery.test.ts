@@ -190,7 +190,7 @@ describe('deliverPromptSequenceToSession', () => {
     await deliver('{Ctrl+C}', mocks);
 
     // Ctrl+C maps to \x03 via comboToPtySequence
-    expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\x03');
+    expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\x03', 'system');
   });
 
   it('modifier tokens like {Ctrl Down} are preserved', async () => {
@@ -209,7 +209,7 @@ describe('deliverPromptSequenceToSession', () => {
     await deliver('{F5}', mocks);
 
     // F5 maps to \x1b[15~
-    expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\x1b[15~');
+    expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\x1b[15~', 'system');
   });
 
   it('{NoEnter} suppresses implied submit (alias for NoSend)', async () => {

@@ -261,10 +261,10 @@ export class PtyManager extends EventEmitter {
   /**
    * Write data to a session's PTY stdin.
    *
-   * Marking lives here rather than in the pty:write IPC handler so that bytes
-   * originating in the main process — MCP and Telegram delivery, pattern-matcher
-   * send-text — move the activity dots too. Genuinely user-origin concerns
-   * (interaction-channel affinity, the Telegram input hook) stay in the handler.
+   * Marking lives here rather than in the pty:write IPC handler so every path
+   * shares the same intent rule. Only user input moves the dot; system prompts
+   * (including MCP, Telegram automation and pattern-matcher sends) stay inert.
+   * User-origin concerns such as channel affinity remain in the IPC handler.
    */
   write(sessionId: string, data: string, intent: WriteIntent = 'input'): boolean {
     const pty = this.ptys.get(sessionId);
@@ -331,13 +331,13 @@ export class PtyManager extends EventEmitter {
           isAlive: () => this.ptys.has(sessionId),
         });
       }
-      this.write(sessionId, buildPastePayload(text, enabled), options?.writeIntent ?? 'input');
+      this.write(sessionId, buildPastePayload(text, enabled), options?.writeIntent ?? 'system');
       // The suffix stays a SEPARATE write after a settle beat: a CR concatenated
       // onto a paste block does not submit, it leaves the text sitting on the
       // prompt (the bug 5a981b3 fixed).
       if (suffix) await new Promise<void>(resolve => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
     }
-    if (suffix) this.write(sessionId, suffix, options?.writeIntent ?? 'input');
+    if (suffix) this.write(sessionId, suffix, options?.writeIntent ?? 'system');
   }
 
   /** Whether the session's CLI has announced bracketed paste on its output stream. */

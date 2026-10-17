@@ -165,7 +165,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
     if (typeof maybeDeliver === 'function') {
       return maybeDeliver.call(params.ptyManager, sessionId, text);
     }
-    params.ptyManager.write(sessionId, text);
+    params.ptyManager.write(sessionId, text, 'system');
     return Promise.resolve();
   };
   const submit = async (sessionId: string): Promise<void> => {
@@ -175,7 +175,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
     if (typeof maybeDeliver === 'function') {
       return maybeDeliver.call(params.ptyManager, sessionId, '', { submitSuffix });
     }
-    params.ptyManager.write(sessionId, submitSuffix);
+    params.ptyManager.write(sessionId, submitSuffix, 'system');
   };
   // Rename delivery waits for PTY output to settle (see initial-prompt); a
   // test fake without the method skips the wait, same deal as deliverText.
@@ -195,7 +195,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
         initialPromptDelay: promptConfig.initialPromptDelay,
         renameCommand: promptConfig.renameCommand,
       },
-      (sid, data) => params.ptyManager.write(sid, data),
+      (sid, data) => params.ptyManager.write(sid, data, 'system'),
       (sid, text) => deliverText(sid, text),
       undefined,
       submit,
@@ -209,7 +209,7 @@ function scheduleConfiguredInitialPrompt(params: ConfiguredSessionSpawnParams & 
   const cancel = scheduleInitialPrompt(
     params.sessionId,
     promptConfig,
-    (sid, data) => params.ptyManager.write(sid, data),
+    (sid, data) => params.ptyManager.write(sid, data, 'system'),
     (sid, text) => deliverText(sid, text),
     onComplete ?? (() => undefined),
     submit,

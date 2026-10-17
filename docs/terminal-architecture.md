@@ -59,13 +59,29 @@ PTY Data Flow:
 
 ## Activity Dots
 
-Session cards and overview cards use activity-based coloring (PTY I/O timing, not AIAGENT state):
+Session cards and overview cards use activity-based coloring (turn activity, not AIAGENT phase state):
 
-- 🟢 active (green `#44cc44` — producing output or receiving user input)
+- 🟢 active (green `#44cc44` — receiving user input, or hook-reported work until `Stop`)
 - 🔵 inactive (blue `#4488ff` — >10s silence)
 - ⚪ idle (grey `#555555` — >5min silence)
 
-Input tracking: the `pty:write` IPC handler calls `StateDetector.markActive(sessionId)` on every keystroke, so the green dot appears immediately when the user types — not just when the shell echoes back. `markActive()` only resets activity timers; it does NOT scan for AIAGENT-* keywords. Helm no longer scrapes printed AIAGENT phase tags from PTY output; agents update durable phase state through `session_set_aiagent_state`. Scroll input uses a distinct path: `pty:scrollInput` IPC handler calls `StateDetector.markScrolling(sessionId)` instead of `markActive()`, suppressing marker scanning for 2s during PageUp/PageDown redraws. Resize uses an analogous path: `pty:resize` IPC handler calls `StateDetector.markResizing(sessionId)`, which suppresses activity promotion for 1s to prevent false green dots when tab switches trigger resize → CLI redraws → output. Terminal switching uses: `pty:markSwitching` IPC (called by TerminalManager before fit()) routes to `markResizing()` to suppress false activity promotion during Ctrl+Tab switching. Session restore uses: `markRestored(sessionId)` sets a 3s grace period that prevents shell startup output from promoting restored sessions to green — ensures restored sessions start as grey (idle) dots.
+User input reaches `StateDetector.markActive(sessionId)` through `PtyManager.write`, so the dot responds before the shell echoes it. System deliveries use the `system` write intent and do not make the dot green. Once a hook event is observed, hook work and `Stop` control agent activity; PTY output cannot override them. Without hooks, a user turn arms output-based activity, and fallback idle ends that turn. Output outside an armed turn, including overnight TUI repaints, does not promote the dot.
+
+```mermaid
+flowchart TD
+    U[User-origin prompt or terminal input] --> A[Arm fallback turn]
+    S[Watchdog · scheduler · keep-warm] --> N[No turn armed]
+    O[PTY output] --> F{Hooks observed?}
+    F -->|no| T{Turn armed?}
+    T -->|yes| G[Active dot]
+    T -->|no| I[Ignore activity promotion]
+    F -->|yes| I
+    W[Hook PreToolUse] --> G
+    E[Hook Stop] --> X[Inactive dot and disarm]
+    D[Fallback idle] --> Y[Idle dot and disarm]
+```
+
+`markActive()` updates activity timers; it does not scan for AIAGENT-* keywords. Helm no longer scrapes printed AIAGENT phase tags from PTY output; agents update durable phase state through `session_set_aiagent_state`. Scroll input uses a distinct path: `pty:scrollInput` IPC handler calls `StateDetector.markScrolling(sessionId)` instead of `markActive()`, suppressing marker scanning for 2s during PageUp/PageDown redraws. Resize uses an analogous path: `pty:resize` IPC handler calls `StateDetector.markResizing(sessionId)`, which suppresses activity promotion for 1s to prevent false green dots when tab switches trigger resize → CLI redraws → output. Terminal switching uses: `pty:markSwitching` IPC (called by TerminalManager before fit()) routes to `markResizing()` to suppress false activity promotion during Ctrl+Tab switching. Session restore uses: `markRestored(sessionId)` sets a 3s grace period that prevents shell startup output from promoting restored sessions to green — ensures restored sessions start as grey (idle) dots.
 
 Session cards also display an elapsed timer showing time since last CLI output (e.g. "just now", "5s", "2m"). `formatElapsed()` helper in `sessions.ts`, driven by `lastOutputAt` piggybacked on the `pty:activity-change` event, refreshed every 10s and on each activity-change.
 

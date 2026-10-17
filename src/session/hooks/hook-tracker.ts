@@ -88,6 +88,8 @@ export interface HookTrackerDeps {
   artifactAttachments: Pick<ArtifactAttachmentManager, 'add'>;
   /** A turn of the session's own agent finished (Stop); auto memory judges it. */
   onTurnEnded?: (sessionId: string) => void;
+  /** A real tool invocation proves agent work, even when the prompt was system-originated. */
+  onTurnWorking?: (sessionId: string) => void;
   now?: () => number;
 }
 
@@ -146,6 +148,8 @@ export class HookTracker {
     // Uncorrelated (Helm did not spawn this CLI) or already closed — untouched.
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) return;
 
+    this.deps.stateDetector.markHooksObserved(sessionId);
+
     this.recordThreadId(sessionId, event.cliSessionId);
     this.recordTranscriptPath(sessionId, event.transcriptPath);
 
@@ -155,20 +159,19 @@ export class HookTracker {
         this.facts.set(sessionId, { turns: 0, toolCounts: new Map(), filesTouched: new Set() });
         this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
-        this.deps.stateDetector.markHookWorking(sessionId);
         break;
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
         this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
-        this.deps.stateDetector.markHookWorking(sessionId);
         break;
 
       case 'PreToolUse':
         this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         this.deps.stateDetector.markHookWorking(sessionId);
+        this.deps.onTurnWorking?.(sessionId);
         break;
 
       case 'PostToolUse':

@@ -57,8 +57,7 @@ export interface TimeTrackerDeps {
 
 export class TimeTracker {
   private readonly open = new Map<number, OpenSlot>();
-  private readonly aiActive = new Set<string>();
-  /** Sessions that have been given a prompt; before that, activity is CLI boot noise. */
+  /** Sessions whose current turn is user-originated or has proven agent work. */
   private readonly aiArmed = new Set<string>();
   /** Last context reading per session; the first is only a baseline. */
   private readonly lastTokens = new Map<string, number>();
@@ -69,11 +68,24 @@ export class TimeTracker {
     this.now = deps.now ?? Date.now;
   }
 
-  recordUser(weight: number, sessionId: string): void {
+  recordUser(weight: number, sessionId: string): boolean {
     const where = this.deps.resolve(sessionId);
-    if (!where) return;
-    this.armAi(sessionId);
+    if (!where) return false;
     this.recordUserAt(weight, where);
+    return true;
+  }
+
+  /** Credit and arm only prompts sent on the user's behalf. System pings need real hook work. */
+  recordPrompt(sessionId: string, origin: 'user' | 'system'): void {
+    if (origin !== 'user' || !this.recordUser(SUBMIT_WEIGHT, sessionId)) return;
+    this.armAi(sessionId);
+  }
+
+  /** Terminal keystrokes count as user time; only an accepted Enter starts an AI turn. */
+  recordTerminalInput(sessionId: string, data: string): void {
+    const submitted = data.includes('\r');
+    if (!this.recordUser(submitted ? SUBMIT_WEIGHT : 1, sessionId) || !submitted) return;
+    this.armAi(sessionId);
   }
 
   /** User input that happened outside a session's terminal (planner, artifacts). */
@@ -134,28 +146,23 @@ export class TimeTracker {
     }
   }
 
-  /** The session was given a prompt: from now on its activity is AI work. */
+  /** A user prompt or real agent work started a turn. */
   armAi(sessionId: string): void {
     this.aiArmed.add(sessionId);
-    if (this.aiActive.has(sessionId)) this.recordAi(sessionId);
+    this.recordAi(sessionId);
   }
 
-  /** Follow a session's activity dot: an armed, active session earns an AI slot on every tick. */
-  setAiActive(sessionId: string, active: boolean): void {
-    if (active) {
-      this.aiActive.add(sessionId);
-      if (this.aiArmed.has(sessionId)) this.recordAi(sessionId);
-    } else {
-      this.aiActive.delete(sessionId);
-    }
+  /** A Stop hook or fallback idle ended the turn. */
+  disarmAi(sessionId: string): void {
+    this.aiArmed.delete(sessionId);
   }
 
-  /** Credit still-active sessions and persist slots that have ended. Call at least once per slot. */
+  /** Credit open turns and persist slots that have ended. Call at least once per slot. */
   tick(): void {
-    for (const id of this.aiActive) {
-      // A closed session never reports going quiet; drop it once it cannot be placed.
-      if (!this.deps.resolve(id)) { this.aiActive.delete(id); this.aiArmed.delete(id); this.forgetTokens(id); }
-      else if (this.aiArmed.has(id)) this.recordAi(id);
+    for (const id of this.aiArmed) {
+      // A closed session never reports a turn end; drop it once it cannot be placed.
+      if (!this.deps.resolve(id)) { this.aiArmed.delete(id); this.forgetTokens(id); }
+      else this.recordAi(id);
     }
     this.closeBefore(slotStart(this.now()));
   }

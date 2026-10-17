@@ -130,7 +130,8 @@ export async function deliverPromptSequenceToSession(input: {
     onComplete?: (result: DeliveryVerificationResult) => void;
   };
 }): Promise<DeliveryVerificationResult | undefined> {
-  const { sessionId, text, ptyManager, sessionManager, configLoader, impliedSubmit, deliveryContext, writeIntent, verifyDelivery } = input;
+  const { sessionId, text, ptyManager, sessionManager, configLoader, impliedSubmit, deliveryContext, verifyDelivery } = input;
+  const writeIntent = input.writeIntent ?? (input.origin === 'user' ? 'input' : 'system');
   const session = sessionManager.getSession(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
   assertSessionWritable(session);
@@ -143,8 +144,11 @@ export async function deliverPromptSequenceToSession(input: {
 
   const lock = input.deliveryLock ?? sharedDeliveryLock;
   const processedText = escapeUnrecognizedBraces(text);
-  const textDeliveryOptions: TextDeliveryOptions | undefined = deliveryContext || writeIntent
-    ? { ...(deliveryContext ? { deliveryContext } : {}), ...(writeIntent ? { writeIntent } : {}) }
+  const textDeliveryOptions: TextDeliveryOptions | undefined = deliveryContext || input.writeIntent || input.origin === 'user'
+    ? {
+      ...(deliveryContext ? { deliveryContext } : {}),
+      ...(input.writeIntent || input.origin === 'user' ? { writeIntent } : {}),
+    }
     : undefined;
   const deliverText = (sid: string, chunk: string, options?: TextDeliveryOptions): Promise<void> => (
     options
@@ -156,8 +160,7 @@ export async function deliverPromptSequenceToSession(input: {
     sessionId,
     input: processedText,
     write: (sid, data) => {
-      if (writeIntent) ptyManager.write(sid, data, writeIntent);
-      else ptyManager.write(sid, data);
+      ptyManager.write(sid, data, writeIntent);
     },
     deliverText: (sid, chunk) => deliverText(sid, chunk, textDeliveryOptions),
     submit: async (sid) => {

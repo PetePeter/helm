@@ -1,11 +1,8 @@
 /**
  * Activity marking on PTY writes.
  *
- * markActive used to live in the pty:write IPC handler, so bytes written from
- * the main process — MCP and Telegram delivery, pattern-matcher send-text — hit
- * the PTY without ever touching the activity dots. Marking now lives in
- * PtyManager.write, so every writer marks regardless of caller
- * (CLAUDE.md invariant 8: dots reflect activity, not pipeline state).
+ * Only user-input intent marks activity. Main-process system prompts still
+ * reach the PTY, but do not fabricate user activity or turn the dot green.
  *
  * Real PtyManager, real StateDetector, fake PTY. The IPC boundary objects
  * (session/window managers) stay as thin stubs — they are not what is under test.
@@ -65,12 +62,12 @@ describe('PtyManager.write — activity marking', () => {
     expect(marked).toEqual(['s1']);
   });
 
-  it('marks for a write that originates in the main process, with no IPC involved', async () => {
+  it('marks a main-process delivery only when it carries user-input intent', async () => {
     const { manager, writes } = createManager();
     const marked: string[] = [];
     manager.setActivityMarker(id => marked.push(id));
 
-    await manager.deliverText('s1', 'hello');
+    await manager.deliverText('s1', 'hello', { writeIntent: 'input' });
 
     expect(writes).toEqual(['hello']);
     expect(marked).toEqual(['s1']);

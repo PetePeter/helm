@@ -132,7 +132,7 @@ export function setupPtyHandlers(
     if (!isRendererOwner(event, sessionId)) return { success: false, error: 'Renderer does not own session' };
     try {
       const inputOrigin = options?.inputOrigin === 'programmatic' ? 'programmatic' : 'user';
-      if (ptyManager.write(sessionId, data) === false) {
+      if (ptyManager.write(sessionId, data, inputOrigin === 'user' ? 'input' : 'system') === false) {
         return { success: false, error: 'PTY could not accept the input' };
       }
       if (inputOrigin === 'user') {

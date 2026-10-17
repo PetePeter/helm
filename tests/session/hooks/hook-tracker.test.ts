@@ -30,6 +30,7 @@ import { PlanManager } from '../../../src/session/plan-manager.js';
 import { ArtifactManager } from '../../../src/session/artifact-manager.js';
 import { ArtifactAttachmentManager, MAX_ATTACHMENT_BYTES } from '../../../src/session/artifact-attachment-manager.js';
 import { HandoverDelivery } from '../../../src/session/handover-delivery.js';
+import { SLOT_MS, TimeTracker, type TimeSlot } from '../../../src/session/time-tracker.js';
 import type { SessionInfo } from '../../../src/types/session.js';
 
 const NOW = 1_700_000_000_000;
@@ -73,6 +74,8 @@ interface Setup {
   turnsEnded: Array<{ sessionId: string; transcript?: string }>;
   delivered: Array<{ sessionId: string; text: string }>;
   updates: Array<Partial<SessionInfo>>;
+  timeTracker: TimeTracker;
+  advanceTime: (ms: number) => void;
   addSession: (id?: string) => void;
   claimPlan: (sessionId: string, status?: 'ready' | 'coding') => string;
   dispose: () => void;
@@ -91,6 +94,18 @@ function setup(): Setup {
 
   const sessionManager = new SessionManager();
   sessionManager.on('session:updated', (e: SessionInfo) => updates.push(e));
+  const persistedSlots: TimeSlot[] = [];
+  let clock = NOW;
+  const timeTracker = new TimeTracker({
+    persistence: {
+      append: slots => persistedSlots.push(...slots),
+      load: (from, to) => persistedSlots.filter(slot => slot.start >= from && slot.start < to),
+    },
+    resolve: sessionId => sessionManager.hasSession(sessionId)
+      ? { projectKey: 'p1', projectName: 'Project', dir: 'x:/repo' }
+      : null,
+    now: () => clock,
+  });
 
   const planManager = new PlanManager();
   const artifactManager = new ArtifactManager();
@@ -112,10 +127,14 @@ function setup(): Setup {
     sessionManager,
     planManager,
     flashAttention: (sessionId: string) => { flashes.push(sessionId); },
+    onTurnWorking: (sessionId) => timeTracker.armAi(sessionId),
     handoverDelivery: handover,
     artifactManager,
     artifactAttachments: attachments,
-    onTurnEnded: (sessionId) => { turnsEnded.push({ sessionId, transcript: sessionManager.getSession(sessionId)?.cliTranscriptPath }); },
+    onTurnEnded: (sessionId) => {
+      timeTracker.disarmAi(sessionId);
+      turnsEnded.push({ sessionId, transcript: sessionManager.getSession(sessionId)?.cliTranscriptPath });
+    },
     now: () => NOW,
   });
   const hookReceiver = new EventEmitter();
@@ -148,7 +167,8 @@ function setup(): Setup {
   return {
     tracker, hookReceiver, stateDetector, activity, sessionManager, planManager,
     artifactManager, attachments, handover, flashes, turnsEnded, delivered, updates,
-    addSession, claimPlan, dispose,
+    addSession, claimPlan, dispose, timeTracker,
+    advanceTime: (ms: number) => { clock += ms; timeTracker.tick(); },
   };
 }
 
@@ -283,6 +303,59 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
+  it('counts hook-reported work only through Stop', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'PreToolUse', { tool_name: 'Bash' }));
+      s.advanceTime(6 * 60_000);
+      expect(s.timeTracker.query(NOW - 24 * 60 * 60_000, NOW + 24 * 60 * 60_000).filter(slot => slot.kind === 'ai'))
+        .toHaveLength(2);
+
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop'));
+      s.advanceTime(8 * 60 * 60_000);
+      expect(s.timeTracker.query(NOW - 24 * 60 * 60_000, NOW + 24 * 60 * 60_000).filter(slot => slot.kind === 'ai'))
+        .toHaveLength(2);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('counts a user-originated text-only turn from prompt through Stop', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.timeTracker.recordPrompt('s1', 'user');
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit'));
+      s.advanceTime(SLOT_MS);
+      s.hookReceiver.emit('hook', hookEvent('claude', 'Stop'));
+      s.advanceTime(SLOT_MS * 2);
+
+      const aiStarts = s.timeTracker.query(0, Number.MAX_SAFE_INTEGER)
+        .filter(slot => slot.kind === 'ai')
+        .map(slot => slot.start);
+      const firstSlot = NOW - (NOW % SLOT_MS);
+      expect(aiStarts).toEqual([firstSlot, firstSlot + SLOT_MS]);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('a system UserPromptSubmit and later repaint do not become hook-reported work', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: 'watchdog check' }));
+      s.stateDetector.processOutput('s1', 'a large TUI repaint after the system prompt');
+
+      expect(s.timeTracker.query(NOW - 24 * 60 * 60_000, NOW + 24 * 60 * 60_000).filter(slot => slot.kind === 'ai'))
+        .toEqual([]);
+      expect(s.activity).toEqual([]);
+    } finally {
+      s.dispose();
+    }
+  });
+
   it('reports a turn end on Stop only, once the transcript path it carries is on the session', () => {
     const s = setup();
     try {
@@ -399,7 +472,7 @@ describe('HookTracker — hook events become session truth', () => {
     }
   });
 
-  it('SessionStart clears a stale stall and starts the dot green', () => {
+  it('SessionStart clears a stale stall without claiming active work', () => {
     const s = setup();
     try {
       s.addSession();
@@ -408,7 +481,7 @@ describe('HookTracker — hook events become session truth', () => {
       s.hookReceiver.emit('hook', hookEvent('claude', 'SessionStart', {}));
 
       expect(s.sessionManager.getSession('s1')!.hookStall).toBeUndefined();
-      expect(s.activity).toEqual([expect.objectContaining({ sessionId: 's1', level: 'active' })]);
+      expect(s.activity).toEqual([]);
     } finally {
       s.dispose();
     }

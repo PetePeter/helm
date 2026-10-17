@@ -88,20 +88,31 @@ describe('TimeTracker', () => {
     expect(userSlots(t)[0]).toMatchObject({ projectKey: 'pA', dir: 'C:/alpha/sub' });
   });
 
-  it('does not count AI activity before the session received a prompt (CLI boot)', () => {
+  it('counts AI time for the full armed turn and stops after it ends', () => {
     const t = tracker();
-    t.setAiActive('a1', true);
     clock = at(9, 6); t.tick();
     expect(t.query(DAY0, DAY0 + 24 * 60 * MIN)).toEqual([]);
     t.armAi('a1');
-    clock = at(9, 7); t.tick();
-    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).map(s => [s.kind, s.start])).toEqual([['ai', at(9, 5)]]);
+    clock = at(9, 11); t.tick();
+    t.disarmAi('a1');
+    clock = at(18, 0); t.tick();
+    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).filter(s => s.kind === 'ai').map(s => s.start))
+      .toEqual([at(9, 5), at(9, 10)]);
   });
 
-  it("arms AI time on the user's own input too", () => {
+  it('arms AI time for a user-originated prompt, but not a system prompt', () => {
     const t = tracker();
-    t.recordUser(SUBMIT, 'a1');
-    t.setAiActive('a1', true);
+    t.recordPrompt('a1', 'system');
+    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN)).toEqual([]);
+    t.recordPrompt('a1', 'user');
+    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).map(s => s.kind).sort()).toEqual(['ai', 'user']);
+  });
+
+  it('arms terminal AI time only when a user input submits with Enter', () => {
+    const t = tracker();
+    t.recordTerminalInput('a1', 'typing');
+    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).map(s => s.kind)).toEqual([]);
+    t.recordTerminalInput('a1', '\r');
     expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).map(s => s.kind).sort()).toEqual(['ai', 'user']);
   });
 
@@ -119,23 +130,22 @@ describe('TimeTracker', () => {
     expect(userSlots(t)).toEqual([]);
   });
 
-  it('keeps crediting AI slots while a session stays active, until it goes quiet', () => {
+  it('re-arms AI time for the next user turn after a previous turn ended', () => {
     const t = tracker();
     t.armAi('a1');
-    t.setAiActive('a1', true);
     clock = at(9, 6); t.tick();
+    t.disarmAi('a1');
     clock = at(9, 11); t.tick();
-    t.setAiActive('a1', false);
+    t.recordPrompt('a1', 'user');
     clock = at(9, 16); t.tick();
     expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).filter(s => s.kind === 'ai').map(s => s.start))
-      .toEqual([at(9, 0), at(9, 5), at(9, 10)]);
+      .toEqual([at(9, 0), at(9, 5), at(9, 10), at(9, 15)]);
   });
 
   it('forgets an active session once it can no longer be placed (closed)', () => {
     const sessions: Record<string, SessionWhere> = { ...SESSIONS };
     const t = new TimeTracker({ persistence: new TimePersistence(dir), resolve: id => sessions[id] ?? null, now: () => clock });
     t.armAi('a1');
-    t.setAiActive('a1', true);
     delete sessions.a1;
     clock = at(9, 6); t.tick();
     sessions.a1 = SESSIONS.a1; // the same id restored later starts idle
@@ -178,19 +188,19 @@ describe('TimeTracker', () => {
 describe('buildTimesheet', () => {
   it('sums one project into dir x day rows of minutes', () => {
     const t = tracker();
-    t.recordUser(SUBMIT, 'a1'); t.recordAi('a1');
-    clock = at(9, 5); t.recordUser(SUBMIT, 'a2');
-    clock = at(9, 10); t.recordUser(SUBMIT, 'b1');
-    clock = at(33, 0); t.recordUser(SUBMIT, 'a1');
+    t.recordUser(SUBMIT, 'a1'); t.armAi('a1'); t.disarmAi('a1');
+    clock = at(9, 5); t.recordUser(SUBMIT, 'a2'); t.armAi('a2'); t.disarmAi('a2');
+    clock = at(9, 10); t.recordUser(SUBMIT, 'b1'); t.armAi('b1'); t.disarmAi('b1');
+    clock = at(33, 0); t.recordUser(SUBMIT, 'a1'); t.armAi('a1'); t.disarmAi('a1');
     t.flush();
     const edges = periodEdges('day', DAY0);
     const sheet = buildTimesheet(t.query(edges[0], edges[7]), 'pA', edges);
     expect(sheet.columns).toHaveLength(7);
     expect(sheet.rows).toEqual([
-      { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
-      { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [0, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha', user: [5, 5, 0, 0, 0, 0, 0], ai: [5, 5, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
+      { dir: 'C:/alpha/sub', user: [5, 0, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] },
     ]);
-    expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [5, 0, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
+    expect(sheet.totals).toEqual({ user: [10, 5, 0, 0, 0, 0, 0], ai: [10, 5, 0, 0, 0, 0, 0], tokens: [0, 0, 0, 0, 0, 0, 0] });
   });
 
   it('cuts day, week and month views on local calendar edges', () => {
@@ -209,12 +219,13 @@ describe('buildTimesheet', () => {
 
   it('totals every project for the phone list, busiest first', () => {
     const t = tracker();
-    t.recordUser(SUBMIT, 'b1');
-    clock = at(9, 5); t.recordUser(SUBMIT, 'a1'); t.armAi('a1'); t.setAiActive('a1', true);
-    clock = at(9, 10); t.recordUser(SUBMIT, 'a2');
+    t.recordUser(SUBMIT, 'b1'); t.armAi('b1');
+    t.disarmAi('b1');
+    clock = at(9, 5); t.recordUser(SUBMIT, 'a1'); t.armAi('a1');
+    clock = at(9, 10); t.recordUser(SUBMIT, 'a2'); t.armAi('a2');
     expect(summarizeProjects(t.query(DAY0, DAY0 + 24 * 60 * MIN))).toEqual([
-      { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 5, tokens: 0 },
-      { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 0, tokens: 0 },
+      { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 10, tokens: 0 },
+      { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 5, tokens: 0 },
     ]);
   });
 

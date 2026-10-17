@@ -9,22 +9,26 @@ Measuring the user's own time means guessing at the gaps between inputs. A fixed
 ## What counts
 
 ```mermaid
-graph LR
-    K[Terminal keys / paste / gamepad<br/>pty:write, origin user] -->|1 per key, Enter = submit| T[TimeTracker]
-    PA[Planner + Artifacts keys<br/>time:activity, batched] -->|1 per key, Enter = submit| T
-    P[Phone message<br/>mobile: sender] -->|origin user| D[deliverPromptSequenceToSession]
-    TG[Telegram message / reaction] -->|origin user| D
-    D -->|user: submit<br/>system: arm AI| T
-    PH[Phone actions via MobileGate<br/>non-read-only calls] -->|submit| T
-    SD[StateDetector activity-change] -->|setAiActive| T
-    T -->|closed slots| J[(time-tracking/YYYY-MM.jsonl)]
+flowchart LR
+    K[Terminal keys / paste / gamepad<br/>user input] -->|user slots| TT[TimeTracker]
+    E[Terminal Enter<br/>accepted prompt submit] -->|user slot + arm| TT
+    P[Phone / Telegram prompt<br/>origin user] -->|user slot + arm| TT
+    PA[Planner + Artifacts keys<br/>time:activity] -->|user slots| TT
+    S[Watchdog · scheduler<br/>keep-warm · other system pings] -->|do not arm| X[No AI time yet]
+    H[Hook PreToolUse<br/>real agent work] -->|arm if needed| TT
+    TT -->|AI slots while turn stays open| J[(time-tracking/YYYY-MM.jsonl)]
+    STOP[Hook Stop] -->|disarm immediately| TT
+    IDLE[Fallback idle<br/>no hooks] -->|disarm| TT
+    H -->|hook working| D[Activity dots]
+    STOP -->|inactive| D
+    O[PTY output] -->|only inside an armed no-hook turn| D
 ```
 
 - **You** (`user` slots): input the user produced: keystrokes in the terminal, planner or artifacts, and on the phone any message or action that changes something. Read-only phone calls (`*_get`, `*_list`, `*_read_terminal`, …) do not count, and neither does reading a terminal.
 - **Noise floor**: a project needs `SUBMIT_WEIGHT` (20) input in a slot to earn it. A keystroke weighs 1. A submit (Enter, a phone or Telegram message including speech-to-text, a phone edit) weighs the full 20, so one deliberate send always counts and a few stray keys never do.
 - **What never counts:** Programmatic sends (background deliveries, AI-to-AI `session_send_text`, the scheduler, initial prompts) are `system` origin and never count.
 - **One project per user slot.** If the user touches two projects in one slot, the one with more input wins, and a tie goes to the latest. Within that project, the folder with the most input gets the slot.
-- **AI** (`ai` slots): a session whose activity dot is green earns its project one AI slot, but only once the session has been given a prompt (any delivery or user input arms it). Before that, activity is the CLI booting and is ignored, so starting a session counts nothing until something is sent. Hook turns (UserPromptSubmit → Stop) drive the same dot, which is why the AI window follows prompts. Agents genuinely run in parallel, so AI slots are per project, not exclusive.
+- **AI** (`ai` slots): a user-originated prompt arms a turn; real hook-reported work (`PreToolUse`) can arm one after a system prompt. The turn earns AI slots until a hook `Stop`, or until the fallback idle for a session without hooks. Watchdog, scheduler, keep-warm, and other system prompts do not arm time or turn a dot green. If a hook later proves real work, that work counts. TUI repaint output cannot reopen a turn or keep an idle session green. Agents genuinely run in parallel, so AI slots are per project, not exclusive.
 - **Tokens** (`tokens` slots): every context-size reading a session reports (statusline, transcript, or API loop; see [terminal-architecture](terminal-architecture.md)) feeds a per-session ledger. A rise adds the growth. A drop (compact, `/clear`, quick compact) adds the new, smaller context, because the CLI re-read that much. So 199k → compact → 50k counts 249k. A session's first reading after Helm starts is only a baseline, so nothing is backfilled. Tokens are summed per project, CLI type, and directory per slot; the Tokens tab aggregates them per CLI. Every CLI type that reports its context size counts. Remote (peer) rows are skipped, since their own machine counts them.
 - **Sub-agent tokens**: a sub-agent's work never shows in the main context, so its logs are read too (`subagent-usage.ts`). Claude writes one file per sub-agent in `<session>/subagents/`. A Codex sub-agent gets its own rollout file in the same folder, naming the parent in `parent_thread_id`. Copilot tags sub-agent `usage_record` lines in the parent's `events.jsonl` with an `agentId`. Each sub-agent is its own ledger stream with a zero baseline, so its whole context counts, then only its growth. The logs are re-read only when the main reading moves. The first read after Helm starts only primes the streams, so sub-agents counted by an earlier run are not counted twice.
 - **Project** = the session's Helm project, or its working directory when it has none.

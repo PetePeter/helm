@@ -20,6 +20,7 @@ vi.mock('../src/session/initial-prompt.js', () => ({
 }));
 
 import { setupPtyHandlers } from '../src/electron/ipc/pty-handlers.js';
+import { TimeTracker, type TimeSlot } from '../src/session/time-tracker.js';
 
 class MockPtyManager extends EventEmitter {
   write = vi.fn();
@@ -47,11 +48,11 @@ class MockStateDetector extends EventEmitter {
   });
 }
 
-function setup() {
+function setup(onPtyInput = vi.fn()) {
   handlers.clear();
   const ptyManager = new MockPtyManager();
   const stateDetector = new MockStateDetector();
-  const session = { id: 's1', interactionChannel: 'telegram' };
+  const session = { id: 's1', interactionChannel: 'telegram', frozen: false };
   const sessionManager = {
     getSession: vi.fn((id: string) => id === 's1' ? session : null),
     updateSession: vi.fn((_id: string, patch: object) => Object.assign(session, patch)),
@@ -65,8 +66,6 @@ function setup() {
     markSessionRendererAttached: vi.fn(),
     markSessionRendererDetached: vi.fn(() => true),
   };
-  const onPtyInput = vi.fn();
-
   setupPtyHandlers(
     ptyManager as any,
     stateDetector as any,
@@ -93,7 +92,7 @@ describe('pty:write input origin', () => {
 
     await handlers.get('pty:write')?.({}, 's1', 'hello', { inputOrigin: 'programmatic' });
 
-    expect(ptyManager.write).toHaveBeenCalledWith('s1', 'hello');
+    expect(ptyManager.write).toHaveBeenCalledWith('s1', 'hello', 'system');
     // Activity marking moved into PtyManager.write, so it is not the handler's
     // job any more — proven against a real manager in pty-write-activity.test.ts.
     expect(stateDetector.markActive).not.toHaveBeenCalled();
@@ -140,6 +139,32 @@ describe('pty:write input origin', () => {
     expect(stamped()).toHaveLength(1);
     expect(typeof stamped()[0][1].lastPromptAt).toBe('number');
     expect(stamped()[0][1]).toMatchObject({ lastUserPromptAt: expect.any(Number), lastUserPromptSource: 'terminal' });
+  });
+
+  it('arms AI time for an accepted terminal Enter, but not plain typing or a frozen write', async () => {
+    const now = Date.now();
+    const persisted: TimeSlot[] = [];
+    const tracker = new TimeTracker({
+      persistence: {
+        append: slots => persisted.push(...slots),
+        load: (from, to) => persisted.filter(slot => slot.start >= from && slot.start < to),
+      },
+      resolve: id => id === 's1' ? { projectKey: 'p1', projectName: 'Project', dir: 'C:/work' } : null,
+      now: () => now,
+    });
+    const { ptyManager, sessionManager } = setup((sessionId, data) => tracker.recordTerminalInput(sessionId, data));
+    const aiSlots = () => tracker.query(0, Number.MAX_SAFE_INTEGER).filter(slot => slot.kind === 'ai');
+
+    await handlers.get('pty:write')?.({}, 's1', 'typing');
+    expect(aiSlots()).toHaveLength(0);
+
+    await handlers.get('pty:write')?.({}, 's1', '\r');
+    expect(aiSlots()).toHaveLength(1);
+
+    sessionManager.getSession('s1').frozen = true;
+    ptyManager.write.mockReturnValue(false);
+    await handlers.get('pty:write')?.({}, 's1', '\r');
+    expect(aiSlots()).toHaveLength(1);
   });
 
   it('rejects input from a renderer that does not own the session', async () => {

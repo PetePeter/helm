@@ -2,6 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { StateDetector } from '../src/session/state-detector';
 import type { QuestionDetected, QuestionCleared, ActivityChange } from '../src/session/state-detector';
 
+function processOutput(detector: StateDetector, sessionId: string, data: string): void {
+  detector.armTurn(sessionId);
+  detector.processOutput(sessionId, data);
+}
+
 describe('StateDetector', () => {
   let detector: StateDetector;
 
@@ -20,7 +25,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('question-detected', handler);
 
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
 
       expect(detector.hasQuestion('s1')).toBe(true);
       expect(handler).toHaveBeenCalledWith({ sessionId: 's1' } satisfies QuestionDetected);
@@ -31,10 +36,10 @@ describe('StateDetector', () => {
       const clearedHandler = vi.fn();
       detector.on('question-cleared', clearedHandler);
 
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(detector.hasQuestion('s1')).toBe(true);
 
-      detector.processOutput('s1', 'normal output without keywords');
+      processOutput(detector, 's1', 'normal output without keywords');
 
       expect(detector.hasQuestion('s1')).toBe(false);
       expect(clearedHandler).toHaveBeenCalledWith({ sessionId: 's1' } satisfies QuestionCleared);
@@ -44,15 +49,15 @@ describe('StateDetector', () => {
       const clearedHandler = vi.fn();
       detector.on('question-cleared', clearedHandler);
 
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
 
       expect(detector.hasQuestion('s1')).toBe(true);
       expect(clearedHandler).not.toHaveBeenCalled();
     });
 
     it('handles question + other text in same chunk', () => {
-      detector.processOutput('s1', 'AIAGENT-QUESTION then some other text');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION then some other text');
 
       expect(detector.hasQuestion('s1')).toBe(true);
     });
@@ -60,8 +65,8 @@ describe('StateDetector', () => {
 
   describe('session isolation', () => {
     it('tracks questions independently per session', () => {
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
-      detector.processOutput('s2', 'normal output');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's2', 'normal output');
 
       expect(detector.hasQuestion('s1')).toBe(true);
       expect(detector.hasQuestion('s2')).toBe(false);
@@ -70,7 +75,7 @@ describe('StateDetector', () => {
 
   describe('removeSession', () => {
     it('clears question state after removal', () => {
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       detector.removeSession('s1');
 
       expect(detector.hasQuestion('s1')).toBe(false);
@@ -91,11 +96,38 @@ describe('StateDetector', () => {
       vi.useRealTimers();
     });
 
+    it('ignores repaint output outside a turn, even across an overnight interval', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      for (let hour = 0; hour < 8; hour++) {
+        detector.processOutput('s1', 'a large TUI repaint that would usually promote activity');
+        vi.advanceTimersByTime(60 * 60 * 1_000);
+      }
+
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+
+    it('promotes fallback output only in an armed turn and disarms at idle', () => {
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.armTurn('s1');
+      detector.processOutput('s1', 'a large chunk of output during a user turn');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+
+      vi.advanceTimersByTime(300_001);
+      handler.mockClear();
+      detector.processOutput('s1', 'a later TUI repaint after fallback idle');
+
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
+    });
+
     it('processOutput updates lastOutputAt timestamp', () => {
       const startTime = Date.now();
       vi.setSystemTime(startTime);
 
-      detector.processOutput('s1', 'some output');
+      processOutput(detector, 's1', 'some output');
 
       expect(detector.getLastOutputTime('s1')).toBe(startTime);
     });
@@ -104,7 +136,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({
         sessionId: 's1',
@@ -116,7 +148,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Advance past the 10s default inactive timeout
@@ -132,7 +164,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       vi.advanceTimersByTime(9_000);
@@ -144,15 +176,15 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output1 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output1 that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Output every 5s — timer keeps resetting
       vi.advanceTimersByTime(5_000);
-      detector.processOutput('s1', 'output2 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output2 that is definitely long enough to pass the threshold');
 
       vi.advanceTimersByTime(5_000);
-      detector.processOutput('s1', 'output3 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output3 that is definitely long enough to pass the threshold');
 
       // No inactive events during rapid output
       expect(handler).not.toHaveBeenCalled();
@@ -171,7 +203,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output1 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output1 that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Go inactive
@@ -180,7 +212,7 @@ describe('StateDetector', () => {
       handler.mockClear();
 
       // New output → active again
-      detector.processOutput('s1', 'output2 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output2 that is definitely long enough to pass the threshold');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
 
@@ -188,9 +220,9 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output1 that is definitely long enough to pass the threshold');
-      detector.processOutput('s1', 'output2 that is definitely long enough to pass the threshold');
-      detector.processOutput('s1', 'output3 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output1 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output2 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output3 that is definitely long enough to pass the threshold');
 
       // Only one active event on the first output
       const activeCalls = handler.mock.calls.filter(
@@ -203,9 +235,9 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output1 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output1 that is definitely long enough to pass the threshold');
       vi.advanceTimersByTime(5_000);
-      detector.processOutput('s2', 'output2 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's2', 'output2 that is definitely long enough to pass the threshold');
 
       handler.mockClear();
 
@@ -225,7 +257,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       detector.removeSession('s1');
@@ -239,7 +271,7 @@ describe('StateDetector', () => {
       const startTime = Date.now();
       vi.setSystemTime(startTime);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       expect(detector.getLastOutputTime('s1')).toBe(startTime);
 
       detector.removeSession('s1');
@@ -250,8 +282,8 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output1 that is definitely long enough to pass the threshold');
-      detector.processOutput('s2', 'output2 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output1 that is definitely long enough to pass the threshold');
+      processOutput(detector, 's2', 'output2 that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       detector.dispose();
@@ -269,7 +301,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       custom.on('activity-change', handler);
 
-      custom.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(custom, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Not yet timed out at 4s
@@ -287,7 +319,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // At 10s → inactive
@@ -304,7 +336,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Go inactive at 10s
@@ -314,7 +346,7 @@ describe('StateDetector', () => {
 
       // Resume output at 30s — back to active, idle timer cancelled
       vi.advanceTimersByTime(20_000);
-      detector.processOutput('s1', 'more output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'more output that is definitely long enough to pass the threshold');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
       handler.mockClear();
 
@@ -350,7 +382,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       // First make it active via output, then let it go inactive
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       vi.advanceTimersByTime(10_001);
       handler.mockClear();
 
@@ -363,7 +395,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       detector.markActive('s1');
@@ -375,7 +407,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // At 8s, mark active (resets timers)
@@ -396,7 +428,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       // Make active then let go all the way to idle
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       vi.advanceTimersByTime(300_001);
       handler.mockClear();
 
@@ -425,7 +457,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markResizing('s1');
-      detector.processOutput('s1', 'some resize redraw that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'some resize redraw that is definitely long enough to pass the threshold');
 
       // Should NOT promote to active (no activity-change event for level promotion)
       expect(handler).not.toHaveBeenCalled();
@@ -433,7 +465,7 @@ describe('StateDetector', () => {
 
     it('still updates lastOutputAt while resizing', () => {
       detector.markResizing('s1');
-      detector.processOutput('s1', 'some output');
+      processOutput(detector, 's1', 'some output');
 
       const lastOutput = detector.getLastOutputTime('s1');
       expect(lastOutput).toBeGreaterThan(0);
@@ -447,7 +479,7 @@ describe('StateDetector', () => {
       vi.advanceTimersByTime(1001);
 
       // Now activity promotion should work again
-      detector.processOutput('s1', 'real output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'real output that is definitely long enough to pass the threshold');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
@@ -457,7 +489,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markResizing('s1');
-      detector.processOutput('s1', 'output during resize that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output during resize that is definitely long enough to pass the threshold');
       // Should NOT promote (resizing suppresses activity promotion)
       expect(handler).not.toHaveBeenCalled();
 
@@ -476,11 +508,11 @@ describe('StateDetector', () => {
       vi.advanceTimersByTime(700); // 700ms since last markResizing (< 1000ms)
 
       // Still resizing — activity promotion suppressed
-      detector.processOutput('s1', 'redraw output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'redraw output that is definitely long enough to pass the threshold');
       expect(handler).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(400); // now past the 1s window
-      detector.processOutput('s1', 'real output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'real output that is definitely long enough to pass the threshold');
       expect(handler).toHaveBeenCalled();
     });
 
@@ -506,7 +538,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markResizing('s1');
-      detector.processOutput('s1', 'output during resize that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output during resize that is definitely long enough to pass the threshold');
       // Suppressed — no event
       expect(handler).not.toHaveBeenCalled();
 
@@ -531,7 +563,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markResizing('s1');
-      detector.processOutput('s1', 'output during resize that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output during resize that is definitely long enough to pass the threshold');
       expect(handler).not.toHaveBeenCalled();
 
       // Suppression clears at 1s — promotes and resets timers
@@ -566,7 +598,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markSwitching('s1');
-      detector.processOutput('s1', 'focus redraw output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'focus redraw output that is definitely long enough to pass the threshold');
       expect(handler).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(1001);
@@ -579,7 +611,7 @@ describe('StateDetector', () => {
 
       detector.markSwitching('s1');
       vi.advanceTimersByTime(1001);
-      detector.processOutput('s1', 'real output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'real output that is definitely long enough to pass the threshold');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
@@ -589,7 +621,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markSwitching('s1');
-      detector.processOutput('s1', 'focus redraw output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'focus redraw output that is definitely long enough to pass the threshold');
       detector.markActive('s1');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
@@ -601,7 +633,7 @@ describe('StateDetector', () => {
 
       // Simulate the real-world bug: switch triggers resize redraw
       detector.markSwitching('s1');
-      detector.processOutput('s1', 'resize redraw prompt that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'resize redraw prompt that is definitely long enough to pass the threshold');
 
       // Resize fires during switching window (fit() runs 2 rAF frames after switch)
       detector.markResizing('s1');
@@ -635,7 +667,7 @@ describe('StateDetector', () => {
       detector.on('question-detected', handler);
 
       detector.markScrolling('s1');
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
 
       // Marker scanning suppressed — no question detected
       expect(handler).not.toHaveBeenCalled();
@@ -646,7 +678,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markScrolling('s1');
-      detector.processOutput('s1', 'some scroll output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'some scroll output that is definitely long enough to pass the threshold');
 
       // Activity promotion is NOT suppressed by scrolling (only resizing suppresses it)
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
@@ -654,7 +686,7 @@ describe('StateDetector', () => {
 
     it('still updates lastOutputAt while scrolling', () => {
       detector.markScrolling('s1');
-      detector.processOutput('s1', 'scroll output');
+      processOutput(detector, 's1', 'scroll output');
 
       expect(detector.getLastOutputTime('s1')).toBeGreaterThan(0);
     });
@@ -667,7 +699,7 @@ describe('StateDetector', () => {
       vi.advanceTimersByTime(2001);
 
       // Question detection resumes after scrolling clears
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(handler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
@@ -676,12 +708,12 @@ describe('StateDetector', () => {
       detector.on('question-detected', questionHandler);
 
       detector.markScrolling('s1');
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(questionHandler).not.toHaveBeenCalled();
 
       // markActive clears scrolling — question detection resumes
       detector.markActive('s1');
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(questionHandler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
@@ -695,11 +727,11 @@ describe('StateDetector', () => {
       vi.advanceTimersByTime(1500); // 1.5s since last markScrolling (< 2s)
 
       // Still scrolling — question detection suppressed
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(questionHandler).not.toHaveBeenCalled();
 
       vi.advanceTimersByTime(600); // now past the 2s window
-      detector.processOutput('s1', 'AIAGENT-QUESTION');
+      processOutput(detector, 's1', 'AIAGENT-QUESTION');
       expect(questionHandler).toHaveBeenCalledWith({ sessionId: 's1' });
     });
 
@@ -739,7 +771,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markRestored('s1');
-      detector.processOutput('s1', 'shell startup output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'shell startup output that is definitely long enough to pass the threshold');
 
       // Should NOT promote to active (restoring suppresses activity promotion)
       expect(handler).not.toHaveBeenCalled();
@@ -747,7 +779,7 @@ describe('StateDetector', () => {
 
     it('still updates lastOutputAt while restoring', () => {
       detector.markRestored('s1');
-      detector.processOutput('s1', 'startup output');
+      processOutput(detector, 's1', 'startup output');
 
       expect(detector.getLastOutputTime('s1')).toBeGreaterThan(0);
     });
@@ -760,7 +792,7 @@ describe('StateDetector', () => {
       vi.advanceTimersByTime(3001);
 
       // Activity promotion works again
-      detector.processOutput('s1', 'real output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'real output that is definitely long enough to pass the threshold');
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
 
@@ -769,7 +801,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markRestored('s1');
-      detector.processOutput('s1', 'startup output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'startup output that is definitely long enough to pass the threshold');
       expect(handler).not.toHaveBeenCalled();
 
       // markActive clears restoring flag and promotes to active
@@ -782,7 +814,7 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       detector.markRestored('s1');
-      detector.processOutput('s1', 'startup output during restore that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'startup output during restore that is definitely long enough to pass the threshold');
       expect(handler).not.toHaveBeenCalled();
 
       // Grace period clears after 3s → promoteIfRecentOutput fires
@@ -838,7 +870,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
 
       expect(handler).toHaveBeenCalledWith({
         sessionId: 's1',
@@ -853,7 +885,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       vi.advanceTimersByTime(10_001);
@@ -871,7 +903,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       vi.advanceTimersByTime(300_001);
@@ -886,7 +918,7 @@ describe('StateDetector', () => {
       vi.setSystemTime(startTime);
 
       // Create some output first
-      detector.processOutput('s1', 'output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'output that is definitely long enough to pass the threshold');
       vi.advanceTimersByTime(10_001); // go inactive
 
       const handler = vi.fn();
@@ -921,7 +953,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'first output that is definitely long enough to pass the threshold');
+      processOutput(detector, 's1', 'first output that is definitely long enough to pass the threshold');
       handler.mockClear();
 
       // Advance 5s and produce more output
@@ -958,7 +990,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'this is a large chunk of output that exceeds the threshold');
+      processOutput(detector, 's1', 'this is a large chunk of output that exceeds the threshold');
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
@@ -967,7 +999,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'tiny');
+      processOutput(detector, 's1', 'tiny');
 
       // Should NOT immediately promote — debounce timer is running
       expect(handler).not.toHaveBeenCalled();
@@ -977,7 +1009,7 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'tiny');
+      processOutput(detector, 's1', 'tiny');
       vi.advanceTimersByTime(150); // debounce window
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
@@ -987,9 +1019,9 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'tiny1');
+      processOutput(detector, 's1', 'tiny1');
       vi.advanceTimersByTime(100);
-      detector.processOutput('s1', 'tiny2');
+      processOutput(detector, 's1', 'tiny2');
       vi.advanceTimersByTime(100);
 
       // Still within debounce window after second chunk
@@ -1003,11 +1035,11 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'large chunk that exceeds the threshold for immediate promotion');
+      processOutput(detector, 's1', 'large chunk that exceeds the threshold for immediate promotion');
       handler.mockClear();
 
       vi.advanceTimersByTime(8_000);
-      detector.processOutput('s1', 'another large chunk that exceeds the threshold');
+      processOutput(detector, 's1', 'another large chunk that exceeds the threshold');
 
       // Should NOT emit activity-change (already active), but resets timers
       expect(handler).not.toHaveBeenCalled();
@@ -1025,11 +1057,11 @@ describe('StateDetector', () => {
       detector.on('activity-change', handler);
 
       // First promote to active with large chunk
-      detector.processOutput('s1', 'large chunk that exceeds the threshold for immediate promotion');
+      processOutput(detector, 's1', 'large chunk that exceeds the threshold for immediate promotion');
       handler.mockClear();
 
       vi.advanceTimersByTime(8_000);
-      detector.processOutput('s1', 'tiny');
+      processOutput(detector, 's1', 'tiny');
 
       // Should NOT emit activity-change or reset timers until the debounce settles
       expect(handler).not.toHaveBeenCalled();
@@ -1049,19 +1081,19 @@ describe('StateDetector', () => {
       const handler = vi.fn();
       detector.on('activity-change', handler);
 
-      detector.processOutput('s1', 'large chunk that exceeds the threshold for immediate promotion');
+      processOutput(detector, 's1', 'large chunk that exceeds the threshold for immediate promotion');
       handler.mockClear();
 
       for (let elapsed = 0; elapsed < 10_000; elapsed += 100) {
         vi.advanceTimersByTime(100);
-        detector.processOutput('s1', 'tick');
+        processOutput(detector, 's1', 'tick');
       }
 
       expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
     });
 
     it('removeSession clears debounce timer', () => {
-      detector.processOutput('s1', 'tiny');
+      processOutput(detector, 's1', 'tiny');
       detector.removeSession('s1');
 
       vi.advanceTimersByTime(500);
@@ -1069,8 +1101,8 @@ describe('StateDetector', () => {
     });
 
     it('dispose clears all debounce timers', () => {
-      detector.processOutput('s1', 'tiny1');
-      detector.processOutput('s2', 'tiny2');
+      processOutput(detector, 's1', 'tiny1');
+      processOutput(detector, 's2', 'tiny2');
       detector.dispose();
 
       vi.advanceTimersByTime(500);
@@ -1093,6 +1125,21 @@ describe('StateDetector', () => {
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({ sessionId: 's1', level: 'active' }),
       );
+    });
+
+    it('keeps hook-reported work active until Stop, regardless of silence or repaint output', () => {
+      vi.useFakeTimers();
+      const handler = vi.fn();
+      detector.on('activity-change', handler);
+
+      detector.markHookWorking('s1');
+      handler.mockClear();
+      vi.advanceTimersByTime(8 * 60 * 60_000);
+      detector.processOutput('s1', 'hours of TUI repaint after hook-reported work began');
+
+      expect(handler).not.toHaveBeenCalled();
+      detector.markHookTurnEnded('s1');
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'inactive' }));
     });
 
     it('markHookTurnEnded leaves green immediately, without waiting out the silence timer', () => {
@@ -1143,7 +1190,7 @@ describe('StateDetector', () => {
       expect(handler).not.toHaveBeenCalled();
     });
 
-    it('PTY output still promotes after a hook turn end — hooks going silent cannot stick the dot', () => {
+    it('PTY repaint cannot override hook-reported Stop', () => {
       vi.useFakeTimers();
       const handler = vi.fn();
       detector.on('activity-change', handler);
@@ -1151,12 +1198,10 @@ describe('StateDetector', () => {
       detector.markHookTurnEnded('s1');
       handler.mockClear();
 
-      detector.processOutput('s1', 'a genuinely large chunk of fresh terminal output');
+      processOutput(detector, 's1', 'a genuinely large chunk of fresh terminal output');
       vi.advanceTimersByTime(200); // past the small-chunk debounce, well under 10s
 
-      expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 's1', level: 'active' }),
-      );
+      expect(handler).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', level: 'active' }));
     });
   });
 });
