@@ -46,30 +46,25 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Chat store', () => {
-  it('subscribes before loading history, deduplicates the overlap, and tracks unread replies by seq', async () => {
+  it('subscribes before loading history and deduplicates the overlap by seq', async () => {
     let finishHistory!: (entries: ChatJournalEntry[]) => void;
     historyFor = sessionId => sessionId === 'two'
       ? new Promise(resolve => { finishHistory = resolve; })
       : Promise.resolve([]);
     const store = useChatStore();
 
-    const loading = store.start(['one', 'two'], 'one');
+    const loading = store.start(['one']);
+    const loadingTwo = store.loadSessions(['two']);
     const live = entry(2, 'two', 'Reply during load');
     emit(live);
     finishHistory([entry(1, 'two', 'Older reply'), live]);
-    await loading;
+    await Promise.all([loading, loadingTwo]);
 
     expect(store.messagesFor('two').map(message => message.record.text)).toEqual(['Older reply', 'Reply during load']);
-    expect(store.unreadCount('two')).toBe(2);
 
-    store.selectSession('two');
-    expect(store.unreadCount('two')).toBe(0);
-    emit(entry(3, 'two', 'Visible reply'));
-    expect(store.unreadCount('two')).toBe(0);
-
-    store.selectSession('one');
-    emit(entry(4, 'two', 'New unread reply'));
-    expect(store.unreadCount('two')).toBe(1);
+    store.stop();
+    emit(entry(3, 'two', 'After stop'));
+    expect(store.messagesFor('two').map(message => message.record.text)).toEqual(['Older reply', 'Reply during load']);
   });
 
   it('keeps drafts and attachment selections per session', () => {
@@ -101,7 +96,7 @@ describe('Chat store', () => {
 
   it('reconciles the optimistic turn with its journal echo and keeps Sent status', async () => {
     const store = useChatStore();
-    await store.start(['one'], 'one');
+    await store.start(['one']);
     send = async input => {
       emit(entry(1, input.sessionId, input.text, input.originId));
       return { ok: true };

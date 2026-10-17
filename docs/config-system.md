@@ -126,7 +126,7 @@ profiles:
 Menu items: Copy, Paste, New Session, New Session with Selection, Cancel.
 
 - Copy and "New Session with Selection" are disabled when no text is selected
-- "New Session" / "New Session with Selection" open a quick-spawn CLI type picker (pre-selects active session's type), then the directory picker (pre-selects active session's working directory), then spawns
+- "New Session" / "New Session with Selection" open a quick-spawn CLI type picker (pre-selects active session's type), then the directory picker (pre-selects active session's working directory), then spawns. Both pickers support case-insensitive search.
 
 > **Removed actions:** `prompt-tree` (prompt-template picker) and `new-draft` (prompt memos) no longer exist. The binding store deletes any saved binding using them on load, so an old profile cannot leave a dead button. Compose longer prompts in the session's [Draft pane](draft.md) (Ctrl+G or Ctrl+Shift+D).
 

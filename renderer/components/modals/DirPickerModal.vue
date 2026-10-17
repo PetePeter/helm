@@ -11,7 +11,7 @@
  * pane, A on a dir spawns, B in the project pane cancels. Digits pick a dir
  * of the focused project. Keyboard routed via App.vue bridge → useModalStack.
  */
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useModalAutofocus } from '../../composables/useModalAutofocus.js';
 import { toDirection, getCliDisplayName } from '../../utils.js';
@@ -42,24 +42,72 @@ const pane = ref<Pane>('dirs');
 const projectIndex = ref(0);
 /** Focused dir within the focused project. */
 const selectedIndex = ref(0);
+const searchQuery = ref('');
 const modalStack = useModalStack();
 const overlayRef = ref<HTMLElement | null>(null);
-const { focusIntoModal } = useModalAutofocus(overlayRef, '.dir-picker-item--focused, .dir-picker-project--active');
+const { focusIntoModal } = useModalAutofocus(overlayRef, '.picker-search-input');
 
-const projects = computed(() => groupDirsByProject(props.items));
+function matchesDir(item: DirItem, query: string): boolean {
+  return item.name.toLowerCase().includes(query) || item.path.toLowerCase().includes(query);
+}
+
+const allProjects = computed(() => groupDirsByProject(props.items));
+const normalizedQuery = computed(() => searchQuery.value.trim().toLowerCase());
+const filteredItems = computed(() => {
+  const query = normalizedQuery.value;
+  if (!query) return props.items;
+  return props.items.filter(item => matchesDir(item, query));
+});
+const projects = computed(() => {
+  const groups = allProjects.value;
+  const query = normalizedQuery.value;
+  if (!groups || !query) return groups;
+  return groups.flatMap(group => {
+    if (group.title.toLowerCase().includes(query)) return [group];
+    const dirs = group.dirs.filter(item => matchesDir(item, query));
+    return dirs.length ? [{ ...group, dirs }] : [];
+  });
+});
 const dirs = computed<DirItem[]>(() =>
-  projects.value ? projects.value[projectIndex.value]?.dirs ?? [] : props.items,
+  projects.value ? projects.value[projectIndex.value]?.dirs ?? [] : filteredItems.value,
 );
+const hasResults = computed(() => projects.value ? projects.value.length > 0 : filteredItems.value.length > 0);
+const resultsVisible = computed(() => !props.loading && !props.error && hasResults.value);
+const activeDescendant = computed(() => {
+  if (!resultsVisible.value) return undefined;
+  if (pane.value === 'projects') {
+    return projects.value?.[projectIndex.value] ? `dir-picker-project-${projectIndex.value}` : undefined;
+  }
+  return dirs.value[selectedIndex.value] ? `dir-picker-option-${selectedIndex.value}` : undefined;
+});
 
-async function focusCurrent(): Promise<void> {
+async function scrollCurrentItemIntoView(): Promise<void> {
   await nextTick();
   const id = pane.value === 'projects'
     ? `dir-picker-project-${projectIndex.value}`
     : `dir-picker-option-${selectedIndex.value}`;
-  overlayRef.value?.querySelector<HTMLElement>(`#${id}`)?.focus();
+  const item = overlayRef.value?.querySelector<HTMLElement>(`#${id}`);
+  if (item && typeof item.scrollIntoView === 'function') {
+    item.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+watch([projects, filteredItems], () => {
+  const lastProject = Math.max(0, (projects.value?.length ?? 1) - 1);
+  projectIndex.value = Math.min(Math.max(0, projectIndex.value), lastProject);
+  selectedIndex.value = Math.min(Math.max(0, selectedIndex.value), Math.max(0, dirs.value.length - 1));
+  void scrollCurrentItemIntoView();
+});
+
+function updateSearch(event: Event): void {
+  searchQuery.value = (event.target as HTMLInputElement).value;
+  projectIndex.value = 0;
+  selectedIndex.value = 0;
+  void scrollCurrentItemIntoView();
 }
 
 function reset(): void {
+  searchQuery.value = '';
   const groups = projects.value;
   if (!groups) {
     pane.value = 'dirs';
@@ -79,7 +127,7 @@ watch(() => props.visible, (v) => {
     reset();
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
     void focusIntoModal();
-    void focusCurrent();
+    void scrollCurrentItemIntoView();
   } else {
     modalStack.pop(MODAL_ID);
   }
@@ -88,18 +136,18 @@ watch(() => props.visible, (v) => {
 function setPane(next: Pane): void {
   if (!projects.value) return;
   pane.value = next;
-  void focusCurrent();
+  void scrollCurrentItemIntoView();
 }
 
 function moveFocus(delta: number): void {
   if (pane.value === 'projects') {
-    const last = (projects.value?.length ?? 1) - 1;
+    const last = Math.max(0, (projects.value?.length ?? 1) - 1);
     projectIndex.value = Math.min(last, Math.max(0, projectIndex.value + delta));
     selectedIndex.value = 0;
   } else {
-    selectedIndex.value = Math.min(dirs.value.length - 1, Math.max(0, selectedIndex.value + delta));
+    selectedIndex.value = Math.min(Math.max(0, dirs.value.length - 1), Math.max(0, selectedIndex.value + delta));
   }
-  void focusCurrent();
+  void scrollCurrentItemIntoView();
 }
 
 function cancel(): void {
@@ -163,15 +211,34 @@ defineExpose({ handleButton });
         <div class="modal-header">
           <h3 class="modal-title">{{ getCliDisplayName(cliType) }} — Select Directory</h3>
         </div>
+        <div class="modal-search">
+          <input
+            class="field-input focusable picker-search-input"
+            type="text"
+            aria-label="Search projects and directories"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-controls="resultsVisible ? (projects ? 'dirPickerProjects dirPickerList' : 'dirPickerList') : undefined"
+            :aria-expanded="resultsVisible"
+            :aria-activedescendant="activeDescendant"
+            data-modal-arrow-navigation
+            autocomplete="off"
+            :value="searchQuery"
+            @input="updateSearch"
+          />
+        </div>
         <div v-if="loading" class="dir-picker-status">Loading directories…</div>
         <div v-else-if="error" class="dir-picker-status dir-picker-status--error">{{ error }}</div>
+        <div v-else-if="!hasResults" class="dir-picker-status picker-empty-state" role="status">
+          No matching projects or directories
+        </div>
         <div v-else class="dir-picker-body">
           <div
             v-if="projects"
+            id="dirPickerProjects"
             class="dir-picker-projects"
             role="listbox"
             aria-label="Projects"
-            :aria-activedescendant="`dir-picker-project-${projectIndex}`"
           >
             <div
               v-for="(project, i) in projects"
@@ -198,7 +265,6 @@ defineExpose({ handleButton });
             id="dirPickerList"
             role="listbox"
             aria-label="Directories"
-            :aria-activedescendant="dirs[selectedIndex] ? `dir-picker-option-${selectedIndex}` : undefined"
           >
             <div
               v-for="(item, i) in dirs"

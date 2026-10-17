@@ -305,8 +305,8 @@ describe('session lifecycle shortcuts', () => {
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
     install();
 
-    document.body.innerHTML = '<input id="field" />';
-    const field = document.querySelector('#field') as HTMLInputElement;
+    document.body.innerHTML = '<textarea id="field"></textarea>';
+    const field = document.querySelector('#field') as HTMLTextAreaElement;
     field.focus();
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'N', code: 'KeyN', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
 

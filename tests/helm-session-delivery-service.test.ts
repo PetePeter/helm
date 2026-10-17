@@ -70,9 +70,9 @@ function makeDeps(opts?: { api?: boolean; helmPreambleForInterSession?: boolean;
 }
 
 function getSentText(ptyManager: ReturnType<typeof makeDeps>['ptyManager']): string {
-  // deliverText is called for each chunk; find the first non-empty chunk (the message body)
+  // Prompt chunks carry delivery options; find the first non-empty message body.
   const calls = ptyManager.deliverText.mock.calls;
-  const textCall = calls.find((c: any[]) => c[1] && c[2] === undefined);
+  const textCall = calls.find((c: any[]) => typeof c[1] === 'string' && c[1].length > 0);
   return textCall ? textCall[1] : '';
 }
 
@@ -108,6 +108,7 @@ describe('HelmSessionDeliveryService', () => {
       }
 
       expect(getSentText(ptyManager)).toBe('hello from Chat');
+      expect(ptyManager.deliverText).toHaveBeenCalledWith(receiver.id, 'hello from Chat', { writeIntent: 'input' });
       expect(origins).toEqual(['user']);
     });
 
@@ -117,6 +118,7 @@ describe('HelmSessionDeliveryService', () => {
       await service.sendDesktopChatTextToSession(receiver.id, 'hello API');
 
       expect(getSentText(ptyManager)).toBe('hello API');
+      expect(ptyManager.deliverText).toHaveBeenCalledWith(receiver.id, 'hello API', { writeIntent: 'input' });
     });
 
     it('refuses a frozen recipient before anything reaches its PTY', async () => {

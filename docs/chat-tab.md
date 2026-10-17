@@ -1,9 +1,10 @@
 # Desktop Chat pane
 
-The Chat pane (`Ctrl+Shift+J`) gives the desktop a journal-backed thread for
-each top-level session. Sessions are grouped by project on the left; the selected thread
-shows messages, timestamps, safe web links, attachment tiles and send status.
-Draft text and a chosen file are kept per session.
+The Chat pane (`Ctrl+Shift+J`) shows a journal-backed thread for the active
+top-level session. The main sidebar, `Ctrl+Tab`, and `Ctrl+<digit>` choose the
+session shown here. The thread shows messages, timestamps, safe web links,
+attachment tiles and send status. Draft text and a chosen file are kept per
+session.
 
 ```mermaid
 flowchart LR
@@ -26,10 +27,9 @@ flowchart LR
 ```
 
 `useChatStore` merges the initial history with the live feed by journal sequence.
-It keeps drafts, attachments and the in-memory read cursor per session. Unread
-counts include new agent messages; selecting a thread or receiving a live entry
-while it is selected advances its read cursor. Alerts and user echoes do not
-increment the count.
+It keeps drafts and attachments per session. Chat history is loaded for
+top-level sessions while the pane is open, and live entries are merged once by
+sequence.
 
 User turns carry an `originId`: `desktop:` renders as **Desktop**, `telegram:`
 as **Telegram**, and phone origins as **Phone**. Agent replies have no origin

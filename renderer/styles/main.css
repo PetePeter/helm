@@ -1699,6 +1699,11 @@ kbd {
   flex-shrink: 0;
 }
 
+.modal-search {
+  padding: var(--spacing-sm) var(--spacing-lg) 0;
+  flex-shrink: 0;
+}
+
 .modal-body {
   flex: 1;
   overflow-y: auto;

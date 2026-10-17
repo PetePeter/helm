@@ -181,7 +181,13 @@ vi.mock('../src/telegram/orchestrator.js', () => ({
     terminalMirror: {},
     dashboard: { start: vi.fn().mockResolvedValue(undefined), dispose: vi.fn() },
     // The relay is a ChatBridge now — handler setup registers it with the broker.
-    relayService: { provider: 'telegram', isAvailable: () => false, sendToSession: vi.fn(), setReminderDelivery: vi.fn() },
+    relayService: {
+      provider: 'telegram',
+      isAvailable: () => false,
+      sendToSession: vi.fn(),
+      setReminderDelivery: vi.fn(),
+      setIncomingMessageRecorder: vi.fn(),
+    },
     feedPtyOutput: vi.fn(),
     cleanup: vi.fn(),
   }),

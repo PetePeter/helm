@@ -27,6 +27,16 @@ function isEditableElementInsideModal(element: Element | null): element is HTMLE
   );
 }
 
+function searchInputAllowsNavigation(element: Element | null, key: string): boolean {
+  if (!(element instanceof HTMLInputElement) || !element.hasAttribute('data-modal-arrow-navigation')) return false;
+  if (key === 'ArrowUp' || key === 'ArrowDown') return true;
+  if (key === 'ArrowLeft') return element.selectionStart === 0 && element.selectionEnd === 0;
+  if (key === 'ArrowRight') {
+    return element.selectionStart === element.value.length && element.selectionEnd === element.value.length;
+  }
+  return false;
+}
+
 export function useModalKeyboardBridge() {
   /**
    * Returns true when the key was consumed. No-op unless a modal is open and
@@ -42,6 +52,7 @@ export function useModalKeyboardBridge() {
       modalNavigationSelectors: MODAL_NAVIGATION_SELECTOR,
     });
     const editableInModal = activeContext === 'editable-field' && isEditableElementInsideModal(active);
+    const searchNavigation = editableInModal && searchInputAllowsNavigation(active, e.key);
     const interceptKeys = stack.topInterceptKeys.value;
     const escProtection = useEscProtection();
 
@@ -52,16 +63,16 @@ export function useModalKeyboardBridge() {
     }
 
     if (e.key === 'ArrowUp') {
-      if (!interceptKeys.has('arrows') || editableInModal) return false;
+      if (!interceptKeys.has('arrows') || (editableInModal && !searchNavigation)) return false;
       stack.handleInput('DPadUp');
     } else if (e.key === 'ArrowDown') {
-      if (!interceptKeys.has('arrows') || editableInModal) return false;
+      if (!interceptKeys.has('arrows') || (editableInModal && !searchNavigation)) return false;
       stack.handleInput('DPadDown');
     } else if (e.key === 'ArrowLeft') {
-      if (!interceptKeys.has('arrows') || editableInModal) return false;
+      if (!interceptKeys.has('arrows') || (editableInModal && !searchNavigation)) return false;
       stack.handleInput('DPadLeft');
     } else if (e.key === 'ArrowRight') {
-      if (!interceptKeys.has('arrows') || editableInModal) return false;
+      if (!interceptKeys.has('arrows') || (editableInModal && !searchNavigation)) return false;
       stack.handleInput('DPadRight');
     } else if (e.key === 'Tab') {
       if (!interceptKeys.has('tab')) return false;

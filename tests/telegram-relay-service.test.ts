@@ -54,6 +54,14 @@ function makeRelay() {
   return { relay, bot, topicManager, sessionManager, ptyManager, configLoader };
 }
 
+function expectUserPromptDelivery(ptyManager: ReturnType<typeof makeRelay>['ptyManager'], text: unknown): void {
+  expect(ptyManager.deliverText).toHaveBeenCalledWith(
+    's1',
+    text,
+    expect.objectContaining({ writeIntent: 'input' }),
+  );
+}
+
 function tempAttachmentPath(fileName: string): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'helm-relay-'));
   const filePath = path.join(dir, fileName);
@@ -109,8 +117,8 @@ describe('TelegramRelayService', () => {
 
     expect(consumed).toBe(true);
     // Now routed through deliverPromptSequenceToSession which uses deliverText for text content
-    expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('[HELM_TELEGRAM from:@testuser'));
-    expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('Respond via telegram_chat MCP tool.'));
+    expectUserPromptDelivery(ptyManager, expect.stringContaining('[HELM_TELEGRAM from:@testuser'));
+    expectUserPromptDelivery(ptyManager, expect.stringContaining('Respond via telegram_chat MCP tool.'));
   });
 
   it('records a successfully delivered Telegram user turn with its source id', async () => {
@@ -552,10 +560,10 @@ describe('TelegramRelayService', () => {
       await vi.runAllTimersAsync();
 
       expect(bot.downloadFile).toHaveBeenCalledWith('large', expect.stringContaining('telegram-attachments'), 'photo_77.jpg');
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('[HELM_TELEGRAM_ATTACHMENT from:@testuser'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('type: photo'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining(`file_path: ${filePath}`));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('Respond via telegram_chat MCP tool.'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('[HELM_TELEGRAM_ATTACHMENT from:@testuser'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('type: photo'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining(`file_path: ${filePath}`));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('Respond via telegram_chat MCP tool.'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -581,9 +589,9 @@ describe('TelegramRelayService', () => {
       await vi.runAllTimersAsync();
 
       expect(bot.downloadFile).toHaveBeenCalledWith('doc1', expect.stringContaining('telegram-attachments'), 'report.pdf');
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('type: document'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('file_name: report.pdf'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('mime_type: application/pdf'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('type: document'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('file_name: report.pdf'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('mime_type: application/pdf'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -608,8 +616,8 @@ describe('TelegramRelayService', () => {
       expect(consumed).toBe(true);
       await vi.runAllTimersAsync();
 
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('type: video'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('file_name: clip.mp4'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('type: video'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('file_name: clip.mp4'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -633,8 +641,8 @@ describe('TelegramRelayService', () => {
       expect(consumed).toBe(true);
       await vi.runAllTimersAsync();
 
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('type: voice'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('mime_type: audio/ogg'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('type: voice'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('mime_type: audio/ogg'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -676,8 +684,8 @@ describe('TelegramRelayService', () => {
       await vi.runAllTimersAsync();
 
       expect(transcriber.transcribe).toHaveBeenCalledWith(filePath, 'audio/ogg');
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining(`transcription_path: ${transcriptPath}`));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('transcription_text: ship the tiny audio bridge'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining(`transcription_path: ${transcriptPath}`));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('transcription_text: ship the tiny audio bridge'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -698,7 +706,7 @@ describe('TelegramRelayService', () => {
       expect(consumed).toBe(true);
       await vi.runAllTimersAsync();
 
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('caption: Here is a screenshot'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('caption: Here is a screenshot'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -739,7 +747,7 @@ describe('TelegramRelayService', () => {
 
       expect(consumed).toBe(true);
       await vi.runAllTimersAsync();
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('[HELM_TELEGRAM_ATTACHMENT'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('[HELM_TELEGRAM_ATTACHMENT'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 
@@ -826,9 +834,9 @@ describe('TelegramRelayService', () => {
       });
 
       expect(consumed).toBe(true);
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('[HELM_TELEGRAM_REACTION from:@testuser'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('emoji: 👍'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('message_id: 77'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('[HELM_TELEGRAM_REACTION from:@testuser'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('emoji: 👍'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('message_id: 77'));
     });
 
     it('reaction with old_reaction shows removed emoji in envelope', async () => {
@@ -844,8 +852,8 @@ describe('TelegramRelayService', () => {
       });
 
       expect(consumed).toBe(true);
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('(removed: ❤️)'));
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('emoji: 👍'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('(removed: ❤️)'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('emoji: 👍'));
     });
 
     // Telegram reactions are not all emoji: custom_emoji and paid entries carry
@@ -917,7 +925,7 @@ describe('TelegramRelayService', () => {
       } as any);
 
       expect(sessionManager.updateSession).toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('HELM_TELEGRAM_MODE'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('HELM_TELEGRAM_MODE'));
     });
 
     it('does NOT inject instructions on subsequent Telegram messages', async () => {
@@ -937,7 +945,7 @@ describe('TelegramRelayService', () => {
 
       // Should not call updateSession again
       expect(sessionManager.updateSession).not.toHaveBeenCalledWith('s1', { interactionChannel: 'telegram' });
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.not.stringContaining('HELM_TELEGRAM_MODE'));
+      expectUserPromptDelivery(ptyManager, expect.not.stringContaining('HELM_TELEGRAM_MODE'));
     });
 
     it('skips the first-contact mode block when telegramModeInstructions resolves to hook — the injector owns it', async () => {
@@ -987,7 +995,7 @@ describe('TelegramRelayService', () => {
       await vi.runAllTimersAsync();
       vi.useRealTimers();
 
-      expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('HELM_TELEGRAM_MODE'));
+      expectUserPromptDelivery(ptyManager, expect.stringContaining('HELM_TELEGRAM_MODE'));
       rmSync(path.dirname(filePath), { recursive: true, force: true });
     });
 

@@ -6,7 +6,7 @@
  * (clamped, not wrapping), A selects, B cancels.
  * Keyboard routed via App.vue bridge → useModalStack → handleButton.
  */
-import { computed, ref, watch, nextTick } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useModalAutofocus } from '../../composables/useModalAutofocus.js';
 import { toDirection, getCliDisplayName } from '../../utils.js';
@@ -30,30 +30,48 @@ const emit = defineEmits<{
 }>();
 
 const selectedIndex = ref(0);
+const searchQuery = ref('');
 const quickSpawn = useQuickSpawnStore();
 const availableTools = computed(() => props.machineAware
   ? quickSpawn.tools
   : props.cliTypes.map(cliType => ({ cliType, displayName: getCliDisplayName(cliType), machineId: '' })));
+const filteredTools = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return availableTools.value;
+  return availableTools.value.filter(tool =>
+    tool.displayName.toLowerCase().includes(query) || tool.cliType.toLowerCase().includes(query),
+  );
+});
+const optionsVisible = computed(() => !props.machineAware || (!quickSpawn.loading && !quickSpawn.error));
 const modalStack = useModalStack();
 const overlayRef = ref<HTMLElement | null>(null);
-const { focusIntoModal } = useModalAutofocus(overlayRef, '.dir-picker-item--focused');
+const { focusIntoModal } = useModalAutofocus(overlayRef, '.picker-search-input');
 
-async function focusCurrentItem(): Promise<void> {
+async function scrollCurrentItemIntoView(): Promise<void> {
   await nextTick();
-  const target = overlayRef.value?.querySelector<HTMLElement>(`#quick-spawn-option-${selectedIndex.value}`);
-  target?.focus();
+  const item = overlayRef.value?.querySelector<HTMLElement>(`#quick-spawn-option-${selectedIndex.value}`);
+  if (item && typeof item.scrollIntoView === 'function') {
+    item.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function updateSearch(event: Event): void {
+  searchQuery.value = (event.target as HTMLInputElement).value;
+  selectedIndex.value = 0;
+  void scrollCurrentItemIntoView();
 }
 
 watch(() => props.visible, (v) => {
   if (v) {
+    searchQuery.value = '';
     // Pre-select matching CLI type if given
     const preIdx = props.preselectedCliType
-      ? availableTools.value.findIndex(tool => tool.cliType === props.preselectedCliType)
+      ? filteredTools.value.findIndex(tool => tool.cliType === props.preselectedCliType)
       : -1;
     selectedIndex.value = preIdx >= 0 ? preIdx : 0;
     modalStack.push({ id: MODAL_ID, handler: handleButton, interceptKeys: SELECTION_KEYS });
     void focusIntoModal();
-    void focusCurrentItem();
+    void scrollCurrentItemIntoView();
   } else {
     modalStack.pop(MODAL_ID);
   }
@@ -62,10 +80,10 @@ watch(() => props.visible, (v) => {
 watch(() => [props.machineAware, quickSpawn.machineId, availableTools.value], () => {
   if (!props.visible) return;
   const preIdx = props.preselectedCliType
-    ? availableTools.value.findIndex(tool => tool.cliType === props.preselectedCliType)
+    ? filteredTools.value.findIndex(tool => tool.cliType === props.preselectedCliType)
     : -1;
-  selectedIndex.value = preIdx >= 0 ? preIdx : 0;
-  void focusCurrentItem();
+  selectedIndex.value = preIdx >= 0 ? preIdx : Math.min(selectedIndex.value, Math.max(0, filteredTools.value.length - 1));
+  void scrollCurrentItemIntoView();
 });
 
 function handleButton(button: string): boolean {
@@ -80,12 +98,12 @@ function handleButton(button: string): boolean {
   }
   if (dir === 'up' || button === 'ShiftTab') {
     selectedIndex.value = Math.max(0, selectedIndex.value - 1);
-    void focusCurrentItem();
+    void scrollCurrentItemIntoView();
     return true;
   }
   if (dir === 'down' || button === 'Tab') {
-    selectedIndex.value = Math.min(availableTools.value.length - 1, selectedIndex.value + 1);
-    void focusCurrentItem();
+    selectedIndex.value = Math.min(Math.max(0, filteredTools.value.length - 1), selectedIndex.value + 1);
+    void scrollCurrentItemIntoView();
     return true;
   }
   if (button === 'A') {
@@ -98,7 +116,7 @@ function handleButton(button: string): boolean {
     return true;
   }
   const pos = jumpButtonToPosition(button);
-  if (pos !== null && pos < availableTools.value.length) {
+  if (pos !== null && pos < filteredTools.value.length) {
     selectItem(pos);
     return true;
   }
@@ -106,7 +124,7 @@ function handleButton(button: string): boolean {
 }
 
 function selectItem(index: number): void {
-  const tool = availableTools.value[index];
+  const tool = filteredTools.value[index];
   if (tool) {
     if (props.machineAware) emit('select', tool.cliType, tool.machineId);
     else emit('select', tool.cliType);
@@ -145,33 +163,52 @@ defineExpose({ handleButton });
           :error="machineAware ? quickSpawn.error : ''"
           @select="quickSpawn.selectMachine"
         />
-        <div
-          v-if="!machineAware || (!quickSpawn.loading && !quickSpawn.error)"
-          class="dir-picker-list"
-          id="quickSpawnList"
-          role="listbox"
-          aria-label="CLI types"
-          :aria-activedescendant="availableTools[selectedIndex] ? `quick-spawn-option-${selectedIndex}` : undefined"
-        >
-          <div
-            v-for="(tool, i) in availableTools"
-            :id="`quick-spawn-option-${i}`"
-            :key="`${tool.machineId}:${tool.cliType}`"
-            class="dir-picker-item focusable"
-            :class="{ 'dir-picker-item--focused': i === selectedIndex }"
-            tabindex="-1"
-            role="option"
-            :aria-selected="i === selectedIndex"
-            @keydown="suppressActivationKey"
-            @click="selectItem(i)"
-          >
-            <span v-if="jumpKeyLabel(i) != null" class="jump-key">{{ jumpKeyLabel(i) }}</span>
-            <span class="dir-picker-item__body">
-              <span class="dir-picker-item__name">{{ tool.displayName }}</span>
-              
-            </span>
-          </div>
+        <div class="modal-search">
+          <input
+            class="field-input focusable picker-search-input"
+            type="text"
+            aria-label="Search CLI types"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-controls="optionsVisible && filteredTools.length ? 'quickSpawnList' : undefined"
+            :aria-expanded="optionsVisible && filteredTools.length > 0"
+            :aria-activedescendant="optionsVisible && filteredTools[selectedIndex] ? `quick-spawn-option-${selectedIndex}` : undefined"
+            data-modal-arrow-navigation
+            autocomplete="off"
+            :value="searchQuery"
+            @input="updateSearch"
+          />
         </div>
+        <template v-if="optionsVisible">
+          <div
+            v-if="filteredTools.length"
+            class="dir-picker-list"
+            id="quickSpawnList"
+            role="listbox"
+            aria-label="CLI types"
+          >
+            <div
+              v-for="(tool, i) in filteredTools"
+              :id="`quick-spawn-option-${i}`"
+              :key="`${tool.machineId}:${tool.cliType}`"
+              class="dir-picker-item focusable"
+              :class="{ 'dir-picker-item--focused': i === selectedIndex }"
+              tabindex="-1"
+              role="option"
+              :aria-selected="i === selectedIndex"
+              @keydown="suppressActivationKey"
+              @click="selectItem(i)"
+            >
+              <span v-if="jumpKeyLabel(i) != null" class="jump-key">{{ jumpKeyLabel(i) }}</span>
+              <span class="dir-picker-item__body">
+                <span class="dir-picker-item__name">{{ tool.displayName }}</span>
+              </span>
+            </div>
+          </div>
+          <div v-else class="dir-picker-status picker-empty-state" role="status">
+            No matching CLI types
+          </div>
+        </template>
         <div class="modal-footer">
           <button class="btn" tabindex="-1" @keydown="suppressActivationKey" @click="emit('cancel'); emit('update:visible', false)">Cancel</button>
         </div>

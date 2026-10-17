@@ -113,6 +113,24 @@ describe('number accelerators', () => {
     expect(fireChipAction.mock.calls.map(call => call[0])).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
+  it('alt: chip action works while an editable textarea has focus', () => {
+    const textarea = document.createElement('textarea');
+    document.body.appendChild(textarea);
+    textarea.focus();
+    const event = new KeyboardEvent('keydown', {
+      key: '1',
+      code: 'Digit1',
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    textarea.dispatchEvent(event);
+
+    expect(fireChipAction).toHaveBeenCalledWith(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('alt: digit 0 emits slot 0', () => {
     press({ key: '0', code: 'Digit0', altKey: true });
 

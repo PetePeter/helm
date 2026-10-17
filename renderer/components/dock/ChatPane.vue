@@ -16,40 +16,11 @@ const chat = useChatStore();
 const sessionIds = computed(() => appStore.state.sessions
   .filter(session => !session.subagentOf)
   .map(session => session.id));
-const visibleSessions = computed(() => appStore.state.sessions.filter(session => !session.subagentOf));
-const selectedSession = computed(() => visibleSessions.value.find(session => session.id === chat.selectedSessionId));
+const selectedSession = computed(() => appStore.state.sessions.find(session =>
+  session.id === appStore.state.activeSessionId && !session.subagentOf,
+));
 const messages = computed(() => selectedSession.value ? chat.messagesFor(selectedSession.value.id) : []);
 const thread = ref<HTMLElement | null>(null);
-const search = ref('');
-
-function projectLabel(session: Session): string {
-  if (session.role === 'operator') return 'Helm';
-  const project = appStore.state.projects.find(item =>
-    item.id === session.projectId || item.canonicalPath === session.projectPath || item.canonicalPath === session.workingDir,
-  );
-  if (project) return project.name;
-  const path = session.projectPath || session.workingDir;
-  return path?.split(/[\\/]/).filter(Boolean).at(-1) || 'Other sessions';
-}
-
-const groups = computed(() => {
-  const query = search.value.trim().toLocaleLowerCase();
-  const byProject = new Map<string, typeof visibleSessions.value>();
-  for (const session of visibleSessions.value) {
-    const mission = session.mission?.text ?? '';
-    if (query && !`${session.name} ${session.cliType} ${session.workingDir ?? ''} ${mission}`.toLocaleLowerCase().includes(query)) continue;
-    const label = projectLabel(session);
-    const entries = byProject.get(label) ?? [];
-    entries.push(session);
-    byProject.set(label, entries);
-  }
-  return [...byProject.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([label, sessions]) => ({
-      label,
-      sessions: [...sessions].sort((a, b) => (b.lastOutputAt ?? b.createdAt ?? 0) - (a.lastOutputAt ?? a.createdAt ?? 0)),
-    }));
-});
 
 const draft = computed({
   get: () => selectedSession.value ? chat.draftFor(selectedSession.value.id) : '',
@@ -85,10 +56,6 @@ function activity(sessionId: string): string {
 
 function sessionState(session: Session): string {
   return appStore.state.sessionStates.get(session.id) ?? session.aiagentState ?? session.state ?? 'idle';
-}
-
-function selectSession(sessionId: string): void {
-  chat.selectSession(sessionId);
 }
 
 function time(at: number): string {
@@ -132,17 +99,11 @@ function retry(message: ChatThreadMessage): void {
 
 watch(sessionIds, ids => {
   void chat.loadSessions(ids);
-  if (chat.selectedSessionId && !ids.includes(chat.selectedSessionId)) {
-    const replacement = appStore.state.activeSessionId && ids.includes(appStore.state.activeSessionId)
-      ? appStore.state.activeSessionId
-      : ids[0];
-    if (replacement) selectSession(replacement);
-  }
 });
 
-onMounted(() => { void chat.start(sessionIds.value, appStore.state.activeSessionId); });
+onMounted(() => { void chat.start(sessionIds.value); });
 onBeforeUnmount(() => chat.stop());
-watch(() => [chat.selectedSessionId, messages.value.length], async () => {
+watch(() => [appStore.state.activeSessionId, messages.value.length], async () => {
   await nextTick();
   thread.value?.scrollTo({ top: thread.value.scrollHeight });
 });
@@ -150,34 +111,6 @@ watch(() => [chat.selectedSessionId, messages.value.length], async () => {
 
 <template>
   <section class="chat-pane" aria-label="Chat">
-    <aside class="chat-pane__sessions" aria-label="Sessions">
-      <label class="chat-pane__search">
-        <span aria-hidden="true">⌕</span>
-        <input v-model="search" type="search" placeholder="Filter sessions" aria-label="Filter sessions" />
-      </label>
-      <div v-if="!visibleSessions.length" class="chat-pane__list-empty">No sessions</div>
-      <div v-else-if="!groups.length" class="chat-pane__list-empty">No matching sessions</div>
-      <section v-for="group in groups" :key="group.label" class="chat-pane__group">
-        <h2>{{ group.label }}</h2>
-        <button
-          v-for="session in group.sessions"
-          :key="session.id"
-          class="chat-pane__session focusable"
-          :class="{ 'chat-pane__session--selected': chat.selectedSessionId === session.id }"
-          type="button"
-          :aria-current="chat.selectedSessionId === session.id ? 'true' : undefined"
-          @click="selectSession(session.id)"
-        >
-          <span class="chat-pane__activity" :style="{ backgroundColor: getActivityColor(activity(session.id)) }" :title="activity(session.id)" />
-          <span class="chat-pane__session-copy">
-            <span class="chat-pane__session-name">{{ session.role === 'operator' ? 'Helm (operator)' : session.name }}</span>
-            <span class="chat-pane__mission">{{ session.mission?.text || 'No mission set' }}</span>
-          </span>
-          <span v-if="chat.unreadCount(session.id)" class="chat-pane__unread">{{ chat.unreadCount(session.id) }}</span>
-        </button>
-      </section>
-    </aside>
-
     <div v-if="selectedSession" class="chat-pane__conversation">
       <header class="chat-pane__context">
         <div class="chat-pane__context-main">
@@ -251,21 +184,22 @@ watch(() => [chat.selectedSessionId, messages.value.length], async () => {
         <button type="button" aria-label="Remove attachment" @click="chat.setAttachment(selectedSession.id, null)">×</button>
       </div>
       <form class="chat-pane__composer" @submit.prevent="send">
-        <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
         <textarea v-model="draft" class="chat-pane__input" rows="2" :placeholder="`Message ${selectedSession.name}…`" @keydown="onComposerKey" />
-        <button class="btn btn--sm btn--primary focusable" type="submit" :disabled="!canSend">Send</button>
+        <div class="chat-pane__composer-actions">
+          <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
+          <button class="btn btn--sm btn--primary focusable" type="submit" :disabled="!canSend">Send</button>
+        </div>
       </form>
       <div class="chat-pane__hint">Enter to send · Shift+Enter for a new line · Draft is kept per session</div>
     </div>
 
-    <div v-else class="chat-pane__no-selection">Select a session to view its chat.</div>
+    <div v-else class="chat-pane__empty">Select a session from the sidebar to view its chat.</div>
   </section>
 </template>
 
 <style scoped>
 .chat-pane {
   display: grid;
-  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -274,49 +208,6 @@ watch(() => [chat.selectedSessionId, messages.value.length], async () => {
   background: var(--bg-primary);
   font-size: var(--font-size-sm);
 }
-
-.chat-pane__sessions {
-  min-width: 0;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--spacing-sm);
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border);
-}
-
-.chat-pane__search {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  margin: 0 0 var(--spacing-sm);
-  padding: 0 var(--spacing-sm);
-  color: var(--text-dim);
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.chat-pane__search input {
-  width: 100%;
-  min-width: 0;
-  padding: var(--spacing-sm) 0;
-  color: var(--text-primary);
-  background: transparent;
-  border: 0;
-  outline: none;
-}
-
-.chat-pane__group + .chat-pane__group { margin-top: var(--spacing-md); }
-.chat-pane__group h2 { margin: var(--spacing-sm) var(--spacing-sm) var(--spacing-xs); color: var(--accent); font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.chat-pane__session { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: var(--spacing-sm); width: 100%; padding: var(--spacing-sm); color: inherit; text-align: left; background: transparent; border: 0; border-left: 3px solid transparent; border-radius: var(--radius-sm); cursor: pointer; }
-.chat-pane__session:hover { background: var(--bg-tertiary); }
-.chat-pane__session--selected { background: var(--bg-tertiary); border-left-color: var(--accent); }
-.chat-pane__activity, .chat-pane__state i { width: 8px; height: 8px; border-radius: 50%; }
-.chat-pane__session-copy { display: grid; min-width: 0; gap: 2px; }
-.chat-pane__session-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.chat-pane__mission { overflow: hidden; color: var(--text-dim); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.chat-pane__unread { min-width: 18px; padding: 1px 5px; color: var(--bg-primary); font-size: 10px; font-weight: 700; text-align: center; background: var(--accent); border-radius: 10px; }
-.chat-pane__list-empty { padding: var(--spacing-md); color: var(--text-dim); text-align: center; }
 
 .chat-pane__conversation { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto auto; min-width: 0; min-height: 0; }
 .chat-pane__context { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-md); padding: var(--spacing-sm) var(--spacing-md); background: var(--bg-secondary); border-bottom: 1px solid var(--border); }
@@ -332,8 +223,7 @@ watch(() => [chat.selectedSessionId, messages.value.length], async () => {
 
 .chat-pane__thread { display: flex; min-height: 0; flex-direction: column; gap: var(--spacing-sm); overflow: auto; padding: var(--spacing-md); }
 .chat-pane__history-error { padding: var(--spacing-sm) var(--spacing-md); color: var(--danger); background: var(--bg-secondary); border-radius: var(--radius-sm); }
-.chat-pane__empty, .chat-pane__no-selection { display: grid; place-items: center; color: var(--text-dim); }
-.chat-pane__no-selection { grid-column: 2; }
+.chat-pane__empty { display: grid; place-items: center; color: var(--text-dim); }
 .chat-pane__message { max-width: min(76%, 860px); padding: var(--spacing-sm) var(--spacing-md); overflow-wrap: anywhere; line-height: 1.4; white-space: pre-wrap; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; border-bottom-left-radius: 3px; }
 .chat-pane__message--user { align-self: flex-end; background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); border-bottom-right-radius: 3px; border-bottom-left-radius: 12px; }
 .chat-pane__message--failed { border-color: var(--danger); }
@@ -354,11 +244,11 @@ watch(() => [chat.selectedSessionId, messages.value.length], async () => {
 .chat-pane__selected-file { display: flex; align-items: center; justify-content: space-between; padding: 4px var(--spacing-md); color: var(--text-secondary); background: var(--bg-secondary); }
 .chat-pane__selected-file button { color: var(--text-secondary); background: transparent; border: 0; cursor: pointer; }
 .chat-pane__composer { display: flex; align-items: flex-end; gap: var(--spacing-sm); padding: var(--spacing-sm); border-top: 1px solid var(--border); }
+.chat-pane__composer-actions { display: flex; flex-direction: column; gap: var(--spacing-xs); }
 .chat-pane__input { flex: 1; min-width: 0; min-height: 40px; max-height: 220px; padding: var(--spacing-sm) var(--spacing-md); color: var(--text-primary); font: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
 .chat-pane__hint { padding: 0 var(--spacing-md) var(--spacing-xs); color: var(--text-dim); font-size: 10px; }
 
 @media (max-width: 680px) {
-  .chat-pane { grid-template-columns: minmax(145px, 36%) minmax(0, 1fr); }
   .chat-pane__context { align-items: flex-start; flex-direction: column; gap: var(--spacing-xs); }
   .chat-pane__context-details { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .chat-pane__message { max-width: 92%; }

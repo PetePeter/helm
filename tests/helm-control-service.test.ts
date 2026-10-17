@@ -135,6 +135,8 @@ describe('HelmControlService.getSessionInfo context size', () => {
     try {
       expect(service.getSessionInfo({ sessionId: 'caller' }).context).toEqual({
         known: true,
+        level: 'ok',
+        limits: { amber: 150_000, red: 180_000 },
         tokens: 80_000,
         window: 200_000,
         percent: 40,

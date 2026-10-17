@@ -46,6 +46,7 @@ export function createNumberKeyHandlers(deps: NumberKeyDeps): KeyHandler[] {
     {
       id: 'chip-actions',
       scope: 'global',
+      allowInEditable: true,
       handle: (ctx) => {
         const slot = slotFor(ctx, 'alt');
         return slot === null ? false : deps.fireChipAction(slot);

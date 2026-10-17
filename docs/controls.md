@@ -103,6 +103,8 @@ it holds modal scope, which by design gates the terminal handlers out entirely
 
 When the spawn dirs carry project metadata, the picker is master/detail: projects on the left, the focused project's dirs on the right (Main first, ungrouped dirs under a trailing **Other**). Without project metadata it is a single dir list. Grouping lives in `renderer/utils/dir-picker-model.ts` so a future one-step spawn sheet can reuse it.
 
+The CLI and directory picker modals each have a search field. Search matches CLI names/ids, project names, directory names and full paths without regard to case. A project-name match keeps that project's directories; a directory/path match narrows the visible rows. The search field gets focus when the modal opens, and keyboard arrows or the gamepad navigate the filtered results. The same search behavior applies when scheduled-task pickers reuse these modals. No matches show an empty state.
+
 ```mermaid
 stateDiagram-v2
     [*] --> Projects: no preselected dir

@@ -1,6 +1,6 @@
-/** Pinia state for the desktop all-session chat pane. */
+/** Pinia state for the desktop active-session chat pane. */
 import { defineStore } from 'pinia';
-import { reactive, ref } from 'vue';
+import { reactive } from 'vue';
 import type { ChatJournalEntry } from '../../src/mobile/mobile-chat-journal.js';
 import type { ChatRecordInput } from '../../src/mobile/mobile-envelope.js';
 import { chatClient } from '../ipc/clients.js';
@@ -26,12 +26,10 @@ function errorMessage(error: unknown): string {
 }
 
 export const useChatStore = defineStore('chat', () => {
-  const selectedSessionId = ref<string | null>(null);
   const entriesBySession = reactive(new Map<string, ChatJournalEntry[]>());
   const localTurnsBySession = reactive(new Map<string, ChatThreadMessage[]>());
   const draftsBySession = reactive(new Map<string, string>());
   const attachmentsBySession = reactive(new Map<string, string>());
-  const readSeqBySession = reactive(new Map<string, number>());
   const historyErrors = reactive(new Map<string, string>());
 
   const loadedSessions = new Set<string>();
@@ -41,11 +39,6 @@ export const useChatStore = defineStore('chat', () => {
 
   function journalEntriesFor(sessionId: string): ChatJournalEntry[] {
     return entriesBySession.get(sessionId) ?? [];
-  }
-
-  function markRead(sessionId: string): void {
-    const latest = journalEntriesFor(sessionId).reduce((seq, entry) => Math.max(seq, entry.seq), 0);
-    readSeqBySession.set(sessionId, Math.max(readSeqBySession.get(sessionId) ?? 0, latest));
   }
 
   function addEntry(entry: ChatJournalEntry): void {
@@ -60,7 +53,6 @@ export const useChatStore = defineStore('chat', () => {
       const localTurns = localTurnsBySession.get(sessionId) ?? [];
       localTurnsBySession.set(sessionId, localTurns.filter(turn => turn.record.originId !== originId));
     }
-    if (selectedSessionId.value === sessionId) markRead(sessionId);
   }
 
   async function loadSession(sessionId: string): Promise<void> {
@@ -74,7 +66,6 @@ export const useChatStore = defineStore('chat', () => {
         for (const entry of entries) addEntry(entry);
         historyErrors.delete(sessionId);
         if (loadingGeneration === generation) loadedSessions.add(sessionId);
-        if (selectedSessionId.value === sessionId) markRead(sessionId);
       })
       .catch(error => historyErrors.set(sessionId, errorMessage(error)))
       .finally(() => {
@@ -88,21 +79,10 @@ export const useChatStore = defineStore('chat', () => {
     await Promise.all([...new Set(sessionIds)].map(loadSession));
   }
 
-  function selectSession(sessionId: string): void {
-    selectedSessionId.value = sessionId;
-    markRead(sessionId);
-  }
-
-  async function start(sessionIds: readonly string[], initialSessionId?: string | null): Promise<void> {
+  async function start(sessionIds: readonly string[]): Promise<void> {
     // Subscribe before history so a reply between the request and response is
     // merged once by journal sequence rather than lost or shown twice.
     unsubscribe ??= chatClient.onChatEntry(addEntry);
-    if (selectedSessionId.value === null) {
-      const firstSessionId = initialSessionId && sessionIds.includes(initialSessionId)
-        ? initialSessionId
-        : sessionIds[0];
-      if (firstSessionId) selectSession(firstSessionId);
-    }
     await loadSessions(sessionIds);
   }
 
@@ -116,12 +96,6 @@ export const useChatStore = defineStore('chat', () => {
 
   function historyErrorFor(sessionId: string): string | undefined {
     return historyErrors.get(sessionId);
-  }
-
-  function unreadCount(sessionId: string): number {
-    const readSeq = readSeqBySession.get(sessionId) ?? 0;
-    return journalEntriesFor(sessionId).filter(({ seq, record }) =>
-      seq > readSeq && record.kind === undefined && record.originId === undefined).length;
   }
 
   function messagesFor(sessionId: string): ChatThreadMessage[] {
@@ -212,12 +186,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   return {
-    selectedSessionId,
     start,
     stop,
     loadSessions,
-    selectSession,
-    unreadCount,
     historyErrorFor,
     journalEntriesFor,
     messagesFor,
