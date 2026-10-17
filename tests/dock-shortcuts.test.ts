@@ -4,6 +4,7 @@ import {
   dockPaneRegistry,
   DOCK_PANES,
   PANE_DRAFT,
+  PANE_TODOS,
   PANE_MEMORIES,
   PANE_TERMINAL,
   type DockPaneDescriptor,
@@ -26,6 +27,8 @@ describe('workspace shortcuts', () => {
 
   it('opens the draft pane on Ctrl+Shift+D', () => {
     expect(getDockShortcutPane(chord('D'))).toBe(PANE_DRAFT);
+    expect(getDockShortcutPane(chord('K'))).toBe(PANE_TODOS);
+    expect(paneShortcutHint(PANE_TODOS)).toBe('Ctrl+Shift+K');
     expect(paneShortcutHint(PANE_DRAFT)).toBe('Ctrl+Shift+D');
   });
 

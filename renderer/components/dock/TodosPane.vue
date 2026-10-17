@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
-import PanelHeader from '../common/PanelHeader.vue';
 import { useAppStore } from '../../stores/app.js';
 import { useTodosStore } from '../../stores/todos.js';
 
@@ -22,7 +21,6 @@ watch(sessionId, async id => {
 
 <template>
   <section class="todos-pane" aria-label="Session todos">
-    <PanelHeader title="Todos" icon="☑" :subtitle="appStore.activeSession?.name ?? 'No session selected'" />
     <EmptyState v-if="!sessionId" title="No session selected" hint="Select a session to view its todos." icon="☑" />
     <div v-else class="todos-pane__scroll" aria-live="polite">
       <EmptyState v-if="loading && !todos.length" title="Loading todos" loading />

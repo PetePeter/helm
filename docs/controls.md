@@ -63,7 +63,7 @@ The same flag the `session_set_locked` MCP tool writes.
 | F5 | Mapped to Y button |
 | Ctrl+V | Focused terminal: managed paste to PTY stdin (bracketed-paste framing, chunking). Focused Artifacts pane: creates a new artifact from the clipboard |
 | Ctrl+G | Jump to the active session's Draft pane, caret in the pad. Works from anywhere, including while typing in a field |
-| Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, J Chat, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft. Tabs show a shortcut chip and tooltip. Shared keys cycle matching panes in registry order; focus outside the set starts at the first |
+| Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, J Chat, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft, K todos. Tabs show a shortcut chip and tooltip. Shared keys cycle matching panes in registry order; focus outside the set starts at the first |
 | Ctrl+1-9, Ctrl+0 | Jump directly to the Nth session in sidebar order (badge: `^n`) |
 | Alt+1-9, Alt+0 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`; 0 is slot 10) |
 | Ctrl+Shift+Space | Talk to Helm: press to start, press again to send (a toggle — the router is keydown-only and key repeat makes a keyboard hold unreliable). Global scope, so a modal blocks it like the other workspace keys |
