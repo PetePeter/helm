@@ -117,7 +117,7 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Prompt',
     description: 'The open items in this session checklist. Value: {{items}}.',
     defaultTemplate:
-      '[HELM_TODOS]\nOpen items:\n{{items}}\nKeep this list and your session manifesto current. Use session_todo_add for new work and session_todo_done when an item is complete; update the mission with session_mission_set when the direction changes.',
+      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. Keep your session manifesto current and update the mission with session_mission_set when the direction changes.',
   },
   {
     id: 'suggestionPointer',
