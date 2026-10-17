@@ -89,7 +89,6 @@ const props = defineProps<{
   flashEntries?: Map<string, FlashEntry>;
   getCliDisplayName: (cliType: string) => string;
   resolveGroupDisplayName: (dirPath: string, directories: SessionListDirectory[], projects?: SessionListProject[]) => string;
-  isSessionHiddenFromOverview: (session: SessionListGroupSession) => boolean;
   sessionElapsedText: (sessionId: string) => string;
   userPromptElapsedText?: (sessionId: string) => string;
   sessionShortcutMap: Map<string, number>;
@@ -109,7 +108,6 @@ const emit = defineEmits<{
   groupAddSession: [groupId: string, sessionId: string];
   groupRemoveSession: [sessionId: string];
   toggleGroupCollapse: [dirPath: string];
-  showOverview: [dirPath: string];
   sessionClick: [sessionId: string];
   commitRename: [sessionId: string, newName: string];
   cancelRename: [];
@@ -270,7 +268,6 @@ function onNewGroupDrop(e: DragEvent): void {
             :is-focused="isNavItemFocused(activeFocus, focusedNavItem, 'group-header', group.dirPath)"
             :flash-entry="group.collapsed ? groupFlashEntry(group.sessions) : null"
             @toggle-collapse="emit('toggleGroupCollapse', $event)"
-            @show-overview="emit('showOverview', $event)"
             @rename="emit('groupRename', $event)"
             @close-group="emit('groupClose', $event)"
             @add-session="(gid, sid) => emit('groupAddSession', gid, sid)"
@@ -312,7 +309,6 @@ function onNewGroupDrop(e: DragEvent): void {
               :is-focused="isNavItemFocused(activeFocus, focusedNavItem, 'session-card', session.id)"
               :focus-column="focusColumn"
               :is-editing="editingSessionId === session.id"
-              :is-hidden-from-overview="isSessionHiddenFromOverview(session)"
               :scheduled-at="pendingSchedules.get(session.id) ?? null"
               :scheduled-task-indicator-enabled="usesScheduledTaskIndicators"
               :is-snapped-out="snappedOutSessions.has(session.id)"

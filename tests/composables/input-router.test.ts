@@ -9,9 +9,6 @@ const mocks = vi.hoisted(() => ({
   state: {
     sessions: [] as Array<{ id: string; cliType: string }>,
   },
-  sessionsState: {
-    overviewFocusIndex: 0,
-  },
   terminalManager: {
     getActiveSessionId: vi.fn(),
   },
@@ -29,13 +26,11 @@ const mocks = vi.hoisted(() => ({
   handlePlanScreenDpad: vi.fn(),
   handlePlanScreenAction: vi.fn(),
   handleSessionsScreenButton: vi.fn(),
-  getOverviewSessions: vi.fn(),
   navigateFocus: vi.fn(),
   isAnyBridgeModalVisible: vi.fn(),
 }));
 
 vi.mock('../../renderer/state.js', () => ({ state: mocks.state }));
-vi.mock('../../renderer/screens/sessions-state.js', () => ({ sessionsState: mocks.sessionsState }));
 vi.mock('../../renderer/runtime/terminal-provider.js', () => ({ getTerminalManager: () => mocks.terminalManager }));
 vi.mock('../../renderer/utils.js', () => ({
   toDirection: (button: string) => ({
@@ -51,7 +46,6 @@ vi.mock('../../renderer/bindings.js', () => ({
   processConfigRelease: mocks.processConfigRelease,
   releaseVoiceTalk: () => false,
 }));
-vi.mock('../../renderer/screens/group-overview.js', () => ({ getOverviewSessions: mocks.getOverviewSessions }));
 vi.mock('../../renderer/plans/plan-screen.js', () => ({
   handlePlanScreenDpad: mocks.handlePlanScreenDpad,
   handlePlanScreenAction: mocks.handlePlanScreenAction,
@@ -67,17 +61,15 @@ function createRouter(overrides: Partial<Parameters<typeof useInputRouter>[0]> =
   const navStore = {
     closeSettings: vi.fn(),
     closePlan: vi.fn(),
-    closeOverview: vi.fn(),
     navigateToSession: vi.fn(),
   };
   const deps = {
     settingsVisible: ref(false),
-    activeView: ref<'terminal' | 'overview' | 'plan'>('terminal'),
+    activeView: ref<'terminal' | 'plan'>('terminal'),
     bindingEditorVisible: ref(false),
     itemEditorVisible: ref(false),
     itemEditorRef: ref<{ handleButton?: (button: string) => void } | null>(null),
     settingsPanelRef: ref<{ handleButton?: (button: string) => void } | null>(null),
-    overviewCollapsedIds: ref(new Set<string>()),
     navStore,
     ...overrides,
   };
@@ -93,7 +85,6 @@ describe('useInputRouter', () => {
     mocks.modalStack.topInterceptKeys.value = new Set();
     mocks.modalStack.handleInput.mockReturnValue(false);
     mocks.escProtection.isProtecting.value = false;
-    mocks.getOverviewSessions.mockReturnValue([{ id: 's1' }]);
     mocks.handlePlanScreenAction.mockReturnValue(false);
     mocks.handleSessionsScreenButton.mockReturnValue(false);
     mocks.isAnyBridgeModalVisible.mockReturnValue(false);
@@ -192,44 +183,6 @@ describe('useInputRouter', () => {
     expect(handleDraftButton).toHaveBeenCalledWith('DPadUp');
     expect(mocks.handleSessionsScreenButton).not.toHaveBeenCalled();
     expect(mocks.processConfigBinding).not.toHaveBeenCalled();
-  });
-
-  it('overview A navigates to the focused overview session', () => {
-    mocks.sessionsState.overviewFocusIndex = 1;
-    mocks.getOverviewSessions.mockReturnValue([{ id: 's1' }, { id: 's2' }]);
-    const { router, navStore } = createRouter({ activeView: ref('overview') });
-
-    router.handleButton('A');
-
-    expect(navStore.navigateToSession).toHaveBeenCalledWith('s2');
-    expect(mocks.handleSessionsScreenButton).not.toHaveBeenCalled();
-  });
-
-  it('overview up and down fall through to session navigation', () => {
-    mocks.getOverviewSessions.mockReturnValue([{ id: 's1' }]);
-    mocks.handleSessionsScreenButton.mockReturnValueOnce(true);
-    const { router } = createRouter({ activeView: ref('overview') });
-
-    router.handleButton('DPadDown');
-
-    expect(mocks.handleSessionsScreenButton).toHaveBeenCalledWith('DPadDown');
-    expect(mocks.processConfigBinding).not.toHaveBeenCalled();
-  });
-
-  it('overview X toggles the focused card collapse state', () => {
-    mocks.sessionsState.overviewFocusIndex = 0;
-    mocks.getOverviewSessions.mockReturnValue([{ id: 's1' }]);
-    const collapsed = ref(new Set<string>());
-    const { router } = createRouter({
-      activeView: ref('overview'),
-      overviewCollapsedIds: collapsed,
-    });
-
-    router.handleButton('X');
-    expect(collapsed.value.has('s1')).toBe(true);
-
-    router.handleButton('X');
-    expect(collapsed.value.has('s1')).toBe(false);
   });
 
   it('falls through to terminal config bindings when no higher-priority surface handles input', () => {

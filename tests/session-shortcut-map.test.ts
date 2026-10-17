@@ -31,17 +31,7 @@ describe('getOrderedSessionIds', () => {
       makeGroupHeader('/dir/b'),
       makeSessionCard('s3'),
     ];
-    expect(getOrderedSessionIds(navList, new Set(), new Set())).toEqual(['s1', 's2', 's3']);
-  });
-
-  it('excludes hidden session IDs', () => {
-    const navList: NavItem[] = [
-      makeSessionCard('a'),
-      makeSessionCard('b'),
-      makeSessionCard('c'),
-    ];
-    const hidden = new Set(['b']);
-    expect(getOrderedSessionIds(navList, hidden, new Set())).toEqual(['a', 'c']);
+    expect(getOrderedSessionIds(navList, new Set())).toEqual(['s1', 's2', 's3']);
   });
 
   it('excludes snapped-out session IDs', () => {
@@ -51,17 +41,7 @@ describe('getOrderedSessionIds', () => {
       makeSessionCard('c'),
     ];
     const snappedOut = new Set(['b']);
-    expect(getOrderedSessionIds(navList, new Set(), snappedOut)).toEqual(['a', 'c']);
-  });
-
-  it('excludes both hidden and snapped-out sessions', () => {
-    const navList: NavItem[] = [
-      makeSessionCard('a'),
-      makeSessionCard('b'),
-      makeSessionCard('c'),
-      makeSessionCard('d'),
-    ];
-    expect(getOrderedSessionIds(navList, new Set(['b']), new Set(['d']))).toEqual(['a', 'c']);
+    expect(getOrderedSessionIds(navList, snappedOut)).toEqual(['a', 'c']);
   });
 
   it('collapsed sessions (absent from navList) are excluded', () => {
@@ -70,7 +50,7 @@ describe('getOrderedSessionIds', () => {
       makeGroupHeader('/dir/b'),
       makeSessionCard('s3'),
     ];
-    expect(getOrderedSessionIds(navList, new Set(), new Set())).toEqual(['s3']);
+    expect(getOrderedSessionIds(navList, new Set())).toEqual(['s3']);
   });
 
   it('collapsed sessions become reachable when navList includes them (group expanded)', () => {
@@ -85,12 +65,12 @@ describe('getOrderedSessionIds', () => {
       makeSessionCard('s3'),
     ];
 
-    expect(getOrderedSessionIds(collapsedNavList, new Set(), new Set())).toEqual(['s3']);
-    expect(getOrderedSessionIds(expandedNavList, new Set(), new Set())).toEqual(['s1', 's2', 's3']);
+    expect(getOrderedSessionIds(collapsedNavList, new Set())).toEqual(['s3']);
+    expect(getOrderedSessionIds(expandedNavList, new Set())).toEqual(['s1', 's2', 's3']);
   });
 
   it('empty navList → empty array', () => {
-    expect(getOrderedSessionIds([], new Set(), new Set())).toEqual([]);
+    expect(getOrderedSessionIds([], new Set())).toEqual([]);
   });
 
   it('non-session-card items are ignored', () => {
@@ -98,7 +78,7 @@ describe('getOrderedSessionIds', () => {
       makeGroupHeader('/dir'),
       makeSessionCard('s1'),
     ];
-    expect(getOrderedSessionIds(navList, new Set(), new Set())).toEqual(['s1']);
+    expect(getOrderedSessionIds(navList, new Set())).toEqual(['s1']);
   });
 });
 
@@ -110,7 +90,7 @@ describe('buildSessionShortcutMap', () => {
   it('assigns slots 1–9 then 0 to first 10 visible session-card nav items in order', () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'];
     const navList: NavItem[] = ids.map(makeSessionCard);
-    const map = buildSessionShortcutMap(navList, new Set(), new Set());
+    const map = buildSessionShortcutMap(navList, new Set());
 
     expect(map.get('a')).toBe(1);
     expect(map.get('b')).toBe(2);
@@ -125,22 +105,10 @@ describe('buildSessionShortcutMap', () => {
     expect(map.size).toBe(10);
   });
 
-  it('skips hidden session IDs — subsequent sessions fill the gaps', () => {
-    const navList: NavItem[] = ['a', 'b', 'c', 'd'].map(makeSessionCard);
-    const hidden = new Set(['b']);
-    const map = buildSessionShortcutMap(navList, hidden, new Set());
-
-    expect(map.get('a')).toBe(1);
-    expect(map.has('b')).toBe(false);
-    expect(map.get('c')).toBe(2);
-    expect(map.get('d')).toBe(3);
-    expect(map.size).toBe(3);
-  });
-
   it('skips snapped-out session IDs — subsequent sessions fill the gaps', () => {
     const navList: NavItem[] = ['a', 'b', 'c', 'd'].map(makeSessionCard);
     const snappedOut = new Set(['c']);
-    const map = buildSessionShortcutMap(navList, new Set(), snappedOut);
+    const map = buildSessionShortcutMap(navList, snappedOut);
 
     expect(map.get('a')).toBe(1);
     expect(map.get('b')).toBe(2);
@@ -152,7 +120,7 @@ describe('buildSessionShortcutMap', () => {
   it('sessions beyond position 10 get no entry in the map', () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l'];
     const navList: NavItem[] = ids.map(makeSessionCard);
-    const map = buildSessionShortcutMap(navList, new Set(), new Set());
+    const map = buildSessionShortcutMap(navList, new Set());
 
     expect(map.has('k')).toBe(false);
     expect(map.has('l')).toBe(false);
@@ -167,7 +135,7 @@ describe('buildSessionShortcutMap', () => {
       makeGroupHeader('/dir/b'),
       makeSessionCard('s3'),
     ];
-    const map = buildSessionShortcutMap(navList, new Set(), new Set());
+    const map = buildSessionShortcutMap(navList, new Set());
 
     expect(map.get('s1')).toBe(1);
     expect(map.get('s2')).toBe(2);
@@ -176,13 +144,13 @@ describe('buildSessionShortcutMap', () => {
   });
 
   it('empty navList → empty map', () => {
-    const map = buildSessionShortcutMap([], new Set(), new Set());
+    const map = buildSessionShortcutMap([], new Set());
     expect(map.size).toBe(0);
   });
 
-  it('all sessions hidden or snapped-out → empty map', () => {
+  it('all sessions snapped-out → empty map', () => {
     const navList: NavItem[] = ['a', 'b', 'c'].map(makeSessionCard);
-    const map = buildSessionShortcutMap(navList, new Set(['a']), new Set(['b', 'c']));
+    const map = buildSessionShortcutMap(navList, new Set(['a', 'b', 'c']));
     expect(map.size).toBe(0);
   });
 });
@@ -202,11 +170,10 @@ describe('ordering consistency', () => {
       makeSessionCard('s4'),
       makeSessionCard('s5'),
     ];
-    const hidden = new Set(['s2']);
     const snappedOut = new Set(['s4']);
 
-    const orderedIds = getOrderedSessionIds(navList, hidden, snappedOut);
-    const map = buildSessionShortcutMap(navList, hidden, snappedOut);
+    const orderedIds = getOrderedSessionIds(navList, snappedOut);
+    const map = buildSessionShortcutMap(navList, snappedOut);
 
     // Map keys follow insertion order, which is navList display order
     expect([...map.keys()]).toEqual(orderedIds);

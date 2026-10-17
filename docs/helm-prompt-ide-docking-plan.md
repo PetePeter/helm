@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make Helm behave like an IDE for prompting: Terminal, Overview, and PlanScreen become independent views that can be docked, split, tabbed, resized, and restored anywhere in the workspace. Scheduler, Quick Spawn, the session sidebar, planner-directory navigation, and Artifacts become independent tool windows with the same docking shell.
+Make Helm behave like an IDE for prompting: Terminal and PlanScreen are independent views that can be docked, split, tabbed, resized, and restored anywhere in the workspace. Scheduler, Quick Spawn, the session sidebar, planner-directory navigation, and Artifacts are independent tool windows with the same docking shell.
 
 ## Recommended model
 
@@ -14,7 +14,7 @@ Workspace
 │  ├─ Sessions
 │  └─ Tool group: Scheduler | Quick Spawn | Planner directories
 ├─ View workspace
-│  └─ Terminal | Overview | PlanScreen
+│  └─ Terminal | PlanScreen
 └─ Right dock
    └─ Artifacts
 ```
@@ -33,10 +33,10 @@ type DockNode =
 
 Pane descriptors are id-keyed registrations. Views and tool windows have different defaults, but every pane can be moved, split, or closed and later restored:
 
-- Views: session terminals, Overview, and PlanScreen. They default to the view workspace, but can be docked to any side, split horizontally or vertically, or tabbed with another view.
+- Views: session terminals and PlanScreen. They default to the view workspace, but can be docked to any side, split horizontally or vertically, or tabbed with another view.
 - Tool windows: session list, Scheduler, Quick Spawn, planner-directory navigation, and Artifacts. They default to edge docks and support auto-hide, but can also be dragged into a view group.
 
-The existing PlanScreen and OverviewGrid are independent dockable views. The existing PlansGrid is only the planner-directory navigation tool; selecting a directory opens or activates its PlanScreen view.
+The existing PlanScreen is a dockable view. The existing PlansGrid is only the planner-directory navigation tool; selecting a directory opens or activates its PlanScreen view.
 
 ## Vue seams
 
@@ -86,7 +86,7 @@ Before implementing drag-and-drop, prove that moving a terminal pane adopts the 
 ### Phase 1: structural workspace
 
 1. Add the layout store, schema validation, default layout, persistence, and Reset Layout.
-2. Extract Terminal, Overview, PlanScreen, Scheduler, Quick Spawn, planner-directory navigation, session sidebar, and Artifacts into registered panes.
+2. Extract Terminal, PlanScreen, Scheduler, Quick Spawn, planner-directory navigation, session sidebar, and Artifacts into registered panes.
 3. Add dock-side toggles and the View menu.
 4. Generalize split resizing.
 5. Replace fixed focus columns with identity-based pane focus.

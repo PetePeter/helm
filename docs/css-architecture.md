@@ -72,7 +72,7 @@ Four cases make a global rule safer than a superficially tidy scoped rule:
 The remaining explicit compatibility families in `main.css` are the plan-chip
 family (`.plan-chip` is also a plain span in `ItemEditor.vue`), terminal and
 xterm classes, the teleported editor/modal families, and legacy session,
-settings, picker, and overview classes that are shared across component
+settings and picker classes that are shared across component
 boundaries or queried by the navigation bridge. The structural CSS test keeps
 this list explicit so a new global selector requires a deliberate rationale.
 The structural test also ratchets the current non-core selector count; that

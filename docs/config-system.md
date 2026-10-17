@@ -117,7 +117,7 @@ profiles:
 
 ### scroll
 
-`{ action: 'scroll', direction: 'up'|'down', lines?: 5 }` — Scroll active terminal buffer (or overview grid when visible).
+`{ action: 'scroll', direction: 'up'|'down', lines?: 5 }` — Scroll the active terminal buffer.
 
 ### context-menu
 

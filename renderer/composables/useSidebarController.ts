@@ -1,5 +1,4 @@
-import { ref, type Ref } from 'vue';
-import { state } from '../state.js';
+import { ref } from 'vue';
 import { getActiveSessionDir } from '../stores/app.js';
 import { sessionsState } from '../screens/sessions-state.js';
 import { patternsClient, schedulerClient, sessionsClient } from '../ipc/clients.js';
@@ -16,14 +15,11 @@ import type { SessionSortField, SortDirection } from '../sort-logic.js';
 import type { ActivationResult } from '../stores/navigation.js';
 
 interface NavigationController {
-  closeOverview(): Promise<void> | void;
   navigateToSession(sessionId: string): Promise<ActivationResult | void> | ActivationResult | void;
   openPlan(dirPath: string): Promise<void> | void;
-  openOverview(dirPath: string | null, sessionId?: string): Promise<void> | void;
 }
 
 export interface SidebarControllerDeps {
-  activeView: Ref<'terminal' | 'overview' | 'plan'>;
   navStore: NavigationController;
   refreshProjects: () => Promise<void>;
   doSpawn: (cliType: string, dirPath?: string) => void | Promise<void>;
@@ -33,8 +29,6 @@ export interface SidebarControllerDeps {
 
 export function useSidebarController(deps: SidebarControllerDeps) {
   const { listPeerDirs, spawnOnPeer, ensureSubscribed: ensurePeersSubscribed } = usePeers();
-  const overviewCollapsedIds = ref<Set<string>>(new Set());
-  const overviewGroupLabel = ref('');
   const schedulerPopupVisible = ref(false);
   const schedulerPopupTaskId = ref<string | null>(null);
   const historyModalVisible = ref(false);
@@ -46,9 +40,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
 
   async function onSessionClick(sessionId: string): Promise<void> {
     if (isAnyBridgeModalVisible()) return;
-    if (deps.activeView.value === 'overview') {
-      await deps.navStore.closeOverview();
-    }
     await deps.navStore.navigateToSession(sessionId);
   }
 
@@ -77,14 +68,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     await setSessionState(sessionId, newState);
   }
 
-  function onOverviewToggleCollapse(sessionId: string): void {
-    if (overviewCollapsedIds.value.has(sessionId)) {
-      overviewCollapsedIds.value.delete(sessionId);
-    } else {
-      overviewCollapsedIds.value.add(sessionId);
-    }
-  }
-
   function onGroupToggleCollapse(dirPath: string): void {
     void toggleGroupCollapse(dirPath);
   }
@@ -92,10 +75,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   function onShowPlans(_dirPath: string): void {
     const dirPath = getActiveSessionDir();
     if (dirPath) void deps.navStore.openPlan(dirPath);
-  }
-
-  function onShowOverview(dirPath: string): void {
-    void deps.navStore.openOverview(dirPath, state.activeSessionId ?? undefined);
   }
 
   async function onCancelSchedule(sessionId: string): Promise<void> {
@@ -219,8 +198,6 @@ export function useSidebarController(deps: SidebarControllerDeps) {
   }
 
   return {
-    overviewCollapsedIds,
-    overviewGroupLabel,
     schedulerPopupVisible,
     schedulerPopupTaskId,
     historyModalVisible,
@@ -234,10 +211,8 @@ export function useSidebarController(deps: SidebarControllerDeps) {
     onCancelRename,
     onRequestClose,
     onSessionStateChange,
-    onOverviewToggleCollapse,
     onGroupToggleCollapse,
     onShowPlans,
-    onShowOverview,
     onCancelSchedule,
     onSessionSnapOut,
     onSessionSnapBack,

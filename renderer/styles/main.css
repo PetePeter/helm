@@ -700,42 +700,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   background: var(--bg-tertiary);
 }
 
-.overview-nav-button {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  background: #1a1a1a;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md, 8px);
-  color: var(--accent);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-  cursor: pointer;
-  text-align: left;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-bottom: 6px;
-  user-select: none;
-}
-.overview-nav-button:hover,
-.overview-nav-button.focused {
-  background: var(--bg-tertiary);
-  border-color: var(--accent);
-}
-
-.overview-visible-count {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent);
-  background: rgba(68, 136, 255, 0.12);
-  border: 1px solid rgba(68, 136, 255, 0.28);
-  border-radius: 999px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
 .group-chevron {
   flex-shrink: 0;
   width: 14px;
@@ -784,7 +748,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* ── Runtime (custom) groups ──────────────────────────────── */
 
-/* Runtime group actions. Overview is a dock pane, not a sidebar button. */
+/* Runtime group creation and actions. */
 .runtime-list-actions {
   display: flex;
   width: 100%;
@@ -814,7 +778,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
   color: var(--activity-active, #44cc44);
 }
 
-/* Group header action buttons (rename / close / overview) */
+/* Group header action buttons (rename / close) */
 .group-header-actions {
   display: flex;
   gap: 2px;
@@ -2810,134 +2774,6 @@ kbd {
 .btn--focused {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-/* ── Group Overview Grid ─────────────────────────────── */
-/* Absolute overlay inside .panel-right — bypasses flex sizing entirely so
- * the grid always has a definite height from its containing block.
- * Content exceeding that height triggers overflow-y scrollbar reliably.
- * Draft strip/editor are hidden by JS when overview opens (overlay lifecycle).
- */
-.overview-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-auto-rows: max-content;
-  gap: var(--spacing-md);
-  padding: var(--spacing-md);
-  align-content: start;
-  scrollbar-gutter: stable;
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow-y: scroll;
-  z-index: 5;
-  background: var(--bg-primary);
-}
-
-.overview-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex-shrink: 0;
-}
-
-.overview-card:hover {
-  background: var(--bg-tertiary);
-  border-color: #333;
-}
-
-.overview-card--focused {
-  border-color: var(--accent);
-  background: var(--focus);
-}
-
-.overview-card-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: 10px 12px 6px;
-}
-
-.overview-state-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.overview-card-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.overview-card-subtitle {
-  font-size: 10px;
-  color: var(--text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-.overview-card-state {
-  font-size: 11px;
-  color: var(--text-dim);
-  font-weight: 400;
-  margin-left: auto;
-}
-
-.overview-card-preview {
-  margin: 0 10px 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-sm) 10px 12px;
-  font-family: 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--text-secondary);
-  overflow: hidden;
-  /* Fixed height: exactly 10 lines — prevents cards resizing when
-   * content wraps or when preview is refreshed with longer lines. */
-  height: calc(10 * 1.55em);
-  flex-shrink: 0;
-  box-sizing: content-box;
-}
-
-.overview-card-preview .preview-line {
-  /* Each line must stay on one visual row — no wrapping allowed,
-   * otherwise one card would get taller than its siblings. */
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: clip;
-  height: 1.55em;
-  line-height: 1.55em;
-}
-
-.overview-card--collapsed .overview-card-preview {
-  display: none;
-}
-
-.overview-break-mark {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  letter-spacing: 0.04em;
-  text-align: center;
-  padding: 2px 0;
 }
 
 .preview-line {

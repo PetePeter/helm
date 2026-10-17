@@ -39,7 +39,7 @@ const context = computed<ContextMenuContext>(() => ({
   hasSelection: props.hasSelection,
   isSnappedOut: props.isSnappedOut,
   currentGroupName: props.currentGroupName ?? null,
-  session: props.sessionFlags ?? { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
+  session: props.sessionFlags ?? { locked: false, frozen: false, keepWarm: false },
 }));
 const groups = computed(() => buildContextMenuGroups(context.value));
 const menuItems = computed<ContextMenuItem[]>(() => {

@@ -27,7 +27,6 @@ routes through a single ownership chain
 | Reachable by gamepad | Not reachable by gamepad |
 |---|---|
 | Session switching, session card columns | Memories pane |
-| Group overview grid | Artifacts pane |
 | Plan canvas (nodes, edit, add, delete) | Scheduler pane |
 | Item editor (plan / context) | Plan Directories pane |
 | Context menu | Quick Spawn as a pane |
@@ -174,7 +173,6 @@ spent on two commands.
 | Right stick | Pane-declared continuous axis: terminal scrollback, plan-canvas pan/zoom, artifact scroll, memory-graph pan |
 | A / B / X / Y | Pane-declared intents; fall through to the tool's binding profile in the terminal pane |
 | L3 | Session switcher HUD (currently unused) |
-| R3 | Toggle overview (currently unused) |
 | Back / Start | Profile switch (unchanged) |
 | Guide | Focus hub window (unchanged) |
 

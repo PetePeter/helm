@@ -53,7 +53,6 @@ function mountList() {
       llmNotifications: new Map(),
       getCliDisplayName: (cliType: string) => cliType,
       resolveGroupDisplayName: (dirPath: string) => dirPath,
-      isSessionHiddenFromOverview: () => false,
       sessionElapsedText: () => '',
       sessionShortcutMap: new Map<string, number>(),
     },

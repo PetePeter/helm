@@ -81,14 +81,6 @@ vi.mock('../renderer/session-groups.js', () => ({
   findNavIndexBySessionId: vi.fn(() => 0),
 }));
 
-vi.mock('../renderer/screens/group-overview.js', () => ({
-  setOutputBuffer: vi.fn(),
-  setSessionStateGetter: vi.fn(),
-  setActivityLevelGetter: vi.fn(),
-  setTerminalManagerGetter: vi.fn(),
-  setSelectCardCallback: vi.fn(),
-  setOverviewDismissCallback: vi.fn(),
-}));
 
 vi.mock('../renderer/plans/plan-screen.js', () => ({
   setPlanScreenFitCallback: vi.fn(),
@@ -165,7 +157,6 @@ describe('useAppBootstrap PTY exit cleanup', () => {
           order: [],
           collapsed: [],
           bookmarked: [],
-          overviewHidden: [],
         }),
         configGetSpawnCommand: vi.fn().mockResolvedValue({ command: 'claude', args: [] }),
         configGetEscProtectionEnabled: vi.fn().mockResolvedValue(true),

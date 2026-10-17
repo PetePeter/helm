@@ -59,7 +59,7 @@ PTY Data Flow:
 
 ## Activity Dots
 
-Session cards and overview cards use activity-based coloring (turn activity, not AIAGENT phase state):
+Session cards use activity-based coloring (turn activity, not AIAGENT phase state):
 
 - 🟢 active (green `#44cc44` — receiving user input, or hook-reported work until `Stop`)
 - 🔵 inactive (blue `#4488ff` — >10s silence)
@@ -266,6 +266,6 @@ flowchart TD
 | TerminalManager | `renderer/terminal/terminal-manager.ts` | Multi-terminal switching, lifecycle. `deselect()` pauses keyboard relay without destroying terminal. Accepts `contextText` forwarded to main process via `ptySpawn()`. `adoptTerminal()` creates a TerminalView for externally-spawned PTY sessions without calling `pty:spawn`. Capture-phase `mousedown` listener on terminal elements blocks right-click (button 2) from reaching xterm.js paste handling. `switchTo()` calls `pty:markSwitching` before fit() to suppress false activity promotion during terminal switching. Owns `PtyOutputBuffer` for preview data. `setOnTitleChange()` routes terminal title events to renderer state. `writeToTerminal()` writes PTY output directly to xterm.js (no filtering). `setVisibleOrderProvider()` supplies the sidebar's visible session order used for hand-over when the active terminal is destroyed or detached |
 | SuccessorPick | `renderer/terminal/successor-pick.ts` | `resolveSuccessorSessionId(orderedVisibleIds, liveTerminalIds, closedId)` — which terminal takes the active slot after a close. Walks forward from the closed session's slot in visible order, wraps once, returns `null` when no visible session survives |
 | MouseTrackingGuard | `renderer/terminal/mouse-tracking-guard.ts` | Why: CLIs like Copilot CLI enable xterm mouse tracking, so plain click-drag goes to the app and copying needs Shift+drag. Unless the CLI type sets `mouseTracking: true`, TerminalView registers DECSET/DECRST (`CSI ? … h/l`) parser handlers that swallow mouse modes 1000/1001/1002/1003/1005/1006/1015/1016; non-mouse modes in a mixed sequence are re-written so they still apply. Handled in the xterm parser, so sequences split across PTY chunks are still caught |
-| PtyOutputBuffer | `renderer/terminal/pty-output-buffer.ts` | Ring buffer for PTY output per session (ANSI-stripped plain text). Used by group overview for live previews |
+| PtyOutputBuffer | `renderer/terminal/pty-output-buffer.ts` | Ring buffer for PTY output per session (ANSI-stripped plain text). Used by Session List preview tails |
 | Bindings | `renderer/bindings.ts` | PTY-aware input routing: voice OS-default (robotjs) with PTY opt-in via `target: 'terminal'` + `keyToPtyEscape()` (F1-F12 VT220 sequences) |
 | PasteHandler | `renderer/paste-handler.ts` | Document-level Ctrl+V interceptor: reads clipboard, writes to active PTY via `ptyWrite()` regardless of DOM focus. Skipped when any modal overlay is visible (selection-mode modals own all keyboard input) |

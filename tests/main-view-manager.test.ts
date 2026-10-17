@@ -15,12 +15,12 @@ describe('MainViewManager', () => {
   it('transitions unmount -> mount in order', async () => {
     const calls: string[] = [];
     registerView('terminal', { mount: () => { calls.push('terminal:mount'); }, unmount: () => { calls.push('terminal:unmount'); } });
-    registerView('overview', { mount: () => { calls.push('overview:mount'); }, unmount: () => { calls.push('overview:unmount'); } });
+    registerView('plan', { mount: () => { calls.push('plan:mount'); }, unmount: () => { calls.push('plan:unmount'); } });
 
-    await showView('overview');
+    await showView('plan');
     // First switch: prior was 'terminal' (default), but no prior mount ran, so unmount still runs
-    expect(calls).toEqual(['terminal:unmount', 'overview:mount']);
-    expect(currentView()).toBe('overview');
+    expect(calls).toEqual(['terminal:unmount', 'plan:mount']);
+    expect(currentView()).toBe('plan');
   });
 
   it('passes params to mount', async () => {
@@ -37,11 +37,11 @@ describe('MainViewManager', () => {
   });
 
   it('fires onChange listeners on transition', async () => {
-    registerView('overview', { mount: () => {}, unmount: () => {} });
+    registerView('plan', { mount: () => {}, unmount: () => {} });
     const cb = vi.fn();
     onViewChange(cb);
-    await showView('overview');
-    expect(cb).toHaveBeenCalledWith('overview');
+    await showView('plan');
+    expect(cb).toHaveBeenCalledWith('plan');
   });
 
   it('notifies listeners before an async mount completes', async () => {
@@ -76,11 +76,11 @@ describe('MainViewManager', () => {
   });
 
   it('unsubscribe removes listener', async () => {
-    registerView('overview', { mount: () => {}, unmount: () => {} });
+    registerView('plan', { mount: () => {}, unmount: () => {} });
     const cb = vi.fn();
     const unsub = onViewChange(cb);
     unsub();
-    await showView('overview');
+    await showView('plan');
     expect(cb).not.toHaveBeenCalled();
   });
 
@@ -93,27 +93,25 @@ describe('MainViewManager', () => {
   });
 
   it('isolates errors in unmount from caller', async () => {
-    registerView('overview', { mount: () => {}, unmount: () => { throw new Error('boom'); } });
+    registerView('plan', { mount: () => {}, unmount: () => { throw new Error('boom'); } });
     registerView('terminal', { mount: () => {}, unmount: () => {} });
-    await showView('overview');
+    await showView('plan');
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(showView('terminal')).resolves.toBeUndefined();
     expect(spy).toHaveBeenCalled();
     spy.mockRestore();
   });
 
-  it('sequential switches between views track current correctly', async () => {
+  it('switches between registered views in order', async () => {
     const order: string[] = [];
     registerView('terminal', { mount: () => { order.push('T:m'); }, unmount: () => { order.push('T:u'); } });
-    registerView('overview', { mount: () => { order.push('O:m'); }, unmount: () => { order.push('O:u'); } });
     registerView('plan', { mount: () => { order.push('P:m'); }, unmount: () => { order.push('P:u'); } });
 
-    await showView('overview');
     await showView('plan');
     await showView('terminal');
 
     expect(currentView()).toBe('terminal');
-    expect(order).toEqual(['T:u', 'O:m', 'O:u', 'P:m', 'P:u', 'T:m']);
+    expect(order).toEqual(['T:u', 'P:m', 'P:u', 'T:m']);
   });
 
   it('ignores stale async mounts after a newer transition wins', async () => {
@@ -134,23 +132,18 @@ describe('MainViewManager', () => {
       },
       unmount: () => { calls.push('plan:unmount'); },
     });
-    registerView('overview', {
-      mount: () => { calls.push('overview:mount'); },
-      unmount: () => { calls.push('overview:unmount'); },
-    });
-
     const pendingPlan = showView('plan');
     await Promise.resolve();
-    await showView('overview');
+    await showView('terminal');
     releasePlanMount?.();
     await pendingPlan;
 
-    expect(currentView()).toBe('overview');
+    expect(currentView()).toBe('terminal');
     expect(calls).toEqual([
       'terminal:unmount',
       'plan:mount:start',
       'plan:unmount',
-      'overview:mount',
+      'terminal:mount',
     ]);
   });
 });

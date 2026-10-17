@@ -194,7 +194,7 @@ describe('TerminalManager.ensureTerminal', () => {
     expect(mgr.getCount()).toBe(1);
   });
 
-  it('Group Overview PtyOutputBuffer reads are unaffected', () => {
+  it('Session List preview reads from the PtyOutputBuffer', () => {
     const buf = mgr.getOutputBuffer();
     buf.append('sess-6', 'hello\nworld\n');
 

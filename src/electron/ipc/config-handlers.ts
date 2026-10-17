@@ -421,7 +421,6 @@ export function setupConfigHandlers(
     order: string[];
     collapsed: string[];
     bookmarked?: string[];
-    overviewHidden?: string[];
     sessionPreviewMode?: 'on' | 'off' | 'selected-only';
   }) => {
     try {

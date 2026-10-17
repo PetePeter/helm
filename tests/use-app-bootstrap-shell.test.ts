@@ -48,10 +48,6 @@ vi.mock('../renderer/sort-logic.js', () => ({ sortSessions: (sessions: unknown[]
 vi.mock('../renderer/session-groups.js', () => ({
   buildSessionGroups: () => [], buildFlatNavList: () => [], findNavIndexBySessionId: () => 0,
 }));
-vi.mock('../renderer/screens/group-overview.js', () => ({
-  setOutputBuffer() {}, setSessionStateGetter() {}, setActivityLevelGetter() {}, setTerminalManagerGetter() {},
-  setSelectCardCallback() {}, setOverviewDismissCallback() {},
-}));
 vi.mock('../renderer/plans/plan-screen.js', () => ({
   setPlanScreenFitCallback() {}, setPlanScreenCloseCallback() {}, setPlanScreenOpenCallback() {}, refreshCanvasIfVisible() {},
 }));
@@ -93,7 +89,7 @@ describe('doSpawnShell', () => {
       ptyKill() {},
       onPtyData: (listener: typeof dataListener) => { dataListener = listener; return () => { dataListener = undefined; }; },
       onPtyExit: () => () => {},
-      configGetSessionGroupPrefs: async () => ({ order: [], collapsed: [], bookmarked: [], overviewHidden: [] }),
+      configGetSessionGroupPrefs: async () => ({ order: [], collapsed: [], bookmarked: [] }),
       configGetCliTypes: async () => [],
       configGetWorkingDirs: async () => [],
       projectList: async () => [],
@@ -151,7 +147,7 @@ describe('doSpawnShell', () => {
       ptyKill() {},
       onPtyData: (listener: typeof dataListener) => { dataListener = listener; return () => { dataListener = undefined; }; },
       onPtyExit: () => () => {},
-      configGetSessionGroupPrefs: async () => ({ order: [], collapsed: [], bookmarked: [], overviewHidden: [] }),
+      configGetSessionGroupPrefs: async () => ({ order: [], collapsed: [], bookmarked: [] }),
       configGetCliTypes: async () => [],
       configGetWorkingDirs: async () => [],
       projectList: async () => [],

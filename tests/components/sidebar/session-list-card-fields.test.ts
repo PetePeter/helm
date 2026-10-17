@@ -40,7 +40,6 @@ describe('SessionList → SessionCard fields', () => {
         llmNotifications: new Map(),
         getCliDisplayName: (c: string) => c,
         resolveGroupDisplayName: (p: string) => p,
-        isSessionHiddenFromOverview: () => false,
         sessionElapsedText: () => '',
         sessionShortcutMap: new Map<string, number>(),
       },

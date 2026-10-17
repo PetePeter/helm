@@ -24,7 +24,6 @@ import { selectSessionFromDock } from './dock-session-navigation.js';
 import { registerKeyHandler } from './keyboard/router.js';
 import { installDockKeyRouter } from './keyboard/install.js';
 import { useTerminalKeys } from './composables/useTerminalKeys.js';
-import { resolveGroupDisplayName } from './session-groups.js';
 import { onPlanContextSave } from './plans/plan-screen.js';
 import { getActiveSessionDir } from './stores/app.js';
 import { onViewChange, type MainView as ViewName } from './main-view/main-view-manager.js';
@@ -85,11 +84,8 @@ import {
   PANE_SESSIONS,
   PANE_TERMINAL,
 } from './dock-types.js';
-import {
-  confirmCloseSessionById, setSessionLocked, setSessionFrozen, setSessionKeepWarm, toggleSessionOverviewVisibility,
-} from './screens/sessions.js';
+import { confirmCloseSessionById, setSessionLocked, setSessionFrozen, setSessionKeepWarm } from './screens/sessions.js';
 import { startRename } from './sidebar/session-services.js';
-import { isSessionHiddenFromOverview } from './session-groups.js';
 
 // Sidebar components
 import StatusStrip from './components/sidebar/StatusStrip.vue';
@@ -148,7 +144,7 @@ import type { DockMode, DockSide, DropTarget, PaneId } from './dock-types.js';
 // Reactive view state
 // ============================================================================
 
-const activeView = ref<'terminal' | 'overview' | 'plan'>('terminal');
+const activeView = ref<'terminal' | 'plan'>('terminal');
 const settingsVisible = ref(false);
 const terminalContainerRef = ref<HTMLElement | null>(null);
 const chipBarStore = useChipBarStore();
@@ -177,9 +173,7 @@ const dockViewMenuOpen = ref(false);
 const dockAwareNavigation = {
   closeSettings: () => navStore.closeSettings(),
   closePlan: () => navStore.closePlan(),
-  closeOverview: () => navStore.closeOverview(),
   openPlan: (dirPath: string) => navStore.openPlan(dirPath),
-  openOverview: (dirPath: string | null, sessionId?: string) => navStore.openOverview(dirPath, sessionId),
   navigateToSession: (sessionId: string) => selectSessionFromDock(sessionId, {
     isChatPaneActive: () => dockWorkspace.isVisible(PANE_CHAT),
     activateSession: (id) => navStore.activateSession(id),
@@ -190,7 +184,6 @@ const dockAwareNavigation = {
 const inputNavigation = {
   closeSettings: dockAwareNavigation.closeSettings,
   closePlan: dockAwareNavigation.closePlan,
-  closeOverview: dockAwareNavigation.closeOverview,
   navigateToSession: (sessionId: string): void => { void dockAwareNavigation.navigateToSession(sessionId); },
 };
 
@@ -209,8 +202,7 @@ watch(terminalContainerRef, (container) => {
 const dockViewItems = computed(() => listRegisteredPanes(dockWorkspace.layout.value));
 
 // Dock ↔ view-mode reconciliation. Tool panes are not part of it: focusing one
-// must not start a view transition. The legacy fullscreen overview view has no
-// pane and is reached through `openOverview()`.
+// must not start a view transition.
 const {
   activateDockPane,
   closeDockPane,
@@ -237,8 +229,7 @@ function onDockViewToggle(paneId: PaneId): void {
 function onDockLayoutReset(): void {
   invalidateActivations();
   dockWorkspace.reset();
-  if (activeView.value === 'overview') void navStore.closeOverview();
-  else if (activeView.value === 'plan') void navStore.closePlan();
+  if (activeView.value === 'plan') void navStore.closePlan();
   activeView.value = 'terminal';
   dockViewMenuOpen.value = false;
 }
@@ -306,8 +297,7 @@ function onDockPaneEdge(paneId: PaneId, side: DockSide): void {
 // main-view-manager stays the view transition authority; the dock mirrors it.
 // Reconciling here — rather than a second routing path — is what lets a normal
 // openPlan() bring back a view pane the user closed to the View menu, instead
-// of transitioning into a pane that is not in the tree. A view with no pane of
-// its own (the legacy fullscreen overview) has nothing to reconcile.
+// of transitioning into a pane that is not in the tree.
 watch(() => activeView.value, (view) => {
   const paneId = paneForView(view);
   if (!paneId) return;
@@ -490,7 +480,6 @@ const firstRunOnboarding = useFirstRunOnboarding({
 });
 
 const sidebarController = useSidebarController({
-  activeView,
   navStore: dockAwareNavigation,
   refreshProjects,
   doSpawn,
@@ -498,8 +487,6 @@ const sidebarController = useSidebarController({
 });
 useSessionRenameFocusGuard(dockWorkspace.focusedPaneId);
 const {
-  overviewCollapsedIds,
-  overviewGroupLabel,
   schedulerPopupVisible,
   schedulerPopupTaskId,
   recreatePrefill,
@@ -546,30 +533,12 @@ const contextMenuSessionFlags = computed(() => {
     locked: !!s?.locked,
     frozen: !!s?.frozen,
     keepWarm: s?.keepWarmUntil !== undefined && s.keepWarmUntil > Date.now(),
-    hiddenFromOverview: s ? isSessionHiddenFromOverview(s, sessionsState.groupPrefs) : false,
   };
 });
 
 const contextMenuIsSnappedOut = computed(() =>
   !!contextMenu.sourceSessionId && state.snappedOutSessions.has(contextMenu.sourceSessionId),
 );
-
-watch(() => activeView.value, (view) => {
-  if (view === 'overview') {
-    if (sessionsState.overviewIsGlobal) {
-      overviewGroupLabel.value = 'All Sessions';
-    } else if (sessionsState.overviewGroup) {
-      // Runtime groups carry their own display name (their key is not a
-      // directory path), so prefer the group's own name when present.
-      const grp = sessionsState.groups.find(g => g.dirPath === sessionsState.overviewGroup);
-      overviewGroupLabel.value = grp?.kind === 'runtime'
-        ? grp.displayName
-        : resolveGroupDisplayName(sessionsState.overviewGroup, sessionsState.directories, settingsProjects.value);
-    } else {
-      overviewGroupLabel.value = 'Sessions';
-    }
-  }
-});
 
 watch(() => state.activeSessionId, (next, prev) => {
   if (!next) return;
@@ -588,7 +557,6 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   itemEditorVisible,
   itemEditorRef,
   settingsPanelRef,
-  overviewCollapsedIds,
   navStore: inputNavigation,
   focusedPaneId: dockWorkspace.focusedPaneId,
   getFocusedItemId: dockWorkspace.getFocusedItemId,
@@ -695,9 +663,6 @@ function onContextMenuAction(action: ContextMenuAction): void {
       break;
     case 'toggle-keep-warm':
       if (target) void setSessionKeepWarm(target.id, !contextMenuSessionFlags.value.keepWarm);
-      break;
-    case 'toggle-overview':
-      if (target) void toggleSessionOverviewVisibility(target.id);
       break;
     case 'copy': {
       const text = action.selectedText;

@@ -103,7 +103,6 @@ function sessionClick(sessionId: string): void {
       :llm-notifications="emptyNotifications"
       :get-cli-display-name="getCliDisplayName"
       :resolve-group-display-name="resolveGroupDisplayName"
-      :is-session-hidden-from-overview="() => false"
       :session-elapsed-text="() => ''"
       :session-shortcut-map="sessionsScreenStore.sessionShortcutMap"
       source="peer"

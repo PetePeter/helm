@@ -23,8 +23,6 @@ import { useAppStore } from '../../stores/app.js';
 import { useChipBarStore } from '../../stores/chip-bar.js';
 import { deliverBulkText } from '../../paste-handler.js';
 import { contextMenu } from '../../stores/modal-bridge.js';
-import { sessionsState } from '../../screens/sessions-state.js';
-import { isSessionHiddenFromOverview } from '../../session-groups.js';
 import { useRuntimeGroups } from '../../composables/useRuntimeGroups.js';
 import type { ContextMenuAction } from '../../../src/types/context-menu.js';
 import TerminalChips from '../chips/TerminalChips.vue';
@@ -51,7 +49,6 @@ const sessionFlags = computed(() => {
     locked: !!session?.locked,
     frozen: !!session?.frozen,
     keepWarm: !!session?.keepWarmUntil && session.keepWarmUntil > Date.now(),
-    hiddenFromOverview: session ? isSessionHiddenFromOverview(session, sessionsState.groupPrefs) : false,
   };
 });
 

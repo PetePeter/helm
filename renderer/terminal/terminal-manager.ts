@@ -71,7 +71,7 @@ export class TerminalManager {
 
   /**
    * Register the source of visible session order (navList display order, with
-   * collapsed-group / hidden / snapped-out sessions already excluded). Used to
+   * collapsed-group and snapped-out sessions already excluded). Used to
    * hand over to the right terminal when the active one is destroyed or detached.
    * Without a provider — child windows, tests — insertion order is used.
    */
@@ -82,13 +82,6 @@ export class TerminalManager {
   /** Register a callback invoked when a terminal's OSC title changes */
   setOnTitleChange(callback: (sessionId: string, title: string) => void): void {
     this.onTitleChangeCallback = callback;
-  }
-
-  /** Deselect the active terminal without destroying it. Keyboard relay stops routing. */
-  deselect(): void {
-    if (!this.activeSessionId) return;
-    this.activeSessionId = null;
-    this.onSwitch?.(null);
   }
 
   /** Create a new terminal and spawn its PTY process */

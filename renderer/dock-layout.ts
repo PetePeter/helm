@@ -807,7 +807,8 @@ function validateNode(raw: unknown, seen: Set<PaneId>, profile: DockProfileId): 
  * Pane ids that used to exist. A saved layout may still name them, so they are
  * pruned before validation rather than failing it — failing would throw away
  * the user's whole arrangement for the sake of one pane that is gone.
- * `overview` was Team View, retired in favour of Session List previews.
+ * Keep the old preview-pane id so saved layouts can be pruned without losing
+ * their remaining panes or relative geometry.
  */
 const RETIRED_PANE_IDS: ReadonlySet<string> = new Set(['overview']);
 

@@ -137,7 +137,7 @@ renderer/
 ├── utils.ts                    # DOM helpers, logEvent, showScreen, toDirection
 ├── bindings.ts                 # Config cache, binding dispatch (PTY-aware routing, voice OS-default + PTY via target: 'terminal', F1-F12 VT220 escape sequences)
 ├── paste-handler.ts            # Document-level Ctrl+V interceptor → clipboard text → active PTY (blocked during plan screen)
-├── navigation.ts               # Gamepad navigation setup, event routing. Priority chain: sandwich → dirPicker → bindingEditor → formModal → closeConfirm → quickSpawn → itemEditor → contextMenu → planScreen (within sessions case) → overview → screen routing → configBinding fallback
+├── navigation.ts               # Gamepad navigation setup and event routing through modal, plan, screen, and config-binding handlers
 ├── gamepad.ts                  # Browser Gamepad API wrapper + repeat engine
 ├── session-groups.ts           # Pure session grouping logic (by working directory) — types, grouping, nav list, reorder, bookmarked dirs; excludes the operator
 ├── peer-session-store.ts       # Per-peer snapshots, push updates, offline stale state, and refresh generation guards
@@ -148,7 +148,7 @@ renderer/
 ├── chat-view.ts               # Pure Chat pane origin labels, safe-link splitting, and attachment size formatting
 ├── onboarding-settings-topics.ts # Grouped navigation from first-run setup into existing Settings pages
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
-├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards + overview grid.
+├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards and group activity indicators.
 ├── tab-cycling.ts              # Ctrl+Tab / Ctrl+Shift+Tab terminal cycling resolver
 ├── components/
 │   ├── index.ts                # Barrel export of all Vue SFC components
@@ -194,8 +194,6 @@ renderer/
 │   └── panels/
 │       ├── index.ts
 │       ├── TerminalPane.vue    # xterm.js lifecycle wrapper
-│       ├── OverviewCard.vue    # Session preview card
-│       ├── OverviewGrid.vue    # Scrollable preview grid
 │       ├── PlanScreen.vue      # SVG DAG canvas + editor
 │       ├── MainView.vue        # Right panel view switcher
 │       └── ChipBar.vue         # Plan chips + chip-bar action strip (chips/ChipBar.vue; mounted via chips/TerminalChips.vue inside the terminal pane)
@@ -203,7 +201,7 @@ renderer/
 │   ├── index.ts                # Barrel export of all Pinia stores
 │   ├── app.ts                  # useAppStore — currentScreen, gamepadCount, eventLog, activeProfile
 │   ├── chat.ts                 # useChatStore — journal history/live merge, per-session drafts, send status, and unread cursors
-│   ├── sessions-screen.ts      # useSessionsScreenStore — zone, focusIndex, cardColumn, overviewGroup
+│   ├── sessions-screen.ts      # useSessionsScreenStore — zone, focusIndex, cardColumn
 │   ├── quick-spawn.ts           # useQuickSpawnStore — shared machine/tool selection for dock and modal Quick Spawn
 │   ├── config.ts               # useConfigStore — cliBindingsCache, cliSequencesCache, cliToolsCache, cliTypes
 │   ├── plans.ts                # usePlansStore — planDoingCounts, planStartableCounts
@@ -241,9 +239,8 @@ renderer/
 │   └── pty-output-buffer.ts    # Ring buffer for PTY output — last N lines per session, ANSI-stripped, for preview display
 ├── screens/
 │   ├── sessions.ts             # Sessions screen orchestrator: group init, collapse/reorder actions, removeBookmark action, navigation, public API. Re-exports from sessions-spawn and sessions-plans.
-│   ├── sessions-spawn.ts       # doSpawn(), PTY creation, terminal area visibility, spawn zone navigation, D-pad Right → group overview entry (col 0 on group-header); Plans button at col 1 (maxCol 1)
-│   ├── sessions-state.ts       # Sessions screen navigation state (sessions/spawn/plans zones, overviewGroup + overviewFocusIndex + plansFocusIndex)
-│   ├── group-overview.ts       # Group overview grid — session preview cards with live PTY output, entry/exit/navigation, max ~5 cards visible
+│   ├── sessions-spawn.ts       # doSpawn(), PTY creation, terminal area visibility, and spawn zone navigation
+│   ├── sessions-state.ts       # Sessions screen navigation state (sessions/spawn/plans zones and focus indices)
 │   └── sessions-plans.ts       # Folder planner grid zone (3rd nav zone below spawn) — shows working directories with plan badges, gamepad 2-column grid navigation, click opens plan screen
 ├── sidebar/
 │   └── session-services.ts     # Sidebar session services: sort preferences, rename flow, status counts
@@ -382,7 +379,6 @@ tests/
 ├── peer-session-store.test.ts   # Peer snapshots, pushes, offline state, and refresh generation guards
 ├── use-peer-session-panes.test.ts # Dynamic peer pane lifecycle, subscriptions, fetches, and persisted layout behavior
 ├── gamepad-repeat.test.ts      # D-pad/stick key repeat engine tests
-├── group-overview.test.ts      # Group overview grid tests
 ├── handlers-restore.test.ts    # Session restore on startup tests
 ├── initial-prompt.test.ts      # Initial prompt delivery tests
 ├── keyboard.test.ts            # Keyboard simulation

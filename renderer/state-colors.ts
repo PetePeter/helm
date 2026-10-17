@@ -1,6 +1,6 @@
 /**
  * Shared activity-level-to-color mapping for session activity dots.
- * Used by session cards and overview grid.
+ * Used by session cards and group activity indicators.
  *
  * Activity level is based purely on output timing — independent of AIAGENT session state.
  */

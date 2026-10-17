@@ -158,13 +158,12 @@ handlers.
 
 ## Ownership model
 
-Sessions are the spine; terminal, overview, memories, artifacts and plans are
+Sessions are the spine; terminal, memories, artifacts and plans are
 aspects onto whichever session is selected.
 
 ```mermaid
 graph LR
     S["Session (spine)"] --> T[Terminal]
-    S --> O[Overview]
     S --> M[Memories]
     S --> A[Artifacts]
     S --> P[Plans]

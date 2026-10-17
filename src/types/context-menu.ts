@@ -4,7 +4,6 @@ export const CONTEXT_MENU_ACTION_IDS = [
   'toggle-freeze',
   'toggle-lock',
   'toggle-keep-warm',
-  'toggle-overview',
   'copy',
   'paste',
   'new-session',

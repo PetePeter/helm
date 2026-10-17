@@ -44,8 +44,6 @@ beforeEach(() => {
 
   sessionsState.activeFocus = 'sessions';
   sessionsState.sessionsFocusIndex = 0;
-  sessionsState.overviewGroup = null;
-  sessionsState.overviewIsGlobal = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -150,30 +148,6 @@ describe('useSessionsScreenStore', () => {
     expect(store.sessionsState.activeFocus).toBe('spawn');
   });
 
-  it('isOverviewOpen reflects overviewGroup', () => {
-    const store = useSessionsScreenStore();
-    expect(store.isOverviewOpen).toBe(false);
-    sessionsState.overviewGroup = '/some/dir';
-    expect(store.isOverviewOpen).toBe(true);
-  });
-
-  it('openOverview sets group and resets index', () => {
-    const store = useSessionsScreenStore();
-    sessionsState.overviewFocusIndex = 5;
-    store.openOverview('/dir', true);
-    expect(sessionsState.overviewGroup).toBe('/dir');
-    expect(sessionsState.overviewIsGlobal).toBe(true);
-    expect(sessionsState.overviewFocusIndex).toBe(0);
-  });
-
-  it('closeOverview clears overview state', () => {
-    const store = useSessionsScreenStore();
-    sessionsState.overviewGroup = '/dir';
-    sessionsState.overviewIsGlobal = true;
-    store.closeOverview();
-    expect(sessionsState.overviewGroup).toBeNull();
-    expect(sessionsState.overviewIsGlobal).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------------------

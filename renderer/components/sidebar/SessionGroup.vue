@@ -4,7 +4,7 @@
  * slot), bordered and tinted in the group colour. The whole box is the drop
  * target, so a session can be dropped anywhere on the group, not just its title.
  *
- * Directory groups keep the legacy header (chevron + name + overview drill-in).
+ * Directory groups keep the legacy header (chevron + name).
  * Runtime groups add controls and render as a drop target. Peer groups are a
  * compact read-only header for a computer's source-parameterized Sessions list.
  */
@@ -41,7 +41,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   toggleCollapse: [dirPath: string];
-  showOverview: [dirPath: string];
   rename: [groupId: string];
   closeGroup: [groupId: string];
   addSession: [groupId: string, sessionId: string];
@@ -142,12 +141,7 @@ function onDrop(e: DragEvent): void {
     <span v-if="isRuntime" class="group-icon" aria-hidden="true">🗂️</span>
     <span v-else-if="isPeer" class="group-icon" aria-hidden="true" title="Sessions on this computer">🖥️</span>
 
-    <span
-      class="group-name"
-      style="cursor: pointer"
-      :title="isPeer ? 'Sessions on this computer' : 'Open group overview'"
-      @click.stop="!isPeer && emit('showOverview', group.dirPath)"
-    >
+    <span class="group-name" :title="isPeer ? 'Sessions on this computer' : undefined">
       {{ group.displayName }} ({{ group.sessionCount }})
     </span>
 

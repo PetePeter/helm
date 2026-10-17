@@ -529,69 +529,6 @@ describe('TerminalManager', () => {
     mgr.dispose();
   });
 
-  // -------------------------------------------------------------------------
-  // deselect()
-  // -------------------------------------------------------------------------
-
-  describe('deselect()', () => {
-    it('sets activeSessionId to null', async () => {
-      const mgr = new TerminalManager(container);
-      await mgr.createTerminal('s1', 'aider', 'aider');
-      expect(mgr.getActiveSessionId()).toBe('s1');
-
-      mgr.deselect();
-      expect(mgr.getActiveSessionId()).toBeNull();
-
-      mgr.dispose();
-    });
-
-    it('does not destroy the terminal', async () => {
-      const mgr = new TerminalManager(container);
-      await mgr.createTerminal('s1', 'aider', 'aider');
-
-      mgr.deselect();
-
-      expect(mgr.has('s1')).toBe(true);
-      expect(mgr.getActiveSessionId()).toBeNull();
-
-      mgr.dispose();
-    });
-
-    it('fires onSwitch with null', async () => {
-      const mgr = new TerminalManager(container);
-      await mgr.createTerminal('s1', 'aider', 'aider');
-
-      const spy = vi.fn();
-      mgr.setOnSwitch(spy);
-
-      mgr.deselect();
-      expect(spy).toHaveBeenCalledWith(null);
-
-      mgr.dispose();
-    });
-
-    it('is a no-op when no terminal is active', () => {
-      const mgr = new TerminalManager(container);
-      expect(() => mgr.deselect()).not.toThrow();
-      mgr.dispose();
-    });
-
-    it('switchTo restores after deselect', async () => {
-      const mgr = new TerminalManager(container);
-      await mgr.createTerminal('s1', 'aider', 'aider');
-      await mgr.createTerminal('s2', 'claude', 'claude');
-
-      mgr.deselect();
-      expect(mgr.getActiveSessionId()).toBeNull();
-
-      mgr.switchTo('s2');
-      expect(mgr.getActiveSessionId()).toBe('s2');
-      expect(mgr.getSession('s2')!.element.style.display).toBe('block');
-
-      mgr.dispose();
-    });
-  });
-
   it('destroyTerminal removes the terminal and calls ptyKill', async () => {
     const mgr = new TerminalManager(container);
     await mgr.createTerminal('s1', 'aider', 'aider');

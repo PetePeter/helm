@@ -155,14 +155,12 @@ represent a *view mode* and therefore pass through the navigation store's
 mount/unmount lifecycle, whichever way they are selected (tab, rail, View menu,
 shortcut). `renderer/composables/useDockViewRouting.ts` is the single place that
 maps between the two, so the dock mirrors `main-view-manager` instead of
-becoming a second routing path. Selecting Terminal closes the active overview or
-plan lifecycle before focusing the terminal.
+becoming a second routing path. Selecting Terminal closes the active plan
+lifecycle before focusing the terminal.
 
 Every other pane is a tool pane over existing state. Focusing a tool pane is a
 focus move and nothing else: a view transition started from `focusin` would
-cancel the click that is about to select a session. The `overview` *view mode*
-still exists for the legacy fullscreen group-overview grid; it has no pane of
-its own, so the `activeView` watcher has nothing to reconcile for it.
+cancel the click that is about to select a session.
 
 Panes can declare a `Ctrl+Shift+<letter>` shortcut on their
 `DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, J Chat, P plans, M
@@ -265,12 +263,10 @@ and Plan directories start closed and come back from the restore menu. Dock
 behaviour tests use their own edge-dock fixture, so the default can change
 without rewriting them.
 
-**Retired panes.** A saved layout may name a pane that no longer exists — the
-`overview` pane (Team View, replaced by
-[Session List previews](session-list-previews.md)). `validateLayout` prunes
-retired ids before validating and hands the freed share back to the
-neighbouring panes, rather than rejecting the layout and discarding the user's
-whole arrangement for one missing pane.
+**Retired panes.** A saved layout may name a pane id that no longer exists.
+`validateLayout` prunes retired ids before validating and hands the freed share
+back to neighbouring panes, rather than rejecting the layout and discarding the
+user's whole arrangement for one missing pane.
 
 **Renamed panes.** `RENAMED_PANE_IDS` in `renderer/dock-layout.ts` maps an old
 id to its new one (`scratchpad` → `draft`) before validation, so a rename keeps

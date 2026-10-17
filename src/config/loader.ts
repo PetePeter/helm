@@ -494,8 +494,6 @@ export interface SessionGroupPrefs {
   collapsed: string[];
   /** Bookmarked directory paths — persist as empty groups even with no sessions. */
   bookmarked?: string[];
-  /** Session IDs hidden from overview. */
-  overviewHidden?: string[];
   /** Session List PTY preview density. Absent = 'on'. */
   sessionPreviewMode?: 'on' | 'off' | 'selected-only';
 }

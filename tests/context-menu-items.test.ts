@@ -10,7 +10,7 @@ const base: ContextMenuContext = {
   hasSelection: false,
   isSnappedOut: false,
   currentGroupName: null,
-  session: { locked: false, frozen: false, keepWarm: false, hiddenFromOverview: false },
+  session: { locked: false, frozen: false, keepWarm: false },
 };
 
 const groups = (overrides: Partial<ContextMenuContext>) =>
@@ -63,7 +63,7 @@ describe('buildContextMenuGroups', () => {
 
     expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
     expect(findItem(session, 'toggle-freeze').label).toMatch(/unfreeze/i);
-    for (const id of ['rename-session', 'toggle-lock', 'toggle-keep-warm', 'toggle-overview', 'move-to-group', 'remove-from-group']) {
+    for (const id of ['rename-session', 'toggle-lock', 'toggle-keep-warm', 'move-to-group', 'remove-from-group']) {
       expect(findItem(session, id).enabled).toBe(true);
     }
     expect(findItem(terminal, 'copy').enabled).toBe(true);

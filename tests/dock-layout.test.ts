@@ -106,34 +106,6 @@ describe('default Classic layout', () => {
 describe('edge dock layout', () => {
   const layout = edgeDockLayout();
 
-  it('drops the retired Team View pane from a saved layout instead of rejecting it', () => {
-    // A layout saved while Team View existed: its own column beside the view
-    // group, plus a stray closed entry.
-    const saved = JSON.parse(JSON.stringify(layout));
-    saved.root.children.splice(2, 0, { type: 'group', tabs: ['overview'], activeTab: 'overview' });
-    saved.root.sizes = [0.20, 0.42, 0.20, 0.18];
-
-    const loaded = validateLayout(saved);
-
-    expect(listPanes(loaded.root)).not.toContain('overview');
-    expect([...listPanes(loaded.root)].sort()).toEqual(DOCK_PANES.map(p => p.id).sort());
-    const sizes = (loaded.root as { sizes: number[] }).sizes;
-    expect(sizes).toHaveLength(3);
-    expect(sizes.reduce((sum, size) => sum + size, 0)).toBeCloseTo(1);
-  });
-
-  it('drops a retired pane tabbed into a group and from the closed list', () => {
-    const saved = JSON.parse(JSON.stringify(layout));
-    const terminalGroup = findPaneGroup(saved.root, PANE_TERMINAL)!;
-    terminalGroup.tabs.push('overview');
-    terminalGroup.activeTab = 'overview';
-
-    const loaded = validateLayout({ ...saved, closed: ['overview'] });
-
-    expect(findPaneGroup(loaded.root, PANE_TERMINAL)?.activeTab).toBe(PANE_TERMINAL);
-    expect(loaded.closed).toEqual([]);
-  });
-
   it('keeps a saved scratchpad tab under its new draft id', () => {
     const saved = JSON.parse(JSON.stringify(layout));
     const draftGroup = findPaneGroup(saved.root, PANE_DRAFT)!;

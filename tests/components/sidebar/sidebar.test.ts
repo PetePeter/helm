@@ -36,7 +36,6 @@ function makeCardProps(overrides: Record<string, any> = {}) {
     isFocused: false,
     focusColumn: 0,
     isEditing: false,
-    isHiddenFromOverview: false,
     ...overrides,
   };
 }
@@ -479,12 +478,6 @@ describe('SessionGroup', () => {
     expect(w.find('.group-move-down').exists()).toBe(false);
   });
 
-  it('emits showOverview on group name click', async () => {
-    const w = mount(SessionGroup, { props: makeGroupProps() });
-    await w.find('.group-name').trigger('click');
-    expect(w.emitted('showOverview')).toEqual([['/home/user/project']]);
-  });
-
   it('applies focused class when isFocused', () => {
     const w = mount(SessionGroup, { props: makeGroupProps({ isFocused: true }) });
     expect(w.find('.group-header').classes()).toContain('focused');
@@ -540,7 +533,6 @@ function makeSessionListProps(overrides: Record<string, any> = {}) {
     llmNotifications: new Map(),
     getCliDisplayName: vi.fn((cliType: string) => cliType === 'claude-code' ? 'Claude' : cliType),
     resolveGroupDisplayName: vi.fn((dirPath: string) => dirPath.split('/').pop() || dirPath),
-    isSessionHiddenFromOverview: vi.fn(() => false),
     sessionElapsedText: vi.fn(() => '2m ago'),
     sessionShortcutMap: new Map<string, number>([['s1', 1]]),
     ...overrides,
@@ -603,7 +595,7 @@ describe('SessionList', () => {
   it('forwards session and group events', async () => {
     const w = mount(SessionList, { props: makeSessionListProps() });
     await w.find('.group-name').trigger('click');
-    expect(w.emitted('showOverview')).toEqual([['/workspace/a']]);
+    expect(w.emitted('toggleGroupCollapse')).toEqual([['/workspace/a']]);
 
     await w.find('.session-card').trigger('click');
     expect(w.emitted('sessionClick')).toEqual([['s1']]);
@@ -638,7 +630,6 @@ describe('SessionList', () => {
         navList: [],
       }),
     });
-    expect(w.find('.overview-nav-button').exists()).toBe(false);
     expect(w.find('.sessions-empty').text()).toContain('No active sessions');
   });
 

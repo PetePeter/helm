@@ -1,9 +1,8 @@
 # Session List previews and message flights
 
 Each Session List row shows a live tail of its session's terminal, and the list
-animates every message one session sends another. Both used to live in Team
-View, a second roster pane that duplicated the Session List. Team View was
-retired (P-0804) and these two parts moved into the list.
+animates messages sent from one session to another. The preview tail is passive:
+it does not change the active terminal or receive input.
 
 ```mermaid
 graph LR

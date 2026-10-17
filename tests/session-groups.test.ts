@@ -10,8 +10,6 @@ import {
   resolveGroupDisplayName,
   groupSessionsByDirectory,
   buildFlatNavList,
-  getVisibleSessions,
-  isSessionHiddenFromOverview,
   findNavIndexBySessionId,
   moveGroupUp,
   moveGroupDown,
@@ -341,64 +339,6 @@ describe('buildFlatNavList', () => {
     ]);
   });
 
-  it('does not add a synthetic Overview item to the session navigation list', () => {
-    const groups = [makeGroup('/a', ['s1'])];
-    const nav = buildFlatNavList(groups);
-    expect(nav[0]).toEqual({ type: 'group-header', id: '/a', groupIndex: 0 });
-  });
-});
-
-describe('getVisibleSessions', () => {
-  const groups: SessionGroup[] = [
-    {
-      dirPath: '/a',
-      displayName: 'a',
-      collapsed: false,
-      sessions: [makeSession('s1', '/a'), makeSession('s2', '/a')],
-    },
-    {
-      dirPath: '/b',
-      displayName: 'b',
-      collapsed: false,
-      sessions: [makeSession('s3', '/b')],
-    },
-  ];
-
-  it('respects overviewHidden when building visible overview sessions', () => {
-    const visible = getVisibleSessions(groups, {
-      order: [],
-      collapsed: [],
-      overviewHidden: ['s2'],
-    });
-
-    expect(visible.map(session => session.id)).toEqual(['s1', 's3']);
-  });
-
-  it('prefers cliSessionName when filtering overview visibility', () => {
-    const stableGroups: SessionGroup[] = [{
-      dirPath: '/a',
-      displayName: 'a',
-      collapsed: false,
-      sessions: [{ ...makeSession('s1', '/a'), cliSessionName: 'cli-1' }],
-    }];
-
-    const visible = getVisibleSessions(stableGroups, {
-      order: [],
-      collapsed: [],
-      overviewHidden: ['cli-1'],
-    });
-
-    expect(visible).toEqual([]);
-  });
-
-  it('still honors legacy session-id overviewHidden entries', () => {
-    const session = { ...makeSession('s1', '/a'), cliSessionName: 'cli-1' };
-    expect(isSessionHiddenFromOverview(session, {
-      order: [],
-      collapsed: [],
-      overviewHidden: ['s1'],
-    })).toBe(true);
-  });
 });
 
 // ============================================================================

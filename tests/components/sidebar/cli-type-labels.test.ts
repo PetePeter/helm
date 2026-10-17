@@ -80,7 +80,6 @@ describe('SessionList labels', () => {
         llmNotifications: new Map(),
         getCliDisplayName,
         resolveGroupDisplayName: (p: string) => p,
-        isSessionHiddenFromOverview: () => false,
         sessionElapsedText: () => '',
         sessionShortcutMap: new Map<string, number>(),
       },

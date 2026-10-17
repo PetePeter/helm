@@ -69,8 +69,8 @@ graph TB
 | Element | Behaviour |
 |---------|-----------|
 | **Unified list** | Runtime groups render first, then directory groups. No section dividers. `SessionGroup` branches its header on `kind: 'runtime' \| 'directory'`. |
-| **Split button** `[ ▦ Overview \| ＋ New Group ]` | Top of the list. **Overview** opens a global preview grid of *all* live sessions. **New Group** creates a group — and is itself a drop target (dropping a card creates a group prefilled with that session). |
-| **Runtime header controls** | Always-visible **▸** (overview of this group's members) · **✎** rename · **✕** close. |
+| **New Group** | Top of the list; creates a group and acts as a drop target (dropping a card creates a group prefilled with that session). |
+| **Runtime header controls** | Always-visible **✎** rename · **✕** close. |
 | **Empty group** | Header stays with a "No active sessions" placeholder and an **✕** to close it. |
 | **Drag to move** | The whole session card is draggable (no handle). Drop targets highlight green (valid) / red-dashed (invalid). Rules live in `runtime-group-drop.ts`. |
 | **Context menu** | "🗂️ Move to group ▸" submenu (lists groups, ✓ current, + "New group…") and "↩ Remove from *group*" when grouped. |
@@ -102,8 +102,8 @@ opens a 3-way dialog:
 
 ## Gamepad
 
-Runtime-group headers are ordinary nav-list items, so D-pad navigation, **▸ / D-pad
-Right** overview, and collapse work through the existing flow. **Moving** a session
+Runtime-group headers are ordinary nav-list items, so D-pad navigation and
+collapse work through the existing flow. **Moving** a session
 into a group is mouse/context-menu only (drag needs a pointer); there is no
 gamepad "grab-and-carry" mode.
 

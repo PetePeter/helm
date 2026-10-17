@@ -43,21 +43,15 @@ const mockShowPlanScreen = vi.fn();
 let mockPlanScreenVisible = false;
 let mockCurrentPlanDirPath: string | null = null;
 
-const mockHideOverview = vi.fn();
-
 const mockActivateSession = vi.fn();
-const mockOpenOverview = vi.fn();
 const mockOpenPlan = vi.fn();
 const mockNavigateToSession = vi.fn();
-const mockCloseOverview = vi.fn();
 
 vi.mock('../renderer/stores/navigation.js', () => ({
   useNavigationStore: () => ({
     activateSession: mockActivateSession,
-    openOverview: mockOpenOverview,
     openPlan: mockOpenPlan,
     navigateToSession: mockNavigateToSession,
-    closeOverview: mockCloseOverview,
     syncSidebarToSession: vi.fn(),
     onNavListRebuilt: vi.fn(),
   }),
@@ -97,14 +91,6 @@ vi.mock('../renderer/plans/plan-screen.js', () => ({
   },
   isPlanScreenVisible: () => mockPlanScreenVisible,
   getCurrentPlanDirPath: () => mockCurrentPlanDirPath,
-}));
-
-vi.mock('../renderer/screens/group-overview.js', () => ({
-  getOverviewSessions: vi.fn(() => []),
-  handleOverviewInput: vi.fn(() => false),
-  hideOverview: mockHideOverview,
-  isOverviewVisible: vi.fn(() => false),
-  refreshOverview: vi.fn(),
 }));
 
 let mockCurrentView = 'terminal';
@@ -300,7 +286,6 @@ describe('Sessions Screen', () => {
     mockHidePlanScreen.mockReset();
     mockShowPlanScreen.mockReset();
     mockOpenPlan.mockReset();
-    mockCloseOverview.mockReset();
     mockNavigateToSession.mockReset();
     mockActivateSession.mockReset();
     mockActivateSession.mockImplementation((sessionId: string) => {
@@ -375,17 +360,13 @@ describe('Sessions Screen', () => {
       directories: [],
       editingSessionId: null,
       // navList/groups are derived from state.sessions — reset below.
-      groupPrefs: { order: [], collapsed: [], overviewHidden: [], bookmarked: [] },
-      overviewGroup: null,
-      overviewIsGlobal: false,
-      overviewFocusIndex: 0,
+      groupPrefs: { order: [], collapsed: [], bookmarked: [] },
     });
     Object.assign(state, {
       sessions: [],
       activeSessionId: null,
       currentScreen: 'sessions',
     });
-    document.getElementById('overviewGrid')?.remove();
     const terminalContainer = document.getElementById('terminalContainer');
     if (terminalContainer) terminalContainer.style.display = '';
     document.body.innerHTML = '';
@@ -456,7 +437,7 @@ describe('Sessions Screen', () => {
 
   describe('keyboard shortcuts', () => {
     it('leaves workspace pane shortcuts to the docking shell', async () => {
-      for (const key of ['P', 'O', 'M', 'S', 'A', 'T']) {
+      for (const key of ['P', 'M', 'S', 'A', 'T']) {
         document.dispatchEvent(new KeyboardEvent('keydown', {
           key,
           ctrlKey: true,
@@ -468,7 +449,6 @@ describe('Sessions Screen', () => {
       await flush();
 
       expect(mockOpenPlan).not.toHaveBeenCalled();
-      expect(mockOpenOverview).not.toHaveBeenCalled();
       expect(mockNavigateToSession).not.toHaveBeenCalled();
     });
 
@@ -520,18 +500,6 @@ describe('Sessions Screen', () => {
       sessions.handleSessionsScreenButton('DPadDown');
       sessions.handleSessionsScreenButton('DPadDown');
       expect(sessionsState.sessionsFocusIndex).toBe(3);
-    });
-
-    it('DPadDown from overview routes session auto-select through activateSession', () => {
-      mockCurrentView = 'overview';
-      sessionsState.sessionsFocusIndex = 1; // first session card
-
-      sessions.handleSessionsScreenButton('DPadDown');
-
-      expect(sessionsState.sessionsFocusIndex).toBe(2);
-      expect(mockActivateSession).toHaveBeenCalledWith('s-1');
-      expect(mockNavigateToSession).not.toHaveBeenCalled();
-      expect(mockSwitchTo).not.toHaveBeenCalled();
     });
 
     it('DPadUp moves sessionsFocusIndex backward', () => {
@@ -1487,20 +1455,6 @@ describe('Sessions Screen', () => {
       });
     });
 
-    it('getTabCycleSessionIds excludes overview-hidden sessions from Ctrl+Tab order', async () => {
-      const data = [
-        { ...makeSessions(1)[0], id: 's-0', cliSessionName: 'cli-0' },
-        { ...makeSessions(1)[0], id: 's-1', name: 'Session 1', cliSessionName: 'cli-1' },
-      ];
-      mockSessionGetAll.mockResolvedValue(data);
-      setMockTerminalSessions(data as any);
-      sessionsState.groupPrefs.overviewHidden = ['cli-0'];
-
-      await loadAndFlush(sessions);
-
-      expect(sessions.getTabCycleSessionIds()).toEqual(['s-1']);
-    });
-
     it('UP/DOWN at col=2 is no-op', () => {
       sessionsState.cardColumn = 2;
       const indexBefore = sessionsState.sessionsFocusIndex;
@@ -1641,7 +1595,6 @@ describe('Sessions Screen', () => {
         <div class="session-card" data-nav-index="2" data-sessions-nav-index="2">
           <button class="session-state-btn"></button>
           <button class="session-rename"></button>
-          <button class="session-overview-toggle"></button>
           <button class="session-close"></button>
         </div>
       `;

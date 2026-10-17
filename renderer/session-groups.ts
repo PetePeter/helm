@@ -54,8 +54,6 @@ export interface SessionGroupPrefs {
   collapsed: string[];
   /** Bookmarked directory paths — persist as empty groups even with no sessions. */
   bookmarked?: string[];
-  /** Stable session keys hidden from overview. Falls back to session id when unavailable. */
-  overviewHidden?: string[];
   /** Session List PTY preview density. Absent = 'on'. */
   sessionPreviewMode?: SessionPreviewMode;
 }
@@ -269,30 +267,6 @@ export function buildFlatNavList(
     if (session.remote) items.push({ type: 'session-card', id: session.id, groupIndex: -1 });
   }
   return items;
-}
-
-export function getVisibleSessions(
-  groups: SessionGroup[],
-  prefs: SessionGroupPrefs = { order: [], collapsed: [] },
-): Session[] {
-  return groups.flatMap(group => group.sessions.filter(session => !isSessionHiddenFromOverview(session, prefs)));
-}
-
-export function getSessionOverviewKey(session: Session): string {
-  return session.cliSessionName || session.id;
-}
-
-export function getSessionOverviewAliases(session: Session): string[] {
-  const stableKey = getSessionOverviewKey(session);
-  return stableKey === session.id ? [stableKey] : [stableKey, session.id];
-}
-
-export function isSessionHiddenFromOverview(
-  session: Session,
-  prefs: SessionGroupPrefs = { order: [], collapsed: [] },
-): boolean {
-  const hidden = new Set(prefs.overviewHidden ?? []);
-  return getSessionOverviewAliases(session).some(key => hidden.has(key));
 }
 
 /**

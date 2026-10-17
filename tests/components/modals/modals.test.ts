@@ -873,7 +873,7 @@ describe('ContextMenu.vue', () => {
     const w = factory({
       mode: 'session',
       hasSelection: true,
-      sessionFlags: { locked: false, frozen: true, keepWarm: false, hiddenFromOverview: false },
+      sessionFlags: { locked: false, frozen: true, keepWarm: false },
     });
     expect(w.find('[data-action="group:Cursor"]').exists()).toBe(false);
     await w.find('[data-action="group:Session"]').trigger('click');

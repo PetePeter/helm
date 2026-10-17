@@ -17,7 +17,6 @@ import {
 } from './sessions.js';
 import { getPlannerDirectories, refreshPlanBadges } from './sessions-plans.js';
 
-import { hideOverview } from './group-overview.js';
 import { registerView } from '../main-view/main-view-manager.js';
 import { useNavigationStore } from '../stores/navigation.js';
 import { isPaneVisible } from '../dock-visibility-bridge.js';
@@ -26,14 +25,13 @@ import { useQuickSpawnStore } from '../stores/quick-spawn.js';
 
 // Register the terminal view with the main-view manager. mount/unmount are
 // no-ops because sessions-spawn owns the terminal container's display via
-// showTerminalArea/hideTerminalArea; transitions FROM overview/plan trigger
-// their unmount which already restores the terminal container.
+// showTerminalArea/hideTerminalArea; the Plan screen handles its own display.
 registerView('terminal', {
   mount: () => {
     const termContainer = document.getElementById('terminalContainer');
     if (termContainer) termContainer.style.display = '';
   },
-  unmount: () => { /* overview/plan mount handlers hide what they need */ },
+  unmount: () => { /* Plan screen mount handlers hide what they need */ },
 });
 
 // ============================================================================
@@ -163,9 +161,6 @@ export async function doSpawn(cliType: string, workingDir?: string, contextText?
 // ============================================================================
 
 export function showTerminalArea(): void {
-  // Dismiss overview if it's showing — terminal takes priority
-  hideOverview();
-
   const termContainer = document.getElementById('terminalContainer');
   if (termContainer) termContainer.style.display = '';
   const tm = getTerminalManager();
@@ -239,11 +234,6 @@ export function handleSessionsZone(button: string, dir: string | null): void {
   if (dir === 'right') {
     if (count === 0) return;
     const currentItem = navList[sessionsState.sessionsFocusIndex];
-    // Right at col=0 on a group-header → drill into its overview
-    if (currentItem?.type === 'group-header' && sessionsState.cardColumn === 0) {
-      void useNavigationStore().openOverview(currentItem.id, state.activeSessionId ?? undefined);
-      return;
-    }
     // Session card: 1 state · 2 kebab (⋮) · 3 close.
     const maxColumn = currentItem?.type === 'session-card'
       ? 3

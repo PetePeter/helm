@@ -216,7 +216,7 @@ interface LayoutResult {
 
 ### Entry / Exit
 
-- **Entry:** 🗺️ Plans button on group headers (column 1, click only — D-pad Right at col 0 opens the group overview)
+- **Entry:** 🗺️ Plans button on group headers (column 1, click only)
 - **Exit:** B button (gamepad) or ← Back button in plan header
 - **Switch project:** the header's project dropdown lists the same directories as the Plans pane; picking one opens its plans in place
 

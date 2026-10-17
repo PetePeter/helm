@@ -44,7 +44,6 @@ describe('SessionList todo progress', () => {
       llmNotifications: new Map(),
       getCliDisplayName: (name: string) => name,
       resolveGroupDisplayName: (name: string) => name,
-      isSessionHiddenFromOverview: () => false,
       sessionElapsedText: () => '',
       sessionShortcutMap: new Map<string, number>(),
     };

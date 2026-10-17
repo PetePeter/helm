@@ -301,7 +301,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
       order: string[];
       collapsed: string[];
       bookmarked?: string[];
-      overviewHidden?: string[];
       sessionPreviewMode?: 'on' | 'off' | 'selected-only';
     }>,
 
@@ -309,7 +308,6 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     order: string[];
     collapsed: string[];
     bookmarked?: string[];
-    overviewHidden?: string[];
     sessionPreviewMode?: 'on' | 'off' | 'selected-only';
   }) =>
     ipcRenderer.invoke('config:setSessionGroupPrefs', prefs),

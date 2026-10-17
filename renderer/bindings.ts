@@ -16,15 +16,6 @@ import { createVoiceTalkHolds } from './voice/voice-talk-binding.js';
 import { useVoiceCall } from './composables/useVoiceCall.js';
 
 function executeScroll(binding: { direction: string; lines?: number }): void {
-  const overviewGrid = document.getElementById('overviewGrid');
-  if (overviewGrid && overviewGrid.style.display !== 'none') {
-    const lineHeight = 18;
-    const amount = (binding.lines ?? 5) * lineHeight;
-    overviewGrid.scrollBy({ top: binding.direction === 'up' ? -amount : amount, behavior: 'smooth' });
-    logEvent(`Scroll overview: ${binding.direction}`);
-    return;
-  }
-
   const tm = getTerminalManager();
   const activeId = tm?.getActiveSessionId();
   if (activeId) {

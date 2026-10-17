@@ -1,9 +1,8 @@
 /**
  * MainViewManager — owns the `#mainArea` right panel.
  *
- * Three views share the panel mutually exclusively:
+ * Two views share the panel mutually exclusively:
  *   - 'terminal' — the active xterm.js session
- *   - 'overview' — the group preview grid
  *   - 'plan'     — the planner canvas for a directory
  *
  * Each view registers mount/unmount handlers at startup. Calling
@@ -11,11 +10,11 @@
  * one: the old view's `unmount` runs first, then the new view's `mount`.
  *
  * Replaces the ad-hoc pattern of callers hiding sibling overlays
- * (scattered `hidePlanScreen()` / `hideOverview()` calls, lazy
+ * (scattered `hidePlanScreen()` calls, lazy
  * `import('../plans/plan-screen.js').then(...)` blocks).
  */
 
-export type MainView = 'terminal' | 'overview' | 'plan';
+export type MainView = 'terminal' | 'plan';
 
 export interface ViewMountContext {
   transitionId: number;

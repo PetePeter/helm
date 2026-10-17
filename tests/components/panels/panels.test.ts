@@ -22,8 +22,6 @@ vi.mock('../../../renderer/state-colors.js', () => ({
 }));
 
 import TerminalPane from '../../../renderer/components/panels/TerminalPane.vue';
-import OverviewCard from '../../../renderer/components/panels/OverviewCard.vue';
-import OverviewGrid from '../../../renderer/components/panels/OverviewGrid.vue';
 import ItemEditor from '../../../renderer/components/panels/ItemEditor.vue';
 import PromptTextarea from '../../../renderer/components/common/PromptTextarea.vue';
 import PlanScreen from '../../../renderer/components/panels/PlanScreen.vue';
@@ -81,222 +79,6 @@ describe('TerminalPane', () => {
     // NOTE: containerRef is null in jsdom, so the watch guard prevents the emit.
     // The component logic is tested structurally here.
     expect(w.find('.terminal-pane').exists()).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// OverviewCard
-// ---------------------------------------------------------------------------
-describe('OverviewCard', () => {
-  const makeSession = (overrides = {}) => ({
-    id: 'sess-1',
-    name: 'my-session',
-    cliType: 'claude-code',
-    ...overrides,
-  });
-
-  const baseProps = {
-    session: makeSession(),
-    activityLevel: 'active',
-    sessionState: 'implementing',
-    previewLines: ['line 1', 'line 2', 'line 3'],
-    isFocused: false,
-    isCollapsed: false,
-    isActive: false,
-  };
-
-  it('renders session name', () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    expect(w.find('.overview-card-name').text()).toBe('my-session');
-  });
-
-  it('shows activity dot with correct color', () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    const dot = w.find('.session-activity-dot');
-    expect(dot.attributes('style')).toContain('rgb(68, 204, 68)');
-  });
-
-  it('shows implementing state icon', () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    expect(w.find('.overview-card-state').text()).toBe('🔨');
-  });
-
-  it('shows waiting state icon', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, sessionState: 'waiting' } });
-    expect(w.find('.overview-card-state').text()).toBe('⏳');
-  });
-
-  it('shows idle state icon by default', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, sessionState: 'unknown' } });
-    expect(w.find('.overview-card-state').text()).toBe('💤');
-  });
-
-  it('renders preview lines', () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    const lines = w.findAll('.overview-preview-line');
-    expect(lines).toHaveLength(3);
-    expect(lines[0].text()).toBe('line 1');
-  });
-
-  it('shows "No output yet" when preview is empty', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, previewLines: [] } });
-    expect(w.find('.overview-preview-empty').text()).toBe('No output yet');
-  });
-
-  it('hides preview when collapsed', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, isCollapsed: true } });
-    expect(w.find('.overview-card-preview').exists()).toBe(false);
-    expect(w.find('.overview-card--collapsed').exists()).toBe(true);
-  });
-
-  it('shows collapse button with expand icon when collapsed', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, isCollapsed: true } });
-    expect(w.find('.overview-card-collapse').text()).toBe('▸');
-  });
-
-  it('shows collapse button with collapse icon when expanded', () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    expect(w.find('.overview-card-collapse').text()).toBe('▾');
-  });
-
-  it('emits select on card click', async () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    await w.find('.overview-card').trigger('click');
-    expect(w.emitted('select')).toEqual([['sess-1']]);
-  });
-
-  it('emits toggleCollapse on collapse button click (stops propagation)', async () => {
-    const w = mount(OverviewCard, { props: baseProps });
-    await w.find('.overview-card-collapse').trigger('click');
-    expect(w.emitted('toggleCollapse')).toEqual([['sess-1']]);
-    // Should not also emit select
-    expect(w.emitted('select')).toBeUndefined();
-  });
-
-  it('adds focused class', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, isFocused: true } });
-    expect(w.find('.overview-card.focused').exists()).toBe(true);
-  });
-
-  it('adds active class', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, isActive: true } });
-    expect(w.find('.overview-card--active').exists()).toBe(true);
-  });
-
-  it('shows subtitle when title differs from name', () => {
-    const w = mount(OverviewCard, {
-      props: { ...baseProps, session: makeSession({ title: 'Custom Title' }) },
-    });
-    expect(w.find('.overview-card-subtitle').text()).toBe('Custom Title');
-  });
-
-  it('hides subtitle when title matches name', () => {
-    const w = mount(OverviewCard, {
-      props: { ...baseProps, session: makeSession({ title: 'my-session' }) },
-    });
-    expect(w.find('.overview-card-subtitle').exists()).toBe(false);
-  });
-
-  it('shows inactive color', () => {
-    const w = mount(OverviewCard, { props: { ...baseProps, activityLevel: 'inactive' } });
-    const dot = w.find('.session-activity-dot');
-    expect(dot.attributes('style')).toContain('rgb(68, 136, 255)');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// OverviewGrid
-// ---------------------------------------------------------------------------
-describe('OverviewGrid', () => {
-  const makeSessions = (count: number) =>
-    Array.from({ length: count }, (_, i) => ({
-      id: `s-${i}`,
-      name: `Session ${i}`,
-      cliType: 'claude-code',
-      activityLevel: 'active',
-      sessionState: 'idle',
-      previewLines: ['output line'],
-    }));
-
-  const makeSections = () => [
-    { id: 'g1', label: 'Project One', sessions: makeSessions(2) },
-    { id: 'g2', label: 'Project Two', sessions: makeSessions(1).map((session) => ({ ...session, id: 's-2' })) },
-  ];
-
-  const baseProps = {
-    sections: [{ id: 'g1', label: 'My Project', sessions: makeSessions(3) }],
-    focusIndex: 0,
-    collapsedIds: new Set<string>(),
-    activeSessionId: 's-0',
-    groupLabel: 'My Project',
-  };
-
-  it('renders group label', () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    expect(w.find('.overview-grid-title').text()).toBe('My Project');
-  });
-
-  it('shows session count (plural)', () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    expect(w.find('.overview-grid-count').text()).toBe('3 sessions');
-  });
-
-  it('shows session count (singular)', () => {
-    const w = mount(OverviewGrid, { props: { ...baseProps, sections: [{ id: 'g1', label: 'My Project', sessions: makeSessions(1) }] } });
-    expect(w.find('.overview-grid-count').text()).toBe('1 session');
-  });
-
-  it('renders correct number of OverviewCards', () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    const cards = w.findAll('.overview-card');
-    expect(cards).toHaveLength(3);
-  });
-
-  it('passes focus index correctly', () => {
-    const w = mount(OverviewGrid, { props: { ...baseProps, focusIndex: 1 } });
-    const cards = w.findAll('.overview-card');
-    expect(cards[1].classes()).toContain('focused');
-    expect(cards[0].classes()).not.toContain('focused');
-  });
-
-  it('emits select when a card is clicked', async () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    const cards = w.findAll('.overview-card');
-    await cards[1].trigger('click');
-    expect(w.emitted('select')).toEqual([['s-1']]);
-  });
-
-  it('emits close on handleButton B', () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    const vm = w.vm as any;
-    expect(vm.handleButton('B')).toBe(true);
-    expect(w.emitted('close')).toHaveLength(1);
-  });
-
-  it('returns false for unknown button', () => {
-    const w = mount(OverviewGrid, { props: baseProps });
-    const vm = w.vm as any;
-    expect(vm.handleButton('X')).toBe(false);
-  });
-
-  it('renders empty grid', () => {
-    const w = mount(OverviewGrid, { props: { ...baseProps, sections: [] } });
-    expect(w.findAll('.overview-card')).toHaveLength(0);
-    expect(w.find('.overview-grid-count').text()).toBe('0 sessions');
-  });
-
-  it('renders section break marks in global overview mode', () => {
-    const w = mount(OverviewGrid, {
-      props: {
-        ...baseProps,
-        sections: makeSections(),
-        groupLabel: 'All Sessions',
-        showSectionMarks: true,
-      },
-    });
-    const marks = w.findAll('.overview-break-mark');
-    expect(marks).toHaveLength(1);
-    expect(marks[0].text()).toBe('Project Two');
   });
 });
 
@@ -1413,29 +1195,6 @@ describe('MainView', () => {
     expect(w.find('.test-terminal').isVisible()).toBe(true);
   });
 
-  it('hides terminal slot when active view is overview', () => {
-    const w = mount(MainView, {
-      props: { activeView: 'overview' as const },
-      slots: {
-        terminal: '<div class="test-terminal">T</div>',
-        overview: '<div class="test-overview">O</div>',
-      },
-    });
-    expect(w.find('.test-terminal').isVisible()).toBe(false);
-    expect(w.find('.test-overview').exists()).toBe(true);
-  });
-
-  it('does not render overview slot when terminal is active (v-if)', () => {
-    const w = mount(MainView, {
-      props: { activeView: 'terminal' as const },
-      slots: {
-        terminal: '<div class="test-terminal">T</div>',
-        overview: '<div class="test-overview">O</div>',
-      },
-    });
-    expect(w.find('.main-view-overview').exists()).toBe(false);
-  });
-
   it('does not render plan slot when terminal is active (v-if)', () => {
     const w = mount(MainView, {
       props: { activeView: 'terminal' as const },
@@ -1456,17 +1215,10 @@ describe('MainView', () => {
   });
 
   it('exposes showTerminal method that emits', () => {
-    const w = mount(MainView, { props: { activeView: 'overview' as const } });
+    const w = mount(MainView, { props: { activeView: 'plan' as const } });
     const vm = w.vm as any;
     vm.showTerminal();
     expect(w.emitted('update:activeView')).toEqual([['terminal']]);
-  });
-
-  it('exposes showOverview method', () => {
-    const w = mount(MainView, { props: { activeView: 'terminal' as const } });
-    const vm = w.vm as any;
-    vm.showOverview();
-    expect(w.emitted('update:activeView')).toEqual([['overview']]);
   });
 
   it('exposes showPlan method', () => {

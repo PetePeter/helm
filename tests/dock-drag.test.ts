@@ -120,7 +120,7 @@ describe('tab reorder', () => {
   });
 
   it('recognises an insertion that would rebuild the strip unchanged', () => {
-    // Terminal already sits at 0 and Overview at 1, so those slots are no-ops.
+    // Terminal already sits at 0 and Mess at 1, so those slots are no-ops.
     expect(isNoOpReorder(tabs, PANE_TERMINAL, 0)).toBe(true);
     expect(isNoOpReorder(tabs, PANE_TERMINAL, 1)).toBe(false);
     expect(isNoOpReorder(tabs, PANE_MESS, 1)).toBe(true);

@@ -8,8 +8,7 @@
  *   - Identity-based focus resolution + navList rebuild survival
  *   - navigateToSession — full UX transition
  *   - activateSession — thin preview
- *   - Overlay lifecycle (overview, plan, settings)
- *   - Overlay chaining (overview → plan, plan → overview)
+ *   - Overlay lifecycle (plan, settings)
  *   - Edge cases (missing session, empty navList, double-close)
  */
 
@@ -41,7 +40,6 @@ vi.mock('../renderer/main-view/main-view-manager.js', () => ({
 const mockTm = {
   hasTerminal: vi.fn(() => true),
   switchTo: vi.fn(),
-  deselect: vi.fn(),
   getActiveSessionId: vi.fn(() => null),
   ensureTerminal: vi.fn(),
 };
@@ -59,20 +57,16 @@ vi.mock('../renderer/session-groups.js', async (importActual) => ({
   }),
 }));
 
-// Dynamic imports — item-editor, chip-bar, group-overview
+// Dynamic imports — item-editor and chip-bar
 const {
   mockHideItemEditor,
   mockChipBarClear,
   mockChipBarRefresh,
-  mockSetSelectedOnExit,
-  mockHideOverview,
   mockSessionSetActive,
 } = vi.hoisted(() => ({
   mockHideItemEditor: vi.fn(),
   mockChipBarClear: vi.fn(),
   mockChipBarRefresh: vi.fn(),
-  mockSetSelectedOnExit: vi.fn(),
-  mockHideOverview: vi.fn(),
   mockSessionSetActive: vi.fn(),
 }));
 
@@ -87,11 +81,6 @@ vi.mock('../renderer/stores/chip-bar.js', () => ({
     clear: mockChipBarClear,
     refresh: mockChipBarRefresh,
   })),
-}));
-
-vi.mock('../renderer/screens/group-overview.js', () => ({
-  setSelectedOnExit: mockSetSelectedOnExit,
-  hideOverview: mockHideOverview,
 }));
 
 vi.mock('../renderer/plans/plan-screen.js', () => ({
@@ -140,7 +129,7 @@ function buildNavList(...items: Array<{ type: string; id: string }>): void {
       sessions.push({ id: item.id, name: item.id, cliType: 'claude', processId: 0, workingDir: dir });
     }
   }
-  sessionsState.groupPrefs = { order: [...dirs], collapsed: [], overviewHidden: [], bookmarked: [...dirs] };
+  sessionsState.groupPrefs = { order: [...dirs], collapsed: [], bookmarked: [...dirs] };
   state.sessions = sessions;
 }
 
@@ -159,9 +148,7 @@ function resetSingletons(): void {
   sessionsState.sessionsFocusIndex = 0;
   sessionsState.cardColumn = 0;
   sessionsState.activeFocus = 'sessions';
-  sessionsState.groupPrefs = { order: [], collapsed: [], overviewHidden: [], bookmarked: [] };
-  sessionsState.overviewGroup = null;
-  sessionsState.overviewIsGlobal = false;
+  sessionsState.groupPrefs = { order: [], collapsed: [], bookmarked: [] };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -230,8 +217,8 @@ describe('useNavigationStore', () => {
     it('updates when onViewChange fires', () => {
       store.init();
       // Simulate main-view-manager changing view
-      viewChangeListeners[0]('overview');
-      expect(store.panelView).toBe('overview');
+      viewChangeListeners[0]('plan');
+      expect(store.panelView).toBe('plan');
     });
 
     it('does not update after dispose', () => {
@@ -356,16 +343,6 @@ describe('useNavigationStore', () => {
       expect(mockChipBarRefresh).toHaveBeenCalledWith('sess-2');
     });
 
-    it('dismisses overview (with selectedOnExit) when overview is open', async () => {
-      currentMvmView = 'overview';
-
-      await store.navigateToSession('sess-1');
-
-      expect(mockSetSelectedOnExit).toHaveBeenCalledWith(true);
-      expect(showView).toHaveBeenCalledWith('terminal');
-      expect(mockTm.switchTo).toHaveBeenCalledWith('sess-1');
-    });
-
     it('dismisses plan when plan is open', async () => {
       currentMvmView = 'plan';
 
@@ -375,17 +352,15 @@ describe('useNavigationStore', () => {
       expect(mockTm.switchTo).toHaveBeenCalledWith('sess-1');
     });
 
-    it('clears restore context when dismissing overlay', async () => {
-      currentMvmView = 'overview';
-      // Simulate that overview was opened (restore context saved)
+    it('clears restore context when dismissing plan', async () => {
+      currentMvmView = 'plan';
       store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-      await store.openOverview('/projects');
+      await store.openPlan('/projects');
 
       // Now navigate away
       await store.navigateToSession('sess-2');
 
       const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
       expect(ctx.savedFocusItem).toBeNull();
     });
 
@@ -475,80 +450,6 @@ describe('useNavigationStore', () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // Overview lifecycle
-  // ──────────────────────────────────────────────────────────────────────
-
-  describe('openOverview', () => {
-    it('saves restore context (previous session + focus)', async () => {
-      state.activeSessionId = 'sess-1';
-      store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-
-      await store.openOverview('/projects', 'sess-2');
-
-      const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBe('sess-1');
-      expect(ctx.savedFocusItem).toEqual({ id: 'sess-1', type: 'session-card' });
-    });
-
-    it('delegates to showView with overview params', async () => {
-      await store.openOverview('/projects', 'sess-2');
-
-      expect(showView).toHaveBeenCalledWith('overview', {
-        groupDirPath: '/projects',
-        initialSessionId: 'sess-2',
-      });
-    });
-
-    it('preserves existing restore context when chaining overlays', async () => {
-      state.activeSessionId = 'original-session';
-      store.focusedNavItem = { id: 'original-session', type: 'session-card' };
-
-      // First overlay open saves context
-      await store.openOverview('/a');
-      const ctx1 = store.__getRestoreContext();
-      expect(ctx1.previousSessionId).toBe('original-session');
-
-      // Transition to plan (overview → plan) should keep original context
-      await store.openPlan('/b');
-      const ctx2 = store.__getRestoreContext();
-      expect(ctx2.previousSessionId).toBe('original-session');
-    });
-  });
-
-  describe('closeOverview', () => {
-    it('delegates to the main view manager', async () => {
-      currentMvmView = 'overview';
-      await store.closeOverview();
-      expect(showView).toHaveBeenCalledWith('terminal');
-      expect(mockHideOverview).not.toHaveBeenCalled();
-    });
-
-    it('reads back restored focus from sessionsState', async () => {
-      buildNavList(
-        { type: 'group-header', id: '/a' },
-        { type: 'session-card', id: 'sess-1' },
-      );
-      sessionsState.sessionsFocusIndex = navIndex('session-card', 'sess-1');
-
-      await store.closeOverview();
-
-      expect(store.focusedNavItem).toEqual({ id: 'sess-1', type: 'session-card' });
-    });
-
-    it('clears restore context', async () => {
-      state.activeSessionId = 'sess-1';
-      store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-      await store.openOverview('/a');
-
-      await store.closeOverview();
-
-      const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
-      expect(ctx.savedFocusItem).toBeNull();
-    });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────
   // Plan lifecycle
   // ──────────────────────────────────────────────────────────────────────
 
@@ -561,7 +462,6 @@ describe('useNavigationStore', () => {
 
       const ctx = store.__getRestoreContext();
       expect(state.activeSessionId).toBe('sess-1');
-      expect(ctx.previousSessionId).toBeNull();
       expect(ctx.savedFocusItem).toEqual({ id: 'sess-1', type: 'session-card' });
     });
 
@@ -571,13 +471,6 @@ describe('useNavigationStore', () => {
       expect(showView).toHaveBeenCalledWith('plan', { dir: '/projects' });
     });
 
-    it('sets selectedOnExit on overview when transitioning overview → plan', async () => {
-      currentMvmView = 'overview';
-
-      await store.openPlan('/projects');
-
-      expect(mockSetSelectedOnExit).toHaveBeenCalledWith(true);
-    });
   });
 
   describe('closePlan', () => {
@@ -647,7 +540,6 @@ describe('useNavigationStore', () => {
       await store.closePlan();
 
       const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
       expect(ctx.savedFocusItem).toBeNull();
     });
   });
@@ -745,52 +637,16 @@ describe('useNavigationStore', () => {
   // Overlay chaining edge cases
   // ──────────────────────────────────────────────────────────────────────
 
-  describe('overlay chaining', () => {
-    it('overview → plan preserves original restore context', async () => {
-      state.activeSessionId = 'original';
-      store.focusedNavItem = { id: 'original', type: 'session-card' };
-
-      await store.openOverview('/a');
-      // overview mount deselects terminal
-      state.activeSessionId = null;
-
-      await store.openPlan('/b');
-
-      const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBe('original');
-      expect(ctx.savedFocusItem).toEqual({ id: 'original', type: 'session-card' });
-    });
-
-    it('closing chained plan does not restore the old session', async () => {
-      buildNavList(
-        { type: 'session-card', id: 'original' },
-        { type: 'session-card', id: 'other' },
-      );
-      state.activeSessionId = 'original';
-      store.focusedNavItem = { id: 'original', type: 'session-card' };
-
-      await store.openOverview('/a');
-      state.activeSessionId = null;
-      await store.openPlan('/b');
-      state.activeSessionId = null;
-
-      await store.closePlan();
-
-      expect(mockTm.switchTo).not.toHaveBeenCalled();
-      expect(state.activeSessionId).toBeNull();
-    });
-
+  describe('plan navigation transitions', () => {
     it('navigateToSession from overlay clears all restore context', async () => {
       state.activeSessionId = 'original';
       store.focusedNavItem = { id: 'original', type: 'session-card' };
-      await store.openOverview('/a');
+      await store.openPlan('/a');
 
       buildNavList({ type: 'session-card', id: 'target' });
-      currentMvmView = 'overview';
       await store.navigateToSession('target');
 
       const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
       expect(ctx.savedFocusItem).toBeNull();
     });
   });
@@ -811,7 +667,6 @@ describe('useNavigationStore', () => {
       expect(store.focusedNavItem).toBeNull();
       expect(store.focusColumn).toBe(0);
       expect(store.__getRestoreContext()).toEqual({
-        previousSessionId: null,
         savedFocusItem: null,
       });
     });
@@ -829,31 +684,6 @@ describe('useNavigationStore', () => {
   // ──────────────────────────────────────────────────────────────────────
 
   describe('integration — user journeys', () => {
-    it('overview visible → sidebar click → overview dismissed, terminal shown', async () => {
-      store.init();
-      buildNavList(
-        { type: 'session-card', id: 'sess-1' },
-        { type: 'session-card', id: 'sess-2' },
-      );
-      state.activeSessionId = 'sess-1';
-      store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-
-      await store.openOverview('/projects');
-      expect(store.panelView).toBe('overview');
-
-      await store.navigateToSession('sess-2');
-
-      expect(showView).toHaveBeenCalledWith('terminal');
-      expect(mockSetSelectedOnExit).toHaveBeenCalledWith(true);
-      expect(mockTm.switchTo).toHaveBeenCalledWith('sess-2');
-      expect(state.activeSessionId).toBe('sess-2');
-      expect(store.focusedNavItem).toEqual({ id: 'sess-2', type: 'session-card' });
-      expect(sessionsState.sessionsFocusIndex).toBe(navIndex('session-card', 'sess-2'));
-      const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
-      expect(ctx.savedFocusItem).toBeNull();
-    });
-
     it('session → plan → session leaves session navigation authoritative', async () => {
       store.init();
       buildNavList(
@@ -880,27 +710,6 @@ describe('useNavigationStore', () => {
       expect(store.focusedNavItem).toEqual({ id: 'sess-1', type: 'session-card' });
     });
 
-    it('overview → plan does not make plan close restore a session', async () => {
-      store.init();
-      buildNavList(
-        { type: 'session-card', id: 'sess-1' },
-        { type: 'session-card', id: 'sess-2' },
-      );
-      state.activeSessionId = 'sess-1';
-      store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-      sessionsState.sessionsFocusIndex = navIndex('session-card', 'sess-1');
-
-      // Open overview, then chain into plan
-      await store.openOverview('/projects');
-      await store.openPlan('/projects');
-      state.activeSessionId = 'sess-2';
-
-      await store.closePlan();
-
-      expect(mockTm.switchTo).not.toHaveBeenCalled();
-      expect(state.activeSessionId).toBe('sess-2');
-    });
-
     it('Ctrl+Tab sidebar sync', () => {
       store.init();
       buildNavList(
@@ -915,36 +724,6 @@ describe('useNavigationStore', () => {
       expect(state.activeSessionId).toBe('sess-2');
       expect(store.focusedNavItem).toEqual({ id: 'sess-2', type: 'session-card' });
       expect(sessionsState.sessionsFocusIndex).toBe(navIndex('session-card', 'sess-2'));
-    });
-
-    it('notification click during overview → overview dismissed + correct session shown', async () => {
-      store.init();
-      buildNavList(
-        { type: 'session-card', id: 'sess-1' },
-        { type: 'session-card', id: 'sess-2' },
-        { type: 'session-card', id: 'sess-3' },
-      );
-      state.activeSessionId = 'sess-1';
-      store.focusedNavItem = { id: 'sess-1', type: 'session-card' };
-
-      await store.openOverview('/projects');
-      expect(store.panelView).toBe('overview');
-
-      await store.navigateToSession('sess-3');
-
-      // Overview dismissed
-      expect(showView).toHaveBeenCalledWith('terminal');
-      expect(mockSetSelectedOnExit).toHaveBeenCalledWith(true);
-      // Terminal switched to sess-3
-      expect(mockTm.switchTo).toHaveBeenCalledWith('sess-3');
-      expect(state.activeSessionId).toBe('sess-3');
-      // Sidebar synced to sess-3
-      expect(store.focusedNavItem).toEqual({ id: 'sess-3', type: 'session-card' });
-      expect(sessionsState.sessionsFocusIndex).toBe(navIndex('session-card', 'sess-3'));
-      // Restore context cleared
-      const ctx = store.__getRestoreContext();
-      expect(ctx.previousSessionId).toBeNull();
-      expect(ctx.savedFocusItem).toBeNull();
     });
 
     it('navList rebuild preserves focused identity', () => {
@@ -1063,7 +842,7 @@ function makeFakeDock() {
 describe('dock view routing — tool panes start no view transition', () => {
   let store: ReturnType<typeof useNavigationStore>;
   let dock: ReturnType<typeof makeFakeDock>;
-  let activeView: ReturnType<typeof ref<'terminal' | 'overview' | 'plan'>>;
+  let activeView: ReturnType<typeof ref<'terminal' | 'plan'>>;
   let routing: ReturnType<typeof createDockViewRouting>;
 
   beforeEach(() => {
@@ -1082,7 +861,7 @@ describe('dock view routing — tool panes start no view transition', () => {
       { type: 'session-card', id: 'sess-2' },
     );
     dock = makeFakeDock();
-    activeView = ref<'terminal' | 'overview' | 'plan'>('terminal');
+    activeView = ref<'terminal' | 'plan'>('terminal');
     routing = createDockViewRouting({
       activeView: activeView as any,
       dock,
@@ -1141,6 +920,5 @@ describe('dock view routing — tool panes start no view transition', () => {
   it('still routes the panes that do represent a view', () => {
     expect(routing.viewForPane(PANE_TERMINAL)).toBe('terminal');
     expect(routing.viewForPane(PANE_SESSIONS)).toBeUndefined();
-    expect(routing.paneForView('overview')).toBeUndefined();
   });
 });

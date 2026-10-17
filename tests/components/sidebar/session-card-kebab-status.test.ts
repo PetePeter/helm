@@ -1,8 +1,5 @@
 /**
- * Session row: the kebab (⋮) replaces the old lock / freeze / eye / rename
- * buttons, and the row's state shows as icons centred on it — every one that
- * applies, side by side. Real SessionCard.
- *
+ * Session row menu and status icons, using the real SessionCard.
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -10,7 +7,7 @@ import { mount } from '@vue/test-utils';
 import SessionCard from '../../../renderer/components/sidebar/SessionCard.vue';
 import { contextMenu } from '../../../renderer/stores/modal-bridge.js';
 
-function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0, isHiddenFromOverview = false) {
+function mountCard(session: Record<string, unknown> = {}, isFocused = false, focusColumn = 0) {
   return mount(SessionCard, {
     props: {
       session: { id: 's1', name: 'worker', cliType: 'claude-code', ...session },
@@ -31,7 +28,6 @@ function mountCard(session: Record<string, unknown> = {}, isFocused = false, foc
       isSnappedOut: false,
       llmNotifications: [],
       shortcutKey: null,
-      isHiddenFromOverview,
     } as never,
   });
 }
@@ -92,24 +88,10 @@ describe('SessionCard menu and status icons', () => {
     expect(contextMenu).toMatchObject({ visible: true, mode: 'session', sourceSessionId: 's1' });
   });
 
-  it('no longer carries separate lock / freeze / eye / rename buttons', () => {
-    const w = mountCard();
-    for (const cls of ['.session-lock', '.session-freeze', '.session-overview-toggle', '.session-rename']) {
-      expect(w.find(cls).exists()).toBe(false);
-    }
-  });
-
   it('shows every status that applies, side by side', () => {
     expect(icons(mountCard())).toEqual([]);
     expect(icons(mountCard({ locked: true }))).toEqual(['🔒']);
     expect(icons(mountCard({ locked: true, frozen: true, keepWarmUntil: Date.now() + 60_000 }))).toEqual(['🔒', '❄️', '⏰']);
-  });
-
-  it('a session hidden from the overview shows a closed eye mid-row', () => {
-    expect(mountCard().find('.session-status-hidden').exists()).toBe(false);
-    const hidden = mountCard({ locked: true }, false, 0, true);
-    expect(hidden.find('.session-status-icons .session-status-hidden').attributes('title')).toBe('Hidden from the overview');
-    expect(icons(hidden)).toEqual(['🔒', '']);
   });
 
   it('an expired keep-warm shows no alarm clock', () => {

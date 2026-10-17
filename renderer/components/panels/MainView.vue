@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
- * MainView.vue — Right panel manager for terminal / overview / plan views.
+ * MainView.vue — Right panel manager for terminal / plan views.
  *
  * Replaces main-view-manager.ts with a reactive component that switches
- * between three mutually exclusive views using v-show (terminal) and v-if
- * (overview/plan) for appropriate lifecycle management.
+ * between two mutually exclusive views using v-show (terminal) and v-if
+ * (plan) for appropriate lifecycle management.
  */
 import { computed } from 'vue';
 
-export type ViewMode = 'terminal' | 'overview' | 'plan';
+export type ViewMode = 'terminal' | 'plan';
 
 const props = defineProps<{
   activeView: ViewMode;
@@ -19,32 +19,23 @@ const emit = defineEmits<{
 }>();
 
 const isTerminal = computed(() => props.activeView === 'terminal');
-const isOverview = computed(() => props.activeView === 'overview');
 const isPlan = computed(() => props.activeView === 'plan');
 
 function showTerminal(): void {
   emit('update:activeView', 'terminal');
 }
 
-function showOverview(): void {
-  emit('update:activeView', 'overview');
-}
-
 function showPlan(): void {
   emit('update:activeView', 'plan');
 }
 
-defineExpose({ showTerminal, showOverview, showPlan });
+defineExpose({ showTerminal, showPlan });
 </script>
 
 <template>
   <div class="main-view" id="mainArea">
     <div v-show="isTerminal" class="main-view-terminal" id="terminalContainer">
       <slot name="terminal" />
-    </div>
-
-    <div v-if="isOverview" class="main-view-overview">
-      <slot name="overview" />
     </div>
 
     <div v-if="isPlan" class="main-view-plan">

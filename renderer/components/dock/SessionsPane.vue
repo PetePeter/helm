@@ -18,7 +18,7 @@ import { useSessionsScreenStore } from '../../stores/sessions-screen.js';
 import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
 import { useFlashAttention } from '../../composables/useFlashAttention.js';
 import { useRecycleBin } from '../../composables/useRecycleBin.js';
-import { isSessionHiddenFromOverview, resolveGroupDisplayName } from '../../session-groups.js';
+import { resolveGroupDisplayName } from '../../session-groups.js';
 import { getCliDisplayName } from '../../utils.js';
 import { formatClock } from '../../../src/utils/time-parser.js';
 import { useHelmMainPaneContext } from '../../dock-pane-context.js';
@@ -104,7 +104,6 @@ function userPromptElapsedText(sessionId: string): string {
       :flash-entries="flashAttention.entries"
       :get-cli-display-name="getCliDisplayName"
       :resolve-group-display-name="resolveGroupDisplayName"
-      :is-session-hidden-from-overview="(session) => isSessionHiddenFromOverview(session, sessionsState.groupPrefs)"
       :session-elapsed-text="sessionElapsedText"
       :user-prompt-elapsed-text="userPromptElapsedText"
       :session-shortcut-map="sessionsScreenStore.sessionShortcutMap"
@@ -116,7 +115,6 @@ function userPromptElapsedText(sessionId: string): string {
       @group-add-session="pane.groups.addSession"
       @group-remove-session="pane.groups.removeSession"
       @toggle-group-collapse="sidebar.onGroupToggleCollapse"
-      @show-overview="sidebar.onShowOverview"
       @session-click="sidebar.onSessionClick"
       @commit-rename="sidebar.onCommitRename"
       @cancel-rename="sidebar.onCancelRename"

@@ -57,7 +57,7 @@ beforeEach(() => {
   state.sessions = [];
   state.activeSessionId = null;
   state.snappedOutSessions.clear();
-  sessionsState.groupPrefs = { order: [], collapsed: [], overviewHidden: [], bookmarked: [] };
+  sessionsState.groupPrefs = { order: [], collapsed: [], bookmarked: [] };
   sessionsState.sessionsFocusIndex = 0;
   setRuntimeGroups([]);
   setSessionCwdResolver(id => state.sessions.find(s => s.id === id)?.workingDir ?? '');

@@ -42,7 +42,7 @@ defineProps<{
   contextMenuIsSnappedOut: boolean;
   contextMenuGroupName?: string | null;
   contextMenuMode?: 'terminal' | 'session' | 'chat';
-  contextMenuSessionFlags?: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
+  contextMenuSessionFlags?: { locked: boolean; frozen: boolean; keepWarm: boolean };
   bindingEditorVisible: boolean;
   bindingEditorButton: string;
   bindingEditorProfileName: string;

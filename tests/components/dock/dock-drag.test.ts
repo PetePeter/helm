@@ -27,7 +27,7 @@ const PaneStub = defineComponent({
   setup: (props) => () => h('div', { 'data-pane-content': props.paneId }, props.paneId),
 });
 
-/** Workspace 1000x600; left group 0-600 holding Terminal+Overview, right group 600-1000. */
+/** Workspace 1000x600; left group 0-600 holding Terminal+Mess, right group 600-1000. */
 const RECTS: Record<string, { x: number; y: number; width: number; height: number }> = {
   workspace: { x: 0, y: 0, width: 1000, height: 600 },
   [`group:${PANE_TERMINAL}`]: { x: 0, y: 0, width: 600, height: 600 },
@@ -237,7 +237,7 @@ describe('dock drag interaction', () => {
 
   it('suppresses the preview for a drop the model rejects', async () => {
     const wrapper = mountWorkspace();
-    // Overview is already tabbed with Terminal, so a centre drop is a no-op.
+    // Mess is already tabbed with Terminal, so a centre drop is a no-op.
     await press(wrapper, PANE_MESS, 120, 10);
     await dragTo(300, 300);
 

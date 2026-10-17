@@ -9,7 +9,7 @@
 import { defineStore } from 'pinia';
 import { reactive, computed } from 'vue';
 import type { NavItem, SessionGroup, SessionGroupPrefs } from '../session-groups.js';
-import { isSessionHiddenFromOverview, buildSessionGroups, buildFlatNavList } from '../session-groups.js';
+import { buildSessionGroups, buildFlatNavList } from '../session-groups.js';
 import { buildSessionShortcutMap } from '../utils/session-shortcut-map.js';
 import { state } from '../state.js';
 import { useRuntimeGroups } from '../composables/useRuntimeGroups.js';
@@ -31,12 +31,6 @@ export interface SessionsScreenState {
   readonly groups: SessionGroup[];
   /** Persisted group preferences (order + collapse). */
   groupPrefs: SessionGroupPrefs;
-  /** Directory path of the group currently shown in overview (null = hidden). */
-  overviewGroup: string | null;
-  /** True when the current overview shows visible sessions across all folders. */
-  overviewIsGlobal: boolean;
-  /** Focused card index within the overview grid. */
-  overviewFocusIndex: number;
   /** Focused button index within the plans grid. */
   plansFocusIndex: number;
 }
@@ -86,16 +80,11 @@ export const sessionsState: SessionsScreenState = reactive({
   editingSessionId: null,
   get navList() { return derivedNavList.value; },
   get groups() { return derivedGroups.value; },
-  groupPrefs: { order: [], collapsed: [], overviewHidden: [], bookmarked: [] },
-  overviewGroup: null,
-  overviewIsGlobal: false,
-  overviewFocusIndex: 0,
+  groupPrefs: { order: [], collapsed: [], bookmarked: [] },
   plansFocusIndex: 0,
 });
 
 export const useSessionsScreenStore = defineStore('sessionsScreen', () => {
-  const isOverviewOpen = computed(() => sessionsState.overviewGroup !== null);
-
   const activeNavItem = computed(() =>
     sessionsState.navList[sessionsState.sessionsFocusIndex] ?? null,
   );
@@ -112,38 +101,14 @@ export const useSessionsScreenStore = defineStore('sessionsScreen', () => {
     return null;
   });
 
-  const hiddenSessionIds = computed<Set<string>>(() => {
-    const hidden = new Set<string>();
-    for (const group of sessionsState.groups) {
-      for (const session of group.sessions) {
-        if (isSessionHiddenFromOverview(session, sessionsState.groupPrefs)) {
-          hidden.add(session.id);
-        }
-      }
-    }
-    return hidden;
-  });
-
   const snappedOutSessionIds = computed<Set<string>>(() => state.snappedOutSessions);
 
   const sessionShortcutMap = computed<Map<string, number>>(() =>
-    buildSessionShortcutMap(sessionsState.navList, hiddenSessionIds.value, snappedOutSessionIds.value),
+    buildSessionShortcutMap(sessionsState.navList, snappedOutSessionIds.value),
   );
 
   function setFocus(zone: SessionsFocus): void {
     sessionsState.activeFocus = zone;
-  }
-
-  function openOverview(dirPath: string, isGlobal = false): void {
-    sessionsState.overviewGroup = dirPath;
-    sessionsState.overviewIsGlobal = isGlobal;
-    sessionsState.overviewFocusIndex = 0;
-  }
-
-  function closeOverview(): void {
-    sessionsState.overviewGroup = null;
-    sessionsState.overviewIsGlobal = false;
-    sessionsState.overviewFocusIndex = 0;
   }
 
   function setEditingSession(id: string | null): void {
@@ -152,14 +117,10 @@ export const useSessionsScreenStore = defineStore('sessionsScreen', () => {
 
   return {
     sessionsState,
-    isOverviewOpen,
     activeNavItem,
     focusedGroup,
-    hiddenSessionIds,
     sessionShortcutMap,
     setFocus,
-    openOverview,
-    closeOverview,
     setEditingSession,
   };
 });

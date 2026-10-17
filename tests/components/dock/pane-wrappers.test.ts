@@ -42,8 +42,6 @@ interface Fake {
 function makeContext(): Fake {
   const terminalContainerRef = ref<HTMLElement | null>(null);
   const sidebar = {
-    overviewCollapsedIds: ref(new Set<string>()),
-    overviewGroupLabel: ref('Sessions'),
     spawnCollapsed: ref(false),
     plannerCollapsed: ref(false),
     schedulerCollapsed: ref(false),
@@ -57,10 +55,8 @@ function makeContext(): Fake {
     onCancelRename: vi.fn(),
     onRequestClose: vi.fn(),
     onSessionStateChange: vi.fn(),
-    onOverviewToggleCollapse: vi.fn(),
     onGroupToggleCollapse: vi.fn(),
     onShowPlans: vi.fn(),
-    onShowOverview: vi.fn(),
     onCancelSchedule: vi.fn(),
     toggleSpawnCollapse: vi.fn(),
     togglePlannerCollapse: vi.fn(),
@@ -117,8 +113,6 @@ beforeEach(() => {
   sessionsState.cliTypes = [];
   sessionsState.directories = [];
   // groups/navList are derived getters on the store — they follow from sessions.
-  sessionsState.overviewIsGlobal = false;
-  sessionsState.overviewGroup = null;
   (window as any).gamepadCli = {
     planList: vi.fn().mockResolvedValue([]),
     planDeps: vi.fn().mockResolvedValue([]),

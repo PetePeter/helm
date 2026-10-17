@@ -1,5 +1,5 @@
 /**
- * Session List PTY previews and message flights, which replaced Team View.
+ * Session List PTY previews and message flights.
  *
  * Real SessionList, real useSessionPreviews over a real PtyOutputBuffer, and
  * real useMessageFlights. Only the flight IPC bridge is faked.
@@ -66,7 +66,6 @@ function mountList(overrides: Record<string, unknown> = {}) {
       llmNotifications: new Map(),
       getCliDisplayName: (t: string) => t,
       resolveGroupDisplayName: (p: string) => p,
-      isSessionHiddenFromOverview: () => false,
       sessionElapsedText: () => '',
       sessionShortcutMap: new Map(),
       ...overrides,

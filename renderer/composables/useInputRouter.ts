@@ -1,10 +1,8 @@
 import type { Ref } from 'vue';
 import { state } from '../state.js';
-import { sessionsState } from '../screens/sessions-state.js';
 import { getTerminalManager } from '../runtime/terminal-provider.js';
 import { toDirection, navigateFocus } from '../utils.js';
 import { processConfigBinding, processConfigRelease, releaseVoiceTalk } from '../bindings.js';
-import { getOverviewSessions } from '../screens/group-overview.js';
 import {
   handlePlanScreenDpad,
   handlePlanScreenAction,
@@ -15,7 +13,7 @@ import { useModalKeyboardBridge } from './useModalKeyboardBridge.js';
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import type { PaneId } from '../dock-types.js';
 
-type MainViewState = 'terminal' | 'overview' | 'plan';
+type MainViewState = 'terminal' | 'plan';
 
 interface ButtonTarget {
   handleButton?: (button: string) => boolean | void;
@@ -24,7 +22,6 @@ interface ButtonTarget {
 interface NavigationController {
   closeSettings(): void;
   closePlan(): Promise<void> | void;
-  closeOverview(): Promise<void> | void;
   navigateToSession(sessionId: string): Promise<void> | void;
 }
 
@@ -35,7 +32,6 @@ export interface InputRouterDeps {
   itemEditorVisible: Ref<boolean>;
   itemEditorRef: Ref<ButtonTarget | null>;
   settingsPanelRef: Ref<ButtonTarget | null>;
-  overviewCollapsedIds: Ref<Set<string>>;
   navStore: NavigationController;
   /** Identity of the dock pane that owns gamepad input. */
   focusedPaneId?: Ref<PaneId | null>;
@@ -122,50 +118,6 @@ export function useInputRouter(deps: InputRouterDeps) {
       if (dir) { handlePlanScreenDpad(dir); return; }
       if (button === 'B') { void deps.navStore.closePlan(); return; }
       if (handlePlanScreenAction(button)) return;
-    }
-
-    if ((routeByFocus ? focusedPane === 'overview' : deps.activeView.value === 'overview')) {
-      const sessions = getOverviewSessions();
-      const count = sessions.length;
-      const dir = toDirection(button);
-
-      if (count === 0) {
-        void deps.navStore.closeOverview();
-        return;
-      }
-
-      if (dir === 'left') {
-        void deps.navStore.closeOverview();
-        return;
-      }
-      if (dir === 'right') {
-        return;
-      }
-
-      if (button === 'A') {
-        const session = sessions[sessionsState.overviewFocusIndex];
-        if (session) {
-          void deps.navStore.navigateToSession(session.id);
-        }
-        return;
-      }
-
-      if (button === 'X') {
-        const session = sessions[sessionsState.overviewFocusIndex];
-        if (session) {
-          if (deps.overviewCollapsedIds.value.has(session.id)) {
-            deps.overviewCollapsedIds.value.delete(session.id);
-          } else {
-            deps.overviewCollapsedIds.value.add(session.id);
-          }
-        }
-        return;
-      }
-
-      if (button === 'B') {
-        void deps.navStore.closeOverview();
-        return;
-      }
     }
 
     if (routeByFocus) {

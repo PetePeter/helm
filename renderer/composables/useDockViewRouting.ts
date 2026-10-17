@@ -3,7 +3,7 @@
  *
  * main-view-manager stays the view transition authority; the dock mirrors it.
  * Reconciling here — rather than a second routing path — is what lets a normal
- * openPlan()/openOverview() bring back a view pane the user closed to the View
+ * openPlan() brings back a view pane the user closed to the View
  * menu, instead of transitioning into a pane that is not in the tree.
  *
  * Only panes that *represent* a view mode take part. Tool panes (Sessions,
@@ -35,7 +35,6 @@ export interface DockViewRoutingWorkspace {
 export interface DockViewRoutingNavigation {
   openPlan(dirPath: string): Promise<void> | void;
   closePlan(): Promise<void> | void;
-  closeOverview(): Promise<void> | void;
 }
 
 export interface DockViewRoutingDeps {
@@ -50,8 +49,7 @@ export interface DockViewRoutingDeps {
 /**
  * Panes that represent a view mode.
  *
- * `overview` (the legacy fullscreen group-overview grid) is deliberately absent:
- * it has no pane of its own and is reached through `openOverview()`.
+ * Only the terminal and plan canvas have independent view lifecycles.
  */
 const VIEW_PANES: ReadonlyArray<readonly [ViewName, PaneId]> = [
   ['terminal', PANE_TERMINAL],
@@ -115,9 +113,7 @@ export function createDockViewRouting(deps: DockViewRoutingDeps) {
       const dirPath = deps.getActiveSessionDir();
       if (dirPath) await navStore.openPlan(dirPath);
     } else if (paneId === PANE_TERMINAL) {
-      // The legacy fullscreen overview is still a view the terminal must leave.
-      if (activeView.value === 'overview') await navStore.closeOverview();
-      else if (activeView.value === 'plan') await navStore.closePlan();
+      if (activeView.value === 'plan') await navStore.closePlan();
     } else if (paneId === PANE_ARTIFACTS) {
       artifacts.showPanel();
     }

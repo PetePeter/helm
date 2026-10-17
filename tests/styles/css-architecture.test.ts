@@ -51,7 +51,7 @@ const GLOBAL_PREFIXES = [
   '.event-log', '.status-content', '.status-card', '.binding-', '.dir-picker-',
   '.modifier-', '.mode-', '.sequence-',
   '.settings-', '.skill-', '.field-', '.notification-', '.tool-',
-  '.overview-', '.preview-line', '.plan-dot', '.controller-', '.bindings-',
+  '.preview-line', '.plan-dot', '.controller-', '.bindings-',
   '.tools-',
 ];
 

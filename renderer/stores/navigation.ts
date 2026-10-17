@@ -3,11 +3,11 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * Navigation store — centralized view routing + sidebar focus.
  *
  * Single write authority for:
- *   - Panel view (terminal / overview / plan) — mirrors main-view-manager
+ *   - Panel view (terminal / plan) — mirrors main-view-manager
  *   - Active session ID — via stores/app.ts `setActiveSessionId`, the single
  *     guard that a session-pinned window (snap-out pop-out) relies on
  *   - Sidebar focus (identity-based — survives navList rebuilds)
- *   - Overlay lifecycle (open/close overview, plan, settings)
+ *   - Overlay lifecycle (open/close plan, settings)
  *
  * Existing reactive singletons (state.ts, sessions-state.ts) remain the
  * read path for components. The store writes to them; no competing refs.
@@ -46,8 +46,7 @@ export const useNavigationStore = defineStore('navigation', () => {
   const panelView = computed(() => _panelView.value);
 
   // ── Overlay restore context ──────────────────────────────────────────
-  // Saved on overlay open, consumed on overlay close.
-  const _previousSessionId = ref<string | null>(null);
+  // Saved on plan open, consumed on plan close.
   const _savedFocusItem = ref<{ id: string; type: string } | null>(null);
 
   // ── Identity-based sidebar focus ─────────────────────────────────────
@@ -127,7 +126,7 @@ export const useNavigationStore = defineStore('navigation', () => {
    * Full UX transition — dismiss overlays, switch terminal, sync sidebar,
    * hide draft/editor, clear chip bar.
    *
-   * Use for: sidebar session click, notification click, overview card select.
+   * Use for: sidebar session click, notification click.
    */
   async function navigateToSession(sessionId: string): Promise<ActivationResult> {
     const requestId = ++navigationRequestId;
@@ -135,18 +134,10 @@ export const useNavigationStore = defineStore('navigation', () => {
     const cv = currentView();
 
     // Always clear restore context — we're navigating to a concrete session.
-    // Covers the case where overview's selectCard callback already dismissed
-    // the overlay before this runs (so cv === 'terminal' with stale context).
-    _previousSessionId.value = null;
     _savedFocusItem.value = null;
 
     // 1. Dismiss overlays (skip their restore — we're going somewhere new)
-    if (cv === 'overview') {
-      const { setSelectedOnExit } = await import('../screens/group-overview.js');
-      if (!isLatestRequest()) return { kind: 'failed', sessionId, error: 'stale request' };
-      setSelectedOnExit(true);
-      await showView('terminal');
-    } else if (cv === 'plan') {
+    if (cv === 'plan') {
       await showView('terminal');
     }
     if (!isLatestRequest()) return { kind: 'failed', sessionId, error: 'stale request' };
@@ -218,55 +209,8 @@ export const useNavigationStore = defineStore('navigation', () => {
 
   // ── Overlay lifecycle ────────────────────────────────────────────────
 
-  async function openOverview(dirPath: string | null, initialSessionId?: string): Promise<void> {
-    ++navigationRequestId;
-    // If transitioning from plan, its unmount runs during showView('overview') — no special flag needed.
-
-    // Re-read legacy focus before saving (D-pad may have moved it)
-    captureCurrentFocus();
-
-    // Save restore context (preserve existing if chaining overlay → overlay)
-    if (_previousSessionId.value === null) {
-      _previousSessionId.value = state.activeSessionId;
-    }
-    if (!_savedFocusItem.value) {
-      _savedFocusItem.value = focusedNavItem.value ? { ...focusedNavItem.value } : null;
-    }
-
-    await showView('overview', { groupDirPath: dirPath, initialSessionId });
-  }
-
-  /**
-   * Close overview and restore previous terminal + sidebar focus.
-   * Delegates to group-overview.ts unmount for terminal/DOM restore,
-   * then reads back the result to update identity-based focus.
-   */
-  async function closeOverview(): Promise<void> {
-    ++navigationRequestId;
-    await showView('terminal');
-
-    // Overview unmount restores terminal + numeric sidebar focus.
-    // Read back the restored index and update identity tracker.
-    const currentIdx = Math.min(
-      sessionsState.sessionsFocusIndex,
-      Math.max(0, sessionsState.navList.length - 1),
-    );
-    sessionsState.sessionsFocusIndex = currentIdx;
-    const navItem = sessionsState.navList[currentIdx];
-    if (navItem) {
-      focusedNavItem.value = { id: navItem.id, type: navItem.type };
-    }
-    _previousSessionId.value = null;
-    _savedFocusItem.value = null;
-  }
-
   async function openPlan(dirPath: string): Promise<void> {
     ++navigationRequestId;
-    // If overview is open, tell it to skip restore
-    if (currentView() === 'overview') {
-      const { setSelectedOnExit } = await import('../screens/group-overview.js');
-      setSelectedOnExit(true);
-    }
 
     // Re-read legacy focus before saving (D-pad may have moved it)
     captureCurrentFocus();
@@ -288,7 +232,6 @@ export const useNavigationStore = defineStore('navigation', () => {
   async function closePlan(): Promise<void> {
     ++navigationRequestId;
     const savedFocus = _savedFocusItem.value;
-    _previousSessionId.value = null;
     _savedFocusItem.value = null;
 
     await showView('terminal');
@@ -378,16 +321,14 @@ export const useNavigationStore = defineStore('navigation', () => {
     }
     initialized = false;
     _panelView.value = 'terminal';
-    _previousSessionId.value = null;
     _savedFocusItem.value = null;
     focusedNavItem.value = null;
     focusColumn.value = 0;
   }
 
-  /** Test-only — read restore context for assertions. */
+  /** Test-only — read plan restore context for assertions. */
   function __getRestoreContext() {
     return {
-      previousSessionId: _previousSessionId.value,
       savedFocusItem: _savedFocusItem.value,
     };
   }
@@ -413,8 +354,6 @@ export const useNavigationStore = defineStore('navigation', () => {
     reconcileTerminalSwitch,
 
     // Overlay lifecycle
-    openOverview,
-    closeOverview,
     openPlan,
     closePlan,
 

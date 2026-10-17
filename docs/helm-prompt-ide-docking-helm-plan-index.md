@@ -21,7 +21,7 @@ All plans are `autoImplement=false`. No production code was changed while creati
 2. `P-0694` — Extract views and tool windows into registered panes
    - ID: `7da24e3d-6288-4c2a-9ef4-5fe922d55497`
    - State: planning
-   - Registers Terminal, Overview, PlanScreen, session list, Scheduler, Quick Spawn, planner-directory, and Artifacts.
+   - Registers Terminal, PlanScreen, session list, Scheduler, Quick Spawn, planner-directory, and Artifacts.
 
 3. `P-0695` — Persisted workspace layout, View recovery, and reset
    - ID: `59edaea7-4042-4868-876c-fdfd57801b66`

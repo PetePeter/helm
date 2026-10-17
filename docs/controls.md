@@ -6,15 +6,14 @@ Gamepad button and keyboard shortcut mappings.
 
 | Input | Action |
 |-------|--------|
-| D-Pad Up/Down | Switch sessions (auto-selects terminal) / auto-opens overview on group headers. The pinned **Helm** section is the first stop (it selects the operator's terminal) |
-| D-Pad Right | Session card: cycle sub-elements / Group header: open group overview (col 0) — 🗺️ Plans button (col 1) is click-only |
+| D-Pad Up/Down | Switch sessions (auto-selects terminal) / move through group headers. The pinned **Helm** section is the first stop (it selects the operator's terminal) |
+| D-Pad Right | Session card: cycle sub-elements / Group header: no-op — 🗺️ Plans button (col 1) is click-only |
 | D-Pad Left | Back one sub-element column |
-| D-Pad directions | Overview grid: navigation between cards (Up/Down past edges exits overview) |
 | Left Stick | Same as D-pad |
-| Right Stick | Configurable (default: scroll terminal buffer / overview grid) |
-| A | Configurable binding (tool's binding profile) / overview: select session + exit |
+| Right Stick | Configurable (default: scroll terminal buffer) |
+| A | Configurable binding (tool's binding profile) |
 | B | Back to sessions zone / configurable binding (tool's binding profile) |
-| X | Configurable binding (tool's binding profile) / overview: close focused session |
+| X | Configurable binding (tool's binding profile) |
 | Y | (planned: cycle terminal state) |
 | Left Trigger | Spawn Claude Code |
 | Right Bumper | Spawn Copilot CLI |
@@ -33,14 +32,8 @@ are on.
 |--------|--------|--------|
 | 0 | the card itself | falls through to the configured binding |
 | 1 | state | open the state dropdown |
-| 2 | ✎ | start rename |
-| 3 | 👁 | toggle overview visibility |
-| 4 | ✕ | close (confirmation) |
-| 5 | 🔓 / 🔒 | lock or unlock against closure |
-
-The padlock sits to the LEFT of ✕ on screen — beside the button it guards — but
-holds the highest column index deliberately, so columns 1-4 keep the numbering
-they have always had.
+| 2 | ⋮ | open the session actions menu |
+| 3 | ✕ | close (confirmation) |
 
 A locked session shows 🔒 and its ✕ is disabled; closing is refused in the main
 process too, so MCP, Telegram, group close, and force restart all bounce off it.
@@ -141,7 +134,7 @@ When a button is pressed, the navigation system checks handlers in this order:
 7. Item editor panel (plan / context; D-pad/A/B field navigation)
 8. Context menu (Arrow keys + Tab/Shift+Tab for button cycling)
 9. Screen-specific routing (sessions / settings — inside settings, `SettingsScreen` owns ◀▶ panes, ▲▼, A, B-back and LB/RB sub-tabs; see [settings.md](settings.md))
-    - **Sessions case:** Plan screen overlay (when visible, B exits) → Group overview → Session/spawn navigation
+    - **Sessions case:** Plan screen overlay (when visible, B exits) → Session/spawn navigation
 10. Config binding fallback (the active tool's binding profile)
 
 The first handler that returns `true` (consumed) stops the chain.
@@ -152,7 +145,7 @@ Prompt memos, the prompt-template picker and the Ctrl+G Prompt Editor popup were
 
 ## Directory Plans
 
-The 🗺️ Plans button on group headers (column 1, click only — D-pad Right at col 0 opens the group overview instead) opens the plan canvas for that directory. The plan screen is an overlay inside `#mainArea`, not a separate screen — it's checked via `isPlanScreenVisible()` within the sessions case of the navigation router.
+The 🗺️ Plans button on group headers (column 1, click only) opens the plan canvas for that directory. The plan screen is an overlay inside `#mainArea`, not a separate screen — it's checked via `isPlanScreenVisible()` within the sessions case of the navigation router.
 
 ### Plan Screen Controls
 

@@ -10,7 +10,6 @@ import { sessionsState } from '../screens/sessions-state.js';
 import { sessionsClient } from '../ipc/clients.js';
 import { logEvent } from '../utils.js';
 import type { SessionSortField, SortDirection } from '../sort-logic.js';
-import { refreshOverview } from '../screens/group-overview.js';
 import {
   loadSessionsData, getTerminalManager,
 } from '../screens/sessions.js';
@@ -45,7 +44,6 @@ export async function commitRename(sessionId: string, newName: string): Promise<
       const tm = getTerminalManager();
       if (tm) tm.renameSession(sessionId, trimmed);
       await loadSessionsData();
-      refreshOverview();
     } else {
       logEvent(`Rename failed: ${result.error}`);
       sessionsState.editingSessionId = null;

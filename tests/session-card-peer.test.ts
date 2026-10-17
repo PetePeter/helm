@@ -27,7 +27,6 @@ function baseProps(session: Record<string, unknown>) {
     isFocused: false,
     focusColumn: 0 as const,
     isEditing: false,
-    isHiddenFromOverview: false,
   };
 }
 

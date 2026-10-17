@@ -3,7 +3,6 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
 
 const mocks = vi.hoisted(() => ({
   state: {
@@ -90,7 +89,6 @@ vi.mock('../../renderer/sidebar/session-services.js', () => ({
   cancelRename: vi.fn(),
 }));
 vi.mock('../../renderer/screens/sessions.js', () => ({
-  toggleSessionOverviewVisibility: vi.fn(),
   setSessionState: vi.fn(),
   toggleGroupCollapse: vi.fn(),
 }));
@@ -101,13 +99,10 @@ import { closeDirPicker, dirPicker } from '../../renderer/stores/modal-bridge.js
 
 function createController() {
   const navStore = {
-    closeOverview: vi.fn(),
     navigateToSession: vi.fn(),
     openPlan: vi.fn(),
-    openOverview: vi.fn(),
   };
   const deps = {
-    activeView: ref<'terminal' | 'overview' | 'plan'>('terminal'),
     navStore,
     refreshProjects: vi.fn(),
     doSpawn: vi.fn(),
@@ -257,13 +252,4 @@ describe('useSidebarController', () => {
     });
   });
 
-  it('closes overview before navigating from a session click', async () => {
-    const { controller, deps, navStore } = createController();
-    deps.activeView.value = 'overview';
-
-    await controller.onSessionClick('s2');
-
-    expect(navStore.closeOverview).toHaveBeenCalled();
-    expect(navStore.navigateToSession).toHaveBeenCalledWith('s2');
-  });
 });

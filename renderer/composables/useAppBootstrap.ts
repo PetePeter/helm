@@ -26,11 +26,10 @@ import { findNavIndexBySessionId } from '../session-groups.js';
 import { BUILTIN_SHELL_CLI_TYPE } from '../../src/types/session.js';
 
 // Side-effect imports — modules that call registerView() at top level
-import '../screens/group-overview.js';
 import '../plans/plan-screen.js';
 import '../screens/sessions-spawn.js';
 import { setTerminalManagerGetter as setSpawnTerminalManagerGetter } from '../screens/sessions-spawn.js';
-import { getTabCycleSessionIds, updateSessionsFocus } from '../screens/sessions.js';
+import { getTabCycleSessionIds } from '../screens/sessions.js';
 import {
   artifactsClient,
   configClient,
@@ -41,12 +40,7 @@ import {
   terminalClient,
 } from '../ipc/clients.js';
 
-// Overview/plan setup functions
-import {
-  setOutputBuffer, setSessionStateGetter, setActivityLevelGetter,
-  setTerminalManagerGetter as setOverviewTerminalManagerGetter,
-  setSelectCardCallback, setOverviewDismissCallback,
-} from '../screens/group-overview.js';
+// Plan screen setup functions
 import {
   setPlanScreenFitCallback, setPlanScreenCloseCallback,
   refreshCanvasIfVisible,
@@ -314,7 +308,6 @@ async function initGroupPrefs(): Promise<void> {
         order: prefs.order ?? [],
         collapsed: prefs.collapsed ?? [],
         bookmarked: prefs.bookmarked ?? [],
-        overviewHidden: prefs.overviewHidden ?? [],
         sessionPreviewMode: prefs.sessionPreviewMode ?? 'on',
       };
     }
@@ -633,7 +626,7 @@ async function loadRepeatConfig(): Promise<void> {
 /**
  * Move the session spine one step in visual sidebar order.
  *
- * Sessions are the spine; terminal/overview/memories/artifacts/plans are
+ * Sessions are the spine; terminal/memories/artifacts/plans are
  * aspects onto whichever session is selected. Cycling therefore moves the
  * selection and deliberately leaves the focused pane alone, so you keep looking
  * at the same aspect of the next session.
@@ -727,13 +720,7 @@ export async function bootstrap(opts: BootstrapOptions): Promise<void> {
     });
   }
 
-  // Overview + Plan screen dependencies
-  setOverviewTerminalManagerGetter(() => tm);
-  setOutputBuffer(tm.getOutputBuffer());
-  setSessionStateGetter(getSessionState);
-  setActivityLevelGetter(getSessionActivity);
-  setSelectCardCallback((sessionId) => { void useNavigationStore().navigateToSession(sessionId); });
-  setOverviewDismissCallback(() => updateSessionsFocus());
+  // Plan screen dependencies
   setPlanScreenFitCallback(() => tm.fitActive());
   setPlanScreenCloseCallback(() => {
     const activeId = getTerminalManager()?.getActiveSessionId() ?? null;

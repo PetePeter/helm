@@ -16,13 +16,10 @@ import { sortSessions } from '../sort-logic.js';
 import { getOrderedSessionIds } from '../utils/session-shortcut-map.js';
 import {
   toggleCollapse,
-  findNavIndexBySessionId, getSessionOverviewAliases, getSessionOverviewKey,
+  findNavIndexBySessionId,
   type SessionPreviewMode,
 } from '../session-groups.js';
 import { useRuntimeGroups } from '../composables/useRuntimeGroups.js';
-import {
-  getOverviewSessions, hideOverview, isOverviewVisible, refreshOverview,
-} from './group-overview.js';
 import { useNavigationStore } from '../stores/navigation.js';
 import { isPlanScreenVisible, hidePlanScreen } from '../plans/plan-screen.js';
 import { loadStoredSessions } from '../session-store.js';
@@ -109,10 +106,6 @@ export async function setSessionState(sessionId: string, newState: string): Prom
       await loadSessionsData();
     }
 
-    if (isOverviewVisible()) {
-      refreshOverview();
-    }
-
     updateSessionsFocus();
   } catch (error) {
     console.error('[Sessions] Failed to set session state:', error);
@@ -182,7 +175,6 @@ function normalizeGroupPrefs(prefs: Partial<typeof sessionsState.groupPrefs>): t
     order: prefs.order ?? [],
     collapsed: prefs.collapsed ?? [],
     bookmarked: prefs.bookmarked ?? [],
-    overviewHidden: prefs.overviewHidden ?? [],
     sessionPreviewMode: prefs.sessionPreviewMode ?? 'on',
   };
 }
@@ -193,7 +185,6 @@ async function saveGroupPrefs(): Promise<void> {
         await configClient.configSetSessionGroupPrefs({
       order: [...sessionsState.groupPrefs.order],
       collapsed: [...sessionsState.groupPrefs.collapsed],
-      overviewHidden: [...(sessionsState.groupPrefs.overviewHidden ?? [])],
       sessionPreviewMode: sessionsState.groupPrefs.sessionPreviewMode ?? 'on',
     });
   } catch (e) {
@@ -230,36 +221,6 @@ export async function setSessionKeepWarm(sessionId: string, on: boolean): Promis
   } catch (e) {
     console.error('[Sessions] Failed to set keep-warm:', e);
   }
-}
-
-export async function toggleSessionOverviewVisibility(sessionId: string): Promise<void> {
-  const session = state.sessions.find(item => item.id === sessionId);
-  if (!session) return;
-
-  const hidden = new Set(sessionsState.groupPrefs.overviewHidden ?? []);
-  const aliases = getSessionOverviewAliases(session);
-  const hiddenFromOverview = aliases.some(key => hidden.has(key));
-
-  aliases.forEach(key => hidden.delete(key));
-  if (!hiddenFromOverview) {
-    hidden.add(getSessionOverviewKey(session));
-  }
-
-  sessionsState.groupPrefs = {
-    ...sessionsState.groupPrefs,
-    overviewHidden: [...hidden],
-  };
-  await saveGroupPrefs();
-  if (isOverviewVisible()) {
-    const count = getOverviewSessions().length;
-    if (count === 0) {
-      hideOverview();
-    } else {
-      sessionsState.overviewFocusIndex = clamp(sessionsState.overviewFocusIndex, 0, count - 1);
-      refreshOverview();
-    }
-  }
-  updateSessionsFocus();
 }
 
 export async function toggleGroupCollapse(dirPath: string): Promise<void> {
@@ -349,11 +310,6 @@ function getDirPathForSession(sessionId: string): string | null {
   return session?.workingDir ?? getSessionCwd(sessionId) ?? null;
 }
 
-function isSessionHiddenFromOverview(session: Session): boolean {
-  const hidden = new Set(sessionsState.groupPrefs.overviewHidden ?? []);
-  return getSessionOverviewAliases(session).some(key => hidden.has(key));
-}
-
 function getFocusedGroupDirPath(): string | null {
   const navItem = sessionsState.navList[sessionsState.sessionsFocusIndex];
   if (navItem?.type === 'group-header') return navItem.id;
@@ -370,8 +326,6 @@ function getFocusedGroupDirPath(): string | null {
 
 function resolvePlanShortcutDirPath(preferredSessionId?: string): string | null {
   if (preferredSessionId) return getDirPathForSession(preferredSessionId);
-  // When an overview is open, Ctrl+N targets that overview's directory.
-  if (sessionsState.overviewGroup) return sessionsState.overviewGroup;
   return getFocusedGroupDirPath()
     ?? (state.activeSessionId ? getDirPathForSession(state.activeSessionId) : null)
     ?? sessionsState.groups[0]?.dirPath
@@ -482,13 +436,8 @@ export function syncSessionHighlight(sessionId: string): void {
  * absent from navList and thus excluded.
  */
 export function getTabCycleSessionIds(): string[] {
-  const hiddenIds = new Set(
-    state.sessions
-      .filter(session => isSessionHiddenFromOverview(session))
-      .map(session => session.id),
-  );
   const snappedOutIds = state.snappedOutSessions;
-  return getOrderedSessionIds(sessionsState.navList, hiddenIds, snappedOutIds);
+  return getOrderedSessionIds(sessionsState.navList, snappedOutIds);
 }
 
 // ============================================================================
@@ -632,7 +581,7 @@ function handleSessionsZoneButton(button: string): boolean {
       openStateDropdownForFocused();
       return true;
     }
-    // Column 2 is the row's kebab (⋮): rename, lock, freeze, keep warm, overview…
+    // Column 2 is the row's kebab (⋮): session actions.
     if (sessionsState.cardColumn === 2) {
       showSessionMenu(navItem.id);
       return true;
@@ -663,8 +612,8 @@ function handleSessionsZoneButton(button: string): boolean {
 export function updateSessionsFocus(): void {
   // Vue renders the sidebar highlight from the identity-based focusedNavItem
   // (see isNavItemFocused). Keep that identity in lockstep with the numeric
-  // stepping cursor for ALL nav item types (cards, group headers, overview
-  // button) so D-pad/keyboard moves onto non-session rows highlight correctly.
+  // stepping cursor for all nav item types so D-pad/keyboard moves onto
+  // group headers and session rows consistently.
   if (sessionsState.activeFocus === 'sessions') {
     try { useNavigationStore().captureCurrentFocus(); } catch { /* store not ready */ }
   }
@@ -705,7 +654,7 @@ export function refreshSessions(): void {
  * Keyboard and gamepad navigation are the same operation, so they share one
  * router (`useInputRouter`) that dispatches by focused pane. This map used to
  * be a capture-phase `document` listener here that re-implemented that pane
- * dispatch — plan, overview and sessions branches inline — and gated it on
+ * dispatch — plan and sessions branches inline — and gated it on
  * `state.currentScreen`, a concept the dock replaced.
  */
 export const NAVIGATION_KEY_BUTTONS: Readonly<Record<string, string>> = Object.freeze({

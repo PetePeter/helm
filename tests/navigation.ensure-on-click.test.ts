@@ -75,10 +75,6 @@ vi.mock('../renderer/stores/chip-bar.js', () => ({
   })),
 }));
 
-vi.mock('../renderer/screens/group-overview.js', () => ({
-  setSelectedOnExit: vi.fn(),
-  hideOverview: vi.fn(),
-}));
 
 vi.mock('../renderer/plans/plan-screen.js', () => ({
   hidePlanScreen: vi.fn(),
@@ -117,9 +113,7 @@ function resetSingletons() {
   sessionsState.sessionsFocusIndex = 0;
   sessionsState.cardColumn = 0;
   sessionsState.activeFocus = 'sessions';
-  sessionsState.groupPrefs = { order: [], collapsed: [], overviewHidden: [], bookmarked: [] };
-  sessionsState.overviewGroup = null;
-  sessionsState.overviewIsGlobal = false;
+  sessionsState.groupPrefs = { order: [], collapsed: [], bookmarked: [] };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
