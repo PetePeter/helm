@@ -1,6 +1,6 @@
 # Session Todos
 
-Todos are a structured checklist for one Helm session, maintained by that session's LLM. The desktop Todos dock pane is read-only. It shows open items first and completed items struck through; the sidebar shows a `done/total` chip when the list is non-empty.
+Todos are a structured checklist for one Helm session, maintained by that session's LLM. The desktop Todos dock pane is read-only. It shows open items first and completed items struck through, with Todo and Done filter chips (the Plans status-chip style, view-only); Ctrl+Shift+K focuses it; the sidebar shows a `done/total` chip when the list is non-empty.
 
 ## MCP tools
 

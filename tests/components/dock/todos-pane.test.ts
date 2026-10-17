@@ -50,8 +50,21 @@ describe('TodosPane', () => {
     expect(rows.map(row => row.text())).toEqual(['Open task', 'Finished task']);
     expect(rows[0]!.classes()).not.toContain('todos-pane__item--done');
     expect(rows[1]!.classes()).toContain('todos-pane__item--done');
-    expect(pane.findAll('button, input, textarea, select')).toHaveLength(0);
+    expect(pane.findAll('.todos-pane__list button, input, textarea, select')).toHaveLength(0);
     expect(loaded).toEqual(['s1']);
+  });
+
+  it('filters by the Todo and Done chips', async () => {
+    const pane = await open();
+    const chip = (label: string) => pane.findAll('.filter-chip').find(c => c.text().includes(label))!;
+    const texts = () => pane.findAll('.todos-pane__item').map(row => row.text());
+
+    await chip('Done').trigger('click');
+    expect(texts()).toEqual(['Open task']);
+
+    await chip('Todo').trigger('click');
+    await chip('Done').trigger('click');
+    expect(texts()).toEqual(['Finished task']);
   });
 
   it('switches with the active session and reflects live MCP changes', async () => {
