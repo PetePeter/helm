@@ -164,20 +164,31 @@ cancel the click that is about to select a session. The `overview` *view mode*
 still exists for the legacy fullscreen group-overview grid; it has no pane of
 its own, so the `activeView` watcher has nothing to reconcile for it.
 
-Every pane declares its own `Ctrl+Shift+<letter>` as `shortcut` on its
-`DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, J Chat (`Ctrl+Shift+J`), P plans, M
+Panes can declare a `Ctrl+Shift+<letter>` shortcut on their
+`DockPaneDescriptor` (`renderer/dock-types.ts`): T terminal, J Chat, P plans, M
 memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F
-projects, A artifacts, D draft. Declaring it on the descriptor means a new pane
-cannot ship without a key, and the router and the tab tooltip
-(`paneShortcutHint`, `renderer/dock-shortcuts.ts`) read one source. The keys
-work from anywhere, text fields included — Ctrl+Shift+letter types nothing, so
-claiming it costs the field nothing. A shortcut shows/focuses its pane; it does
-not toggle visibility. `Ctrl+Shift+N` remains the new-session shortcut, and
-Ctrl+G is an alias for the Draft pane.
+projects, A artifacts, D draft. The router and the visible tab key chip (also
+shown in the tooltip) read the descriptor through `paneShortcutHint` in
+`renderer/dock-shortcuts.ts`. These keys work from anywhere, text fields
+included — Ctrl+Shift+letter types nothing, so claiming it costs the field
+nothing. A shortcut shows/focuses its pane; it does not toggle visibility. If
+multiple panes share a key, each press advances to the next matching pane in
+registry order and wraps around; focus outside that set starts at its first
+pane. `Ctrl+Shift+N` remains the new-session shortcut, and Ctrl+G is an alias
+for the Draft pane.
 
 **Caret on focus.** A pane field marked `data-autofocus` takes the caret when
 the dock focuses that pane (`DockPane.vue`), so a jump lands ready to type. The
-Draft textarea uses it.
+Draft textarea and Chat composer use it; tab clicks and gamepad focus follow
+the same dock focus path. While Chat is the active pane, changing the selected
+session also returns focus to its composer, regardless of whether the change
+came from the sidebar, a session shortcut, D-pad navigation or session spawn.
+An inactive Chat pane never steals focus.
+
+The `popout` window uses the same descriptor shortcuts filtered to its profile:
+Terminal, Plans, Memories, Mess, Artifacts and Draft. It also supports Ctrl+G
+and session-slot/chip-action digit shortcuts; session cycling and shell-owned
+actions stay in the main window.
 
 Pane content does not provide a second close control. The dock tab close button
 is the close action, the View menu restores closed panes, and rails reveal

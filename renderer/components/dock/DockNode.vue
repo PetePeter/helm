@@ -13,6 +13,7 @@ const props = defineProps<{
   node: DockNode;
   path: DockNodePath;
   focusedPaneId: PaneId | null;
+  focusRequestId?: number;
   paneComponents: Readonly<Record<PaneId, Component>>;
   revealedPaneIds: readonly PaneId[];
   draggedPaneId?: PaneId | null;
@@ -131,6 +132,7 @@ function onDockFocusOut(event: FocusEvent): void {
         :node="child"
         :path="childPath(index)"
         :focused-pane-id="focusedPaneId"
+        :focus-request-id="focusRequestId ?? 0"
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"
@@ -165,6 +167,7 @@ function onDockFocusOut(event: FocusEvent): void {
       :tabs="node.tabs"
       :active-tab="node.activeTab"
       :focused-pane-id="focusedPaneId"
+      :focus-request-id="focusRequestId ?? 0"
       :pane-components="paneComponents"
       :dragged-pane-id="draggedPaneId"
       @focus="onFocusPane"
@@ -194,6 +197,7 @@ function onDockFocusOut(event: FocusEvent): void {
         :node="node.child"
         :path="dockChildPath()"
         :focused-pane-id="focusedPaneId"
+        :focus-request-id="focusRequestId ?? 0"
         :pane-components="paneComponents"
         :revealed-pane-ids="revealedPaneIds"
         :dragged-pane-id="draggedPaneId"

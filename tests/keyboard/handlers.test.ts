@@ -9,16 +9,19 @@
  * resolved context.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createWorkspaceKeyHandlers, type WorkspaceKeyDeps } from '../../renderer/keyboard/handlers/workspace-keys.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createDockShortcutKeyHandlers, createWorkspaceKeyHandlers, type WorkspaceKeyDeps } from '../../renderer/keyboard/handlers/workspace-keys.js';
 import { createTerminalKeyHandlers, type TerminalKeyDeps } from '../../renderer/keyboard/handlers/terminal-keys.js';
 import { installKeyRouter, registerKeyHandler, resetKeyHandlers } from '../../renderer/keyboard/router.js';
 import { type KeyEnvironment } from '../../renderer/keyboard/key-context.js';
 import {
   PANE_ARTIFACTS,
+  PANE_CHAT,
   PANE_DRAFT,
   PANE_MEMORIES,
   PANE_TERMINAL,
+  dockPaneRegistry,
+  type DockPaneDescriptor,
   type PaneId,
 } from '../../renderer/dock-types.js';
 
@@ -52,6 +55,7 @@ function fakeTerminal() {
 // ── Harness ─────────────────────────────────────────────────────────────────
 
 let uninstall: (() => void) | null = null;
+const registeredTestPanes: PaneId[] = [];
 
 function install(over: Partial<KeyEnvironment> = {}): void {
   uninstall = installKeyRouter({
@@ -95,6 +99,10 @@ beforeEach(() => {
   document.body.innerHTML = '<div id="root"></div>';
 });
 
+afterEach(() => {
+  for (const paneId of registeredTestPanes.splice(0)) dockPaneRegistry.unregister(paneId);
+});
+
 // ── Workspace shortcuts ─────────────────────────────────────────────────────
 
 describe('dock pane shortcuts', () => {
@@ -131,6 +139,29 @@ describe('dock pane shortcuts', () => {
     expect(workspace.calls.activated).toEqual([PANE_ARTIFACTS]);
   });
 
+  it('Ctrl+Shift+J activates Chat while typing', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    const event = pressInField({ key: 'J', code: 'KeyJ', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.activated).toEqual([PANE_CHAT]);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('routes only pop-out pane shortcuts and Ctrl+G', () => {
+    const activated: PaneId[] = [];
+    createDockShortcutKeyHandlers(pane => activated.push(pane), 'popout').forEach(registerKeyHandler);
+    install({ getFocusedPane: () => PANE_TERMINAL });
+
+    press({ key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
+    press({ key: 'J', code: 'KeyJ', ctrlKey: true, shiftKey: true });
+    press({ key: 'g', code: 'KeyG', ctrlKey: true });
+
+    expect(activated).toEqual([PANE_TERMINAL, PANE_DRAFT]);
+  });
+
   // Pane shortcuts are navigation, not editing: typing in the draft pad (or any
   // field) must not trap you there.
   it('Ctrl+Shift+M activates Memories while typing in a text field', () => {
@@ -142,6 +173,29 @@ describe('dock pane shortcuts', () => {
 
     expect(workspace.calls.activated).toEqual([PANE_MEMORIES]);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('cycles shared shortcuts from the focused pane and starts at the first elsewhere', () => {
+    const sharedPanes: DockPaneDescriptor[] = [
+      { id: 'test-shared-a', kind: 'tool', title: 'A', icon: 'A', shortcut: 'z', closable: true, home: 'left', dynamic: true },
+      { id: 'test-shared-b', kind: 'tool', title: 'B', icon: 'B', shortcut: 'z', closable: true, home: 'left', dynamic: true },
+    ];
+    sharedPanes.forEach(pane => {
+      dockPaneRegistry.register(pane);
+      registeredTestPanes.push(pane.id);
+    });
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    let focusedPane: PaneId | null = PANE_MEMORIES;
+    install({ getFocusedPane: () => focusedPane });
+
+    press({ key: 'Z', ctrlKey: true, shiftKey: true });
+    focusedPane = 'test-shared-a';
+    press({ key: 'Z', ctrlKey: true, shiftKey: true });
+    focusedPane = 'test-shared-b';
+    press({ key: 'Z', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.activated).toEqual(['test-shared-a', 'test-shared-b', 'test-shared-a']);
   });
 
   it('Ctrl+Shift+D activates the draft pane', () => {
@@ -160,6 +214,17 @@ describe('dock pane shortcuts', () => {
     install();
 
     const event = pressInField({ key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.activated).toEqual([]);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('a dock shortcut is gated while a modal owns keyboard input', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install({ isModalOpen: () => true });
+
+    const event = press({ key: 'J', code: 'KeyJ', ctrlKey: true, shiftKey: true });
 
     expect(workspace.calls.activated).toEqual([]);
     expect(event.defaultPrevented).toBe(false);
@@ -331,6 +396,16 @@ describe('session lifecycle shortcuts', () => {
     install({ getFocusedPane: () => PANE_MEMORIES, isPaneVisible: (pane) => pane !== PANE_TERMINAL });
 
     press({ key: 'W', code: 'KeyW', ctrlKey: true, shiftKey: true });
+
+    expect(workspace.calls.closed).toBe(0);
+  });
+
+  it('Ctrl+Shift+W does not close a session while typing in an editable field', () => {
+    const workspace = fakeWorkspace();
+    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
+    install();
+
+    pressInField({ key: 'W', code: 'KeyW', ctrlKey: true, shiftKey: true });
 
     expect(workspace.calls.closed).toBe(0);
   });

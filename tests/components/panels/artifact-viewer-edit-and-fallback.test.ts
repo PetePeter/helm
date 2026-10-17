@@ -244,7 +244,7 @@ describe('ArtifactViewer — blank HTML frame fallback', () => {
 
   it('shows no fallback when the frame reports itself ready', async () => {
     vi.useFakeTimers();
-    const { w } = await mountWith([htmlArtifact()]);
+    const { w } = await mountWith([htmlArtifact()], true);
 
     sendReady(w);
     vi.advanceTimersByTime(FRAME_READY_TIMEOUT_MS * 2);

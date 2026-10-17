@@ -19,9 +19,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { TerminalView } from '../../terminal/terminal-view.js';
 import { fitAndSyncPty } from '../../terminal/fit-and-sync-pty.js';
 import { useTerminalKeys } from '../../composables/useTerminalKeys.js';
-import { slotToIndex } from '../../composables/useNumberAccelerator.js';
-import { registerKeyHandler } from '../../keyboard/router.js';
-import { createNumberKeyHandlers } from '../../keyboard/handlers/number-keys.js';
 import { useAppStore } from '../../stores/app.js';
 import { useChipBarStore } from '../../stores/chip-bar.js';
 import { deliverBulkText } from '../../paste-handler.js';
@@ -79,22 +76,6 @@ async function getEscProtectionEnabled(): Promise<boolean> {
 }
 
 useTerminalKeys({ getActiveSessionId: () => sessionId.value || null, getEscProtectionEnabled });
-
-// Ctrl+<n>: ask the main window to focus the Nth session wherever it lives.
-// Alt+<n>: fire the Nth chip action for this popped-out session.
-// Resolution is async (round-trip to the main window), so Ctrl+<n> is always
-// consumed here — it is reserved for navigation in a pop-out and must never
-// leak a digit into the terminal, even when the slot maps to nothing. It also
-// never re-targets this window, whose session is pinned.
-const numberKeyHandlers = createNumberKeyHandlers({
-  jumpToSession: (slot) => { void sessionsClient.sessionRequestFocusSlot(slot); return true; },
-  fireChipAction: (slot) => {
-    const action = chipBarStore.actions[slotToIndex(slot)];
-    if (!action) return false;
-    void chipBarStore.triggerAction(action.sequence);
-    return true;
-  },
-});
 
 function syncFit(): void {
   if (!view) return;
@@ -155,7 +136,6 @@ async function snapBack(): Promise<void> {
 
 function onContextMenuCancel(): void { contextMenu.visible = false; }
 
-const keyHandlerCleanups: Array<() => void> = [];
 let resizeObserver: ResizeObserver | null = null;
 const handleWindowResize = (): void => debouncedFit();
 
@@ -218,8 +198,6 @@ onMounted(async () => {
   }
   window.addEventListener('resize', handleWindowResize);
   container.addEventListener('contextmenu', onContextMenuOpen);
-  for (const handler of numberKeyHandlers) keyHandlerCleanups.push(registerKeyHandler(handler));
-
   await chipBarStore.refresh(id);
 });
 
@@ -228,7 +206,6 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleWindowResize);
   container?.removeEventListener('contextmenu', onContextMenuOpen);
   container = null;
-  for (const cleanup of keyHandlerCleanups.splice(0)) cleanup();
   resizeObserver?.disconnect();
   resizeObserver = null;
   if (fitDebounceTimer !== null) clearTimeout(fitDebounceTimer);

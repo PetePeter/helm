@@ -13,6 +13,7 @@ import type { DockWorkspaceLayout } from '../../../renderer/dock-types';
 import {
   DOCK_LAYOUT_VERSION,
   PANE_ARTIFACTS,
+  PANE_CHAT,
   PANE_MESS,
   PANE_PLAN_SCREEN,
   PANE_TERMINAL,
@@ -40,6 +41,36 @@ function layout(root: DockWorkspaceLayout['root']): DockWorkspaceLayout {
 }
 
 describe('DockWorkspace', () => {
+  it('shows a visible shortcut chip on tabs that declare a shortcut', () => {
+    const wrapper = mount(DockWorkspace, {
+      props: {
+        layout: layout({ type: 'group', tabs: [PANE_CHAT, PANE_TERMINAL], activeTab: PANE_CHAT }),
+        focusedPaneId: PANE_CHAT,
+        paneComponents: { [PANE_CHAT]: PaneStub, [PANE_TERMINAL]: PaneStub },
+      },
+    });
+
+    expect(wrapper.findAll('.dock-tab__shortcut').map(hint => hint.text())).toEqual([
+      'Ctrl+Shift+J',
+      'Ctrl+Shift+T',
+    ]);
+  });
+
+  it('routes a Chat tab click through pane activation and focus', async () => {
+    const wrapper = mount(DockWorkspace, {
+      props: {
+        layout: layout({ type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT], activeTab: PANE_TERMINAL }),
+        focusedPaneId: PANE_TERMINAL,
+        paneComponents: { [PANE_CHAT]: PaneStub, [PANE_TERMINAL]: PaneStub },
+      },
+    });
+
+    await wrapper.get('[role="tab"][aria-controls="dock-pane-chat"]').trigger('click');
+
+    expect(wrapper.emitted('activate-pane')).toEqual([[PANE_CHAT]]);
+    expect(wrapper.emitted('focus-pane')).toEqual([[PANE_CHAT, 'tab:chat']]);
+  });
+
   it('renders recursive splits, docks, tabs, and all tab panes mounted', async () => {
     const wrapper = mount(DockWorkspace, {
       props: { layout: layout({

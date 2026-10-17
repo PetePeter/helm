@@ -125,10 +125,84 @@ describe('buildArtifactDocument — document shape', () => {
     const out = buildArtifactDocument('<p>hello</p>');
     expect(out).toContain(READY_MESSAGE);
   });
+
+  it('forwards modified shortcuts but preserves document copy, select, and find', () => {
+    const out = buildArtifactDocument('<p>hello</p>');
+    const doc = new DOMParser().parseFromString(out, 'text/html');
+    const bridge = Array.from(doc.scripts).find(script => script.textContent?.includes('helm-artifact-shortcut'));
+
+    expect(bridge?.textContent).toContain('event.ctrlKey || event.metaKey || event.altKey');
+    expect(bridge?.textContent).toContain('parent.postMessage');
+
+    const posted: unknown[] = [];
+    let onKeyDown: ((event: any) => void) | undefined;
+    const documentStub = {
+      addEventListener: (type: string, listener: (event: any) => void) => {
+        if (type === 'keydown') onKeyDown = listener;
+      },
+    };
+    new Function(
+      'document', 'parent', 'addEventListener', 'setTimeout', 'scrollY', 'scrollTo',
+      bridge?.textContent ?? '',
+    )(
+      documentStub,
+      { postMessage: (message: unknown) => posted.push(message) },
+      () => {},
+      () => 0,
+      0,
+      () => {},
+    );
+
+    const forwarded = { key: 'j', code: 'KeyJ', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(forwarded);
+    expect(forwarded.prevented).toBe(true);
+    expect(posted).toContainEqual({
+      type: 'helm-artifact-shortcut', key: 'j', code: 'KeyJ',
+      ctrlKey: true, altKey: false, metaKey: false, shiftKey: true,
+    });
+
+    const altShortcut = { key: 'ArrowLeft', code: 'ArrowLeft', ctrlKey: false, metaKey: false, altKey: true, shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(altShortcut);
+    const metaShortcut = { key: 'k', code: 'KeyK', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(metaShortcut);
+    expect(posted).toContainEqual({
+      type: 'helm-artifact-shortcut', key: 'ArrowLeft', code: 'ArrowLeft',
+      ctrlKey: false, altKey: true, metaKey: false, shiftKey: false,
+    });
+    expect(posted).toContainEqual({
+      type: 'helm-artifact-shortcut', key: 'k', code: 'KeyK',
+      ctrlKey: false, altKey: false, metaKey: true, shiftKey: false,
+    });
+
+    const plain = { key: 'j', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(plain);
+    expect(plain.prevented).toBe(false);
+    expect(posted).toHaveLength(3);
+
+    const shiftOnly = { key: 'Z', ctrlKey: false, metaKey: false, altKey: false, shiftKey: true, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(shiftOnly);
+    expect(shiftOnly.prevented).toBe(false);
+
+    for (const key of ['c', 'a', 'f']) {
+      const documentShortcut = { key, code: `Key${key.toUpperCase()}`, ctrlKey: true, metaKey: false, altKey: false, shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+      onKeyDown?.(documentShortcut);
+      expect(documentShortcut.prevented).toBe(false);
+    }
+    expect(posted).toHaveLength(3);
+    const metaCopy = { key: 'c', code: 'KeyC', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false, prevented: false, preventDefault() { this.prevented = true; }, stopPropagation() {} };
+    onKeyDown?.(metaCopy);
+    expect(metaCopy.prevented).toBe(false);
+    expect(posted).toHaveLength(3);
+  });
 });
 
 describe('buildMarkdownDocument', () => {
   const MERMAID_SCRIPT = 'src="helm-artifact://asset/mermaid.js"';
+
+  it('injects the same modified-key bridge as HTML documents', () => {
+    const out = buildMarkdownDocument('plain text');
+    expect(out).toContain('helm-artifact-shortcut');
+  });
 
   it('turns a mermaid fence into a marker and loads the local mermaid bundle', () => {
     const out = buildMarkdownDocument('```mermaid\ngraph LR\n  A --> B\n```');

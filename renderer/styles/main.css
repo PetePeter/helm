@@ -382,6 +382,7 @@ input[type='radio'] {
   100% { opacity: 0; transform: translateY(-10px) scale(1); }
 }
 .dock-tab__icon { font-size: 13px; line-height: 1; }
+.dock-tab .dock-tab__shortcut { margin-right: 0; }
 .dock-tab:hover,
 .dock-tab:focus-visible,
 .dock-tab--focused { color: var(--text-primary); background: var(--bg-tertiary); }

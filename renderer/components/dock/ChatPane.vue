@@ -12,6 +12,7 @@ import { artifactsClient, dialogClient, systemClient } from '../../ipc/clients.j
 import { showChatContextMenu } from '../../stores/modal-bridge.js';
 import type { Session } from '../../state.js';
 
+const props = defineProps<{ paneActive?: boolean }>();
 const appStore = useAppStore();
 const chat = useChatStore();
 const sessionIds = computed(() => appStore.state.sessions
@@ -173,6 +174,11 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
   await nextTick();
   thread.value?.scrollTo({ top: thread.value.scrollHeight });
 });
+watch(() => appStore.state.activeSessionId, async () => {
+  await nextTick();
+  if (!props.paneActive) return;
+  composerInput.value?.focus();
+});
 </script>
 
 <template>
@@ -254,6 +260,7 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
           ref="composerInput"
           v-model="draft"
           class="chat-pane__input"
+          data-autofocus
           rows="2"
           :placeholder="`Message ${selectedSession.name}…`"
           title="Enter a new line · Ctrl+Enter to send"

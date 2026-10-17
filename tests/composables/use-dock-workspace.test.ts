@@ -4,6 +4,7 @@ import { createDefaultLayout, listPanes } from '../../renderer/dock-layout';
 import { edgeDockLayout } from '../helpers/dock-fixtures';
 import {
   PANE_ARTIFACTS,
+  PANE_CHAT,
   PANE_MEMORIES,
   PANE_PLAN_SCREEN,
   PANE_TIMESHEET,
@@ -26,6 +27,16 @@ describe('useDockWorkspace', () => {
     expect(ws.isVisible(PANE_MEMORIES)).toBe(true);
     expect(ws.isVisible(PANE_TERMINAL)).toBe(false);
     expect(ws.focusedPaneId.value).toBe(PANE_MEMORIES);
+  });
+
+  it('issues a new focus request when an already-focused pane is activated again', () => {
+    const ws = useDockWorkspace();
+    ws.focusPane(PANE_CHAT);
+    const firstRequest = ws.focusRequestId.value;
+
+    ws.focusPane(PANE_CHAT);
+
+    expect(ws.focusRequestId.value).toBe(firstRequest + 1);
   });
 
   it('cycles focus in deterministic tree order and wraps', () => {

@@ -44,11 +44,14 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
 
 import ArtifactViewer from '../../../renderer/components/panels/ArtifactViewer.vue';
 import { useArtifactViewer } from '../../../renderer/composables/useArtifactViewer.js';
+import { installKeyRouter, registerKeyHandler, resetKeyHandlers } from '../../../renderer/keyboard/router.js';
+import { PANE_ARTIFACTS } from '../../../renderer/dock-types.js';
 
 const originalClipboard = navigator.clipboard;
 
 afterEach(() => {
   Object.assign(navigator, { clipboard: originalClipboard });
+  resetKeyHandlers();
 });
 
 function makeArtifact(over: Partial<Artifact> = {}): Artifact {
@@ -155,6 +158,23 @@ describe('ArtifactViewer — artifact frame link bridge', () => {
     }));
   }
 
+  function postShortcut(source: unknown, payload: Record<string, unknown>): void {
+    window.dispatchEvent(new MessageEvent('message', {
+      source: source as MessageEventSource,
+      data: { type: 'helm-artifact-shortcut', ...payload },
+    }));
+  }
+
+  function markFrameActive(frame: HTMLIFrameElement): () => void {
+    // jsdom cannot focus a sandboxed iframe; model the browser's active frame.
+    const previous = Object.getOwnPropertyDescriptor(document, 'activeElement');
+    Object.defineProperty(document, 'activeElement', { configurable: true, value: frame });
+    return () => {
+      if (previous) Object.defineProperty(document, 'activeElement', previous);
+      else Reflect.deleteProperty(document, 'activeElement');
+    };
+  }
+
   it('opens an https link externally, once', async () => {
     const { frameWindow } = await mountHtml();
     post(frameWindow, 'https://example.com/docs');
@@ -174,6 +194,105 @@ describe('ArtifactViewer — artifact frame link bridge', () => {
     await mountHtml();
     post(window, 'https://evil.example');
     expect(systemOpenExternalUrl).not.toHaveBeenCalled();
+  });
+
+  it('routes modified key details from the focused artifact frame into window keydown', async () => {
+    const keydowns: KeyboardEvent[] = [];
+    const capture = (event: KeyboardEvent) => keydowns.push(event);
+    window.addEventListener('keydown', capture);
+
+    try {
+      const { w, frameWindow } = await mountHtml();
+      const frame = w.get('iframe.ap-frame').element as HTMLIFrameElement;
+      const restoreFocus = markFrameActive(frame);
+
+      try {
+        postShortcut(frameWindow, {
+          key: 'g', code: 'KeyG', ctrlKey: true, altKey: false, metaKey: false, shiftKey: true,
+        });
+        postShortcut(frameWindow, {
+          key: 'g', code: 'KeyG', ctrlKey: false, altKey: false, metaKey: true, shiftKey: true,
+        });
+
+        expect(keydowns).toHaveLength(2);
+        expect(keydowns[0]).toMatchObject({ key: 'g', code: 'KeyG', ctrlKey: true, shiftKey: true });
+        expect(keydowns[1]).toMatchObject({ key: 'g', code: 'KeyG', metaKey: true, shiftKey: true });
+      } finally {
+        restoreFocus();
+      }
+    } finally {
+      window.removeEventListener('keydown', capture);
+    }
+  });
+
+  it('does not route a shortcut while the artifact frame is not focused', async () => {
+    const keydowns: KeyboardEvent[] = [];
+    const capture = (event: KeyboardEvent) => keydowns.push(event);
+    window.addEventListener('keydown', capture);
+
+    try {
+      const { frameWindow } = await mountHtml();
+      postShortcut(frameWindow, {
+        key: 'g', code: 'KeyG', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false,
+      });
+      expect(keydowns).toHaveLength(0);
+    } finally {
+      window.removeEventListener('keydown', capture);
+    }
+  });
+
+  it('drops malformed shortcut messages and messages from another window', async () => {
+    const keydowns: KeyboardEvent[] = [];
+    const capture = (event: KeyboardEvent) => keydowns.push(event);
+    window.addEventListener('keydown', capture);
+
+    try {
+      const { w, frameWindow } = await mountHtml();
+      const restoreFocus = markFrameActive(w.get('iframe.ap-frame').element as HTMLIFrameElement);
+      try {
+        const valid = { key: 'g', code: 'KeyG', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false };
+        postShortcut(window, valid);
+        postShortcut(frameWindow, { ...valid, ctrlKey: 'true' });
+        postShortcut(frameWindow, { key: 'g', code: 'KeyG', ctrlKey: false, altKey: false, metaKey: false, shiftKey: true });
+
+        expect(keydowns).toHaveLength(0);
+      } finally {
+        restoreFocus();
+      }
+    } finally {
+      window.removeEventListener('keydown', capture);
+    }
+  });
+
+  it('lets the router decide which forwarded shortcuts have an action', async () => {
+    const handled: string[] = [];
+    const unregister = registerKeyHandler({
+      id: 'artifact-frame-registered-shortcut',
+      scope: 'global',
+      claims: (ctx) => ctx.combo === 'ctrl+g',
+      handle: (ctx) => { handled.push(ctx.combo); return true; },
+    });
+    const uninstall = installKeyRouter({
+      getActiveSessionId: () => 'session-1',
+      getFocusedPane: () => PANE_ARTIFACTS,
+      isPaneVisible: () => true,
+      isModalOpen: () => false,
+    });
+
+    try {
+      const { w, frameWindow } = await mountHtml();
+      const restoreFocus = markFrameActive(w.get('iframe.ap-frame').element as HTMLIFrameElement);
+      try {
+        postShortcut(frameWindow, { key: 'g', code: 'KeyG', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false });
+        postShortcut(frameWindow, { key: 'z', code: 'KeyZ', ctrlKey: true, altKey: false, metaKey: false, shiftKey: false });
+        expect(handled).toEqual(['ctrl+g']);
+      } finally {
+        restoreFocus();
+      }
+    } finally {
+      uninstall();
+      unregister();
+    }
   });
 });
 

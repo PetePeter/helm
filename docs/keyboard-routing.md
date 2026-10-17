@@ -120,6 +120,42 @@ key actually does:
 Ctrl+Shift+W follows the visible rule: you routinely close a session from the
 sidebar while its terminal is on screen.
 
+## Shortcut focus-context matrix
+
+Global shortcuts use the router's resolved context, not a component-specific
+input check. `allowInEditable` is the explicit exception for shortcuts that
+remain useful while typing. A modal always takes ownership before globals run.
+
+| Shortcut group | Terminal | Chat composer | Draft editor | Search fields | Modal fields | Artifact iframe | Mess / Memories / Plans | Snap-out |
+|----------------|----------|---------------|--------------|---------------|--------------|-----------------|-------------------------|----------|
+| `Ctrl+Shift+<pane>`, `Ctrl+G`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+digit`, `Alt+digit`, `Ctrl+Shift+N` | Yes | Yes | Yes | Yes | No | Yes, when the iframe is focused; matching handlers act | Yes | Pane-profile shortcuts, `Ctrl+G`, `Ctrl/Alt+digit`; no session cycle or spawn |
+| `Ctrl+Shift+W` close session | Yes, if Terminal is visible | No | No | No | No | Yes, when focused and Terminal is visible | Yes, if Terminal is visible | Not registered |
+| `Ctrl+Shift+R` rename, `Ctrl+Shift+B` clear notifications | Yes, with an active session | No | No | No | No | Yes, when focused and an action is registered | Yes, with an active session | Not registered; the pop-out has no rename/notification callbacks |
+| `Ctrl+Shift+Space` voice toggle | Yes | No | No | No | No | Yes, when focused and the voice handler is registered | Yes | Not registered |
+| Pane-owned keys | Terminal keys go to the PTY | `Enter` adds a line; `Ctrl+Enter` sends | Draft/editor keys stay local | Search text stays local | Modal handler owns keys | Plain keys stay in the artifact | Focused pane handler owns keys | Same pane-local rules for available panes |
+
+The first row opts in to editable fields because each binding is navigation or
+session selection. The other global actions do not opt in: for example,
+`Ctrl+Shift+W` cannot close a session while typing in Chat or a search box.
+Terminal classification is special: xterm's helper textarea is resolved as the
+terminal, not as an editable field, so terminal and global handlers still run.
+
+Artifact documents run in an opaque-origin iframe. Their injected bridge sends
+keydowns with Ctrl, Alt, or Meta held; plain and Shift-only typing stays in the
+document. Ctrl/Cmd+C, Ctrl/Cmd+A, and Ctrl/Cmd+F also stay in the document for
+copy, select-all, and find. The parent accepts only a valid keydown message
+from its own focused artifact frame, then dispatches it through the same
+router. The registered handlers decide which shortcuts act, so there is no
+second shortcut list to keep in sync; modal ownership and editable-field rules
+still apply.
+
+The snap-out window uses the `popout` dock profile: Terminal (`T`), Plans (`P`),
+Memories (`M`), Mess (`E`), Artifacts (`A`) and Draft (`D`). Chat, Sessions,
+Scheduler, Quick Spawn and Projects are absent there. The pinned session means
+session cycling, close, rename, notification-clear and voice shortcuts are not
+registered; Ctrl/Alt+digit still use the shared session-slot and chip-action
+handlers.
+
 ## Ownership model
 
 Sessions are the spine; terminal, overview, memories, artifacts and plans are

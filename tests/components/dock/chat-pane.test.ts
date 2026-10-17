@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
 import { createPinia } from 'pinia';
+import { markRaw } from 'vue';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatJournalEntry } from '../../../src/mobile/mobile-chat-journal.js';
 import ChatPane from '../../../renderer/components/dock/ChatPane.vue';
+import DockPane from '../../../renderer/components/dock/DockPane.vue';
 import { appState } from '../../../renderer/stores/app.js';
 import { contextMenu, pasteChatContextMenuText } from '../../../renderer/stores/modal-bridge.js';
 
@@ -82,6 +84,56 @@ describe('ChatPane', () => {
 
     expect(wrapper.find('.chat-pane__conversation').exists()).toBe(false);
     expect(wrapper.text()).toContain('Select a session from the sidebar to view its chat.');
+  });
+
+  it('focuses the composer when the Chat pane receives dock focus', async () => {
+    wrapper = mount(DockPane, {
+      attachTo: document.body,
+      props: { paneId: 'chat', active: true, focused: false, focusRequestId: 0, component: markRaw(ChatPane) },
+      global: { plugins: [createPinia()] },
+    });
+    await flushPromises();
+
+    await wrapper.setProps({ focused: true });
+    await flushPromises();
+
+    expect(document.activeElement).toBe(wrapper.get('.chat-pane__input').element);
+
+    const outside = document.body.appendChild(document.createElement('input'));
+    try {
+      outside.focus();
+      await wrapper.setProps({ focusRequestId: 1 });
+      await flushPromises();
+      expect(document.activeElement).toBe(wrapper.get('.chat-pane__input').element);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it('refocuses the composer on session changes only while the Chat pane is active', async () => {
+    const outside = document.body.appendChild(document.createElement('input'));
+    try {
+      outside.focus();
+      wrapper = mount(DockPane, {
+        attachTo: document.body,
+        props: { paneId: 'chat', active: false, focused: false, focusRequestId: 0, component: markRaw(ChatPane) },
+        global: { plugins: [createPinia()] },
+      });
+      await flushPromises();
+
+      outside.focus();
+      appState.activeSessionId = 'two';
+      await flushPromises();
+      expect(document.activeElement).toBe(outside);
+
+      await wrapper.setProps({ active: true });
+      outside.focus();
+      appState.activeSessionId = 'one';
+      await flushPromises();
+      expect(document.activeElement).toBe(wrapper.get('.chat-pane__input').element);
+    } finally {
+      outside.remove();
+    }
   });
 
   it('opens the shared chat context menu when right-clicking a message body', async () => {

@@ -24,6 +24,7 @@ export interface TerminalKeysOptions {
 
 export function useTerminalKeys(options: TerminalKeysOptions): void {
   const unregisters: Array<() => void> = [];
+  const escProtection = useEscProtection();
 
   // The setting lives behind async IPC but the key path must answer
   // synchronously, so it is cached and refreshed after every Escape. A toggle
@@ -40,30 +41,26 @@ export function useTerminalKeys(options: TerminalKeysOptions): void {
     }
   }
 
-  onMounted(() => {
-    void refreshEscProtection();
-    const escProtection = useEscProtection();
+  function writePty(sessionId: string, data: string): void {
+    void terminalClient.ptyWrite(sessionId, data);
+    if (data === '\x1b') void refreshEscProtection();
+  }
 
-    function writePty(sessionId: string, data: string): void {
-      void terminalClient.ptyWrite(sessionId, data);
-      if (data === '\x1b') void refreshEscProtection();
-    }
-
-    const handlers = createTerminalKeyHandlers({
-      writePty,
-      deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
-      readClipboardText: () => navigator.clipboard.readText(),
-      isEscProtectionArmed: () => escProtectionEnabled.value,
-      openEscProtection: (sessionId) => escProtection.openProtection(
-        sessionId,
-        () => writePty(sessionId, '\x1b'),
-      ),
-      renameSession: options.renameSession,
-      clearNotifications: options.clearNotifications,
-    });
-
-    for (const handler of handlers) unregisters.push(registerKeyHandler(handler));
+  const handlers = createTerminalKeyHandlers({
+    writePty,
+    deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
+    readClipboardText: () => navigator.clipboard.readText(),
+    isEscProtectionArmed: () => escProtectionEnabled.value,
+    openEscProtection: (sessionId) => escProtection.openProtection(
+      sessionId,
+      () => writePty(sessionId, '\x1b'),
+    ),
+    renameSession: options.renameSession,
+    clearNotifications: options.clearNotifications,
   });
+  for (const handler of handlers) unregisters.push(registerKeyHandler(handler));
+
+  onMounted(() => { void refreshEscProtection(); });
 
   onUnmounted(() => {
     for (const unregister of unregisters.splice(0)) unregister();

@@ -26,6 +26,7 @@ import {
   buildMarkdownDocument,
   OPEN_URL_MESSAGE,
   READY_MESSAGE,
+  SHORTCUT_MESSAGE,
   SCROLL_MESSAGE,
   SCROLL_TO_MESSAGE,
 } from '../../artifacts/build-artifact-document.js';
@@ -50,6 +51,28 @@ const emit = defineEmits<{
 
 const viewer = useArtifactViewer();
 const { addToast } = useToast();
+
+interface ArtifactShortcutMessage {
+  type: typeof SHORTCUT_MESSAGE;
+  key: string;
+  code: string;
+  ctrlKey: boolean;
+  altKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}
+
+function isArtifactShortcutMessage(value: unknown): value is ArtifactShortcutMessage {
+  if (value === null || typeof value !== 'object') return false;
+  const message = value as Partial<ArtifactShortcutMessage>;
+  return message.type === SHORTCUT_MESSAGE
+    && typeof message.key === 'string' && message.key.length > 0 && message.key.length <= 64
+    && typeof message.code === 'string' && message.code.length <= 64
+    && typeof message.ctrlKey === 'boolean'
+    && typeof message.altKey === 'boolean'
+    && typeof message.metaKey === 'boolean'
+    && typeof message.shiftKey === 'boolean';
+}
 
 // Local rail controls.
 import { ref } from 'vue';
@@ -162,7 +185,9 @@ watch(() => {
  * useless as a gate; identity of the sending window is the real check.
  */
 function onFrameMessage(e: MessageEvent): void {
-  if (e.source !== frameRef.value?.contentWindow) return;
+  const frame = frameRef.value;
+  const frameWindow = frame?.contentWindow;
+  if (!frameWindow || e.source !== frameWindow) return;
   const data = e.data as { type?: string; url?: string; y?: number } | null;
   if (data?.type === READY_MESSAGE) {
     stopReadyWatch();
@@ -176,6 +201,21 @@ function onFrameMessage(e: MessageEvent): void {
   }
   if (data?.type === SCROLL_MESSAGE) {
     if (frameDocKey && typeof data.y === 'number') artifactScrollPositions.set(frameDocKey, data.y);
+    return;
+  }
+  if (data?.type === SHORTCUT_MESSAGE) {
+    if (document.activeElement !== frame || !isArtifactShortcutMessage(data)) return;
+    if (!(data.ctrlKey || data.altKey || data.metaKey)) return;
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: data.key,
+      code: data.code,
+      ctrlKey: data.ctrlKey,
+      altKey: data.altKey,
+      metaKey: data.metaKey,
+      shiftKey: data.shiftKey,
+      bubbles: true,
+      cancelable: true,
+    }));
     return;
   }
   if (data?.type === OPEN_URL_MESSAGE) openArtifactLink(data.url ?? '');

@@ -12,6 +12,7 @@ import DockPreview from './DockPreview.vue';
 const props = defineProps<{
   layout: DockWorkspaceLayout;
   focusedPaneId: PaneId | null;
+  focusRequestId?: number;
   paneComponents?: Readonly<Partial<Record<PaneId, Component>>>;
   revealedPaneIds?: readonly PaneId[];
 }>();
@@ -111,6 +112,7 @@ const ghostLabel = computed(() => {
       :node="visibleLayout.layout.root"
       :path="[]"
       :focused-pane-id="focusedPaneId"
+      :focus-request-id="focusRequestId ?? 0"
       :pane-components="resolvedPaneComponents"
       :revealed-pane-ids="revealedPaneIds ?? []"
       :dragged-pane-id="drag.dragging.value ? drag.draggedPaneId.value : null"

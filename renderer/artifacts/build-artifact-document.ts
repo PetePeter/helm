@@ -46,6 +46,8 @@ export const READY_MESSAGE = 'helm-artifact-ready';
  */
 export const SCROLL_MESSAGE = 'helm-artifact-scroll';
 export const SCROLL_TO_MESSAGE = 'helm-artifact-scroll-to';
+/** Modified keydown reported by the opaque artifact frame. */
+export const SHORTCUT_MESSAGE = 'helm-artifact-shortcut';
 
 /**
  * Links inside the frame are inert by design — the sandbox blocks navigation
@@ -77,6 +79,26 @@ addEventListener('message', function (e) {
 });
 parent.postMessage({ type: '${READY_MESSAGE}' }, '*');
 `.trim();
+
+function shortcutBridgeScript(): string {
+  return `
+(function () {
+  document.addEventListener('keydown', function (event) {
+    if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
+    var key = event.key.toLowerCase();
+    if (!(event.altKey || event.shiftKey) && (event.ctrlKey || event.metaKey) &&
+        (key === 'c' || key === 'a' || key === 'f')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    parent.postMessage({
+      type: '${SHORTCUT_MESSAGE}', key: event.key, code: event.code,
+      ctrlKey: !!event.ctrlKey, altKey: !!event.altKey,
+      metaKey: !!event.metaKey, shiftKey: !!event.shiftKey
+    }, '*');
+  }, true);
+})();
+`.trim();
+}
 
 /** True when the author styled the document in any way at all. */
 function hasAuthorStyling(doc: Document): boolean {
@@ -172,8 +194,9 @@ function injectBaseCss(doc: Document): void {
   doc.head.prepend(style);
 }
 
-/** The link bridge goes last, so its ready ping means the document is alive. */
+/** The link bridge goes last, so its ready ping means every bridge is listening. */
 function serialize(doc: Document): string {
+  appendScript(doc, { text: shortcutBridgeScript() });
   appendScript(doc, { text: LINK_BRIDGE_SCRIPT });
   return `<!doctype html>${doc.documentElement.outerHTML}`;
 }
@@ -206,7 +229,10 @@ export function buildArtifactDocument(html: string): string {
  * @param preserveLineBreaks Treat single newlines as line breaks (manual notes).
  * @returns A complete `<!doctype html>` string.
  */
-export function buildMarkdownDocument(markdown: string, preserveLineBreaks = false): string {
+export function buildMarkdownDocument(
+  markdown: string,
+  preserveLineBreaks = false,
+): string {
   const body = renderArtifact('markdown', markdown, preserveLineBreaks);
   const doc = new DOMParser().parseFromString(body, 'text/html');
 

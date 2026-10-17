@@ -20,6 +20,7 @@ import { doSpawn, doSpawnShell, switchToSession, doCloseSession,
   cycleActiveSession,
 } from './composables/useAppBootstrap.js';
 import { createWorkspaceKeyHandlers } from './keyboard/handlers/workspace-keys.js';
+import { selectSessionFromDock } from './dock-session-navigation.js';
 import { registerKeyHandler } from './keyboard/router.js';
 import { installDockKeyRouter } from './keyboard/install.js';
 import { useTerminalKeys } from './composables/useTerminalKeys.js';
@@ -77,6 +78,7 @@ import { provideHelmPaneContext } from './dock-pane-context.js';
 import { setPaneVisibilityBridge } from './dock-visibility-bridge.js';
 import {
   PANE_ARTIFACTS,
+  PANE_CHAT,
   PANE_DRAFT,
   PANE_PLAN_SCREEN,
   PANE_SESSIONS,
@@ -170,6 +172,26 @@ const dockWorkspace = useDockWorkspace(undefined, {
   },
 });
 const dockViewMenuOpen = ref(false);
+
+const dockAwareNavigation = {
+  closeSettings: () => navStore.closeSettings(),
+  closePlan: () => navStore.closePlan(),
+  closeOverview: () => navStore.closeOverview(),
+  openPlan: (dirPath: string) => navStore.openPlan(dirPath),
+  openOverview: (dirPath: string | null, sessionId?: string) => navStore.openOverview(dirPath, sessionId),
+  navigateToSession: (sessionId: string) => selectSessionFromDock(sessionId, {
+    isChatPaneActive: () => dockWorkspace.isVisible(PANE_CHAT),
+    activateSession: (id) => navStore.activateSession(id),
+    syncSidebarToSession: (id) => navStore.syncSidebarToSession(id),
+    navigateToSession: (id) => navStore.navigateToSession(id),
+  }),
+};
+const inputNavigation = {
+  closeSettings: dockAwareNavigation.closeSettings,
+  closePlan: dockAwareNavigation.closePlan,
+  closeOverview: dockAwareNavigation.closeOverview,
+  navigateToSession: (sessionId: string): void => { void dockAwareNavigation.navigateToSession(sessionId); },
+};
 
 // The imperative gamepad navigation in `screens/` decides whether to skip a
 // zone. The dock is the only collapse authority, so it answers that question
@@ -468,7 +490,7 @@ const firstRunOnboarding = useFirstRunOnboarding({
 
 const sidebarController = useSidebarController({
   activeView,
-  navStore,
+  navStore: dockAwareNavigation,
   refreshProjects,
   doSpawn,
   doCloseSession,
@@ -566,7 +588,7 @@ const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRoute
   itemEditorRef,
   settingsPanelRef,
   overviewCollapsedIds,
-  navStore,
+  navStore: inputNavigation,
   focusedPaneId: dockWorkspace.focusedPaneId,
   getFocusedItemId: dockWorkspace.getFocusedItemId,
 });
@@ -589,7 +611,7 @@ const workspaceKeyHandlers = createWorkspaceKeyHandlers({
   cycleSession: (direction) => { cycleActiveSession(direction); },
   jumpToSession: (slot) => {
     for (const [sessionId, assignedSlot] of sessionsScreenStore.sessionShortcutMap) {
-      if (assignedSlot === slot) { void navStore.navigateToSession(sessionId); return true; }
+      if (assignedSlot === slot) { void dockAwareNavigation.navigateToSession(sessionId); return true; }
     }
     return false;
   },
@@ -624,6 +646,13 @@ useTerminalKeys({
   renameSession: (sessionId) => { onSessionRename(sessionId); },
   clearNotifications: (sessionId) => { llmNotificationsStore.dismissSession(sessionId); },
 });
+
+// Register global bindings during setup so artifact-frame keydowns can reach
+// the complete router as soon as a pane is ready.
+for (const handler of workspaceKeyHandlers) {
+  keyHandlerCleanups.push(registerKeyHandler(handler));
+}
+keyHandlerCleanups.push(registerKeyHandler(createVoiceKeyHandler(() => { void useVoiceCall().toggleTalk(); })));
 
 // ⧉ pop-out: snap the active terminal into its own window. The artifact pane
 // remains owned by the dock; SnapOutWindow renders only the terminal surface.
@@ -907,10 +936,6 @@ onMounted(async () => {
 
   // One listener for the whole window. Workspace keys and the modal bridge
   // register as handlers; the router resolves context and decides precedence.
-  for (const handler of workspaceKeyHandlers) {
-    keyHandlerCleanups.push(registerKeyHandler(handler));
-  }
-  keyHandlerCleanups.push(registerKeyHandler(createVoiceKeyHandler(() => { void useVoiceCall().toggleTalk(); })));
   keyHandlerCleanups.push(registerKeyHandler({
     id: 'modal-stack-bridge',
     scope: 'modal',
@@ -953,7 +978,7 @@ onMounted(async () => {
       handleRelease,
       onTerminalSwitch(sessionId) {
         void navStore.reconcileTerminalSwitch(sessionId ?? null);
-        if (sessionId) activeView.value = 'terminal';
+        if (sessionId && !dockWorkspace.isVisible(PANE_CHAT)) activeView.value = 'terminal';
       },
       onTerminalEmpty() {
         void navStore.reconcileTerminalSwitch(null);
@@ -1157,6 +1182,7 @@ onUnmounted(() => {
         <DockWorkspace
           :layout="dockWorkspace.layout.value"
           :focused-pane-id="dockWorkspace.focusedPaneId.value"
+          :focus-request-id="dockWorkspace.focusRequestId.value"
           :revealed-pane-ids="dockWorkspace.revealedPanes.value"
           @focus-pane="onDockFocusPane"
           @activate-pane="onDockActivatePane"

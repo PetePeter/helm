@@ -14,6 +14,8 @@
  */
 import { computed, markRaw, onMounted, onUnmounted, ref, watch } from 'vue';
 import { registerKeyHandler } from '../keyboard/router.js';
+import { createDockShortcutKeyHandlers } from '../keyboard/handlers/workspace-keys.js';
+import { createNumberKeyHandlers } from '../keyboard/handlers/number-keys.js';
 import { installDockKeyRouter } from '../keyboard/install.js';
 import { PANE_ARTIFACTS, PANE_TERMINAL, type DockMode, type DockSide, type DropTarget, type PaneId } from '../dock-types.js';
 import { useAppStore } from '../stores/app.js';
@@ -32,11 +34,14 @@ import { loadStoredSessions } from '../session-store.js';
 import { refreshProjects } from '../projects-sync.js';
 import { getCliDisplayName } from '../utils.js';
 import { setPlanEditorOpener as setChipBarPlanEditorOpener } from '../stores/chip-bar.js';
-import { configClient, eventsClient } from '../ipc/clients.js';
+import { useChipBarStore } from '../stores/chip-bar.js';
+import { slotToIndex } from '../composables/useNumberAccelerator.js';
+import { configClient, eventsClient, sessionsClient } from '../ipc/clients.js';
 
 const props = defineProps<{ sessionId: string }>();
 
 const appStore = useAppStore();
+const chipBarStore = useChipBarStore();
 // Pinned during setup, not in `onMounted`: child panes mount before the parent's
 // mounted hook runs, so a later pin would let the terminal pane come up with no
 // session. From here the window's session can never change, which is why no pane
@@ -79,6 +84,23 @@ const sessionLoaded = ref(false);
 let unsubSessionUpdated: (() => void) | null = null;
 let uninstallKeyRouter: (() => void) | null = null;
 const keyHandlerCleanups: Array<() => void> = [];
+
+// Register global bindings before pane setup so artifact-frame keydowns reach
+// the complete pop-out router as soon as a pane is ready.
+for (const handler of createDockShortcutKeyHandlers(onDockActivatePane, 'popout')) {
+  keyHandlerCleanups.push(registerKeyHandler(handler));
+}
+for (const handler of createNumberKeyHandlers({
+  jumpToSession: (slot) => { void sessionsClient.sessionRequestFocusSlot(slot); return true; },
+  fireChipAction: (slot) => {
+    const action = chipBarStore.actions[slotToIndex(slot)];
+    if (!action) return false;
+    void chipBarStore.triggerAction(action.sequence);
+    return true;
+  },
+})) {
+  keyHandlerCleanups.push(registerKeyHandler(handler));
+}
 
 // Artifacts follow the active session in both shells; here that is a constant,
 // which is exactly the point of pinning.
@@ -279,6 +301,7 @@ onUnmounted(() => {
         v-if="sessionLoaded"
         :layout="dockWorkspace.layout.value"
         :focused-pane-id="dockWorkspace.focusedPaneId.value"
+        :focus-request-id="dockWorkspace.focusRequestId.value"
         :revealed-pane-ids="dockWorkspace.revealedPanes.value"
         :pane-components="paneComponents"
         @focus-pane="onDockFocusPane"

@@ -14,7 +14,7 @@ const Plain = defineComponent({ render: () => h('button', 'x') });
 
 function mountPane(component = Typing) {
   return mount(DockPane, {
-    props: { paneId: 'draft', active: true, focused: false, component },
+    props: { paneId: 'draft', active: true, focused: false, focusRequestId: 0, component },
     attachTo: document.body,
   });
 }
@@ -35,6 +35,21 @@ describe('DockPane autofocus', () => {
     await flushPromises();
     expect(document.activeElement).toBe(w.find('button').element);
     w.unmount();
+  });
+
+  it('re-focuses a marked field when an already-focused pane receives another focus request', async () => {
+    const outside = document.body.appendChild(document.createElement('input'));
+    const w = mountPane();
+    await w.setProps({ focused: true, focusRequestId: 1 });
+    await flushPromises();
+
+    outside.focus();
+    await w.setProps({ focusRequestId: 2 });
+    await flushPromises();
+
+    expect(document.activeElement).toBe(w.find('textarea').element);
+    w.unmount();
+    outside.remove();
   });
 
   it('does not grab focus for panes without a marked field', async () => {

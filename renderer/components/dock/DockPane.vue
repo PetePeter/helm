@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, ref, watch, type Component } from 'vue';
-import type { PaneId } from '../../dock-types.js';
+import { computed, nextTick, ref, watch, type Component } from 'vue';
+import { PANE_CHAT, type PaneId } from '../../dock-types.js';
 
 const props = defineProps<{
   paneId: PaneId;
   active: boolean;
   focused: boolean;
+  focusRequestId?: number;
   component: Component | undefined;
 }>();
 
@@ -14,6 +15,10 @@ const emit = defineEmits<{
 }>();
 
 const paneRef = ref<HTMLElement | null>(null);
+const componentProps = computed(() => ({
+  paneId: props.paneId,
+  ...(props.paneId === PANE_CHAT ? { paneActive: props.active } : {}),
+}));
 
 function focusedItemId(target: EventTarget | null): string | undefined {
   if (!(target instanceof Element)) return undefined;
@@ -32,12 +37,12 @@ function onFocusIn(event: FocusEvent): void {
 
 // A pane jump (shortcut, focus cycle) moves the dock's focus, not the caret.
 // Panes whose point is typing mark their field `data-autofocus` to take it.
-watch(() => props.focused, async (focused) => {
+watch(() => [props.focused, props.focusRequestId] as const, async ([focused]) => {
   if (!focused) return;
   await nextTick();
   if (paneRef.value?.contains(document.activeElement)) return;
   paneRef.value?.querySelector<HTMLElement>('[data-autofocus]')?.focus();
-});
+}, { immediate: true });
 </script>
 
 <template>
@@ -55,7 +60,7 @@ watch(() => props.focused, async (focused) => {
     v-show="active"
     @focusin="onFocusIn"
   >
-    <component :is="component" v-if="component" :pane-id="paneId" />
+    <component :is="component" v-if="component" v-bind="componentProps" />
     <div v-else class="dock-pane__missing">Pane unavailable: {{ paneId }}</div>
   </section>
 </template>

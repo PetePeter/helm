@@ -60,6 +60,8 @@ export interface DockWorkspace {
   /** Autohide docks the user has opened; they render and take focus like pinned ones. */
   revealedPanes: Ref<PaneId[]>;
   focusedPaneId: Ref<PaneId | null>;
+  /** Incremented for every focus request, including reactivating the focused pane. */
+  focusRequestId: Ref<number>;
   isVisible: (paneId: PaneId) => boolean;
   /** Open an autohide/hidden dock and give it focus. */
   reveal: (paneId: PaneId) => void;
@@ -119,6 +121,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
   }
   const layout = computed(() => readonly(layoutState.value));
   const focusedPaneId = ref<PaneId | null>(PANE_TERMINAL);
+  const focusRequestId = ref(0);
   const focusedItemIds = ref<Partial<Record<PaneId, string>>>({});
   // Reveal is session state, not layout: an opened autohide dock re-collapses on
   // the next launch, so it is deliberately outside the persisted tree.
@@ -197,6 +200,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     apply(setActiveTab(layoutState.value, paneId));
     if (focusablePaneOrder.value.includes(paneId)) {
       focusedPaneId.value = paneId;
+      focusRequestId.value++;
       if (focusedItemId !== undefined) setFocusedItemId(paneId, focusedItemId);
     }
   }
@@ -238,6 +242,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
     closedPanes,
     revealedPanes,
     focusedPaneId,
+    focusRequestId,
     isVisible,
     reveal,
     unreveal,

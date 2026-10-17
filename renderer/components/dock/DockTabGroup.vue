@@ -10,6 +10,7 @@ const props = defineProps<{
   tabs: readonly PaneId[];
   activeTab: PaneId;
   focusedPaneId: PaneId | null;
+  focusRequestId?: number;
   paneComponents: Readonly<Record<PaneId, Component>>;
   draggedPaneId?: PaneId | null;
 }>();
@@ -39,6 +40,10 @@ function titleFor(paneId: PaneId): string {
 
 function iconFor(paneId: PaneId): string {
   return getPaneDescriptor(paneId)?.icon ?? '';
+}
+
+function shortcutHintFor(paneId: PaneId): string {
+  return paneShortcutHint(paneId);
 }
 
 /** Keyboard hints live on the descriptor and surface only as a tooltip. */
@@ -142,6 +147,7 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
         >
           <span class="dock-tab__icon" aria-hidden="true">{{ iconFor(paneId) }}</span>
           <span class="dock-tab__label">{{ titleFor(paneId) }}</span>
+          <kbd v-if="shortcutHintFor(paneId)" class="dock-tab__shortcut jump-key">{{ shortcutHintFor(paneId) }}</kbd>
           <NewItemPulse :pane-id="paneId" />
         </button>
         <button
@@ -160,6 +166,7 @@ function onPaneFocus(paneId: PaneId, focusedItemId?: string): void {
       :pane-id="paneId"
       :active="paneId === activeTab"
       :focused="paneId === focusedPaneId"
+      :focus-request-id="focusRequestId ?? 0"
       :component="paneComponents[paneId]"
       @focus="onPaneFocus"
     />

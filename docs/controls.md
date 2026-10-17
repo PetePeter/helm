@@ -53,12 +53,15 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+Tab | Next terminal tab |
 | Ctrl+Shift+Tab | Previous terminal tab |
 | Ctrl+Shift+T | Focus the Terminal pane |
+| Ctrl+Shift+J | Focus the Chat pane and its composer; while Chat stays active, session changes return focus to the composer |
 | Ctrl+Shift+M | Focus the Memories pane |
 | Ctrl+Shift+P | Open/focus the Plans pane for the active session folder |
 | Ctrl+Shift+S | Focus the Sessions pane |
 | Ctrl+Shift+A | Show/focus the Artifacts pane; never toggles it |
-| Ctrl+Shift+N | Terminal: open machine-first Quick Spawn / Sessions: create a new plan for the current directory |
+| Ctrl+Shift+N | Open the machine-first Quick Spawn picker |
 | Ctrl+Shift+W | Close the active session; needs a terminal **visible**, not focused |
+| Ctrl+Shift+R | Rename the active session |
+| Ctrl+Shift+B | Clear notifications for the active session |
 | Ctrl+Tab / Ctrl+Shift+Tab | Cycle the selected session forward/back (also from inside a text field). Moves the session spine only — the focused pane stays put and re-points at the new session |
 | Arrow keys | Navigate the focused pane (mapped to D-pad equivalents). In Quick Spawn, left/right cycle machine tabs while a tab has focus; in the modal they cycle tabs directly. xterm owns arrows when the keystroke lands in it |
 | Enter | Mapped to A button |
@@ -67,11 +70,19 @@ The same flag the `session_set_locked` MCP tool writes.
 | F5 | Mapped to Y button |
 | Ctrl+V | Focused terminal: managed paste to PTY stdin (bracketed-paste framing, chunking). Focused Artifacts pane: creates a new artifact from the clipboard |
 | Ctrl+G | Jump to the active session's Draft pane, caret in the pad. Works from anywhere, including while typing in a field |
-| Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft. Each tab's tooltip shows its letter |
+| Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, J Chat, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft. Tabs show a shortcut chip and tooltip. Shared keys cycle matching panes in registry order; focus outside the set starts at the first |
 | Ctrl+1-9, Ctrl+0 | Jump directly to the Nth session in sidebar order (badge: `^n`) |
-| Alt+1-9 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`) |
+| Alt+1-9, Alt+0 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`; 0 is slot 10) |
 | Ctrl+Shift+Space | Talk to Helm: press to start, press again to send (a toggle — the router is keydown-only and key repeat makes a keyboard hold unreliable). Global scope, so a modal blocks it like the other workspace keys |
 | Tab / Shift+Tab (selection-mode modal) | Cycle buttons in close-confirm, context-menu, or quick-spawn |
+
+Global shortcuts with an editable-field opt-in still work while typing in Chat,
+Draft and search fields. A modal owns keyboard input ahead of global shortcuts.
+The artifact iframe forwards Ctrl/Alt/Meta keydowns while focused, except
+Ctrl/Cmd+C, Ctrl/Cmd+A and Ctrl/Cmd+F, which stay in the artifact. The keyboard
+router handles only shortcuts with a registered action. In a snap-out window,
+pane shortcuts are limited to that window's profile; session cycling and
+main-window actions are unavailable. See the [focus-context matrix](keyboard-routing.md#shortcut-focus-context-matrix).
 
 ## Keyboard Ownership
 
