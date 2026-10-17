@@ -15,6 +15,7 @@ import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import { resolveContextLimits } from '../../../src/session/context-limits.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
+import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextSparkline from './ContextSparkline.vue';
@@ -70,6 +71,7 @@ export interface SessionCardProps {
   displayName: string;
   artifactCount: number;
   unreadChatCount: number;
+  todoCount?: SessionTodoCount;
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
   /** Subagents this session is waiting on. 0 = none. */
@@ -238,6 +240,7 @@ const metaText = computed(() => {
 });
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
+const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
 const hasContextGraph = computed(() => (props.session.contextHistory?.length ?? 0) >= 1);
 /** Last 2h for every row. A plain function, not a computed: it re-reads the
  *  clock on each render, and the parent's elapsed-timer tick re-renders the card. */
@@ -507,6 +510,12 @@ function onCardClick(e: MouseEvent): void {
           :title="`${unreadChatCount} new Chat messages`"
           :aria-label="`${unreadChatCount} new Chat messages`"
         >{{ unreadChatCount }} new</span>
+        <span
+          v-if="todoProgress.total > 0"
+          class="session-todo-count"
+          :title="`${todoProgress.done} of ${todoProgress.total} todos done`"
+          :aria-label="`${todoProgress.done} of ${todoProgress.total} todos done`"
+        >{{ todoProgress.done }}/{{ todoProgress.total }}</span>
         <span v-if="metaText" class="session-meta" :title="metaText">
           {{ metaText }}
         </span>
@@ -671,7 +680,8 @@ function onCardClick(e: MouseEvent): void {
   white-space: nowrap;
 }
 
-.session-chat-unread {
+.session-chat-unread,
+.session-todo-count {
   display: inline-flex;
   align-items: center;
   padding: 1px 5px;

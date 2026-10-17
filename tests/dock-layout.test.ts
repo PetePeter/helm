@@ -35,6 +35,7 @@ import {
   PANE_TIMESHEET,
   PANE_QUICK_SPAWN,
   PANE_DRAFT,
+  PANE_TODOS,
   PANE_SCHEDULER,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -87,7 +88,7 @@ describe('default Classic layout', () => {
           direction: 'vertical',
           children: [
             { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], activeTab: PANE_TERMINAL },
-            { type: 'group', tabs: [PANE_DRAFT] },
+            { type: 'group', tabs: [PANE_DRAFT, PANE_TODOS], activeTab: PANE_DRAFT },
           ],
         },
       ],

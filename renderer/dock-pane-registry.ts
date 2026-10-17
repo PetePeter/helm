@@ -20,6 +20,7 @@ import ArtifactsPane from './components/dock/ArtifactsPane.vue';
 import MessPane from './components/dock/MessPane.vue';
 import TimesheetPane from './components/dock/TimesheetPane.vue';
 import DraftPane from './components/dock/DraftPane.vue';
+import TodosPane from './components/dock/TodosPane.vue';
 import ChatPane from './components/dock/ChatPane.vue';
 import {
   PANE_ARTIFACTS,
@@ -29,6 +30,7 @@ import {
   PANE_QUICK_SPAWN,
   PANE_SCHEDULER,
   PANE_DRAFT,
+  PANE_TODOS,
   PANE_CHAT,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -52,6 +54,7 @@ export const DOCK_PANE_COMPONENTS: Readonly<Record<PaneId, Component>> = Object.
   [PANE_MESS]: MessPane,
   [PANE_TIMESHEET]: TimesheetPane,
   [PANE_DRAFT]: DraftPane,
+  [PANE_TODOS]: TodosPane,
   [PANE_CHAT]: ChatPane,
 });
 

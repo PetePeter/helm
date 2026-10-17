@@ -37,6 +37,7 @@ vi.mock('../src/utils/logger.js', () => ({
 const { RecycleBinManager } = await import('../src/session/recycle-bin-manager.js');
 const { ArtifactManager } = await import('../src/session/artifact-manager.js');
 const { DraftManager } = await import('../src/session/draft-manager.js');
+const { TodoManager } = await import('../src/session/todo-manager.js');
 const { setupRecycleBinHandlers } = await import('../src/electron/ipc/recycle-bin-handlers.js');
 
 function getHandler(channel: string): Function {
@@ -143,6 +144,8 @@ describe('recycle-bin handlers: draft lifecycle', () => {
   let bin: InstanceType<typeof RecycleBinManager>;
   let pads: InstanceType<typeof DraftManager>;
   let files: Map<string, unknown>;
+  let todoFiles: Map<string, import('../src/types/todo.js').SessionTodo[]>;
+  let todos: InstanceType<typeof TodoManager>;
   let nowVal: number;
 
   beforeEach(() => {
@@ -150,6 +153,7 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     handleCalls.clear();
     nowVal = 1_700_000_000_000;
     files = new Map();
+    todoFiles = new Map();
     bin = new RecycleBinManager(() => nowVal);
     pads = new DraftManager({
       load: (id) => (files.get(id) as never) ?? null,
@@ -157,11 +161,18 @@ describe('recycle-bin handlers: draft lifecycle', () => {
       remove: (id) => { files.delete(id); },
       list: () => [...files.keys()],
     });
-    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, undefined, pads);
+    todos = new TodoManager({
+      load: id => todoFiles.get(id) ?? null,
+      save: (id, list) => { todoFiles.set(id, list); },
+      remove: id => { todoFiles.delete(id); },
+      list: () => [...todoFiles.keys()],
+    });
+    setupRecycleBinHandlers(bin, new ArtifactManager(), undefined, undefined, undefined, undefined, undefined, undefined, pads, todos);
   });
 
   function binSession(sessionId: string): RecycleBinEntry {
     pads.set(sessionId, `notes of ${sessionId}`, 'user', 0);
+    todos.add(sessionId, `todo of ${sessionId}`);
     return bin.append({
       sessionId, name: 'claude', cliType: 'claude-code', workingDir: 'X:\\work',
       cliSessionName: 'uuid-' + sessionId, closedAt: nowVal,
@@ -178,6 +189,8 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     expect(bin.count()).toBe(0);
     expect(pads.get('s1').text).toBe('notes of s1');
     expect(files.has('s1')).toBe(true);
+    expect(todos.list('s1').map(todo => todo.text)).toEqual(['todo of s1']);
+    expect(todoFiles.has('s1')).toBe(true);
   });
 
   it('Forget deletes exactly that session\'s pad', async () => {
@@ -187,7 +200,9 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     await getHandler('recycleBin:forget')(null, entry.id);
 
     expect([...files.keys()]).toEqual(['s2']);
+    expect([...todoFiles.keys()]).toEqual(['s2']);
     expect(pads.get('s1')).toEqual({ sessionId: 's1', text: '', revision: 0 });
+    expect(todos.list('s1')).toEqual([]);
   });
 
   it('Empty deletes every binned session\'s pad', async () => {
@@ -197,6 +212,7 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     await getHandler('recycleBin:empty')(null);
 
     expect(files.size).toBe(0);
+    expect(todoFiles.size).toBe(0);
   });
 
   it('an entry that ages out of the bin takes its pad with it', () => {
@@ -205,5 +221,6 @@ describe('recycle-bin handlers: draft lifecycle', () => {
     binSession('s2');
 
     expect([...files.keys()]).toEqual(['s2']);
+    expect([...todoFiles.keys()]).toEqual(['s2']);
   });
 });

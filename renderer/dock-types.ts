@@ -138,6 +138,7 @@ export const PANE_ARTIFACTS = 'artifacts';
 export const PANE_MESS = 'mess';
 export const PANE_TIMESHEET = 'timesheet';
 export const PANE_DRAFT = 'draft';
+export const PANE_TODOS = 'todos';
 export const PANE_CHAT = 'chat';
 
 /**
@@ -166,6 +167,7 @@ export const DOCK_PANES: readonly DockPaneDescriptor[] = Object.freeze([
   Object.freeze({ id: PANE_PLAN_DIRECTORIES, kind: 'tool', title: 'Projects', icon: '📁', shortcut: 'f', closable: true, home: 'left' }),
   Object.freeze({ id: PANE_ARTIFACTS, kind: 'tool', title: 'Artifacts', icon: '📄', shortcut: 'a', closable: true, home: 'right' }),
   Object.freeze({ id: PANE_DRAFT, kind: 'tool', title: 'Draft', icon: '🗒', shortcut: 'd', closable: true, home: 'right' }),
+  Object.freeze({ id: PANE_TODOS, kind: 'tool', title: 'Todos', icon: '☑', closable: true, home: 'right' }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -184,7 +186,7 @@ export const DOCK_PROFILE_PANES: Readonly<Record<DockProfileId, readonly PaneId[
   // Derived, never re-listed: a pane added to the registry is in the main
   // profile by construction.
   main: Object.freeze(DOCK_PANES.map(p => p.id)),
-  popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT]),
+  popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT, PANE_TODOS]),
 });
 
 /** Mutable registry for descriptors that exist only while their owner exists. */

@@ -26,6 +26,7 @@ function makeCardProps(overrides: Record<string, any> = {}) {
     displayName: 'Claude',
     artifactCount: 0,
     unreadChatCount: 0,
+    todoCount: { done: 0, total: 0 },
     loopContinues: 0,
     pendingSubagents: 0,
     elapsedText: '',
@@ -111,6 +112,17 @@ describe('SessionCard', () => {
 
     const empty = mount(SessionCard, { props: makeCardProps({ unreadChatCount: 0 }) });
     expect(empty.find('.session-chat-unread').exists()).toBe(false);
+  });
+
+  it('shows a done/total todo chip after the session name and hides it when empty', () => {
+    const w = mount(SessionCard, { props: makeCardProps({ todoCount: { done: 3, total: 7 } }) });
+    const name = w.get('.session-name');
+    const badge = w.get('.session-todo-count');
+
+    expect(badge.text()).toBe('3/7');
+    expect(badge.attributes('title')).toBe('3 of 7 todos done');
+    expect(name.element.compareDocumentPosition(badge.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(mount(SessionCard, { props: makeCardProps() }).find('.session-todo-count').exists()).toBe(false);
   });
 
   it('keeps terminal title beside the name and puts the working plan on the next row', () => {

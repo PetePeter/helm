@@ -73,6 +73,8 @@ import type { ArtifactAttachmentManager } from '../session/artifact-attachment-m
 import type { ArtifactAttachment } from '../types/artifact-attachment.js';
 import type { DraftManager } from '../session/draft-manager.js';
 import { DRAFT_MAX_BYTES, draftBytes, type Draft, type DraftRefusal, type DraftWriteResult } from '../types/draft.js';
+import type { SessionTodo } from '../types/todo.js';
+import type { TodoManager } from '../session/todo-manager.js';
 import { HelmMemoryService, type MemoryExportResult, type WrittenMemory } from './services/helm-memory-service.js';
 import { HelmMessService } from './services/helm-mess-service.js';
 import { MessManager } from '../session/mess-manager.js';
@@ -320,6 +322,7 @@ export class HelmControlService extends EventEmitter {
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
   private draftManager?: DraftManager;
+  private todoManager?: TodoManager;
   private artifactAttachmentManager?: ArtifactAttachmentManager;
   private artifactAttachmentDeleted?: (sessionId: string, artifactId: string, attachmentId: string) => void;
   private artifactUploadService?: import('../mobile/mobile-artifact-upload.js').MobileArtifactUploadService;
@@ -515,6 +518,11 @@ export class HelmControlService extends EventEmitter {
   setDraftManager(manager: DraftManager): void {
     this.draftManager = manager;
     this.sessionService.setSessionDraftCopier((fromSessionId, toSessionId) => manager.copySession(fromSessionId, toSessionId));
+  }
+
+  /** Wire the TodoManager behind the caller-scoped session_todo_* MCP tools. */
+  setTodoManager(manager: TodoManager): void {
+    this.todoManager = manager;
   }
 
   /** Wire the ArtifactManager so the artifact_* MCP tools can produce session reports. */
@@ -1569,6 +1577,42 @@ export class HelmControlService extends EventEmitter {
   appendSessionDraft(sessionRef: string, text: string): McpDraftWrite {
     const { manager, sessionId } = this.draftOf(sessionRef);
     return toMcpDraftWrite(manager.append(sessionId, text, 'ai'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session todos (LLM-managed checklist; renderer is read-only)
+  // ---------------------------------------------------------------------------
+
+  private todosFor(sessionRef: string): { manager: TodoManager; sessionId: string } {
+    if (!this.todoManager) throw new Error('Todos are not available: TodoManager is not configured.');
+    const session = this.sessionService.getSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    return { manager: this.todoManager, sessionId: session.id };
+  }
+
+  listSessionTodos(sessionRef: string): SessionTodo[] {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.list(sessionId);
+  }
+
+  addSessionTodo(sessionRef: string, text: string): SessionTodo {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.add(sessionId, text);
+  }
+
+  completeSessionTodo(sessionRef: string, id: string): SessionTodo {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.markDone(sessionId, id);
+  }
+
+  deleteSessionTodo(sessionRef: string, id: string): boolean {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.delete(sessionId, id);
+  }
+
+  clearSessionTodos(sessionRef: string): number {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.clear(sessionId);
   }
 
   // ---------------------------------------------------------------------------

@@ -270,6 +270,25 @@ session_draft_set(text="...", revision=4)        -> { ok, revision }
 
 See [draft.md](draft.md).
 
+## The session todo list: `session_todo_*`
+
+Each session has an LLM-maintained checklist. The desktop Todos pane and the
+sidebar's `done/total` chip show the same list read-only. Every tool acts on
+your authenticated session; do not pass `sessionId`.
+
+```text
+session_todo_add(text="Add a regression test") -> { id, text, status, createdAt }
+session_todo_done(id="...")                 -> completed todo
+session_todo_delete(id="...")               -> true
+session_todo_clear()                          -> number of removed items
+session_todo_list()                           -> open items first
+```
+
+Delete is only for completed items. Mark open work done first. The
+`[HELM_TODOS]` prompt block contains open items and asks you to keep the list
+and session mission current. Helm supplies it again after session resets; see
+[todos.md](todos.md) for storage and lifecycle details.
+
 ## Checking your context size
 
 `session_info` includes your context size at startup. For routine checks, call `session_get` with `{ "sessionId": process.env.HELM_SESSION_ID }`; it returns the same positive token count, source, and transcript timestamp in a smaller response. If the count is not available, inspect `context.reason`; do not infer a size from earlier chat badges.

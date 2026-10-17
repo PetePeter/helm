@@ -10,6 +10,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import type { RecycleBinManager } from '../../session/recycle-bin-manager.js';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
 import type { DraftManager } from '../../session/draft-manager.js';
+import type { TodoManager } from '../../session/todo-manager.js';
 import type { RecycleBinEntry } from '../../types/recycle-bin.js';
 import type { WindowManager } from '../window-manager.js';
 import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
@@ -29,6 +30,7 @@ export function setupRecycleBinHandlers(
   /** Re-applies bin-carried session fields (the mission) once the re-spawn is back. */
   onRestoreCommitted?: (entry: RecycleBinEntry) => void,
   draftManager?: Pick<DraftManager, 'clearSession'>,
+  todoManager?: Pick<TodoManager, 'clearSession'>,
 ): void {
   const getTargetWindows = () => windowManager?.getAllWindows() ?? BrowserWindow.getAllWindows();
   /**
@@ -63,6 +65,7 @@ export function setupRecycleBinHandlers(
   const clearPreserved = (sessionId: string): void => {
     artifactManager.clearSession(sessionId);
     draftManager?.clearSession(sessionId);
+    todoManager?.clearSession(sessionId);
     tempRegistry.drain(sessionId);
   };
 

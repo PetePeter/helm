@@ -9,6 +9,7 @@ import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { Draft, DraftWriteResult } from '../../types/draft.js';
+import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenSheet } from '../../session/time-tracker.js';
@@ -102,6 +103,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Replace the draft text as the user; refused when `baseRevision` is no longer current. */
   draftSet: (sessionId: string, text: string, baseRevision: number): Promise<DraftWriteResult> =>
     ipcRenderer.invoke('draft:set', sessionId, text, baseRevision),
+
+  /** Read the LLM-managed checklist for a session. */
+  todoList: (sessionId: string): Promise<SessionTodo[]> => ipcRenderer.invoke('todo:list', sessionId),
 
   /**
    * From a snapped-out window: ask the main window to resolve a Ctrl+<n>
@@ -1394,6 +1398,13 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     const listener = (_event: Electron.IpcRendererEvent, data: Draft) => callback(data);
     ipcRenderer.on('draft:changed', listener);
     return () => ipcRenderer.removeListener('draft:changed', listener);
+  },
+
+  /** Subscribe to live todo list changes from session_todo_* MCP calls. */
+  onTodosChanged: (callback: (change: SessionTodosChanged) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, change: SessionTodosChanged) => callback(change);
+    ipcRenderer.on('todos:changed', listener);
+    return () => ipcRenderer.removeListener('todos:changed', listener);
   },
 
   /** Subscribe to artifact reveal (bring-forward) events */

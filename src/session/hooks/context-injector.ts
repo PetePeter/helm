@@ -38,6 +38,8 @@ import { logger } from '../../utils/logger.js';
 import { appendManifestoContext, formatManifestoContext } from '../artifact-context.js';
 import { contextLevel, type ContextLimits } from '../context-limits.js';
 import { renderHookInjection, type HookInjectionOverrides } from './hook-injections.js';
+import { renderSessionTodoContext } from '../todo-context.js';
+import type { SessionTodo } from '../../types/todo.js';
 
 /** A claimed plan reduced to what a nudge names. */
 export interface ClaimedPlanSummary {
@@ -66,6 +68,8 @@ export interface ContextInjectorDeps {
    * = no mission yet, and the AI is asked to set one.
    */
   getMission?(sessionId: string): SessionMission | undefined;
+  /** The session's persistent checklist. Present even when empty so it survives context resets. */
+  getTodos?(sessionId: string): SessionTodo[];
   /**
    * The operator's pending "call me when…" requests — the tldrs of its
    * `RING_ME_PREFIX` memories. Asked only for the operator, the one session
@@ -219,6 +223,8 @@ export class ContextInjector {
     }
     const mission = this.deps.getMission?.(session.id);
     if (mission) parts.push(truncate(this.injection('missionStart', { text: mission.text }), SOURCE_CAP_CHARS));
+    const todos = this.deps.getTodos?.(session.id);
+    if (todos) parts.push(truncate(renderSessionTodoContext(todos, this.deps.getHookInjectionOverrides?.()), SOURCE_CAP_CHARS));
     const rings = session.role === 'operator' ? this.deps.getRingRequests?.(session.id) ?? [] : [];
     if (rings.length > 0) {
       parts.push(truncate(
@@ -328,6 +334,13 @@ export class ContextInjector {
           ? this.injection('missionPromptCurrent', { text: mission.text })
           : this.injection('missionPromptUnset'));
       } else if (mission) parts.push(this.injection('missionStart', { text: mission.text }));
+    }
+
+    if (this.deps.getTodos) {
+      parts.push(truncate(
+        renderSessionTodoContext(this.deps.getTodos(session.id), this.deps.getHookInjectionOverrides?.()),
+        SOURCE_CAP_CHARS,
+      ));
     }
 
     const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;

@@ -1228,6 +1228,51 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_todo_add',
+    title: 'Add Session Todo',
+    description: 'Add an open todo to YOUR OWN session checklist. The desktop Todos pane is a read-only view; use this MCP tool to maintain the list. Returns the new todo including its id.',
+    inputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string', description: 'A short, actionable todo.' } },
+      required: ['text'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_todo_done',
+    title: 'Complete Session Todo',
+    description: 'Mark an open todo in YOUR OWN session checklist done. Pass the id returned by session_todo_add or session_todo_list.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Todo id.' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_todo_delete',
+    title: 'Delete Completed Session Todo',
+    description: 'Delete a completed todo from YOUR OWN session checklist. Open todos must be marked done first.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'Completed todo id.' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_todo_clear',
+    title: 'Clear Session Todos',
+    description: 'Clear all todos from YOUR OWN session checklist.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'session_todo_list',
+    title: 'List Session Todos',
+    description: 'List YOUR OWN session todos, with open items first. The desktop Todos pane displays the same list read-only.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'session_set_locked',
     title: 'Set Session Lock',
     description: 'Set or clear the durable closure lock for a Helm session. A locked session rejects deliberate close operations from the desktop, MCP, Telegram, group close, and force restart. Accepts sessionId or exact session name.',

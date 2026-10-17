@@ -18,6 +18,7 @@ const chord = (key: string) => ({ key, ctrlKey: true, metaKey: false, shiftKey: 
 describe('workspace shortcuts', () => {
   it('formats each built-in shortcut from its pane descriptor and avoids reserved keys', () => {
     for (const pane of DOCK_PANES) {
+      if (!pane.shortcut) continue;
       expect(paneShortcutHint(pane.id)).toBe(`Ctrl+Shift+${pane.shortcut!.toUpperCase()}`);
       expect(RESERVED).not.toContain(pane.shortcut);
     }

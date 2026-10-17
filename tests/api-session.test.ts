@@ -11,6 +11,7 @@ vi.mock('../src/utils/logger.js', () => ({
 const { runAgentTurn, parseToolArguments, cleanModelText } = await import('../src/session/api/api-agent-loop.js');
 const { chunkForChat, selectApiTools, listAvailableApiTools, buildSystemPrompt, formatSenderTag, parseSenderTag, formatChatHistory } = await import('../src/session/api/api-prompt.js');
 const { ApiSessionProcess, dropTurns, forgetNudge, rescaleTokens, trimForOverflow, isContextOverflow } = await import('../src/session/api/api-session-process.js');
+const { appendSessionTodoContext } = await import('../src/session/todo-context.js');
 const { ApiSessionHost } = await import('../src/session/api/api-session-host.js');
 const { NATIVE_TOOLS, globToRegExp } = await import('../src/session/api/api-native-tools.js');
 const { DiscardTable, lookupKey: lookupKeyOf } = await import('../src/session/api/api-discard.js');
@@ -716,27 +717,39 @@ describe('ApiSessionProcess (terminal adapter)', () => {
   });
 
   it('/clear starts the new API history with manifesto context', async () => {
+    const persistent = appendSessionTodoContext(
+      'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      [{ id: 'todo-1', text: 'Finish the feature', status: 'open', createdAt: 1 }],
+    );
     const { proc, saved } = makeProcess([], {
       history: [{ role: 'user', content: 'old' }],
-      getManifestoContext: () => 'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      getManifestoContext: () => persistent,
     });
     proc.write('/clear\r');
     await vi.waitFor(() => expect(saved).toHaveLength(1));
     expect(saved[0].map((message) => message.content)).toEqual([
-      'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      persistent,
       'Understood — continuing with the persistent manifesto context.',
     ]);
+    expect(saved[0][0].content).toContain('[HELM_TODOS]');
+    expect(saved[0][0].content).toContain('todo-1: Finish the feature');
   });
 
   it('/compact keeps generated handover and appends manifesto context', async () => {
+    const persistent = appendSessionTodoContext(
+      'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      [{ id: 'todo-2', text: 'Resume from here', status: 'open', createdAt: 1 }],
+    );
     const { proc, saved } = makeProcess([{ content: 'summary of old context' }], {
       history: [{ role: 'user', content: 'old' }],
-      getManifestoContext: () => 'Persistent manifesto context\n\n## Rules\nKeep the invariant.',
+      getManifestoContext: () => persistent,
     });
     proc.write('/compact\r');
     await vi.waitFor(() => expect(saved).toHaveLength(1));
     expect(saved[0][0].content).toContain('summary of old context');
     expect(saved[0][0].content).toContain('Persistent manifesto context');
+    expect(saved[0][0].content).toContain('[HELM_TODOS]');
+    expect(saved[0][0].content).toContain('todo-2: Resume from here');
   });
 
   it('quick compact keeps manifesto context separate from the optional handover', async () => {

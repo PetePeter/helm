@@ -80,6 +80,7 @@ import {
   PANE_ARTIFACTS,
   PANE_CHAT,
   PANE_DRAFT,
+  PANE_TODOS,
   PANE_PLAN_SCREEN,
   PANE_SESSIONS,
   PANE_TERMINAL,
@@ -476,7 +477,7 @@ const firstRunOnboarding = useFirstRunOnboarding({
   createProject: (dirPath) => projectsClient.projectCreate(dirPath),
   spawnSession: (cliType, dirPath, prompt) => doSpawn(cliType, dirPath, prompt),
   openPane: (paneId) => {
-    void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT);
+    void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT || paneId === PANE_TODOS);
   },
   openSettings: (tabId) => {
     if (tabId === 'scheduled-tasks') {
@@ -607,7 +608,7 @@ let uninstallKeyRouter: (() => void) | null = null;
  * Artifacts; it never toggles.
  */
 const workspaceKeyHandlers = createWorkspaceKeyHandlers({
-  activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT); },
+  activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT || paneId === PANE_TODOS); },
   cycleSession: (direction) => { cycleActiveSession(direction); },
   jumpToSession: (slot) => {
     for (const [sessionId, assignedSlot] of sessionsScreenStore.sessionShortcutMap) {

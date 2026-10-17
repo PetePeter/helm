@@ -43,6 +43,9 @@ import type { Draft } from '../../types/draft.js';
 import { readSubagentContexts } from '../../session/subagent-usage.js';
 import type { SessionUpdatedEvent } from '../../types/session.js';
 import { createDraftStore } from '../../session/draft-persistence.js';
+import { TodoManager } from '../../session/todo-manager.js';
+import { createTodoStore } from '../../session/todo-persistence.js';
+import type { SessionTodosChanged } from '../../types/todo.js';
 import { ArtifactTempRegistry, attachSessionTempCleanup } from '../../session/artifact-temp-registry.js';
 import { MemoryPersistence } from '../../session/memory-persistence.js';
 import { MemoryAttachmentManager } from '../../session/memory-attachment-manager.js';
@@ -54,6 +57,7 @@ import { logger } from '../../utils/logger.js';
 import { ApiSessionHost, registerApiSessionHost } from '../../session/api/api-session-host.js';
 import { ComfyUiSessionHost, getComfyUiSessionHost, registerComfyUiSessionHost } from '../../session/comfyui/comfyui-session-host.js';
 import { formatManifestoContext } from '../../session/artifact-context.js';
+import { appendSessionTodoContext } from '../../session/todo-context.js';
 /** Skill type whose reviews collect request_tool wishes from API-tool sessions. */
 const API_TOOL_REQUESTS_SKILL_TYPE = 'api-tool-requests';
 import { MCP_TOOLS } from '../../mcp/tools/definitions.js';
@@ -90,6 +94,7 @@ import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
 import { setupRuntimeGroupHandlers } from './runtime-group-handlers.js';
 import { setupArtifactHandlers } from './artifact-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
+import { setupTodoHandlers } from './todo-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, statisticsQuery } from './time-tracking-handlers.js';
@@ -237,6 +242,7 @@ export function registerIPCHandlers(
   );
   artifactManager.importAll(loadArtifacts());
   const draftManager = new DraftManager(createDraftStore());
+  const todoManager = new TodoManager(createTodoStore());
   const memoryPersistence = new MemoryPersistence();
   const memoryAttachmentManager = new MemoryAttachmentManager();
   // PlanManager is constructed before MemoryManager so provenance can be
@@ -277,6 +283,7 @@ export function registerIPCHandlers(
   helmControlService.sessionChangeFeed.attach(sessionManager);
   helmControlService.setArtifactManager(artifactManager, artifactAttachmentManager);
   helmControlService.setDraftManager(draftManager);
+  helmControlService.setTodoManager(todoManager);
   // The phone's upload reassembler (protocol 4): slots opened by the gated
   // session_artifact_attachment_add, filled by binary blob records, committed
   // by session_artifact_attachment_commit into the SAME managed storage the
@@ -395,6 +402,7 @@ export function registerIPCHandlers(
   );
   // Drafts follow the same rule: kept for a live or binned session, dropped otherwise.
   draftManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
+  todoManager.pruneOrphans(new Set([...liveSessionIds, ...binSessionIds]));
 
   // Prune orphan attachment directories (artifacts deleted in a previous crash)
   const allArtifactIds = new Set(
@@ -488,7 +496,11 @@ export function registerIPCHandlers(
     mcpTools: () => filterToolsByCapabilities(MCP_TOOLS, helmControlService.getTelegramStatus().capabilities),
     listSkills: (cwd) => helmControlService.listSkills(cwd ? { dirPath: cwd } : undefined),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission?.text,
-    getManifestoContext: (sessionId) => formatManifestoContext(artifactManager.getManifestosForSession(sessionId)),
+    getManifestoContext: (sessionId) => appendSessionTodoContext(
+      formatManifestoContext(artifactManager.getManifestosForSession(sessionId)),
+      todoManager.list(sessionId),
+      configLoader.getHookInjectionOverrides(),
+    ),
     // Wishes land as reviews on one all-projects skill, where skill feedback is already read.
     recordToolRequest: ({ name, purpose, example }, auth) => {
       const skillId = helmControlService.resolveSkill(API_TOOL_REQUESTS_SKILL_TYPE)?.id
@@ -700,6 +712,7 @@ export function registerIPCHandlers(
     // Restore reuses the original session id, so the mission lands back on the same session.
     (entry) => sessionManager.restoreMission(entry.sessionId, entry.mission, entry.missionBarHeight),
     draftManager,
+    todoManager,
   );
   // Expired entries loaded from persisted state were not visible to the runtime
   // expiry event until now; dispatch them after cleanup listeners are attached.
@@ -708,6 +721,10 @@ export function registerIPCHandlers(
   setupArtifactHandlers(artifactManager, artifactAttachmentManager, windowManager, dirname, artifactTempRegistry);
   setupDraftHandlers(
     draftManager,
+    (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
+  );
+  setupTodoHandlers(
+    todoManager,
     (sessionId) => Boolean(sessionManager.getSession(sessionId)) || recycleBinManager.list().some(entry => entry.sessionId === sessionId),
   );
   setupMemoryHandlers(memoryManager, memoryAttachmentManager, sessionManager, windowManager, artifactTempRegistry);
@@ -756,6 +773,11 @@ export function registerIPCHandlers(
   draftManager.on('draft:changed', (draft: Draft) => {
     for (const win of artifactWindowsFor(draft.sessionId)) {
       win.webContents.send('draft:changed', draft);
+    }
+  });
+  todoManager.on('todos:changed', (change: SessionTodosChanged) => {
+    for (const win of windowManager.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('todos:changed', change);
     }
   });
   setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager);
@@ -893,6 +915,7 @@ export function registerIPCHandlers(
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
     getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
+    getTodos: (sessionId) => todoManager.list(sessionId),
     clearReportsTo: (sessionId) => sessionManager.updateSession(sessionId, { reportsTo: undefined }),
     getRingRequests: (sessionId) => memoryManager.forestForSession(sessionId).records
       .map((record) => record.tldr)
@@ -1017,6 +1040,7 @@ export function registerIPCHandlers(
       }
       artifactManager.clearSession(event.sessionId);
       draftManager.clearSession(event.sessionId);
+      todoManager.clearSession(event.sessionId);
       // No bin entry means no way back, so the phone's replay of this
       // conversation goes now too — same rule the bin's purge paths enforce.
       try {

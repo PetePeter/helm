@@ -18,6 +18,7 @@ import { ContextInjector, type ContextInjectorDeps } from '../../../src/session/
 import type { HookEvent } from '../../../src/session/hooks/hook-normaliser';
 import { SuggestionService } from '../../../src/session/hooks/suggestion-scorer';
 import type { SessionInfo } from '../../../src/types/session';
+import type { SessionTodo } from '../../../src/types/todo';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -543,6 +544,30 @@ describe('Mission statement ([HELM_MISSION])', () => {
     const { injector } = makeInjector({ getMission: () => mission });
     const result = await injector.respond(hookEvent());
     expect(contextOf(result!.body)).toContain('Ship the mission bar');
+  });
+
+  it('re-supplies open todos on every prompt beside the mission', async () => {
+    const todo: SessionTodo = { id: 'todo-1', text: 'Ship the pane', status: 'open', createdAt: 1 };
+    const { injector } = makeInjector({ getMission: () => mission, getTodos: () => [todo] });
+
+    for (const prompt of ['first', 'after compact']) {
+      const context = contextOf((await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt })))!.body);
+      expect(context).toContain('[HELM_TODOS]');
+      expect(context).toContain('todo-1: Ship the pane');
+      expect(context).toContain('Keep this list and your session manifesto current');
+      expect(context).toContain('[HELM_MISSION] Current mission');
+    }
+  });
+
+  it('re-supplies todos beside the manifesto after SessionStart reset', async () => {
+    const { injector } = makeInjector({
+      getTodos: () => [{ id: 'todo-2', text: 'Restore context', status: 'open', createdAt: 1 }],
+      getManifestos: () => [{ title: 'Working agreement', content: 'Keep changes small.' }],
+    });
+    const context = contextOf((await injector.respond(hookEvent()))!.body);
+    expect(context).toContain('Working agreement');
+    expect(context).toContain('[HELM_TODOS]');
+    expect(context).toContain('todo-2: Restore context');
   });
 });
 

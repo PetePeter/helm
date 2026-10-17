@@ -6,7 +6,7 @@
  * Quick Spawn and Folder Planner sections outside this component so they stay
  * pinned below the scrolling list.
  */
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import SessionGroup from './SessionGroup.vue';
 import SessionCard from './SessionCard.vue';
@@ -15,6 +15,7 @@ import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
 import { useMessageFlights } from '../../composables/useMessageFlights.js';
+import { useTodosStore } from '../../stores/todos.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 
 interface FlashEntry {
@@ -122,7 +123,13 @@ const emit = defineEmits<{
 }>();
 
 const scheduledTaskIndicators = useScheduledTaskIndicatorsStore();
+const todosStore = useTodosStore();
 const usesScheduledTaskIndicators = props.source !== 'peer';
+const localTodoSessionIds = computed(() => props.source === 'peer'
+  ? []
+  : [...new Set(props.groups.flatMap(group => group.sessions.map(session => session.id)))],
+);
+watch(localTodoSessionIds, ids => { void todosStore.loadSessions(ids); }, { immediate: true });
 
 onMounted(() => {
   if (usesScheduledTaskIndicators) scheduledTaskIndicators.start();
@@ -294,6 +301,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :display-name="session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType)"
               :artifact-count="artifactCounts.get(session.id) ?? 0"
               :unread-chat-count="source === 'peer' ? 0 : unreadChatCountFor?.(session.id) ?? 0"
+              :todo-count="source === 'peer' ? { done: 0, total: 0 } : todosStore.countFor(session.id)"
               :loop-continues="session.loopContinues ?? 0"
               :pending-subagents="session.pendingSubagents ?? 0"
               :elapsed-text="sessionElapsedText(session.id)"

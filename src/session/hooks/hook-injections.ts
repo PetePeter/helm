@@ -112,6 +112,14 @@ export const HOOK_INJECTION_DEFINITIONS = [
       '[HELM_MISSION] Current mission: "{{text}}". If this prompt changes the direction of work, call session_mission_set with a new TL;DR (max 500 chars). Otherwise ignore.',
   },
   {
+    id: 'todosPrompt',
+    label: 'Session todos',
+    group: 'Prompt',
+    description: 'The open items in this session checklist. Value: {{items}}.',
+    defaultTemplate:
+      '[HELM_TODOS]\nOpen items:\n{{items}}\nKeep this list and your session manifesto current. Use session_todo_add for new work and session_todo_done when an item is complete; update the mission with session_mission_set when the direction changes.',
+  },
+  {
     id: 'suggestionPointer',
     label: 'Suggested context',
     group: 'Prompt',

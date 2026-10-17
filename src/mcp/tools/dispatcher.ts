@@ -73,6 +73,15 @@ function requireOwnDraft(authContext: AuthContext, args: Record<string, unknown>
   return own;
 }
 
+/** Every todo tool mutates or reads only the server-authenticated caller's list. */
+function requireOwnTodo(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+  const own = requireCallerSession(authContext, tool);
+  if (args.sessionId !== undefined && args.sessionId !== own) {
+    throw new Error(`${tool} only accesses your own session's todos.`);
+  }
+  return own;
+}
+
 /**
  * Resolve the TARGET session for the session-addressed artifact tools. Unlike
  * the artifact_* family — which trusts the caller's own authContext because the
@@ -744,6 +753,16 @@ export async function callMcpTool(
           requireOwnDraft(authContext, args, 'session_draft_append'),
           asString(args.text, 'text is required'),
         );
+      case 'session_todo_add':
+        return service.addSessionTodo(requireOwnTodo(authContext, args, 'session_todo_add'), asStringValue(args.text, 'text is required'));
+      case 'session_todo_done':
+        return service.completeSessionTodo(requireOwnTodo(authContext, args, 'session_todo_done'), asString(args.id, 'id is required'));
+      case 'session_todo_delete':
+        return service.deleteSessionTodo(requireOwnTodo(authContext, args, 'session_todo_delete'), asString(args.id, 'id is required'));
+      case 'session_todo_clear':
+        return service.clearSessionTodos(requireOwnTodo(authContext, args, 'session_todo_clear'));
+      case 'session_todo_list':
+        return service.listSessionTodos(requireOwnTodo(authContext, args, 'session_todo_list'));
       case 'session_rename':
         return service.renameSession(
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
