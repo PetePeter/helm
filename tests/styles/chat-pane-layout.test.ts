@@ -26,18 +26,31 @@ describe('ChatPane narrow layout', () => {
   it('lets the context, message content, and composer shrink to their dock pane', () => {
     expect(declaration('.chat-pane', 'min-width')).toBe('0');
     expect(declaration('.chat-pane', 'grid-template-columns')).toBe('minmax(0, 1fr)');
+    expect(declaration('.chat-pane', 'container-type')).toBe('inline-size');
     expect(declaration('.chat-pane__conversation', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__conversation', 'grid-template-columns')).toBe('minmax(0, 1fr)');
     expect(declaration('.chat-pane__context', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__context', 'flex-wrap')).toBe('wrap');
     expect(declaration('.chat-pane__context-main', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__context-details', 'min-width')).toBe('0');
+    expect(declaration('.chat-pane__context-details', 'max-width')).toBe('100%');
     expect(declaration('.chat-pane__context-meta', 'max-width')).toBe('100%');
+    expect(declaration('.chat-pane__context-usage', 'max-width')).toBe('100%');
     expect(declaration('.chat-pane__thread', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__message', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__message', 'box-sizing')).toBe('border-box');
+    expect(declaration('.chat-pane__message', 'max-width')).toBe('92%');
+    expect(styleContent).toContain('max-width: min(76%, 860px)');
     expect(declaration('.chat-pane__text', 'overflow-wrap')).toBe('anywhere');
     expect(declaration('.chat-pane__composer', 'min-width')).toBe('0');
     expect(declaration('.chat-pane__input', 'min-width')).toBe('0');
+    expect(declaration('.chat-pane__input', 'box-sizing')).toBe('border-box');
+    expect(declaration('.chat-pane__composer-actions', 'flex')).toBe('0 0 auto');
+  });
+
+  it('uses the pane width, not only the viewport width, for dock-split fallbacks', () => {
+    expect(styleContent).toContain('@container (max-width: 300px)');
+    expect(styleContent).toContain('@container (max-width: 180px)');
+    expect(styleContent).toContain('.chat-pane__context-usage :deep(.context-sparkline) { display: none; }');
   });
 });

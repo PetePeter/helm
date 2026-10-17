@@ -289,6 +289,7 @@ watch(() => appStore.state.activeSessionId, async () => {
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
+  container-type: inline-size;
   color: var(--text-primary);
   background: var(--bg-primary);
   font-size: var(--font-size-sm);
@@ -339,5 +340,18 @@ watch(() => appStore.state.activeSessionId, async () => {
   .chat-pane__context { align-items: flex-start; flex-direction: column; gap: var(--spacing-xs); }
   .chat-pane__context-details { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
   .chat-pane__message { max-width: 92%; }
+}
+
+/* A dock split can be narrow even while the application viewport is wide. */
+@container (max-width: 300px) {
+  .chat-pane__context { align-items: flex-start; flex-direction: column; gap: var(--spacing-xs); padding-inline: var(--spacing-sm); }
+  .chat-pane__context-details { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .chat-pane__thread { padding-inline: var(--spacing-sm); }
+  .chat-pane__composer { padding-inline: var(--spacing-xs); }
+  .chat-pane__hint { padding-inline: var(--spacing-sm); }
+}
+
+@container (max-width: 180px) {
+  .chat-pane__context-usage :deep(.context-sparkline) { display: none; }
 }
 </style>
