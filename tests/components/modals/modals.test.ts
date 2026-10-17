@@ -822,6 +822,19 @@ describe('ContextMenu.vue', () => {
     w.unmount();
   });
 
+  it('renders the same shared menu with chat text actions and no terminal-only action', async () => {
+    const w = factory({ mode: 'chat', hasSelection: true });
+
+    expect(w.find('[role="menu"]').attributes('aria-label')).toBe('Chat actions');
+    expect(w.find('[data-action="group:Text"]').exists()).toBe(true);
+    expect(w.find('[data-action="group:Cursor"]').exists()).toBe(false);
+    await w.find('[data-action="group:Text"]').trigger('click');
+    expect(w.find('[data-action="copy"]').exists()).toBe(true);
+    expect(w.find('[data-action="paste"]').exists()).toBe(true);
+    expect(w.find('[data-action="new-session-with-selection"]').exists()).toBe(false);
+    w.unmount();
+  });
+
   it('disables copy when no selection', async () => {
     const w = factory({ hasSelection: false });
     await w.find('[data-action="group:Cursor"]').trigger('click');

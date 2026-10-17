@@ -29,6 +29,14 @@ describe('buildHelmMsgDirective (prepended form)', () => {
     expect(directive).toContain('Reply to EVERY message from the phone');
     expect(directive).not.toContain('session_send_text sessionId=');
   });
+
+  it('routes desktop Chat replies into chat_send', () => {
+    const directive = buildHelmMsgDirective('desktop', 'desktop');
+    expect(directive).toContain('user through the desktop Chat pane');
+    expect(directive).toContain('Reply to EVERY message from desktop Chat with chat_send');
+    expect(directive).toContain('The reply appears in the desktop Chat pane');
+    expect(directive).not.toContain('session_send_text sessionId=');
+  });
 });
 
 describe('injected forms', () => {
@@ -36,6 +44,7 @@ describe('injected forms', () => {
     expect(HELM_MSG_HOOK_RULES).toContain('fromSessionId in the envelope');
     expect(HELM_MSG_HOOK_RULES).toContain('session_send_text');
     expect(HELM_MSG_HOOK_RULES).toContain('chat_send');
+    expect(HELM_MSG_HOOK_RULES).toContain('fromSessionId is "desktop"');
     expect(HELM_MSG_HOOK_RULES).toContain('Do NOT use AskUserQuestion');
     expect(HELM_MSG_HOOK_RULES).toContain('session_set_aiagent_state');
   });

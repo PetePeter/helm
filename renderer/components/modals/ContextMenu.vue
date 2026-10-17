@@ -178,7 +178,7 @@ defineExpose({ handleButton });
         class="context-menu"
         :style="menuPosition"
         role="menu"
-        :aria-label="`${mode === 'session' ? 'Session' : 'Terminal'} actions${activeGroup ? `: ${activeGroup}` : ''}`"
+        :aria-label="`${mode === 'session' ? 'Session' : mode === 'chat' ? 'Chat' : 'Terminal'} actions${activeGroup ? `: ${activeGroup}` : ''}`"
       >
         <div v-if="activeGroup" class="context-menu-header">{{ activeGroup }}</div>
         <button

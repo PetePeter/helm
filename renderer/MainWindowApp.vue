@@ -42,6 +42,8 @@ import { usePlanWorkspaceController } from './composables/usePlanWorkspaceContro
 import { appClient, configClient, deliveryClient, dialogClient, eventsClient, projectsClient, sessionsClient, systemClient } from './ipc/clients.js';
 import {
   contextMenu,
+  hideContextMenu,
+  takeChatContextMenuPasteHandler,
   openQuickSpawn,
   isAnyBridgeModalVisible,
   showAppCloseConfirm,
@@ -646,7 +648,9 @@ async function runTranscriptAction(pending: Promise<{ success: boolean; error?: 
 
 // Context menu
 function onContextMenuAction(action: ContextMenuAction): void {
-  contextMenu.visible = false;
+  const pasteIntoChat = action.id === 'paste' && contextMenu.mode === 'chat';
+  const pasteChatText = pasteIntoChat ? takeChatContextMenuPasteHandler() : null;
+  hideContextMenu();
   const sessionId = action.targetSessionId;
   const target = sessionId ? state.sessions.find(s => s.id === sessionId) ?? null : null;
   switch (action.id) {
@@ -672,7 +676,9 @@ function onContextMenuAction(action: ContextMenuAction): void {
     }
     case 'paste':
       navigator.clipboard.readText().then(text => {
-        if (text && sessionId) void deliverBulkText(sessionId, text);
+        if (!text) return;
+        if (pasteIntoChat) pasteChatText?.(text);
+        else if (sessionId) void deliverBulkText(sessionId, text);
       });
       break;
     case 'new-session':

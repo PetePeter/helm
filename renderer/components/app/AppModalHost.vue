@@ -3,6 +3,7 @@ import {
   closeConfirm, getCloseConfirmCallback, setCloseConfirmCallback,
   getCloseConfirmCancelCallback, setCloseConfirmCancelCallback,
   contextMenu,
+  hideContextMenu,
   planDeleteConfirm, getPlanDeleteCallback, setPlanDeleteCallback,
   bulkCleanup, getBulkCleanupCallback,
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
@@ -40,7 +41,7 @@ defineProps<{
   contextMenuPosition?: { x: number; y: number } | null;
   contextMenuIsSnappedOut: boolean;
   contextMenuGroupName?: string | null;
-  contextMenuMode?: 'terminal' | 'session';
+  contextMenuMode?: 'terminal' | 'session' | 'chat';
   contextMenuSessionFlags?: { locked: boolean; frozen: boolean; keepWarm: boolean; hiddenFromOverview: boolean };
   bindingEditorVisible: boolean;
   bindingEditorButton: string;
@@ -215,7 +216,7 @@ function onRuntimeGroupMoveCancel(): void {
     :mode="contextMenuMode"
     :session-flags="contextMenuSessionFlags"
     @action="emit('context-menu-action', $event)"
-    @cancel="contextMenu.visible = false"
+    @cancel="hideContextMenu()"
   />
 
   <DirPickerModal

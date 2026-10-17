@@ -42,6 +42,20 @@ describe('buildContextMenuGroups', () => {
     expect(findItem(selected, 'new-session-with-selection').enabled).toBe(true);
   });
 
+  it('adds chat copy and paste actions without terminal-only selection actions', () => {
+    const chat = groups({ mode: 'chat', hasSelection: true });
+    const textGroup = chat.find(group => group.title === 'Text');
+
+    expect(chat.filter(group => group.title !== 'Text')).toEqual(groups({ mode: 'session' }));
+    expect(textGroup?.items.map(item => item.id)).toEqual(['copy', 'paste']);
+    expect(textGroup?.items.find(item => item.id === 'copy')?.enabled).toBe(true);
+    expect(textGroup?.items.find(item => item.id === 'paste')?.enabled).toBe(true);
+    expect(chat.flatMap(group => group.items).some(item => item.id === 'new-session-with-selection')).toBe(false);
+
+    const frozen = groups({ mode: 'chat', session: { ...base.session, frozen: true } });
+    expect(frozen.find(group => group.title === 'Text')?.items.find(item => item.id === 'paste')?.enabled).toBe(false);
+  });
+
   it('keeps common session controls grouped for frozen targets and disables delivery', () => {
     const frozen = { ...base.session, frozen: true };
     const session = groups({ mode: 'session', session: frozen, currentGroupName: 'Work' });

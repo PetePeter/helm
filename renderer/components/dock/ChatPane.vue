@@ -9,6 +9,7 @@ import { formatSessionContextUsage, sessionContextUsageTitle } from '../../sessi
 import ContextSparkline from '../sidebar/ContextSparkline.vue';
 import { chatOriginLabel, formatChatFileSize, splitChatLinks } from '../../chat-view.js';
 import { artifactsClient, dialogClient, systemClient } from '../../ipc/clients.js';
+import { showChatContextMenu } from '../../stores/modal-bridge.js';
 import type { Session } from '../../state.js';
 
 const appStore = useAppStore();
@@ -21,6 +22,7 @@ const selectedSession = computed(() => appStore.state.sessions.find(session =>
 ));
 const messages = computed(() => selectedSession.value ? chat.messagesFor(selectedSession.value.id) : []);
 const thread = ref<HTMLElement | null>(null);
+const composerInput = ref<HTMLTextAreaElement | null>(null);
 
 const draft = computed({
   get: () => selectedSession.value ? chat.draftFor(selectedSession.value.id) : '',
@@ -67,9 +69,65 @@ function send(): void {
 }
 
 function onComposerKey(event: KeyboardEvent): void {
-  if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.metaKey) return;
+  if (event.key !== 'Enter' || !event.ctrlKey) return;
   event.preventDefault();
   send();
+}
+
+function resizeComposer(): void {
+  const input = composerInput.value;
+  if (!input) return;
+  input.style.height = 'auto';
+  const maximum = Math.max(40, window.innerHeight * 0.3);
+  const contentHeight = input.scrollHeight;
+  input.style.height = `${Math.max(40, Math.min(contentHeight, maximum))}px`;
+  input.style.overflowY = contentHeight > maximum ? 'auto' : 'hidden';
+}
+
+function openContextMenu(
+  event: MouseEvent,
+  selectedText: string,
+  selectionStart: number,
+  selectionEnd: number,
+): void {
+  const session = selectedSession.value;
+  if (!session) return;
+  event.preventDefault();
+  showChatContextMenu(
+    session.id,
+    selectedText,
+    { x: event.clientX, y: event.clientY },
+    text => {
+      if (selectedSession.value?.id !== session.id) return;
+      const value = draft.value;
+      const start = Math.max(0, Math.min(selectionStart, value.length));
+      const end = Math.max(start, Math.min(selectionEnd, value.length));
+      draft.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+      const caret = start + text.length;
+      void nextTick(() => {
+        if (!composerInput.value) return;
+        composerInput.value.focus();
+        composerInput.value.setSelectionRange(caret, caret);
+        resizeComposer();
+      });
+    },
+  );
+}
+
+function onComposerContextMenu(event: MouseEvent): void {
+  const input = event.currentTarget as HTMLTextAreaElement;
+  const start = input.selectionStart;
+  const end = input.selectionEnd;
+  openContextMenu(event, input.value.slice(start, end), start, end);
+}
+
+function onThreadContextMenu(event: MouseEvent): void {
+  const input = composerInput.value;
+  const insertionPoint = input?.value.length ?? draft.value.length;
+  const selection = window.getSelection();
+  const selectedText = selection?.toString()
+    || (selection?.rangeCount ? selection.getRangeAt(0).toString() : '');
+  openContextMenu(event, selectedText, insertionPoint, insertionPoint);
 }
 
 async function pickAttachment(): Promise<void> {
@@ -101,8 +159,16 @@ watch(sessionIds, ids => {
   void chat.loadSessions(ids);
 });
 
-onMounted(() => { void chat.start(sessionIds.value); });
-onBeforeUnmount(() => chat.stop());
+onMounted(() => {
+  void chat.start(sessionIds.value);
+  window.addEventListener('resize', resizeComposer);
+  void nextTick(resizeComposer);
+});
+onBeforeUnmount(() => {
+  chat.stop();
+  window.removeEventListener('resize', resizeComposer);
+});
+watch(draft, () => { void nextTick(resizeComposer); });
 watch(() => [appStore.state.activeSessionId, messages.value.length], async () => {
   await nextTick();
   thread.value?.scrollTo({ top: thread.value.scrollHeight });
@@ -136,7 +202,7 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
         </div>
       </header>
 
-      <div ref="thread" class="chat-pane__thread" aria-live="polite">
+      <div ref="thread" class="chat-pane__thread" aria-live="polite" @contextmenu="onThreadContextMenu">
         <div v-if="chat.historyErrorFor(selectedSession.id)" class="chat-pane__history-error" role="alert">
           Chat history could not be loaded: {{ chat.historyErrorFor(selectedSession.id) }}
         </div>
@@ -184,13 +250,23 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
         <button type="button" aria-label="Remove attachment" @click="chat.setAttachment(selectedSession.id, null)">×</button>
       </div>
       <form class="chat-pane__composer" @submit.prevent="send">
-        <textarea v-model="draft" class="chat-pane__input" rows="2" :placeholder="`Message ${selectedSession.name}…`" @keydown="onComposerKey" />
+        <textarea
+          ref="composerInput"
+          v-model="draft"
+          class="chat-pane__input"
+          rows="2"
+          :placeholder="`Message ${selectedSession.name}…`"
+          title="Enter a new line · Ctrl+Enter to send"
+          @input="resizeComposer"
+          @keydown="onComposerKey"
+          @contextmenu="onComposerContextMenu"
+        />
         <div class="chat-pane__composer-actions">
           <button class="btn btn--sm btn--secondary focusable" type="button" title="Attach a file" @click="pickAttachment">📎</button>
           <button class="btn btn--sm btn--primary focusable" type="submit" :disabled="!canSend">Send</button>
         </div>
       </form>
-      <div class="chat-pane__hint">Enter to send · Shift+Enter for a new line · Draft is kept per session</div>
+      <div class="chat-pane__hint">Ctrl+Enter to send · Enter for a new line · Draft is kept per session</div>
     </div>
 
     <div v-else class="chat-pane__empty">Select a session from the sidebar to view its chat.</div>
@@ -245,7 +321,7 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
 .chat-pane__selected-file button { color: var(--text-secondary); background: transparent; border: 0; cursor: pointer; }
 .chat-pane__composer { display: flex; align-items: flex-end; gap: var(--spacing-sm); padding: var(--spacing-sm); border-top: 1px solid var(--border); }
 .chat-pane__composer-actions { display: flex; flex-direction: column; gap: var(--spacing-xs); }
-.chat-pane__input { flex: 1; min-width: 0; min-height: 40px; max-height: 220px; padding: var(--spacing-sm) var(--spacing-md); color: var(--text-primary); font: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
+.chat-pane__input { flex: 1; min-width: 0; min-height: 40px; max-height: 30vh; box-sizing: border-box; overflow-y: hidden; padding: var(--spacing-sm) var(--spacing-md); color: var(--text-primary); font: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: none; }
 .chat-pane__hint { padding: 0 var(--spacing-md) var(--spacing-xs); color: var(--text-dim); font-size: 10px; }
 
 @media (max-width: 680px) {

@@ -29,22 +29,25 @@ import { isMobileSessionId } from '../mobile/mobile-identity.js';
  * forever, unseen. Questions must travel back over the same wire the work came
  * in on. Mirrors the guarantee Telegram mode already gives (relay-service.ts).
  */
-export function buildHelmMsgDirective(senderSessionId: string): string {
+export function buildHelmMsgDirective(senderSessionId: string, senderSource?: 'desktop'): string {
   // A phone sender cannot read the recipient's terminal at all. Observed
   // 2026-09-17: without a hard channel rule, interim updates went to the
   // terminal only and the phone user had to ask for replies. Local and fleet
   // peers CAN tail the terminal, so their directive stays unchanged.
-  const mobileChannelRule = isMobileSessionId(senderSessionId)
+  const chatChannelRule = isMobileSessionId(senderSessionId)
     ? 'The user reads ONLY chat_send: your terminal output is invisible to them. ' +
       'Reply to EVERY message from the phone with chat_send — ack, plan, result, or error, not just questions.\n'
-    : '';
+    : senderSource === 'desktop'
+      ? 'The user is reading the desktop Chat pane. Terminal output is not a reply there. ' +
+        'Reply to EVERY message from desktop Chat with chat_send — ack, plan, result, or error.\n'
+      : '';
   return (
     '[HELM_MSG_RULES]\n' +
-    mobileChannelRule +
-    `${describeSender(senderSessionId)} ` +
+    chatChannelRule +
+    `${describeSender(senderSessionId, senderSource)} ` +
     'Nobody can see or answer an interactive prompt here.\n' +
     'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
-    `If you need a decision, ${buildReplyInstruction(senderSessionId)} — ` +
+    `If you need a decision, ${buildReplyInstruction(senderSessionId, senderSource)} — ` +
     'then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +
     'While standing by, call session_set_aiagent_state with state="planning" so the wait is visible on your session row.\n' +
     '[/HELM_MSG_RULES]'
@@ -52,7 +55,8 @@ export function buildHelmMsgDirective(senderSessionId: string): string {
 }
 
 /** One sentence of provenance, so the recipient knows who it is actually talking to. */
-function describeSender(senderSessionId: string): string {
+function describeSender(senderSessionId: string, senderSource?: 'desktop'): string {
+  if (senderSource === 'desktop') return 'This message came from the user through the desktop Chat pane.';
   return isMobileSessionId(senderSessionId)
     ? 'This message came from the user on a paired phone, not from a human at this terminal.'
     : 'This message came from another Helm session, not from a human at this terminal.';
@@ -69,7 +73,10 @@ function describeSender(senderSessionId: string): string {
  * configured), exactly as Telegram mode routes replies through telegram_chat.
  * Local and fleet senders are real addressable sessions and keep send_text.
  */
-function buildReplyInstruction(senderSessionId: string): string {
+function buildReplyInstruction(senderSessionId: string, senderSource?: 'desktop'): string {
+  if (senderSource === 'desktop') {
+    return 'send the question back to the user with chat_send text="<your question>". The reply appears in the desktop Chat pane';
+  }
   if (isMobileSessionId(senderSessionId)) {
     return 'send the question back to the user with chat_send text="<your question>". Keep lines short — they are read on a phone';
   }
@@ -86,11 +93,12 @@ function buildReplyInstruction(senderSessionId: string): string {
  */
 export const HELM_MSG_HOOK_RULES =
   '[HELM_MSG_RULES]\n' +
-  'This message came from another Helm session or the user on a paired phone — not from a human at this terminal.\n' +
+  'This message came from another Helm session, the user through desktop Chat, or the user on a paired phone — not from a human at this terminal.\n' +
   'Nobody can see or answer an interactive prompt here.\n' +
   'Do NOT use AskUserQuestion or any other blocking prompt.\n' +
   'If you need a decision, send it back over the same wire: for a session sender, session_send_text with ' +
   'sessionId="<the fromSessionId in the envelope>", expectsResponse=true; ' +
+  'for desktop Chat (fromSessionId is "desktop"), use chat_send so the reply appears in the Chat pane; ' +
   'for a phone sender (address starts with mobile:), chat_send instead — the user reads ONLY chat_send, ' +
   'so reply to EVERY phone message with it, and keep lines short because they are read on a phone.\n' +
   'Then stand by for the reply. Do not guess and do not proceed on assumptions.\n' +

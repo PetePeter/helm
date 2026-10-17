@@ -43,7 +43,10 @@ const ACTION_WAIT_NOTE =
 const buildNonBlockingDirective = buildHelmMsgDirective;
 
 /** The reply-routing hint carried on the opening tag when a response is expected. */
-function buildExpectsResponseTag(senderSessionId: string): string {
+function buildExpectsResponseTag(senderSessionId: string, senderSource?: 'desktop'): string {
+  if (senderSource === 'desktop') {
+    return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It appears in the desktop Chat pane.]';
+  }
   if (isMobileSessionId(senderSessionId)) {
     return '[HELM_MSG: expectsResponse=true. To reply, call MCP tool mcp__helm__chat_send with: text="<your reply>". It reaches the user on the phone they sent this from; keep lines short.]';
   }
@@ -219,12 +222,12 @@ export class HelmSessionDeliveryService {
     }
   }
 
-  /** The user typing in the desktop Chat pane: no envelope, no sender session, counted as user input. */
+  /** A user turn from the desktop Chat pane; CLI recipients reply into that same pane. */
   async sendDesktopChatTextToSession(
     sessionRef: string,
     text: string,
   ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
-    return this.sendTextToSession(sessionRef, text, { source: 'desktop' });
+    return this.sendTextToSession(sessionRef, text, { source: 'desktop', expectsResponse: true });
   }
 
   /**
@@ -305,17 +308,19 @@ export class HelmSessionDeliveryService {
 
     // Determine if recipient wants the Helm preamble
     const recipientEntry = this.configLoader.getCliTypeEntry(session.cliType);
-    // An API tool is not a CLI agent: the envelope and its reply rules are noise
-    // to it (Helm posts its answer to chat itself). It gets the text, plus the
-    // sender's name when that is another session rather than the user's phone.
+    // An API tool is not a CLI agent: Helm posts its answer to chat itself, so
+    // reply routing is noise. Session senders still get a sender tag; desktop
+    // Chat gets the original user text without one.
     const isApiTool = Boolean(recipientEntry?.api);
     // Validated above: every non-desktop send names its sender session.
-    const sender = desktopOrigin ? undefined : { id: options.senderSessionId!, name: options.senderSessionName! };
-    const mobileOrigin = Boolean(sender && isMobileSessionId(sender.id));
+    const sender = desktopOrigin
+      ? { id: 'desktop', name: 'Desktop Chat' }
+      : { id: options.senderSessionId!, name: options.senderSessionName! };
+    const mobileOrigin = isMobileSessionId(sender.id);
     // Read before delivery: the paste itself turns the dot green.
     const busyReport = reportTargetBusy(session, isApiTool);
-    const usePreamble = sender !== undefined && !isApiTool && (recipientEntry?.helmPreambleForInterSession ?? true);
-    let deliveryText = isApiTool && sender && !mobileOrigin
+    const usePreamble = !isApiTool && (desktopOrigin || (recipientEntry?.helmPreambleForInterSession ?? true));
+    let deliveryText = isApiTool && !mobileOrigin && !desktopOrigin
       ? formatSenderTag({
         sessionId: sender.id,
         sessionName: sender.name,
@@ -342,14 +347,14 @@ export class HelmSessionDeliveryService {
       const expectsResponse = options.expectsResponse ?? false;
       const envelope = JSON.stringify({
         type: 'inter_llm_message',
-        fromSessionId: options.senderSessionId,
-        fromSessionName: options.senderSessionName,
+        fromSessionId: sender.id,
+        fromSessionName: sender.name,
         expectsResponse,
         timestamp: new Date().toISOString(),
       });
 
       const tag = expectsResponse
-        ? buildExpectsResponseTag(sender.id)
+        ? buildExpectsResponseTag(sender.id, desktopOrigin ? 'desktop' : undefined)
         : '[HELM_MSG]';
       // Envelope JSON braces will be smart-escaped by escapeUnrecognizedBraces
       // (unrecognized brace groups get {{/}}), while user text tokens like {Send}
@@ -371,7 +376,9 @@ export class HelmSessionDeliveryService {
       const channel = this.reminderDelivery
         ? (await this.reminderDelivery(session, 'helmMsgRules')).channel
         : 'pty';
-      const directive = channel === 'pty' ? buildNonBlockingDirective(sender.id) : '';
+      const directive = channel === 'pty'
+        ? buildNonBlockingDirective(sender.id, desktopOrigin ? 'desktop' : undefined)
+        : '';
       const message = `${tag}${envelope}${deliveryText}${directive}`;
 
       deliveryVerification = await deliverPromptSequenceToSession({

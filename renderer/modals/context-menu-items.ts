@@ -9,7 +9,7 @@ export interface ContextMenuItem {
 }
 
 export interface ContextMenuContext {
-  mode: 'terminal' | 'session';
+  mode: 'terminal' | 'session' | 'chat';
   targetSessionId: string | null;
   hasSelection: boolean;
   isSnappedOut: boolean;
@@ -70,6 +70,14 @@ export function buildContextMenuGroups(ctx: ContextMenuContext): ContextMenuGrou
         { id: 'copy', label: '📋 Copy', enabled: ctx.hasSelection },
         { id: 'paste', label: '📎 Paste', enabled: canType },
         { id: 'new-session-with-selection', label: '📌 New Session with Selection', enabled: ctx.hasSelection },
+      ],
+    });
+  } else if (ctx.mode === 'chat') {
+    groups.push({
+      title: 'Text',
+      items: [
+        { id: 'copy', label: '📋 Copy', enabled: ctx.hasSelection },
+        { id: 'paste', label: '📎 Paste', enabled: canType },
       ],
     });
   }

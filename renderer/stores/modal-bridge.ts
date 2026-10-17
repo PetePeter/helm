@@ -70,15 +70,18 @@ export const contextMenu = reactive({
   hasSelection: false,
   sourceSessionId: '',
   position: null as { x: number; y: number } | null,
-  /** 'session' = opened from a row's kebab (⋮); 'terminal' = right-click. */
-  mode: 'terminal' as 'terminal' | 'session',
+  /** 'session' = row kebab, 'terminal' = terminal right-click, 'chat' = chat right-click. */
+  mode: 'terminal' as 'terminal' | 'session' | 'chat',
 });
+
+let _chatContextMenuPaste: ((text: string) => void) | null = null;
 
 export function showContextMenu(
   sessionId: string,
   preCapturedText?: string, preCapturedHasSelection?: boolean,
   position?: { x: number; y: number },
 ): void {
+  _chatContextMenuPaste = null;
   let selectedText: string;
   let hasSelection: boolean;
   if (preCapturedText !== undefined && preCapturedHasSelection !== undefined) {
@@ -100,6 +103,7 @@ export function showContextMenu(
 
 /** The session row's kebab (⋮): the same menu, with the session's own actions. */
 export function showSessionMenu(sessionId: string, position?: { x: number; y: number }): void {
+  _chatContextMenuPaste = null;
   contextMenu.visible = true;
   contextMenu.mode = 'session';
   contextMenu.selectedText = '';
@@ -108,8 +112,37 @@ export function showSessionMenu(sessionId: string, position?: { x: number; y: nu
   contextMenu.position = position ?? null;
 }
 
+/** Open the shared menu for ChatPane text, routing Paste back to its composer. */
+export function showChatContextMenu(
+  sessionId: string,
+  selectedText: string,
+  position: { x: number; y: number },
+  onPaste: (text: string) => void,
+): void {
+  contextMenu.visible = true;
+  contextMenu.mode = 'chat';
+  contextMenu.selectedText = selectedText;
+  contextMenu.hasSelection = selectedText.length > 0;
+  contextMenu.sourceSessionId = sessionId;
+  contextMenu.position = position;
+  _chatContextMenuPaste = onPaste;
+}
+
+/** Consume the chat paste target before awaiting clipboard access. */
+export function takeChatContextMenuPasteHandler(): ((text: string) => void) | null {
+  const callback = _chatContextMenuPaste;
+  _chatContextMenuPaste = null;
+  return callback;
+}
+
+/** Paste action helper for callers that already have clipboard text. */
+export function pasteChatContextMenuText(text: string): void {
+  takeChatContextMenuPasteHandler()?.(text);
+}
+
 export function hideContextMenu(): void {
   contextMenu.visible = false;
+  _chatContextMenuPaste = null;
 }
 
 // ============================================================================

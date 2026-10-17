@@ -96,7 +96,7 @@ describe('HelmSessionDeliveryService', () => {
       });
     });
 
-    it('delivers a desktop chat turn through the shared prompt path without an inter-session envelope', async () => {
+    it('delivers desktop chat CLI turns with a desktop envelope and chat reply routing', async () => {
       const { service, ptyManager, receiver } = makeDeps();
       const origins: string[] = [];
       setDeliveryObserver((_sessionId, origin) => origins.push(origin));
@@ -107,9 +107,29 @@ describe('HelmSessionDeliveryService', () => {
         setDeliveryObserver(null);
       }
 
-      expect(getSentText(ptyManager)).toBe('hello from Chat');
-      expect(ptyManager.deliverText).toHaveBeenCalledWith(receiver.id, 'hello from Chat', { writeIntent: 'input' });
+      const sent = getSentText(ptyManager);
+      expect(sent).toContain('[HELM_MSG: expectsResponse=true');
+      const envelopeStart = sent.indexOf('{');
+      const envelopeEnd = sent.indexOf('}', envelopeStart) + 1;
+      expect(JSON.parse(sent.slice(envelopeStart, envelopeEnd))).toMatchObject({
+        type: 'inter_llm_message',
+        fromSessionId: 'desktop',
+        fromSessionName: 'Desktop Chat',
+        expectsResponse: true,
+      });
+      expect(sent.slice(envelopeEnd)).toContain('hello from Chat');
+      expect(sent).toContain('EVERY message from desktop Chat with chat_send');
+      expect(sent).toContain('mcp__helm__chat_send');
+      expect(ptyManager.deliverText).toHaveBeenCalledWith(receiver.id, sent, { writeIntent: 'input' });
       expect(origins).toEqual(['user']);
+    });
+
+    it('keeps desktop chat reply instructions even when inter-session preambles are disabled', async () => {
+      const { service, ptyManager, receiver } = makeDeps({ helmPreambleForInterSession: false });
+
+      await service.sendDesktopChatTextToSession(receiver.id, 'hello from Chat');
+
+      expect(getSentText(ptyManager)).toContain('mcp__helm__chat_send');
     });
 
     it('sends desktop chat text to an API session without adding a session sender tag', async () => {

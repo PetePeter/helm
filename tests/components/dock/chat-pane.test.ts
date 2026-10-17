@@ -6,16 +6,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatJournalEntry } from '../../../src/mobile/mobile-chat-journal.js';
 import ChatPane from '../../../renderer/components/dock/ChatPane.vue';
 import { appState } from '../../../renderer/stores/app.js';
+import { contextMenu, pasteChatContextMenuText } from '../../../renderer/stores/modal-bridge.js';
 
 describe('ChatPane', () => {
   let wrapper: VueWrapper | null;
   let history: ReturnType<typeof vi.fn>;
   let scrollToDescriptor: PropertyDescriptor | undefined;
+  let innerHeightDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     wrapper = null;
     scrollToDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
+    innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
+    contextMenu.visible = false;
+    contextMenu.mode = 'terminal';
+    contextMenu.selectedText = '';
+    contextMenu.hasSelection = false;
+    contextMenu.sourceSessionId = '';
+    contextMenu.position = null;
     appState.sessions = [
       { id: 'one', name: 'First', cliType: 'codex', processId: 1 },
       { id: 'two', name: 'Second', cliType: 'claude', processId: 2 },
@@ -44,10 +53,13 @@ describe('ChatPane', () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = null;
+    contextMenu.visible = false;
+    window.getSelection()?.removeAllRanges();
     appState.activeSessionId = null;
     appState.sessions = [];
     if (scrollToDescriptor) Object.defineProperty(HTMLElement.prototype, 'scrollTo', scrollToDescriptor);
     else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
+    if (innerHeightDescriptor) Object.defineProperty(window, 'innerHeight', innerHeightDescriptor);
   });
 
   it('shows the active top-level session thread and follows active-session changes', async () => {
@@ -70,5 +82,115 @@ describe('ChatPane', () => {
 
     expect(wrapper.find('.chat-pane__conversation').exists()).toBe(false);
     expect(wrapper.text()).toContain('Select a session from the sidebar to view its chat.');
+  });
+
+  it('opens the shared chat context menu when right-clicking a message body', async () => {
+    wrapper = mount(ChatPane, { attachTo: document.body, global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const messageBody = wrapper.get('.chat-pane__text').element;
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(messageBody);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 31, clientY: 47 });
+    messageBody.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(contextMenu.visible).toBe(true);
+    expect(contextMenu.mode).toBe('chat');
+    expect(contextMenu.sourceSessionId).toBe('one');
+    expect(contextMenu.selectedText).toBe('first thread');
+    expect(contextMenu.hasSelection).toBe(true);
+    expect(contextMenu.position).toEqual({ x: 31, y: 47 });
+  });
+
+  it('opens the shared chat context menu when right-clicking the composer selection', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const composer = wrapper.get('.chat-pane__input');
+    await composer.setValue('draft text');
+    (composer.element as HTMLTextAreaElement).setSelectionRange(0, 5);
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 53, clientY: 71 });
+    composer.element.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(contextMenu.visible).toBe(true);
+    expect(contextMenu.mode).toBe('chat');
+    expect(contextMenu.sourceSessionId).toBe('one');
+    expect(contextMenu.selectedText).toBe('draft');
+    expect(contextMenu.hasSelection).toBe(true);
+    expect(contextMenu.position).toEqual({ x: 53, y: 71 });
+  });
+
+  it('pastes clipboard text into the composer at its captured selection', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const composer = wrapper.get('.chat-pane__input');
+    const input = composer.element as HTMLTextAreaElement;
+    await composer.setValue('draft text');
+    input.setSelectionRange(0, 6);
+    input.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 53, clientY: 71 }));
+
+    pasteChatContextMenuText('pasted ');
+    await flushPromises();
+
+    expect(input.value).toBe('pasted text');
+    expect(input.selectionStart).toBe(7);
+    expect(input.selectionEnd).toBe(7);
+  });
+
+  it('grows and shrinks the composer at its 30vh limit and resets after sending', async () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1000 });
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const composer = wrapper.get('.chat-pane__input');
+    const input = composer.element as HTMLTextAreaElement;
+    let measuredHeight = 64;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, get: () => measuredHeight });
+
+    await composer.setValue('two\nlines');
+    expect(input.style.height).toBe('64px');
+
+    measuredHeight = 480;
+    await composer.setValue('many\nlines\nnow');
+    expect(input.style.height).toBe('300px');
+    expect(input.style.overflowY).toBe('auto');
+
+    measuredHeight = 44;
+    await composer.setValue('short');
+    expect(input.style.height).toBe('44px');
+    expect(input.style.overflowY).toBe('hidden');
+
+    measuredHeight = 40;
+    const sendEvent = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true });
+    input.dispatchEvent(sendEvent);
+    await flushPromises();
+    expect(sendEvent.defaultPrevented).toBe(true);
+    expect(input.style.height).toBe('40px');
+  });
+
+  it('leaves plain Enter for a newline and sends on Ctrl+Enter', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const composer = wrapper.get('.chat-pane__input');
+    await composer.setValue('send this');
+    const plainEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    composer.element.dispatchEvent(plainEnter);
+    expect(plainEnter.defaultPrevented).toBe(false);
+    expect((composer.element as HTMLTextAreaElement).value).toBe('send this');
+
+    const ctrlEnter = new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true });
+    composer.element.dispatchEvent(ctrlEnter);
+    await flushPromises();
+    expect(ctrlEnter.defaultPrevented).toBe(true);
+    expect((composer.element as HTMLTextAreaElement).value).toBe('');
+    expect(wrapper.findAll('.chat-pane__text').map(node => node.text())).toContain('send this');
   });
 });
