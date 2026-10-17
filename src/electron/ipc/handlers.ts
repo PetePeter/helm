@@ -686,11 +686,6 @@ export function registerIPCHandlers(
   // Created here (not in the mobile block far below) so the recycle bin's
   // purge paths can prune it — the journal's retention is the session's
   // lifetime, and a purged session's replay dies with it.
-  /** Sessions whose pane is a chat thread over the journal. */
-  const isChatPaneSession = (sessionId: string): boolean =>
-    sessionId === operatorSessionManager.getOperatorId()
-    || sessionManager.getSession(sessionId)?.apiTool === true
-    || sessionManager.getSession(sessionId)?.comfyUiTool === true;
   const mobileChatJournal = new MobileChatJournal({
     persist: saveMobileChatJournal,
     // The desktop Chat pane renders the same journal as the phone for every session.
@@ -698,8 +693,6 @@ export function registerIPCHandlers(
       const win = windowManager.getMainWindow();
       if (!win || win.isDestroyed()) return;
       win.webContents.send('chat:entry', entry);
-      // Keep the old operator overlay alive until the dock migration removes it.
-      if (isChatPaneSession(entry.record.sessionId)) win.webContents.send('voice:operatorChat', entry);
     },
   });
   mobileChatJournal.hydrate(loadMobileChatJournal());
@@ -1355,6 +1348,7 @@ export function registerIPCHandlers(
     },
     journal: mobileChatJournal,
   });
+  telegramModules.relayService.setIncomingMessageRecorder(record => mobileChatBridge.recordExternalTurn(record));
   const mobileAlertNotifier = new MobileAlertNotifier(mobileChatBridge);
   mobileChatBridge.setChatMessageObserver(sessionId => mobileAlertNotifier.recordChatMessage(sessionId));
 
@@ -1432,47 +1426,14 @@ export function registerIPCHandlers(
       const operatorId = operatorSessionManager.getOperatorId();
       return operatorId ? mobileChatJournal.lastSessionMessage(operatorId) : null;
     },
-    history: (sessionId) => {
-      const target = sessionId ?? operatorSessionManager.getOperatorId();
-      return target && isChatPaneSession(target) ? mobileChatJournal.sessionEntries(target) : [];
-    },
-    deleteAttachmentMessages: (sessionId, artifactId, attachmentId) =>
-      mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId),
-    ask: async (text, filePath, sessionId, comfyProfileId, comfyImageSizeId, comfyInputAttachmentIds) => {
-      if (sessionId && !isChatPaneSession(sessionId)) return { ok: false, error: 'That session has no chat view' };
-      const operatorId = sessionId ?? operatorSessionManager.getOperatorId();
+    ask: async (text) => {
+      const operatorId = operatorSessionManager.getOperatorId();
       if (!operatorId) return { ok: false, error: 'The Helm operator is off — enable it in Settings → Operator' };
-      const target = sessionManager.getSession(operatorId);
-      if (!text.trim() && !(target?.comfyUiTool && (filePath || comfyInputAttachmentIds?.length))) {
-        return { ok: false, error: 'Nothing to send' };
-      }
-      if (target?.comfyUiTool) {
-        if (text.trim() === '/cancel') {
-          if (filePath || comfyInputAttachmentIds?.length) return { ok: false, error: 'Remove attached images before cancelling a ComfyUI generation' };
-          if (!await getComfyUiSessionHost().cancel(operatorId)) return { ok: false, error: 'No ComfyUI generation is running' };
-          mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
-        } else {
-          const journalText = text.trim() || (comfyInputAttachmentIds?.length ? `Using ${comfyInputAttachmentIds.length} selected reference image${comfyInputAttachmentIds.length === 1 ? '' : 's'}` : filePath ? `Using reference image ${basename(filePath)}` : text);
-          mobileChatBridge.recordDesktopTurn(operatorId, journalText, randomUUID());
-          try {
-            getComfyUiSessionHost().submit(operatorId, text, comfyProfileId, comfyImageSizeId, undefined, filePath, comfyInputAttachmentIds ?? []);
-          } catch (error) {
-            return { ok: false, error: error instanceof Error ? error.message : String(error) };
-          }
-        }
-        sessionManager.updateSession(operatorId, { lastPromptAt: Date.now() });
-        return { ok: true };
-      }
-      // The operator is a local CLI: a desktop path is directly readable by it.
-      const withFile = filePath ? `${text}
-
-[Attached file: ${filePath}]` : text;
-      await deliverPromptSequenceToSession({ sessionId: operatorId, text: withFile, ptyManager, sessionManager, configLoader });
-      mobileChatBridge.recordDesktopTurn(operatorId, withFile, randomUUID());
+      await deliverPromptSequenceToSession({ sessionId: operatorId, text, ptyManager, sessionManager, configLoader });
+      mobileChatBridge.recordDesktopTurn(operatorId, text, randomUUID());
       return { ok: true };
     },
   });
-
   setupChatHandlers({
     history: sessionId => sessionManager.getSession(sessionId)
       ? mobileChatJournal.sessionEntries(sessionId)

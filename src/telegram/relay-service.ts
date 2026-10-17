@@ -33,6 +33,7 @@ import type { ReminderDeliveryFn } from '../session/reminder-delivery.js';
 import { HELM_TELEGRAM_MODE_INSTRUCTIONS } from '../session/intersession-directive.js';
 import { TELEGRAM_CHAT_PROVIDER } from '../session/chat/chat-bindings.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
+import type { ChatRecordInput } from '../mobile/mobile-envelope.js';
 import type {
   TelegramBridge,
   TelegramChannel,
@@ -87,6 +88,7 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
   readonly provider = TELEGRAM_CHAT_PROVIDER;
 
   private channels = new Map<string, TelegramChannel>();
+  private incomingMessageRecorder?: (record: ChatRecordInput) => void;
 
   constructor(
     private telegramBot: TelegramBotCore,
@@ -111,6 +113,21 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
    */
   setReminderDelivery(reminderDelivery: ReminderDeliveryFn): void {
     this.reminderDelivery = reminderDelivery;
+  }
+
+  /** Late-bind the shared journal after mobile chat infrastructure is ready. */
+  setIncomingMessageRecorder(recorder: (record: ChatRecordInput) => void): void {
+    this.incomingMessageRecorder = recorder;
+  }
+
+  private recordIncomingMessage(record: ChatRecordInput): void {
+    try {
+      this.incomingMessageRecorder?.(record);
+    } catch (error) {
+      // Delivery succeeded already. A desktop/phone journal failure must not
+      // make Telegram report that its prompt was rejected.
+      logger.warn(`[TelegramRelay] Could not record incoming chat turn: ${error}`);
+    }
   }
 
   /**
@@ -314,6 +331,13 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
         onComplete: (result) => void this.handleDeliveryVerification(session.id, topicId, result, msgContext),
       },
     });
+    this.recordIncomingMessage({
+      sessionId: session.id,
+      sessionName: session.name,
+      text: msg.text,
+      at: Date.now(),
+      originId: `telegram:${chatId}:${msg.message_id}`,
+    });
     logger.info(`[TelegramRelay] Injected user message to session ${session.id}`);
     return true;
   }
@@ -437,6 +461,17 @@ export class TelegramRelayService extends EventEmitter implements TelegramBridge
           background: true,
           onComplete: (result) => void this.handleDeliveryVerification(targetSession.id, topicId, result, { chatId, messageId: msg.message_id }),
         },
+      });
+      this.recordIncomingMessage({
+        sessionId: targetSession.id,
+        sessionName: targetSession.name,
+        text: caption,
+        at: Date.now(),
+        filePath,
+        filename: attachment.fileName,
+        mimeType: attachment.mimeType,
+        sizeBytes: fileSize,
+        originId: `telegram:${chatId}:${msg.message_id}`,
       });
       logger.info(`[TelegramRelay] Injected attachment (${attachment.type}) to session ${targetSession.id}: ${filePath}`);
     })().catch((err) => {
@@ -815,4 +850,3 @@ function wrapTelegramEnvelope(text: string, from: string, chatId: number, skipIn
   const instruction = skipInstruction ? '' : '\nRespond via telegram_chat MCP tool.';
   return `[HELM_TELEGRAM${fromTag} chat:${chatId}]\n${text}\n[/HELM_TELEGRAM]${instruction}`;
 }
-

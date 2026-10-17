@@ -6,6 +6,7 @@
 import {
   DOCK_LAYOUT_VERSION,
   PANE_ARTIFACTS,
+  PANE_CHAT,
   PANE_DRAFT,
   PANE_MEMORIES,
   PANE_MESS,
@@ -39,7 +40,7 @@ export function edgeDockLayout(): DockWorkspaceLayout {
             ],
           },
         },
-        { type: 'group', tabs: [PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], activeTab: PANE_TERMINAL },
+        { type: 'group', tabs: [PANE_TERMINAL, PANE_CHAT, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_TIMESHEET], activeTab: PANE_TERMINAL },
         {
           type: 'dock', side: 'right', mode: 'autohide',
           child: { type: 'group', tabs: [PANE_ARTIFACTS, PANE_DRAFT], activeTab: PANE_ARTIFACTS },

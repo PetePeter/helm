@@ -259,6 +259,13 @@ export class MobileChatBridge implements ChatBridge {
     });
   }
 
+  /** Journal and push an inbound message from a non-phone surface without
+   * sending it back to its source provider. */
+  recordExternalTurn(input: ChatRecordInput): void {
+    if (input.originId && this.deps.journal.findByOriginId(input.sessionId, input.originId)) return;
+    this.journalAndPush(input);
+  }
+
   /**
    * Delete journaled messages of one session: each is removed from the journal
    * and replaced by a `kind: 'deleted'` tombstone pushed to every surface (and

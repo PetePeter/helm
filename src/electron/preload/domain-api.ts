@@ -14,7 +14,7 @@ import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../..
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenSheet } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
-import type { ChatJournalEntry, ChatJournalEntry as OperatorChatEntry } from '../../mobile/mobile-chat-journal.js';
+import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
 import {
   createPreloadDomains,
   type HelmPreloadApi,
@@ -224,11 +224,11 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('config:setMcpConfig', updates),
 
   /** Voice operator singleton settings (docs/voice-operator.md). */
-  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string; pttKey: string }> =>
+  configGetOperatorConfig: (): Promise<{ enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }> =>
     ipcRenderer.invoke('config:getOperatorConfig'),
 
   /** Persist operator settings; main re-ensures the operator session at once. */
-  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; compactEveryMinutes?: number; rules?: string; pttKey?: string }): Promise<{ success: boolean; error?: string }> =>
+  configSetOperatorConfig: (updates: { enabled?: boolean; cliType?: string; compactEveryMinutes?: number; rules?: string }): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('config:setOperatorConfig', updates),
 
   /**
@@ -1734,23 +1734,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   voiceSpeak: (text: string): Promise<{ ok: true; audio: Uint8Array; mimeType: string } | { ok: false; error: string }> =>
     ipcRenderer.invoke('voice:speak', text),
 
-  /** Deliver the user's words — and optionally a local file — to the operator, or to a chat-pane
-   *  session (an API tool) when `sessionId` is given (and echo them to the phone). */
-  voiceAsk: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string, comfyInputAttachmentIds?: string[]): Promise<{ ok: true } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('voice:ask', text, filePath, sessionId, comfyProfileId, comfyImageSizeId, comfyInputAttachmentIds),
-
-  /** A chat-pane session's journaled conversation (default: the operator's), oldest first. */
-  voiceOperatorHistory: (sessionId?: string): Promise<OperatorChatEntry[]> =>
-    ipcRenderer.invoke('voice:operatorHistory', sessionId),
-  voiceDeleteAttachmentMessages: (sessionId: string, artifactId: string, attachmentId: string): Promise<number> =>
-    ipcRenderer.invoke('voice:deleteAttachmentMessages', sessionId, artifactId, attachmentId),
-
-  /** Each new journal entry of any chat-pane session (operator, API tools), either direction. Returns an unsubscribe. */
-  onVoiceOperatorChat: (callback: (entry: OperatorChatEntry) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, entry: OperatorChatEntry) => callback(entry);
-    ipcRenderer.on('voice:operatorChat', listener);
-    return () => ipcRenderer.removeListener('voice:operatorChat', listener);
-  },
+  /** Deliver the user's spoken words to the Helm operator. */
+  voiceAsk: (text: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('voice:ask', text),
 
   /** The operator's newest persisted chat_send, or null. */
   voiceLastOperatorReply: (): Promise<string | null> =>
@@ -1770,7 +1756,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('chat:history', sessionId),
 
   /** Send a desktop Chat turn; successful delivery is mirrored to chat surfaces. */
-  chatSend: (input: { sessionId: string; text: string; filePath?: string }): Promise<{ ok: true } | { ok: false; error: string }> =>
+  chatSend: (input: { sessionId: string; text: string; filePath?: string; originId?: string }): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('chat:send', input),
 
   /** Every appended journal entry across all sessions. Returns an unsubscribe. */

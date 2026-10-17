@@ -9,13 +9,11 @@ import { onMounted, ref, watch } from 'vue';
 import { configClient } from '../../../ipc/clients.js';
 import { getCliDisplayName } from '../../../utils.js';
 import { OPERATOR_RULES } from '../../../../src/mcp/guides/operator-guide.js';
-import { toCombo } from '../../../keyboard/key-combo.js';
-import { operatorPttKey } from '../../../composables/useOperatorChat.js';
 import { trackSave, useAutosave } from '../../../composables/useAutosave.js';
 
-interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string; pttKey: string }
+interface OperatorConfig { enabled: boolean; cliType: string; compactEveryMinutes: number; rules: string }
 
-const config = ref<OperatorConfig>({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '', pttKey: 'f9' });
+const config = ref<OperatorConfig>({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '' });
 /**
  * Edited locally and autosaved on a long pause or on leaving the field, since
  * every save re-runs ensure().
@@ -46,7 +44,6 @@ function save(updates: Partial<OperatorConfig>): Promise<boolean> {
     const result = await configClient.configSetOperatorConfig(updates);
     if (result.success) {
       config.value = { ...config.value, ...updates };
-      operatorPttKey.value = config.value.pttKey;
       return;
     }
     // The controls bind one-way: re-read so a failed save does not leave the
@@ -65,14 +62,6 @@ watch(rulesDraft, (draft) => {
 
 const selectValue = (event: Event): string => (event.target as HTMLSelectElement).value;
 
-const MODIFIER_KEYS = new Set(['control', 'shift', 'alt', 'meta']);
-
-/** Press-to-capture: the first non-modifier key, with its held modifiers, becomes the PTT combo. */
-function capturePttKey(event: KeyboardEvent): void {
-  if (event.key === 'Tab' || MODIFIER_KEYS.has(event.key.toLowerCase())) return;
-  event.preventDefault();
-  void save({ pttKey: toCombo(event) });
-}
 </script>
 
 <template>
@@ -104,18 +93,6 @@ function capturePttKey(event: KeyboardEvent): void {
       </select>
     </label>
 
-
-    <label class="operator-setting">
-      <span>Push-to-talk key (hold in the operator chat)</span>
-      <input
-        class="operator-ptt-key focusable"
-        type="text"
-        readonly
-        :value="config.pttKey"
-        title="Click, then press the key or combo to use"
-        @keydown="capturePttKey"
-      />
-    </label>
 
     <label class="operator-setting">
       <span>Auto-clear when idle</span>

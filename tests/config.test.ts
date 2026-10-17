@@ -1211,12 +1211,12 @@ describe('ConfigLoader', () => {
   describe('operator config', () => {
     it('defaults to disabled with no CLI type, and round-trips through settings.yaml', () => {
       loader.load();
-      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '', pttKey: 'f9' });
+      expect(loader.getOperatorConfig()).toEqual({ enabled: false, cliType: '', compactEveryMinutes: 60, rules: '' });
       loader.setOperatorConfig({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0 });
-      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0, rules: '', pttKey: 'f9' });
+      expect(readYaml<any>('settings.yaml').operator).toEqual({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0, rules: '' });
       const loader2 = new ConfigLoader(TEST_DIR);
       loader2.load();
-      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0, rules: '', pttKey: 'f9' });
+      expect(loader2.getOperatorConfig()).toEqual({ enabled: true, cliType: 'uuid-1', compactEveryMinutes: 0, rules: '' });
     });
 
     it('round-trips multi-line user rules, trimming only the outer whitespace', () => {
@@ -1225,16 +1225,6 @@ describe('ConfigLoader', () => {
       const loader2 = new ConfigLoader(TEST_DIR);
       loader2.load();
       expect(loader2.getOperatorConfig().rules).toBe('Never message the build session.\nYou may read the gamepad terminal in full.');
-    });
-
-    it('round-trips the PTT combo lowercased, and a blank one falls back to f9', () => {
-      loader.load();
-      loader.setOperatorConfig({ pttKey: ' Ctrl+Space ' });
-      const loader2 = new ConfigLoader(TEST_DIR);
-      loader2.load();
-      expect(loader2.getOperatorConfig().pttKey).toBe('ctrl+space');
-      loader2.setOperatorConfig({ pttKey: '' });
-      expect(loader2.getOperatorConfig().pttKey).toBe('f9');
     });
 
     it('falls back to 60 for an invalid compactEveryMinutes', () => {

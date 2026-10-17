@@ -349,9 +349,6 @@ export const PRELOAD_API_DOMAINS = {
     'voiceAsk',
     'voiceLastOperatorReply',
     'onVoiceOperatorReply',
-    'voiceOperatorHistory',
-    'voiceDeleteAttachmentMessages',
-    'onVoiceOperatorChat',
   ],
   chat: [
     'chatHistory',

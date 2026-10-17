@@ -140,6 +140,24 @@ describe('MobileChatBridge as a chat surface', () => {
     expect(telegram.sendToSession).toHaveBeenCalledWith(expect.objectContaining({ source: 'desktop', originId: 'desktop:turn-1' }));
   });
 
+  it('journals an inbound external user turn once and pushes it to linked phones', () => {
+    links.online.add(phone.machineId);
+    const incoming = {
+      sessionId: 's1',
+      sessionName: 'work',
+      text: 'From Telegram',
+      at: NOW,
+      originId: 'telegram:12345:77',
+    };
+
+    bridge.recordExternalTurn(incoming);
+    bridge.recordExternalTurn(incoming);
+
+    expect(journal.sessionEntries('s1')).toHaveLength(1);
+    expect(journal.sessionEntries('s1')[0].record.originId).toBe('telegram:12345:77');
+    expect(links.records().filter(record => record.t === 'chat')).toHaveLength(1);
+  });
+
   it('stays available with no phone linked, so the journal still takes the message', async () => {
     expect(bridge.isAvailable()).toBe(true);
     await expect(bridge.sendToSession({ sessionId: 's1', text: 'hello' }))

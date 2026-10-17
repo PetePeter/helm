@@ -8,6 +8,7 @@ interface DesktopChatSendInput {
   sessionId: string;
   text: string;
   filePath?: string;
+  originId?: string;
 }
 
 export interface ChatHandlerDeps {
@@ -28,13 +29,17 @@ export function setupChatHandlers(deps: ChatHandlerDeps): void {
     if (!isRecord(value)
       || typeof value.sessionId !== 'string' || !value.sessionId.trim()
       || typeof value.text !== 'string'
-      || (value.filePath !== undefined && typeof value.filePath !== 'string')) {
+      || (value.filePath !== undefined && typeof value.filePath !== 'string')
+      || (value.originId !== undefined && (typeof value.originId !== 'string'
+        || !value.originId.startsWith('desktop:')
+        || value.originId.length > 160))) {
       return { ok: false, error: 'Invalid chat message' };
     }
 
     const input: DesktopChatSendInput = {
       sessionId: value.sessionId,
       text: value.text,
+      ...(typeof value.originId === 'string' ? { originId: value.originId } : {}),
       ...(typeof value.filePath === 'string' && value.filePath ? { filePath: value.filePath } : {}),
     };
     if (!input.text.trim() && !input.filePath) return { ok: false, error: 'Nothing to send' };
@@ -49,7 +54,7 @@ export function setupChatHandlers(deps: ChatHandlerDeps): void {
       sessionId: input.sessionId,
       text: input.text,
       source: 'desktop',
-      originId: `desktop:${randomUUID()}`,
+      originId: input.originId ?? `desktop:${randomUUID()}`,
       ...(input.filePath ? { filePath: input.filePath } : {}),
     };
     try {

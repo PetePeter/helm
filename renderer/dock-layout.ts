@@ -22,6 +22,7 @@ import {
   PANE_MESS,
   PANE_TIMESHEET,
   PANE_DRAFT,
+  PANE_CHAT,
   PANE_QUICK_SPAWN,
   PANE_SCHEDULER,
   PANE_SESSIONS,
@@ -99,7 +100,7 @@ function createClassicLayout(): DockWorkspaceLayout {
     root: split('horizontal', [
       dock('left', 'pinned', group([PANE_SESSIONS, PANE_SCHEDULER], PANE_SESSIONS)),
       split('vertical', [
-        group([PANE_TERMINAL, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], PANE_TERMINAL),
+        group([PANE_TERMINAL, PANE_CHAT, PANE_ARTIFACTS, PANE_TIMESHEET, PANE_MESS, PANE_MEMORIES, PANE_PLAN_SCREEN], PANE_TERMINAL),
         group([PANE_DRAFT]),
       ], [0.8, 0.2]),
     ], [0.28, 0.72]),

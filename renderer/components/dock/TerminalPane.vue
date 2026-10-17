@@ -13,11 +13,8 @@
  * simply "this pane is rendered", which the dock already decides, rather than a
  * separate view flag.
  *
- * The Helm operator's pane shows its chat over the terminal by default
- * (OperatorChat); the xterm stays mounted underneath so flipping back to the
- * raw terminal never re-adopts the container. API-tool chats cover only the
- * terminal area, so their plan/shortcut chips stay docked below. The operator
- * carries no chip bar: quick actions don't apply to it.
+ * Chat lives in its own dock pane. The terminal owns only the PTY surface,
+ * keeping chat state and terminal adoption independent.
  */
 import { computed, onBeforeUnmount } from 'vue';
 import { useHelmPaneContext } from '../../dock-pane-context.js';
@@ -30,15 +27,11 @@ function thaw(sessionId: string): void {
   void setSessionFrozen(sessionId, false);
 }
 import { useAppStore } from '../../stores/app.js';
-import OperatorChat from './OperatorChat.vue';
-import { operatorView } from '../../composables/useOperatorChat.js';
 
 const pane = useHelmPaneContext();
 /** The mission bar follows the session at the prompt, like the chips below. */
 const appStore = useAppStore();
 const isOperator = computed(() => appStore.activeSession?.role === 'operator');
-/** Chat-pane sessions: the operator and API tools render their journal as a chat thread. */
-const isChatPane = computed(() => isOperator.value || appStore.activeSession?.apiTool === true || appStore.activeSession?.comfyUiTool === true);
 
 function setContainer(el: unknown): void {
   pane.terminalContainerRef.value = (el as HTMLElement | null) ?? null;
@@ -72,22 +65,6 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">
         <!-- xterm.js terminals rendered by TerminalManager -->
       </div>
-      <OperatorChat
-        v-if="isChatPane && operatorView === 'chat' && appStore.activeSession"
-        :key="appStore.activeSession.id"
-        :session-id="appStore.activeSession.id"
-        :title="isOperator ? 'Helm operator' : appStore.activeSession.name"
-        :is-operator="isOperator"
-        :comfy-profiles="appStore.activeSession.comfyUiProfiles ?? []"
-        :comfy-image-sizes="appStore.activeSession.comfyUiImageSizes ?? []"
-      />
-      <button
-        v-else-if="isChatPane"
-        class="btn btn--sm btn--secondary focusable terminal-view__chat-toggle"
-        type="button"
-        title="Back to the chat"
-        @click="operatorView = 'chat'"
-      >Chat</button>
     </div>
     <!-- Repeated under the terminal, where the eyes are while typing. -->
     <PromptCacheBanner
@@ -102,10 +79,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
 </template>
 
 <style scoped>
-/* The chat overlays only the terminal area, so the mission bar above and the
-   chip bar below stay docked around it rather than hidden beneath it. */
 .terminal-view__stage {
-  position: relative;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -123,10 +97,4 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
   border-bottom: 1px solid #8cbcff;
 }
 
-.terminal-view__chat-toggle {
-  position: absolute;
-  top: var(--spacing-sm);
-  right: var(--spacing-md);
-  z-index: 2;
-}
 </style>

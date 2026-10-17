@@ -9,19 +9,13 @@
 import { ipcMain } from 'electron';
 import { logger } from '../../utils/logger.js';
 import type { VoiceResult, VoiceService } from '../../voice/voice-service.js';
-import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
 
 export interface VoiceHandlerDeps {
   voiceService: Pick<VoiceService, 'transcribe' | 'speak'>;
-  /** Deliver the user's words (and optionally a local file) to the operator,
-   *  or to the named chat-capable session (an API tool). */
-  ask: (text: string, filePath?: string, sessionId?: string, comfyProfileId?: string, comfyImageSizeId?: string, comfyInputAttachmentIds?: string[]) => Promise<VoiceResult>;
+  /** Deliver the user's spoken words to the operator. */
+  ask: (text: string) => Promise<VoiceResult>;
   /** The operator's newest persisted reply, so the sidebar survives a restart. */
   lastReply: () => string | null;
-  /** A chat session's whole journaled conversation (default: the operator's), for the desktop chat view. */
-  history: (sessionId?: string) => ChatJournalEntry[];
-  /** Remove journal entries whose image attachment was just deleted from its artifact. */
-  deleteAttachmentMessages?: (sessionId: string, artifactId: string, attachmentId: string) => number;
 }
 
 export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
@@ -39,22 +33,10 @@ export function setupVoiceHandlers(deps: VoiceHandlerDeps): void {
 
   ipcMain.handle('voice:lastOperatorReply', () => deps.lastReply());
 
-  ipcMain.handle('voice:operatorHistory', (_event, sessionId?: unknown) =>
-    deps.history(typeof sessionId === 'string' ? sessionId : undefined));
-
-  ipcMain.handle('voice:deleteAttachmentMessages', (_event, sessionId: unknown, artifactId: unknown, attachmentId: unknown) => {
-    if (typeof sessionId !== 'string' || typeof artifactId !== 'string' || typeof attachmentId !== 'string') return 0;
-    return deps.deleteAttachmentMessages?.(sessionId, artifactId, attachmentId) ?? 0;
-  });
-
-  ipcMain.handle('voice:ask', async (_event, text: unknown, filePath?: unknown, sessionId?: unknown, comfyProfileId?: unknown, comfyImageSizeId?: unknown, comfyInputAttachmentIds?: unknown) => {
+  ipcMain.handle('voice:ask', async (_event, text: unknown) => {
     if (typeof text !== 'string') return { ok: false, error: 'Nothing to send' };
-    if (filePath !== undefined && typeof filePath !== 'string') return { ok: false, error: 'Invalid attachment' };
-    if (comfyInputAttachmentIds !== undefined && (!Array.isArray(comfyInputAttachmentIds) || comfyInputAttachmentIds.some(id => typeof id !== 'string'))) {
-      return { ok: false, error: 'Invalid ComfyUI reference images' };
-    }
     try {
-      return await deps.ask(text.trim(), filePath || undefined, typeof sessionId === 'string' ? sessionId : undefined, typeof comfyProfileId === 'string' ? comfyProfileId : undefined, typeof comfyImageSizeId === 'string' ? comfyImageSizeId : undefined, Array.isArray(comfyInputAttachmentIds) ? comfyInputAttachmentIds as string[] : undefined);
+      return await deps.ask(text.trim());
     } catch (error) {
       logger.error(`[IPC] voice:ask failed: ${error}`);
       return { ok: false, error: String(error) };

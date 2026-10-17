@@ -65,3 +65,4 @@ export const eventsClient = domainClient('events');
 export const peersClient = domainClient('peers');
 export const mobileClient = domainClient('mobile');
 export const voiceClient = domainClient('voice');
+export const chatClient = domainClient('chat');

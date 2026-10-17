@@ -113,6 +113,27 @@ describe('TelegramRelayService', () => {
     expect(ptyManager.deliverText).toHaveBeenCalledWith('s1', expect.stringContaining('Respond via telegram_chat MCP tool.'));
   });
 
+  it('records a successfully delivered Telegram user turn with its source id', async () => {
+    const { relay } = makeRelay();
+    const recordIncoming = vi.fn();
+    relay.setIncomingMessageRecorder(recordIncoming);
+
+    await relay.handleIncomingTelegramMessage({
+      message_id: 77,
+      message_thread_id: 42,
+      text: 'From Telegram',
+      chat: { id: 12345 },
+      from: { username: 'testuser' },
+    } as any);
+
+    expect(recordIncoming).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 's1',
+      sessionName: 'Claude',
+      text: 'From Telegram',
+      originId: 'telegram:12345:77',
+    }));
+  });
+
   it('keeps the instruction line when the reminder resolves to pty — no hooks, prepend as always', async () => {
     const { relay, ptyManager } = makeRelay();
     relay.setReminderDelivery(async () => ({ channel: 'pty', fellBack: true }));

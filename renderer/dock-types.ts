@@ -138,6 +138,7 @@ export const PANE_ARTIFACTS = 'artifacts';
 export const PANE_MESS = 'mess';
 export const PANE_TIMESHEET = 'timesheet';
 export const PANE_DRAFT = 'draft';
+export const PANE_CHAT = 'chat';
 
 /**
  * The pane registry. Registration is id-keyed data, so a later renderer plan can
@@ -145,6 +146,7 @@ export const PANE_DRAFT = 'draft';
  */
 export const DOCK_PANES: readonly DockPaneDescriptor[] = Object.freeze([
   Object.freeze({ id: PANE_TERMINAL, kind: 'view', title: 'Terminal', icon: '▶', shortcut: 't', closable: true, home: 'center' }),
+  Object.freeze({ id: PANE_CHAT, kind: 'view', title: 'Chat', icon: '💬', shortcut: 'j', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_PLAN_SCREEN, kind: 'view', title: 'Plans', icon: '🗺', shortcut: 'p', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_MEMORIES, kind: 'view', title: 'Memories', icon: '🧠', shortcut: 'm', closable: true, home: 'center' }),
   Object.freeze({ id: PANE_MESS, kind: 'view', title: 'Mess', icon: '🍽', shortcut: 'e', closable: true, home: 'center' }),
