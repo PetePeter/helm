@@ -88,6 +88,7 @@ export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now
   const labelEvery = Math.ceil(n / 12);
   const color = (i: number) => SERIES[i % SERIES.length];
   const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
+  const rows = sheet.rows.filter(row => sum(row.tokens) !== 0);
 
   const grid: string[] = [], axis: string[] = [];
   for (let g = 0; g <= GRID; g++) {
@@ -96,7 +97,7 @@ export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now
     axis.push(`<text x="${L - 6}" y="${gy + 3}">${formatTokens(max * (1 - g / GRID))}</text>`);
   }
   const stacked = new Array<number>(n).fill(0);
-  const bars = sheet.rows.map((row, r) => {
+  const bars = rows.map((row, r) => {
     const rects = row.tokens.slice(0, n).map((v, i) => {
       if (v <= 0) return '';
       const top = y(stacked[i] + v), bottom = y(stacked[i]);
@@ -110,7 +111,7 @@ export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now
     .join('');
 
   return `<div class="tsc"><style>${STYLE}</style><div class="toggles">`
-    + sheet.rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.label)} ${formatTokens(sum(row.tokens))}</label>`).join('')
+    + rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.label)} ${formatTokens(sum(row.tokens))}</label>`).join('')
     + '</div>'
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per CLI per period">`
     + `<g stroke="#222">${grid.join('')}</g>`

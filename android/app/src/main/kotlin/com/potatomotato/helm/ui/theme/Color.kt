@@ -92,4 +92,12 @@ object HelmColors {
         val Idle = Color(0xFF52525B)
         val Flash = Color(0xFFFBBF24)
     }
+
+    /** Token chart series, mirrored from src/session/timesheet-chart.ts. */
+    object Statistics {
+        val Series = listOf(
+            Color(0xFFF0B34A), Color(0xFF5AA9FF), Color(0xFF4FD08B), Color(0xFFC58AF0),
+            Color(0xFFF07A7A), Color(0xFF5FD3D3), Color(0xFF9AA0A6),
+        )
+    }
 }

@@ -3,14 +3,19 @@ package com.potatomotato.helm.ui.time
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +42,7 @@ import com.potatomotato.helm.data.TimeProjectTotal
 import com.potatomotato.helm.data.TimeRow
 import com.potatomotato.helm.data.TimeSheet
 import com.potatomotato.helm.data.TimeTokenSheet
+import com.potatomotato.helm.data.TimeTokenRow
 import com.potatomotato.helm.data.TimeView
 import com.potatomotato.helm.ui.artifacts.ContainedWebView
 import com.potatomotato.helm.ui.components.LoadBody
@@ -150,7 +156,7 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ProjectTotals(projects: List<TimeProjectTotal>, chartHtml: String?, onOpen: (TimeProjectTotal) -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it) } }
+        chartHtml?.let { item { TimeChart(it, legendRows = 1) } }
         item { TableHeader(stringResource(R.string.time_col_project), includeTokens = true) }
         items(projects, key = { it.projectKey }) { project ->
             TableRow(project.projectName, project.userMinutes, project.aiMinutes, onClick = { onOpen(project) }, tokens = project.tokens)
@@ -170,7 +176,7 @@ private fun ProjectTotals(projects: List<TimeProjectTotal>, chartHtml: String?, 
 @Composable
 private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartHtml: String?) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it) } }
+        chartHtml?.let { item { TimeChart(it, legendRows = 1) } }
         item { Folder(stringResource(R.string.time_total), TimeRow("", sheet.totalUser, sheet.totalAi, sheet.totalTokens), sheet.columns, period) }
         items(sheet.rows, key = { it.dir }) { row -> Folder(row.dir, row, sheet.columns, period) }
     }
@@ -178,24 +184,134 @@ private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartHtml: String?
 
 @Composable
 private fun TokenSheetView(period: TimePeriod, sheet: TimeTokenSheet, chartHtml: String?) {
+    val rows = visibleTokenRows(sheet)
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it) } }
-        items(sheet.rows, key = { it.cliType }) { row ->
-            TokenBreakdown(row.label, row.tokens, sheet.columns, period)
-        }
-        item { TokenBreakdown(stringResource(R.string.time_total), sheet.totals, sheet.columns, period, bold = true) }
+        chartHtml?.let { item { TimeChart(it, legendRows = rows.size) } }
+        item { TokenTable(period, sheet, rows) }
     }
 }
 
-/**
- * The desktop's time + tokens chart, drawn as sent so both screens match.
- * Sized to the chart's 700x290 plot plus its toggle row.
- */
+/** The shared chart markup, sized to its 700x290 plot plus the supplied legend rows. */
 @Composable
-private fun TimeChart(html: String) {
-    ContainedWebView(
-        html = "<body style=\"margin:0\">$html</body>",
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.95f).padding(vertical = HelmSpacing.Sm),
+private fun TimeChart(html: String, legendRows: Int) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
+        ContainedWebView(
+            html = "<body style=\"margin:0\">$html</body>",
+            modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value, legendRows).dp),
+        )
+    }
+}
+
+internal fun chartHeightDp(widthDp: Float, legendRows: Int): Float =
+    widthDp.coerceAtLeast(0f) * CHART_HEIGHT / CHART_WIDTH +
+        CHART_LEGEND_ROW_HEIGHT * legendRows.coerceAtLeast(0) +
+        CHART_LEGEND_GAP
+
+internal fun visibleTokenRows(sheet: TimeTokenSheet): List<TimeTokenRow> =
+    sheet.rows.filter { it.tokens.sum() != 0L }
+
+private const val CHART_WIDTH = 700f
+private const val CHART_HEIGHT = 290f
+private const val CHART_LEGEND_ROW_HEIGHT = 28f
+private const val CHART_LEGEND_GAP = 8f
+
+private val TokenLabelColumn = 136.dp
+private val TokenValueColumn = 76.dp
+
+@Composable
+private fun TokenTable(period: TimePeriod, sheet: TimeTokenSheet, rows: List<TimeTokenRow>) {
+    val tableWidth = TokenLabelColumn + TokenValueColumn * (sheet.columns.size + 1)
+    Column(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        Row(
+            modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "CLI",
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.width(TokenLabelColumn),
+                maxLines = 1,
+            )
+            sheet.columns.forEach { start ->
+                Text(
+                    text = columnLabel(period, start),
+                    color = HelmColors.Dim,
+                    style = MaterialTheme.typography.labelMedium,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier.width(TokenValueColumn),
+                )
+            }
+            Text(
+                text = stringResource(R.string.time_total),
+                color = HelmColors.Dim,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                modifier = Modifier.width(TokenValueColumn),
+            )
+        }
+        HorizontalDivider(modifier = Modifier.width(tableWidth), color = HelmColors.Surface2)
+        rows.forEachIndexed { index, row ->
+            Row(
+                modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier.width(TokenLabelColumn).padding(end = HelmSpacing.Sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Spacer(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(HelmColors.Statistics.Series[index % HelmColors.Statistics.Series.size]),
+                    )
+                    Spacer(modifier = Modifier.width(HelmSpacing.Xs))
+                    Text(
+                        text = row.label,
+                        color = HelmColors.Txt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                sheet.columns.indices.forEach { i ->
+                    TokenNumber(row.tokens.getOrElse(i) { 0L })
+                }
+                TokenNumber(row.tokens.sum())
+            }
+        }
+        HorizontalDivider(modifier = Modifier.width(tableWidth), color = HelmColors.Surface2)
+        Row(
+            modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.time_total),
+                color = HelmColors.Txt,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                modifier = Modifier.width(TokenLabelColumn),
+                maxLines = 1,
+            )
+            sheet.totals.forEach { TokenNumber(it, bold = true) }
+            TokenNumber(sheet.totals.sum(), bold = true)
+        }
+    }
+}
+
+@Composable
+private fun TokenNumber(value: Long, bold: Boolean = false) {
+    Text(
+        text = formatTokens(value),
+        color = HelmColors.Txt,
+        style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it }
+            .copy(fontFeatureSettings = "tnum"),
+        textAlign = TextAlign.End,
+        maxLines = 1,
+        modifier = Modifier.width(TokenValueColumn),
     )
 }
 
@@ -256,37 +372,6 @@ private fun Cells(
         (listOf(you, ai, total) + listOfNotNull(tokens)).forEach {
             Text(it, color = color, style = style, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(NumberColumn))
         }
-    }
-}
-
-@Composable
-private fun TokenBreakdown(title: String, values: List<Long>, columns: List<Long>, period: TimePeriod, bold: Boolean = false) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
-        Text(
-            text = title,
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.titleSmall.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        columns.forEachIndexed { i, start ->
-            val count = values.getOrElse(i) { 0L }
-            if (count != 0L) TokenValueRow(columnLabel(period, start), formatTokens(count))
-        }
-        TokenValueRow(stringResource(R.string.time_total), formatTokens(values.sum()), bold)
-    }
-}
-
-@Composable
-private fun TokenValueRow(label: String, tokens: String, bold: Boolean = false) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Xs), verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            label,
-            color = HelmColors.Txt,
-            style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it },
-            modifier = Modifier.weight(1f),
-        )
-        Text(tokens, color = HelmColors.Txt, style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"), textAlign = TextAlign.End)
     }
 }
 

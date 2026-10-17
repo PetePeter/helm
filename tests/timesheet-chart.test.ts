@@ -57,7 +57,7 @@ describe('renderTimesheetChart', () => {
 });
 
 describe('renderTokenChart', () => {
-  it('stacks one segment per CLI with tokens, with a legend per row', () => {
+  it('stacks one segment per CLI with tokens and omits zero-total legend rows', () => {
     const columns = [DAY0, DAY0 + 86_400_000];
     const html = renderTokenChart({ columns, rows: [
       { cliType: 'claude-code', label: 'claude-code', tokens: [1_000, 0] },
@@ -66,7 +66,24 @@ describe('renderTokenChart', () => {
     ], totals: [1_500, 500] }, 'day', DAY0 + 2 * 86_400_000);
     expect(html.match(/<rect/g)).toHaveLength(3);
     expect(html).toContain('claude-code 1k');
-    expect(html).toContain('copilot 0');
+    expect(html).not.toContain('copilot');
+  });
+
+  it('keeps a large weekly CLI visible without zero-total legend chips', () => {
+    const columns = Array.from({ length: 7 }, (_, i) => DAY0 + i * 86_400_000);
+    const luna = [1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_090_000, 0, 0];
+    const rows = [
+      { cliType: 'luna-xhigh', label: 'luna-xhigh', tokens: luna },
+      ...Array.from({ length: 12 }, (_, i) => ({ cliType: `unused-${i}`, label: `unused-${i}`, tokens: Array(7).fill(0) })),
+    ];
+    const html = renderTokenChart({ columns, rows, totals: [...luna] }, 'day', DAY0 + 7 * 86_400_000);
+    const bar = html.match(/<rect[^>]*>/)?.[0];
+
+    expect(html).toContain('luna-xhigh 5.09M');
+    expect(html).not.toContain('unused-');
+    expect(bar).toBeDefined();
+    expect(Number(bar!.match(/y="([\d.]+)"/)![1])).toBeLessThan(260);
+    expect(Number(bar!.match(/height="([\d.]+)"/)![1])).toBeGreaterThan(100);
   });
 
   it('escapes CLI names in the legend', () => {
