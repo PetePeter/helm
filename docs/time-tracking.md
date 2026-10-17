@@ -86,3 +86,28 @@ flowchart LR
 All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. Timesheet responses include project totals, folder rows and chart markup; token responses include CLI rows, period totals and the shared token chart.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).
+
+### Chart library decision (P-1054, 2026-10-18)
+
+Use **Chart.js 4.5.1** for both the desktop Statistics pane and Android WebView charts. This is a library decision only; this plan does not add it to `package.json`.
+
+The size comparison below uses each release's full minified browser distribution from its npm package, measured before and after gzip. A production Chart.js or ECharts build can be smaller when it includes only the required components, so these figures set a scale, not a shipped-size target.
+
+| Library | Full minified asset | Required chart behavior, theme, and licence |
+|---|---:|---|
+| uPlot 1.6.32 | 51,081 B (22,277 B gzip) | Smallest. MIT. Supports multiple axes, but stacked bars, exact bar tooltips, and the legend behavior here need more custom path/plugin work. |
+| Chart.js 4.5.1 | 208,522 B (71,374 B gzip) | Tree-shakeable ESM. MIT. Built-in stacked bars, mixed bar/line charts, multiple axes, legend toggles, and tooltips; the touch event list includes `touchstart` and `touchmove`. |
+| ECharts 6.1.0 | 1,121,883 B (373,226 B gzip) | Tree-shakeable imports are available. Apache-2.0. Strong built-in legend, dual-axis, tooltip, and dark-theme support, with a much larger full distribution and a broader API than these charts need. |
+
+Chart.js is the pragmatic middle: the token chart can use stacked bar datasets, while Timesheet can combine bars and a line on separate value axes. Its built-in legend hides datasets and recalculates the visible scale; tooltip callbacks can format exact counts. Chart.js takes explicit colors, so map the existing desktop CSS tokens and Android theme values into its options. No time adapter is needed because period labels are already formatted by the time tracker.
+
+All three can run without a CDN when packaged locally. Electron's renderer policy in `renderer/index.html` permits scripts from `'self'`, so the renderer can import the tree-shaken Chart.js modules through Vite. Android's `ContainedWebView` (`android/app/src/main/kotlin/com/potatomotato/helm/ui/artifacts/ContainedWebView.kt`) blocks network loads; the artifact containment CSP in `HtmlContainment.kt` permits inline scripts under `default-src 'none'` and does not permit a remote script. Package the selected Chart.js bundle with the APK and have the trusted chart host include it inline. Do not fetch it from a CDN.
+
+The current chart is generated as static SVG in `src/session/timesheet-chart.ts` and passed to the desktop `v-html` pane and Android `ContainedWebView`. The follow-up implementation must mount the chart in those browser hosts from the existing sheet data; script tags inside `v-html` are not an integration path. Keep the data query and arithmetic shared, and do not send executable code from the main process as chart data.
+
+#### Research sources
+
+- [Chart.js integration and tree-shaking](https://www.chartjs.org/docs/latest/getting-started/integration.html), [mixed charts](https://www.chartjs.org/docs/latest/charts/mixed.html), [axes](https://www.chartjs.org/docs/latest/axes/), [legend toggles](https://www.chartjs.org/docs/latest/configuration/legend.html), [tooltips](https://www.chartjs.org/docs/latest/configuration/tooltip.html), and [interaction events](https://www.chartjs.org/docs/latest/configuration/interactions.html).
+- [Chart.js v4.5.1 package and MIT licence](https://github.com/chartjs/Chart.js/tree/v4.5.1).
+- [uPlot v1.6.32 package](https://www.npmjs.com/package/uplot/v/1.6.32) and [bar/tooltip plugin discussion](https://github.com/leeoniya/uPlot/issues/344).
+- [ECharts modular imports](https://echarts.apache.org/handbook/en/basics/import/), [legend selection](https://echarts.apache.org/handbook/en/concepts/legend/), [multiple axes](https://echarts.apache.org/handbook/en/concepts/axis/), and [Apache-2.0 licence](https://github.com/apache/echarts/blob/6.1.0/LICENSE).
