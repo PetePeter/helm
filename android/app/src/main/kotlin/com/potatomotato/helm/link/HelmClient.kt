@@ -1868,13 +1868,13 @@ class HelmClient(
     }
 
     /**
-     * The user's own timesheet (docs/time-tracking.md). A phone-only gate method,
+     * The user's own statistics (docs/time-tracking.md). A phone-only gate method,
      * not an AI tool: nothing an agent can call reads this data.
      */
     fun refreshTime(ask: TimeAsk): Boolean {
         time.requested(ask)
-        val params = linkedMapOf<String, Any>("period" to ask.period.wire, "anchor" to ask.anchorEpochMs)
-        ask.projectKey?.let { params["projectKey"] = it }
+        val params = linkedMapOf<String, Any>("view" to ask.view.wire, "period" to ask.period.wire, "anchor" to ask.anchorEpochMs)
+        if (ask.view == com.potatomotato.helm.data.TimeView.Timesheet) ask.projectKey?.let { params["projectKey"] = it }
         return call(METHOD_TIMESHEET, params) { outcome ->
             when (outcome) {
                 is Outcome.Ok -> if (!time.arrived(ask, outcome.result)) time.failed(ask, UNREADABLE_TIME)

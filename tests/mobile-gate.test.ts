@@ -343,9 +343,11 @@ describe('MobileGate — permitted-tool discovery', () => {
 });
 
 describe('MobileGate — timesheet', () => {
-  it('answers in-gate for any trusted device, never through the AI tool dispatcher', async () => {
+  it('answers both Statistics views in-gate for any trusted device, never through the AI tool dispatcher', async () => {
     const { gate, deviceId, calls } = build(['session_list']);
     await expect(gate.handle(deviceId, RESERVED_TIMESHEET_METHOD, { period: 'day' })).resolves.toEqual({ asked: { period: 'day' } });
+    await expect(gate.handle(deviceId, RESERVED_TIMESHEET_METHOD, { view: 'tokens', period: 'day' }))
+      .resolves.toEqual({ asked: { view: 'tokens', period: 'day' } });
     expect(calls).toHaveLength(0);
   });
 

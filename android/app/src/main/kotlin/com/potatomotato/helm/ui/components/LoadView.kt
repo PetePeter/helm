@@ -136,7 +136,7 @@ object LoadViews {
         is ContextDetail.Failed -> scoped(state.contextId, contextId) { LoadView.Failed(state.message) }
     }
 
-    /** The Time tab's answer, keyed on the whole ask (period, anchor, project). */
+    /** The Statistics screen's answer, keyed on view, period, anchor and project. */
     fun time(state: TimeState, ask: TimeAsk): LoadView<TimeAnswer> = when (state) {
         TimeState.Idle -> LoadView.Loading
         is TimeState.Loading -> LoadView.Loading

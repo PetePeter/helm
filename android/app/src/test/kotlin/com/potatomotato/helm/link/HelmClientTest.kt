@@ -1788,12 +1788,41 @@ class HelmClientTest {
         val record = JSONObject(String(sent.single(), Charsets.UTF_8))
         assertEquals("__timesheet__", record.getString("method"))
         val params = record.getJSONObject("params")
+        assertEquals("timesheet", params.getString("view"))
         assertEquals("week", params.getString("period"))
         assertEquals(42L, params.getLong("anchor"))
         assertEquals("proj1", params.getString("projectKey"))
 
         client.onInbound(resultFor(lastCallId(), """{"projects":[]}"""))
         assertTrue(client.time.state.value is com.potatomotato.helm.data.TimeState.Ready)
+    }
+
+    @Test
+    fun `the token view uses the same reserved route without a project scope`() {
+        val ask = com.potatomotato.helm.data.TimeAsk(
+            com.potatomotato.helm.data.TimePeriod.Month,
+            84L,
+            "ignored-while-viewing-tokens",
+            view = com.potatomotato.helm.data.TimeView.Tokens,
+        )
+        client.refreshTime(ask)
+
+        val record = JSONObject(String(sent.single(), Charsets.UTF_8))
+        assertEquals("__timesheet__", record.getString("method"))
+        val params = record.getJSONObject("params")
+        assertEquals(setOf("view", "period", "anchor"), params.keySet().toSet())
+        assertEquals("tokens", params.getString("view"))
+        assertEquals("month", params.getString("period"))
+        assertEquals(84L, params.getLong("anchor"))
+
+        client.onInbound(resultFor(lastCallId(), """{"sheet":{"columns":[1],
+            "rows":[{"cliType":"codex","label":"Codex","tokens":[1200]}],"totals":[1200]},
+            "chartHtml":"<svg/>"}"""))
+        val state = client.time.state.value as com.potatomotato.helm.data.TimeState.Ready
+        val answer = state.answer as com.potatomotato.helm.data.TimeAnswer.Tokens
+        assertEquals("Codex", answer.sheet.rows.single().label)
+        assertEquals(listOf(1_200L), answer.sheet.totals)
+        assertEquals("<svg/>", answer.chartHtml)
     }
 
     @Test

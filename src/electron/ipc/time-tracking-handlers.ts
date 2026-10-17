@@ -51,6 +51,22 @@ export function tokenQuery(tracker: SlotSource, cliTypes: string[], labelOf: (cl
   return { sheet, chartHtml: renderTokenChart(sheet, p) };
 }
 
+/** The phone's existing reserved route now selects either Statistics view. */
+export function statisticsQuery(
+  tracker: SlotSource,
+  params: unknown,
+  cliTypes: string[],
+  labelOf: (cliType: string) => string,
+): TimesheetQueryResult | { sheet: TokenSheet; chartHtml: string } {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('statistics params must be an object');
+  const request = params as Record<string, unknown>;
+  switch (request.view ?? 'timesheet') {
+    case 'timesheet': return timesheetQuery(tracker, request);
+    case 'tokens': return tokenQuery(tracker, cliTypes, labelOf, request.period, request.anchor);
+    default: throw new Error('view must be timesheet or tokens');
+  }
+}
+
 /** Phone calls that only look (read/list/search/download) are not the user working. */
 const PHONE_READ_ONLY = /_(get|list|read_terminal|info|search|graph|export|summary|status|check|history|download|tools)$/;
 /** Credited by the delivery path itself (origin 'user'), so never twice. */

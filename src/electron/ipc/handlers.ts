@@ -92,7 +92,7 @@ import { setupArtifactHandlers } from './artifact-handlers.js';
 import { setupDraftHandlers } from './draft-handlers.js';
 import { setupMemoryHandlers } from './memory-handlers.js';
 import { setupMessHandlers } from './mess-handlers.js';
-import { phoneActivityTarget, setupTimeTrackingHandlers, timesheetQuery } from './time-tracking-handlers.js';
+import { phoneActivityTarget, setupTimeTrackingHandlers, statisticsQuery } from './time-tracking-handlers.js';
 import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT } from '../../session/time-tracker.js';
 import { TimePersistence } from '../../session/time-persistence.js';
 import { TIME_TRACKING_DIR } from '../../session/persistence-paths.js';
@@ -1313,7 +1313,7 @@ export function registerIPCHandlers(
     sessionLookup: sessionManager,
     restartHelm: (resume) => helmControlService.restartHelm(resume),
     ringAnswered: (sessionId) => helmControlService.ringAnswered(sessionId),
-    timesheet: (params) => timesheetQuery(timeTracker, params),
+    timesheet: (params) => statisticsQuery(timeTracker, params, configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id)),
   });
 
   // The rolling record of chat messages fanned out to phones, so a phone that

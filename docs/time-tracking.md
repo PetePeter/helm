@@ -39,7 +39,7 @@ Append-only JSONL, one file per local month under the app-data `time-tracking/` 
 
 ## Statistics pane
 
-Dock pane **Statistics** (📊, shortcut `l`) has two tabs that share the period toggle and ◀ ▶ stepping. The **Timesheet** tab starts with totals for every project in the selected period, like the Android Time tab. Choose a project to drill into its folder rows; Back returns to the project list. The selected session never changes the timesheet scope. Project totals are ordered by user time, then AI time, then project name. The views are:
+Dock pane **Statistics** (📊, shortcut `l`) has two tabs that share the period toggle and ◀ ▶ stepping. The **Timesheet** tab starts with totals for every project in the selected period, like the Android Statistics screen. Choose a project to drill into its folder rows; Back returns to the project list. The selected session never changes the timesheet scope. Project totals are ordered by user time, then AI time, then project name. The views are:
 
 | View  | Columns |
 |-------|---------|
@@ -56,26 +56,33 @@ graph LR
   CU --> SA[readSubagentContexts<br/>Claude · Codex · Copilot logs] --> TS[TimeTracker.recordSubagentTokens]
   TS --> J
   TT --> J[(time-tracking/*.jsonl)]
-  J --> Q[timesheetQuery]
-  Q --> C[renderTimesheetChart<br/>timesheet-chart.ts]
-  C --> D[Desktop Timesheet pane<br/>v-html]
-  C --> A[APK Time tab<br/>ContainedWebView]
+  J --> Q{Statistics query}
+  Q -->|timesheet| T[timesheetQuery]
+  Q -->|tokens| K[tokenQuery]
+  T --> C[renderTimesheetChart<br/>timesheet-chart.ts]
+  K --> TC[renderTokenChart<br/>timesheet-chart.ts]
+  C --> D[Desktop Statistics<br/>v-html]
+  C --> A[APK Statistics · Timesheet<br/>ContainedWebView]
+  TC --> TD[Desktop Tokens tab<br/>v-html]
+  TC --> AT[APK Statistics · Tokens<br/>ContainedWebView]
 ```
 
 The chart is built once, in the main process, as self-contained SVG and CSS with no script. Both hosts draw the same markup, so they cannot drift apart. It is Helm's own markup with no AI-authored content, so the pane inlines it directly. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
 
 ### Tokens tab
 
-Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the `time:tokens` channel; the phone does not use it yet.
+Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the desktop `time:tokens` channel and the Android Statistics Tokens view.
 
 ```mermaid
 flowchart LR
   S[token slots<br/>projectKey + cliType] --> B[buildTokenSheet<br/>configured CLIs + other]
   B --> C[renderTokenChart<br/>stacked bars]
-  B --> T[Tokens tab table]
+  B --> T[Desktop Tokens tab table]
   C --> T
+  B --> A[APK Statistics Tokens view]
+  C --> A
 ```
 
-All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. Desktop queries use the same main-process `timesheetQuery` path as the phone Time tab; both responses carry `sheet` (the overview's covers every project) and `chartHtml`. An older phone ignores the extra fields.
+All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. Timesheet responses include project totals, folder rows and chart markup; token responses include CLI rows, period totals and the shared token chart.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).

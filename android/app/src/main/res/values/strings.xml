@@ -91,7 +91,7 @@
     <string name="home_tab_sessions">Sessions</string>
     <string name="home_tab_plans">Plans</string>
     <string name="home_tab_contexts">Contexts</string>
-    <string name="home_tab_time">Time</string>
+    <string name="home_tab_statistics">Statistics</string>
 
     <!--
       The glyph that leads each surface in the app bar's surface menu. Three
@@ -102,7 +102,7 @@
     <string name="context_glyph_sessions">▤</string>
     <string name="context_glyph_plans">✦</string>
     <string name="context_glyph_contexts">◈</string>
-    <string name="context_glyph_time">⏱</string>
+    <string name="context_glyph_statistics">📊</string>
     <!-- Marks the surface you are already on. -->
     <string name="context_glyph_check">✓</string>
 
@@ -161,6 +161,11 @@
     <string name="time_col_when">When</string>
     <string name="time_col_you">You</string>
     <string name="time_col_ai">AI</string>
+    <string name="statistics_view_timesheet">Timesheet</string>
+    <string name="statistics_view_tokens">Tokens</string>
+    <string name="statistics_tokens_loading">Reading token totals…</string>
+    <string name="statistics_tokens_empty">No tokens recorded in this period.</string>
+    <string name="statistics_col_tokens">Tokens</string>
     <string name="time_period_hour">Hour</string>
     <string name="time_period_day">Day</string>
     <string name="time_period_week">Week</string>

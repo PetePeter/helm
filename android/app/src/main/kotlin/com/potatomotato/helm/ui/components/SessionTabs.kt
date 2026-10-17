@@ -60,7 +60,7 @@ internal val HomeTab.labelRes: Int
         HomeTab.Sessions -> R.string.home_tab_sessions
         HomeTab.Plans -> R.string.home_tab_plans
         HomeTab.Contexts -> R.string.home_tab_contexts
-        HomeTab.Time -> R.string.home_tab_time
+        HomeTab.Time -> R.string.home_tab_statistics
     }
 
 /**
@@ -74,7 +74,7 @@ internal val HomeTab.glyphRes: Int
         HomeTab.Sessions -> R.string.context_glyph_sessions
         HomeTab.Plans -> R.string.context_glyph_plans
         HomeTab.Contexts -> R.string.context_glyph_contexts
-        HomeTab.Time -> R.string.context_glyph_time
+        HomeTab.Time -> R.string.context_glyph_statistics
     }
 
 /**

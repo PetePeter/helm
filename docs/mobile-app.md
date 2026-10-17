@@ -82,6 +82,12 @@ removes.
   **One at a time is reported here, never enforced here**: the phone advertises
   and the desktop connects, so the radio itself refuses a second central
   (`BleLinkSession.onCentralConnected`) and advertising stops once linked.
+- **Statistics** — a root surface independent of the selected session. The
+  Timesheet view shows every project's You, AI and token totals, then drills
+  into folder rows with the same hour, day, week and month periods as desktop.
+  Tokens shows per-CLI/model totals for those periods, including configured
+  CLIs with no usage and the shared `other` row. Both views use the desktop's
+  chart markup over the existing read-only `__timesheet__` route.
 - **Session tabs** — an open session shows two tabs under one app bar: **Chat**
   and **Artifacts**. They are places, not actions, which is why they are tabs and
   not sheet rows; the bar (title, link badge, ⋮) is owned by the scaffold, so

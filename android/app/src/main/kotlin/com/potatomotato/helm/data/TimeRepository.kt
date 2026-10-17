@@ -10,7 +10,7 @@ import java.time.Instant
 import java.time.ZoneId
 
 /**
- * The Time tab's views — the desktop's `periodEdges` names them on the wire.
+ * The Statistics screen's views — the desktop's `periodEdges` names them on the wire.
  * [step] pages one view-width, on local calendar boundaries like the desktop.
  */
 enum class TimePeriod(val wire: String) {
@@ -29,22 +29,35 @@ enum class TimePeriod(val wire: String) {
     }
 }
 
+enum class TimeView(val wire: String) { Timesheet("timesheet"), Tokens("tokens") }
+
 /**
- * One ask: a period around [anchorEpochMs]; every project's totals, or one
- * project's grid. [projectName] is only for the screen's header, never sent.
+ * One ask: a view and period around [anchorEpochMs]; every project's totals,
+ * one project's grid, or CLI token rows. [projectName] is display-only.
  */
 data class TimeAsk(
     val period: TimePeriod,
     val anchorEpochMs: Long,
     val projectKey: String?,
     val projectName: String? = null,
+    val view: TimeView = TimeView.Timesheet,
 )
 
-data class TimeProjectTotal(val projectKey: String, val projectName: String, val userMinutes: Int, val aiMinutes: Int)
+data class TimeProjectTotal(val projectKey: String, val projectName: String, val userMinutes: Int, val aiMinutes: Int, val tokens: Long = 0)
 
-data class TimeRow(val dir: String, val user: List<Int>, val ai: List<Int>)
+data class TimeRow(val dir: String, val user: List<Int>, val ai: List<Int>, val tokens: List<Long> = emptyList())
 
-data class TimeSheet(val columns: List<Long>, val rows: List<TimeRow>, val totalUser: List<Int>, val totalAi: List<Int>)
+data class TimeSheet(
+    val columns: List<Long>,
+    val rows: List<TimeRow>,
+    val totalUser: List<Int>,
+    val totalAi: List<Int>,
+    val totalTokens: List<Long> = emptyList(),
+)
+
+data class TimeTokenRow(val cliType: String, val label: String, val tokens: List<Long>)
+
+data class TimeTokenSheet(val columns: List<Long>, val rows: List<TimeTokenRow>, val totals: List<Long>)
 
 /** [chartHtml]: the desktop's shared time + tokens chart (timesheet-chart.ts); null from an older desktop. */
 sealed interface TimeAnswer {
@@ -52,9 +65,10 @@ sealed interface TimeAnswer {
 
     data class Projects(val projects: List<TimeProjectTotal>, override val chartHtml: String? = null) : TimeAnswer
     data class Sheet(val sheet: TimeSheet, override val chartHtml: String? = null) : TimeAnswer
+    data class Tokens(val sheet: TimeTokenSheet, override val chartHtml: String? = null) : TimeAnswer
 }
 
-/** The state of the Time tab, keyed by the ask that produced it. */
+/** The state of the Statistics screen, keyed by the ask that produced it. */
 sealed interface TimeState {
     data object Idle : TimeState
     data class Loading(val ask: TimeAsk) : TimeState
@@ -64,7 +78,7 @@ sealed interface TimeState {
 }
 
 /**
- * TimeRepository — the phone's read of the user's own timesheet
+ * TimeRepository — the phone's read of the user's own time and token statistics
  * (docs/time-tracking.md). Answered by the phone-only gate method
  * `__timesheet__`; no AI tool reads this data.
  *
@@ -87,8 +101,9 @@ class TimeRepository {
     /** True when settled (applied, or a stale arrival dropped); false when unreadable. */
     fun arrived(ask: TimeAsk, result: Any?): Boolean {
         if (asked != null && asked != ask) return true
-        val answer = parse(result as? JSONObject) ?: run {
-            WireShape.undecodable<Unit>("a __timesheet__ result", "an object with `projects` or `sheet`", result)
+        val answer = parse(result as? JSONObject, ask.view) ?: run {
+            val expected = if (ask.view == TimeView.Tokens) "a token sheet with `columns`, `rows`, and `totals`" else "an object with `projects` or `sheet`"
+            WireShape.undecodable<Unit>("a __timesheet__ result", expected, result)
             return false
         }
         cache[ask] = answer
@@ -100,15 +115,34 @@ class TimeRepository {
         if (asked == ask) _state.value = TimeState.Failed(ask, message)
     }
 
-    private fun parse(json: JSONObject?): TimeAnswer? {
+    private fun parse(json: JSONObject?, view: TimeView): TimeAnswer? {
         if (json == null) return null
         val chartHtml = json.opt("chartHtml") as? String
+        if (view == TimeView.Tokens) {
+            val sheet = json.optJSONObject("sheet") ?: return null
+            val columns = sheet.optJSONArray("columns") ?: return null
+            val rows = sheet.optJSONArray("rows") ?: return null
+            val totals = sheet.optJSONArray("totals") ?: return null
+            return TimeAnswer.Tokens(
+                TimeTokenSheet(
+                    columns = (0 until columns.length()).map { columns.optLong(it) },
+                    rows = (0 until rows.length()).mapNotNull { i ->
+                        val row = rows.optJSONObject(i) ?: return@mapNotNull null
+                        val cliType = row.opt("cliType") as? String ?: return@mapNotNull null
+                        val label = row.opt("label") as? String ?: return@mapNotNull null
+                        TimeTokenRow(cliType, label, longs(row.optJSONArray("tokens")))
+                    },
+                    totals = longs(totals),
+                ),
+                chartHtml,
+            )
+        }
         json.optJSONArray("projects")?.let { array ->
             return TimeAnswer.Projects(
                 (0 until array.length()).mapNotNull { i ->
                     val o = array.optJSONObject(i) ?: return@mapNotNull null
                     val key = o.opt("projectKey") as? String ?: return@mapNotNull null
-                    TimeProjectTotal(key, o.opt("projectName") as? String ?: key, o.optInt("user"), o.optInt("ai"))
+                    TimeProjectTotal(key, o.opt("projectName") as? String ?: key, o.optInt("user"), o.optInt("ai"), o.optLong("tokens"))
                 },
                 chartHtml,
             )
@@ -123,11 +157,12 @@ class TimeRepository {
                     (0 until rows.length()).mapNotNull { i ->
                         val o = rows.optJSONObject(i) ?: return@mapNotNull null
                         val dir = o.opt("dir") as? String ?: return@mapNotNull null
-                        TimeRow(dir, ints(o.optJSONArray("user")), ints(o.optJSONArray("ai")))
+                        TimeRow(dir, ints(o.optJSONArray("user")), ints(o.optJSONArray("ai")), longs(o.optJSONArray("tokens")))
                     }
                 }.orEmpty(),
                 totalUser = ints(totals?.optJSONArray("user")),
                 totalAi = ints(totals?.optJSONArray("ai")),
+                totalTokens = longs(totals?.optJSONArray("tokens")),
             ),
             chartHtml,
         )
@@ -135,4 +170,7 @@ class TimeRepository {
 
     private fun ints(array: JSONArray?): List<Int> =
         if (array == null) emptyList() else (0 until array.length()).map { array.optInt(it) }
+
+    private fun longs(array: JSONArray?): List<Long> =
+        if (array == null) emptyList() else (0 until array.length()).map { array.optLong(it) }
 }
