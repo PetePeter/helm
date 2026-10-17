@@ -48,7 +48,7 @@ Dock pane **Statistics** (📊, shortcut `l`) has two tabs that share the period
 | Week  | the Monday weeks covering a month |
 | Month | the 12 months of a year |
 
-A chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. CSS-only chips toggle each series, and the token axis hides with its series. The plot ends at the current column: periods that have not started yet are not drawn. The overview chart covers every project.
+A chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. CSS-only chips toggle each series, and the token axis hides with its series. The plot ends at the current column: periods that have not started yet are not drawn. The project totals chart covers every project.
 
 ```mermaid
 graph LR
@@ -71,7 +71,7 @@ The chart is built once, in the main process, as self-contained SVG and CSS with
 
 ### Tokens tab
 
-Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart above stacks one bar segment per CLI. `buildTokenSheet` and `renderTokenChart` back the desktop `time:tokens` channel and the Android Statistics Tokens view.
+Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart stacks one bar segment per CLI. Click a model legend chip to show or hide that CLI's segments, using the same CSS-only checkbox pattern as the Timesheet chart. Hover a segment to see the model, date or bucket, and exact token count. `buildTokenSheet` and `renderTokenChart` back the desktop `time:tokens` channel and the Android Statistics Tokens view; both hosts use the same chart markup and interactions.
 
 ```mermaid
 flowchart LR

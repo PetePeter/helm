@@ -1,6 +1,6 @@
 /** The shared timesheet chart: one markup for the desktop pane and the phone WebView. */
 import { describe, expect, it } from 'vitest';
-import { renderTimesheetChart, renderTokenChart } from '../src/session/timesheet-chart.js';
+import { columnLabel, renderTimesheetChart, renderTokenChart } from '../src/session/timesheet-chart.js';
 import type { Timesheet } from '../src/session/time-tracker.js';
 
 const DAY0 = new Date(2026, 8, 28).getTime();
@@ -67,6 +67,32 @@ describe('renderTokenChart', () => {
     expect(html.match(/<rect/g)).toHaveLength(3);
     expect(html).toContain('claude-code 1k');
     expect(html).not.toContain('copilot');
+  });
+
+  it('reuses the CSS legend toggle pattern for each CLI series', () => {
+    const html = renderTokenChart({ columns: [DAY0], rows: [
+      { cliType: 'codex', label: 'Codex', tokens: [1_250] },
+      { cliType: 'claude', label: 'Claude', tokens: [750] },
+    ], totals: [2_000] }, 'day', DAY0 + 1);
+
+    for (const [index, label] of ['Codex', 'Claude'].entries()) {
+      const id = `tsc-model-${index}`;
+      expect(html).toContain(`<input type="checkbox" id="${id}" checked>`);
+      expect(html).toContain(`<label for="${id}" class="l-model-${index}"`);
+      expect(html).toContain(`#${id}:not(:checked)~svg .s-model-${index}{display:none}`);
+      expect(html).toContain(`</i>${label}`);
+    }
+  });
+
+  it('shows the model, bucket and exact token count when a segment is hovered', () => {
+    const html = renderTokenChart({ columns: [DAY0], rows: [
+      { cliType: 'codex', label: 'Codex', tokens: [1_234] },
+      { cliType: 'claude', label: 'Claude', tokens: [2_345] },
+    ], totals: [3_579] }, 'day', DAY0 + 1);
+
+    expect(html).toContain(`<title>Codex — ${columnLabel('day', DAY0)}: 1,234 tokens</title>`);
+    expect(html).toContain(`<title>Claude — ${columnLabel('day', DAY0)}: 2,345 tokens</title>`);
+    expect(html.match(/<title>/g)).toHaveLength(2);
   });
 
   it('keeps a large weekly CLI visible without zero-total legend chips', () => {

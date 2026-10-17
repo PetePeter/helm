@@ -14,19 +14,36 @@ const COLORS = { you: '#5aa9ff', ai: '#4fd08b', tok: '#f0b34a' };
 /** Per-CLI series, in row order; cycles past the end. */
 const SERIES = [COLORS.tok, COLORS.you, COLORS.ai, '#c58af0', '#f07a7a', '#5fd3d3', '#9aa0a6'];
 
-const STYLE = `
+const BASE_STYLE = `
 .tsc{font-family:Consolas,'Cascadia Mono',monospace;font-size:12px;color:#eee}
 .tsc input{display:none}
 .tsc .toggles{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
 .tsc label{padding:3px 10px;border:1px solid #222;border-radius:4px;cursor:pointer;color:#555;user-select:none}
 .tsc label i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;opacity:.3}
-.tsc #tsc-you:checked~.toggles .l-you,.tsc #tsc-ai:checked~.toggles .l-ai,.tsc #tsc-tok:checked~.toggles .l-tok{color:#eee;background:#1a1a1a}
-.tsc #tsc-you:checked~.toggles .l-you i,.tsc #tsc-ai:checked~.toggles .l-ai i,.tsc #tsc-tok:checked~.toggles .l-tok i{opacity:1}
-.tsc #tsc-you:not(:checked)~svg .s-you{display:none}
-.tsc #tsc-ai:not(:checked)~svg .s-ai{display:none}
-.tsc #tsc-tok:not(:checked)~svg .s-tok{display:none}
 .tsc svg{width:100%;height:auto;display:block}
 .tsc svg text{fill:#999;font-size:10px;font-family:inherit}`;
+
+interface ChartSeries {
+  id: string;
+  key: string;
+  label: string;
+  color: string;
+  total: string;
+}
+
+/** One CSS-only legend toggle pattern shared by the timesheet and token charts. */
+function chartControls(series: ChartSeries[]): { style: string; html: string } {
+  const activeLabels = series.map(s => `.tsc #${s.id}:checked~.toggles .l-${s.key}`).join(',');
+  const activeSwatches = series.map(s => `.tsc #${s.id}:checked~.toggles .l-${s.key} i`).join(',');
+  const hiddenSeries = series.map(s => `.tsc #${s.id}:not(:checked)~svg .s-${s.key}{display:none}`).join('');
+  return {
+    style: `${BASE_STYLE}\n${activeLabels}{color:#eee;background:#1a1a1a}\n${activeSwatches}{opacity:1}\n${hiddenSeries}`,
+    html: series.map(s => `<input type="checkbox" id="${s.id}" checked>`).join('')
+      + '<div class="toggles">'
+      + series.map(s => `<label for="${s.id}" class="l-${s.key}"><i style="background:${s.color}"></i>${escapeHtml(s.label)} ${s.total}</label>`).join('')
+      + '</div>',
+  };
+}
 
 export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'>, period: TimesheetPeriod, now = Date.now()): string {
   // The plot ends at the current column: periods that have not started have no data, not zero.
@@ -58,14 +75,13 @@ export function renderTimesheetChart(sheet: Pick<Timesheet, 'columns' | 'totals'
     .map((col, i) => i % labelEvery ? '' : `<text x="${fx(centre(i))}" y="${BOTTOM + 18}">${columnLabel(period, col)}</text>`)
     .join('');
   const sum = (a: number[]) => a.reduce((t, v) => t + v, 0);
+  const controls = chartControls([
+    { id: 'tsc-you', key: 'you', label: 'You', color: COLORS.you, total: formatMinutes(sum(user)) },
+    { id: 'tsc-ai', key: 'ai', label: 'AI', color: COLORS.ai, total: formatMinutes(sum(ai)) },
+    { id: 'tsc-tok', key: 'tok', label: 'Tokens', color: COLORS.tok, total: formatTokens(sum(tokens)) },
+  ]);
 
-  return `<div class="tsc"><style>${STYLE}</style>`
-    + '<input type="checkbox" id="tsc-you" checked><input type="checkbox" id="tsc-ai" checked><input type="checkbox" id="tsc-tok" checked>'
-    + '<div class="toggles">'
-    + `<label for="tsc-you" class="l-you"><i style="background:${COLORS.you}"></i>You ${formatMinutes(sum(user))}</label>`
-    + `<label for="tsc-ai" class="l-ai"><i style="background:${COLORS.ai}"></i>AI ${formatMinutes(sum(ai))}</label>`
-    + `<label for="tsc-tok" class="l-tok"><i style="background:${COLORS.tok}"></i>Tokens ${formatTokens(sum(tokens))}</label>`
-    + '</div>'
+  return `<div class="tsc"><style>${controls.style}</style>${controls.html}`
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Time and tokens per period">`
     + `<g stroke="#222">${grid.join('')}</g>`
     + `<g text-anchor="end">${leftAxis.join('')}</g>`
@@ -102,17 +118,23 @@ export function renderTokenChart(sheet: TokenSheet, period: TimesheetPeriod, now
       if (v <= 0) return '';
       const top = y(stacked[i] + v), bottom = y(stacked[i]);
       stacked[i] += v;
-      return `<rect x="${fx(L + step * (i + 0.5) - barW / 2)}" y="${fx(top)}" width="${fx(barW)}" height="${fx(bottom - top)}"/>`;
+      const tooltip = `${escapeHtml(row.label)} — ${escapeHtml(columnLabel(period, columns[i]))}: ${v.toLocaleString('en-US')} tokens`;
+      return `<rect x="${fx(L + step * (i + 0.5) - barW / 2)}" y="${fx(top)}" width="${fx(barW)}" height="${fx(bottom - top)}"><title>${tooltip}</title></rect>`;
     }).join('');
-    return `<g fill="${color(r)}">${rects}</g>`;
+    return `<g class="s-model-${r}" fill="${color(r)}">${rects}</g>`;
   }).join('');
   const labels = columns
     .map((col, i) => i % labelEvery ? '' : `<text x="${fx(L + step * (i + 0.5))}" y="${BOTTOM + 18}">${columnLabel(period, col)}</text>`)
     .join('');
+  const controls = chartControls(rows.map((row, r) => ({
+    id: `tsc-model-${r}`,
+    key: `model-${r}`,
+    label: row.label,
+    color: color(r),
+    total: formatTokens(sum(row.tokens)),
+  })));
 
-  return `<div class="tsc"><style>${STYLE}</style><div class="toggles">`
-    + rows.map((row, r) => `<label style="color:#eee"><i style="background:${color(r)};opacity:1"></i>${escapeHtml(row.label)} ${formatTokens(sum(row.tokens))}</label>`).join('')
-    + '</div>'
+  return `<div class="tsc"><style>${controls.style}</style>${controls.html}`
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per CLI per period">`
     + `<g stroke="#222">${grid.join('')}</g>`
     + `<g text-anchor="end">${axis.join('')}</g>`
