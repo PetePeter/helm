@@ -79,6 +79,7 @@ const props = defineProps<{
   sessionStates: Map<string, string>;
   sessionActivityLevels: Map<string, string>;
   artifactCounts: Map<string, number>;
+  unreadChatCountFor?: (sessionId: string) => number;
   workingPlanLabels: Map<string, string>;
   workingPlanTooltips: Map<string, string>;
   pendingSchedules: Map<string, string>;
@@ -292,6 +293,7 @@ function onNewGroupDrop(e: DragEvent): void {
               :activity-level="session.activityLevel || sessionActivityLevels.get(session.id) || 'idle'"
               :display-name="session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType)"
               :artifact-count="artifactCounts.get(session.id) ?? 0"
+              :unread-chat-count="source === 'peer' ? 0 : unreadChatCountFor?.(session.id) ?? 0"
               :loop-continues="session.loopContinues ?? 0"
               :pending-subagents="session.pendingSubagents ?? 0"
               :elapsed-text="sessionElapsedText(session.id)"

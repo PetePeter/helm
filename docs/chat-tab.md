@@ -28,8 +28,14 @@ flowchart LR
 
 `useChatStore` merges the initial history with the live feed by journal sequence.
 It keeps drafts and attachments per session. Chat history is loaded for
-top-level sessions while the pane is open, and live entries are merged once by
-sequence.
+top-level sessions while the Chat or Sessions pane is mounted, and live entries
+are merged once by sequence.
+
+The same store derives each session's unread Chat count from its journal entries
+and a per-session read-through sequence. The first history load sets a baseline;
+subsequent incoming messages count until that session's thread is visible in the
+active Chat pane. User-originated turns and typed system records do not count.
+The Sessions pane and Chat pane share the store and its live subscription.
 
 User turns carry an `originId`: `desktop:` renders as **Desktop**, `telegram:`
 as **Telegram**, and phone origins as **Phone**. Agent replies have no origin

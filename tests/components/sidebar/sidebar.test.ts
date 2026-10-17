@@ -25,6 +25,9 @@ function makeCardProps(overrides: Record<string, any> = {}) {
     activityLevel: 'active',
     displayName: 'Claude',
     artifactCount: 0,
+    unreadChatCount: 0,
+    loopContinues: 0,
+    pendingSubagents: 0,
     elapsedText: '',
     workingPlanLabel: '',
     workingPlanTooltip: '',
@@ -95,6 +98,19 @@ describe('SessionCard', () => {
       }),
     });
     expect(w.find('.session-meta').exists()).toBe(false);
+  });
+
+  it('shows an outlined unread Chat count after the session name and hides it at zero', () => {
+    const w = mount(SessionCard, { props: makeCardProps({ unreadChatCount: 3 }) });
+    const name = w.get('.session-name');
+    const badge = w.get('.session-chat-unread');
+
+    expect(badge.text()).toBe('3 new');
+    expect(badge.attributes('title')).toBe('3 new Chat messages');
+    expect(name.element.compareDocumentPosition(badge.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+
+    const empty = mount(SessionCard, { props: makeCardProps({ unreadChatCount: 0 }) });
+    expect(empty.find('.session-chat-unread').exists()).toBe(false);
   });
 
   it('keeps terminal title beside the name and puts the working plan on the next row', () => {

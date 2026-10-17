@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import type { ChatJournalEntry } from '../src/mobile/mobile-chat-journal.js';
+import type { ChatRecordInput } from '../src/mobile/mobile-envelope.js';
 import { useChatStore } from '../renderer/stores/chat.js';
 
 const listeners = new Set<(entry: ChatJournalEntry) => void>();
 let historyFor: (sessionId: string) => Promise<ChatJournalEntry[]>;
 let send: (input: { sessionId: string; text: string; filePath?: string; originId?: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
 
-function entry(seq: number, sessionId: string, text: string, originId?: string): ChatJournalEntry {
+function entry(
+  seq: number,
+  sessionId: string,
+  text: string,
+  originId?: string,
+  kind?: ChatRecordInput['kind'],
+): ChatJournalEntry {
   return {
     seq,
     record: {
@@ -16,6 +23,7 @@ function entry(seq: number, sessionId: string, text: string, originId?: string):
       text,
       at: seq * 1000,
       ...(originId ? { originId } : {}),
+      ...(kind ? { kind } : {}),
     },
   };
 }
@@ -61,10 +69,69 @@ describe('Chat store', () => {
     await Promise.all([loading, loadingTwo]);
 
     expect(store.messagesFor('two').map(message => message.record.text)).toEqual(['Older reply', 'Reply during load']);
+    expect(store.unreadCountFor('two')).toBe(1);
 
     store.stop();
     emit(entry(3, 'two', 'After stop'));
     expect(store.messagesFor('two').map(message => message.record.text)).toEqual(['Older reply', 'Reply during load']);
+  });
+
+  it('counts incoming unread messages per session and clears them when that thread is viewed', async () => {
+    historyFor = async sessionId => [entry(sessionId === 'one' ? 1 : 2, sessionId, 'history')];
+    const store = useChatStore();
+    await store.start(['one', 'two']);
+
+    expect(store.unreadCountFor('one')).toBe(0);
+    expect(store.unreadCountFor('two')).toBe(0);
+
+    emit(entry(3, 'one', 'reply for one'));
+    emit(entry(4, 'two', 'reply for two'));
+    emit(entry(5, 'one', 'desktop turn', 'desktop:turn-1'));
+    emit(entry(6, 'one', 'artifact notice', undefined, 'artifact'));
+
+    expect(store.unreadCountFor('one')).toBe(1);
+    expect(store.unreadCountFor('two')).toBe(1);
+
+    store.setViewedSession('one');
+    expect(store.unreadCountFor('one')).toBe(0);
+    expect(store.unreadCountFor('two')).toBe(1);
+
+    emit(entry(7, 'one', 'reply while viewed'));
+    expect(store.unreadCountFor('one')).toBe(0);
+
+    store.setViewedSession(null);
+    emit(entry(8, 'one', 'reply while away'));
+    expect(store.unreadCountFor('one')).toBe(1);
+    expect(store.unreadCountFor('two')).toBe(1);
+    store.stop();
+  });
+
+  it('catches up unread messages from journal history after the listener stops', async () => {
+    historyFor = async () => [entry(1, 'one', 'seen')];
+    const store = useChatStore();
+    await store.start(['one']);
+    store.stop();
+
+    historyFor = async () => [entry(1, 'one', 'seen'), entry(2, 'one', 'arrived while stopped')];
+    await store.start(['one']);
+
+    expect(store.unreadCountFor('one')).toBe(1);
+    store.stop();
+  });
+
+  it('keeps one live subscription until all pane consumers stop', async () => {
+    const store = useChatStore();
+    await Promise.all([store.start(['one']), store.start(['one'])]);
+    expect(listeners.size).toBe(1);
+
+    store.stop();
+    emit(entry(1, 'one', 'still subscribed'));
+    expect(store.unreadCountFor('one')).toBe(1);
+
+    store.stop();
+    emit(entry(2, 'one', 'after final stop'));
+    expect(store.unreadCountFor('one')).toBe(1);
+    store.stop();
   });
 
   it('keeps drafts and attachment selections per session', () => {

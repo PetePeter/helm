@@ -69,6 +69,7 @@ export interface SessionCardProps {
   activityLevel: string;
   displayName: string;
   artifactCount: number;
+  unreadChatCount: number;
   /** G8: consecutive Stop-hook auto-continues in flight. 0 = no active loop. */
   loopContinues: number;
   /** Subagents this session is waiting on. 0 = none. */
@@ -500,6 +501,12 @@ function onCardClick(e: MouseEvent): void {
         <span v-if="shortcutKey != null" class="session-jump-key">^{{ shortcutKey }}</span>
         <span v-else class="session-jump-key session-jump-key--empty" aria-hidden="true" />
         <span class="session-name">{{ displayName }}</span>
+        <span
+          v-if="unreadChatCount > 0"
+          class="session-chat-unread"
+          :title="`${unreadChatCount} new Chat messages`"
+          :aria-label="`${unreadChatCount} new Chat messages`"
+        >{{ unreadChatCount }} new</span>
         <span v-if="metaText" class="session-meta" :title="metaText">
           {{ metaText }}
         </span>
@@ -656,6 +663,19 @@ function onCardClick(e: MouseEvent): void {
   gap: 2px;
   padding: 1px 5px;
   background: #2a2a3a;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--accent);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.session-chat-unread {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  background: var(--bg-secondary);
   border: 1px solid var(--accent);
   border-radius: 8px;
   font-size: 10px;

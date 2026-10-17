@@ -166,6 +166,7 @@ onMounted(() => {
   void nextTick(resizeComposer);
 });
 onBeforeUnmount(() => {
+  chat.setViewedSession(null);
   chat.stop();
   window.removeEventListener('resize', resizeComposer);
 });
@@ -174,6 +175,9 @@ watch(() => [appStore.state.activeSessionId, messages.value.length], async () =>
   await nextTick();
   thread.value?.scrollTo({ top: thread.value.scrollHeight });
 });
+watch(() => [props.paneActive, selectedSession.value?.id] as const, ([active, sessionId]) => {
+  chat.setViewedSession(active ? sessionId ?? null : null);
+}, { immediate: true });
 watch(() => appStore.state.activeSessionId, async () => {
   await nextTick();
   if (!props.paneActive) return;

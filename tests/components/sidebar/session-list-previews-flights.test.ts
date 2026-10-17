@@ -16,8 +16,8 @@ import { FLIGHT_LANDING_FLASH_MS } from '../../../renderer/composables/useMessag
 import type { SessionMessageFlight } from '../../../src/session/message-flight.js';
 
 const CardStub = {
-  props: ['session', 'previewSource', 'messageLanded'],
-  template: `<div class="card" :data-session-id="session.id" :class="{ landed: messageLanded }">
+  props: ['session', 'previewSource', 'messageLanded', 'unreadChatCount'],
+  template: `<div class="card" :data-session-id="session.id" :data-unread-chat-count="unreadChatCount" :class="{ landed: messageLanded }">
     <span v-if="previewSource" class="preview">{{ previewSource(session.id).join('|') }}</span>
   </div>`,
 };
@@ -151,6 +151,18 @@ describe('Session List PTY previews', () => {
     const list = mountList({ previewMode: 'selected-only' });
     expect(list.findAll('.preview')).toHaveLength(1);
     expect(list.find('[data-session-id="sA"] .preview').exists()).toBe(true);
+  });
+});
+
+describe('Session List Chat unread counts', () => {
+  it('passes local per-session counts to cards and suppresses them for peer rows', () => {
+    const local = mountList({ unreadChatCountFor: (sessionId: string) => sessionId === 'sA' ? 3 : 0 });
+    expect(local.get('[data-session-id="sA"]').attributes('data-unread-chat-count')).toBe('3');
+    local.unmount();
+    wrapper = null;
+
+    const peers = mountList({ source: 'peer', unreadChatCountFor: () => 7 });
+    expect(peers.get('[data-session-id="sA"]').attributes('data-unread-chat-count')).toBe('0');
   });
 });
 

@@ -27,6 +27,7 @@ function errorMessage(error: unknown): string {
 
 export const useChatStore = defineStore('chat', () => {
   const entriesBySession = reactive(new Map<string, ChatJournalEntry[]>());
+  const readThroughBySession = reactive(new Map<string, number>());
   const localTurnsBySession = reactive(new Map<string, ChatThreadMessage[]>());
   const draftsBySession = reactive(new Map<string, string>());
   const attachmentsBySession = reactive(new Map<string, string>());
@@ -34,20 +35,57 @@ export const useChatStore = defineStore('chat', () => {
 
   const loadedSessions = new Set<string>();
   const loadingSessions = new Map<string, Promise<void>>();
+  const firstLiveSeqBySession = new Map<string, number>();
   let unsubscribe: (() => void) | null = null;
   let generation = 0;
+  let startCount = 0;
+  let viewedSessionId: string | null = null;
 
   function journalEntriesFor(sessionId: string): ChatJournalEntry[] {
     return entriesBySession.get(sessionId) ?? [];
   }
 
-  function addEntry(entry: ChatJournalEntry): void {
+  function maxSequence(sessionId: string): number {
+    return journalEntriesFor(sessionId).reduce((max, entry) => Math.max(max, entry.seq), 0);
+  }
+
+  function advanceReadThrough(sessionId: string, seq: number): void {
+    const current = readThroughBySession.get(sessionId) ?? 0;
+    if (seq > current) readThroughBySession.set(sessionId, seq);
+  }
+
+  function markRead(sessionId: string): void {
+    if (!loadedSessions.has(sessionId) && !entriesBySession.has(sessionId)) return;
+    advanceReadThrough(sessionId, maxSequence(sessionId));
+  }
+
+  function setViewedSession(sessionId: string | null): void {
+    viewedSessionId = sessionId;
+    if (sessionId) markRead(sessionId);
+  }
+
+  function unreadCountFor(sessionId: string): number {
+    const readThrough = readThroughBySession.get(sessionId);
+    if (readThrough === undefined) return 0;
+    return journalEntriesFor(sessionId).filter(({ seq, record }) =>
+      seq > readThrough && !record.originId && !record.kind,
+    ).length;
+  }
+
+  function addEntry(entry: ChatJournalEntry, fromLiveFeed = false): void {
     const { sessionId, originId } = entry.record;
     const entries = journalEntriesFor(sessionId);
     if (entries.some(existing => existing.seq === entry.seq)) return;
 
+    if (fromLiveFeed && !readThroughBySession.has(sessionId)) {
+      const firstLiveSeq = firstLiveSeqBySession.get(sessionId);
+      firstLiveSeqBySession.set(sessionId, firstLiveSeq === undefined ? entry.seq : Math.min(firstLiveSeq, entry.seq));
+    }
+
     const next = [...entries, entry].sort((a, b) => a.seq - b.seq);
     entriesBySession.set(sessionId, next);
+
+    if (viewedSessionId === sessionId) advanceReadThrough(sessionId, entry.seq);
 
     if (originId) {
       const localTurns = localTurnsBySession.get(sessionId) ?? [];
@@ -59,11 +97,26 @@ export const useChatStore = defineStore('chat', () => {
     if (loadedSessions.has(sessionId)) return;
     const ongoing = loadingSessions.get(sessionId);
     if (ongoing) return ongoing;
+    const chatHistory = chatClient.chatHistory;
+    if (typeof chatHistory !== 'function') return;
 
     const loadingGeneration = generation;
-    const loading = chatClient.chatHistory(sessionId)
+    const readSequenceAtStart = readThroughBySession.get(sessionId);
+    const loading = chatHistory(sessionId)
       .then(entries => {
         for (const entry of entries) addEntry(entry);
+        if (readSequenceAtStart === undefined) {
+          const historyMax = entries.reduce((max, entry) => Math.max(max, entry.seq), 0);
+          const firstLiveSeq = firstLiveSeqBySession.get(sessionId);
+          const initialReadThrough = firstLiveSeq === undefined
+            ? historyMax
+            : Math.min(historyMax, firstLiveSeq - 1);
+          const currentReadThrough = readThroughBySession.get(sessionId);
+          if (currentReadThrough === undefined) readThroughBySession.set(sessionId, initialReadThrough);
+          else advanceReadThrough(sessionId, initialReadThrough);
+        }
+        firstLiveSeqBySession.delete(sessionId);
+        if (viewedSessionId === sessionId) markRead(sessionId);
         historyErrors.delete(sessionId);
         if (loadingGeneration === generation) loadedSessions.add(sessionId);
       })
@@ -82,11 +135,20 @@ export const useChatStore = defineStore('chat', () => {
   async function start(sessionIds: readonly string[]): Promise<void> {
     // Subscribe before history so a reply between the request and response is
     // merged once by journal sequence rather than lost or shown twice.
-    unsubscribe ??= chatClient.onChatEntry(addEntry);
+    const onChatEntry = chatClient.onChatEntry;
+    if (!unsubscribe) {
+      if (typeof onChatEntry !== 'function') return;
+      unsubscribe = onChatEntry(entry => addEntry(entry, true));
+    }
+    startCount += 1;
     await loadSessions(sessionIds);
   }
 
   function stop(): void {
+    if (startCount === 0) return;
+    startCount -= 1;
+    if (startCount > 0) return;
+
     unsubscribe?.();
     unsubscribe = null;
     generation += 1;
@@ -192,6 +254,8 @@ export const useChatStore = defineStore('chat', () => {
     historyErrorFor,
     journalEntriesFor,
     messagesFor,
+    unreadCountFor,
+    setViewedSession,
     draftFor,
     setDraft,
     attachmentFor,

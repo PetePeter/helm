@@ -160,6 +160,7 @@ describe('pane wrappers render their view', () => {
     const wrapper = mountPane(SessionsPane, fake.context);
     expect(wrapper.findComponent(SortBar).exists()).toBe(true);
     expect(wrapper.findComponent(SessionList).exists()).toBe(true);
+    expect(wrapper.findComponent(SessionList).props('unreadChatCountFor')).toBeTypeOf('function');
     expect(wrapper.find('.recycle-bin-btn').exists()).toBe(true);
   });
 

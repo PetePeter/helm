@@ -6,12 +6,13 @@
  * data comes from the existing singletons; only the handlers the shell owns
  * arrive through the pane context.
  */
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, watch } from 'vue';
 import SortBar from '../sidebar/SortBar.vue';
 import SessionList from '../sidebar/SessionList.vue';
 import OperatorSection from '../sidebar/OperatorSection.vue';
 import { sessionsState } from '../../screens/sessions-state.js';
 import { useAppStore } from '../../stores/app.js';
+import { useChatStore } from '../../stores/chat.js';
 import { useNavigationStore } from '../../stores/navigation.js';
 import { useSessionsScreenStore } from '../../stores/sessions-screen.js';
 import { useLlmNotificationsStore } from '../../stores/llmNotifications.js';
@@ -32,11 +33,17 @@ const SORT_OPTIONS = [
 const pane = useHelmMainPaneContext();
 const sidebar = pane.sidebar;
 const state = useAppStore().state;
+const chat = useChatStore();
+const chatSessionIds = computed(() => state.sessions.filter(session => !session.subagentOf).map(session => session.id));
 const navStore = useNavigationStore();
 const sessionsScreenStore = useSessionsScreenStore();
 const llmNotificationsStore = useLlmNotificationsStore();
 const flashAttention = useFlashAttention();
 const recycleBin = useRecycleBin();
+
+onMounted(() => { void chat.start(chatSessionIds.value); });
+watch(chatSessionIds, ids => { void chat.loadSessions(ids); });
+onUnmounted(() => chat.stop());
 
 // Maps each navList item's id → its index — fed to session cards/group headers as
 // data-nav-index so the legacy updateSessionsFocus() can find focused elements.
@@ -88,6 +95,7 @@ function userPromptElapsedText(sessionId: string): string {
       :session-states="state.sessionStates"
       :session-activity-levels="state.sessionActivityLevels"
       :artifact-counts="state.artifactCounts"
+      :unread-chat-count-for="chat.unreadCountFor"
       :working-plan-labels="state.workingPlanLabels"
       :working-plan-tooltips="state.workingPlanTooltips"
       :pending-schedules="state.pendingSchedules"

@@ -40,6 +40,14 @@ run. Spawn-mode tasks, disabled tasks, and tasks with `scheduleKind: none` are h
 the existing `onScheduledTaskChanged` event, which covers creation, edits, runs,
 cancellation, completion, and deletion. Peer session lists do not load local tasks.
 
+## Unread Chat count
+
+Local session rows show an outlined `N new` chip after the session name when
+that session has unread Chat messages. It counts incoming journal messages;
+user-originated turns and typed system records are excluded. The count comes
+from `useChatStore` and clears when that session's thread is visible in the
+active Chat pane. Peer rows do not show the local Chat count.
+
 ## Message flights
 
 The delivery service broadcasts a flight **before** it pastes an inter-session

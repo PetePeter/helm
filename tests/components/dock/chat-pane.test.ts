@@ -8,16 +8,19 @@ import type { ChatJournalEntry } from '../../../src/mobile/mobile-chat-journal.j
 import ChatPane from '../../../renderer/components/dock/ChatPane.vue';
 import DockPane from '../../../renderer/components/dock/DockPane.vue';
 import { appState } from '../../../renderer/stores/app.js';
+import { useChatStore } from '../../../renderer/stores/chat.js';
 import { contextMenu, pasteChatContextMenuText } from '../../../renderer/stores/modal-bridge.js';
 
 describe('ChatPane', () => {
   let wrapper: VueWrapper | null;
   let history: ReturnType<typeof vi.fn>;
+  let chatEntryListeners: Set<(entry: ChatJournalEntry) => void>;
   let scrollToDescriptor: PropertyDescriptor | undefined;
   let innerHeightDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     wrapper = null;
+    chatEntryListeners = new Set();
     scrollToDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
     innerHeightDescriptor = Object.getOwnPropertyDescriptor(window, 'innerHeight');
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
@@ -38,15 +41,14 @@ describe('ChatPane', () => {
       ['one', [{ seq: 1, record: { sessionId: 'one', sessionName: 'First', text: 'first thread', at: 1_700_000_000_000 } }]],
       ['two', [{ seq: 2, record: { sessionId: 'two', sessionName: 'Second', text: 'second thread', at: 1_700_000_001_000 } }]],
     ]);
-    const listeners = new Set<(entry: ChatJournalEntry) => void>();
     history = vi.fn(async (sessionId: string) => entries.get(sessionId) ?? []);
     (window as unknown as { helm: unknown }).helm = {
       chat: {
         chatHistory: history,
         chatSend: async () => ({ ok: true }),
         onChatEntry: (listener: (entry: ChatJournalEntry) => void) => {
-          listeners.add(listener);
-          return () => listeners.delete(listener);
+          chatEntryListeners.add(listener);
+          return () => chatEntryListeners.delete(listener);
         },
       },
     };
@@ -134,6 +136,38 @@ describe('ChatPane', () => {
     } finally {
       outside.remove();
     }
+  });
+
+  it('marks only the visible Chat thread read and counts replies while the pane is inactive', async () => {
+    const pinia = createPinia();
+    wrapper = mount(DockPane, {
+      attachTo: document.body,
+      props: { paneId: 'chat', active: false, focused: false, focusRequestId: 0, component: markRaw(ChatPane) },
+      global: { plugins: [pinia] },
+    });
+    await flushPromises();
+    const chat = useChatStore(pinia);
+
+    const emit = (seq: number, text: string) => {
+      const entry: ChatJournalEntry = {
+        seq,
+        record: { sessionId: 'one', sessionName: 'First', text, at: seq * 1000 },
+      };
+      for (const listener of chatEntryListeners) listener(entry);
+    };
+
+    emit(3, 'first unread reply');
+    await flushPromises();
+    expect(chat.unreadCountFor('one')).toBe(1);
+
+    await wrapper.setProps({ active: true });
+    await flushPromises();
+    expect(chat.unreadCountFor('one')).toBe(0);
+
+    await wrapper.setProps({ active: false });
+    emit(4, 'second unread reply');
+    await flushPromises();
+    expect(chat.unreadCountFor('one')).toBe(1);
   });
 
   it('opens the shared chat context menu when right-clicking a message body', async () => {
