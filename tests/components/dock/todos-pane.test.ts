@@ -54,17 +54,17 @@ describe('TodosPane', () => {
     expect(loaded).toEqual(['s1']);
   });
 
-  it('filters by the Todo and Done chips', async () => {
+  it('cycles the Done chip through any, done only, and open only', async () => {
     const pane = await open();
-    const chip = (label: string) => pane.findAll('.filter-chip').find(c => c.text().includes(label))!;
+    const chip = pane.find('.filter-chip');
     const texts = () => pane.findAll('.todos-pane__item').map(row => row.text());
 
-    await chip('Done').trigger('click');
-    expect(texts()).toEqual(['Open task']);
-
-    await chip('Todo').trigger('click');
-    await chip('Done').trigger('click');
+    await chip.trigger('click');
     expect(texts()).toEqual(['Finished task']);
+    await chip.trigger('click');
+    expect(texts()).toEqual(['Open task']);
+    await chip.trigger('click');
+    expect(texts()).toEqual(['Open task', 'Finished task']);
   });
 
   it('switches with the active session and reflects live MCP changes', async () => {

@@ -11,9 +11,9 @@ const sessionId = computed(() => appStore.state.activeSessionId);
 const todos = computed(() => sessionId.value ? todosStore.todosFor(sessionId.value) : []);
 const loadError = computed(() => sessionId.value ? todosStore.errorFor(sessionId.value) : '');
 const loading = ref(false);
-const showOpen = ref(true);
-const showDone = ref(true);
-const visibleTodos = computed(() => todos.value.filter(t => (t.status === 'done' ? showDone : showOpen).value));
+const doneFilter = ref<'either' | 'yes' | 'no'>('either');
+const visibleTodos = computed(() => todos.value.filter(t =>
+  doneFilter.value === 'either' || (t.status === 'done') === (doneFilter.value === 'yes')));
 
 watch(sessionId, async id => {
   if (!id) return;
@@ -27,8 +27,7 @@ watch(sessionId, async id => {
   <section class="todos-pane" aria-label="Session todos">
     <EmptyState v-if="!sessionId" title="No session selected" hint="Select a session to view its todos." icon="☑" />
     <div v-if="sessionId" class="todos-pane__filters">
-      <FilterChip :state="showOpen ? 'yes' : 'no'" label="Todo" @update:state="showOpen = !showOpen" />
-      <FilterChip :state="showDone ? 'yes' : 'no'" label="Done" @update:state="showDone = !showDone" />
+      <FilterChip :state="doneFilter" label="Done" @update:state="doneFilter = $event" />
     </div>
     <div v-if="sessionId" class="todos-pane__scroll" aria-live="polite">
       <EmptyState v-if="loading && !todos.length" title="Loading todos" loading />
