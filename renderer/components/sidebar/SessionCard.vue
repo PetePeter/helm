@@ -686,6 +686,12 @@ function onCardClick(e: MouseEvent): void {
   white-space: nowrap;
 }
 
+/* While the row flashes, the chips follow its beat instead of staying a dark patch. */
+.session-card:is(.flash-pulse, .flash-solid) :is(.session-chat-unread, .session-todo-count) {
+  background: transparent;
+  border-color: currentColor;
+}
+
 /* Clickable entry point that opens the session's artifact panel. */
 .artifact-badge {
   display: inline-flex;
