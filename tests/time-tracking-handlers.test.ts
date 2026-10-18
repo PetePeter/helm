@@ -50,7 +50,6 @@ describe('statisticsQuery', () => {
   it('returns the configured CLI token sheet, including zero and other rows', () => {
     const result = statisticsQuery(tracker(), { view: 'tokens', period: 'day', anchor: NOW }, ['codex', 'claude'], id => ({ codex: 'Codex', claude: 'Claude Code' }[id] ?? id)) as {
       sheet: { rows: Array<{ cliType: string; label: string; tokens: number[] }>; totals: number[] };
-      chartHtml: string;
       chartModel: { columns: number[]; series: Array<{ key: string; values: number[] }> };
     };
 
@@ -60,7 +59,6 @@ describe('statisticsQuery', () => {
       { cliType: 'other', label: 'other', tokens: [0, 0, 0, 0, 0, 400, 0] },
     ]);
     expect(result.sheet.totals).toEqual([0, 0, 0, 0, 0, 1_900, 0]);
-    expect(result.chartHtml).toContain('Codex');
     const visibleColumns = result.chartModel.columns.length;
     expect(result.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
       ['cli:codex', result.sheet.rows[0].tokens.slice(0, visibleColumns)],

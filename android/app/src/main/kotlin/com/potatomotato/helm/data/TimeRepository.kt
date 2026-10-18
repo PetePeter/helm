@@ -86,24 +86,20 @@ data class TimeChartSeries(
 
 data class TimeChartModel(val columns: List<Long>, val labels: List<String>, val series: List<TimeChartSeries>)
 
-/** Chart data and temporary desktop SVG fallback; both are null from an older desktop. */
+/** Chart data is null when connected to an older desktop that does not send it. */
 sealed interface TimeAnswer {
-    val chartHtml: String?
     val chartModel: TimeChartModel?
 
     data class Projects(
         val projects: List<TimeProjectTotal>,
-        override val chartHtml: String? = null,
         override val chartModel: TimeChartModel? = null,
     ) : TimeAnswer
     data class Sheet(
         val sheet: TimeSheet,
-        override val chartHtml: String? = null,
         override val chartModel: TimeChartModel? = null,
     ) : TimeAnswer
     data class Tokens(
         val sheet: TimeTokenSheet,
-        override val chartHtml: String? = null,
         override val chartModel: TimeChartModel? = null,
     ) : TimeAnswer
 }
@@ -157,7 +153,6 @@ class TimeRepository {
 
     private fun parse(json: JSONObject?, view: TimeView): TimeAnswer? {
         if (json == null) return null
-        val chartHtml = json.opt("chartHtml") as? String
         val chartModel = parseChartModel(json.optJSONObject("chartModel"))
         if (view == TimeView.Tokens) {
             val sheet = json.optJSONObject("sheet") ?: return null
@@ -165,7 +160,7 @@ class TimeRepository {
             val rows = sheet.optJSONArray("rows") ?: return null
             val totals = sheet.optJSONArray("totals") ?: return null
             return TimeAnswer.Tokens(
-                TimeTokenSheet(
+                sheet = TimeTokenSheet(
                     columns = (0 until columns.length()).map { columns.optLong(it) },
                     rows = (0 until rows.length()).mapNotNull { i ->
                         val row = rows.optJSONObject(i) ?: return@mapNotNull null
@@ -175,26 +170,24 @@ class TimeRepository {
                     },
                     totals = longs(totals),
                 ),
-                chartHtml,
-                chartModel,
+                chartModel = chartModel,
             )
         }
         json.optJSONArray("projects")?.let { array ->
             return TimeAnswer.Projects(
-                (0 until array.length()).mapNotNull { i ->
+                projects = (0 until array.length()).mapNotNull { i ->
                     val o = array.optJSONObject(i) ?: return@mapNotNull null
                     val key = o.opt("projectKey") as? String ?: return@mapNotNull null
                     TimeProjectTotal(key, o.opt("projectName") as? String ?: key, o.optInt("user"), o.optInt("ai"), o.optLong("tokens"))
                 },
-                chartHtml,
-                chartModel,
+                chartModel = chartModel,
             )
         }
         val sheet = json.optJSONObject("sheet") ?: return null
         val columns = sheet.optJSONArray("columns") ?: return null
         val totals = sheet.optJSONObject("totals")
         return TimeAnswer.Sheet(
-            TimeSheet(
+            sheet = TimeSheet(
                 columns = (0 until columns.length()).map { columns.optLong(it) },
                 rows = sheet.optJSONArray("rows")?.let { rows ->
                     (0 until rows.length()).mapNotNull { i ->
@@ -207,8 +200,7 @@ class TimeRepository {
                 totalAi = ints(totals?.optJSONArray("ai")),
                 totalTokens = longs(totals?.optJSONArray("tokens")),
             ),
-            chartHtml,
-            chartModel,
+            chartModel = chartModel,
         )
     }
 

@@ -49,7 +49,6 @@ import com.potatomotato.helm.data.TimeTokenSheet
 import com.potatomotato.helm.data.TimeTokenRow
 import com.potatomotato.helm.data.TimeView
 import com.potatomotato.helm.ui.artifacts.ContainedWebView
-import com.potatomotato.helm.ui.artifacts.HtmlContainment
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -137,11 +136,11 @@ fun TimeScreen(
             onRefresh = { onFetch(ask) },
         ) { answer ->
             when (answer) {
-                is TimeAnswer.Projects -> ProjectTotals(answer.projects, answer.chartModel, answer.chartHtml) {
+                is TimeAnswer.Projects -> ProjectTotals(answer.projects, answer.chartModel) {
                     onAsk(ask.copy(projectKey = it.projectKey, projectName = it.projectName))
                 }
-                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet, answer.chartModel, answer.chartHtml)
-                is TimeAnswer.Tokens -> TokenSheetView(ask.period, answer.sheet, answer.chartModel, answer.chartHtml)
+                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet, answer.chartModel)
+                is TimeAnswer.Tokens -> TokenSheetView(ask.period, answer.sheet, answer.chartModel)
             }
         }
     }
@@ -165,12 +164,11 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 private fun ProjectTotals(
     projects: List<TimeProjectTotal>,
     chartModel: TimeChartModel?,
-    chartHtml: String?,
     onOpen: (TimeProjectTotal) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        if (chartModel != null || chartHtml != null) {
-            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = false, fallbackLegendRows = 1) }
+        if (chartModel != null) {
+            item { TimeChart(chartModel, stackedTokens = false) }
         }
         item { TableHeader(stringResource(R.string.time_col_project), includeTokens = true) }
         items(projects, key = { it.projectKey }) { project ->
@@ -189,10 +187,10 @@ private fun ProjectTotals(
 }
 
 @Composable
-private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartModel: TimeChartModel?, chartHtml: String?) {
+private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartModel: TimeChartModel?) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        if (chartModel != null || chartHtml != null) {
-            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = false, fallbackLegendRows = 1) }
+        if (chartModel != null) {
+            item { TimeChart(chartModel, stackedTokens = false) }
         }
         item { Folder(stringResource(R.string.time_total), TimeRow("", sheet.totalUser, sheet.totalAi, sheet.totalTokens), sheet.columns, period) }
         items(sheet.rows, key = { it.dir }) { row -> Folder(row.dir, row, sheet.columns, period) }
@@ -200,27 +198,13 @@ private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartModel: TimeCh
 }
 
 @Composable
-private fun TokenSheetView(period: TimePeriod, sheet: TimeTokenSheet, chartModel: TimeChartModel?, chartHtml: String?) {
+private fun TokenSheetView(period: TimePeriod, sheet: TimeTokenSheet, chartModel: TimeChartModel?) {
     val rows = visibleTokenRows(sheet)
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        if (chartModel != null || chartHtml != null) {
-            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = true, fallbackLegendRows = rows.size) }
+        if (chartModel != null) {
+            item { TimeChart(chartModel, stackedTokens = true) }
         }
         item { TokenTable(period, sheet, rows, chartModel) }
-    }
-}
-
-@Composable
-private fun TimeChartOrFallback(
-    chartModel: TimeChartModel?,
-    chartHtml: String?,
-    stackedTokens: Boolean,
-    fallbackLegendRows: Int,
-) {
-    if (chartModel != null) {
-        TimeChart(chartModel, stackedTokens)
-    } else if (chartHtml != null) {
-        LegacyTimeChart(chartHtml, fallbackLegendRows)
     }
 }
 
@@ -243,28 +227,14 @@ private fun TimeChart(model: TimeChartModel, stackedTokens: Boolean) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
         ContainedWebView(
             html = html,
-            modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value, legendRows = 1).dp),
+            modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value).dp),
         )
     }
 }
 
-/** Old desktop builds can still send their static SVG while they are upgraded. */
-@Composable
-private fun LegacyTimeChart(html: String, legendRows: Int) {
-    val containedHtml = remember(html) {
-        HtmlContainment.injectCsp("<body style=\"margin:0\">$html</body>")
-    }
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
-        ContainedWebView(
-            html = containedHtml,
-            modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value, legendRows).dp),
-        )
-    }
-}
-
-internal fun chartHeightDp(widthDp: Float, legendRows: Int): Float =
+internal fun chartHeightDp(widthDp: Float): Float =
     widthDp.coerceAtLeast(0f) * CHART_HEIGHT / CHART_WIDTH +
-        CHART_LEGEND_ROW_HEIGHT * legendRows.coerceAtLeast(0) +
+        CHART_LEGEND_ROW_HEIGHT +
         CHART_LEGEND_GAP
 
 internal fun visibleTokenRows(sheet: TimeTokenSheet): List<TimeTokenRow> =

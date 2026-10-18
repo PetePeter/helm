@@ -48,7 +48,7 @@ Dock pane **Statistics** (📊, shortcut `l`) has two tabs that share the period
 | Week  | the Monday weeks covering a month |
 | Month | the 12 months of a year |
 
-A chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. CSS-only chips toggle each series, and the token axis hides with its series. The plot ends at the current column: periods that have not started yet are not drawn. The project totals chart covers every project.
+A Chart.js chart sits above the table in both views. *You* and *AI* minutes are bars on the left axis, and tokens are a line on the right axis. The chart legend toggles each series, and the token axis hides with its series. The plot ends at the current column: periods that have not started yet are not drawn. The project totals chart covers every project.
 
 ```mermaid
 graph LR
@@ -61,16 +61,13 @@ graph LR
   Q -->|tokens| K[tokenQuery]
   T --> CM[buildTimesheetChartModel]
   K --> CM2[buildTokenChartModel]
-  CM --> C[SVG fallback renderer]
-  CM2 --> C
   CM --> D[Desktop IPC + phone wire]
   CM2 --> D
-  C --> A[Legacy SVG fallback]
-  D --> A2[APK Chart.js WebView]
+  D --> A[APK Chart.js WebView]
   D --> U[Desktop Chart.js views]
 ```
 
-The main process builds a transport-neutral `ChartModel` from the same sheet used by the table. It contains column timestamps and labels plus keyed series with type, axis kind, colour and raw values. Values stay unstacked so a chart client can stack and rescale only visible series. Desktop renders that model with Chart.js: Tokens stacks the visible CLI series, and Timesheet combines grouped *You* and *AI* bars with a token line on a second axis. Axis, grid and tooltip colours come from app CSS tokens. Android renders the same model with the locally bundled Chart.js 4.5.1 UMD build inside `ContainedWebView`; it makes no network requests. Its horizontally scrollable legend uses 48px touch targets, and toggling a series restacks and rescales the visible data. Tooltip counts use the full value rather than compact axis notation. Android uses the SVG/CSS fallback only when connected to an older desktop that does not send `ChartModel`. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
+The main process builds a transport-neutral `ChartModel` from the same sheet used by the table. It contains column timestamps and labels plus keyed series with type, axis kind, colour and raw values. Values stay unstacked so a chart client can stack and rescale only visible series. Desktop renders that model with Chart.js: Tokens stacks the visible CLI series, and Timesheet combines grouped *You* and *AI* bars with a token line on a second axis. Axis, grid and tooltip colours come from app CSS tokens. Android renders the same model with the locally bundled Chart.js 4.5.1 UMD build inside `ContainedWebView`; it makes no network requests. Its horizontally scrollable legend uses 48px touch targets, and toggling a series restacks and rescales the visible data. Tooltip counts use the full value rather than compact axis notation. Older desktop replies without `ChartModel` still parse, but do not include a chart. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
 
 ### Tokens tab
 
@@ -79,18 +76,18 @@ Tokens per CLI per column: one row per configured CLI type, labelled by its disp
 ```mermaid
 flowchart LR
   S[token slots<br/>projectKey + cliType] --> B[buildTokenSheet<br/>configured CLIs + other]
-  B --> C[renderTokenChart<br/>stacked bars]
+  B --> C[Chart.js stacked bars]
   B --> D[Desktop Chart.js Tokens tab + table]
-  C --> A
+  C --> A[Android Chart.js Tokens tab]
 ```
 
-All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. Responses include project totals or CLI rows, the sheet, and the shared `ChartModel`; `chartHtml` remains as the fallback for older desktop builds.
+All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The shared chart builders live in `src/session/chart-model.ts`; queries send the model with the sheet over desktop IPC and the phone wire. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. No chart markup or executable code crosses either transport.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).
 
 ### Chart library decision (P-1054, 2026-10-18)
 
-Use **Chart.js 4.5.1** for both the desktop Statistics pane and Android WebView charts. P-1056 adds the desktop dependency; P-1057 packages the Android WebView bundle.
+Use **Chart.js 4.5.1** for both the desktop Statistics pane and Android WebView charts. P-1056 adds the desktop dependency; P-1057 packages the Android WebView bundle; P-1058 removes the retired SVG renderer and markup field.
 
 The size comparison below uses each release's full minified browser distribution from its npm package, measured before and after gzip. A production Chart.js or ECharts build can be smaller when it includes only the required components, so these figures set a scale, not a shipped-size target.
 

@@ -93,7 +93,7 @@ object HelmColors {
         val Flash = Color(0xFFFBBF24)
     }
 
-    /** Token chart series, mirrored from src/session/timesheet-chart.ts. */
+    /** Token chart series, mirrored from src/session/chart-model.ts. */
     object Statistics {
         val Series = listOf(
             Color(0xFFF0B34A), Color(0xFF5AA9FF), Color(0xFF4FD08B), Color(0xFFC58AF0),

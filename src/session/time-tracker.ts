@@ -352,12 +352,12 @@ export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: st
 
 export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }
 
-/** A Time view (desktop pane, phone tab); chart data and the temporary SVG fallback. */
+/** A Time view (desktop pane, phone tab) with its transport-neutral chart data. */
 export type TimesheetQueryResult =
-  | { sheet: Timesheet; chartModel: ChartModel; chartHtml: string }
-  | { projects: ProjectTotal[]; sheet: Timesheet; chartModel: ChartModel; chartHtml: string };
+  | { sheet: Timesheet; chartModel: ChartModel }
+  | { projects: ProjectTotal[]; sheet: Timesheet; chartModel: ChartModel };
 
-export interface TokenQueryResult { sheet: TokenSheet; chartModel: ChartModel; chartHtml: string }
+export interface TokenQueryResult { sheet: TokenSheet; chartModel: ChartModel }
 
 /** Minutes and tokens per project across the given slots, most user time first. */
 export function summarizeProjects(slots: TimeSlot[]): ProjectTotal[] {

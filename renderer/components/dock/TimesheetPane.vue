@@ -8,7 +8,8 @@ import { computed } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
 import PanelHeader from '../common/PanelHeader.vue';
 import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
-import { columnLabel, formatTokens } from '../../../src/session/timesheet-chart.js';
+import { columnLabel } from '../../../src/session/chart-model.js';
+import { formatTokens } from '../../../src/session/format-tokens.js';
 import { formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
 import StatsChart from '../charts/StatsChart.vue';
 

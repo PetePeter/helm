@@ -53,14 +53,13 @@ class TimeRepositoryTest {
         assertTrue(repo.arrived(ask, JSONObject("""{"sheet":{"columns":[1,2],
             "rows":[{"cliType":"codex","label":"Codex","tokens":[1500,250]},
                     {"cliType":"other","label":"other","tokens":[0,40]}],
-            "totals":[1500,290]},"chartHtml":"<svg/>","chartModel":{"columns":[1,2],
+            "totals":[1500,290]},"chartModel":{"columns":[1,2],
             "labels":["one","two"],"series":[{"key":"cli:codex","label":"Codex","color":"#123456",
             "type":"bar","axis":"tokens","values":[1500,250]}]}}""")))
 
         val answer = (LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Tokens
         assertEquals(listOf(TimeTokenRow("codex", "Codex", listOf(1500L, 250L)), TimeTokenRow("other", "other", listOf(0L, 40L))), answer.sheet.rows)
         assertEquals(listOf(1500L, 290L), answer.sheet.totals)
-        assertEquals("<svg/>", answer.chartHtml)
         assertEquals(
             TimeChartModel(
                 listOf(1L, 2L), listOf("one", "two"),
@@ -71,16 +70,15 @@ class TimeRepositoryTest {
     }
 
     @Test
-    fun `both views carry the desktop's chart markup, absent from an older desktop`() {
+    fun `chart model is optional when an older desktop omits it`() {
         val repo = TimeRepository()
         repo.requested(week)
-        repo.arrived(week, JSONObject("""{"projects":[],"sheet":{"columns":[]},"chartHtml":"<svg/>"}"""))
-        assertEquals("<svg/>", ((LoadViews.time(repo.state.value, week) as LoadView.Ready).data as TimeAnswer.Projects).chartHtml)
+        repo.arrived(week, JSONObject("""{"projects":[],"sheet":{"columns":[]}}"""))
+        assertEquals(null, ((LoadViews.time(repo.state.value, week) as LoadView.Ready).data as TimeAnswer.Projects).chartModel)
 
         val ask = week.copy(projectKey = "p1")
         repo.requested(ask)
         repo.arrived(ask, JSONObject("""{"sheet":{"columns":[]}}"""))
-        assertEquals(null, ((LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Sheet).chartHtml)
         assertEquals(null, ((LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Sheet).chartModel)
     }
 

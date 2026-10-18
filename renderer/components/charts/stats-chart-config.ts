@@ -1,5 +1,5 @@
 import type { ChartConfiguration, TooltipOptions } from 'chart.js';
-import { formatTokens } from '../../../src/session/timesheet-chart.js';
+import { formatTokens } from '../../../src/session/format-tokens.js';
 import type { ChartAxisKind, ChartModel, ChartModelSeries } from '../../../src/session/chart-model.js';
 import { formatMinutes } from '../../composables/useTimesheetPane.js';
 

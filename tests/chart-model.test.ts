@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimesheetChartModel, buildTokenChartModel } from '../src/session/chart-model.js';
+import { buildTimesheetChartModel, buildTokenChartModel, columnLabel } from '../src/session/chart-model.js';
 import type { Timesheet, TokenSheet } from '../src/session/time-tracker.js';
 
 const DAY0 = new Date(2026, 8, 28).getTime();
 const DAY = 86_400_000;
 
 describe('ChartModel builders', () => {
+  it('formats labels on the same local calendar boundaries as the time sheet', () => {
+    expect(columnLabel('day', DAY0)).toBe('Mon 28');
+    expect(columnLabel('month', new Date(2026, 8, 1).getTime())).toMatch(/^Sep/);
+  });
+
   it('maps timesheet values as raw bar and line series and clips future columns', () => {
     const sheet: Timesheet = {
       columns: [DAY0, DAY0 + DAY, DAY0 + DAY * 2, DAY0 + DAY * 3],

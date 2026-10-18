@@ -40,8 +40,9 @@ src/
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
 │   ├── state-detector.ts       # PTY activity tracking + question markers; AIAGENT phase state is MCP-owned + markRestored() grace period for restored sessions
 │   ├── context-limits.ts       # Per-CLI amber/red context warning thresholds and level resolution
+│   ├── chart-model.ts          # Transport-neutral Statistics series builders, period labels, and CLI colours
+│   ├── format-tokens.ts        # Compact axis labels and exact token tooltip values
 │   ├── time-tracker.ts         # Project/folder 5-minute time and token ledgers, period queries, and token totals
-│   ├── timesheet-chart.ts      # Self-contained SVG/CSS charts for Statistics time and token views
 │   ├── mission.ts              # Session mission validator (500-char limit, trim/clear) + bar-height clamp, shared by IPC and MCP
 │   ├── handover-delivery.ts    # Holds a session_compact handover across the compaction; pastes it back on the first inactive edge (floor 15s / ceiling 5min)
 │   ├── pipeline-queue.ts       # Waiting→implementing auto-handoff queue (FIFO)

@@ -1817,12 +1817,24 @@ class HelmClientTest {
 
         client.onInbound(resultFor(lastCallId(), """{"sheet":{"columns":[1],
             "rows":[{"cliType":"codex","label":"Codex","tokens":[1200]}],"totals":[1200]},
-            "chartHtml":"<svg/>"}"""))
+            "chartModel":{"columns":[1],"labels":["Aug"],"series":[{"key":"cli:codex","label":"Codex",
+            "color":"#123456","type":"bar","axis":"tokens","values":[1200]}]}}"""))
         val state = client.time.state.value as com.potatomotato.helm.data.TimeState.Ready
         val answer = state.answer as com.potatomotato.helm.data.TimeAnswer.Tokens
         assertEquals("Codex", answer.sheet.rows.single().label)
         assertEquals(listOf(1_200L), answer.sheet.totals)
-        assertEquals("<svg/>", answer.chartHtml)
+        assertEquals(
+            com.potatomotato.helm.data.TimeChartModel(
+                listOf(1L), listOf("Aug"),
+                listOf(com.potatomotato.helm.data.TimeChartSeries(
+                    "cli:codex", "Codex", "#123456",
+                    com.potatomotato.helm.data.TimeChartSeriesType.BAR,
+                    com.potatomotato.helm.data.TimeChartAxisKind.TOKENS,
+                    listOf(1_200L),
+                )),
+            ),
+            answer.chartModel,
+        )
     }
 
     @Test

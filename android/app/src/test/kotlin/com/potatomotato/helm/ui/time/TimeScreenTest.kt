@@ -7,7 +7,6 @@ import com.potatomotato.helm.data.TimeChartModel
 import com.potatomotato.helm.data.TimeChartSeries
 import com.potatomotato.helm.data.TimeChartSeriesType
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TimeScreenTest {
@@ -45,7 +44,6 @@ class TimeScreenTest {
         val widthDp = 360f
         val plotHeightDp = widthDp * 290f / 700f
 
-        assertEquals(plotHeightDp + 8f + 48f, chartHeightDp(widthDp, 1), 0.01f)
-        assertTrue(chartHeightDp(widthDp, 3) > chartHeightDp(widthDp, 1))
+        assertEquals(plotHeightDp + 8f + 48f, chartHeightDp(widthDp), 0.01f)
     }
 }
