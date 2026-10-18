@@ -3,6 +3,7 @@ import { createPinia } from 'pinia';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TimesheetPane from '../../../renderer/components/dock/TimesheetPane.vue';
+import type { ChartModel } from '../../../src/session/chart-model.js';
 import { appState } from '../../../renderer/stores/app.js';
 import type { Timesheet } from '../../../src/session/time-tracker.js';
 
@@ -11,6 +12,19 @@ const sheet: Timesheet = {
   columns: [day],
   rows: [{ dir: 'C:/alpha/src', user: [10], ai: [5], tokens: [1_200] }],
   totals: { user: [10], ai: [5], tokens: [1_200] },
+};
+const chartModel: ChartModel = {
+  columns: [day],
+  labels: ['Mon 28'],
+  series: [
+    { key: 'you', label: 'You', color: '#5aa9ff', type: 'bar', axis: 'minutes', values: [10] },
+    { key: 'ai', label: 'AI', color: '#4fd08b', type: 'bar', axis: 'minutes', values: [5] },
+    { key: 'tokens', label: 'Tokens', color: '#f0b34a', type: 'line', axis: 'tokens', values: [1_200] },
+  ],
+};
+const statsChartStub = {
+  props: ['model', 'kind'],
+  template: '<div class="stats-chart-stub" :data-kind="kind">{{ model.labels.join(" ") }}</div>',
 };
 
 describe('TimesheetPane', () => {
@@ -28,8 +42,8 @@ describe('TimesheetPane', () => {
     ];
     appState.activeSessionId = 's1';
     query = vi.fn(async (params: { projectKey?: string }) => params.projectKey
-      ? { sheet }
-      : { projects: [
+      ? { sheet, chartModel }
+      : { sheet, chartModel, projects: [
         { projectKey: 'pA', projectName: 'Alpha', user: 10, ai: 5 },
         { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 0 },
       ] });
@@ -38,12 +52,14 @@ describe('TimesheetPane', () => {
   });
 
   it('shows all projects, drills into any project, and ignores selected-session changes', async () => {
-    const wrapper = mount(TimesheetPane, { global: { plugins: [createPinia()] } });
+    const wrapper = mount(TimesheetPane, { global: { plugins: [createPinia()], stubs: { StatsChart: statsChartStub } } });
     await flushPromises();
 
     expect(query).toHaveBeenCalledWith(expect.objectContaining({ projectKey: undefined }));
     expect(wrapper.text()).toContain('Alpha');
     expect(wrapper.text()).toContain('Beta');
+    expect(wrapper.find('.stats-chart-stub').attributes('data-kind')).toBe('timesheet');
+    expect(wrapper.find('.stats-chart-stub').text()).toBe('Mon 28');
 
     await wrapper.get('button.timesheet-project').trigger('click');
     await flushPromises();

@@ -10,6 +10,7 @@ import PanelHeader from '../common/PanelHeader.vue';
 import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
 import { columnLabel, formatTokens } from '../../../src/session/timesheet-chart.js';
 import { formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
+import StatsChart from '../charts/StatsChart.vue';
 
 const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'hour', label: 'Hour' },
@@ -18,7 +19,7 @@ const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ];
 
-const { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
+const { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const range = computed(() => {
@@ -64,7 +65,7 @@ const range = computed(() => {
     <template v-if="tab === 'tokens'">
       <EmptyState v-if="!tokenSheet" title="Loading tokens" loading />
       <div v-else class="timesheet-scroll">
-        <div class="timesheet-chart" v-html="chartHtml" />
+        <div class="timesheet-chart"><StatsChart v-if="chartModel" :model="chartModel" kind="tokens" /></div>
         <table class="timesheet-table">
           <thead>
             <tr>
@@ -93,7 +94,7 @@ const range = computed(() => {
     <EmptyState v-else-if="projects === null && sheet === null" title="Loading timesheet" loading />
     <EmptyState v-else-if="projects !== null && !projects.length" title="No time recorded" hint="Time is counted in 5-minute slots while you work across projects." icon="⏱" />
     <div v-else-if="projects !== null" class="timesheet-scroll">
-      <div class="timesheet-chart" v-html="chartHtml" />
+      <div class="timesheet-chart"><StatsChart v-if="chartModel" :model="chartModel" kind="timesheet" /></div>
       <table class="timesheet-table">
         <thead>
           <tr><th>Project</th><th>You</th><th>AI</th><th>Total</th><th>Tokens</th></tr>
@@ -123,7 +124,7 @@ const range = computed(() => {
     <EmptyState v-else-if="sheet && !sheet.rows.length" title="No time recorded" hint="No time was recorded for this project in the selected period." icon="⏱" />
     <div v-else-if="sheet" class="timesheet-scroll">
       <button type="button" class="timesheet-back" aria-label="Back to projects" @click="backToProjects">‹ {{ selectedProject?.projectName }}</button>
-      <div class="timesheet-chart" v-html="chartHtml" />
+      <div class="timesheet-chart"><StatsChart v-if="chartModel" :model="chartModel" kind="timesheet" /></div>
       <table class="timesheet-table">
         <thead>
           <tr>

@@ -4,6 +4,7 @@
  * the period and anchor. All arithmetic lives in the main process (time-tracker.ts).
  */
 import { onUnmounted, ref, watch } from 'vue';
+import type { ChartModel } from '../../src/session/chart-model.js';
 import type { ProjectTotal, Timesheet, TimesheetPeriod, TokenSheet } from '../../src/session/time-tracker.js';
 import { timeClient } from '../ipc/clients.js';
 
@@ -16,8 +17,7 @@ export function useTimesheetPane() {
   const period = ref<TimesheetPeriod>('day');
   const anchor = ref(Date.now());
   const sheet = ref<Timesheet | null>(null);
-  /** Trusted markup built in the main process (timesheet-chart.ts), not AI content. */
-  const chartHtml = ref('');
+  const chartModel = ref<ChartModel | null>(null);
   const projects = ref<ProjectTotal[] | null>(null);
   const selectedProject = ref<ProjectTotal | null>(null);
   const tokenSheet = ref<TokenSheet | null>(null);
@@ -30,7 +30,7 @@ export function useTimesheetPane() {
       const tokens = await timeClient.timeTokens(period.value, anchor.value);
       if (ticket !== generation) return;
       tokenSheet.value = tokens.sheet;
-      chartHtml.value = tokens.chartHtml;
+      chartModel.value = tokens.chartModel;
       return;
     }
     const next = await timeClient.timeQuery({
@@ -39,7 +39,7 @@ export function useTimesheetPane() {
       projectKey: target?.projectKey,
     });
     if (ticket !== generation) return;
-    chartHtml.value = next.chartHtml;
+    chartModel.value = next.chartModel;
     if ('projects' in next) {
       projects.value = next.projects;
       sheet.value = null;
@@ -87,7 +87,7 @@ export function useTimesheetPane() {
   const timer = setInterval(() => { void refresh(); }, REFRESH_MS);
   onUnmounted(() => clearInterval(timer));
 
-  return { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartHtml, openProject, backToProjects, step, exportCsv };
+  return { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv };
 }
 
 /** Minutes as "3h05"; zero renders as an en dash. */

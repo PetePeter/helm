@@ -65,32 +65,31 @@ graph LR
   CM2 --> C
   CM --> D[Desktop IPC + phone wire]
   CM2 --> D
-  C --> UI[Current desktop and APK chart views]
+  C --> A[APK SVG fallback]
+  D --> U[Desktop Chart.js views]
 ```
 
-The main process builds a transport-neutral `ChartModel` from the same sheet used by the table. It contains column timestamps and labels plus keyed series with type, axis kind, colour and raw values. Values stay unstacked so a chart client can stack and rescale only visible series. The current desktop and phone still receive a self-contained SVG/CSS fallback rendered from that model while their Chart.js clients are introduced in later steps. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
+The main process builds a transport-neutral `ChartModel` from the same sheet used by the table. It contains column timestamps and labels plus keyed series with type, axis kind, colour and raw values. Values stay unstacked so a chart client can stack and rescale only visible series. Desktop renders that model with Chart.js: Tokens stacks the visible CLI series, and Timesheet combines grouped *You* and *AI* bars with a token line on a second axis. Axis, grid and tooltip colours come from app CSS tokens. Android continues receiving the self-contained SVG/CSS fallback rendered from the same model. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
 
 ### Tokens tab
 
-Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. `buildTokenChartModel` drops series that are zero in the visible columns and keeps each remaining series' values unstacked. Its key-based colour is stable across row order. The current SVG fallback stacks one bar segment per CLI; later clients can stack and rescale from the same raw model when the visible series change. Hovering a fallback segment shows the model, date or bucket, and exact token count.
+Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. `buildTokenChartModel` drops series that are zero in the visible columns and keeps each remaining series' values unstacked. Its key-based colour is unique within a chart and stable across row order. The desktop legend hides series, then Chart.js restacks and rescales the visible values. Android's SVG fallback stacks one bar segment per CLI; its CSS-only legend hides segments without restacking. Hovering an SVG fallback segment shows the model, date or bucket, and exact token count.
 
 ```mermaid
 flowchart LR
   S[token slots<br/>projectKey + cliType] --> B[buildTokenSheet<br/>configured CLIs + other]
   B --> C[renderTokenChart<br/>stacked bars]
-  B --> T[Desktop Tokens tab table]
-  C --> T
-  B --> A[APK Statistics Tokens view]
+  B --> D[Desktop Chart.js Tokens tab + table]
   C --> A
 ```
 
-All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. Timesheet responses include project totals, folder rows and chart markup; token responses include CLI rows, period totals and the shared token chart.
+All arithmetic (`periodEdges`, `buildTimesheet`, `buildTokenSheet`, `summarizeProjects`, `timesheetToCsv`) lives in `src/session/time-tracker.ts`. The phone uses the reserved, read-only `__timesheet__` method with `view: "timesheet"` or `view: "tokens"`; omitting `view` keeps older phones on the existing timesheet shape. The mobile gate remains unchanged. Its handler routes to the same `timesheetQuery` and `tokenQuery` functions used by desktop IPC, so the ledger and chart are not duplicated. Responses include project totals or CLI rows, the sheet, and the shared `ChartModel`; `chartHtml` remains as the Android SVG fallback.
 
 A saved dock layout from before a pane existed keeps its arrangement, and the new pane is offered as closed in the View menu (`dock-persistence.ts`, `adoptNewPanes`).
 
 ### Chart library decision (P-1054, 2026-10-18)
 
-Use **Chart.js 4.5.1** for both the desktop Statistics pane and Android WebView charts. This is a library decision only; this plan does not add it to `package.json`.
+Use **Chart.js 4.5.1** for both the desktop Statistics pane and Android WebView charts. P-1056 adds the desktop dependency; the Android WebView integration follows separately.
 
 The size comparison below uses each release's full minified browser distribution from its npm package, measured before and after gzip. A production Chart.js or ECharts build can be smaller when it includes only the required components, so these figures set a scale, not a shipped-size target.
 
@@ -104,7 +103,7 @@ Chart.js is the pragmatic middle: the token chart can use stacked bar datasets, 
 
 All three can run without a CDN when packaged locally. Electron's renderer policy in `renderer/index.html` permits scripts from `'self'`, so the renderer can import the tree-shaken Chart.js modules through Vite. Android's `ContainedWebView` (`android/app/src/main/kotlin/com/potatomotato/helm/ui/artifacts/ContainedWebView.kt`) blocks network loads; the artifact containment CSP in `HtmlContainment.kt` permits inline scripts under `default-src 'none'` and does not permit a remote script. Package the selected Chart.js bundle with the APK and have the trusted chart host include it inline. Do not fetch it from a CDN.
 
-The current chart is generated as static SVG in `src/session/timesheet-chart.ts` and passed to the desktop `v-html` pane and Android `ContainedWebView`. The follow-up implementation must mount the chart in those browser hosts from the existing sheet data; script tags inside `v-html` are not an integration path. Keep the data query and arithmetic shared, and do not send executable code from the main process as chart data.
+The phone still receives static SVG from `src/session/timesheet-chart.ts` for `ContainedWebView`; desktop renders the `ChartModel` locally through its tree-shaken Vite import. The Android follow-up must mount Chart.js from the existing sheet data; script tags inside `v-html` are not an integration path. Keep the data query and arithmetic shared, and do not send executable code from the main process as chart data.
 
 #### Research sources
 

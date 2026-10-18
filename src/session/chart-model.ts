@@ -34,13 +34,57 @@ const SERIES_PALETTE = [
   '#5fd3d3',
   '#9aa0a6',
 ] as const;
+const FALLBACK_SATURATION = [55, 70, 85] as const;
+const FALLBACK_LIGHTNESS = [35, 45, 55, 65, 75] as const;
 
-/** Stable for a series key, independent of configured row order. */
+/** Assign stable chart colours independent of the configured row order. */
+export function chartSeriesColors(keys: readonly string[]): Map<string, string> {
+  const assigned = new Map<string, string>();
+  const used = new Set<string>();
+  for (const key of keys) {
+    const roleColor = COLOR_BY_ROLE[key as keyof typeof COLOR_BY_ROLE];
+    if (roleColor) {
+      assigned.set(key, roleColor);
+      used.add(roleColor);
+    }
+  }
+  for (const key of [...new Set(keys)].sort()) {
+    if (assigned.has(key)) continue;
+    const color = nextSeriesColor(key, used);
+    assigned.set(key, color);
+    used.add(color);
+  }
+  return assigned;
+}
+
+/** Stable for a series key when a chart has only one series. */
 export function chartSeriesColor(key: string): string {
-  if (key in COLOR_BY_ROLE) return COLOR_BY_ROLE[key as keyof typeof COLOR_BY_ROLE];
+  return chartSeriesColors([key]).get(key)!;
+}
+
+function nextSeriesColor(key: string, used: Set<string>): string {
+  const hash = hashSeriesKey(key);
+  const start = hash % SERIES_PALETTE.length;
+  for (let offset = 0; offset < SERIES_PALETTE.length; offset++) {
+    const color = SERIES_PALETTE[(start + offset) % SERIES_PALETTE.length];
+    if (!used.has(color)) return color;
+  }
+  for (const saturation of FALLBACK_SATURATION) {
+    for (const lightness of FALLBACK_LIGHTNESS) {
+      for (let offset = 0; offset < 360; offset++) {
+        const hue = (hash + offset * 137) % 360;
+        const color = `hsl(${hue}deg ${saturation}% ${lightness}%)`;
+        if (!used.has(color)) return color;
+      }
+    }
+  }
+  throw new Error('Too many chart series for unique colours');
+}
+
+function hashSeriesKey(key: string): number {
   let hash = 2_166_136_261;
   for (let i = 0; i < key.length; i++) hash = Math.imul(hash ^ key.charCodeAt(i), 16_777_619);
-  return SERIES_PALETTE[(hash >>> 0) % SERIES_PALETTE.length];
+  return hash >>> 0;
 }
 
 export function buildTimesheetChartModel(
@@ -67,13 +111,14 @@ export function buildTimesheetChartModel(
 export function buildTokenChartModel(sheet: TokenSheet, period: TimesheetPeriod, now = Date.now()): ChartModel {
   const columns = visibleColumns(sheet.columns, now);
   const count = columns.length;
-  const series = sheet.rows
-    .map(row => ({ row, values: row.tokens.slice(0, count) }))
+  const rows = sheet.rows.map(row => ({ row, values: row.tokens.slice(0, count) }));
+  const colors = chartSeriesColors(rows.map(({ row }) => `cli:${row.cliType}`));
+  const series = rows
     .filter(({ values }) => values.some(value => value !== 0))
     .map(({ row, values }): ChartModelSeries => ({
       key: `cli:${row.cliType}`,
       label: row.label,
-      color: chartSeriesColor(`cli:${row.cliType}`),
+      color: colors.get(`cli:${row.cliType}`)!,
       type: 'bar',
       axis: 'tokens',
       values,

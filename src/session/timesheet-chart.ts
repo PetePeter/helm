@@ -179,8 +179,8 @@ function formatMinutes(min: number): string {
   return rest ? `${Math.floor(m / 60)}h${String(rest).padStart(2, '0')}` : `${m / 60}h`;
 }
 
-export function formatTokens(t: number): string {
-  if (t >= 1e6) return `${+(t / 1e6).toFixed(2)}M`;
-  if (t >= 1e3) return `${+(t / 1e3).toFixed(1)}k`;
-  return String(Math.round(t));
+export function formatTokens(t: number, compact = true): string {
+  if (compact && t >= 1e6) return `${+(t / 1e6).toFixed(2)}M`;
+  if (compact && t >= 1e3) return `${+(t / 1e3).toFixed(1)}k`;
+  return Math.round(t).toLocaleString('en-US');
 }

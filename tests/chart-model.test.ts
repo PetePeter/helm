@@ -48,6 +48,33 @@ describe('ChartModel builders', () => {
     expect(colorByKey(model)).toEqual(colorByKey(reorderedModel));
   });
 
+  it('resolves palette collisions uniquely and consistently for CLI keys', () => {
+    const collidingRows = [
+      { cliType: 'test-3', label: 'Test 3', tokens: [10] },
+      { cliType: 'test-4', label: 'Test 4', tokens: [20] },
+    ];
+    const sheet: TokenSheet = { columns: [DAY0], rows: collidingRows, totals: [30] };
+    const reversed: TokenSheet = { ...sheet, rows: [...collidingRows].reverse() };
+    const colors = (rows: TokenSheet) => Object.fromEntries(
+      buildTokenChartModel(rows, 'day', DAY0).series.map(({ key, color }) => [key, color]),
+    );
+
+    const assigned = colors(sheet);
+    expect(new Set(Object.values(assigned)).size).toBe(2);
+    expect(colors(reversed)).toEqual(assigned);
+  });
+
+  it('keeps fallback colours unique beyond one full hue rotation', () => {
+    const rows = Array.from({ length: 400 }, (_, i) => ({
+      cliType: `cli-${i}`,
+      label: `CLI ${i}`,
+      tokens: [i + 1],
+    }));
+    const model = buildTokenChartModel({ columns: [DAY0], rows, totals: [80_200] }, 'day', DAY0);
+
+    expect(new Set(model.series.map(({ color }) => color)).size).toBe(rows.length);
+  });
+
   it('keeps a month-view token model small when serialized for the mobile wire', () => {
     const columns = Array.from({ length: 12 }, (_, i) => new Date(2026, i, 1).getTime());
     const rows = Array.from({ length: 32 }, (_, cli) => ({
@@ -58,6 +85,7 @@ describe('ChartModel builders', () => {
     const totals = columns.map((_, month) => rows.reduce((sum, row) => sum + row.tokens[month], 0));
     const model = buildTokenChartModel({ columns, rows, totals }, 'month', new Date(2027, 0, 1).getTime());
 
+    expect(new Set(model.series.map(({ color }) => color)).size).toBe(rows.length);
     expect(new TextEncoder().encode(JSON.stringify(model)).length).toBeLessThan(16 * 1024);
   });
 });
