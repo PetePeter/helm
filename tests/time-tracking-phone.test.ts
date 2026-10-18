@@ -51,6 +51,7 @@ describe('timesheetQuery (the phone Time tab)', () => {
     expect(timesheetQuery(tracker, { period: 'day', anchor: day })).toEqual({
       projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5, tokens: 0 }],
       sheet: expect.any(Object),
+      chartModel: expect.any(Object),
       chartHtml: expect.any(String),
     });
   });
@@ -58,10 +59,21 @@ describe('timesheetQuery (the phone Time tab)', () => {
   it('carries per-column tokens and the shared chart in both views', () => {
     const withTokens = [...slots, { start: day, kind: 'tokens' as const, projectKey: 'pA', projectName: 'Alpha', dir: 'C:/a', tokens: 1_234 }];
     const t = { query: (from: number, to: number) => withTokens.filter(s => s.start >= from && s.start < to) };
-    const overview = timesheetQuery(t, { period: 'day', anchor: day }) as { projects: { tokens: number }[]; sheet: { totals: { tokens: number[] } }; chartHtml: string };
+    const overview = timesheetQuery(t, { period: 'day', anchor: day }) as {
+      projects: { tokens: number }[];
+      sheet: { totals: { user: number[]; ai: number[]; tokens: number[] } };
+      chartModel: { columns: number[]; series: Array<{ key: string; values: number[] }> };
+      chartHtml: string;
+    };
     expect(overview.projects[0].tokens).toBe(1_234);
     expect(overview.sheet.totals.tokens[0]).toBe(1_234);
     expect(overview.chartHtml).toContain('<svg');
+    const visibleColumns = overview.chartModel.columns.length;
+    expect(overview.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
+      ['you', overview.sheet.totals.user.slice(0, visibleColumns)],
+      ['ai', overview.sheet.totals.ai.slice(0, visibleColumns)],
+      ['tokens', overview.sheet.totals.tokens.slice(0, visibleColumns)],
+    ]);
     const detail = timesheetQuery(t, { projectKey: 'pA', period: 'day', anchor: day }) as { chartHtml: string };
     expect(detail.chartHtml).toContain('<svg');
   });
@@ -82,6 +94,7 @@ describe('timesheetQuery (the phone Time tab)', () => {
     expect(handler({}, { period: 'day', anchor: day })).toEqual({
       projects: [{ projectKey: 'pA', projectName: 'Alpha', user: 5, ai: 5, tokens: 0 }],
       sheet: expect.any(Object),
+      chartModel: expect.any(Object),
       chartHtml: expect.any(String),
     });
     expect(handler({}, { projectKey: 'pA', period: 'hour', anchor: day })).toMatchObject({

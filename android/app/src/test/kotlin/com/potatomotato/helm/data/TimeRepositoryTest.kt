@@ -53,12 +53,21 @@ class TimeRepositoryTest {
         assertTrue(repo.arrived(ask, JSONObject("""{"sheet":{"columns":[1,2],
             "rows":[{"cliType":"codex","label":"Codex","tokens":[1500,250]},
                     {"cliType":"other","label":"other","tokens":[0,40]}],
-            "totals":[1500,290]},"chartHtml":"<svg/>"}""")))
+            "totals":[1500,290]},"chartHtml":"<svg/>","chartModel":{"columns":[1,2],
+            "labels":["one","two"],"series":[{"key":"cli:codex","label":"Codex","color":"#123456",
+            "type":"bar","axis":"tokens","values":[1500,250]}]}}""")))
 
         val answer = (LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Tokens
         assertEquals(listOf(TimeTokenRow("codex", "Codex", listOf(1500L, 250L)), TimeTokenRow("other", "other", listOf(0L, 40L))), answer.sheet.rows)
         assertEquals(listOf(1500L, 290L), answer.sheet.totals)
         assertEquals("<svg/>", answer.chartHtml)
+        assertEquals(
+            TimeChartModel(
+                listOf(1L, 2L), listOf("one", "two"),
+                listOf(TimeChartSeries("cli:codex", "Codex", "#123456", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1500L, 250L))),
+            ),
+            answer.chartModel,
+        )
     }
 
     @Test
@@ -72,6 +81,7 @@ class TimeRepositoryTest {
         repo.requested(ask)
         repo.arrived(ask, JSONObject("""{"sheet":{"columns":[]}}"""))
         assertEquals(null, ((LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Sheet).chartHtml)
+        assertEquals(null, ((LoadViews.time(repo.state.value, ask) as LoadView.Ready).data as TimeAnswer.Sheet).chartModel)
     }
 
     @Test

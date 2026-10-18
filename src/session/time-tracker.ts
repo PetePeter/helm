@@ -12,6 +12,7 @@
  */
 
 import type { TimePersistence } from './time-persistence.js';
+import type { ChartModel } from './chart-model.js';
 
 export const SLOT_MS = 5 * 60_000;
 /**
@@ -351,10 +352,12 @@ export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: st
 
 export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }
 
-/** A Time view (desktop pane, phone tab); both shapes carry the shared chart markup. */
+/** A Time view (desktop pane, phone tab); chart data and the temporary SVG fallback. */
 export type TimesheetQueryResult =
-  | { sheet: Timesheet; chartHtml: string }
-  | { projects: ProjectTotal[]; sheet: Timesheet; chartHtml: string };
+  | { sheet: Timesheet; chartModel: ChartModel; chartHtml: string }
+  | { projects: ProjectTotal[]; sheet: Timesheet; chartModel: ChartModel; chartHtml: string };
+
+export interface TokenQueryResult { sheet: TokenSheet; chartModel: ChartModel; chartHtml: string }
 
 /** Minutes and tokens per project across the given slots, most user time first. */
 export function summarizeProjects(slots: TimeSlot[]): ProjectTotal[] {

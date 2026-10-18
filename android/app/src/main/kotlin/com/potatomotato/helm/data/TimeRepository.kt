@@ -59,13 +59,53 @@ data class TimeTokenRow(val cliType: String, val label: String, val tokens: List
 
 data class TimeTokenSheet(val columns: List<Long>, val rows: List<TimeTokenRow>, val totals: List<Long>)
 
-/** [chartHtml]: the desktop's shared time + tokens chart (timesheet-chart.ts); null from an older desktop. */
+enum class TimeChartSeriesType(val wire: String) {
+    BAR("bar"), LINE("line");
+
+    companion object {
+        fun fromWire(wire: String): TimeChartSeriesType? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+enum class TimeChartAxisKind(val wire: String) {
+    MINUTES("minutes"), TOKENS("tokens");
+
+    companion object {
+        fun fromWire(wire: String): TimeChartAxisKind? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+data class TimeChartSeries(
+    val key: String,
+    val label: String,
+    val color: String,
+    val type: TimeChartSeriesType,
+    val axis: TimeChartAxisKind,
+    val values: List<Long>,
+)
+
+data class TimeChartModel(val columns: List<Long>, val labels: List<String>, val series: List<TimeChartSeries>)
+
+/** Chart data and temporary desktop SVG fallback; both are null from an older desktop. */
 sealed interface TimeAnswer {
     val chartHtml: String?
+    val chartModel: TimeChartModel?
 
-    data class Projects(val projects: List<TimeProjectTotal>, override val chartHtml: String? = null) : TimeAnswer
-    data class Sheet(val sheet: TimeSheet, override val chartHtml: String? = null) : TimeAnswer
-    data class Tokens(val sheet: TimeTokenSheet, override val chartHtml: String? = null) : TimeAnswer
+    data class Projects(
+        val projects: List<TimeProjectTotal>,
+        override val chartHtml: String? = null,
+        override val chartModel: TimeChartModel? = null,
+    ) : TimeAnswer
+    data class Sheet(
+        val sheet: TimeSheet,
+        override val chartHtml: String? = null,
+        override val chartModel: TimeChartModel? = null,
+    ) : TimeAnswer
+    data class Tokens(
+        val sheet: TimeTokenSheet,
+        override val chartHtml: String? = null,
+        override val chartModel: TimeChartModel? = null,
+    ) : TimeAnswer
 }
 
 /** The state of the Statistics screen, keyed by the ask that produced it. */
@@ -118,6 +158,7 @@ class TimeRepository {
     private fun parse(json: JSONObject?, view: TimeView): TimeAnswer? {
         if (json == null) return null
         val chartHtml = json.opt("chartHtml") as? String
+        val chartModel = parseChartModel(json.optJSONObject("chartModel"))
         if (view == TimeView.Tokens) {
             val sheet = json.optJSONObject("sheet") ?: return null
             val columns = sheet.optJSONArray("columns") ?: return null
@@ -135,6 +176,7 @@ class TimeRepository {
                     totals = longs(totals),
                 ),
                 chartHtml,
+                chartModel,
             )
         }
         json.optJSONArray("projects")?.let { array ->
@@ -145,6 +187,7 @@ class TimeRepository {
                     TimeProjectTotal(key, o.opt("projectName") as? String ?: key, o.optInt("user"), o.optInt("ai"), o.optLong("tokens"))
                 },
                 chartHtml,
+                chartModel,
             )
         }
         val sheet = json.optJSONObject("sheet") ?: return null
@@ -165,6 +208,32 @@ class TimeRepository {
                 totalTokens = longs(totals?.optJSONArray("tokens")),
             ),
             chartHtml,
+            chartModel,
+        )
+    }
+
+    private fun parseChartModel(json: JSONObject?): TimeChartModel? {
+        if (json == null) return null
+        val columns = json.optJSONArray("columns") ?: return null
+        val labels = json.optJSONArray("labels") ?: return null
+        val series = json.optJSONArray("series") ?: return null
+        if (columns.length() != labels.length()) return null
+        val parsedSeries = (0 until series.length()).map { i ->
+            val item = series.optJSONObject(i) ?: return null
+            val key = item.opt("key") as? String ?: return null
+            val label = item.opt("label") as? String ?: return null
+            val color = item.opt("color") as? String ?: return null
+            val type = TimeChartSeriesType.fromWire(item.opt("type") as? String ?: return null) ?: return null
+            val axis = TimeChartAxisKind.fromWire(item.opt("axis") as? String ?: return null) ?: return null
+            val values = item.optJSONArray("values") ?: return null
+            if (values.length() != columns.length()) return null
+            TimeChartSeries(key, label, color, type, axis, longs(values))
+        }
+        val parsedLabels = (0 until labels.length()).map { labels.opt(it) as? String ?: return null }
+        return TimeChartModel(
+            columns = (0 until columns.length()).map { columns.optLong(it) },
+            labels = parsedLabels,
+            series = parsedSeries,
         )
     }
 

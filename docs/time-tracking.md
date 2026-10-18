@@ -59,19 +59,20 @@ graph LR
   J --> Q{Statistics query}
   Q -->|timesheet| T[timesheetQuery]
   Q -->|tokens| K[tokenQuery]
-  T --> C[renderTimesheetChart<br/>timesheet-chart.ts]
-  K --> TC[renderTokenChart<br/>timesheet-chart.ts]
-  C --> D[Desktop Statistics<br/>v-html]
-  C --> A[APK Statistics · Timesheet<br/>ContainedWebView]
-  TC --> TD[Desktop Tokens tab<br/>v-html]
-  TC --> AT[APK Statistics · Tokens<br/>ContainedWebView]
+  T --> CM[buildTimesheetChartModel]
+  K --> CM2[buildTokenChartModel]
+  CM --> C[SVG fallback renderer]
+  CM2 --> C
+  CM --> D[Desktop IPC + phone wire]
+  CM2 --> D
+  C --> UI[Current desktop and APK chart views]
 ```
 
-The chart is built once, in the main process, as self-contained SVG and CSS with no script. Both hosts draw the same markup, so they cannot drift apart. It is Helm's own markup with no AI-authored content, so the pane inlines it directly. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
+The main process builds a transport-neutral `ChartModel` from the same sheet used by the table. It contains column timestamps and labels plus keyed series with type, axis kind, colour and raw values. Values stay unstacked so a chart client can stack and rescale only visible series. The current desktop and phone still receive a self-contained SVG/CSS fallback rendered from that model while their Chart.js clients are introduced in later steps. Each folder cell shows *You* time, with an *AI* line and a *Tokens* line underneath when nonzero. The project overview shows each project's *You*, *AI*, combined and *Tokens* totals. The arrows page the selected period, and the range label jumps back to now. **CSV** is available in project detail and exports that project's current view (`period_start,project,directory,you_minutes,ai_minutes,tokens`).
 
 ### Tokens tab
 
-Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. The chart stacks one bar segment per CLI. Click a model legend chip to show or hide that CLI's segments, using the same CSS-only checkbox pattern as the Timesheet chart. Hover a segment to see the model, date or bucket, and exact token count. `buildTokenSheet` and `renderTokenChart` back the desktop `time:tokens` channel and the Android Statistics Tokens view; both hosts use the same chart markup and interactions.
+Tokens per CLI per column: one row per configured CLI type, labelled by its display name, in config order and zero-filled, so an unused CLI still shows. Slots with no `cliType`, or from a CLI type no longer configured, share one trailing **other** row. Sub-agent tokens count toward the parent session's CLI. `buildTokenChartModel` drops series that are zero in the visible columns and keeps each remaining series' values unstacked. Its key-based colour is stable across row order. The current SVG fallback stacks one bar segment per CLI; later clients can stack and rescale from the same raw model when the visible series change. Hovering a fallback segment shows the model, date or bucket, and exact token count.
 
 ```mermaid
 flowchart LR

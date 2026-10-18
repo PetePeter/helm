@@ -1,7 +1,8 @@
 /** Read-only timesheet queries over the TimeTracker (docs/time-tracking.md). */
 import { ipcMain } from 'electron';
-import { renderTimesheetChart, renderTokenChart } from '../../session/timesheet-chart.js';
-import { buildTimesheet, buildTokenSheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker, type TokenSheet } from '../../session/time-tracker.js';
+import { buildTimesheetChartModel, buildTokenChartModel } from '../../session/chart-model.js';
+import { renderTimesheetChartModel, renderTokenChartModel } from '../../session/timesheet-chart.js';
+import { buildTimesheet, buildTokenSheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker, type TokenQueryResult } from '../../session/time-tracker.js';
 
 const PERIODS: readonly TimesheetPeriod[] = ['hour', 'day', 'week', 'month'];
 
@@ -26,7 +27,7 @@ function sheetFor(tracker: SlotSource, projectKey: string, period: TimesheetPeri
 /**
  * The Time view on desktop and phone (gate method `__timesheet__`): with
  * `projectKey`, that project's folder grid; without, every project's totals
- * plus an all-project sheet. Both carry the shared chart markup.
+ * plus an all-project sheet. Both carry shared chart data and SVG fallback.
  */
 export function timesheetQuery(tracker: SlotSource, params: unknown): TimesheetQueryResult {
   if (!params || typeof params !== 'object') throw new Error('timesheet params must be an object');
@@ -34,21 +35,24 @@ export function timesheetQuery(tracker: SlotSource, params: unknown): TimesheetQ
   if (projectKey !== undefined) {
     const [key, p, a] = validate(projectKey, period, anchor);
     const sheet = sheetFor(tracker, key, p, a);
-    return { sheet, chartHtml: renderTimesheetChart(sheet, p) };
+    const chartModel = buildTimesheetChartModel(sheet, p);
+    return { sheet, chartModel, chartHtml: renderTimesheetChartModel(chartModel) };
   }
   const [p, a] = validatePeriod(period, anchor);
   const edges = periodEdges(p, a);
   const slots = tracker.query(edges[0], edges[edges.length - 1]);
   const sheet = buildTimesheet(slots, null, edges);
-  return { projects: summarizeProjects(slots), sheet, chartHtml: renderTimesheetChart(sheet, p) };
+  const chartModel = buildTimesheetChartModel(sheet, p);
+  return { projects: summarizeProjects(slots), sheet, chartModel, chartHtml: renderTimesheetChartModel(chartModel) };
 }
 
-/** The Statistics pane's Tokens tab: tokens per configured CLI per column, with its chart. */
-export function tokenQuery(tracker: SlotSource, cliTypes: string[], labelOf: (cliType: string) => string, period: unknown, anchor: unknown): { sheet: TokenSheet; chartHtml: string } {
+/** The Statistics pane's Tokens tab: tokens per configured CLI per column, with shared chart data. */
+export function tokenQuery(tracker: SlotSource, cliTypes: string[], labelOf: (cliType: string) => string, period: unknown, anchor: unknown): TokenQueryResult {
   const [p, a] = validatePeriod(period, anchor);
   const edges = periodEdges(p, a);
   const sheet = buildTokenSheet(tracker.query(edges[0], edges[edges.length - 1]), edges, cliTypes, labelOf);
-  return { sheet, chartHtml: renderTokenChart(sheet, p) };
+  const chartModel = buildTokenChartModel(sheet, p);
+  return { sheet, chartModel, chartHtml: renderTokenChartModel(chartModel) };
 }
 
 /** The phone's existing reserved route now selects either Statistics view. */
@@ -57,7 +61,7 @@ export function statisticsQuery(
   params: unknown,
   cliTypes: string[],
   labelOf: (cliType: string) => string,
-): TimesheetQueryResult | { sheet: TokenSheet; chartHtml: string } {
+): TimesheetQueryResult | TokenQueryResult {
   if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('statistics params must be an object');
   const request = params as Record<string, unknown>;
   switch (request.view ?? 'timesheet') {

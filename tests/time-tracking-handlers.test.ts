@@ -27,7 +27,8 @@ describe('statisticsQuery', () => {
   it('defaults to the existing all-project timesheet shape and carries folder tokens', () => {
     const result = statisticsQuery(tracker(), { period: 'day', anchor: NOW }, ['codex', 'claude'], id => id) as {
       projects: Array<{ projectKey: string; user: number; ai: number; tokens: number }>;
-      sheet: { rows: Array<{ dir: string; tokens: number[] }> };
+      sheet: { rows: Array<{ dir: string; tokens: number[] }>; totals: { user: number[]; ai: number[]; tokens: number[] } };
+      chartModel: { columns: number[]; series: Array<{ key: string; values: number[] }> };
     };
 
     expect(result.projects).toEqual([
@@ -38,12 +39,19 @@ describe('statisticsQuery', () => {
       { dir: 'C:/helm', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 0, 1_500, 0] },
       { dir: 'C:/other', user: expect.any(Array), ai: expect.any(Array), tokens: [0, 0, 0, 0, 0, 400, 0] },
     ]);
+    const visibleColumns = result.chartModel.columns.length;
+    expect(result.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
+      ['you', result.sheet.totals.user.slice(0, visibleColumns)],
+      ['ai', result.sheet.totals.ai.slice(0, visibleColumns)],
+      ['tokens', result.sheet.totals.tokens.slice(0, visibleColumns)],
+    ]);
   });
 
   it('returns the configured CLI token sheet, including zero and other rows', () => {
     const result = statisticsQuery(tracker(), { view: 'tokens', period: 'day', anchor: NOW }, ['codex', 'claude'], id => ({ codex: 'Codex', claude: 'Claude Code' }[id] ?? id)) as {
       sheet: { rows: Array<{ cliType: string; label: string; tokens: number[] }>; totals: number[] };
       chartHtml: string;
+      chartModel: { columns: number[]; series: Array<{ key: string; values: number[] }> };
     };
 
     expect(result.sheet.rows).toEqual([
@@ -53,6 +61,11 @@ describe('statisticsQuery', () => {
     ]);
     expect(result.sheet.totals).toEqual([0, 0, 0, 0, 0, 1_900, 0]);
     expect(result.chartHtml).toContain('Codex');
+    const visibleColumns = result.chartModel.columns.length;
+    expect(result.chartModel.series.map(({ key, values }) => [key, values])).toEqual([
+      ['cli:codex', result.sheet.rows[0].tokens.slice(0, visibleColumns)],
+      ['cli:other', result.sheet.rows[2].tokens.slice(0, visibleColumns)],
+    ]);
   });
 
   it('rejects an unknown view', () => {

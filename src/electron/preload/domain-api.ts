@@ -12,7 +12,7 @@ import type { Draft, DraftWriteResult } from '../../types/draft.js';
 import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
-import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenSheet } from '../../session/time-tracker.js';
+import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
@@ -658,7 +658,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('time:query', params),
 
   /** Tokens per configured CLI per column for a period, with the chart. */
-  timeTokens: (period: TimesheetPeriod, anchor: number): Promise<{ sheet: TokenSheet; chartHtml: string }> =>
+  timeTokens: (period: TimesheetPeriod, anchor: number): Promise<TokenQueryResult> =>
     ipcRenderer.invoke('time:tokens', period, anchor),
 
   /** One project's timesheet: minutes per directory per day/week/month column. */
