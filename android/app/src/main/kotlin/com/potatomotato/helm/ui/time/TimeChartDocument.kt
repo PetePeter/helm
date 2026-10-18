@@ -89,7 +89,7 @@ internal object TimeChartDocument {
         *{box-sizing:border-box}
         html,body{width:100%;height:100%;margin:0;padding:0;background:transparent}
         body{display:flex;flex-direction:column;overflow:hidden;font-family:Roboto,Arial,sans-serif}
-        #plot{position:relative;flex:1;min-height:0;overflow:hidden}
+        #plot{position:relative;flex:none;height:calc(100vh - 56px);overflow:hidden}
         #chart{display:block;width:100%;height:100%}
         #legend{position:relative;z-index:1;order:-1;display:flex;flex:0 0 56px;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;
           padding:4px 0;touch-action:pan-x;scrollbar-width:none}
