@@ -105,6 +105,8 @@ sequenceDiagram
 
 After each finished turn of an API session, Helm asks the recording model whether the conversation now holds a key memory. It identifies, it does not summarise: most turns save nothing, and that is the correct answer.
 
+The default prompt names work status as never-save: commit hashes, plan ids, test counts, "committed / approved / queued" reports, task scope and next steps, and UI changes just built. Git, plans and todos already hold those; saving them filled memory with stale progress logs. The bar for NEW is that a different session a month later would act differently because of it.
+
 ```mermaid
 graph TB
     T[API session finishes a turn] -->|copy of the history, off the turn's path| R[AutoMemoryRecorder<br/>one pass at a time per session]
