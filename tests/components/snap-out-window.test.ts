@@ -40,7 +40,6 @@ import { useModalStack } from '../../renderer/composables/useModalStack.js';
 import { createDefaultLayout } from '../../renderer/dock-layout.js';
 import { DOCK_PROFILE_PANES, PANE_TERMINAL } from '../../renderer/dock-types.js';
 import { planScreenState } from '../../renderer/plans/plan-screen.js';
-import { hidePlanHelpModal } from '../../renderer/stores/modal-bridge.js';
 import { resetKeyHandlers } from '../../renderer/keyboard/router.js';
 import { useEscProtection } from '../../renderer/composables/useEscProtection.js';
 
@@ -89,10 +88,9 @@ beforeEach(() => {
   savedLayouts = [];
   ptyDataListeners = [];
   mounted = [];
-  // Key handlers and the plan-help modal are window-global singletons; a leaked
+  // Key handlers are window-global singletons; a leaked
   // registration from a previous case would answer this one's keystrokes.
   resetKeyHandlers();
-  hidePlanHelpModal();
   // Escape in an earlier case arms ESC protection, which is a modal state and
   // would swallow the next case's shortcuts.
   useEscProtection().dismissProtection();
@@ -360,9 +358,6 @@ describe('SnapOutWindow terminal pane', () => {
   it('routes Ctrl+<n> to the main window without unpinning this one', async () => {
     const wrapper = await mountShell();
 
-    // The pinned directory has no plans, so the plan pane raises its help modal
-    // on mount; a modal legitimately owns the keyboard, so dismiss it first.
-    hidePlanHelpModal();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '2', ctrlKey: true, bubbles: true }));
     await flushPromises();
 

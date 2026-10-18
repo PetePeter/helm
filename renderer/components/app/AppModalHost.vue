@@ -9,7 +9,6 @@ import {
   quickSpawn, getQuickSpawnCallback, closeQuickSpawn,
   dirPicker, closeDirPicker,
   formModal, getFormModalResolve,
-  planHelp, hidePlanHelpModal,
   runtimeGroupName, getRuntimeGroupNameCallback, closeRuntimeGroupNameModal,
   runtimeGroupClose, getRuntimeGroupCloseCallback, closeRuntimeGroupCloseModal,
   runtimeGroupMove, closeRuntimeGroupMoveSubmenu,
@@ -24,7 +23,6 @@ import DirPickerModal from '../modals/DirPickerModal.vue';
 import FormModal from '../modals/FormModal.vue';
 import BindingEditorModal from '../modals/BindingEditorModal.vue';
 import EscProtectionModal from '../modals/EscProtectionModal.vue';
-import PlanHelpModal from '../modals/PlanHelpModal.vue';
 import BulkCleanupModal from '../modals/BulkCleanupModal.vue';
 import RuntimeGroupNameModal from '../modals/RuntimeGroupNameModal.vue';
 import RuntimeGroupCloseDialog from '../modals/RuntimeGroupCloseDialog.vue';
@@ -281,7 +279,6 @@ function onRuntimeGroupMoveCancel(): void {
 
   <EscProtectionModal />
 
-  <PlanHelpModal v-if="planHelp.visible" @dismiss="hidePlanHelpModal()" />
 
   <div
     v-if="schedulerPopupVisible"

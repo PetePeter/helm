@@ -5,7 +5,7 @@ import type { LayoutNode, LayoutResult } from './plan-layout.js';
 import { computeLayout } from './plan-layout.js';
 import { deliverPromptSequence } from '../sequence-delivery.js';
 import { hidePlanDeleteConfirm, showPlanDeleteConfirm } from '../stores/modal-bridge.js';
-import { bulkCleanup, setBulkCleanupCallback, showPlanHelpModal, hidePlanHelpModal, isPlanHelpVisible } from '../stores/modal-bridge.js';
+import { bulkCleanup, setBulkCleanupCallback } from '../stores/modal-bridge.js';
 import { state } from '../state.js';
 import { getActiveSessionDir } from '../stores/app.js';
 import { registerView, showView, currentView, type ViewMountContext } from '../main-view/main-view-manager.js';
@@ -380,11 +380,6 @@ async function loadPlanData(dirPath: string, context?: ViewMountContext, options
     const first = planScreenState.layout.nodes.find((node) => node.layer === 0 && node.order === 0) ?? planScreenState.layout.nodes[0];
     planScreenState.selectedId = first.id;
   }
-  if (items.length === 0) {
-    showPlanHelpModal(dirPath);
-  } else if (isPlanHelpVisible()) {
-    hidePlanHelpModal();
-  }
 }
 
 /** Next check per operator task; the scheduler is only asked when a task is on screen. */
@@ -556,7 +551,6 @@ function closePlannerOverlay(): void {
   planScreenState.relatedFocusIds = new Set();
   setRelatedTransientIds([]);
   hidePlanDeleteConfirm();
-  hidePlanHelpModal();
   clearNotice();
 }
 
@@ -587,10 +581,6 @@ function clearPlanDataForSession(): void {
  */
 function planScreenKeyHandler(ctx: KeyContext): boolean {
   if (ctx.key === 'Escape') {
-    if (isPlanHelpVisible()) {
-      hidePlanHelpModal();
-      return true;
-    }
     if (planScreenState.editingId || planScreenState.editingContextId) {
       getWindowCallbacks().itemEditorCloser?.();
       planScreenState.selectedId = null;

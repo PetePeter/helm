@@ -461,28 +461,6 @@ export function buildToolEditorOptions(values: Record<string, any>): {
 }
 
 // ============================================================================
-// Plan Help Modal
-// ============================================================================
-
-export const planHelp = reactive({ visible: false });
-
-const _showedForDir = new Set<string>();
-
-export function showPlanHelpModal(dir: string): void {
-  if (_showedForDir.has(dir)) return;
-  _showedForDir.add(dir);
-  planHelp.visible = true;
-}
-
-export function hidePlanHelpModal(): void {
-  planHelp.visible = false;
-}
-
-export function isPlanHelpVisible(): boolean {
-  return planHelp.visible;
-}
-
-// ============================================================================
 // Runtime Group Name (create / rename)
 // ============================================================================
 
@@ -598,7 +576,7 @@ export function isAnyBridgeModalVisible(): boolean {
   return closeConfirm.visible || contextMenu.visible || planDeleteConfirm.visible ||
     bulkCleanup.visible || quickSpawn.visible || dirPicker.visible ||
     formModal.visible ||
-    planHelp.visible || runtimeGroupName.visible || runtimeGroupClose.visible ||
+    runtimeGroupName.visible || runtimeGroupClose.visible ||
     runtimeGroupMove.visible || escProtection.isProtecting.value;
 }
 

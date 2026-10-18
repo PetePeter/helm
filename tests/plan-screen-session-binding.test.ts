@@ -28,9 +28,6 @@ vi.mock('../renderer/stores/modal-bridge.js', () => ({
   hidePlanDeleteConfirm: vi.fn(),
   showPlanDeleteConfirm: vi.fn(),
   setBulkCleanupCallback: vi.fn(),
-  showPlanHelpModal: vi.fn(),
-  hidePlanHelpModal: vi.fn(),
-  isPlanHelpVisible: () => false,
 }));
 vi.mock('../renderer/main-view/main-view-manager.js', () => ({
   currentView: () => 'terminal',

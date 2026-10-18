@@ -43,9 +43,6 @@ const mockDialogShowOpenFile = vi.fn();
 const mockDeliverPromptSequence = vi.fn();
 const mockShowPlanDeleteConfirm = vi.fn();
 const mockHidePlanDeleteConfirm = vi.fn();
-const mockShowPlanHelpModal = vi.fn();
-const mockHidePlanHelpModal = vi.fn();
-const mockIsPlanHelpVisible = vi.fn(() => false);
 const mockComputeLayout = vi.fn();
 const bulkCleanup = { title: '', lines: [] as { count: number; noun: string }[], dirName: '', visible: false };
 let cleanupCallback: (() => Promise<void>) | null = null;
@@ -77,10 +74,6 @@ vi.mock('../renderer/stores/modal-bridge.js', () => ({
   hidePlanDeleteConfirm: (...args: unknown[]) => mockHidePlanDeleteConfirm(...args),
   bulkCleanup,
   setBulkCleanupCallback: (cb: () => Promise<void>) => { cleanupCallback = cb; },
-  showPlanHelpModal: (...args: unknown[]) => mockShowPlanHelpModal(...args),
-  hidePlanHelpModal: (...args: unknown[]) => mockHidePlanHelpModal(...args),
-  isPlanHelpVisible: () => mockIsPlanHelpVisible(),
-  planHelp: { visible: false },
 }));
 
 vi.mock('../renderer/state.js', () => ({
@@ -200,9 +193,6 @@ describe('plan screen bridge', () => {
     mockDeliverPromptSequence.mockReset();
     mockShowPlanDeleteConfirm.mockReset();
     mockHidePlanDeleteConfirm.mockReset();
-    mockShowPlanHelpModal.mockReset();
-    mockHidePlanHelpModal.mockReset();
-    mockIsPlanHelpVisible.mockReturnValue(false);
     mockComputeLayout.mockReset();
     mockPlanSequenceList.mockResolvedValue([]);
     mockPlanContextList.mockResolvedValue([]);
