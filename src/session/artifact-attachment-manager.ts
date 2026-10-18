@@ -27,7 +27,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ArtifactAttachment } from '../types/artifact-attachment.js';
+import { MAX_ATTACHMENT_BYTES, type ArtifactAttachment } from '../types/artifact-attachment.js';
 import { ARTIFACT_DOWNLOAD_MAX_DECODED_BYTES, resolveSliceWindow } from './artifact-download.js';
 import type { SliceWindow } from './artifact-download.js';
 import { getConfigDir } from '../utils/app-paths.js';
@@ -36,12 +36,7 @@ import { MAX_GENERATED_MEDIA_BYTES } from './generated-media-policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/**
- * The cap on ONE attachment file, shared by every writer: desktop imports
- * (`add`) and phone uploads (`mobile-artifact-upload.ts`) refuse past it, so an
- * attachment's size never depends on which door it came through.
- */
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export { MAX_ATTACHMENT_BYTES };
 const INDEX_FILE = 'index.json';
 
 interface AttachmentIndex {

@@ -147,6 +147,31 @@ describe('Chat store', () => {
     expect(store.attachmentFor('two')).toBe('C:/second.txt');
   });
 
+  it('sends an uploaded attachment path and metadata, then clears the selection', async () => {
+    const store = useChatStore();
+    store.setDraft('one', 'inspect this file');
+    store.setAttachment('one', 'C:/app-data/chat-files/report.pdf', {
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 15,
+      artifactId: 'chat-files',
+      attachmentId: 'report',
+    });
+
+    await store.send('one');
+
+    expect(store.messagesFor('one')[0].record).toMatchObject({
+      text: 'inspect this file',
+      filePath: 'C:/app-data/chat-files/report.pdf',
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 15,
+      artifactId: 'chat-files',
+      attachmentId: 'report',
+    });
+    expect(store.attachmentFor('one')).toBeNull();
+  });
+
   it('keeps a failed desktop send visible as Failed without adding a journal turn', async () => {
     send = async () => ({ ok: false, error: 'session is not accepting input' });
     const store = useChatStore();

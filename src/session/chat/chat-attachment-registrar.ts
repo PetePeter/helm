@@ -22,11 +22,12 @@
  */
 
 import { readFileSync, statSync } from 'node:fs';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { mimeForPath } from '../../electron/helm-img-protocol.js';
 import { logger } from '../../utils/logger.js';
-import type { ChatAttachmentRef } from './chat-bridge.js';
-import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
+import type { ChatAttachmentRef, ChatUploadedAttachment } from './chat-bridge.js';
+import { MAX_ATTACHMENT_BYTES, type ArtifactAttachmentManager, type AddAttachmentInput } from '../artifact-attachment-manager.js';
+import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
 import type { Artifact } from '../../types/artifact.js';
 
 /** The one artifact per session that chat files are filed under. */
@@ -46,7 +47,7 @@ export interface ChatAttachmentArtifacts {
 
 export interface ChatAttachmentRegistrarDeps {
   artifacts: ChatAttachmentArtifacts;
-  attachments: Pick<ArtifactAttachmentManager, 'add'>;
+  attachments: Pick<ArtifactAttachmentManager, 'add' | 'getPath' | 'list'>;
 }
 
 /**
@@ -60,21 +61,21 @@ export function createChatAttachmentRegistrar(deps: ChatAttachmentRegistrarDeps)
   return (sessionId: string, filePath: string): ChatAttachmentRef | undefined => {
     try {
       // stat before read: a 10MB refusal should not cost 10MB of memory first.
-      if (!statSync(filePath).isFile()) return undefined;
-      const content = readFileSync(filePath);
-      const filename = basename(filePath);
-      const mimeType = mimeForPath(filePath) ?? FALLBACK_MIME;
-
+      const source = statSync(filePath);
+      if (!source.isFile() || source.size > MAX_ATTACHMENT_BYTES) return undefined;
       const artifact = chatFilesArtifact(deps.artifacts, sessionId);
-      const attachment = deps.attachments.add(artifact.id, { filename, content, contentType: mimeType });
+      const existing = deps.attachments.list(artifact.id).find((attachment) => {
+        try {
+          return resolve(deps.attachments.getPath(artifact.id, attachment.id)) === resolve(filePath);
+        } catch {
+          return false;
+        }
+      });
+      if (existing) return toChatAttachmentRef(artifact.id, existing, FALLBACK_MIME, filePath);
 
-      return {
-        artifactId: artifact.id,
-        attachmentId: attachment.id,
-        filename: attachment.filename,
-        mimeType: attachment.contentType ?? mimeType,
-        sizeBytes: attachment.sizeBytes,
-      };
+      const input = filePathInput(filePath);
+      const attachment = deps.attachments.add(artifact.id, input);
+      return toChatAttachmentRef(artifact.id, attachment, FALLBACK_MIME);
     } catch (error) {
       logger.warn(`[ChatAttachment] Could not take a copy of ${filePath}: ${error}`);
       return undefined;
@@ -82,8 +83,47 @@ export function createChatAttachmentRegistrar(deps: ChatAttachmentRegistrarDeps)
   };
 }
 
+/** Store clipboard bytes under the same per-session artifact used by ChatBroker. */
+export function createChatAttachmentUploader(deps: ChatAttachmentRegistrarDeps) {
+  return (sessionId: string, input: AddAttachmentInput): ChatUploadedAttachment => {
+    if (input.content.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error('Attachment exceeds 10MB size limit');
+    }
+
+    const artifact = chatFilesArtifact(deps.artifacts, sessionId);
+    const attachment = deps.attachments.add(artifact.id, input);
+    const filePath = deps.attachments.getPath(artifact.id, attachment.id);
+    return { ...toChatAttachmentRef(artifact.id, attachment, FALLBACK_MIME), filePath };
+  };
+}
+
 /** The session's chat-files artifact, created the first time one is sent. */
 function chatFilesArtifact(artifacts: ChatAttachmentArtifacts, sessionId: string): Artifact {
   const existing = artifacts.getForSession(sessionId).find(a => a.title === CHAT_FILES_TITLE);
   return existing ?? artifacts.create(sessionId, CHAT_FILES_TITLE, 'markdown', CHAT_FILES_BODY, 'manual');
+}
+
+function filePathInput(filePath: string): AddAttachmentInput {
+  const content = readFileSync(filePath);
+  return {
+    filename: basename(filePath),
+    content,
+    contentType: mimeForPath(filePath) ?? FALLBACK_MIME,
+  };
+}
+
+function toChatAttachmentRef(
+  artifactId: string,
+  attachment: ArtifactAttachment,
+  fallbackMime: string,
+  filePath?: string,
+): ChatAttachmentRef {
+  return {
+    artifactId,
+    attachmentId: attachment.id,
+    filename: attachment.filename,
+    mimeType: attachment.contentType ?? fallbackMime,
+    sizeBytes: attachment.sizeBytes,
+    ...(filePath ? { filePath } : {}),
+  };
 }

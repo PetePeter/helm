@@ -15,6 +15,14 @@ export interface ChatThreadMessage {
   error?: string;
 }
 
+export interface ChatAttachmentDetails {
+  filename?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  artifactId?: string;
+  attachmentId?: string;
+}
+
 let nextLocalId = 0;
 
 function fileName(path: string): string {
@@ -30,7 +38,7 @@ export const useChatStore = defineStore('chat', () => {
   const readThroughBySession = reactive(new Map<string, number>());
   const localTurnsBySession = reactive(new Map<string, ChatThreadMessage[]>());
   const draftsBySession = reactive(new Map<string, string>());
-  const attachmentsBySession = reactive(new Map<string, string>());
+  const attachmentsBySession = reactive(new Map<string, { filePath: string; details: ChatAttachmentDetails }>());
   const historyErrors = reactive(new Map<string, string>());
 
   const loadedSessions = new Set<string>();
@@ -183,11 +191,18 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function attachmentFor(sessionId: string): string | null {
-    return attachmentsBySession.get(sessionId) ?? null;
+    return attachmentsBySession.get(sessionId)?.filePath ?? null;
   }
 
-  function setAttachment(sessionId: string, path: string | null): void {
-    if (path) attachmentsBySession.set(sessionId, path);
+  function attachmentDetailsFor(sessionId: string): ChatAttachmentDetails | null {
+    return attachmentsBySession.get(sessionId)?.details ?? null;
+  }
+
+  function setAttachment(sessionId: string, path: string | null, details?: ChatAttachmentDetails): void {
+    if (path) attachmentsBySession.set(sessionId, {
+      filePath: path,
+      details: { ...details, filename: details?.filename ?? fileName(path) },
+    });
     else attachmentsBySession.delete(sessionId);
   }
 
@@ -218,6 +233,7 @@ export const useChatStore = defineStore('chat', () => {
   async function send(sessionId: string): Promise<boolean> {
     const text = draftFor(sessionId);
     const path = attachmentFor(sessionId);
+    const attachmentDetails = attachmentDetailsFor(sessionId);
     if (!text.trim() && !path) return false;
 
     nextLocalId += 1;
@@ -230,7 +246,14 @@ export const useChatStore = defineStore('chat', () => {
         text,
         at: Date.now(),
         originId,
-        ...(path ? { filePath: path, filename: fileName(path) } : {}),
+        ...(path ? {
+          filePath: path,
+          filename: attachmentDetails?.filename ?? fileName(path),
+          ...(attachmentDetails?.mimeType ? { mimeType: attachmentDetails.mimeType } : {}),
+          ...(attachmentDetails?.sizeBytes !== undefined ? { sizeBytes: attachmentDetails.sizeBytes } : {}),
+          ...(attachmentDetails?.artifactId ? { artifactId: attachmentDetails.artifactId } : {}),
+          ...(attachmentDetails?.attachmentId ? { attachmentId: attachmentDetails.attachmentId } : {}),
+        } : {}),
       },
       status: 'sending',
     };
@@ -259,6 +282,7 @@ export const useChatStore = defineStore('chat', () => {
     draftFor,
     setDraft,
     attachmentFor,
+    attachmentDetailsFor,
     setAttachment,
     send,
     retry,

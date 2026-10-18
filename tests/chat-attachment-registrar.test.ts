@@ -2,10 +2,11 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
+import { ArtifactAttachmentManager, MAX_ATTACHMENT_BYTES } from '../src/session/artifact-attachment-manager.js';
 import {
   CHAT_FILES_TITLE,
   createChatAttachmentRegistrar,
+  createChatAttachmentUploader,
   type ChatAttachmentArtifacts,
 } from '../src/session/chat/chat-attachment-registrar.js';
 import { ChatBroker } from '../src/session/chat/chat-broker.js';
@@ -101,6 +102,47 @@ describe('chat attachment registrar', () => {
     const theirs = register('s2', writeSource('b.png'))!;
 
     expect(theirs.artifactId).not.toBe(mine.artifactId);
+  });
+
+  it('stores pasted bytes under the session Chat files artifact and returns an openable path', () => {
+    const upload = createChatAttachmentUploader({ artifacts, attachments });
+    const ref = upload('s1', {
+      filename: 'diagram.webp',
+      content: Buffer.from('image-bytes'),
+      contentType: 'image/webp',
+    });
+
+    expect(ref.filename).toBe('diagram.webp');
+    expect(ref.mimeType).toBe('image/webp');
+    expect(ref.sizeBytes).toBe(11);
+    expect(ref.filePath).toBe(attachments.getPath(ref.artifactId, ref.attachmentId));
+    expect(attachments.readBytes(ref.artifactId, ref.attachmentId).toString()).toBe('image-bytes');
+    expect(artifacts.getForSession('s1')[0].title).toBe(CHAT_FILES_TITLE);
+  });
+
+  it('refuses oversized pasted bytes before creating an empty Chat files artifact', () => {
+    const upload = createChatAttachmentUploader({ artifacts, attachments });
+
+    expect(() => upload('s1', {
+      filename: 'large.bin',
+      content: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1),
+      contentType: 'application/octet-stream',
+    })).toThrow('10MB');
+    expect(artifacts.creates).toBe(0);
+  });
+
+  it('reuses a pasted attachment when ChatBroker later registers its path', () => {
+    const upload = createChatAttachmentUploader({ artifacts, attachments });
+    const uploaded = upload('s1', {
+      filename: 'clipboard.pdf',
+      content: Buffer.from('%PDF'),
+      contentType: 'application/pdf',
+    });
+
+    const registered = register('s1', uploaded.filePath!);
+
+    expect(registered?.attachmentId).toBe(uploaded.attachmentId);
+    expect(attachments.list(uploaded.artifactId)).toHaveLength(1);
   });
 
   it('gives up quietly on a file that is not there', () => {

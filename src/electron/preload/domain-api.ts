@@ -16,6 +16,7 @@ import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
+import type { ChatUploadedAttachment } from '../../session/chat/chat-bridge.js';
 import {
   createPreloadDomains,
   type HelmPreloadApi,
@@ -1365,6 +1366,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     contentType?: string;
   }): Promise<ArtifactAttachment> =>
     ipcRenderer.invoke('artifact:attachmentAdd', artifactId, input),
+
+  /** Upload a pasted file under the target session's Chat files artifact. */
+  artifactChatAttachmentUpload: (sessionId: string, input: {
+    filename: string;
+    contentBase64: string;
+    contentType?: string;
+  }): Promise<ChatUploadedAttachment> =>
+    ipcRenderer.invoke('artifact:chatAttachmentUpload', sessionId, input),
 
   /** Delete one attachment from an artifact */
   artifactAttachmentDelete: (artifactId: string, attachmentId: string): Promise<boolean> =>

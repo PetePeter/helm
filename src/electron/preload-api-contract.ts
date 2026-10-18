@@ -278,6 +278,7 @@ export const PRELOAD_API_DOMAINS = {
     'artifactSaveAttachment',
     'artifactAttachmentList',
     'artifactAttachmentAdd',
+    'artifactChatAttachmentUpload',
     'artifactAttachmentDelete',
   ],
   peers: [

@@ -19,6 +19,9 @@
  */
 export const ATTACHMENT_LINK_SCHEME = 'helm-attachment:';
 
+/** Maximum size shared by every artifact attachment writer and the composer. */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 /** Build the link main embeds in an attachment artifact's markdown. */
 export function buildAttachmentHref(artifactId: string, attachmentId: string): string {
   return `${ATTACHMENT_LINK_SCHEME}//${artifactId}/${attachmentId}`;

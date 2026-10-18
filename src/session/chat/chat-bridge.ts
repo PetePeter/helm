@@ -67,6 +67,11 @@ export interface ChatAttachmentRef {
   filePath?: string;
 }
 
+/** Chat attachment returned by the desktop uploader, which always has a local path. */
+export interface ChatUploadedAttachment extends ChatAttachmentRef {
+  filePath: string;
+}
+
 /** What one bridge reports about one send. Never throws out of a broker. */
 export interface ChatSendResult {
   sent: boolean;

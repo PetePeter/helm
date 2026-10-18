@@ -54,7 +54,13 @@ menu. Its Text group copies a selected message/composer range or pastes into the
 composer at the saved caret; message-list paste appends to the draft. The
 composer inserts a newline on Enter and sends on Ctrl+Enter. It grows with the
 draft up to 30% of the window height, then scrolls internally, and shrinks when
-text is removed or sent.
+text is removed or sent. Pasting a clipboard file uploads it to the session's
+shared **Chat files** artifact and selects it as the message attachment; image,
+text-file, and binary MIME types all use the same path. Plain text pastes remain
+in the draft. The composer shows upload progress and the uploaded file's name
+and size, and reports upload or 10MB size-limit errors inline. Paste one file at
+a time. A sent turn carries the stored file path to the target CLI and the
+artifact reference to connected chat surfaces.
 
 The context header shows the session name, mission, project folder, CLI label,
 context tokens/window with the per-CLI amber/red thresholds and sparkline, plus

@@ -10,11 +10,13 @@ import ContextSparkline from '../sidebar/ContextSparkline.vue';
 import { chatOriginLabel, formatChatFileSize, splitChatLinks } from '../../chat-view.js';
 import { artifactsClient, dialogClient, systemClient } from '../../ipc/clients.js';
 import { showChatContextMenu } from '../../stores/modal-bridge.js';
+import { useChatPasteUpload } from '../../composables/useChatPasteUpload.js';
 import type { Session } from '../../state.js';
 
 const props = defineProps<{ paneActive?: boolean }>();
 const appStore = useAppStore();
 const chat = useChatStore();
+const pasteUpload = useChatPasteUpload(chat.setAttachment);
 const sessionIds = computed(() => appStore.state.sessions
   .filter(session => !session.subagentOf)
   .map(session => session.id));
@@ -30,6 +32,7 @@ const draft = computed({
   set: value => { if (selectedSession.value) chat.setDraft(selectedSession.value.id, value); },
 });
 const attachment = computed(() => selectedSession.value ? chat.attachmentFor(selectedSession.value.id) : null);
+const attachmentDetails = computed(() => selectedSession.value ? chat.attachmentDetailsFor(selectedSession.value.id) : null);
 const selectedUsage = computed(() => selectedSession.value?.contextUsage);
 const selectedContextLimits = computed(() => selectedSession.value
   ? resolveContextLimits(resolveCliTypeRecord(selectedSession.value.cliType), selectedUsage.value?.window)
@@ -51,6 +54,7 @@ const hasSendingMessage = computed(() => messages.value.some(message => message.
 const canSend = computed(() => Boolean(selectedSession.value
   && !selectedSession.value.frozen
   && !hasSendingMessage.value
+  && !pasteUpload.isUploading(selectedSession.value.id)
   && (draft.value.trim() || attachment.value)));
 
 function activity(sessionId: string): string {
@@ -67,6 +71,10 @@ function time(at: number): string {
 
 function send(): void {
   if (selectedSession.value && canSend.value) void chat.send(selectedSession.value.id);
+}
+
+function onComposerPaste(event: ClipboardEvent): void {
+  void pasteUpload.onPaste(selectedSession.value?.id, event);
 }
 
 function onComposerKey(event: KeyboardEvent): void {
@@ -255,8 +263,19 @@ watch(() => appStore.state.activeSessionId, async () => {
       </div>
 
       <div v-if="selectedSession.frozen" class="chat-pane__frozen" role="status">This session is frozen and cannot receive messages.</div>
+      <div v-if="pasteUpload.isUploading(selectedSession.id)" class="chat-pane__paste-uploading" role="status">
+        Uploading {{ pasteUpload.uploadingFile(selectedSession.id)?.filename }}
+        · {{ formatChatFileSize(pasteUpload.uploadingFile(selectedSession.id)?.sizeBytes) }}
+      </div>
+      <div v-if="pasteUpload.errorFor(selectedSession.id)" class="chat-pane__paste-error" role="alert">
+        <span>{{ pasteUpload.errorFor(selectedSession.id) }}</span>
+        <button type="button" aria-label="Dismiss paste error" @click="pasteUpload.clearError(selectedSession.id)">×</button>
+      </div>
       <div v-if="attachment" class="chat-pane__selected-file">
-        <span>📎 {{ attachment.split(/[\\/]/).at(-1) }}</span>
+        <span>
+          📎 {{ attachmentDetails?.filename || attachment.split(/[\\/]/).at(-1) }}
+          <small v-if="attachmentDetails?.sizeBytes !== undefined">{{ formatChatFileSize(attachmentDetails.sizeBytes) }}</small>
+        </span>
         <button type="button" aria-label="Remove attachment" @click="chat.setAttachment(selectedSession.id, null)">×</button>
       </div>
       <form class="chat-pane__composer" @submit.prevent="send">
@@ -269,6 +288,7 @@ watch(() => appStore.state.activeSessionId, async () => {
           :placeholder="`Message ${selectedSession.name}…`"
           title="Enter a new line · Ctrl+Enter to send"
           @input="resizeComposer"
+          @paste="onComposerPaste"
           @keydown="onComposerKey"
           @contextmenu="onComposerContextMenu"
         />
@@ -334,7 +354,11 @@ watch(() => appStore.state.activeSessionId, async () => {
 .chat-pane__frozen { min-width: 0; padding: 5px var(--spacing-md); color: var(--text-secondary); background: var(--bg-tertiary); overflow-wrap: anywhere; }
 .chat-pane__selected-file { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--spacing-sm); padding: 4px var(--spacing-md); color: var(--text-secondary); background: var(--bg-secondary); }
 .chat-pane__selected-file > span { min-width: 0; overflow-wrap: anywhere; }
+.chat-pane__selected-file small { display: block; color: var(--text-dim); font-size: 10px; }
 .chat-pane__selected-file button { color: var(--text-secondary); background: transparent; border: 0; cursor: pointer; }
+.chat-pane__paste-uploading, .chat-pane__paste-error { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: var(--spacing-sm); padding: 4px var(--spacing-md); color: var(--text-secondary); background: var(--bg-secondary); overflow-wrap: anywhere; }
+.chat-pane__paste-error { color: var(--danger); }
+.chat-pane__paste-error button { flex: 0 0 auto; color: inherit; background: transparent; border: 0; cursor: pointer; }
 .chat-pane__composer { display: flex; min-width: 0; align-items: flex-end; gap: var(--spacing-sm); padding: var(--spacing-sm); border-top: 1px solid var(--border); }
 .chat-pane__composer-actions { display: flex; flex: 0 0 auto; flex-direction: column; gap: var(--spacing-xs); }
 .chat-pane__input { flex: 1; min-width: 0; min-height: 40px; max-height: 30vh; box-sizing: border-box; overflow-y: hidden; padding: var(--spacing-sm) var(--spacing-md); color: var(--text-primary); font: inherit; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: none; }

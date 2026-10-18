@@ -15,7 +15,9 @@ import { mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { ArtifactManager } from '../../session/artifact-manager.js';
 import type { ArtifactIntent } from '../../types/artifact.js';
+import { MAX_ATTACHMENT_BYTES } from '../../types/artifact-attachment.js';
 import type { ArtifactAttachmentManager } from '../../session/artifact-attachment-manager.js';
+import { createChatAttachmentUploader } from '../../session/chat/chat-attachment-registrar.js';
 import type { WindowManager } from '../window-manager.js';
 import { mimeForPath } from '../helm-img-protocol.js';
 import { setPendingDocument } from '../helm-artifact-protocol.js';
@@ -24,8 +26,6 @@ import { ArtifactTempRegistry } from '../../session/artifact-temp-registry.js';
 import { createArtifactFromBytes } from '../../session/artifact-file-import.js';
 import { getTempDir } from '../../utils/app-paths.js';
 import { logger } from '../../utils/logger.js';
-
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /**
  * Decode a base64 attachment input, refusing oversized files before decoding.
@@ -36,9 +36,11 @@ function decodeAttachmentInput(input: {
   contentBase64: string;
   contentType?: string;
 }): { filename: string; content: Buffer; contentType?: string } {
-  // Validate size before decoding (base64 is ~4/3 of raw size)
-  const rawSize = Math.ceil(input.contentBase64.length * 3 / 4);
-  if (rawSize > MAX_ATTACHMENT_BYTES) {
+  // Validate size before decoding (base64 is ~4/3 of raw size). Subtract its
+  // trailing padding so an attachment exactly at the cap remains acceptable.
+  const padding = input.contentBase64.endsWith('==') ? 2 : input.contentBase64.endsWith('=') ? 1 : 0;
+  const decodedSize = Math.floor(input.contentBase64.length * 3 / 4) - padding;
+  if (decodedSize > MAX_ATTACHMENT_BYTES) {
     throw new Error('File exceeds 10MB size limit');
   }
   return {
@@ -55,6 +57,11 @@ export function setupArtifactHandlers(
   moduleDirname?: string,
   tempRegistry: ArtifactTempRegistry = new ArtifactTempRegistry(),
 ): void {
+  const uploadChatAttachment = createChatAttachmentUploader({
+    artifacts: artifactManager,
+    attachments: attachmentManager,
+  });
+
   // ── Read operations (existing) ───────────────────────────────────────────
 
   ipcMain.handle('artifact:list', (_event, sessionId: string) => {
@@ -321,6 +328,27 @@ export function setupArtifactHandlers(
   }) => {
     if (!artifactManager.get(artifactId)) throw new Error('Artifact not found');
     return attachmentManager.add(artifactId, decodeAttachmentInput(input));
+  });
+
+  /** Store a pasted chat file under its session's shared Chat files artifact. */
+  ipcMain.handle('artifact:chatAttachmentUpload', (_event, sessionId: unknown, value: unknown) => {
+    if (typeof sessionId !== 'string' || !sessionId.trim()) {
+      throw new Error('Invalid session id');
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Invalid attachment upload');
+    }
+    const input = value as Record<string, unknown>;
+    if (typeof input.filename !== 'string' || !input.filename.trim()
+      || typeof input.contentBase64 !== 'string'
+      || (input.contentType !== undefined && typeof input.contentType !== 'string')) {
+      throw new Error('Invalid attachment upload');
+    }
+    return uploadChatAttachment(sessionId, decodeAttachmentInput({
+      filename: input.filename,
+      contentBase64: input.contentBase64,
+      ...(typeof input.contentType === 'string' ? { contentType: input.contentType } : {}),
+    }));
   });
 
   /** Delete one attachment. Any body link to it becomes inert text. */

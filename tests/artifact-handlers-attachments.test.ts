@@ -30,7 +30,7 @@ vi.mock('../src/utils/logger.js', () => ({
 
 import { setupArtifactHandlers } from '../src/electron/ipc/artifact-handlers.js';
 import { ArtifactManager } from '../src/session/artifact-manager.js';
-import { ArtifactAttachmentManager } from '../src/session/artifact-attachment-manager.js';
+import { ArtifactAttachmentManager, MAX_ATTACHMENT_BYTES } from '../src/session/artifact-attachment-manager.js';
 
 const SESSION = 'sess-1';
 
@@ -45,6 +45,10 @@ function listAttachments() {
 
 function addAttachment(input: { filename: string; contentBase64: string; contentType?: string }) {
   return handlers.get('artifact:attachmentAdd')!({}, artifactId, input);
+}
+
+function uploadChatAttachment(input: { filename: string; contentBase64: string; contentType?: string }) {
+  return handlers.get('artifact:chatAttachmentUpload')!({}, SESSION, input);
 }
 
 function deleteAttachment(attachmentId: string) {
@@ -121,5 +125,40 @@ describe('artifact:attachmentList / attachmentDelete', () => {
 
     // Deleting again is false, not a throw — an already-gone row is fine.
     expect(deleteAttachment(a.id)).toBe(false);
+  });
+});
+
+describe('artifact:chatAttachmentUpload', () => {
+  it('stores any MIME type under the target session Chat files artifact and returns its path', () => {
+    const uploaded = uploadChatAttachment({
+      filename: 'notes.txt',
+      contentBase64: Buffer.from('clipboard bytes').toString('base64'),
+      contentType: 'text/plain',
+    });
+    const chatFiles = artifactManager.getForSession(SESSION).find(item => item.title === 'Chat files');
+
+    expect(chatFiles?.id).toBe(uploaded.artifactId);
+    expect(uploaded.filename).toBe('notes.txt');
+    expect(uploaded.mimeType).toBe('text/plain');
+    expect(uploaded.sizeBytes).toBe(15);
+    expect(uploaded.filePath).toBe(attachmentManager.getPath(uploaded.artifactId, uploaded.attachmentId));
+    expect(attachmentManager.readBytes(uploaded.artifactId, uploaded.attachmentId).toString()).toBe('clipboard bytes');
+  });
+
+  it('accepts a file exactly at the shared attachment cap', () => {
+    const uploaded = uploadChatAttachment({
+      filename: 'exact-limit.bin',
+      contentBase64: Buffer.alloc(MAX_ATTACHMENT_BYTES).toString('base64'),
+      contentType: 'application/octet-stream',
+    });
+
+    expect(uploaded.sizeBytes).toBe(MAX_ATTACHMENT_BYTES);
+  });
+
+  it('rejects oversized content before creating a Chat files artifact', () => {
+    const huge = 'A'.repeat(Math.ceil(10 * 1024 * 1024 * 4 / 3) + 1024);
+
+    expect(() => uploadChatAttachment({ filename: 'large.bin', contentBase64: huge })).toThrow('10MB');
+    expect(artifactManager.getForSession(SESSION).map(item => item.title)).toEqual(['Report']);
   });
 });

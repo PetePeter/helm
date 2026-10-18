@@ -3,6 +3,7 @@
 import { createPinia } from 'pinia';
 import { markRaw } from 'vue';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatJournalEntry } from '../../../src/mobile/mobile-chat-journal.js';
 import ChatPane from '../../../renderer/components/dock/ChatPane.vue';
@@ -10,10 +11,35 @@ import DockPane from '../../../renderer/components/dock/DockPane.vue';
 import { appState } from '../../../renderer/stores/app.js';
 import { useChatStore } from '../../../renderer/stores/chat.js';
 import { contextMenu, pasteChatContextMenuText } from '../../../renderer/stores/modal-bridge.js';
+import { MAX_ATTACHMENT_BYTES } from '../../../src/session/artifact-attachment-manager.js';
+
+function filePasteEvent(...files: File[]): Event {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  const items = files.map(file => ({ kind: 'file', type: file.type, getAsFile: () => file }));
+  Object.defineProperty(event, 'clipboardData', { value: { files, items } });
+  return event;
+}
+
+function fileItemPasteEvent(file: File): Event {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  const item = { kind: 'file', type: file.type, getAsFile: () => file };
+  Object.defineProperty(event, 'clipboardData', { value: { files: [], items: [item] } });
+  return event;
+}
+
+function textPasteEvent(): Event {
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { files: [], items: [{ kind: 'string', type: 'text/plain', getAsFile: () => null }] },
+  });
+  return event;
+}
 
 describe('ChatPane', () => {
   let wrapper: VueWrapper | null;
   let history: ReturnType<typeof vi.fn>;
+  let chatSend: ReturnType<typeof vi.fn>;
+  let chatAttachmentUpload: ReturnType<typeof vi.fn>;
   let chatEntryListeners: Set<(entry: ChatJournalEntry) => void>;
   let scrollToDescriptor: PropertyDescriptor | undefined;
   let innerHeightDescriptor: PropertyDescriptor | undefined;
@@ -37,6 +63,16 @@ describe('ChatPane', () => {
     ];
     appState.activeSessionId = 'one';
 
+    chatSend = vi.fn(async () => ({ ok: true }));
+    chatAttachmentUpload = vi.fn(async () => ({
+      artifactId: 'chat-files',
+      attachmentId: 'pasted-file',
+      filename: 'screen.png',
+      mimeType: 'image/png',
+      sizeBytes: 5,
+      filePath: 'C:/app-data/artifact-attachments/screen.png',
+    }));
+
     const entries = new Map<string, ChatJournalEntry[]>([
       ['one', [{ seq: 1, record: { sessionId: 'one', sessionName: 'First', text: 'first thread', at: 1_700_000_000_000 } }]],
       ['two', [{ seq: 2, record: { sessionId: 'two', sessionName: 'Second', text: 'second thread', at: 1_700_000_001_000 } }]],
@@ -45,12 +81,13 @@ describe('ChatPane', () => {
     (window as unknown as { helm: unknown }).helm = {
       chat: {
         chatHistory: history,
-        chatSend: async () => ({ ok: true }),
+        chatSend,
         onChatEntry: (listener: (entry: ChatJournalEntry) => void) => {
           chatEntryListeners.add(listener);
           return () => chatEntryListeners.delete(listener);
         },
       },
+      artifacts: { artifactChatAttachmentUpload: chatAttachmentUpload },
     };
   });
 
@@ -228,6 +265,142 @@ describe('ChatPane', () => {
     expect(input.value).toBe('pasted text');
     expect(input.selectionStart).toBe(7);
     expect(input.selectionEnd).toBe(7);
+  });
+
+  it('pastes plain clipboard text natively without uploading it', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const event = textPasteEvent();
+    wrapper.get('.chat-pane__input').element.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+    expect(chatAttachmentUpload).not.toHaveBeenCalled();
+  });
+
+  it('uploads a pasted image as a Chat file attachment and sends its stored path', async () => {
+    let finishUpload!: (attachment: {
+      artifactId: string;
+      attachmentId: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      filePath: string;
+    }) => void;
+    chatAttachmentUpload.mockImplementation(() => new Promise(resolve => { finishUpload = resolve; }));
+    const pinia = createPinia();
+    wrapper = mount(ChatPane, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    const file = new File(['abcde'], 'screen.png', { type: 'image/png' });
+    await wrapper.get('.chat-pane__input').setValue('inspect this image');
+    const event = fileItemPasteEvent(file);
+    wrapper.get('.chat-pane__input').element.dispatchEvent(event);
+    await nextTick();
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect((wrapper.get('.chat-pane__composer button[type="submit"]').element as HTMLButtonElement).disabled).toBe(true);
+    expect(wrapper.get('.chat-pane__paste-uploading').text()).toContain('screen.png');
+    expect(chatAttachmentUpload).toHaveBeenCalledWith('one', expect.objectContaining({
+      filename: 'screen.png',
+      contentType: 'image/png',
+    }));
+    const request = chatAttachmentUpload.mock.calls[0][1] as { contentBase64: string };
+    expect(atob(request.contentBase64)).toBe('abcde');
+
+    finishUpload({
+      artifactId: 'chat-files',
+      attachmentId: 'pasted-file',
+      filename: 'screen.png',
+      mimeType: 'image/png',
+      sizeBytes: 5,
+      filePath: 'C:/app-data/artifact-attachments/screen.png',
+    });
+    await flushPromises();
+
+    expect(wrapper.get('.chat-pane__selected-file').text()).toContain('screen.png');
+    expect(wrapper.get('.chat-pane__selected-file').text()).toContain('5 B');
+    await wrapper.get('.chat-pane__composer').trigger('submit');
+    await flushPromises();
+    expect(chatSend).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'one',
+      filePath: 'C:/app-data/artifact-attachments/screen.png',
+    }));
+  });
+
+  it('uploads non-image clipboard files with their original MIME type', async () => {
+    chatAttachmentUpload.mockResolvedValueOnce({
+      artifactId: 'chat-files',
+      attachmentId: 'pasted-pdf',
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 4,
+      filePath: 'C:/app-data/artifact-attachments/report.pdf',
+    });
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const file = new File(['%PDF'], 'report.pdf', { type: 'application/pdf' });
+    const event = filePasteEvent(file);
+    wrapper.get('.chat-pane__input').element.dispatchEvent(event);
+    await flushPromises();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(chatAttachmentUpload).toHaveBeenCalledWith('one', expect.objectContaining({
+      filename: 'report.pdf',
+      contentType: 'application/pdf',
+    }));
+    expect(wrapper.get('.chat-pane__selected-file').text()).toContain('report.pdf');
+  });
+
+  it('shows an upload error without blocking a text-only send', async () => {
+    chatAttachmentUpload.mockRejectedValue(new Error('disk full'));
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+    await wrapper.get('.chat-pane__input').setValue('send even though the file failed');
+
+    wrapper.get('.chat-pane__input').element.dispatchEvent(filePasteEvent(
+      new File(['bytes'], 'report.pdf', { type: 'application/pdf' }),
+    ));
+    await flushPromises();
+
+    expect(wrapper.get('.chat-pane__paste-error').text()).toContain('disk full');
+    expect((wrapper.get('.chat-pane__composer button[type="submit"]').element as HTMLButtonElement).disabled).toBe(false);
+    await wrapper.get('.chat-pane__composer').trigger('submit');
+    await flushPromises();
+    expect(chatSend).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'one',
+      text: 'send even though the file failed',
+    }));
+  });
+
+  it('shows an inline error and skips upload when a pasted file exceeds the attachment cap', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const file = new File([new Uint8Array(MAX_ATTACHMENT_BYTES + 1)], 'large.bin', { type: 'application/octet-stream' });
+    wrapper.get('.chat-pane__input').element.dispatchEvent(filePasteEvent(file));
+    await flushPromises();
+
+    expect(chatAttachmentUpload).not.toHaveBeenCalled();
+    expect(wrapper.get('.chat-pane__paste-error').text()).toContain('10MB');
+  });
+
+  it('reports multiple clipboard files and leaves upload unchanged until one is pasted', async () => {
+    wrapper = mount(ChatPane, { global: { plugins: [createPinia()] } });
+    await flushPromises();
+
+    const event = filePasteEvent(
+      new File(['one'], 'one.txt', { type: 'text/plain' }),
+      new File(['two'], 'two.pdf', { type: 'application/pdf' }),
+    );
+    wrapper.get('.chat-pane__input').element.dispatchEvent(event);
+    await nextTick();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(chatAttachmentUpload).not.toHaveBeenCalled();
+    expect(wrapper.get('.chat-pane__paste-error').text()).toContain('one file at a time');
   });
 
   it('grows and shrinks the composer at its 30vh limit and resets after sending', async () => {
