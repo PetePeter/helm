@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimesheetChartModel, buildTokenChartModel, columnLabel } from '../src/session/chart-model.js';
+import { buildTimesheetChartModel, buildTokenChartModel, chartSeriesColors, columnLabel } from '../src/session/chart-model.js';
 import type { Timesheet, TokenSheet } from '../src/session/time-tracker.js';
 
 const DAY0 = new Date(2026, 8, 28).getTime();
@@ -92,5 +92,14 @@ describe('ChartModel builders', () => {
 
     expect(new Set(model.series.map(({ color }) => color)).size).toBe(rows.length);
     expect(new TextEncoder().encode(JSON.stringify(model)).length).toBeLessThan(16 * 1024);
+  });
+});
+
+describe('chartSeriesColors past the palette', () => {
+  it('stays unique #rrggbb, which the Android client requires', () => {
+    const keys = Array.from({ length: 20 }, (_, i) => `cli:type-${i}`);
+    const colors = [...chartSeriesColors(keys).values()];
+    expect(colors.every(c => /^#[0-9a-f]{6}$/.test(c))).toBe(true);
+    expect(new Set(colors).size).toBe(keys.length);
   });
 });

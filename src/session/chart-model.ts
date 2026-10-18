@@ -73,12 +73,21 @@ function nextSeriesColor(key: string, used: Set<string>): string {
     for (const lightness of FALLBACK_LIGHTNESS) {
       for (let offset = 0; offset < 360; offset++) {
         const hue = (hash + offset * 137) % 360;
-        const color = `hsl(${hue}deg ${saturation}% ${lightness}%)`;
+        // Hex, not hsl(): the Android client only accepts #rrggbb.
+        const color = hslToHex(hue, saturation, lightness);
         if (!used.has(color)) return color;
       }
     }
   }
   throw new Error('Too many chart series for unique colours');
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number): string {
+  const s = saturation / 100, l = lightness / 100;
+  const k = (n: number) => (n + hue / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const channel = (n: number) => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
+  return '#' + [0, 8, 4].map(n => channel(n).toString(16).padStart(2, '0')).join('');
 }
 
 function hashSeriesKey(key: string): number {
