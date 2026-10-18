@@ -82,6 +82,15 @@ function requireOwnTodo(authContext: AuthContext, args: Record<string, unknown>,
   return own;
 }
 
+/** ETA tools only ever write the server-authenticated caller's own session. */
+function requireOwnEta(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+  const own = requireCallerSession(authContext, tool);
+  if (args.sessionId !== undefined && args.sessionId !== own) {
+    throw new Error(`${tool} only ${tool === 'session_eta_set' ? 'sets' : 'clears'} your own session's ETA.`);
+  }
+  return own;
+}
+
 /**
  * Resolve the TARGET session for the session-addressed artifact tools. Unlike
  * the artifact_* family — which trusts the caller's own authContext because the
@@ -736,6 +745,14 @@ export async function callMcpTool(
           : requireCallerSession(authContext, 'session_mission_set');
         return service.setSessionMission(target, asStringValue(args.text, 'text is required'));
       }
+      case 'session_eta_set':
+        return service.setSessionEta(requireOwnEta(authContext, args, name), {
+          minutes: args.minutes,
+          at: args.at,
+          note: args.note,
+        });
+      case 'session_eta_clear':
+        return service.clearSessionEta(requireOwnEta(authContext, args, name));
       case 'session_draft_get': {
         const target = typeof args.sessionId === 'string' && args.sessionId.trim()
           ? args.sessionId

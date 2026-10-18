@@ -4,6 +4,7 @@ import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, t
 import type { ConfigLoader } from '../config/loader.js';
 import type { PlanManager } from '../session/plan-manager.js';
 import type { SessionManager } from '../session/manager.js';
+import type { SessionEta } from '../types/session.js';
 import { SessionChangeFeed, type SessionFeedCursor } from '../session/session-change-feed.js';
 import type { PtyManager } from '../session/pty-manager.js';
 import type { TerminalReadMode } from '../session/terminal-output-buffer.js';
@@ -176,6 +177,8 @@ export interface SessionSummary {
   keepWarmUntilEpochMs?: number;
   /** The session's mission TL;DR, who set it, and when (epoch ms). */
   mission?: { text: string; setBy: 'user' | 'ai'; setAt: number };
+  /** The LLM's expected completion time, in epoch milliseconds. */
+  eta?: SessionEta;
   /** 'operator' marks the router-only "Helm" session. Voice clients (the
    *  phone's CallTarget) find the operator by this exact string. */
   role?: 'operator';
@@ -253,6 +256,8 @@ export interface SessionInfoResponse {
   your_working_dir: string;
   /** This session's mission TL;DR, or null when none is set (session_mission_set). */
   your_mission: { text: string; setBy: 'user' | 'ai'; setAt: number } | null;
+  /** This session's expected completion time, or null when none is set (session_eta_set). */
+  your_eta: SessionEta | null;
   /** The caller's measured model context, when its session is known. */
   context?: SessionContextSize;
   helm_workflow: string;
@@ -1549,6 +1554,14 @@ export class HelmControlService extends EventEmitter {
 
   setSessionMission(sessionRef: string, text: string) {
     return this.sessionService.setSessionMission(sessionRef, text);
+  }
+
+  setSessionEta(sessionRef: string, input: { minutes?: unknown; at?: unknown; note?: unknown }) {
+    return this.sessionService.setSessionEta(sessionRef, input);
+  }
+
+  clearSessionEta(sessionRef: string) {
+    return this.sessionService.clearSessionEta(sessionRef);
   }
 
   // ---------------------------------------------------------------------------

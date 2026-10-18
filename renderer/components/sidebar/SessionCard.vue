@@ -14,13 +14,14 @@ import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import { resolveContextLimits } from '../../../src/session/context-limits.js';
-import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, UserPromptSource } from '../../../src/types/session.js';
 import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextSparkline from './ContextSparkline.vue';
 import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
+import { formatSessionEta } from '../../session-eta.js';
 
 function openSessionMenu(event: MouseEvent): void {
   showSessionMenu(props.session.id, { x: event.clientX, y: event.clientY });
@@ -59,6 +60,7 @@ export interface SessionCardSession {
   lastUserPromptSource?: UserPromptSource;
   /** Keep-warm is on until this epoch ms. */
   keepWarmUntil?: number;
+  eta?: SessionEta;
 }
 
 export type SessionCardFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -155,6 +157,14 @@ const userPromptTimerTooltip = computed(() => {
   const at = props.session.lastUserPromptAt;
   const origin = source === 'phone' ? 'phone' : 'terminal';
   return `Time since your last submitted prompt from ${origin}${at !== undefined ? `\nSubmitted: ${formatClockTime(at)}` : ''}`;
+});
+
+const etaTimer = computed(() => {
+  const eta = props.session.eta;
+  if (!eta) return null;
+  // The parent's existing one-second elapsed timer refreshes this computed too.
+  void props.elapsedText;
+  return formatSessionEta(eta);
 });
 
 // --- Prompt-cache fade: the fill drains over the CLI's short cache window ---
@@ -441,6 +451,12 @@ function onCardClick(e: MouseEvent): void {
         </svg>
         <span>{{ userPromptElapsedText }}</span>
       </span>
+      <span
+        v-if="etaTimer"
+        class="session-timer session-eta-timer"
+        :class="{ 'session-eta-timer--late': etaTimer.isLate }"
+        :title="etaTimer.title"
+      >{{ etaTimer.text }}</span>
 
       <!-- Copy session id button -->
       <button

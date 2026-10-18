@@ -163,6 +163,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mission-statement.md](docs/mission-statement.md) | Per-session mission TL;DR — pinned bar above the terminal, `session_mission_set`, 500-char limit, `[HELM_MISSION]` hook reminder |
 | [docs/draft.md](docs/draft.md) | Per-session draft — one plain-text pad the user (dock pane) and the session's LLM (`session_draft_*`) both write, stale-write refusal, 64 KB cap, deleted with the session |
 | [docs/todos.md](docs/todos.md) | Per-session LLM-maintained todo list — `session_todo_*`, read-only Todos pane, done/total session-row chip, and compaction/reset context |
+| [docs/session-eta.md](docs/session-eta.md) | LLM-set session finish estimate, persisted MCP record, desktop row timer, and hook reminder |
 | [docs/handover.md](docs/handover.md) | Compaction handover — a note carried across a session's own `/compact`, pasted back on the next lull |
 | [docs/quick-compact-switch-cli.md](docs/quick-compact-switch-cli.md) | Quick Compact + Switch CLI — strip the hook-reported transcript, reload it into a cleared session or a different CLI |
 | [docs/mess.md](docs/mess.md) | Durable local project conversation, ordered cursors, best-effort reminders, and read-only observer pane |

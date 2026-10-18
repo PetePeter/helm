@@ -959,6 +959,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-user-prompt-timer { color: #bbb; }
 .session-user-prompt-timer.source-phone .session-timer-icon { color: #d0b8f5; }
 .session-user-prompt-timer.source-terminal .session-timer-icon { color: #9de0d4; }
+.session-eta-timer--late { color: var(--warning, #b58900); }
 
 /* Top row: dot, state, badges, timer, actions */
 .session-top-row {

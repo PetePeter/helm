@@ -74,6 +74,8 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'session_set_keep_warm', title: 'Keep Session Cache Warm', description: 'Turn prompt-cache keep-warm on or off for your session or a target session.' },
     { name: 'session_set_locked', title: 'Set Session Lock', description: 'Set or clear a durable lock that prevents deliberate session closure.' },
     { name: 'session_mission_set', title: 'Set Session Mission', description: 'Set the session mission — a TL;DR (max 500 chars) of what it is meant to be doing, pinned above its terminal. Defaults to your own session; an empty text clears it.' },
+    { name: 'session_eta_set', title: 'Set Session ETA', description: 'Set your current request finish estimate using positive minutes from now or an absolute epoch-millisecond time.' },
+    { name: 'session_eta_clear', title: 'Clear Session ETA', description: 'Clear your current request finish estimate.' },
     { name: 'session_draft_get', title: 'Read Session Draft', description: 'Read a session draft (yours by default): the plain-text pad the user and the session LLM both write. Returns text and revision.' },
     { name: 'session_draft_set', title: 'Replace Session Draft', description: 'Replace your own draft text. Pass the revision you read; a stale write is refused with the current text. Max 65536 bytes.' },
     { name: 'session_draft_append', title: 'Append To Session Draft', description: 'Add text on a new line at the end of your own draft. No revision needed.' },

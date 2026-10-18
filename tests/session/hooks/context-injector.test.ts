@@ -180,6 +180,21 @@ describe('SessionStart injection', () => {
 });
 
 describe('UserPromptSubmit', () => {
+  it('adds one ETA instruction beside the todo reminder', async () => {
+    const { injector } = makeInjector({ getTodos: () => [] });
+    const context = await injector.promptContext(
+      's1',
+      'Take on a multi-step task',
+      new Set(['session_todo_add', 'session_eta_set']),
+    );
+
+    expect(context).toContain('[HELM_TODOS]');
+    expect(context).toContain('[HELM_ETA]');
+    expect(context!.match(/\[HELM_ETA\]/g)).toHaveLength(1);
+    expect(context).toContain('session_eta_set');
+    expect(context).toContain('multi-step work');
+  });
+
   it('sends NOTHING for a plain prompt with no hint and nothing outstanding', async () => {
     const { injector } = makeInjector();
     expect(await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'rename the variable' }))).toBeNull();

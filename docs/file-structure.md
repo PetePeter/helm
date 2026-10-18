@@ -44,6 +44,7 @@ src/
 │   ├── format-tokens.ts        # Compact axis labels and exact token tooltip values
 │   ├── time-tracker.ts         # Project/folder 5-minute time and token ledgers, period queries, and token totals
 │   ├── mission.ts              # Session mission validator (500-char limit, trim/clear) + bar-height clamp, shared by IPC and MCP
+│   ├── session-eta.ts          # Session ETA validation and durable record guard for MCP and persistence
 │   ├── handover-delivery.ts    # Holds a session_compact handover across the compaction; pastes it back on the first inactive edge (floor 15s / ceiling 5min)
 │   ├── pipeline-queue.ts       # Waiting→implementing auto-handoff queue (FIFO)
 │   ├── notification-manager.ts # Windows toast notifications (Electron Notification API, activity-change triggers for implementing/planning sessions, dedup, click-to-focus)
@@ -150,6 +151,7 @@ renderer/
 ├── onboarding-settings-topics.ts # Grouped navigation from first-run setup into existing Settings pages
 ├── sort-logic.ts               # Pure sort functions for sessions + bindings
 ├── state-colors.ts             # Activity-level-to-color mapping (getActivityColor, ACTIVITY_COLORS). Used by session cards and group activity indicators.
+├── session-eta.ts              # Local-time ETA, relative tooltip, and late-state formatter for desktop rows
 ├── tab-cycling.ts              # Ctrl+Tab / Ctrl+Shift+Tab terminal cycling resolver
 ├── components/
 │   ├── index.ts                # Barrel export of all Vue SFC components

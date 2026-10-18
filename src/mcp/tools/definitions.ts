@@ -1189,6 +1189,27 @@ export const MCP_TOOLS: McpTool[] = [
     },
   },
   {
+    name: 'session_eta_set',
+    title: 'Set Session ETA',
+    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. The caller identity comes from Helm, not arguments.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        minutes: { type: 'number', exclusiveMinimum: 0, description: 'Positive minutes from now.' },
+        at: { type: 'number', description: 'Absolute completion time as epoch milliseconds.' },
+        note: { type: 'string', description: 'Optional short note shown in the desktop row tooltip.' },
+      },
+      oneOf: [{ required: ['minutes'] }, { required: ['at'] }],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_eta_clear',
+    title: 'Clear Session ETA',
+    description: 'Clear the expected completion time for YOUR OWN current request.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
     name: 'session_draft_get',
     title: 'Read Session Draft',
     description: 'Read a session draft: one plain-text pad per session that the user types in (a Helm tool window) and that session\'s own LLM writes too. Use it for the running notes of this session: a to-do list, numbers to remember, something the user pasted for you. It lives and dies with the session; lasting knowledge belongs in memory_*. Omit sessionId to read your own. Returns text and the revision to pass to session_draft_set.',

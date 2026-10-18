@@ -14,7 +14,7 @@ describe('getSessionInfo', () => {
   describe('response shape', () => {
     it('has identity, workflow, artifact, and durable memory guidance', () => {
       const info = getSessionInfo(mgr, authContext);
-      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_mission', 'your_session_id', 'your_working_dir']);
+      expect(Object.keys(info).sort()).toEqual(['artifact_viewer', 'chat', 'durable_memory', 'helm_workflow', 'knowledge_model', 'your_eta', 'your_mission', 'your_session_id', 'your_working_dir']);
       expect(info.durable_memory.ownership).toContain('authenticated Helm session');
       expect(info.knowledge_model.memory).toContain('project');
     });
@@ -39,6 +39,13 @@ describe('getSessionInfo', () => {
       const mission = { text: 'ship it', setBy: 'ai' as const, setAt: 5 };
       const withMission = { getSession: () => ({ workingDir: '/p', mission }) } as any;
       expect(getSessionInfo(withMission, authContext).your_mission).toEqual(mission);
+    });
+
+    it('your_eta is null without an estimate and mirrors the caller estimate', () => {
+      expect(getSessionInfo(mgr, authContext).your_eta).toBeNull();
+      const eta = { at: 10_000, setAt: 5_000, note: 'build' };
+      const withEta = { getSession: () => ({ workingDir: '/p', eta }) } as any;
+      expect(getSessionInfo(withEta, authContext).your_eta).toEqual(eta);
     });
 
     it('helm_workflow points to startup skill', () => {

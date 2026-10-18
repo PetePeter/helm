@@ -289,6 +289,17 @@ Delete is only for completed items. Mark open work done first. The
 and session mission current. Helm supplies it again after session resets; see
 [todos.md](todos.md) for storage and lifecycle details.
 
+## Setting your session ETA
+
+For multi-step work, use `session_eta_set` with positive `minutes` from now or
+an absolute `at` epoch-millisecond timestamp. Supply exactly one; `note` is
+optional. Update the ETA when your expected finish changes, or clear it with
+`session_eta_clear()`. The estimate is returned by `session_info.your_eta` and
+`session_list` / `session_get` as `eta`. The desktop row shows local time and
+turns amber with `late Nm` after it passes; the phone has no ETA display.
+
+See [session-eta.md](session-eta.md) for the record and display details.
+
 ## Checking your context size
 
 `session_info` includes your context size at startup. For routine checks, call `session_get` with `{ "sessionId": process.env.HELM_SESSION_ID }`; it returns the same positive token count, source, and transcript timestamp in a smaller response. If the count is not available, inspect `context.reason`; do not infer a size from earlier chat badges.

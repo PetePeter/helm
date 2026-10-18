@@ -21,6 +21,11 @@ The tool returns a `SessionInfoResponse` object with these fields:
 
 `session_info` includes a `context` object for the caller's own session. `session_get` includes the same object for its selected session. A known result has `known: true`, a positive `tokens` count, `source` (`transcript`, `api`, or `statusline`), and optional `window`, rounded `percent`, and `measuredAtIso`. Transcript measurements use the timestamp on the usage record; API measurements are the server's latest reported count; Claude statusline reports include the model's actual context window.
 
+The caller's current mission and expected finish time are also returned as
+`your_mission` and `your_eta` (either is `null` when unset). Use
+`session_eta_set` and `session_eta_clear` to maintain `your_eta` for your own
+multi-step request; see [session-eta.md](session-eta.md).
+
 When Helm cannot report a value, `context` is `{ "known": false, "reason": ... }`. Reasons include `no-transcript` (no transcript path or it cannot be read), `no-usage-yet` (a readable transcript has no usage record yet), `unsupported-cli` (the CLI does not report live context usage), `remote` (the session is hosted by a peer), and `api-unavailable` (an API session process is not available). Helm omits `context` when a global-token caller has no session. It never reports zero as a known size.
 
 Context lookup is deliberately limited to `session_info` and `session_get`: reading a CLI transcript may inspect up to 1 MB, so `session_list` and the session feed do not include it.

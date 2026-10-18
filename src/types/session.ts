@@ -144,6 +144,8 @@ export interface SessionInfo {
    *  or the AI (MCP session_mission_set); current value only, no history.
    *  Persists across restarts and recycle-bin restore. See docs/mission-statement.md. */
   mission?: SessionMission;
+  /** The LLM's expected completion time for its current request. Persists across restarts. */
+  eta?: SessionEta;
   /** Per-session height (px) of the resizable mission bar. Persists. */
   missionBarHeight?: number;
   /** System role. 'operator' marks the router-only "Helm" singleton voice
@@ -176,6 +178,13 @@ export interface SessionMission {
   setBy: 'user' | 'ai';
   /** Epoch ms of the last change. */
   setAt: number;
+}
+
+/** An LLM-set completion estimate, stored as epoch milliseconds. */
+export interface SessionEta {
+  at: number;
+  setAt: number;
+  note?: string;
 }
 
 /**

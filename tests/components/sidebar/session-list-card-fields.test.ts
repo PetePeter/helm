@@ -10,7 +10,7 @@ import { mount } from '@vue/test-utils';
 import SessionList from '../../../renderer/components/sidebar/SessionList.vue';
 
 describe('SessionList → SessionCard fields', () => {
-  it('passes frozen and lastPromptAt through to the card', () => {
+  it('passes persisted session state through to the card', () => {
     const seen: Array<Record<string, unknown>> = [];
     const CardStub = {
       props: ['session'],
@@ -21,7 +21,10 @@ describe('SessionList → SessionCard fields', () => {
       props: {
         hasSessions: true,
         groups: [{ dirPath: '/repo', displayName: '/repo', collapsed: false, sessions: [
-          { id: 's1', name: 'a', cliType: 'claude-code', frozen: true, lastPromptAt: 42 },
+          {
+            id: 's1', name: 'a', cliType: 'claude-code', frozen: true, lastPromptAt: 42,
+            eta: { at: 90_000, setAt: 30_000, note: 'review' },
+          },
         ] }],
         directories: [],
         navIndexMap: new Map<string, number>(),
@@ -45,6 +48,6 @@ describe('SessionList → SessionCard fields', () => {
       },
       global: { stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
-    expect(seen[0]).toMatchObject({ frozen: true, lastPromptAt: 42 });
+    expect(seen[0]).toMatchObject({ frozen: true, lastPromptAt: 42, eta: { at: 90_000, setAt: 30_000, note: 'review' } });
   });
 });

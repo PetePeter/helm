@@ -6,6 +6,8 @@ import type { SessionManager } from '../../session/manager.js';
 import type { PtyManager } from '../../session/pty-manager.js';
 import type { TerminalReadMode, TerminalTail } from '../../session/terminal-output-buffer.js';
 import type { SessionInfo } from '../../types/session.js';
+import type { SessionEtaInput } from '../../session/session-eta.js';
+import { createSessionEta } from '../../session/session-eta.js';
 import type { SessionDetails, SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { HelmSessionPlanService } from './helm-session-plan-service.js';
@@ -310,6 +312,23 @@ export class HelmSessionService {
     return { ok: true, mission: updated.mission ?? null };
   }
 
+  /** Set the authenticated LLM's current completion estimate. */
+  setSessionEta(sessionRef: string, input: SessionEtaInput): { ok: true; eta: SessionInfo['eta'] } {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    const eta = createSessionEta(input);
+    this.sessionManager.updateSession(session.id, { eta });
+    return { ok: true, eta };
+  }
+
+  /** Clear the authenticated LLM's current completion estimate. */
+  clearSessionEta(sessionRef: string): { ok: true; eta: null } {
+    const session = this.findSession(sessionRef);
+    if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    this.sessionManager.updateSession(session.id, { eta: undefined });
+    return { ok: true, eta: null };
+  }
+
   renameSession(sessionRef: string, name: string): { ok: true } {
     const session = this.findSession(sessionRef);
     if (!session) {
@@ -416,6 +435,7 @@ export class HelmSessionService {
       } } : {}),
       ...(cliEntry?.noPromptCache ? { noPromptCache: true } : {}),
       ...(session.mission ? { mission: { ...session.mission } } : {}),
+      ...(session.eta ? { eta: { ...session.eta } } : {}),
       ...(session.role ? { role: session.role } : {}),
       ...(session.apiTool ? { apiTool: true } : {}),
       ...(session.comfyUiTool ? { comfyUiTool: true } : {}),

@@ -12,6 +12,7 @@ import { atomicWriteFileSync, isNumber, isRecord, isString } from './persistence
 import { normalizeProjectPath } from './project-identity.js';
 import { hydrateChatBindings, serializeChatBindings } from './chat/chat-bindings.js';
 import { isSessionMission } from './mission.js';
+import { isSessionEta } from './session-eta.js';
 import { isContextUsageSample } from './context-usage-history.js';
 
 function serializeSession(s: SessionInfo): Record<string, unknown> {
@@ -56,6 +57,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     ...(isHookStall(s.hookStall) ? { hookStall: s.hookStall } : {}),
     // The mission TL;DR and its bar height (docs/mission-statement.md).
     ...(isSessionMission(s.mission) ? { mission: s.mission } : {}),
+    ...(isSessionEta(s.eta) ? { eta: s.eta } : {}),
     ...(isNumber(s.missionBarHeight) ? { missionBarHeight: s.missionBarHeight } : {}),
     // System role (docs/voice-operator.md): the operator must survive a restart
     // or a second "Helm" would be spawned next launch.
@@ -140,6 +142,9 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
         }
         if (session.mission !== undefined && !isSessionMission(session.mission)) {
           delete session.mission;
+        }
+        if (session.eta !== undefined && !isSessionEta(session.eta)) {
+          delete session.eta;
         }
         if (session.missionBarHeight !== undefined && !isNumber(session.missionBarHeight)) {
           delete session.missionBarHeight;
