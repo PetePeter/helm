@@ -89,7 +89,7 @@ internal object TimeChartDocument {
         *{box-sizing:border-box}
         html,body{width:100%;height:100%;margin:0;padding:0;background:transparent}
         body{display:flex;flex-direction:column;overflow:hidden;font-family:Roboto,Arial,sans-serif}
-        #plot{position:relative;flex:none;height:calc(100vh - 56px);overflow:hidden}
+        #plot{position:relative;flex:none;width:100%;aspect-ratio:700/290;overflow:hidden}
         #chart{display:block;width:100%;height:100%}
         #legend{position:relative;z-index:1;order:-1;display:flex;flex:0 0 56px;align-items:center;gap:8px;overflow-x:auto;overflow-y:hidden;
           padding:4px 0;touch-action:pan-x;scrollbar-width:none}
@@ -98,12 +98,17 @@ internal object TimeChartDocument {
           padding:0 14px;border:1px solid __GRID__;border-radius:24px;background:__SURFACE__;color:__TEXT__;
           font:500 14px Roboto,Arial,sans-serif;white-space:nowrap;touch-action:manipulation}
         #legend button[aria-pressed=false]{opacity:.45}
+        #empty{margin:auto;color:__MUTED__;font-size:14px}
         #legend .swatch{width:10px;height:10px;flex:none;border-radius:2px}
     """
 
     private const val INITIALISE = """
         (function(){
           const model = JSON.parse(document.getElementById('chart-model').textContent);
+          if (!model.series.length || model.series.every(series => series.values.every(value => Number(value) === 0))) {
+            document.body.innerHTML = '<p id="empty">No activity in this period</p>';
+            return;
+          }
           const exactTokens = value => new Intl.NumberFormat('en-US').format(value);
           const compactTokens = value => {
             if (value >= 1e6) return Number((value / 1e6).toFixed(2)) + 'M';
