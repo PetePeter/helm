@@ -308,6 +308,10 @@ nothing) is the common case by design:
   accompany the event without changing that decision. G8's loop decision
   (below) runs BEFORE this nudge on the same event; exactly one block is
   ever emitted per Stop.
+  Open todos add their own reminder to the same block: it lists them and asks
+  the LLM to finish, mark done or delete them. It fires once per user turn
+  (the next prompt re-arms it), so a todo that waits on someone else costs
+  one extra turn, not a loop.
 
 ```mermaid
 flowchart LR

@@ -129,6 +129,8 @@ export class ContextInjector {
   private readonly nudged = new Map<string, Set<string>>();
   /** The one-shot Stop ledger: a session is nudged at most once. CAP = 1. */
   private readonly stopNudged = new Set<string>();
+  /** Open-todo Stop reminder: once per user turn, re-armed by the next prompt. */
+  private readonly stopTodosNudged = new Set<string>();
   /** Sessions whose telegram-mode entry the injected mode block covered. */
   private readonly telegramModeAnnounced = new Set<string>();
 
@@ -144,6 +146,7 @@ export class ContextInjector {
   forgetSession(sessionId: string): void {
     this.nudged.delete(sessionId);
     this.stopNudged.delete(sessionId);
+    this.stopTodosNudged.delete(sessionId);
     this.telegramModeAnnounced.delete(sessionId);
   }
 
@@ -157,6 +160,8 @@ export class ContextInjector {
     // is a new mode entry and must be announced again, exactly as the
     // prepended first-contact block would be.
     if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
+
+    if (event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed') this.stopTodosNudged.delete(session.id);
 
     let response: InjectorResponse;
     switch (event.event) {
@@ -443,16 +448,23 @@ export class ContextInjector {
 
     const plan = this.deps.getClaimedPlan(session.id);
     const unsettled = session.aiagentState === undefined;
-    if (!plan && !unsettled) return null;
-    if (this.stopNudged.has(session.id)) return null; // second Stop ALWAYS passes
-    this.stopNudged.add(session.id);
+    // The plan/state nudge fires once per session (the second Stop always passes);
+    // the todo reminder once per user turn.
+    const nudge = (plan || unsettled) && !this.stopNudged.has(session.id);
+    const openTodos = this.stopTodosNudged.has(session.id)
+      ? []
+      : (this.deps.getTodos?.(session.id) ?? []).filter(todo => todo.status === 'open');
+    if (!nudge && openTodos.length === 0) return null;
 
     const lines: string[] = [];
-    if (plan) {
-      lines.push(this.injection('stopPlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
+    if (nudge) {
+      this.stopNudged.add(session.id);
+      if (plan) lines.push(this.injection('stopPlanNudge', { humanId: plan.humanId ?? '?', title: plan.title }));
+      if (unsettled) lines.push(this.injection('stopAiagentNudge'));
     }
-    if (unsettled) {
-      lines.push(this.injection('stopAiagentNudge'));
+    if (openTodos.length) {
+      this.stopTodosNudged.add(session.id);
+      lines.push(this.injection('stopTodosNudge', { todos: openTodos.map(todo => `- ${todo.text}`).join('\n') }));
     }
     logger.info(`[HookInject] Stop nudge session=${session.id} (${session.name}): blocked once`);
     return { statusCode: 200, body: encodeStopBlock(event, lines.join('\n')) };

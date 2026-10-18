@@ -170,6 +170,14 @@ export const HOOK_INJECTION_DEFINITIONS = [
       'Your AIAGENT state is unset — call session_set_aiagent_state (e.g. "completed") before stopping.',
   },
   {
+    id: 'stopTodosNudge',
+    label: 'Open todos stop nudge',
+    group: 'Stop',
+    description: 'Reminder, once per user turn, not to stop with open todos. Values: {{todos}}.',
+    defaultTemplate:
+      'You are stopping with open todos:\n{{todos}}\nFinish them, mark finished ones with session_todo_done, delete ones no longer wanted with session_todo_delete, then stop again. Leave a todo open only if it waits on someone else.',
+  },
+  {
     id: 'amberContextAlert',
     label: 'Amber context alert',
     group: 'Context alerts',

@@ -431,6 +431,30 @@ describe('Stop — the one-shot nudge', () => {
     expect(await injector.respond(hookEvent({ event: 'SessionStart', helmSessionId: null }))).toBeNull();
   });
 
+  it('reminds of open todos once per user turn, never of done ones', async () => {
+    const { injector } = makeInjector({
+      getTodos: () => [
+        { id: 't1', text: 'Wire the chart', status: 'open', createdAt: 1 },
+        { id: 't2', text: 'Already shipped', status: 'done', createdAt: 2, doneAt: 3 },
+      ],
+    });
+    const first = await injector.respond(hookEvent({ event: 'Stop' }));
+    const reason = (first!.body as { reason: string }).reason;
+    expect(reason).toContain('Wire the chart');
+    expect(reason).not.toContain('Already shipped');
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+
+    await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'next' }));
+    expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
+  });
+
+  it('lets a Stop pass when every todo is done', async () => {
+    const { injector } = makeInjector({
+      getTodos: () => [{ id: 't1', text: 'Done', status: 'done', createdAt: 1, doneAt: 2 }],
+    });
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+  });
+
   it('forgets a session with its ledgers', async () => {
     const { injector } = makeInjector(
       { getClaimedPlan: () => ({ humanId: 'P-0785', title: 'Hook G4', status: 'coding' }) },
