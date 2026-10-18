@@ -24,10 +24,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import com.potatomotato.helm.R
 import com.potatomotato.helm.data.TimeAnswer
 import com.potatomotato.helm.data.TimeAsk
+import com.potatomotato.helm.data.TimeChartModel
 import com.potatomotato.helm.data.TimePeriod
 import com.potatomotato.helm.data.TimeProjectTotal
 import com.potatomotato.helm.data.TimeRow
@@ -45,6 +49,7 @@ import com.potatomotato.helm.data.TimeTokenSheet
 import com.potatomotato.helm.data.TimeTokenRow
 import com.potatomotato.helm.data.TimeView
 import com.potatomotato.helm.ui.artifacts.ContainedWebView
+import com.potatomotato.helm.ui.artifacts.HtmlContainment
 import com.potatomotato.helm.ui.components.LoadBody
 import com.potatomotato.helm.ui.components.LoadView
 import com.potatomotato.helm.ui.theme.HelmColors
@@ -55,6 +60,7 @@ import java.math.RoundingMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * The Statistics surface — the user's time per project/folder or tokens per CLI
@@ -131,9 +137,11 @@ fun TimeScreen(
             onRefresh = { onFetch(ask) },
         ) { answer ->
             when (answer) {
-                is TimeAnswer.Projects -> ProjectTotals(answer.projects, answer.chartHtml) { onAsk(ask.copy(projectKey = it.projectKey, projectName = it.projectName)) }
-                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet, answer.chartHtml)
-                is TimeAnswer.Tokens -> TokenSheetView(ask.period, answer.sheet, answer.chartHtml)
+                is TimeAnswer.Projects -> ProjectTotals(answer.projects, answer.chartModel, answer.chartHtml) {
+                    onAsk(ask.copy(projectKey = it.projectKey, projectName = it.projectName))
+                }
+                is TimeAnswer.Sheet -> FolderSheet(ask.period, answer.sheet, answer.chartModel, answer.chartHtml)
+                is TimeAnswer.Tokens -> TokenSheetView(ask.period, answer.sheet, answer.chartModel, answer.chartHtml)
             }
         }
     }
@@ -154,9 +162,16 @@ private fun Toggle(text: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ProjectTotals(projects: List<TimeProjectTotal>, chartHtml: String?, onOpen: (TimeProjectTotal) -> Unit) {
+private fun ProjectTotals(
+    projects: List<TimeProjectTotal>,
+    chartModel: TimeChartModel?,
+    chartHtml: String?,
+    onOpen: (TimeProjectTotal) -> Unit,
+) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it, legendRows = 1) } }
+        if (chartModel != null || chartHtml != null) {
+            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = false, fallbackLegendRows = 1) }
+        }
         item { TableHeader(stringResource(R.string.time_col_project), includeTokens = true) }
         items(projects, key = { it.projectKey }) { project ->
             TableRow(project.projectName, project.userMinutes, project.aiMinutes, onClick = { onOpen(project) }, tokens = project.tokens)
@@ -174,29 +189,74 @@ private fun ProjectTotals(projects: List<TimeProjectTotal>, chartHtml: String?, 
 }
 
 @Composable
-private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartHtml: String?) {
+private fun FolderSheet(period: TimePeriod, sheet: TimeSheet, chartModel: TimeChartModel?, chartHtml: String?) {
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it, legendRows = 1) } }
+        if (chartModel != null || chartHtml != null) {
+            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = false, fallbackLegendRows = 1) }
+        }
         item { Folder(stringResource(R.string.time_total), TimeRow("", sheet.totalUser, sheet.totalAi, sheet.totalTokens), sheet.columns, period) }
         items(sheet.rows, key = { it.dir }) { row -> Folder(row.dir, row, sheet.columns, period) }
     }
 }
 
 @Composable
-private fun TokenSheetView(period: TimePeriod, sheet: TimeTokenSheet, chartHtml: String?) {
+private fun TokenSheetView(period: TimePeriod, sheet: TimeTokenSheet, chartModel: TimeChartModel?, chartHtml: String?) {
     val rows = visibleTokenRows(sheet)
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
-        chartHtml?.let { item { TimeChart(it, legendRows = rows.size) } }
-        item { TokenTable(period, sheet, rows) }
+        if (chartModel != null || chartHtml != null) {
+            item { TimeChartOrFallback(chartModel, chartHtml, stackedTokens = true, fallbackLegendRows = rows.size) }
+        }
+        item { TokenTable(period, sheet, rows, chartModel) }
     }
 }
 
-/** The shared chart markup, sized to its 700x290 plot plus the supplied legend rows. */
 @Composable
-private fun TimeChart(html: String, legendRows: Int) {
+private fun TimeChartOrFallback(
+    chartModel: TimeChartModel?,
+    chartHtml: String?,
+    stackedTokens: Boolean,
+    fallbackLegendRows: Int,
+) {
+    if (chartModel != null) {
+        TimeChart(chartModel, stackedTokens)
+    } else if (chartHtml != null) {
+        LegacyTimeChart(chartHtml, fallbackLegendRows)
+    }
+}
+
+@Composable
+private fun TimeChart(model: TimeChartModel, stackedTokens: Boolean) {
+    val context = LocalContext.current
+    val chartBundle = remember(context) {
+        context.assets.open(CHART_ASSET).bufferedReader().use { it.readText() }
+    }
+    val theme = TimeChartTheme(
+        text = HelmColors.Txt.toCssHex(),
+        textMuted = HelmColors.Dim.toCssHex(),
+        grid = HelmColors.Line.toCssHex(),
+        tooltip = HelmColors.Surface2.toCssHex(),
+        surface = HelmColors.Surface.toCssHex(),
+    )
+    val html = remember(model, chartBundle, theme, stackedTokens) {
+        TimeChartDocument.build(model, chartBundle, theme, stackedTokens)
+    }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
         ContainedWebView(
-            html = "<body style=\"margin:0\">$html</body>",
+            html = html,
+            modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value, legendRows = 1).dp),
+        )
+    }
+}
+
+/** Old desktop builds can still send their static SVG while they are upgraded. */
+@Composable
+private fun LegacyTimeChart(html: String, legendRows: Int) {
+    val containedHtml = remember(html) {
+        HtmlContainment.injectCsp("<body style=\"margin:0\">$html</body>")
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
+        ContainedWebView(
+            html = containedHtml,
             modifier = Modifier.fillMaxWidth().height(chartHeightDp(maxWidth.value, legendRows).dp),
         )
     }
@@ -210,16 +270,33 @@ internal fun chartHeightDp(widthDp: Float, legendRows: Int): Float =
 internal fun visibleTokenRows(sheet: TimeTokenSheet): List<TimeTokenRow> =
     sheet.rows.filter { it.tokens.sum() != 0L }
 
+internal fun tokenChartSeriesColor(model: TimeChartModel?, cliType: String): String? =
+    model?.series?.firstOrNull { it.key == "cli:$cliType" }?.color?.takeIf(HEX_CHART_COLOR::matches)
+
+private fun Color.toCssHex(): String = String.format(Locale.ROOT, "#%06X", toArgb() and 0x00FFFFFF)
+
+private fun parseChartColor(value: String): Color? {
+    if (!HEX_CHART_COLOR.matches(value)) return null
+    val rgb = value.substring(1).toLongOrNull(16) ?: return null
+    return Color(
+        red = ((rgb shr 16) and 0xFF).toFloat() / 255,
+        green = ((rgb shr 8) and 0xFF).toFloat() / 255,
+        blue = (rgb and 0xFF).toFloat() / 255,
+    )
+}
+
 private const val CHART_WIDTH = 700f
 private const val CHART_HEIGHT = 290f
-private const val CHART_LEGEND_ROW_HEIGHT = 28f
+private const val CHART_LEGEND_ROW_HEIGHT = 48f
 private const val CHART_LEGEND_GAP = 8f
+private const val CHART_ASSET = "chartjs/chart.umd.min.js"
+private val HEX_CHART_COLOR = Regex("^#[0-9a-fA-F]{6}$")
 
 private val TokenLabelColumn = 136.dp
 private val TokenValueColumn = 76.dp
 
 @Composable
-private fun TokenTable(period: TimePeriod, sheet: TimeTokenSheet, rows: List<TimeTokenRow>) {
+private fun TokenTable(period: TimePeriod, sheet: TimeTokenSheet, rows: List<TimeTokenRow>, chartModel: TimeChartModel?) {
     val tableWidth = TokenLabelColumn + TokenValueColumn * (sheet.columns.size + 1)
     Column(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
         Row(
@@ -262,11 +339,14 @@ private fun TokenTable(period: TimePeriod, sheet: TimeTokenSheet, rows: List<Tim
                     modifier = Modifier.width(TokenLabelColumn).padding(end = HelmSpacing.Sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val seriesColor = tokenChartSeriesColor(chartModel, row.cliType)
+                        ?.let(::parseChartColor)
+                        ?: HelmColors.Statistics.Series[index % HelmColors.Statistics.Series.size]
                     Spacer(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(HelmColors.Statistics.Series[index % HelmColors.Statistics.Series.size]),
+                            .background(seriesColor),
                     )
                     Spacer(modifier = Modifier.width(HelmSpacing.Xs))
                     Text(

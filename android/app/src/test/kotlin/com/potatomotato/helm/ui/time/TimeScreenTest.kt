@@ -2,6 +2,10 @@ package com.potatomotato.helm.ui.time
 
 import com.potatomotato.helm.data.TimeTokenRow
 import com.potatomotato.helm.data.TimeTokenSheet
+import com.potatomotato.helm.data.TimeChartAxisKind
+import com.potatomotato.helm.data.TimeChartModel
+import com.potatomotato.helm.data.TimeChartSeries
+import com.potatomotato.helm.data.TimeChartSeriesType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -23,11 +27,25 @@ class TimeScreenTest {
     }
 
     @Test
-    fun `chart viewport reserves plot height and grows for wrapped legend rows`() {
+    fun `token row colours follow chart model keys instead of the visible row order`() {
+        val model = TimeChartModel(
+            columns = listOf(1L),
+            labels = listOf("today"),
+            series = listOf(
+                TimeChartSeries("cli:second", "Second", "#abcdef", TimeChartSeriesType.BAR, TimeChartAxisKind.TOKENS, listOf(1L)),
+            ),
+        )
+
+        assertEquals("#abcdef", tokenChartSeriesColor(model, "second"))
+        assertEquals(null, tokenChartSeriesColor(model, "first"))
+    }
+
+    @Test
+    fun `chart viewport reserves plot height and one touch-sized scrollable legend row`() {
         val widthDp = 360f
         val plotHeightDp = widthDp * 290f / 700f
 
-        assertEquals(plotHeightDp + 8f + 3 * 28f, chartHeightDp(widthDp, 3), 0.01f)
+        assertEquals(plotHeightDp + 8f + 48f, chartHeightDp(widthDp, 1), 0.01f)
         assertTrue(chartHeightDp(widthDp, 3) > chartHeightDp(widthDp, 1))
     }
 }
