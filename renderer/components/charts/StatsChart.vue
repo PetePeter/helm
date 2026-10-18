@@ -38,7 +38,7 @@ function renderChart(): void {
   }
 }
 
-watch(() => [props.model, props.kind], renderChart, { deep: true });
+watch(() => [props.model, props.kind], renderChart, { deep: true, flush: 'post' });
 onMounted(renderChart);
 onBeforeUnmount(() => chart?.destroy());
 </script>
