@@ -86,6 +86,11 @@ pane (`dock/TerminalPane.vue`) and of the snapped-out terminal
   again to 28–240.
 - No gamepad binding.
 
+**Session row.** `sidebar/SessionCard.vue` gives the row its own line under the
+name: the mission when set, else the CLI's terminal title. It ticker-scrolls only
+when it overflows (a short line stays still, hover pauses it, reduced-motion
+stops it), so the row stays one line tall while the full text is still readable.
+
 ## MCP
 
 `session_mission_set { sessionId?, text }` — `sessionId` defaults to the

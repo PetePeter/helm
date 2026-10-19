@@ -981,7 +981,13 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 /* State icon — removed, state shown via dropdown button only */
 
 .session-card .session-name { flex: 0 1 auto; min-width: 0; font-size: var(--font-size-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: inherit; }
-.session-card .session-meta { flex: 1 1 auto; min-width: 0; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.session-card .session-meta { display: block; min-width: 0; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Overflowing line scrolls right-to-left, pauses, repeats; hover holds it. */
+.session-card .session-meta--ticker { text-overflow: clip; }
+.session-card .session-meta--ticker .session-meta__text { display: inline-block; padding-right: 2em; animation: session-meta-ticker 14s linear infinite; }
+.session-card .session-meta--ticker:hover .session-meta__text { animation-play-state: paused; }
+@keyframes session-meta-ticker { 0%, 10% { transform: translateX(0); } 90%, 100% { transform: translateX(-100%); } }
+@media (prefers-reduced-motion: reduce) { .session-card .session-meta--ticker .session-meta__text { animation: none; } }
 
 /* Pending schedule chip */
 .session-schedule-chip {

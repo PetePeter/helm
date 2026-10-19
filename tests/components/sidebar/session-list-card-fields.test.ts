@@ -24,6 +24,7 @@ describe('SessionList → SessionCard fields', () => {
           {
             id: 's1', name: 'a', cliType: 'claude-code', frozen: true, lastPromptAt: 42,
             eta: { at: 90_000, setAt: 30_000, note: 'review' },
+            mission: { text: 'm', setBy: 'user', setAt: 1 },
           },
         ] }],
         directories: [],
@@ -48,6 +49,6 @@ describe('SessionList → SessionCard fields', () => {
       },
       global: { stubs: { SessionGroup: { template: '<div><slot /></div>' }, SessionCard: CardStub } },
     });
-    expect(seen[0]).toMatchObject({ frozen: true, lastPromptAt: 42, eta: { at: 90_000, setAt: 30_000, note: 'review' } });
+    expect(seen[0]).toMatchObject({ frozen: true, lastPromptAt: 42, eta: { at: 90_000, setAt: 30_000, note: 'review' }, mission: { text: 'm' } });
   });
 });

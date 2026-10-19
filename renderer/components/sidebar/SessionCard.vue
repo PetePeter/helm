@@ -14,7 +14,7 @@ import { formatHelmRef } from '../../lib/helm-ref.js';
 import { getCliDisplayName, resolveCliTypeRecord } from '../../utils.js';
 import { warnAfterMs } from '../../../src/session/prompt-staleness.js';
 import { resolveContextLimits } from '../../../src/session/context-limits.js';
-import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, UserPromptSource } from '../../../src/types/session.js';
+import type { ContextUsageSample, SessionContextUsageSnapshot, SessionEta, SessionMission, UserPromptSource } from '../../../src/types/session.js';
 import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
@@ -61,6 +61,7 @@ export interface SessionCardSession {
   /** Keep-warm is on until this epoch ms. */
   keepWarmUntil?: number;
   eta?: SessionEta;
+  mission?: SessionMission;
 }
 
 export type SessionCardFocusColumn = 0 | 1 | 2 | 3 | 4 | 5;
@@ -243,10 +244,27 @@ const statusIcons = computed(() => [
     && { icon: '⏰', title: `Keeping cache warm until ${new Date(props.session.keepWarmUntil).toLocaleTimeString()}` },
   scheduledTaskTooltip.value && { icon: '🕒', title: scheduledTaskTooltip.value, className: 'session-status-scheduled-task' },
 ].filter((x): x is { icon: string; title: string; className?: string } => !!x));
+/** The row's own line: the mission when set, else the CLI's terminal title. */
 const metaText = computed(() => {
+  const mission = props.session.mission?.text.trim();
+  if (mission) return mission;
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
 });
+/** Ticker only when the text overflows — short lines stay still. */
+const metaEl = ref<HTMLElement | null>(null);
+const metaOverflows = ref(false);
+function measureMeta(): void {
+  const el = metaEl.value;
+  metaOverflows.value = !!el && el.scrollWidth > el.clientWidth;
+}
+const metaResize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMeta);
+watch(metaEl, (el, prev) => {
+  if (prev) metaResize?.unobserve(prev);
+  if (el) metaResize?.observe(el);
+});
+watch(metaText, () => { metaOverflows.value = false; nextTick(measureMeta); }, { flush: 'post' });
+onUnmounted(() => metaResize?.disconnect());
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
 const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
@@ -527,9 +545,6 @@ function onCardClick(e: MouseEvent): void {
           :title="`${todoProgress.done} of ${todoProgress.total} todos done`"
           :aria-label="`${todoProgress.done} of ${todoProgress.total} todos done`"
         >{{ todoProgress.done }}/{{ todoProgress.total }}</span>
-        <span v-if="metaText" class="session-meta" :title="metaText">
-          {{ metaText }}
-        </span>
         <span
           v-if="contextUsageText"
           class="session-context-usage"
@@ -561,17 +576,21 @@ function onCardClick(e: MouseEvent): void {
       </template>
     </div>
 
-    <!-- Line 3: working plan claim -->
+    <!-- Line 3: mission, else terminal title — ticker-scrolls when it overflows -->
+    <span
+      v-if="metaText"
+      ref="metaEl"
+      class="session-meta"
+      :class="{ 'session-meta--ticker': metaOverflows }"
+      :title="metaText"
+    ><span class="session-meta__text">{{ metaText }}</span></span>
+
+    <!-- Line 4: working plan claim -->
     <span v-if="workingPlanLabel" class="session-working-plan" :title="workingPlanTooltip">
       {{ workingPlanLabel }}
     </span>
 
-    <!-- Keep the terminal title visible on its former row while renaming. -->
-    <span v-if="isEditing && metaText" class="session-meta" :title="metaText">
-      {{ metaText }}
-    </span>
-
-    <!-- Line 4: pending schedule chip -->
+    <!-- Line 5: pending schedule chip -->
     <div v-if="scheduledAt" class="session-schedule-chip">
       <span>⏰ {{ scheduledAt }}</span>
       <button

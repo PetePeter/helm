@@ -124,7 +124,7 @@ describe('SessionCard', () => {
     expect(mount(SessionCard, { props: makeCardProps() }).find('.session-todo-count').exists()).toBe(false);
   });
 
-  it('keeps terminal title beside the name and puts the working plan on the next row', () => {
+  it('puts the terminal title on its own row between the name and the working plan', () => {
     const w = mount(SessionCard, {
       props: makeCardProps({
         session: { id: 's1', name: 'test', cliType: 'claude-code', title: 'Terminal title' },
@@ -134,16 +134,31 @@ describe('SessionCard', () => {
       }),
     });
     const identityRow = w.find('.session-name-line');
+    const meta = w.find('.session-meta');
     const plan = w.find('.session-working-plan');
 
-    expect(identityRow.find('.session-name').text()).toBe('Session name');
-    expect(identityRow.find('.session-meta').text()).toBe('Terminal title');
-    expect(plan.text()).toBe('🗺️ Working plan');
-    expect(identityRow.element.contains(w.find('.session-meta').element)).toBe(true);
-    expect(identityRow.element.compareDocumentPosition(plan.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(identityRow.find('.session-meta').exists()).toBe(false);
+    expect(meta.text()).toBe('Terminal title');
+    expect(identityRow.element.compareDocumentPosition(meta.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(meta.element.compareDocumentPosition(plan.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 
-  it('keeps the terminal title on its own row while renaming', () => {
+  it('shows the mission instead of the terminal title when one is set', () => {
+    const w = mount(SessionCard, {
+      props: makeCardProps({
+        session: {
+          id: 's1', name: 'test', cliType: 'claude-code', title: 'Terminal title',
+          mission: { text: 'Ship the ticker', setBy: 'ai', setAt: 1 },
+        },
+        displayName: 'Session name',
+      }),
+    });
+    const meta = w.get('.session-meta');
+    expect(meta.text()).toBe('Ship the ticker');
+    expect(meta.attributes('title')).toBe('Ship the ticker');
+  });
+
+  it('keeps the terminal title row while renaming', () => {
     const w = mount(SessionCard, {
       props: makeCardProps({
         session: { id: 's1', name: 'test', cliType: 'claude-code', title: 'Terminal title' },
@@ -152,7 +167,6 @@ describe('SessionCard', () => {
       }),
     });
 
-    expect(w.find('.session-name-line .session-meta').exists()).toBe(false);
     expect(w.find('.session-meta').text()).toBe('Terminal title');
     expect(w.find('.session-rename-input').exists()).toBe(true);
   });
