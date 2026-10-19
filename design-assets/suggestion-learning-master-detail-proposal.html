@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Suggestion learning — project breakdown proposal</title>
+<style>
+:root{color-scheme:dark;--bg:#111318;--panel:#191c23;--raised:#20242d;--border:#303541;--text:#edf0f6;--muted:#a0a8b7;--dim:#7a8291;--accent:#b6a2ff;--soft:#302b43;--green:#8fd5b1;font-family:"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}main{max-width:1120px;margin:auto;padding:28px}
+nav{color:var(--muted);font-size:12px;margin-bottom:20px}nav span{color:var(--dim);padding:0 7px}h1{font-size:25px;margin:0 0 7px}.subtitle,.copy{color:var(--muted);font-size:13px;line-height:1.55}.tag{display:inline-block;margin:18px 0 22px;padding:5px 10px;border:1px solid #554a78;border-radius:20px;color:var(--accent);background:var(--soft);font-size:10px}
+.strip{display:flex;gap:10px;margin-bottom:24px}.setting,.card,.note{background:var(--panel);border:1px solid var(--border);border-radius:9px}.setting{padding:12px 15px;min-width:170px}.setting small,.setting strong{display:block}.setting small{color:var(--muted);font-size:10px;margin-bottom:6px}.setting strong{font-size:12px}.on{color:var(--green)}h2{font-size:17px;margin:0 0 5px}.copy{font-size:12px;margin:0;max-width:850px}
+.card{margin-top:14px;overflow:hidden}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 15px;border-bottom:1px solid var(--border)}.toolbar-left{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.metrics{display:flex;gap:16px;color:var(--muted);font-size:11px}.metrics b{color:var(--text);font-size:13px;padding-right:3px}.project-scope{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px}.project-scope select{border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);padding:6px 8px;font-size:11px}.type-filter{display:flex;gap:3px;padding:3px;border:1px solid var(--border);border-radius:7px;background:var(--bg)}.type-filter button{border:0;border-radius:5px;padding:6px 9px;background:transparent;color:var(--muted);font-size:10px;cursor:pointer}.type-filter button.active{background:var(--soft);color:var(--accent)}button,input{font:inherit}.reset{border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--muted);padding:7px 10px;font-size:10px}
+.workspace{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:350px}.master{border-right:1px solid var(--border)}.list-head{padding:12px;color:var(--muted);font-weight:600;font-size:11px}.search{margin:0 10px 7px;width:calc(100% - 20px);padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:11px}.rows{padding:0 7px 8px}.row{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border:0;border-radius:7px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.row:hover{background:var(--raised)}.row.active{background:var(--soft)}.kind{display:grid;place-items:center;width:29px;height:29px;flex:none;border-radius:7px;color:var(--accent);background:#28243a;font-size:9px}.row-info{min-width:0;flex:1}.row-title,.row-meta{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.row-title{font-size:11px}.row-meta{margin-top:3px;color:var(--dim);font:9px Consolas,monospace}.count{color:var(--muted);font-size:10px;white-space:nowrap}
+.detail{padding:20px 22px;min-width:0}.detail-head{display:flex;justify-content:space-between;gap:12px}.badge{border:1px solid var(--border);border-radius:14px;padding:3px 7px;color:var(--muted);font-size:9px;vertical-align:3px;margin-right:6px}.detail h3{display:inline;font-size:15px}.item-id{display:block;color:var(--dim);font:10px Consolas,monospace;margin-top:7px}.project-meta{display:block;color:var(--muted);font-size:10px;margin-top:5px}.weight{color:var(--accent);font-size:11px;white-space:nowrap}.detail-copy{color:var(--muted);font-size:11px;margin:17px 0}.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.sub{border:1px solid var(--border);border-radius:7px;background:var(--bg);padding:12px}.sub h4{font-size:11px;margin:0 0 9px}.term,.event{display:flex;justify-content:space-between;gap:9px;padding:7px 0;border-top:1px solid #272b34;color:var(--muted);font-size:10px}.term:first-of-type,.event:first-of-type{border-top:0}.term b{color:var(--text);font-weight:500}.event time{color:var(--dim);white-space:nowrap}.privacy{border-top:1px solid var(--border);padding:12px 15px;color:var(--muted);font-size:10px;line-height:1.5}.privacy strong{color:var(--green);margin-right:8px}.notes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}.note{padding:13px 15px}.note h2{font-size:12px;margin-bottom:7px}.note p,.note li{color:var(--muted);font-size:10px;line-height:1.55}.note p{margin:0}.note ul{margin:0;padding-left:16px}.question{margin-top:14px;border-color:#554a78}.question h2{color:var(--accent)}
+@media(max-width:760px){main{padding:18px 12px}.strip{flex-wrap:wrap}.setting{flex:1;min-width:140px}.toolbar{align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.master{border-right:0;border-bottom:1px solid var(--border)}.rows{display:flex;overflow:auto}.row{min-width:230px}.detail-grid,.notes{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<nav>Settings <span>/</span> Knowledge <span>/</span> Auto memory</nav>
+<h1>Auto memory</h1>
+<p class="subtitle">Choose how Helm records useful memories and brings related knowledge into later prompts.</p>
+<div class="tag">APPROVED DESIGN · IMPLEMENTATION IN PROGRESS · P-1062</div>
+<div class="strip">
+<div class="setting"><small>Recording model</small><strong>Local API model</strong></div>
+<div class="setting"><small>Auto-save</small><strong class="on">On · after each turn</strong></div>
+<div class="setting"><small>Auto-recall</small><strong class="on">On · for related prompts</strong></div>
+</div>
+<h2>Suggestion learning</h2>
+<p class="copy">When a session fetches a memory or skill that Helm recently suggested, Helm learns which topic terms tend to lead to useful items. Feedback is kept separate by project and only reorders that project’s eligible suggestions.</p>
+<section class="card">
+<div class="toolbar">
+<div class="toolbar-left">
+<div class="type-filter" role="group" aria-label="Filter by item type">
+<button type="button" class="active" data-type="all" aria-pressed="true">Both</button>
+<button type="button" data-type="skill" aria-pressed="false">Skill</button>
+<button type="button" data-type="memory" aria-pressed="false">Memory</button>
+</div>
+<label class="project-scope">Project
+<select id="projectFilter" aria-label="Filter by project">
+<option value="all">All projects</option>
+<option value="gamepad-cli-hub">gamepad-cli-hub</option>
+<option value="homeassistant">homeassistant</option>
+<option value="unattributed">Unattributed legacy</option>
+</select></label>
+<div class="metrics"><span><b id="itemCount">5</b> items</span><span><b id="assocCount">47</b> associations</span><span><b id="eventCount">8</b> recent events</span></div>
+</div>
+<button class="reset" type="button" title="Keeps the existing reset confirmation">Reset all learning</button>
+</div>
+<div class="workspace">
+<aside class="master"><div class="list-head">Learned items · highest weight first</div><input id="filter" class="search" type="search" placeholder="Filter by title or item id" aria-label="Filter learned items"><div id="rows" class="rows" role="listbox"></div></aside>
+<article id="detail" class="detail" aria-live="polite"></article>
+</div>
+<div class="privacy"><strong>Privacy and effect</strong>Item ids, project id, topic terms, counts, and timestamps are retained. Prompt text and transcripts are not stored. A fetch counts only after a matching suggestion in the same session within 15 minutes. Older feedback has no project id and appears under “Unattributed legacy”.</div>
+</section>
+<div class="notes">
+<section class="note"><h2>Proposed structure</h2><ul><li>Move the existing feedback section from <code>CLI Integrations</code> here as “Suggestion learning”.</li><li>Break down both memory and skill feedback by the session’s project; “All projects” sums the project rows.</li><li>Use a searchable master list with project labels and a detail pane for terms and recent fetches.</li><li>Keep reset-all with confirmation. Historical global feedback remains unattributed until reset.</li></ul></section>
+<section class="note"><h2>Recommended data boundary</h2><p>Keep usage weights in the dedicated suggestion-usage store. They describe ranking behavior, not facts for AutoMemory to record. Store project id with each pending suggestion and apply its weight only in that project.</p></section>
+</div>
+<section class="note question"><h2>Approved change</h2><p>Use single-select chips to show Both, Skill, or Memory items. The project selector remains independent, so each type can be inspected across all projects, one project, or Unattributed legacy.</p></section>
+</main>
+<script>
+const items=[
+{project:"gamepad-cli-hub",type:"Memory",title:"Session-bound recall boundaries",id:"memory/8d0ea3c2-c4c4-477d",n:18,terms:[["auto-recall",5],["memory",4],["session",3],["bound",3],["recall",3]],events:[["Today, 10:42","Correlated fetch"],["Today, 09:18","Correlated fetch"],["Yesterday, 16:33","Correlated fetch"]]},
+{project:"gamepad-cli-hub",type:"Skill",title:"Code review workflow",id:"skill/3b4286d0-c660-4147",n:12,terms:[["review",4],["source",3],["test",3],["scope",2]],events:[["Today, 08:51","Correlated fetch"],["Yesterday, 14:06","Correlated fetch"]]},
+{project:"homeassistant",type:"Memory",title:"Memory graph access rules",id:"memory/51a54cc5-2147-4b0d",n:8,terms:[["graph",3],["memory",3],["session",2]],events:[["Yesterday, 11:28","Correlated fetch"]]},
+{project:"homeassistant",type:"Skill",title:"Testing",id:"skill/b94c463b-be6e-44ff",n:6,terms:[["focused",2],["test",2],["verify",2]],events:[["Oct 19, 17:10","Correlated fetch"]]},
+{project:"unattributed",type:"Memory",title:"API tool context limits",id:"memory/f00140b9-ffad-4aab",n:3,terms:[["context",2],["tool",1]],events:[["Oct 19, 13:45","Correlated fetch"]]}
+];
+let selected=0;
+let typeFilter="all";
+function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
+function scoped(){const project=document.getElementById("projectFilter").value;return items.map(function(x,i){return{x:x,i:i}}).filter(function(pair){return(project==="all"||pair.x.project===project)&&(typeFilter==="all"||pair.x.type.toLowerCase()===typeFilter)})}
+function detail(){const root=document.getElementById("detail");root.replaceChildren();if(selected<0){root.append(el("p","detail-copy","No learned items match these filters yet."));return}const x=items[selected],head=el("div","detail-head"),left=el("div"),badge=el("span","badge",x.type),title=el("h3","",x.title),id=el("span","item-id",x.id),project=el("span","project-meta","Project: "+(x.project==="unattributed"?"Unattributed legacy":x.project)),weight=el("span","weight",x.n+" associations");left.append(badge,title,id,project);head.append(left,weight);root.append(head);root.append(el("p","detail-copy","These topics appeared when this item was fetched after it had been suggested. Matching terms can move it higher within this project."));const grid=el("div","detail-grid"),terms=el("section","sub"),events=el("section","sub");terms.append(el("h4","","Top topic terms"));events.append(el("h4","","Recent correlated fetches"));x.terms.forEach(function(v){const r=el("div","term");r.append(el("span","",v[0]),el("b","","× "+v[1]));terms.append(r)});x.events.forEach(function(v){const r=el("div","event");r.append(el("span","",v[1]),el("time","",v[0]));events.append(r)});grid.append(terms,events);root.append(grid)}
+function rows(query){const root=document.getElementById("rows");root.replaceChildren();query=(query||"").trim().toLowerCase();let list=scoped().filter(function(pair){const x=pair.x;return!query||(x.type+" "+x.title+" "+x.id+" "+x.project).toLowerCase().indexOf(query)>=0});if(!list.some(function(pair){return pair.i===selected}))selected=list.length?list[0].i:-1;list.forEach(function(pair){const x=pair.x,i=pair.i,b=el("button","row"+(i===selected?" active":""));b.type="button";b.setAttribute("role","option");b.setAttribute("aria-selected",i===selected?"true":"false");const k=el("span","kind",x.type==="Memory"?"MEM":"SKL"),info=el("span","row-info"),name=el("span","row-title",x.title),meta=el("span","row-meta",(x.project==="unattributed"?"Unattributed legacy":x.project)+" · "+x.id),count=el("span","count",x.n+"×");info.append(name,meta);b.append(k,info,count);b.onclick=function(){selected=i;rows(document.getElementById("filter").value);detail()};root.append(b)});const summary=scoped().map(function(pair){return pair.x});document.getElementById("itemCount").textContent=summary.length;document.getElementById("assocCount").textContent=summary.reduce(function(n,x){return n+x.n},0);document.getElementById("eventCount").textContent=summary.reduce(function(n,x){return n+x.events.length},0)}
+document.querySelectorAll(".type-filter button").forEach(function(button){button.addEventListener("click",function(){typeFilter=button.dataset.type;document.querySelectorAll(".type-filter button").forEach(function(item){const active=item===button;item.classList.toggle("active",active);item.setAttribute("aria-pressed",active?"true":"false")});rows(document.getElementById("filter").value);detail()})});document.getElementById("filter").addEventListener("input",function(e){rows(e.target.value)});document.getElementById("projectFilter").addEventListener("change",function(){rows(document.getElementById("filter").value);detail()});rows("");detail();
+</script>
+</body></html>

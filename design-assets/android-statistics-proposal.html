@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Android Statistics layout proposal</title>
+<style>
+:root{color-scheme:dark;--bg:#11151b;--panel:#1a2029;--surface:#202833;--stripe:#252f3b;--line:#35404d;--text:#eef2f7;--muted:#aab5c3;--accent:#9bc8ff;--accent-bg:#26425f;--green:#8ecfb0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,Segoe UI,sans-serif;padding:20px}
+main{max-width:920px;margin:auto}
+h1{font-size:22px;margin:0 0 6px}
+.lead{color:var(--muted);margin:0 0 18px}
+.layout{display:grid;grid-template-columns:minmax(310px,390px) minmax(280px,1fr);gap:18px;align-items:start}
+.phone{background:#0c1015;border:1px solid #46515e;border-radius:28px;padding:12px;box-shadow:0 14px 38px #0006}
+.screen{background:var(--panel);border-radius:19px;overflow:hidden;min-height:490px}
+.top{padding:17px 16px 10px;display:flex;justify-content:space-between;align-items:center}
+.kicker{font-size:11px;letter-spacing:.12em;color:var(--muted)}
+.range{font-size:13px;color:var(--muted);padding:0 16px 12px}
+.tabs{display:flex;gap:7px;padding:0 16px 12px}
+button{font:inherit;color:var(--muted);background:var(--surface);border:0;border-radius:999px;padding:7px 12px;cursor:pointer}
+button.active{background:var(--accent-bg);color:var(--accent)}
+.table-wrap{padding:0 12px}
+.grid{display:grid;grid-template-columns:112px minmax(0,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.fixed{position:relative;z-index:2;background:var(--panel);box-shadow:5px 0 10px #0003}
+.fixed .cell{padding:0 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--line)}
+.fixed .label{border-right:1px solid var(--line)}
+.metric-viewport{overflow-x:auto;overscroll-behavior-x:contain;scrollbar-color:#586879 var(--panel)}
+.metric-grid{display:grid;width:max-content}
+.metric-row{display:flex;border-bottom:1px solid var(--line)}
+.metric-row .cell{width:76px;flex:0 0 76px;padding:0 8px;text-align:right;white-space:nowrap;border-right:8px solid transparent}
+.cell{height:43px;display:flex;align-items:center}
+.heading{height:40px;color:var(--muted);font-size:12px;font-weight:600}
+.row-a{background:var(--surface)}
+.row-b{background:var(--stripe)}
+.total{font-weight:700;border-top:1px solid var(--line)}
+.swatch{display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green);margin-right:7px;flex:none}
+.hint{color:var(--muted);font-size:12px;padding:10px 16px 16px}
+.notes{display:grid;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.card h2{font-size:15px;margin:0 0 8px}
+.card p{margin:6px 0;color:var(--muted)}
+.card strong{color:var(--text)}
+.proposal{border-left:3px solid var(--accent)}
+.status{display:inline-block;border-radius:999px;padding:3px 8px;font-size:11px;background:#27342d;color:#a9e2bf;margin-left:6px}
+@media(max-width:720px){body{padding:12px}.layout{grid-template-columns:1fr}.phone{max-width:430px;width:100%;margin:auto}.notes{max-width:430px;width:100%;margin:auto}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Android Statistics</h1>
+  <p class="lead">Proposal preview · labels stay visible while metric columns scroll</p>
+  <div class="layout">
+    <section class="phone" aria-label="Interactive Statistics mockup">
+      <div class="screen">
+        <div class="top"><strong>Statistics</strong><span class="kicker">HELM · ANDROID</span></div>
+        <div class="range">Week of 19 October <span class="status">Preview</span></div>
+        <div class="tabs" role="tablist">
+          <button id="tokens-tab" class="active" role="tab" aria-selected="true">Tokens</button>
+          <button id="timesheet-tab" role="tab" aria-selected="false">Timesheet</button>
+        </div>
+        <div class="table-wrap"><div id="table" class="grid"></div></div>
+        <div class="hint">Swipe the values sideways · the row label stays pinned</div>
+      </div>
+    </section>
+    <section class="notes">
+      <article class="card">
+        <h2>What the supplied log proves</h2>
+        <p>Statistics requests later received successful replies. The log records request names and byte counts, not the selected view or returned token rows.</p>
+        <p>It therefore does not confirm why token rows were missing at the time you noticed it.</p>
+      </article>
+      <article class="card">
+        <h2>Current code clue</h2>
+        <p>The Android parser reads <strong>sheet.rows[].tokens</strong>. The screen then hides CLI rows whose total is zero for the selected period. The existing parser test covers nonzero token rows, but the supplied log cannot tell whether the reply contained zero values.</p>
+      </article>
+      <article class="card proposal">
+        <h2>Proposed layout</h2>
+        <p><strong>Tokens:</strong> keep the CLI label and color marker fixed; scroll the period and Total columns as one aligned strip.</p>
+        <p><strong>Timesheet:</strong> use the same fixed-label and scrollable-metrics pattern, with wider cells and small consistent gaps.</p>
+        <p><strong>Both:</strong> apply subtle alternating A/B row backgrounds; keep totals visually distinct.</p>
+      </article>
+      <article class="card">
+        <h2>Approval gate</h2>
+        <p>This is a design proposal only. After approval, implement the Android table layout, add focused Compose coverage, build the debug APK, then verify on-device if the handset is available.</p>
+      </article>
+    </section>
+  </div>
+</main>
+<script>
+const datasets={
+  tokens:{label:"CLI",headers:["Mon","Tue","Wed","Thu","Fri","Sat","Sun","Total"],rows:[
+    {label:"Codex",swatch:true,values:["4.2k","8.1k","—","10.2k","6.7k","—","—","29.2k"]},
+    {label:"Claude",swatch:true,values:["—","1.2k","4.8k","2.1k","—","—","—","8.1k"]},
+    {label:"Copilot",swatch:true,values:["1.1k","—","2.0k","—","3.8k","—","—","6.9k"]},
+    {label:"Total",total:true,values:["5.3k","9.3k","6.8k","12.3k","10.5k","—","—","44.2k"]}
+  ]},
+  timesheet:{label:"When",headers:["You","AI","Total","Tokens"],rows:[
+    {label:"Mon 19",values:["2h15","1h45","4h00","18.4k"]},
+    {label:"Tue 20",values:["0h50","2h10","3h00","11.2k"]},
+    {label:"Wed 21",values:["1h30","0h40","2h10","7.6k"]},
+    {label:"Thu 22",values:["3h05","2h20","5h25","22.1k"]},
+    {label:"Total",total:true,values:["7h40","6h55","14h35","59.3k"]}
+  ]}
+};
+function render(mode){
+  const data=datasets[mode], host=document.getElementById("table");
+  const labels=document.createElement("div"); labels.className="fixed";
+  const metricsViewport=document.createElement("div"); metricsViewport.className="metric-viewport";
+  const metrics=document.createElement("div"); metrics.className="metric-grid";
+  const labelHead=document.createElement("div"); labelHead.className="cell heading label"; labelHead.textContent=data.label; labels.append(labelHead);
+  const metricHead=document.createElement("div"); metricHead.className="metric-row heading";
+  data.headers.forEach(h=>{const c=document.createElement("div");c.className="cell";c.textContent=h;metricHead.append(c)}); metrics.append(metricHead);
+  data.rows.forEach((row,i)=>{
+    const stripe=row.total?"total":(i%2===0?"row-a":"row-b");
+    const l=document.createElement("div");l.className="cell label "+stripe;
+    if(row.swatch){const s=document.createElement("span");s.className="swatch";l.append(s)}
+    const t=document.createElement("span");t.textContent=row.label;l.append(t);labels.append(l);
+    const values=document.createElement("div");values.className="metric-row "+stripe;
+    row.values.forEach(v=>{const c=document.createElement("div");c.className="cell";c.textContent=v;values.append(c)});
+    metrics.append(values);
+  });
+  metricsViewport.append(metrics);host.replaceChildren(labels,metricsViewport);
+}
+const tokenTab=document.getElementById("tokens-tab"), timeTab=document.getElementById("timesheet-tab");
+tokenTab.onclick=()=>{tokenTab.classList.add("active");timeTab.classList.remove("active");tokenTab.setAttribute("aria-selected","true");timeTab.setAttribute("aria-selected","false");render("tokens")};
+timeTab.onclick=()=>{timeTab.classList.add("active");tokenTab.classList.remove("active");timeTab.setAttribute("aria-selected","true");tokenTab.setAttribute("aria-selected","false");render("timesheet")};
+render("tokens");
+</script>
+</body>
+</html>
