@@ -313,16 +313,29 @@ describe('session cycling', () => {
 });
 
 describe('session meta keys', () => {
-  it('Ctrl+Shift+R renames through the Session List while the terminal is focused', () => {
+  it('Ctrl+Shift+R renames the active session while typing in a field', () => {
     const terminal = fakeTerminal();
     const renames: string[] = [];
     terminal.deps.renameSession = (sessionId) => { renames.push(sessionId); };
     createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
-    install();
+    install({ getFocusedPane: () => PANE_CHAT });
 
-    const event = press({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true });
+    const event = pressInField({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true });
 
     expect(renames).toEqual(['session-1']);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('Ctrl+Shift+B clears notifications while typing in a field', () => {
+    const terminal = fakeTerminal();
+    const cleared: string[] = [];
+    terminal.deps.clearNotifications = (sessionId) => { cleared.push(sessionId); };
+    createTerminalKeyHandlers(terminal.deps).forEach(registerKeyHandler);
+    install({ getFocusedPane: () => PANE_CHAT });
+
+    const event = pressInField({ key: 'B', code: 'KeyB', ctrlKey: true, shiftKey: true });
+
+    expect(cleared).toEqual(['session-1']);
     expect(event.defaultPrevented).toBe(true);
   });
 });
@@ -378,8 +391,6 @@ describe('session lifecycle shortcuts', () => {
     expect(workspace.calls.spawned).toBe(1);
   });
 
-  // Closing acts on the terminal you can see, so visibility is the test — you
-  // routinely close a session with the sidebar focused and its terminal on screen.
   it('Ctrl+Shift+W closes the active session while the terminal is visible', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
@@ -390,24 +401,24 @@ describe('session lifecycle shortcuts', () => {
     expect(workspace.calls.closed).toBe(1);
   });
 
-  it('Ctrl+Shift+W stands down when no terminal is on screen', () => {
+  it('Ctrl+Shift+W closes the active session when the terminal is hidden', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
     install({ getFocusedPane: () => PANE_MEMORIES, isPaneVisible: (pane) => pane !== PANE_TERMINAL });
 
     press({ key: 'W', code: 'KeyW', ctrlKey: true, shiftKey: true });
 
-    expect(workspace.calls.closed).toBe(0);
+    expect(workspace.calls.closed).toBe(1);
   });
 
-  it('Ctrl+Shift+W does not close a session while typing in an editable field', () => {
+  it('Ctrl+Shift+W opens the close flow while typing in an editable field', () => {
     const workspace = fakeWorkspace();
     createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
-    install();
+    install({ getFocusedPane: () => PANE_CHAT });
 
     pressInField({ key: 'W', code: 'KeyW', ctrlKey: true, shiftKey: true });
 
-    expect(workspace.calls.closed).toBe(0);
+    expect(workspace.calls.closed).toBe(1);
   });
 });
 

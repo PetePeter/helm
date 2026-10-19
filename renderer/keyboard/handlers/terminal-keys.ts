@@ -52,6 +52,7 @@ export function createTerminalKeyHandlers(deps: TerminalKeyDeps): KeyHandler[] {
     {
       id: 'session-meta-keys',
       scope: 'global',
+      allowInEditable: true,
       claims: (ctx) => ctx.activeSessionId !== null,
       handle: (ctx) => {
         const sessionId = ctx.activeSessionId!;

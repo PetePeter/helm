@@ -70,7 +70,7 @@ blue for a first send, amber for a reply within the reply window.
 
 ## Context fill graph
 
-The `ctx` label on each row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS`). Every row uses the same span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the label opens a larger chart of the whole stored history, with the window limit and guides at the amber and red limits.
+The `ctx` label on each desktop and Android row carries a small graph of the session's context size over the last 2 hours (`ROW_GRAPH_SPAN_MS` on desktop and `ROW_SPAN_MS` on Android). Every row uses the same rolling span, so rows are comparable, and an idle session draws a flat line at its last level. Hovering the desktop label opens a larger chart of the whole stored history, with the window limit and guides at the amber and red limits.
 
 ```mermaid
 graph LR

@@ -11,7 +11,7 @@
  */
 
 import { getDockShortcutPane } from '../../dock-shortcuts.js';
-import { PANE_DRAFT, PANE_TERMINAL, type DockProfileId, type PaneId } from '../../dock-types.js';
+import { PANE_DRAFT, type DockProfileId, type PaneId } from '../../dock-types.js';
 import type { KeyHandler } from '../router.js';
 import { createNumberKeyHandlers, type NumberKeyDeps } from './number-keys.js';
 
@@ -85,12 +85,12 @@ export function createWorkspaceKeyHandlers(deps: WorkspaceKeyDeps): KeyHandler[]
     },
 
     {
-      // Closing acts on the terminal you are looking at, so it needs the
-      // terminal on screen — not focused. Closing a session from the sidebar
-      // while its terminal is visible is the common case.
+      // The active session is the target, regardless of the focused pane or
+      // which panes are currently visible. The caller opens the close dialog.
       id: 'session-close',
       scope: 'global',
-      claims: (ctx) => ctx.isVisible(PANE_TERMINAL) && ctx.activeSessionId !== null,
+      allowInEditable: true,
+      claims: (ctx) => ctx.activeSessionId !== null,
       handle: (ctx) => {
         if (ctx.combo !== 'ctrl+shift+w') return false;
         deps.closeActiveSession();

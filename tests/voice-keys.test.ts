@@ -6,6 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createVoiceKeyHandler, VOICE_TALK_COMBO } from '../renderer/keyboard/handlers/voice-keys';
 import { installKeyRouter, registerKeyHandler, resetKeyHandlers, type KeyContext } from '../renderer/keyboard/router';
+import { PANE_CHAT } from '../renderer/dock-types.js';
 
 function ctx(combo: string, repeat = false): KeyContext {
   return { combo, event: { repeat } as KeyboardEvent } as unknown as KeyContext;
@@ -50,6 +51,25 @@ describe('voice talk hotkey through the real router', () => {
 
   it('fires from the workspace', () => {
     expect(press(false)).toBe(1);
+  });
+
+  it('fires while typing in an editable field', () => {
+    let toggles = 0;
+    registerKeyHandler(createVoiceKeyHandler(() => { toggles += 1; }));
+    uninstall = installKeyRouter({
+      getActiveSessionId: () => null,
+      getFocusedPane: () => PANE_CHAT,
+      isPaneVisible: () => false,
+      isModalOpen: () => false,
+    });
+    document.body.innerHTML = '<textarea></textarea>';
+    const field = document.querySelector('textarea')!;
+    field.focus();
+    field.dispatchEvent(new KeyboardEvent('keydown', {
+      key: ' ', code: 'Space', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    }));
+
+    expect(toggles).toBe(1);
   });
 
   it('is blocked while a modal owns the keyboard, like the other workspace keys', () => {

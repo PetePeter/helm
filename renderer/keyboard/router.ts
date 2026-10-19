@@ -44,8 +44,8 @@ export interface KeyHandler {
   id: string;
   scope: KeyHandlerScope;
   /**
-   * Opt back in while an input/textarea has focus. Only for shortcuts that
-   * must work mid-typing (Ctrl+Shift+N spawns a session or Ctrl+digit switches it).
+   * Opt back in while an input/textarea has focus. Use for app commands that
+   * remain useful while typing, such as session actions and workspace navigation.
    */
   allowInEditable?: boolean;
   /** Eligibility. Ask the context whether you are focused, visible, or neither. */
@@ -122,7 +122,7 @@ function warnDroppedKey(ctx: KeyContext): void {
   console.warn(
     `[Keyboard] ${JSON.stringify(ctx.key)} fell through with no handler while session ${ctx.activeSessionId} is active — ` +
       `focus parked on ${describeParkedFocus()}. ` +
-      'If typing is dead, give the terminal focus (click it, or Ctrl+Shift+R) to restore input.',
+      'If typing is dead, give the terminal focus by clicking it to restore input.',
   );
 }
 

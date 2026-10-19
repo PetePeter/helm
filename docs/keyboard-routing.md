@@ -44,9 +44,10 @@ graph TB
 ```
 
 An **editable field** short-circuits the chain after `modal`: ordinary handlers
-are skipped unless they opt in with `allowInEditable`. The Ctrl+digit session-jump
-handler opts in so a session can be changed while typing in Draft. A **terminal
-is never an editable field**, however much its helper textarea resembles one.
+are skipped unless they opt in with `allowInEditable`. Workspace navigation,
+session actions, and voice toggle opt in so their app commands remain available
+while typing. A **terminal is never an editable field**, however much its helper
+textarea resembles one.
 
 ## The contract
 
@@ -114,11 +115,12 @@ key actually does:
 
 | Question | Use | Because |
 |----------|-----|---------|
-| Does this key **render** something over a pane? | `isVisible(pane)` | Ctrl+Shift+W acts on a terminal that is on screen, even while another pane has focus. |
+| Is an action explicitly limited to a pane currently on screen? | `isVisible(pane)` | Use visibility only when showing that pane is part of the action's contract. |
 | Does this key **send input** to a pane? | `isFocused(pane)` | Esc, Ctrl+V and the key relay write to a PTY. Typing into Memories must never reach a CLI. |
 
-Ctrl+Shift+W follows the visible rule: you routinely close a session from the
-sidebar while its terminal is on screen.
+Session actions target the active session rather than a rendered pane. For
+example, Ctrl+Shift+W opens the close confirmation for the active session even
+when Terminal is hidden.
 
 ## Shortcut focus-context matrix
 
@@ -129,16 +131,16 @@ remain useful while typing. A modal always takes ownership before globals run.
 | Shortcut group | Terminal | Chat composer | Draft editor | Search fields | Modal fields | Artifact iframe | Mess / Memories / Plans | Snap-out |
 |----------------|----------|---------------|--------------|---------------|--------------|-----------------|-------------------------|----------|
 | `Ctrl+Shift+<pane>`, `Ctrl+G`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+digit`, `Alt+digit`, `Ctrl+Shift+N` | Yes | Yes | Yes | Yes | No | Yes, when the iframe is focused; matching handlers act | Yes | Pane-profile shortcuts, `Ctrl+G`, `Ctrl/Alt+digit`; no session cycle or spawn |
-| `Ctrl+Shift+W` close session | Yes, if Terminal is visible | No | No | No | No | Yes, when focused and Terminal is visible | Yes, if Terminal is visible | Not registered |
-| `Ctrl+Shift+R` rename, `Ctrl+Shift+B` clear notifications | Yes, with an active session | No | No | No | No | Yes, when focused and an action is registered | Yes, with an active session | Not registered; the pop-out has no rename/notification callbacks |
-| `Ctrl+Shift+Space` voice toggle | Yes | No | No | No | No | Yes, when focused and the voice handler is registered | Yes | Not registered |
+| `Ctrl+Shift+W` close session | Yes, with an active session | Yes, with an active session | Yes, with an active session | Yes, with an active session | No | Yes, when focused and an active session exists | Yes, with an active session | Not registered |
+| `Ctrl+Shift+R` rename, `Ctrl+Shift+B` clear notifications | Yes, with an active session | Yes, when the action is registered | Yes, when the action is registered | Yes, when the action is registered | No | Yes, when focused and an action is registered | Yes, with an active session | Not registered; the pop-out has no rename/notification callbacks |
+| `Ctrl+Shift+Space` voice toggle | Yes | Yes | Yes | Yes | No | Yes, when focused and the voice handler is registered | Yes | Not registered |
 | Pane-owned keys | Terminal keys go to the PTY | `Enter` adds a line; `Ctrl+Enter` sends | Draft/editor keys stay local | Search text stays local | Modal handler owns keys | Plain keys stay in the artifact | Focused pane handler owns keys | Same pane-local rules for available panes |
 
-The first row opts in to editable fields because each binding is navigation or
-session selection. The other global actions do not opt in: for example,
-`Ctrl+Shift+W` cannot close a session while typing in Chat or a search box.
-Terminal classification is special: xterm's helper textarea is resolved as the
-terminal, not as an editable field, so terminal and global handlers still run.
+Global handlers opt in to editable fields when their action remains useful
+while typing. Modal ownership still takes precedence, so a close confirmation
+receives keys before workspace shortcuts. Terminal classification is special:
+xterm's helper textarea is resolved as the terminal, not as an editable field,
+so terminal and global handlers still run.
 
 Artifact documents run in an opaque-origin iframe. Their injected bridge sends
 keydowns with Ctrl, Alt, or Meta held; plain and Shift-only typing stays in the

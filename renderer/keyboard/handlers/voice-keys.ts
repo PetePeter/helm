@@ -11,6 +11,7 @@ export function createVoiceKeyHandler(toggleTalk: () => void): KeyHandler {
   return {
     id: 'voice-talk',
     scope: 'global',
+    allowInEditable: true,
     handle: (ctx) => {
       if (ctx.combo !== VOICE_TALK_COMBO) return false;
       if (!ctx.event.repeat) toggleTalk();

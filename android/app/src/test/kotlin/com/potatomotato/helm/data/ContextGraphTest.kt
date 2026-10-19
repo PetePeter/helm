@@ -12,6 +12,11 @@ class ContextGraphTest {
         )
 
     @Test
+    fun sessionRowGraphUsesATwoHourRollingWindow() {
+        assertEquals(2L * 60 * 60 * 1000, ContextGraph.ROW_SPAN_MS)
+    }
+
+    @Test
     fun buildsHistoryFromRepliesInTimeOrderWithTheLatestWindow() {
         val thread = listOf(
             reply(30, 300, 1000),
