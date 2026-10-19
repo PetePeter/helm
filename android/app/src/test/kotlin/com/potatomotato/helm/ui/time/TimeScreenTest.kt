@@ -1,15 +1,52 @@
 package com.potatomotato.helm.ui.time
 
-import com.potatomotato.helm.data.TimeTokenRow
-import com.potatomotato.helm.data.TimeTokenSheet
+import com.potatomotato.helm.data.TimeAnswer
 import com.potatomotato.helm.data.TimeChartAxisKind
 import com.potatomotato.helm.data.TimeChartModel
 import com.potatomotato.helm.data.TimeChartSeries
 import com.potatomotato.helm.data.TimeChartSeriesType
+import com.potatomotato.helm.data.TimeTokenRow
+import com.potatomotato.helm.data.TimeTokenSheet
+import com.potatomotato.helm.ui.theme.HelmColors
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TimeScreenTest {
+
+    @Test
+    fun `all-zero token sheet is empty for display`() {
+        val answer = TimeAnswer.Tokens(
+            TimeTokenSheet(
+                columns = listOf(1L, 2L),
+                rows = listOf(TimeTokenRow("unused", "Unused", listOf(0L, 0L))),
+                totals = listOf(0L, 0L),
+            ),
+        )
+
+        assertTrue(answer.isEmptyForDisplay())
+    }
+
+    @Test
+    fun `token sheet with usage is not empty for display`() {
+        val answer = TimeAnswer.Tokens(
+            TimeTokenSheet(
+                columns = listOf(1L, 2L),
+                rows = listOf(TimeTokenRow("used", "Used", listOf(0L, 1L))),
+                totals = listOf(0L, 1L),
+            ),
+        )
+
+        assertFalse(answer.isEmptyForDisplay())
+    }
+
+    @Test
+    fun `statistics row backgrounds alternate and repeat every two rows`() {
+        assertEquals(HelmColors.Surface, statisticsRowBackground(0))
+        assertEquals(HelmColors.Surface2, statisticsRowBackground(1))
+        assertEquals(HelmColors.Surface, statisticsRowBackground(2))
+    }
 
     @Test
     fun `token table rows omit CLIs with a zero period total`() {

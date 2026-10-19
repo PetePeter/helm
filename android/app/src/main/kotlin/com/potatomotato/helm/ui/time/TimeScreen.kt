@@ -1,6 +1,7 @@
 package com.potatomotato.helm.ui.time
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -32,7 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -126,13 +127,7 @@ fun TimeScreen(
             view = view,
             loadingText = stringResource(if (ask.view == TimeView.Timesheet) R.string.time_loading else R.string.statistics_tokens_loading),
             emptyText = stringResource(if (ask.view == TimeView.Timesheet) R.string.time_empty else R.string.statistics_tokens_empty),
-            isEmpty = { answer ->
-                when (answer) {
-                    is TimeAnswer.Projects -> answer.projects.isEmpty()
-                    is TimeAnswer.Sheet -> answer.sheet.rows.isEmpty()
-                    is TimeAnswer.Tokens -> answer.sheet.rows.isEmpty()
-                }
-            },
+            isEmpty = { answer -> answer.isEmptyForDisplay() },
             onRefresh = { onFetch(ask) },
         ) { answer ->
             when (answer) {
@@ -166,19 +161,30 @@ private fun ProjectTotals(
     chartModel: TimeChartModel?,
     onOpen: (TimeProjectTotal) -> Unit,
 ) {
+    val scrollState = rememberScrollState()
     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = HelmSpacing.Md)) {
         if (chartModel != null) {
             item { TimeChart(chartModel, stackedTokens = false) }
         }
-        item { TableHeader(stringResource(R.string.time_col_project), includeTokens = true) }
-        items(projects, key = { it.projectKey }) { project ->
-            TableRow(project.projectName, project.userMinutes, project.aiMinutes, onClick = { onOpen(project) }, tokens = project.tokens)
+        item { TableHeader(stringResource(R.string.time_col_project), scrollState, includeTokens = true) }
+        itemsIndexed(projects, key = { _, project -> project.projectKey }) { index, project ->
+            TableRow(
+                project.projectName,
+                project.userMinutes,
+                project.aiMinutes,
+                scrollState = scrollState,
+                stripeIndex = index,
+                onClick = { onOpen(project) },
+                tokens = project.tokens,
+            )
         }
         item {
+            HorizontalDivider(color = HelmColors.Surface2)
             TableRow(
                 stringResource(R.string.time_total),
                 projects.sumOf { it.userMinutes },
                 projects.sumOf { it.aiMinutes },
+                scrollState = scrollState,
                 bold = true,
                 tokens = projects.sumOf { it.tokens },
             )
@@ -240,6 +246,12 @@ internal fun chartHeightDp(widthDp: Float): Float =
 internal fun visibleTokenRows(sheet: TimeTokenSheet): List<TimeTokenRow> =
     sheet.rows.filter { it.tokens.sum() != 0L }
 
+internal fun TimeAnswer.isEmptyForDisplay(): Boolean = when (this) {
+    is TimeAnswer.Projects -> projects.isEmpty()
+    is TimeAnswer.Sheet -> sheet.rows.isEmpty()
+    is TimeAnswer.Tokens -> visibleTokenRows(sheet).isEmpty()
+}
+
 internal fun tokenChartSeriesColor(model: TimeChartModel?, cliType: String): String? =
     model?.series?.firstOrNull { it.key == "cli:$cliType" }?.color?.takeIf(HEX_CHART_COLOR::matches)
 
@@ -262,170 +274,185 @@ private const val CHART_LEGEND_GAP = 8f
 private const val CHART_ASSET = "chartjs/chart.umd.min.js"
 private val HEX_CHART_COLOR = Regex("^#[0-9a-fA-F]{6}$")
 
-private val TokenLabelColumn = 136.dp
-private val TokenValueColumn = 76.dp
-
 @Composable
 private fun TokenTable(period: TimePeriod, sheet: TimeTokenSheet, rows: List<TimeTokenRow>, chartModel: TimeChartModel?) {
-    val tableWidth = TokenLabelColumn + TokenValueColumn * (sheet.columns.size + 1)
-    Column(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-        Row(
-            modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "CLI",
-                color = HelmColors.Dim,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier.width(TokenLabelColumn),
-                maxLines = 1,
-            )
-            sheet.columns.forEach { start ->
-                Text(
-                    text = columnLabel(period, start),
-                    color = HelmColors.Dim,
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.End,
-                    maxLines = 1,
-                    modifier = Modifier.width(TokenValueColumn),
-                )
-            }
-            Text(
-                text = stringResource(R.string.time_total),
-                color = HelmColors.Dim,
-                style = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                modifier = Modifier.width(TokenValueColumn),
-            )
-        }
-        HorizontalDivider(modifier = Modifier.width(tableWidth), color = HelmColors.Surface2)
+    val scrollState = rememberScrollState()
+    Column(modifier = Modifier.fillMaxWidth()) {
+        StatisticsTableRow(
+            label = "CLI",
+            metrics = sheet.columns.map { columnLabel(period, it) } + stringResource(R.string.time_total),
+            scrollState = scrollState,
+            header = true,
+        )
+        HorizontalDivider(color = HelmColors.Surface2)
         rows.forEachIndexed { index, row ->
-            Row(
-                modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    modifier = Modifier.width(TokenLabelColumn).padding(end = HelmSpacing.Sm),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val seriesColor = tokenChartSeriesColor(chartModel, row.cliType)
-                        ?.let(::parseChartColor)
-                        ?: HelmColors.Statistics.Series[index % HelmColors.Statistics.Series.size]
-                    Spacer(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(seriesColor),
-                    )
-                    Spacer(modifier = Modifier.width(HelmSpacing.Xs))
-                    Text(
-                        text = row.label,
-                        color = HelmColors.Txt,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                sheet.columns.indices.forEach { i ->
-                    TokenNumber(row.tokens.getOrElse(i) { 0L })
-                }
-                TokenNumber(row.tokens.sum())
-            }
-        }
-        HorizontalDivider(modifier = Modifier.width(tableWidth), color = HelmColors.Surface2)
-        Row(
-            modifier = Modifier.width(tableWidth).padding(vertical = HelmSpacing.Sm),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = stringResource(R.string.time_total),
-                color = HelmColors.Txt,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.width(TokenLabelColumn),
-                maxLines = 1,
+            val seriesColor = tokenChartSeriesColor(chartModel, row.cliType)
+                ?.let(::parseChartColor)
+                ?: HelmColors.Statistics.Series[index % HelmColors.Statistics.Series.size]
+            StatisticsTableRow(
+                label = row.label,
+                metrics = sheet.columns.indices.map { i -> formatTokens(row.tokens.getOrElse(i) { 0L }) } +
+                    formatTokens(row.tokens.sum()),
+                scrollState = scrollState,
+                leadingColor = seriesColor,
+                stripeIndex = index,
             )
-            sheet.totals.forEach { TokenNumber(it, bold = true) }
-            TokenNumber(sheet.totals.sum(), bold = true)
         }
+        HorizontalDivider(color = HelmColors.Surface2)
+        StatisticsTableRow(
+            label = stringResource(R.string.time_total),
+            metrics = sheet.totals.map(::formatTokens) + formatTokens(sheet.totals.sum()),
+            scrollState = scrollState,
+            bold = true,
+        )
     }
-}
-
-@Composable
-private fun TokenNumber(value: Long, bold: Boolean = false) {
-    Text(
-        text = formatTokens(value),
-        color = HelmColors.Txt,
-        style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it }
-            .copy(fontFeatureSettings = "tnum"),
-        textAlign = TextAlign.End,
-        maxLines = 1,
-        modifier = Modifier.width(TokenValueColumn),
-    )
 }
 
 /** One folder: a table of only the columns that have time — a phone has no room for empty cells — then its total. */
 @Composable
 private fun Folder(title: String, row: TimeRow, columns: List<Long>, period: TimePeriod) {
+    val scrollState = rememberScrollState()
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm)) {
         Text(text = title, color = HelmColors.Txt, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        TableHeader(stringResource(R.string.time_col_when), includeTokens = true)
+        TableHeader(stringResource(R.string.time_col_when), scrollState, includeTokens = true)
+        var visibleIndex = 0
         columns.forEachIndexed { i, start ->
             val user = row.user.getOrElse(i) { 0 }
             val ai = row.ai.getOrElse(i) { 0 }
             val tokens = row.tokens.getOrElse(i) { 0 }
-            if (user != 0 || ai != 0 || tokens != 0L) TableRow(columnLabel(period, start), user, ai, tokens = tokens)
+            if (user != 0 || ai != 0 || tokens != 0L) {
+                TableRow(
+                    columnLabel(period, start),
+                    user,
+                    ai,
+                    scrollState = scrollState,
+                    stripeIndex = visibleIndex++,
+                    tokens = tokens,
+                )
+            }
         }
-        TableRow(stringResource(R.string.time_total), row.user.sum(), row.ai.sum(), bold = true, tokens = row.tokens.sum())
+        HorizontalDivider(color = HelmColors.Surface2)
+        TableRow(
+            stringResource(R.string.time_total),
+            row.user.sum(),
+            row.ai.sum(),
+            scrollState = scrollState,
+            bold = true,
+            tokens = row.tokens.sum(),
+        )
     }
 }
 
 @Composable
-private fun TableHeader(first: String, includeTokens: Boolean = false) {
-    Cells(
-        first,
-        stringResource(R.string.time_col_you),
-        stringResource(R.string.time_col_ai),
-        stringResource(R.string.time_total),
-        HelmColors.Dim,
-        MaterialTheme.typography.labelMedium,
-        tokens = if (includeTokens) stringResource(R.string.statistics_col_tokens) else null,
+private fun TableHeader(first: String, scrollState: ScrollState, includeTokens: Boolean = false) {
+    StatisticsTableRow(
+        label = first,
+        metrics = listOf(
+            stringResource(R.string.time_col_you),
+            stringResource(R.string.time_col_ai),
+            stringResource(R.string.time_total),
+        ) + listOfNotNull(if (includeTokens) stringResource(R.string.statistics_col_tokens) else null),
+        scrollState = scrollState,
+        header = true,
     )
     HorizontalDivider(color = HelmColors.Surface2)
 }
 
 @Composable
-private fun TableRow(label: String, user: Int, ai: Int, bold: Boolean = false, onClick: (() -> Unit)? = null, tokens: Long? = null) {
-    val style = MaterialTheme.typography.bodyMedium.let { if (bold) it.copy(fontWeight = FontWeight.Bold) else it }
-    Cells(
-        label, formatMinutes(user), formatMinutes(ai), formatMinutes(user + ai),
-        color = HelmColors.Txt,
-        style = style.copy(fontFeatureSettings = "tnum"),
+private fun TableRow(
+    label: String,
+    user: Int,
+    ai: Int,
+    scrollState: ScrollState,
+    bold: Boolean = false,
+    stripeIndex: Int? = null,
+    onClick: (() -> Unit)? = null,
+    tokens: Long? = null,
+) {
+    StatisticsTableRow(
+        label = label,
+        metrics = listOf(
+            formatMinutes(user),
+            formatMinutes(ai),
+            formatMinutes(user + ai),
+        ) + listOfNotNull(tokens?.let { if (it == 0L) "–" else formatTokens(it) }),
+        scrollState = scrollState,
+        bold = bold,
+        stripeIndex = stripeIndex,
         labelColor = if (onClick != null) HelmColors.Accent else HelmColors.Txt,
-        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
-        tokens = tokens?.let { if (it == 0L) "–" else formatTokens(it) },
+        onClick = onClick,
     )
 }
 
-/** A label column that takes the slack, then three fixed right-aligned number columns. */
 @Composable
-private fun Cells(
-    label: String, you: String, ai: String, total: String,
-    color: Color, style: TextStyle,
-    labelColor: Color = color,
-    modifier: Modifier = Modifier,
-    tokens: String? = null,
+private fun StatisticsTableRow(
+    label: String,
+    metrics: List<String>,
+    scrollState: ScrollState,
+    header: Boolean = false,
+    bold: Boolean = false,
+    stripeIndex: Int? = null,
+    labelColor: Color = if (header) HelmColors.Dim else HelmColors.Txt,
+    leadingColor: Color? = null,
+    onClick: (() -> Unit)? = null,
 ) {
-    Row(modifier = modifier.fillMaxWidth().padding(vertical = HelmSpacing.Sm), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = labelColor, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        (listOf(you, ai, total) + listOfNotNull(tokens)).forEach {
-            Text(it, color = color, style = style, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.width(NumberColumn))
+    val baseStyle = if (header) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodyMedium
+    val rowStyle = if (bold) baseStyle.copy(fontWeight = FontWeight.Bold) else baseStyle
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+        .then(stripeIndex?.let { Modifier.background(statisticsRowBackground(it)) } ?: Modifier)
+        .padding(vertical = HelmSpacing.Sm)
+    Row(modifier = rowModifier, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .width(StatisticsLabelColumn)
+                .padding(end = HelmSpacing.Sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (leadingColor != null) {
+                Spacer(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(leadingColor),
+                )
+                Spacer(modifier = Modifier.width(HelmSpacing.Xs))
+            }
+            Text(
+                text = label,
+                color = labelColor,
+                style = rowStyle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(scrollState),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            metrics.forEachIndexed { index, metric ->
+                Text(
+                    text = metric,
+                    color = if (header) HelmColors.Dim else HelmColors.Txt,
+                    style = rowStyle.copy(fontFeatureSettings = "tnum"),
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .width(StatisticsMetricColumn)
+                        .padding(end = if (index < metrics.lastIndex) HelmSpacing.Sm else 0.dp),
+                )
+            }
         }
     }
 }
 
-private val NumberColumn = 56.dp
+internal fun statisticsRowBackground(index: Int): Color =
+    if (index % 2 == 0) HelmColors.Surface else HelmColors.Surface2
+
+private val StatisticsLabelColumn = 136.dp
+private val StatisticsMetricColumn = 76.dp
 
 private val TimePeriod.labelRes: Int
     get() = when (this) {
