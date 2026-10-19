@@ -300,6 +300,10 @@ nothing) is the common case by design:
   Claude and Codex receive this output. Copilot drops
   `userPromptSubmitted` output, so per-prompt additions use its separate
   `userPromptTransformed` event; standing channel rules remain prepended.
+- **PostToolUse** — one bounded query from the tool name, arguments, and
+  result can add one skill or memory pointer beside the result. Claude Code,
+  Codex, and Copilot support this response; the same per-session no-repeat
+  ledger applies as prompt hints.
 - **Stop** — the one-shot nudge: a claimed-but-open plan item or an unset
   AIAGENT state blocks the turn ONCE with a reason naming the alternative
   (`plan_complete` / `session_plan_claim` / `session_set_aiagent_state`).
@@ -391,6 +395,20 @@ the asking session's own session-bound memories — never another session's
 description (`Trigger: /graphify`) beat any inference. Known, accepted
 weakness: BM25 misses oblique phrasing; revisit only with evidence from real
 use.
+
+PostToolUse also scores the completed tool name, bounded arguments (800
+characters), and bounded result (1,200 characters). Argument values under
+keys containing `secret`, `token`, `password`, or `credential` are omitted.
+The tool query stays in memory for scoring only: it is not logged or included
+in usage feedback. A tool hint needs a base BM25 score of at least 5 unless
+its name or declared trigger matches (prompt hints keep the 3.5 floor). It
+emits one pointer per event and at most two per user turn. The shared
+no-repeat ledger resets on compaction and a session clear/compact start. Tool
+scoring has a 50 ms budget: the hook stops waiting at 50 ms (a slow or failed
+scorer never stalls the CLI's tool call), returns no pointer, and records nothing.
+The cutoff bounds asynchronous scoring only: the in-process BM25 scorer runs
+synchronously and cannot be interrupted, so its cost is kept small instead
+(measured P50 0.33 ms, P95 0.88 ms over 52 candidates). Tool-result terms never train the prompt/fetch usage weights.
 
 ### Dual-path rules delivery
 

@@ -13,6 +13,7 @@ import {
   HOOK_PROVIDERS,
   getHookProviderConfig,
   inferCliProvider,
+  supportsPostToolUseContext,
 } from '../../../src/session/hooks/hook-providers';
 
 describe('HOOK_PROVIDERS', () => {
@@ -33,6 +34,11 @@ describe('HOOK_PROVIDERS', () => {
     expect(byProvider.claude).toEqual(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop', 'StopFailure']);
     expect(byProvider.codex).toEqual(['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop']);
     expect(byProvider.copilot).toEqual(['sessionStart', 'userPromptSubmitted', 'userPromptTransformed', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop']);
+    for (const provider of HOOK_PROVIDERS) {
+      expect(provider.events).toContain(provider.provider === 'copilot' ? 'postToolUse' : 'PostToolUse');
+      expect(provider.postToolUseContext).toBe(true);
+    }
+    expect(supportsPostToolUseContext('unknown')).toBe(false);
   });
 
   it('resolves a config by provider; unknown answers null', () => {

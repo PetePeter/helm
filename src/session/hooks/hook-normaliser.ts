@@ -56,6 +56,10 @@ export interface HookEvent {
   toolName?: string;
   /** The tool's arguments object (tool_input / toolInput), when present. */
   toolInput?: Record<string, unknown>;
+  /** The tool's result (tool_response / tool_result / toolResult), when present. */
+  toolResponse?: unknown;
+  /** SessionStart source, used to distinguish startup/resume from clear/compact. */
+  source?: string;
   prompt?: string;
   /** Copilot's model-facing prompt before a userPromptTransformed response. */
   transformedPrompt?: string;
@@ -109,6 +113,14 @@ function obj(payload: Record<string, unknown>, keys: string[]): Record<string, u
   return undefined;
 }
 
+/** Pick the first present value without restricting tool results to objects. */
+function value(payload: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) return payload[key];
+  }
+  return undefined;
+}
+
 /** Copilot CLI keeps each session's event log at a fixed spot keyed by its session id. */
 function copilotTranscriptPath(cliSessionId: string | undefined): string | undefined {
   return cliSessionId ? join(homedir(), '.copilot', 'session-state', cliSessionId, 'events.jsonl') : undefined;
@@ -139,6 +151,8 @@ export function normaliseHookEvent(
     cwd: str(input.payload, ['cwd']),
     toolName: str(input.payload, ['tool_name', 'toolName']),
     toolInput: obj(input.payload, ['tool_input', 'toolInput']),
+    toolResponse: value(input.payload, ['tool_response', 'toolResponse', 'tool_result', 'toolResult']),
+    source: str(input.payload, ['source']),
     prompt: str(input.payload, ['prompt']),
     transformedPrompt: str(input.payload, ['transformedPrompt', 'transformed_prompt']),
     trigger: str(input.payload, ['trigger']),

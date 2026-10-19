@@ -150,6 +150,30 @@ describe('normaliseHookEvent', () => {
     ).toBeUndefined();
   });
 
+  it('normalises PostToolUse results and SessionStart sources across provider spellings', () => {
+    expect(normalise({
+      cli: 'claude',
+      event: 'PostToolUse',
+      payload: { tool_name: 'Read', tool_input: { file_path: '/repo/a.ts' }, tool_response: 'source text' },
+    })).toMatchObject({
+      event: 'PostToolUse',
+      toolName: 'Read',
+      toolInput: { file_path: '/repo/a.ts' },
+      toolResponse: 'source text',
+    });
+    expect(normalise({
+      cli: 'copilot',
+      event: 'postToolUse',
+      payload: { toolName: 'search', toolInput: { query: 'baud' }, toolResult: { matches: 2 } },
+    })).toMatchObject({
+      event: 'PostToolUse',
+      toolName: 'search',
+      toolInput: { query: 'baud' },
+      toolResponse: { matches: 2 },
+    });
+    expect(normalise({ cli: 'codex', event: 'SessionStart', payload: { source: 'compact' } })?.source).toBe('compact');
+  });
+
   it('normalises the Claude-only StopFailure event — the reported stall', () => {
     const event = normalise({
       cli: 'claude',

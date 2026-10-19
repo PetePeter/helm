@@ -199,11 +199,15 @@ A real CLI as the recording model, measured the same day with the suggested comm
 
 ## Auto-recall
 
-Recall is the prompt-hint suggester that already existed ([cli-hooks.md](cli-hooks.md), "The hint-only suggester"). Auto memory adds one thing to it: the asking session's own bound memories join the candidate list. There is no second recall path and no model in it.
+Recall uses the same hint suggester on prompts and completed CLI tool calls
+([cli-hooks.md](cli-hooks.md), "The hint-only suggester"). Auto memory adds one
+thing to its candidate list: the asking session's own bound memories. There is
+no second recall path and no model in it.
 
 ```mermaid
 flowchart LR
     P[prompt from session S] --> C[createSuggestionCandidateSource]
+    T[PostToolUse name, bounded args and result] --> C
     SK[skills visible to the project] --> C
     PM[project memories<br/>live, unbound] --> C
     BM[S's own bound memories<br/>listBoundForSession] --> C
@@ -212,11 +216,28 @@ flowchart LR
     SW -->|no| D[memory candidates dropped]
     SW -->|yes| SC[scorer: BM25 threshold,<br/>then G5 reorder]
     D --> SC
-    SC -->|passers, top 3| H["possibly related: memory/&lt;id&gt; (&lt;tldr&gt;)"]
+    SC -->|prompt: top 3 passers| H["possibly related: memory/&lt;id&gt; (&lt;tldr&gt;)"]
+    SC -->|tool: base 5+, one per call, max two per turn| TH[tool hint]
 ```
 
-- **Same line, same rules.** A bound memory is hinted as `memory/<id> (<tldr>)` like any other, must pass the same BM25 threshold (unless the prompt names its tldr outright, which bypasses scoring for every candidate), and is hinted once per session. This is why the judge writes the tldr as the fact itself.
+- **Same line, same rules.** A bound memory is hinted as `memory/<id> (<tldr>)`
+  like any other. Prompt hints use the 3.5 BM25 floor; tool hints use a
+  stricter base-score floor of 5. An explicit name bypasses scoring. Each
+  pointer is sent once per session until compaction or a clear/compact start
+  resets the ledger. This is why the judge writes the tldr as the fact itself.
 - **Own session only.** A session is reminded of what it learned earlier; other sessions of the project see the memory only after a dream releases its binding, at which point it arrives through the project list.
 - **No project needed.** A session outside any project still gets its own bound memories as candidates.
-- **No per-type branch.** CLI sessions get the hint through the UserPromptSubmit hook and API sessions through `promptContext`; both call the same `SuggestionService`. A CLI whose prompt-hook output never reaches the model (Copilot today) gets no hint of any kind, bound memories included.
-- **The switch.** `SuggestionService` reads `autoRecall` on every prompt. Off means memory candidates, bound or not, are dropped before scoring, so no memory is hinted; skills are still suggested. Switching it back on needs no restart.
+- **Prompt and tool paths.** CLI prompt hints use UserPromptSubmit, or
+  Copilot's `userPromptTransformed`; API sessions use `promptContext`. Claude
+  Code, Codex, and Copilot also receive one PostToolUse pointer beside a
+  completed tool result. Copilot still drops `userPromptSubmitted` output,
+  but its PostToolUse response supports additional context. API sessions do
+  not receive tool-result hints.
+- **Bounded tool query.** The query includes the tool name, at most 800
+  argument characters, and at most 1,200 result characters. Argument keys
+  containing `secret`, `token`, `password`, or `credential` are excluded.
+  Query text is not logged or used for suggestion-learning feedback. Tool
+  results have a 50 ms budget; the hook stops waiting at 50 ms, sends no hint
+  and records no no-repeat state. Object results are walked with a node budget
+  before serializing, and their secret-named keys are dropped too.
+- **The switch.** `SuggestionService` reads `autoRecall` on every prompt or tool hint. Off means memory candidates, bound or not, are dropped before scoring, so no memory is hinted; skills are still suggested. Switching it back on needs no restart.

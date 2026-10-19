@@ -40,6 +40,8 @@ import { contextLevel, type ContextLimits } from '../context-limits.js';
 import { renderHookInjection, type HookInjectionOverrides } from './hook-injections.js';
 import { renderSessionTodoContext } from '../todo-context.js';
 import type { SessionTodo } from '../../types/todo.js';
+import { supportsPostToolUseContext } from './hook-providers.js';
+import { buildToolSuggestionQuery } from './tool-suggestion-query.js';
 
 /** A claimed plan reduced to what a nudge names. */
 export interface ClaimedPlanSummary {
@@ -83,6 +85,11 @@ export interface ContextInjectorDeps {
   getOpenTasks?(sessionId: string): string[];
   /** The hint-only suggester: tuple payload or null. Promise = the worker seam. */
   suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null>;
+  /** Tool-result hint path; kept separate so it does not train prompt usage weights. */
+  suggestTool?(sessionId: string, query: string, projectId: string | null): Promise<string | null>;
+  /** Reset no-repeat hints after a context reset, and tool hints on a new prompt. */
+  resetSuggestions?(sessionId: string): void;
+  resetToolSuggestionTurn?(sessionId: string): void;
   /** Directory → project id, for pre-filtering suggester candidates. */
   getProjectIdForDirectory(dirPath: string): string | null;
   /**
@@ -161,7 +168,14 @@ export class ContextInjector {
     // prepended first-contact block would be.
     if (session.interactionChannel !== 'telegram') this.telegramModeAnnounced.delete(session.id);
 
-    if (event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed') this.stopTodosNudged.delete(session.id);
+    if (event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed') {
+      this.stopTodosNudged.delete(session.id);
+      this.deps.resetToolSuggestionTurn?.(session.id);
+    }
+    if (event.event === 'PreCompact' ||
+      (event.event === 'SessionStart' && ['clear', 'compact'].includes(event.source?.toLowerCase() ?? ''))) {
+      this.deps.resetSuggestions?.(session.id);
+    }
 
     let response: InjectorResponse;
     switch (event.event) {
@@ -179,6 +193,9 @@ export class ContextInjector {
         break;
       case 'UserPromptTransformed':
         response = await this.respondUserPrompt(event, session);
+        break;
+      case 'PostToolUse':
+        response = await this.respondPostToolUse(event, session);
         break;
       case 'Stop':
         response = this.respondStop(event, session);
@@ -273,6 +290,17 @@ export class ContextInjector {
     const hookCanCarryStandingRules = PROMPT_INJECTION_PROVIDERS.has(event.cli);
     const context = await this.userPromptContext(session, event.prompt ?? '', () => true, true, hookCanCarryStandingRules);
     return context ? { statusCode: 200, body: encodeAdditionalContext(event, context) } : null;
+  }
+
+  private async respondPostToolUse(event: HookEvent, session: SessionInfo): Promise<InjectorResponse> {
+    if (!this.deps.suggestTool || !supportsPostToolUseContext(event.cli)) return null;
+    const query = buildToolSuggestionQuery(event);
+    if (!query) return null;
+    const projectId = session.workingDir ? this.deps.getProjectIdForDirectory(session.workingDir) : null;
+    const pointer = await this.deps.suggestTool(session.id, query, projectId);
+    return pointer
+      ? { statusCode: 200, body: encodeAdditionalContext(event, this.injection('suggestionPointer', { content: pointer })) }
+      : null;
   }
 
   /**

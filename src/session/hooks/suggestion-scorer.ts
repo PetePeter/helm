@@ -1,5 +1,5 @@
 /**
- * SuggestionScorer — the hint-only suggester that fires on UserPromptSubmit.
+ * SuggestionScorer — the hint-only suggester used by UserPromptSubmit and PostToolUse.
  *
  * DESIGN (decided; do not re-derive — see plans P-0785/P-0786 and the
  * "scoring is on demand" context node):
@@ -71,6 +71,8 @@ export interface ScoredSuggestion {
 export interface SuggestionScoreContext {
   sessionId?: string;
   projectId?: string | null;
+  /** Raise the base-score floor for a caller without letting boosts rescue a passer. */
+  minimumScore?: number;
 }
 
 /**
@@ -175,11 +177,12 @@ export class Bm25SuggestionScorer implements SuggestionScorer {
   async score(
     prompt: string,
     candidates: readonly SuggestionCandidate[],
+    ctx?: SuggestionScoreContext,
   ): Promise<ScoredSuggestion[]> {
     const scores = bm25RawScores(prompt, candidates);
     const scored: ScoredSuggestion[] = [];
     candidates.forEach((candidate, i) => {
-      if (scores[i]! >= MIN_SCORE) {
+      if (scores[i]! >= (ctx?.minimumScore ?? MIN_SCORE)) {
         scored.push({ type: candidate.type, id: candidate.id, name: candidate.name, score: scores[i]! });
       }
     });
@@ -347,6 +350,8 @@ export interface SuggestionServiceDeps {
    * Absent (G4 wiring) means nothing is recorded.
    */
   onSuggested?: (sessionId: string, keys: readonly string[], promptTerms: readonly string[], projectId: string | null) => void;
+  /** Monotonic clock seam for deterministic budget tests; defaults to performance.now. */
+  now?: () => number;
 }
 
 export interface SuggestionServiceOptions {
@@ -359,6 +364,9 @@ export interface SuggestionServiceOptions {
 const DEFAULT_TOP_K = 3;
 const DEFAULT_MAX_BYTES = 400;
 const PAYLOAD_PREFIX = 'possibly related: ';
+const TOOL_MIN_SCORE = 5;
+const TOOL_POINTERS_PER_TURN = 2;
+const TOOL_SOFT_BUDGET_MS = 50;
 
 /** A prompt that NAMES a candidate matches it without consulting the scorer. */
 function explicitlyNamed(prompt: string, candidates: readonly SuggestionCandidate[]): SuggestionCandidate[] {
@@ -379,14 +387,18 @@ export class SuggestionService {
   private readonly topK: number;
   private readonly maxBytes: number;
   private readonly scorer: SuggestionScorer;
+  private readonly now: () => number;
   /** Per-session ledger of already-suggested items — one pointer, ever. */
   private readonly suggested = new Map<string, Set<string>>();
+  /** Successful tool hints in the current prompt turn. */
+  private readonly toolPointersThisTurn = new Map<string, number>();
 
   constructor(deps: SuggestionServiceDeps, options: SuggestionServiceOptions = {}) {
     this.deps = deps;
     this.topK = options.topK ?? DEFAULT_TOP_K;
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
     this.scorer = deps.scorer ?? new Bm25SuggestionScorer();
+    this.now = deps.now ?? (() => performance.now());
   }
 
   /**
@@ -395,7 +407,7 @@ export class SuggestionService {
    */
   async suggest(sessionId: string, prompt: string, projectId: string | null): Promise<string | null> {
     if (!prompt.trim()) return null;
-    const startedAt = performance.now();
+    const startedAt = this.now();
 
     const recall = this.deps.memoriesEnabled?.() ?? true;
     const candidates = this.deps.getCandidates(projectId, sessionId)
@@ -411,30 +423,14 @@ export class SuggestionService {
       ? named.map((candidate) => ({ ...candidate, score: TRIGGER_SCORE }))
       : await this.scorer.score(prompt, fresh, { sessionId, projectId });
 
-    const chosen: ScoredSuggestion[] = [];
-    let payload = '';
-    for (const item of ranked.slice(0, this.topK)) {
-      const next = chosen.length === 0
-        ? PAYLOAD_PREFIX + this.tuple(item)
-        : payload + ', ' + this.tuple(item);
-      if (next.length > this.maxBytes && chosen.length > 0) break;
-      payload = next;
-      chosen.push(item);
-      if (chosen.length >= this.topK) break;
-    }
+    const stillFresh = ranked.filter((item) => !this.suggested.get(sessionId)?.has(this.key(item)));
+    const { chosen, payload } = this.format(stillFresh, this.topK);
     if (chosen.length === 0) return null;
 
     // Record AFTER deciding: only what was actually sent counts as suggested.
-    for (const item of chosen) {
-      let ledger = this.suggested.get(sessionId);
-      if (!ledger) {
-        ledger = new Set();
-        this.suggested.set(sessionId, ledger);
-      }
-      ledger.add(this.key(item));
-    }
+    this.remember(sessionId, chosen);
 
-    const elapsedMs = performance.now() - startedAt;
+    const elapsedMs = this.now() - startedAt;
     logger.info(`[HookSuggest] session=${sessionId} "${payload}"`);
     logger.debug(`[HookSuggest] scored ${candidates.length} candidates in ${elapsedMs.toFixed(2)}ms`);
     // G5 usage feedback: what was sent, and the prompt's usable terms, for the
@@ -445,7 +441,75 @@ export class SuggestionService {
 
   /** A session that closed takes its ledger with it. */
   forgetSession(sessionId: string): void {
+    this.resetSuggestions(sessionId);
+  }
+
+  /** Build one tool-result pointer; over-budget or irrelevant work leaves no ledger state. */
+  async suggestTool(sessionId: string, query: string, projectId: string | null): Promise<string | null> {
+    if (!query.trim() || (this.toolPointersThisTurn.get(sessionId) ?? 0) >= TOOL_POINTERS_PER_TURN) return null;
+    const startedAt = this.now();
+    const recall = this.deps.memoriesEnabled?.() ?? true;
+    const candidates = this.deps.getCandidates(projectId, sessionId)
+      .filter((candidate) => recall || candidate.type !== 'memory');
+    if (candidates.length === 0) return null;
+
+    const seen = this.suggested.get(sessionId);
+    const fresh = candidates.filter((candidate) => !seen?.has(this.key(candidate)));
+    if (fresh.length === 0) return null;
+
+    const named = explicitlyNamed(query, fresh);
+    const ranked = named.length > 0
+      ? named.map((candidate) => ({ ...candidate, score: TRIGGER_SCORE }))
+      : await withinBudget(this.scorer.score(query, fresh, { sessionId, projectId, minimumScore: TOOL_MIN_SCORE }));
+    // The tool hook runs inline in the CLI: a slow scorer yields no hint rather than a stalled tool call.
+    if (!ranked) return null;
+
+    // Recheck after scoring: another concurrent hook may have used the final
+    // turn slot or suggested this item while this call was awaiting.
+    if ((this.toolPointersThisTurn.get(sessionId) ?? 0) >= TOOL_POINTERS_PER_TURN) return null;
+    const stillFresh = ranked.filter((item) =>
+      item.score >= TOOL_MIN_SCORE && !this.suggested.get(sessionId)?.has(this.key(item)),
+    );
+    const { chosen, payload } = this.format(stillFresh.slice(0, 1), 1);
+    if (chosen.length === 0 || this.now() - startedAt > TOOL_SOFT_BUDGET_MS) return null;
+
+    this.remember(sessionId, chosen);
+    this.toolPointersThisTurn.set(sessionId, (this.toolPointersThisTurn.get(sessionId) ?? 0) + 1);
+    return payload;
+  }
+
+  /** A new user prompt gets a fresh two-pointer tool budget. */
+  resetToolSuggestionTurn(sessionId: string): void {
+    this.toolPointersThisTurn.delete(sessionId);
+  }
+
+  /** Compaction and clear start a new context, so prior pointers may be useful again. */
+  resetSuggestions(sessionId: string): void {
     this.suggested.delete(sessionId);
+    this.toolPointersThisTurn.delete(sessionId);
+  }
+
+  private remember(sessionId: string, chosen: readonly ScoredSuggestion[]): void {
+    let ledger = this.suggested.get(sessionId);
+    if (!ledger) {
+      ledger = new Set();
+      this.suggested.set(sessionId, ledger);
+    }
+    for (const item of chosen) ledger.add(this.key(item));
+  }
+
+  private format(ranked: readonly ScoredSuggestion[], limit: number): { chosen: ScoredSuggestion[]; payload: string } {
+    const chosen: ScoredSuggestion[] = [];
+    let payload = '';
+    for (const item of ranked.slice(0, limit)) {
+      const next = chosen.length === 0
+        ? PAYLOAD_PREFIX + this.tuple(item)
+        : payload + ', ' + this.tuple(item);
+      if (next.length > this.maxBytes && chosen.length > 0) break;
+      payload = next;
+      chosen.push(item);
+    }
+    return { chosen, payload };
   }
 
   private key(candidate: { type: SuggestionType; id: string }): string {
@@ -469,4 +533,14 @@ export class SuggestionService {
     if (!name || name.toLowerCase() === item.id.toLowerCase()) return `${item.type}/${item.id}`;
     return `${item.type}/${item.id} (${name})`;
   }
+}
+
+/** Resolve to null once the tool soft budget passes; a late or failed score is dropped. */
+function withinBudget<T>(work: Promise<T>): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), TOOL_SOFT_BUDGET_MS);
+    timer.unref?.();
+  });
+  return Promise.race([work.catch(() => null), expired]).finally(() => clearTimeout(timer));
 }

@@ -21,6 +21,8 @@ export interface HookProviderConfig {
   configPath: string;
   /** Event names registered, spelled the way this CLI spells them. */
   events: string[];
+  /** Whether PostToolUse replies can add context beside the tool result. */
+  postToolUseContext: boolean;
 }
 
 export const HOOK_PROVIDERS: HookProviderConfig[] = [
@@ -31,23 +33,30 @@ export const HOOK_PROVIDERS: HookProviderConfig[] = [
     // StopFailure is Claude's alone — the turn died on an API error (the
     // usage-limit stall), reported as fact instead of guessed from silence.
     events: ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop', 'StopFailure'],
+    postToolUseContext: true,
   },
   {
     provider: 'codex',
     label: 'Codex',
     configPath: '~/.codex/hooks.json',
     events: ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'Stop'],
+    postToolUseContext: true,
   },
   {
     provider: 'copilot',
     label: 'GitHub Copilot CLI',
     configPath: '~/.copilot/hooks/helm.json',
     events: ['sessionStart', 'userPromptSubmitted', 'userPromptTransformed', 'preToolUse', 'postToolUse', 'preCompact', 'agentStop'],
+    postToolUseContext: true,
   },
 ];
 
 export function getHookProviderConfig(provider: string): HookProviderConfig | null {
   return HOOK_PROVIDERS.find((entry) => entry.provider === provider) ?? null;
+}
+
+export function supportsPostToolUseContext(provider: string): boolean {
+  return getHookProviderConfig(provider)?.postToolUseContext === true;
 }
 
 /** The fields of a CLI type a provider can plausibly be inferred from.

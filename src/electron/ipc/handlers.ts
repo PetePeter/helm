@@ -937,6 +937,9 @@ export function registerIPCHandlers(
       return dir ? openTaskLines(planManager.getForDirectory(dir)) : [];
     },
     suggest: (sessionId, prompt, projectId) => suggestionService.suggest(sessionId, prompt, projectId),
+    suggestTool: (sessionId, query, projectId) => suggestionService.suggestTool(sessionId, query, projectId),
+    resetSuggestions: (sessionId) => suggestionService.resetSuggestions(sessionId),
+    resetToolSuggestionTurn: (sessionId) => suggestionService.resetToolSuggestionTurn(sessionId),
     getProjectIdForDirectory: (dirPath) => planManager.getProjectIdForDirectory(dirPath),
     getReminderMode: (reminder) => configLoader.getReminderDelivery()[reminder],
     getContextLimits: (session) => {

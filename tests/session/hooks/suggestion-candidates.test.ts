@@ -10,7 +10,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryManager } from '../../../src/session/memory-manager';
 import { createSuggestionCandidateSource } from '../../../src/session/hooks/suggestion-candidates';
-import { SuggestionService } from '../../../src/session/hooks/suggestion-scorer';
+import {
+  Bm25SuggestionScorer,
+  BoostedSuggestionScorer,
+  SuggestionService,
+} from '../../../src/session/hooks/suggestion-scorer';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -27,6 +31,7 @@ const BAUD_PROMPT = 'what baud rate does the RS485 link on the EG004 charger nee
 function setup() {
   let tick = 1_000;
   let recall = true;
+  let usageNotes = 0;
   const projects: Record<string, string | null> = { s1: 'p-a', s2: 'p-a', loose: null };
   const memory = new MemoryManager({ resolveSessionProject: (sessionId) => projects[sessionId] ?? null, now: () => ++tick });
   const service = new SuggestionService({
@@ -36,14 +41,21 @@ function setup() {
       listBoundMemories: (sessionId) => memory.listBoundForSession(sessionId),
     }),
     memoriesEnabled: () => recall,
+    scorer: new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
+      getMemoryEdges: () => [],
+      getWorkspacePlanIds: () => new Set(),
+      usageBoost: () => 0,
+    }),
+    onSuggested: () => { usageNotes += 1; },
   });
   const suggest = (sessionId: string, prompt: string) => service.suggest(sessionId, prompt, projects[sessionId] ?? null);
+  const suggestTool = (sessionId: string, query: string) => service.suggestTool(sessionId, query, projects[sessionId] ?? null);
   const saveBound = (sessionId: string) => memory.createForSession(sessionId, {
     tldr: 'RS485 on the EG004 charger needs 9600 baud',
     content: 'The EG004 charger only answers on its RS485 link at 9600 baud, 8N1.',
     sessionBound: true,
   })!;
-  return { memory, suggest, saveBound, setRecall: (on: boolean) => { recall = on; } };
+  return { memory, service, suggest, suggestTool, saveBound, setRecall: (on: boolean) => { recall = on; }, usageNotes: () => usageNotes };
 }
 
 describe('suggester candidates: session-bound memories', () => {
@@ -103,5 +115,47 @@ describe('suggester candidates: session-bound memories', () => {
     memory.releaseBinding(saved.id);
 
     expect(await suggest('s2', BAUD_PROMPT)).toContain(`memory/${saved.id}`);
+  });
+
+  it('uses tool results for the owning session, respects autoRecall, and does not train usage feedback', async () => {
+    const { suggestTool, saveBound, setRecall, usageNotes } = setup();
+    const saved = saveBound('s1');
+    const query = `tool Read\nresult ${BAUD_PROMPT}`;
+
+    setRecall(false);
+    expect(await suggestTool('s1', 'tool Read\nresult graphify this folder into a knowledge graph')).toContain('skill/graphify');
+    expect(await suggestTool('s1', query)).toBeNull();
+    setRecall(true);
+    expect(await suggestTool('s2', query)).toBeNull();
+    expect(await suggestTool('s1', query)).toContain(`memory/${saved.id}`);
+    expect(usageNotes()).toBe(0);
+  });
+
+  it('measures the real candidate-build, BM25, and formatting path on a local MemoryManager', async () => {
+    const { memory, service, suggestTool } = setup();
+    memory.createForSession('s1', {
+      tldr: 'RS485 on the EG004 charger needs 9600 baud',
+      content: 'The EG004 charger uses 9600 baud on its RS485 link.',
+    });
+    for (let index = 0; index < 48; index += 1) {
+      memory.createForSession('s1', {
+        tldr: `Unrelated fixture memory ${index}`,
+        content: `Documentation for unrelated fixture topic ${index}, with independent terms and examples.`,
+      });
+    }
+
+    const samples: number[] = [];
+    for (let index = 0; index < 100; index += 1) {
+      const start = performance.now();
+      await suggestTool('s1', `tool Read\nresult ${BAUD_PROMPT}`);
+      samples.push(performance.now() - start);
+      // Reuse one session and candidate set while keeping every sample eligible.
+      service.resetSuggestions('s1');
+    }
+    samples.sort((a, b) => a - b);
+    const percentile = (fraction: number) => samples[Math.ceil(fraction * samples.length) - 1]!;
+    console.info(`[P-1042] tool suggestion latency: P50 ${percentile(0.5).toFixed(2)} ms, P95 ${percentile(0.95).toFixed(2)} ms`);
+    expect(samples).toHaveLength(100);
+    expect(Number.isFinite(percentile(0.95))).toBe(true);
   });
 });

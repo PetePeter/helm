@@ -15,6 +15,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   Bm25SuggestionScorer,
+  BoostedSuggestionScorer,
   SuggestionService,
   declaredTriggers,
   type SuggestionCandidate,
@@ -188,6 +189,76 @@ describe('SuggestionService', () => {
     expect(await service.suggest('s1', prompt, null)).toBeNull();
     // A different session is a different ledger.
     expect(await service.suggest('s2', prompt, null)).toContain('skill/graphify');
+  });
+
+  it('uses a five point base floor even when boosts could raise a weaker match, and shares prompt deduplication', async () => {
+    const candidate: SuggestionCandidate = {
+      type: 'skill',
+      id: 'charger-guide',
+      name: 'EG004 Charger',
+      description: 'The EG004 charger only answers on its RS485 link at 9600 baud, 8N1.',
+      allProjects: false,
+    };
+    const signals = {
+      getMemoryEdges: () => [],
+      getWorkspacePlanIds: () => new Set<string>(),
+      usageBoost: () => 100,
+    };
+    const boosted = new SuggestionService({
+      getCandidates: () => [candidate],
+      scorer: new BoostedSuggestionScorer(new Bm25SuggestionScorer(), signals, { usageMax: 10 }),
+    });
+    expect(await new Bm25SuggestionScorer().score('RS485 charger', [candidate])).toHaveLength(1);
+    expect(await boosted.suggestTool('s1', 'RS485 charger', null)).toBeNull();
+
+    const aboveFloor = new SuggestionService({ getCandidates: () => [candidate] });
+    expect(await aboveFloor.suggestTool('s1', 'charger RS485 baud', null)).toContain('skill/charger-guide');
+
+    const matching = new SuggestionService({ getCandidates: () => [SKILLS[0]] });
+    expect(await matching.suggest('s2', 'graphify this folder into a knowledge graph', null)).toContain('skill/graphify');
+    expect(await matching.suggestTool('s2', 'tool Read result graphify knowledge graph', null)).toBeNull();
+  });
+
+  it('caps successful tool hints at two per prompt, resets the cap, and never records prompt usage', async () => {
+    const candidates = SKILLS;
+    let usageNotes = 0;
+    const service = new SuggestionService({
+      getCandidates: () => candidates,
+      onSuggested: () => { usageNotes += 1; },
+    });
+
+    expect(await service.suggestTool('s1', 'tool Search result BigQuery Import', null)).toContain('skill/bq-import');
+    expect(await service.suggestTool('s1', 'tool Search result PDF Text Extraction', null)).toContain('skill/pdf-extract');
+    expect(await service.suggestTool('s1', 'tool Search result graphify', null)).toBeNull();
+    expect(usageNotes).toBe(0);
+
+    service.resetToolSuggestionTurn('s1');
+    expect(await service.suggestTool('s1', 'tool Search result graphify', null)).toContain('skill/graphify');
+    expect(usageNotes).toBe(0);
+  });
+
+  it('drops an over-budget tool hint without consuming its item or turn slot', async () => {
+    let time = 0;
+    let calls = 0;
+    const candidate = SKILLS[0];
+    const service = new SuggestionService({
+      getCandidates: () => [candidate],
+      now: () => (++calls === 2 ? (time += 51) : time),
+    });
+
+    expect(await service.suggestTool('s1', 'tool Read result graphify', null)).toBeNull();
+    time = 51;
+    calls = 2;
+    expect(await service.suggestTool('s1', 'tool Read result graphify', null)).toContain('skill/graphify');
+  });
+
+  it('returns no tool hint instead of waiting on a scorer that never answers', async () => {
+    const hung = { score: () => new Promise<never>(() => {}) };
+    const service = new SuggestionService({ getCandidates: () => [SKILLS[0]], scorer: hung });
+
+    const started = Date.now();
+    expect(await service.suggestTool('s1', 'tool Read result knowledge clusters', null)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 
   it('enforces the top-K cap', async () => {

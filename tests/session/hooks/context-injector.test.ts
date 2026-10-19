@@ -403,6 +403,57 @@ describe('UserPromptSubmit reminder delivery modes (G9)', () => {
   });
 });
 
+describe('PostToolUse suggestion injection', () => {
+  it.each(['claude', 'codex', 'copilot'] as const)('encodes one tool pointer for %s', async (cli) => {
+    let receivedQuery = '';
+    const { injector } = makeInjector({
+      suggestTool: async (_sessionId, query, projectId) => {
+        receivedQuery = `${projectId}:${query}`;
+        return 'possibly related: memory/m1 (charger baud rate)';
+      },
+    });
+
+    const result = await injector.respond(hookEvent({
+      cli,
+      event: 'PostToolUse',
+      toolName: 'Read',
+      toolInput: { file_path: '/repo/charger.ts' },
+      toolResponse: 'RS485 charger baud rate is 9600',
+    }));
+
+    expect(receivedQuery).toContain('project-1:tool Read');
+    expect(receivedQuery).toContain('charger.ts');
+    expect(receivedQuery).toContain('9600');
+    if (cli === 'copilot') {
+      expect(result?.body).toMatchObject({ additionalContext: expect.stringContaining('memory/m1') });
+    } else {
+      expect(result?.body).toMatchObject({
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: expect.stringContaining('memory/m1'),
+        },
+      });
+    }
+  });
+
+  it('returns no hint for an unsupported provider and resets turn/session state at lifecycle boundaries', async () => {
+    const resetSuggestions = vi.fn();
+    const resetToolSuggestionTurn = vi.fn();
+    const suggestTool = vi.fn(async () => 'possibly related: skill/x');
+    const { injector } = makeInjector({ resetSuggestions, resetToolSuggestionTurn, suggestTool });
+
+    expect(await injector.respond(hookEvent({ cli: 'unknown' as HookEvent['cli'], event: 'PostToolUse' }))).toBeNull();
+    expect(suggestTool).not.toHaveBeenCalled();
+    await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'new turn' }));
+    await injector.respond(hookEvent({ event: 'PreCompact' }));
+    await injector.respond(hookEvent({ event: 'SessionStart', source: 'compact' }));
+    await injector.respond(hookEvent({ event: 'SessionStart', source: 'resume' }));
+
+    expect(resetToolSuggestionTurn).toHaveBeenCalledTimes(1);
+    expect(resetSuggestions).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('Stop — the one-shot nudge', () => {
   it('blocks ONCE when a claimed plan is still open; the second Stop always passes', async () => {
     const { injector } = makeInjector({
