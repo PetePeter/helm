@@ -17,12 +17,10 @@ import com.potatomotato.helm.ui.components.field
  * absence of an order — it is the first lane, and a board that hides the number
  * for exactly the top lane is a board whose ordering looks arbitrary.
  *
- * MEMBERSHIP prefers the human ids and falls back to the internal ones. The
- * desktop computes both per answer; P-0041 is the name the user has seen on the
- * plan board, and a column of UUIDs is technically the same fact said uselessly.
- * A lane that answered neither says nothing rather than "0 plans" — the member
- * lists are the one part of the wire shape a future desktop could stop sending,
- * and silence is the honest reading of "not answered".
+ * MEMBERSHIP prefers open human ids, then open internal ids. These are the
+ * uncompleted plans the lane displays. If an older desktop sends neither open
+ * list, it falls back to all-member human ids and then internal ids. A supplied
+ * empty open list means zero open plans rather than missing data.
  */
 object SequenceFields {
 
@@ -39,13 +37,13 @@ object SequenceFields {
     fun members(sequence: HelmPlanSequence): String = memberIds(sequence).joinToString(SEPARATOR)
 
     /**
-     * The member ids themselves — human where the desktop answered them, internal
-     * otherwise. The lane list counts them; the detail screen names them. One
-     * preference rule, so the count and the list can never disagree about which
-     * plans a lane holds.
+     * Open member ids when the desktop provides them; older desktops fall back
+     * to all members. The lane list counts them and the detail screen names them.
      */
     fun memberIds(sequence: HelmPlanSequence): List<String> =
-        sequence.memberHumanIds.ifEmpty { sequence.memberPlanIds }
+        sequence.openMemberHumanIds
+            ?: sequence.openMemberPlanIds
+            ?: sequence.memberHumanIds.ifEmpty { sequence.memberPlanIds }
 
     private const val SEPARATOR = ", "
 }

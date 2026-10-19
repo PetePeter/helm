@@ -4,6 +4,13 @@ import type { ProjectStore } from '../../session/project-store.js';
 import type { PlanManager, PlanRefResolution } from '../../session/plan-manager.js';
 import type { PlanItem, PlanSequence } from '../../types/plan.js';
 
+export type PlanSequenceMemberFields = {
+  memberPlanIds: string[];
+  memberHumanIds: string[];
+  openMemberPlanIds: string[];
+  openMemberHumanIds: string[];
+};
+
 /**
  * Plan sequence (shared-memory store) operations: list, create, update,
  * memory append, delete, and plan-to-sequence assignment.
@@ -15,7 +22,7 @@ export class HelmPlanSequenceService {
     private readonly projectStore?: ProjectStore,
   ) {}
 
-  listPlanSequences(input: { dirPath?: string; planRef?: string }): Array<PlanSequence & { memberPlanIds: string[]; memberHumanIds: string[]; selectedForPlan?: boolean }> {
+  listPlanSequences(input: { dirPath?: string; planRef?: string }): Array<PlanSequence & PlanSequenceMemberFields & { selectedForPlan?: boolean }> {
     const plan = input.planRef ? this.resolvePlanRef(input.planRef, 'Plan')?.item ?? null : null;
     if (input.planRef && !plan) {
       throw new Error(`Plan not found: ${input.planRef}`);
@@ -29,22 +36,30 @@ export class HelmPlanSequenceService {
       const members = items.filter((item) => item.sequenceId === sequence.id);
       return {
         ...sequence,
-        memberPlanIds: members.map((item) => item.id),
-        memberHumanIds: members.map((item) => item.humanId ?? item.id),
+        ...this.buildMemberFields(members),
         ...(plan ? { selectedForPlan: plan.sequenceId === sequence.id } : {}),
       };
     });
   }
 
-  getPlanSequence(id: string): (PlanSequence & { memberPlanIds: string[]; memberHumanIds: string[] }) | null {
+  getPlanSequence(id: string): (PlanSequence & PlanSequenceMemberFields) | null {
     const sequence = this.planManager.getSequence(id);
     if (!sequence) return null;
     const items = this.planManager.getForDirectory(sequence.dirPath);
     const members = items.filter((item) => item.sequenceId === sequence.id);
     return {
       ...sequence,
+      ...this.buildMemberFields(members),
+    };
+  }
+
+  private buildMemberFields(members: PlanItem[]): PlanSequenceMemberFields {
+    const openMembers = members.filter((item) => item.status !== 'done');
+    return {
       memberPlanIds: members.map((item) => item.id),
       memberHumanIds: members.map((item) => item.humanId ?? item.id),
+      openMemberPlanIds: openMembers.map((item) => item.id),
+      openMemberHumanIds: openMembers.map((item) => item.humanId ?? item.id),
     };
   }
 

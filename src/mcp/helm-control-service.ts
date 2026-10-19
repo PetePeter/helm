@@ -24,7 +24,7 @@ import type { NotificationManager } from '../session/notification-manager.js';
 import { HelmSessionDeliveryService, type HandoverArming } from './services/helm-session-delivery-service.js';
 import { HelmSessionService } from './services/helm-session-service.js';
 import { HelmPlanService } from './services/helm-plan-service.js';
-import { HelmPlanSequenceService } from './services/helm-plan-sequence-service.js';
+import { HelmPlanSequenceService, type PlanSequenceMemberFields } from './services/helm-plan-sequence-service.js';
 import { HelmPlanAttachmentService } from './services/helm-plan-attachment-service.js';
 import { HelmContextService } from './services/helm-context-service.js';
 import { HelmTelegramService } from './services/helm-telegram-service.js';
@@ -1253,11 +1253,11 @@ export class HelmControlService extends EventEmitter {
   // Plan sequences
   // ---------------------------------------------------------------------------
 
-  listPlanSequences(input: { dirPath?: string; planRef?: string }): Array<PlanSequence & { memberPlanIds: string[]; memberHumanIds: string[]; selectedForPlan?: boolean }> {
+  listPlanSequences(input: { dirPath?: string; planRef?: string }): Array<PlanSequence & PlanSequenceMemberFields & { selectedForPlan?: boolean }> {
     return this.planSequenceService.listPlanSequences(input);
   }
 
-  getPlanSequence(id: string): (PlanSequence & { memberPlanIds: string[]; memberHumanIds: string[] }) | null {
+  getPlanSequence(id: string): (PlanSequence & PlanSequenceMemberFields) | null {
     return this.planSequenceService.getPlanSequence(id);
   }
 

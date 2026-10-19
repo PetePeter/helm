@@ -19,6 +19,8 @@ class SequenceFieldsTest {
         contextIds: List<String> = emptyList(),
         memberPlanIds: List<String> = emptyList(),
         memberHumanIds: List<String> = emptyList(),
+        openMemberPlanIds: List<String>? = null,
+        openMemberHumanIds: List<String>? = null,
         dirPath: String = "X:/work/alpha",
     ) = HelmPlanSequence(
         id = "lane",
@@ -31,6 +33,8 @@ class SequenceFieldsTest {
         contextIds = contextIds,
         memberPlanIds = memberPlanIds,
         memberHumanIds = memberHumanIds,
+        openMemberPlanIds = openMemberPlanIds,
+        openMemberHumanIds = openMemberHumanIds,
     )
 
     private fun labels(sequence: HelmPlanSequence) = SequenceFields.of(sequence).map { it.label }
@@ -67,6 +71,41 @@ class SequenceFieldsTest {
         val sequence = lane(memberPlanIds = listOf("uuid-1"))
 
         assertEquals(DetailValue.Text("uuid-1"), value(sequence, DetailLabel.Members))
+    }
+
+    @Test
+    fun `open member ids take priority over all members`() {
+        val sequence = lane(
+            memberPlanIds = listOf("uuid-open", "uuid-done"),
+            memberHumanIds = listOf("P-open", "P-done"),
+            openMemberPlanIds = listOf("uuid-open"),
+            openMemberHumanIds = listOf("P-open"),
+        )
+
+        assertEquals(DetailValue.Text("P-open"), value(sequence, DetailLabel.Members))
+    }
+
+    @Test
+    fun `an empty open member list means there are no displayed plans`() {
+        val sequence = lane(
+            memberPlanIds = listOf("uuid-done"),
+            memberHumanIds = listOf("P-done"),
+            openMemberPlanIds = emptyList(),
+            openMemberHumanIds = emptyList(),
+        )
+
+        assertEquals("", SequenceFields.members(sequence))
+        assertEquals(listOf(DetailLabel.Order, DetailLabel.Directory), labels(sequence))
+    }
+
+    @Test
+    fun `open internal ids are used when open human ids are unavailable`() {
+        val sequence = lane(
+            memberPlanIds = listOf("uuid-open", "uuid-done"),
+            openMemberPlanIds = listOf("uuid-open"),
+        )
+
+        assertEquals(DetailValue.Text("uuid-open"), value(sequence, DetailLabel.Members))
     }
 
     @Test

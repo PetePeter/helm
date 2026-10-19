@@ -320,18 +320,29 @@ describe('HelmControlService plan sequences', () => {
       updatedAt: 2,
     };
     (planManager.getItem as ReturnType<typeof vi.fn>).mockReturnValue(plan);
-    (planManager.getForDirectory as ReturnType<typeof vi.fn>).mockReturnValue([plan]);
+    const donePlan = { ...plan, id: 'plan-2', humanId: 'P-0002', status: 'done' };
+    (planManager.getForDirectory as ReturnType<typeof vi.fn>).mockReturnValue([plan, donePlan]);
     (planManager as any).getSequencesForDirectory = vi.fn(() => [sequence]);
+    (planManager as any).getSequence = vi.fn(() => sequence);
 
     expect(service.listPlanSequences({ planRef: 'P-0001' })).toEqual([
       expect.objectContaining({
         id: 'seq-1',
         sharedMemory: 'Shared notes',
-        memberPlanIds: ['plan-1'],
-        memberHumanIds: ['P-0001'],
+        memberPlanIds: ['plan-1', 'plan-2'],
+        memberHumanIds: ['P-0001', 'P-0002'],
+        openMemberPlanIds: ['plan-1'],
+        openMemberHumanIds: ['P-0001'],
         selectedForPlan: true,
       }),
     ]);
+
+    expect(service.getPlanSequence('seq-1')).toEqual(expect.objectContaining({
+      memberPlanIds: ['plan-1', 'plan-2'],
+      memberHumanIds: ['P-0001', 'P-0002'],
+      openMemberPlanIds: ['plan-1'],
+      openMemberHumanIds: ['P-0001'],
+    }));
   });
 
 });

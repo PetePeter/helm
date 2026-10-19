@@ -202,6 +202,7 @@ A sequence is a first-class shared-memory store that groups related plans into a
 **Key points:**
 - A plan may include `sequenceId` (returned by `plan_get`), but the full sequence and its shared memory are NOT inlined.
 - Call `plan_sequence_list` with `planId` to discover the sequence and see member plans, mission statement, and shared memory.
+- `memberPlanIds` / `memberHumanIds` include all members. `openMemberPlanIds` / `openMemberHumanIds` exclude plans with status `done`; an empty open array means there are no open plans. If an older desktop omits both open arrays, use the all-member arrays.
 - Shared memory is common state that all member plans can read and append to.
 
 **Workflow for reading:**
@@ -211,7 +212,9 @@ if (plan.sequenceId) {
   const sequences = await mcp.callTool('plan_sequence_list', { planId: 'P-0042' });
   const sequence = sequences[0]; // The sequence this plan belongs to
   console.log('Shared Memory:', sequence.sharedMemory);
+  // All member arrays include done plans; open member arrays omit them.
   console.log('Member Plans:', sequence.memberHumanIds);
+  console.log('Open Member Plans:', sequence.openMemberHumanIds ?? sequence.openMemberPlanIds ?? sequence.memberHumanIds);
 }
 ```
 

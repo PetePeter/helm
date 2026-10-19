@@ -12,11 +12,10 @@ import org.json.JSONObject
  * `sequence_get` answer it.
  *
  * [memberPlanIds] and [memberHumanIds] are NOT fields of the desktop's stored
- * `PlanSequence` — the service computes them per answer — so they are the one
- * part of this shape that a future desktop could stop sending. They parse to
- * empty for exactly that reason: a lane with no member list is still a lane
- * worth drawing, and the plans' own `sequenceId` is the authority on membership
- * anyway.
+ * `PlanSequence` — the service computes them per answer. [openMemberPlanIds] and
+ * [openMemberHumanIds] carry the same member ids filtered to plans not marked
+ * done. The open lists are nullable because older desktops omit them; an empty
+ * list means the desktop answered that there are no open plans.
  *
  * [sharedMemory] is the desktop's own legacy field. It is carried because it is
  * still answered and still readable; nothing here writes it.
@@ -32,6 +31,8 @@ data class HelmPlanSequence(
     val contextIds: List<String> = emptyList(),
     val memberPlanIds: List<String> = emptyList(),
     val memberHumanIds: List<String> = emptyList(),
+    val openMemberPlanIds: List<String>? = null,
+    val openMemberHumanIds: List<String>? = null,
     val createdAtEpochMs: Long = 0L,
     val updatedAtEpochMs: Long = 0L,
 )
@@ -239,6 +240,8 @@ class SequenceRepository {
             contextIds = strings(entry.opt("contextIds")),
             memberPlanIds = strings(entry.opt("memberPlanIds")),
             memberHumanIds = strings(entry.opt("memberHumanIds")),
+            openMemberPlanIds = optionalStrings(entry.opt("openMemberPlanIds")),
+            openMemberHumanIds = optionalStrings(entry.opt("openMemberHumanIds")),
             createdAtEpochMs = (entry.opt("createdAt") as? Number)?.toLong() ?: 0L,
             updatedAtEpochMs = (entry.opt("updatedAt") as? Number)?.toLong() ?: 0L,
         )
@@ -249,4 +252,8 @@ class SequenceRepository {
         val array = raw as? JSONArray ?: return emptyList()
         return (0 until array.length()).mapNotNull { array.opt(it) as? String }
     }
+
+    /** A new wire array preserves absence as null while an empty array stays empty. */
+    private fun optionalStrings(raw: Any?): List<String>? =
+        (raw as? JSONArray)?.let(::strings)
 }

@@ -33,6 +33,8 @@ class SequenceRepositoryTest {
         assertEquals(listOf("c1"), first.contextIds)
         assertEquals(listOf("p1", "p2"), first.memberPlanIds)
         assertEquals(listOf("P-0007", "P-0008"), first.memberHumanIds)
+        assertEquals(listOf("p2"), first.openMemberPlanIds)
+        assertEquals(listOf("P-0008"), first.openMemberHumanIds)
     }
 
     @Test
@@ -42,6 +44,8 @@ class SequenceRepositoryTest {
         val lane = (repo.list.value as SequenceList.Ready).sequences.single()
         assertEquals(emptyList<String>(), lane.memberPlanIds)
         assertEquals(emptyList<String>(), lane.contextIds)
+        assertEquals(null, lane.openMemberPlanIds)
+        assertEquals(null, lane.openMemberHumanIds)
         // An absent order is 0, which is the desktop's own default.
         assertEquals(0, lane.order)
     }
@@ -172,6 +176,7 @@ class SequenceRepositoryTest {
         """[{"id":"seq1","projectId":"proj1","dirPath":"/work","title":"Mobile transport",""" +
             """"missionStatement":"Get the phone talking","sharedMemory":"legacy notes","order":2,""" +
             """"contextIds":["c1"],"memberPlanIds":["p1","p2"],"memberHumanIds":["P-0007","P-0008"],""" +
+            """"openMemberPlanIds":["p2"],"openMemberHumanIds":["P-0008"],""" +
             """"createdAt":10,"updatedAt":20},""" +
             """{"id":"seq2","dirPath":"/work","title":"Cleanup","missionStatement":"","sharedMemory":"",""" +
             """"order":3,"memberPlanIds":[],"memberHumanIds":[],"createdAt":11,"updatedAt":21}]"""
