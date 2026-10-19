@@ -5,23 +5,24 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-function makeMocks(overrides?: { submitSuffix?: string; cliType?: string }) {
+function makeMocks(overrides?: { submitSuffix?: string; cliType?: string; provider?: string; activityLevel?: string }) {
   const submitSuffix = overrides?.submitSuffix ?? '\\r';
   const cliType = overrides?.cliType ?? 'claude-code';
   const ptyManager = {
-    write: vi.fn(),
+    write: vi.fn(() => true),
     deliverText: vi.fn(() => Promise.resolve()),
     nudgeResize: vi.fn(() => Promise.resolve()),
     has: vi.fn(() => true),
     getTerminalTail: undefined as any,
   };
+  const session = { id: 's1', name: 'Test', cliType, activityLevel: overrides?.activityLevel ?? 'idle' };
   const sessionManager = {
-    getSession: vi.fn(() => ({ id: 's1', name: 'Test', cliType })),
+    getSession: vi.fn(() => session),
   };
   const configLoader = {
-    getCliTypeEntry: vi.fn(() => ({ submitSuffix })),
+    getCliTypeEntry: vi.fn(() => ({ submitSuffix, provider: overrides?.provider })),
   };
-  return { ptyManager, sessionManager, configLoader };
+  return { ptyManager, sessionManager, configLoader, session };
 }
 
 function deliver(input: string, mocks: ReturnType<typeof makeMocks>, opts?: { origin?: 'user' | 'system'; impliedSubmit?: boolean; deliveryContext?: 'background' | 'interactive'; verifyDelivery?: { label?: string; delayMs?: number; retrySubmit?: boolean } }) {
@@ -56,6 +57,35 @@ describe('deliverPromptSequenceToSession', () => {
     expect(mocks.ptyManager.deliverText).toHaveBeenCalledWith('s1', 'hello');
     expect(mocks.ptyManager.deliverText).toHaveBeenCalledWith('s1', '', { submitSuffix: '\r' });
     expect(mocks.ptyManager.write).not.toHaveBeenCalledWith('s1', '\r');
+  });
+
+  it('sends a settled fallback Enter for an implied submit to busy Codex', async () => {
+    vi.useFakeTimers();
+    try {
+      const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'active' });
+      mocks.ptyManager.getTerminalTail = vi.fn(() => ({ lastOutputAt: Date.now() }));
+      const pending = deliver('hello', mocks, { origin: 'user', verifyDelivery: { delayMs: 0 } });
+
+      await vi.advanceTimersByTimeAsync(1400);
+      const result = await pending;
+
+      expect(mocks.ptyManager.write).toHaveBeenCalledWith('s1', '\r', 'input');
+      expect(result?.codexBusySubmitRecoverySent).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not send the Codex fallback Enter when Codex is idle', async () => {
+    const mocks = makeMocks({ cliType: 'codex', provider: 'codex', activityLevel: 'idle' });
+    (mocks.ptyManager.deliverText as any).mockImplementation((_sessionId: string, text: string) => {
+      if (text) mocks.session.activityLevel = 'active';
+      return Promise.resolve();
+    });
+
+    await deliver('hello', mocks, { origin: 'user' });
+
+    expect(mocks.ptyManager.write).not.toHaveBeenCalled();
   });
 
   it('{NoSend} suppresses implied submit', async () => {

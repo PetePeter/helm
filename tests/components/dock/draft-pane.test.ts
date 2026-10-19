@@ -28,6 +28,7 @@ describe('DraftPane.vue', () => {
   let holdSaves: Promise<void> | null;
   /** What reached the session's PTY stdin. */
   let ptyWrites: Array<{ sessionId: string; data: string }>;
+  let chatSends: Array<{ sessionId: string; text: string }>;
   let DraftPane: typeof import('../../../renderer/components/dock/DraftPane.vue').default;
   let setActiveSessionId: typeof import('../../../renderer/stores/app.js').setActiveSessionId;
 
@@ -62,8 +63,10 @@ describe('DraftPane.vue', () => {
       },
       time: { timeActivity: vi.fn() },
       terminal: { ptyWrite: async (sessionId: string, data: string) => { ptyWrites.push({ sessionId, data }); } },
+      chat: { chatSend: async (input: { sessionId: string; text: string }) => { chatSends.push(input); return { ok: true }; } },
     };
     ptyWrites = [];
+    chatSends = [];
   });
 
   afterEach(() => {
@@ -340,6 +343,40 @@ describe('DraftPane.vue', () => {
       expect(sent()).toMatch(/\r$/);
       expect(input().value).toBe('');
       expect(main.get('s1').text).toBe('');
+    });
+
+    it('sends through Chat when the last prompt came from a phone', async () => {
+      await open();
+      const { useAppStore } = await import('../../../renderer/stores/app.js');
+      useAppStore().state.sessions.push({
+        id: 's1', name: 'Session 1', cliType: 'claude-code', processId: 1, lastUserPromptSource: 'phone',
+      } as never);
+      await type('continue from my phone');
+
+      await wrapper!.find('[data-draft-send]').trigger('click');
+      await settle();
+
+      expect(chatSends).toHaveLength(1);
+      expect(chatSends[0]).toMatchObject({ sessionId: 's1', text: 'continue from my phone' });
+      expect(ptyWrites).toHaveLength(0);
+      expect(input().value).toBe('');
+    });
+
+    it('sends through Chat when the last prompt came from desktop Chat', async () => {
+      await open();
+      const { useAppStore } = await import('../../../renderer/stores/app.js');
+      useAppStore().state.sessions.push({
+        id: 's1', name: 'Session 1', cliType: 'claude-code', processId: 1, lastUserPromptSource: 'chat',
+      } as never);
+      await type('continue in Chat');
+
+      await wrapper!.find('[data-draft-send]').trigger('click');
+      await settle();
+
+      expect(chatSends).toHaveLength(1);
+      expect(chatSends[0]).toMatchObject({ sessionId: 's1', text: 'continue in Chat' });
+      expect(ptyWrites).toHaveLength(0);
+      expect(input().value).toBe('');
     });
 
     it('Ctrl+Enter sends; a plain Enter is just a new line', async () => {

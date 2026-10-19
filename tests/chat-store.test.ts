@@ -172,6 +172,16 @@ describe('Chat store', () => {
     expect(store.attachmentFor('one')).toBeNull();
   });
 
+  it('sends supplied text through Chat without replacing the Chat composer draft', async () => {
+    const store = useChatStore();
+    store.setDraft('one', 'keep this composer draft');
+
+    await store.sendText('one', 'send this from the session draft');
+
+    expect(store.messagesFor('one')[0].record.text).toBe('send this from the session draft');
+    expect(store.draftFor('one')).toBe('keep this composer draft');
+  });
+
   it('keeps a failed desktop send visible as Failed without adding a journal turn', async () => {
     send = async () => ({ ok: false, error: 'session is not accepting input' });
     const store = useChatStore();

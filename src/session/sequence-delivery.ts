@@ -134,6 +134,7 @@ export async function deliverPromptSequenceToSession(input: {
   const writeIntent = input.writeIntent ?? (input.origin === 'user' ? 'input' : 'system');
   const session = sessionManager.getSession(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
+  let targetWasBusy = false;
   assertSessionWritable(session);
   if (session.comfyUiTool) {
     throw new Error('ComfyUI sessions accept prompts through chat; terminal and automated prompt delivery is disabled.');
@@ -141,6 +142,7 @@ export async function deliverPromptSequenceToSession(input: {
 
   const cliEntry = configLoader.getCliTypeEntry(session.cliType);
   const submitSuffix = parseSubmitSuffix(cliEntry?.submitSuffix);
+  let codexBusySubmitRecoverySent = false;
 
   const lock = input.deliveryLock ?? sharedDeliveryLock;
   const processedText = escapeUnrecognizedBraces(text);
@@ -163,9 +165,17 @@ export async function deliverPromptSequenceToSession(input: {
       ptyManager.write(sid, data, writeIntent);
     },
     deliverText: (sid, chunk) => deliverText(sid, chunk, textDeliveryOptions),
-    submit: async (sid) => {
+    submit: async (sid, kind) => {
       await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
-      return deliverText(sid, '', { ...textDeliveryOptions, submitSuffix });
+      await deliverText(sid, '', { ...textDeliveryOptions, submitSuffix });
+      if (kind === 'implied' && cliEntry?.provider === 'codex'
+        && targetWasBusy && submitSuffix === '\r') {
+        await new Promise<void>((resolve) => setTimeout(resolve, SUBMIT_SETTLE_DELAY_MS));
+        codexBusySubmitRecoverySent = ptyManager.write(sid, submitSuffix, writeIntent);
+        if (codexBusySubmitRecoverySent) {
+          logger.info(`[SequenceDelivery] Codex busy submit fallback sent for ${sid}`);
+        }
+      }
     },
     impliedSubmit: impliedSubmit ?? true,
   });
@@ -184,6 +194,7 @@ export async function deliverPromptSequenceToSession(input: {
    * buffer. Harmless for line-based CLIs, which ignore the size change.
    */
   const runTransaction = () => lock.run(sessionId, async () => {
+    targetWasBusy = session.activityLevel === 'active';
     await ptyManager.nudgeResize(sessionId);
     await runSequence();
   });
@@ -223,10 +234,10 @@ export async function deliverPromptSequenceToSession(input: {
 
   if (verifyDelivery.background) {
     verifyDeliveryAfterDelay(verifyRequest)
-      .then((result) => verifyDelivery.onComplete?.(result))
+      .then((result) => verifyDelivery.onComplete?.({ ...result, codexBusySubmitRecoverySent }))
       .catch((err) => logger.warn(`[SequenceDelivery] Background verification error for ${sessionId}: ${err}`));
     return undefined;
   }
 
-  return verifyDeliveryAfterDelay(verifyRequest);
+  return verifyDeliveryAfterDelay(verifyRequest).then(result => ({ ...result, codexBusySubmitRecoverySent }));
 }

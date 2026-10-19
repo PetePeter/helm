@@ -97,7 +97,7 @@ describe('HelmSessionDeliveryService', () => {
     });
 
     it('delivers desktop chat CLI turns with a desktop envelope and chat reply routing', async () => {
-      const { service, ptyManager, receiver } = makeDeps();
+      const { service, ptyManager, receiver, sessionManager } = makeDeps();
       const origins: string[] = [];
       setDeliveryObserver((_sessionId, origin) => origins.push(origin));
 
@@ -122,6 +122,11 @@ describe('HelmSessionDeliveryService', () => {
       expect(sent).toContain('mcp__helm__chat_send');
       expect(ptyManager.deliverText).toHaveBeenCalledWith(receiver.id, sent, { writeIntent: 'input' });
       expect(origins).toEqual(['user']);
+      expect(sessionManager.updateSession).toHaveBeenCalledWith(receiver.id, {
+        lastPromptAt: expect.any(Number),
+        lastUserPromptAt: expect.any(Number),
+        lastUserPromptSource: 'chat',
+      });
     });
 
     it('keeps desktop chat reply instructions even when inter-session preambles are disabled', async () => {

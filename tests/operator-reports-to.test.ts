@@ -127,4 +127,18 @@ describe('lastPromptAt persistence', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('persists desktop Chat as the last user prompt source', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-chat-prompt-'));
+    try {
+      const file = join(dir, 'sessions.yaml');
+      saveSessions([row({ id: 'worker', lastUserPromptAt: 5678, lastUserPromptSource: 'chat' })], file);
+      expect(loadSessions(file)[0]).toMatchObject({
+        lastUserPromptAt: 5678,
+        lastUserPromptSource: 'chat',
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

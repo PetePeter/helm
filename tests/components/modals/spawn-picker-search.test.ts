@@ -109,6 +109,24 @@ describe('spawn picker search', () => {
     expect(wrapper.emitted('select')).toEqual([['codex']]);
   });
 
+  it('routes bare digits to CLI jump shortcuts while the search field is focused', async () => {
+    const wrapper = mountQuickSpawn();
+    await flushPromises();
+    const search = getSearchInput('Search CLI types');
+    expect(document.activeElement).toBe(search);
+
+    for (const modifier of ['ctrlKey', 'altKey', 'metaKey'] as const) {
+      const modifiedEvent = new KeyboardEvent('keydown', { key: '2', [modifier]: true, bubbles: true });
+      expect(useModalKeyboardBridge().handler(modifiedEvent)).toBe(false);
+    }
+    expect(wrapper.emitted('select')).toBeUndefined();
+
+    const event = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
+    expect(useModalKeyboardBridge().handler(event)).toBe(true);
+    expect(search.value).toBe('');
+    expect(wrapper.emitted('select')).toEqual([['codex']]);
+  });
+
   it('keeps keyboard and gamepad navigation on filtered CLI results while search stays focused', async () => {
     const wrapper = mountQuickSpawn();
     await flushPromises();
@@ -155,6 +173,18 @@ describe('spawn picker search', () => {
     (wrapper.vm as any).handleButton('A');
     (wrapper.vm as any).handleButton('A');
     expect(wrapper.emitted('select')).toEqual([['C:/repos/Beta/workspace', '']]);
+  });
+
+  it('routes bare digits to directory jump shortcuts while the search field is focused', async () => {
+    const wrapper = mountDirPicker();
+    await flushPromises();
+    const search = getSearchInput('Search projects and directories');
+    expect(document.activeElement).toBe(search);
+
+    const event = new KeyboardEvent('keydown', { key: '2', bubbles: true, cancelable: true });
+    expect(useModalKeyboardBridge().handler(event)).toBe(true);
+    expect(search.value).toBe('');
+    expect(wrapper.emitted('select')).toEqual([['C:/repos/Alpha/tests', '']]);
   });
 
   it('navigates only visible directories with keyboard and gamepad while search stays focused', async () => {

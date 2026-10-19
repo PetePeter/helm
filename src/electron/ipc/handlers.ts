@@ -1475,7 +1475,12 @@ export function registerIPCHandlers(
         } else {
           getComfyUiSessionHost().submit(target.id, text, undefined, undefined, undefined, filePath);
         }
-        sessionManager.updateSession(target.id, { lastPromptAt: Date.now() });
+        const submittedAt = Date.now();
+        sessionManager.updateSession(target.id, {
+          lastPromptAt: submittedAt,
+          lastUserPromptAt: submittedAt,
+          lastUserPromptSource: 'chat',
+        });
         return;
       }
       const prompt = filePath ? `${text}\r\n\r\n[Attached file: ${filePath}]` : text;

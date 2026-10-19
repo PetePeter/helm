@@ -155,7 +155,7 @@ const timerTooltip = computed(() => {
 const userPromptTimerTooltip = computed(() => {
   const source = props.session.lastUserPromptSource;
   const at = props.session.lastUserPromptAt;
-  const origin = source === 'phone' ? 'phone' : 'terminal';
+  const origin = source === 'phone' ? 'phone' : source === 'chat' ? 'desktop Chat' : 'terminal';
   return `Time since your last submitted prompt from ${origin}${at !== undefined ? `\nSubmitted: ${formatClockTime(at)}` : ''}`;
 });
 
@@ -445,6 +445,9 @@ function onCardClick(e: MouseEvent): void {
           <rect x="5" y="2.5" width="10" height="15" rx="2" />
           <path d="M8 5h4M9 14.5h2" />
         </svg>
+        <svg v-else-if="session.lastUserPromptSource === 'chat'" class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3 4.5h14v10H9l-4 3v-3H3z" />
+        </svg>
         <svg v-else class="session-timer-icon" viewBox="0 0 20 20" aria-hidden="true">
           <rect x="2.5" y="3.5" width="15" height="13" rx="1.8" />
           <path d="m5.5 7 2.2 2-2.2 2M9.5 11h4" />
@@ -597,7 +600,6 @@ function onCardClick(e: MouseEvent): void {
 /* Prompt-cache fade — a tint that drains to nothing over the CLI's short cache
    window (cacheWarnMinutes). Behind the content, never catching clicks. */
 .session-card { position: relative; isolation: isolate; }
-.session-card.peer-stale { opacity: 0.72; }
 .session-card.interaction-disabled { cursor: default; }
 .session-context-usage {
   flex: 0 0 auto;
@@ -607,24 +609,6 @@ function onCardClick(e: MouseEvent): void {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
   white-space: nowrap;
-}
-/* Inside a group box the selection is a solid fill in the group's colour with
-   a white ring, and every other row recedes so the selected one is unmistakable.
-   Text goes white on the fill; the activity dot keeps its own state colour. */
-.session-group-box .session-card.active {
-  background: var(--group-color);
-  border-color: #fff;
-  box-shadow: 0 0 0 1px #fff;
-  color: #fff;
-}
-.session-group-box .session-card.active .session-name,
-.session-group-box .session-card.active .session-meta,
-.session-group-box .session-card.active .session-context-usage,
-.session-group-box .session-card.active .session-working-plan {
-  color: #fff;
-}
-.sessions-list-shell:has(.session-card.active) .session-card:not(.active, .flash-pulse, .flash-solid, :hover) {
-  opacity: 0.6;
 }
 .session-context-card {
   position: fixed;

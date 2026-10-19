@@ -58,6 +58,8 @@ export interface DeliveryVerificationResult {
   retryAttempted: boolean;
   /** Number of recovery re-sends made (0 when delivery landed first time). */
   retryCount: number;
+  /** A second Enter was sent after the implied submit for a busy Codex session. */
+  codexBusySubmitRecoverySent?: boolean;
   /** Legacy field — represents total elapsed verification time. */
   delayMs: number;
 }

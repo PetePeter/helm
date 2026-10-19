@@ -2,7 +2,7 @@ import { parseSequence, type SequenceAction } from './sequence-parser.js';
 
 export type SequenceWrite = (sessionId: string, data: string) => void | Promise<void>;
 export type SequenceDeliverText = (sessionId: string, text: string) => Promise<void>;
-export type SequenceSubmit = (sessionId: string) => void | Promise<void>;
+export type SequenceSubmit = (sessionId: string, kind: 'explicit' | 'implied') => void | Promise<void>;
 
 export interface ExecuteSequenceOptions {
   sessionId: string;
@@ -61,9 +61,9 @@ export async function executeSequenceString(options: ExecuteSequenceOptions): Pr
     await deliverText(sessionId, text);
   };
 
-  const doSubmit = async () => {
+  const doSubmit = async (kind: 'explicit' | 'implied') => {
     await flush();
-    await submit(sessionId);
+    await submit(sessionId, kind);
     submitted = true;
   };
 
@@ -82,7 +82,7 @@ export async function executeSequenceString(options: ExecuteSequenceOptions): Pr
     }
 
     if (action.type === 'key' && (action.key === 'Enter' || action.key === 'Send')) {
-      await doSubmit();
+      await doSubmit('explicit');
       continue;
     }
 
@@ -100,6 +100,6 @@ export async function executeSequenceString(options: ExecuteSequenceOptions): Pr
   await flush();
 
   if (impliedSubmit && sawAction && !submitted && !suppressImpliedSubmit && !isCancelled?.()) {
-    await submit(sessionId);
+    await submit(sessionId, 'implied');
   }
 }

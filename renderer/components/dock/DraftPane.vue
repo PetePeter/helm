@@ -13,12 +13,14 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import EmptyState from '../common/EmptyState.vue';
 import { useAppStore } from '../../stores/app.js';
+import { useChatStore } from '../../stores/chat.js';
 import { useDraft } from '../../composables/useDraft.js';
 import { useTimeActivity } from '../../composables/useTimeActivity.js';
 import { DRAFT_MAX_BYTES } from '../../../src/types/draft.js';
 import { deliverBulkText } from '../../paste-handler.js';
 
 const appStore = useAppStore();
+const chatStore = useChatStore();
 const state = appStore.state;
 const { text, pad, loading, dirty, conflict, error, bytes, edit, flush, keepMine, takeTheirs } =
   useDraft(() => state.activeSessionId);
@@ -35,6 +37,11 @@ const status = computed(() => {
   if (!pad.value?.updatedBy) return '';
   return pad.value.updatedBy === 'ai' ? 'Last edit by the AI' : 'Saved';
 });
+const sendViaChat = computed(() => {
+  const source = appStore.activeSession?.lastUserPromptSource;
+  return source === 'phone' || source === 'chat';
+});
+const sendTarget = computed(() => sendViaChat.value ? 'Chat' : 'the CLI');
 
 // Setting a textarea's value drops the caret at the end. When the text changes
 // under the user (an LLM edit), put the caret back where it was.
@@ -51,7 +58,7 @@ function onInput(event: Event): void {
 }
 
 /**
- * Send the pad to the session's CLI as a prompt (submitted), then clear it.
+ * Send the pad through the medium of the last user prompt, then clear it.
  * A frozen session takes no input (docs/session-freeze.md), so the send is
  * silently dropped and the pad keeps its text for after the thaw.
  */
@@ -59,7 +66,11 @@ async function send(): Promise<void> {
   const sessionId = state.activeSessionId;
   const prompt = text.value;
   if (!sessionId || !prompt.trim() || appStore.activeSession?.frozen) return;
-  await deliverBulkText(sessionId, prompt, { withReturn: true });
+  if (sendViaChat.value) {
+    if (!await chatStore.sendText(sessionId, prompt)) return;
+  } else {
+    await deliverBulkText(sessionId, prompt, { withReturn: true });
+  }
   edit('');
   await flush();
 }
@@ -104,7 +115,7 @@ function onKeydown(event: KeyboardEvent): void {
         type="button"
         class="btn btn--primary btn--sm"
         data-draft-send
-        title="Send to the session's CLI and clear (Ctrl+Enter)"
+        :title="`Send via ${sendTarget} and clear (Ctrl+Enter)`"
         :disabled="loading || !text.trim()"
         @click="send"
       >Send</button>

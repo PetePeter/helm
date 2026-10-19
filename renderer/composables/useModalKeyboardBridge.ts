@@ -88,7 +88,7 @@ export function useModalKeyboardBridge() {
       stack.handleInput('B');
     } else if (e.key >= '0' && e.key <= '9' && e.key.length === 1) {
       // Jump numbers: bare digit selects the Nth row in a selection modal.
-      if (!interceptKeys.has('digits') || editableInModal) return false;
+      if (!interceptKeys.has('digits')) return false;
       if (e.ctrlKey || e.altKey || e.metaKey) return false;
       stack.handleInput(`Digit${e.key}`);
     } else if (e.key.length === 1 && e.key >= 'a' && e.key <= 'z') {

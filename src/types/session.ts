@@ -15,7 +15,7 @@ export const VALID_SESSION_STATES: readonly SessionState[] = ['implementing', 'w
 export type ActivityLevel = 'active' | 'inactive' | 'idle';
 
 /** Surface where the user most recently submitted a prompt. */
-export type UserPromptSource = 'terminal' | 'phone';
+export type UserPromptSource = 'terminal' | 'phone' | 'chat';
 
 /** Last known current-context usage, cached so session rows need no transcript reads. */
 export interface SessionContextUsageSnapshot {

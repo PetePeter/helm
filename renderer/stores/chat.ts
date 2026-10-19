@@ -236,9 +236,31 @@ export const useChatStore = defineStore('chat', () => {
     const attachmentDetails = attachmentDetailsFor(sessionId);
     if (!text.trim() && !path) return false;
 
+    const turn = createTurn(sessionId, text, path, attachmentDetails);
+    const localTurns = localTurnsBySession.get(sessionId) ?? [];
+    localTurnsBySession.set(sessionId, [...localTurns, turn]);
+    setDraft(sessionId, '');
+    setAttachment(sessionId, null);
+    return transmit(sessionId, turn);
+  }
+
+  async function sendText(sessionId: string, text: string): Promise<boolean> {
+    if (!text.trim()) return false;
+    const turn = createTurn(sessionId, text);
+    const localTurns = localTurnsBySession.get(sessionId) ?? [];
+    localTurnsBySession.set(sessionId, [...localTurns, turn]);
+    return transmit(sessionId, turn);
+  }
+
+  function createTurn(
+    sessionId: string,
+    text: string,
+    path?: string | null,
+    attachmentDetails?: ChatAttachmentDetails | null,
+  ): ChatThreadMessage {
     nextLocalId += 1;
     const originId = `desktop:${Date.now().toString(36)}-${nextLocalId.toString(36)}`;
-    const turn: ChatThreadMessage = {
+    return {
       id: originId,
       record: {
         sessionId,
@@ -257,11 +279,6 @@ export const useChatStore = defineStore('chat', () => {
       },
       status: 'sending',
     };
-    const localTurns = localTurnsBySession.get(sessionId) ?? [];
-    localTurnsBySession.set(sessionId, [...localTurns, turn]);
-    setDraft(sessionId, '');
-    setAttachment(sessionId, null);
-    return transmit(sessionId, turn);
   }
 
   async function retry(sessionId: string, originId: string): Promise<boolean> {
@@ -285,6 +302,7 @@ export const useChatStore = defineStore('chat', () => {
     attachmentDetailsFor,
     setAttachment,
     send,
+    sendText,
     retry,
   };
 });

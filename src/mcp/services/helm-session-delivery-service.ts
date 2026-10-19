@@ -62,12 +62,17 @@ function buildExpectsResponseTag(senderSessionId: string, senderSource?: 'deskto
  */
 function summarizeDelivery(
   verification: DeliveryVerificationResult | undefined,
-): { verified: boolean; deliveryStatus: string; retryCount: number } {
+): { verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } {
   if (!verification) {
-    return { verified: true, deliveryStatus: 'unverified', retryCount: 0 };
+    return { verified: true, deliveryStatus: 'unverified', retryCount: 0, codexBusySubmitRecoverySent: false };
   }
   const verified = verification.status === 'confirmed' || verification.status === 'retry_confirmed';
-  return { verified, deliveryStatus: verification.status, retryCount: verification.retryCount };
+  return {
+    verified,
+    deliveryStatus: verification.status,
+    retryCount: verification.retryCount,
+    codexBusySubmitRecoverySent: verification.codexBusySubmitRecoverySent ?? false,
+  };
 }
 
 /** Accepted spellings of a placeholder — shipped defaults once said $instructions. */
@@ -226,7 +231,7 @@ export class HelmSessionDeliveryService {
   async sendDesktopChatTextToSession(
     sessionRef: string,
     text: string,
-  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
+  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport> {
     return this.sendTextToSession(sessionRef, text, { source: 'desktop', expectsResponse: true });
   }
 
@@ -238,7 +243,7 @@ export class HelmSessionDeliveryService {
     sessionRef: string,
     text: string,
     options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' },
-  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number } & TargetBusyReport> {
+  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport> {
     const session = this.findSession(sessionRef);
     if (!session) {
       throw new Error(`Session not found: ${sessionRef}`);
@@ -299,11 +304,12 @@ export class HelmSessionDeliveryService {
         );
       }
       const submittedAt = Date.now();
+      const userPromptSource = options.userPromptSource ?? (desktopOrigin ? 'chat' : undefined);
       this.sessionManager.updateSession(session.id, {
         lastPromptAt: submittedAt,
-        ...(options.userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: options.userPromptSource } : {}),
+        ...(userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: userPromptSource } : {}),
       });
-      return { ok: true, preambleUsed: false, verified: true, deliveryStatus: 'accepted', retryCount: 0, ...reportTargetBusy(session, true) };
+      return { ok: true, preambleUsed: false, verified: true, deliveryStatus: 'accepted', retryCount: 0, codexBusySubmitRecoverySent: false, ...reportTargetBusy(session, true) };
     }
 
     // Determine if recipient wants the Helm preamble
@@ -417,15 +423,17 @@ export class HelmSessionDeliveryService {
     // A message is a prompt — it re-arms a dormant session even when its CLI
     // has no UserPromptSubmit hook to say so.
     const submittedAt = Date.now();
+    const userPromptSource = options.userPromptSource ?? (desktopOrigin ? 'chat' : undefined);
     this.sessionManager.updateSession(session.id, {
       lastPromptAt: submittedAt,
-      ...(options.userPromptSource ? {
-        lastUserPromptAt: submittedAt,
-        lastUserPromptSource: options.userPromptSource,
-      } : {}),
+      ...(userPromptSource ? { lastUserPromptAt: submittedAt, lastUserPromptSource: userPromptSource } : {}),
     });
 
-    return { ok: true, preambleUsed: usePreamble, ...summarizeDelivery(deliveryVerification), ...busyReport };
+    const codexBusySubmitRecoverySent = deliveryVerification?.codexBusySubmitRecoverySent ?? false;
+    const deliveryBusyReport = codexBusySubmitRecoverySent
+      ? { ...busyReport, busyHint: 'Target was mid-turn and the Codex submit fallback was sent. Check the terminal before retrying.' }
+      : busyReport;
+    return { ok: true, preambleUsed: usePreamble, ...summarizeDelivery(deliveryVerification), ...deliveryBusyReport };
   }
 
   /**
@@ -436,7 +444,7 @@ export class HelmSessionDeliveryService {
     sessionRef: string,
     sequence: string,
     options?: { senderSessionId?: string; senderSessionName?: string; impliedSubmit?: boolean; verify?: boolean },
-  ): Promise<{ ok: true; verified: boolean; deliveryStatus: string; retryCount: number }> {
+  ): Promise<{ ok: true; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean }> {
     const session = this.findSession(sessionRef);
     if (!session) {
       throw new Error(`Session not found: ${sessionRef}`);

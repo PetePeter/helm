@@ -151,9 +151,10 @@ snapped-out session window. It follows the active session.
 - Saves 400 ms after you stop typing, on blur, on a session switch and when the
   pane goes away.
 - Footer: `Saving`, `Saved` or `Last edit by the AI`, and the size against the cap.
-- **Send** (button or Ctrl+Enter) types the pad into the session's CLI through
-  the normal paste path, submits it, then clears and saves the empty pad — the
-  pad doubles as a prompt composer. Plain Enter is a new line; an empty pad sends nothing.
+- **Send** (button or Ctrl+Enter) uses the medium of the session's last user
+  prompt: Chat for phone or desktop Chat, or the CLI for terminal input. It then
+  clears and saves the empty pad. Plain Enter is a new line; an empty pad sends
+  nothing.
   A frozen session takes no input, so Send does nothing and the pad keeps its text.
 - **Ctrl+G** or **Ctrl+Shift+D** jumps here from anywhere, even mid-typing in
   another field. The textarea carries `data-autofocus`, so the caret lands in it

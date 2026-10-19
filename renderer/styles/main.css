@@ -851,17 +851,20 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 }
 .session-card:hover,
 .session-card.focused { background: var(--bg-tertiary); }
-.session-card.active { border-color: var(--accent); background: var(--bg-secondary); }
+.session-card.active { border-color: var(--accent); background: var(--bg-hover); }
 .session-card.snapped-out {
-  opacity: 0.6;
-  filter: grayscale(0.5);
   border-style: dashed;
   border-color: #555;
 }
 .session-card.snapped-out:hover,
 .session-card.snapped-out.focused {
-  opacity: 0.8;
   background: var(--bg-tertiary);
+}
+.session-card.snapped-out.active,
+.session-card.snapped-out.active:hover,
+.session-card.snapped-out.active.focused {
+  border-color: var(--accent);
+  background: var(--bg-hover);
 }
 
 /* Sessions opened on this machine by a remote Fleet peer. The tint holds through
@@ -877,6 +880,11 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-card.peer-created:hover,
 .session-card.peer-created.focused {
   background: var(--peer-session-bg-hover, #22374f) !important;
+}
+.session-card.peer-created.active,
+.session-card.peer-created.active:hover,
+.session-card.peer-created.active.focused {
+  background: var(--bg-hover) !important;
 }
 
 .snap-indicator {
@@ -959,6 +967,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-user-prompt-timer { color: #bbb; }
 .session-user-prompt-timer.source-phone .session-timer-icon { color: #d0b8f5; }
 .session-user-prompt-timer.source-terminal .session-timer-icon { color: #9de0d4; }
+.session-user-prompt-timer.source-chat .session-timer-icon { color: #d0b8f5; }
 .session-eta-timer--late { color: var(--warning, #b58900); }
 
 /* Top row: dot, state, badges, timer, actions */
@@ -1001,7 +1010,7 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-copy-id {
   background: none;
   border: none;
-  color: #666;
+  color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
   padding: 2px 6px;
@@ -1021,9 +1030,6 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 .session-state-btn:hover { color: var(--accent); background: rgba(100, 150, 255, 0.1); }
 
 /* Session close button specific styles */
-.session-close {
-  color: #666;
-}
 .session-close:hover {
   color: #ff4444;
   background: rgba(255, 68, 68, 0.1);

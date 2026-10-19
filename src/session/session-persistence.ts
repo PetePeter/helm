@@ -91,7 +91,7 @@ function isContextUsageSnapshot(value: unknown): value is SessionContextUsageSna
 }
 
 function isUserPromptSource(value: unknown): value is UserPromptSource {
-  return value === 'terminal' || value === 'phone';
+  return value === 'terminal' || value === 'phone' || value === 'chat';
 }
 
 export function saveSessions(sessions: SessionInfo[], sessionsFile = SESSIONS_FILE): void {
