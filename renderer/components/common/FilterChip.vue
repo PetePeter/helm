@@ -1,5 +1,7 @@
 <script setup lang="ts">
-type FilterState = 'either' | 'yes' | 'no';
+import type { FilterPreferenceState } from '../../../src/types/filter-preference.js';
+
+type FilterState = FilterPreferenceState;
 
 const props = defineProps<{
   state: FilterState;

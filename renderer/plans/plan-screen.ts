@@ -15,7 +15,6 @@ import { currentWindowIdentity, windowIdentityKey } from '../window-identity.js'
 import { pathsMatch } from '../session-groups.js';
 import {
   attachmentsClient,
-  configClient,
   contextsClient,
   dialogClient,
   eventsClient,
@@ -24,8 +23,10 @@ import {
   schedulerClient,
 } from '../ipc/clients.js';
 import { nextCheckAt } from '../../src/session/operator-tasks.js';
+import { registerFilterPreference } from '../stores/filter-preferences.js';
+import type { FilterPreferenceState, PlanFilterPreferences } from '../../src/types/filter-preference.js';
 
-export type TriState = 'either' | 'yes' | 'no';
+export type TriState = FilterPreferenceState;
 type TypeFilterKey = 'bug' | 'feature' | 'research' | 'untyped';
 type StatusFilterKey = 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done';
 type AttachmentFilterKey = 'yes' | 'no';
@@ -38,6 +39,30 @@ function makeDefaultFilters() {
     auto: 'either' as TriState,
   };
 }
+
+const PLAN_FILTER_PREFERENCE_ID = 'plan.filters';
+
+function normalizePlanFilters(saved: unknown): PlanFilterPreferences {
+  const source = saved && typeof saved === 'object' ? saved as Record<string, unknown> : {};
+  const defaults = makeDefaultFilters();
+  const group = <T extends string>(keys: readonly T[], candidate: unknown): Record<T, TriState> => {
+    const values = candidate && typeof candidate === 'object' ? candidate as Record<string, unknown> : {};
+    return Object.fromEntries(keys.map((key) => [key, coerceTriState(values[key])])) as Record<T, TriState>;
+  };
+  return {
+    types: group(Object.keys(defaults.types) as Array<keyof typeof defaults.types>, source.types),
+    statuses: group(Object.keys(defaults.statuses) as Array<keyof typeof defaults.statuses>, source.statuses),
+    hasAttachment: group(Object.keys(defaults.hasAttachment) as Array<keyof typeof defaults.hasAttachment>, source.hasAttachment),
+    auto: coerceTriState(source.auto),
+  };
+}
+
+const persistedPlanFilters = registerFilterPreference(
+  PLAN_FILTER_PREFERENCE_ID,
+  makeDefaultFilters(),
+  normalizePlanFilters,
+  { persistOnChange: false },
+);
 
 export interface PlanEditorCallbacks {
   onSave: (updates: { title: string; description: string; status: PlanStatus; stateInfo?: string; type?: PlanType; autoImplement?: boolean; completionRecap?: boolean }) => void | Promise<void>;
@@ -64,7 +89,7 @@ export const planScreenState = reactive({
   relatedFocusRootId: null as string | null,
   relatedFocusIds: new Set<string>(),
   relatedTransientIds: new Set<string>(),
-  filters: makeDefaultFilters(),
+  filters: persistedPlanFilters.value,
   attachmentHasAny: {} as Record<string, boolean>,
   /** Operator task plan id -> epoch ms of its next check timer run. */
   taskNextChecks: {} as Record<string, number>,
@@ -111,17 +136,8 @@ function getWindowCallbacks(): WindowCallbacks {
   return callbackRegistry.get(key)!;
 }
 
-let filtersLoaded = false;
-
 function coerceTriState(value: unknown): TriState {
   return value === 'yes' || value === 'no' || value === 'either' ? value : 'either';
-}
-
-function coerceTriStateGroup<T extends string>(defaults: Record<T, TriState>, saved: unknown): Record<T, TriState> {
-  const source = saved && typeof saved === 'object' ? saved as Record<string, unknown> : {};
-  return Object.fromEntries(
-    Object.keys(defaults).map((key) => [key, coerceTriState(source[key])]),
-  ) as Record<T, TriState>;
 }
 
 function cycleTriState(current: TriState): TriState {
@@ -135,54 +151,9 @@ function matchesTriStateGroup<T extends string>(group: Record<T, TriState>, key:
   return hasYes ? state === 'yes' : true;
 }
 
-function snapshotFilterPreferences() {
-  return {
-    types: { ...planScreenState.filters.types },
-    statuses: { ...planScreenState.filters.statuses },
-    hasAttachment: { ...planScreenState.filters.hasAttachment },
-    auto: planScreenState.filters.auto,
-  };
-}
-
-watch(
-  () => ({
-    types: planScreenState.filters.types,
-    statuses: planScreenState.filters.statuses,
-    hasAttachment: planScreenState.filters.hasAttachment,
-    auto: planScreenState.filters.auto,
-  }),
-  () => {
-    if (!filtersLoaded) return;
-    void saveFilterPreferences();
-  },
-  { deep: true },
-);
-
-async function loadFilterPreferences(): Promise<void> {
-  try {
-    const saved = await configClient.configGetPlanFilters();
-    const defaults = makeDefaultFilters();
-    planScreenState.filters.types = coerceTriStateGroup(defaults.types, saved.types);
-    planScreenState.filters.statuses = coerceTriStateGroup(defaults.statuses, saved.statuses);
-    planScreenState.filters.hasAttachment = coerceTriStateGroup(defaults.hasAttachment, saved.hasAttachment);
-    planScreenState.filters.auto = coerceTriState(saved.auto);
-  } catch (err) {
-    console.error('[PlanScreen] Failed to load filter preferences:', err);
-  } finally {
-    filtersLoaded = true;
-  }
-}
-
-async function saveFilterPreferences(): Promise<void> {
-  try {
-    await configClient.configSetPlanFilters(snapshotFilterPreferences());
-  } catch (err) {
-    console.error('[PlanScreen] Failed to save filter preferences:', err);
-  }
-}
-
-// Eagerly load persisted filters so they're ready before first render
-void loadFilterPreferences();
+watch(persistedPlanFilters, (filters) => {
+  planScreenState.filters = filters;
+});
 
 export function setPlanScreenFitCallback(fn: () => void): void { fitActiveCallback = fn; }
 export function setPlanScreenCloseCallback(fn: () => void): void { closeCallback = fn; }
@@ -678,7 +649,8 @@ async function mountPlanScreen(params?: unknown, context?: ViewMountContext): Pr
   planScreenState.visible = true;
   hidePlanDeleteConfirm();
   getWindowCallbacks().itemEditorCloser?.();
-  await loadFilterPreferences();
+  await persistedPlanFilters.ready;
+  planScreenState.filters = persistedPlanFilters.value.value;
   await bindPlanScreenToDir(requestedDir || null, context);
   if (context && !context.isActive()) return;
 }
@@ -1191,13 +1163,13 @@ export function toggleRelatedFocus(): void {
 export function toggleTypeFilter(type: 'bug' | 'feature' | 'research' | 'untyped'): void {
   planScreenState.filters.types[type] = cycleTriState(planScreenState.filters.types[type]);
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 export function toggleStatusFilter(status: 'planning' | 'ready' | 'coding' | 'review' | 'blocked' | 'done'): void {
   planScreenState.filters.statuses[status] = cycleTriState(planScreenState.filters.statuses[status]);
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 export function toggleStatusGroup(group: 'active' | 'terminal' | 'planning'): void {
@@ -1214,25 +1186,26 @@ export function toggleStatusGroup(group: 'active' | 'terminal' | 'planning'): vo
     planScreenState.filters.statuses[status] = newValue;
   }
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 export function resetFilters(): void {
   planScreenState.filters = makeDefaultFilters();
+  persistedPlanFilters.value = planScreenState.filters;
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 export function toggleHasAttachmentFilter(value: 'yes' | 'no'): void {
   planScreenState.filters.hasAttachment[value] = cycleTriState(planScreenState.filters.hasAttachment[value]);
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 export function toggleAutoFilter(): void {
   planScreenState.filters.auto = cycleTriState(planScreenState.filters.auto);
   refreshLayout();
-  void saveFilterPreferences();
+  void persistedPlanFilters.persist();
 }
 
 function refreshLayout(): void {

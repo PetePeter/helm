@@ -854,8 +854,6 @@ describe('plan screen bridge', () => {
   });
 
   it('loads and saves attachment filters without dropping them back to defaults', async () => {
-    const mod = await getModule();
-    const item = planItem('a');
     const configGetPlanFilters = vi.fn().mockResolvedValue({
       types: { bug: 'either', feature: 'no', research: 'either', untyped: 'either' },
       statuses: { planning: 'either', ready: 'either', coding: 'either', review: 'either', blocked: 'either', done: 'no' },
@@ -865,6 +863,8 @@ describe('plan screen bridge', () => {
     const configSetPlanFilters = vi.fn().mockResolvedValue(undefined);
     (window as any).gamepadCli.configGetPlanFilters = configGetPlanFilters;
     (window as any).gamepadCli.configSetPlanFilters = configSetPlanFilters;
+    const mod = await getModule();
+    const item = planItem('a');
     mockPlanList.mockResolvedValue([item]);
     mockPlanDeps.mockResolvedValue([]);
     mockComputeLayout.mockReturnValue(fakeLayout(['a']));
@@ -881,10 +881,10 @@ describe('plan screen bridge', () => {
   });
 
   it('saves status filters as a plain snapshot for IPC persistence', async () => {
-    const mod = await getModule();
-    const item = planItem('a');
     const configSetPlanFilters = vi.fn().mockResolvedValue(undefined);
     (window as any).gamepadCli.configSetPlanFilters = configSetPlanFilters;
+    const mod = await getModule();
+    const item = planItem('a');
     mockPlanList.mockResolvedValue([item]);
     mockPlanDeps.mockResolvedValue([]);
     mockComputeLayout.mockReturnValue(fakeLayout(['a']));
@@ -929,9 +929,6 @@ describe('plan screen bridge', () => {
   });
 
   it('reloads persisted done filter state after planner remount', async () => {
-    const mod = await getModule();
-    await flushAsyncHandlers();
-
     const configGetPlanFilters = vi.fn()
       .mockResolvedValueOnce({
         types: { bug: 'either', feature: 'either', research: 'either', untyped: 'either' },
@@ -946,6 +943,8 @@ describe('plan screen bridge', () => {
         auto: 'either',
       });
     (window as any).gamepadCli.configGetPlanFilters = configGetPlanFilters;
+    const mod = await getModule();
+    await flushAsyncHandlers();
     mockPlanList.mockResolvedValue([planItem('a')]);
     mockPlanDeps.mockResolvedValue([]);
     mockComputeLayout.mockReturnValue(fakeLayout(['a']));
@@ -955,6 +954,7 @@ describe('plan screen bridge', () => {
     await mod.showPlanScreen('/test/dir');
 
     expect(mod.planScreenState.filters.statuses.done).toBe('no');
+    expect(configGetPlanFilters).toHaveBeenCalledTimes(1);
   });
 
   it('eagerly loads persisted filter preferences on module import', async () => {
@@ -968,9 +968,12 @@ describe('plan screen bridge', () => {
     const configSetPlanFilters = vi.fn().mockResolvedValue(undefined);
     (window as any).gamepadCli.configGetPlanFilters = configGetPlanFilters;
     (window as any).gamepadCli.configSetPlanFilters = configSetPlanFilters;
+    mockPlanList.mockResolvedValue([]);
+    mockPlanDeps.mockResolvedValue([]);
+    mockComputeLayout.mockReturnValue(fakeLayout([]));
 
     const mod = await getModule();
-    // Wait for the eager load to complete
+    await mod.showPlanScreen('/test/dir');
     await flushAsyncHandlers();
 
     expect(configGetPlanFilters).toHaveBeenCalled();
@@ -988,8 +991,12 @@ describe('plan screen bridge', () => {
     };
     const configGetPlanFilters = vi.fn().mockResolvedValue(legacyFilters);
     (window as any).gamepadCli.configGetPlanFilters = configGetPlanFilters;
+    mockPlanList.mockResolvedValue([]);
+    mockPlanDeps.mockResolvedValue([]);
+    mockComputeLayout.mockReturnValue(fakeLayout([]));
 
     const mod = await getModule();
+    await mod.showPlanScreen('/test/dir');
     await flushAsyncHandlers();
 
     expect(mod.planScreenState.filters.types).toEqual({ bug: 'either', feature: 'either', research: 'either', untyped: 'either' });
@@ -998,10 +1005,7 @@ describe('plan screen bridge', () => {
     expect(mod.planScreenState.filters.auto).toBe('either');
   });
 
-  it('reloads filter preferences on each planner mount', async () => {
-    const mod = await getModule();
-    await flushAsyncHandlers();
-
+  it('keeps the registered preference live across planner remounts', async () => {
     const secondLoadFilters = {
       types: { bug: 'no', feature: 'no', research: 'no', untyped: 'no' },
       statuses: { planning: 'yes', ready: 'no', coding: 'no', review: 'no', blocked: 'no', done: 'no' },
@@ -1010,14 +1014,18 @@ describe('plan screen bridge', () => {
     };
     const configGetPlanFilters = vi.fn().mockResolvedValue(secondLoadFilters);
     (window as any).gamepadCli.configGetPlanFilters = configGetPlanFilters;
+    const mod = await getModule();
+    await flushAsyncHandlers();
 
     mockPlanList.mockResolvedValue([planItem('a')]);
     mockPlanDeps.mockResolvedValue([]);
     mockComputeLayout.mockReturnValue(fakeLayout(['a']));
 
     await mod.showPlanScreen('/test/dir');
+    mod.hidePlanScreen();
+    await mod.showPlanScreen('/test/dir');
 
-    expect(configGetPlanFilters).toHaveBeenCalled();
+    expect(configGetPlanFilters).toHaveBeenCalledTimes(1);
     expect(mod.planScreenState.filters.types).toEqual(secondLoadFilters.types);
     expect(mod.planScreenState.filters.statuses).toEqual(secondLoadFilters.statuses);
     expect(mod.planScreenState.filters.hasAttachment).toEqual(secondLoadFilters.hasAttachment);

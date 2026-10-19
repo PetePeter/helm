@@ -674,6 +674,30 @@ export function setupConfigHandlers(
     }
   });
 
+  ipcMain.handle('config:getFilterPreference', (_event, id: string) => {
+    try {
+      return configLoader.getFilterPreference(id);
+    } catch (error) {
+      logger.error(`[IPC] Failed to get filter preference ${id}: ${error}`);
+      return undefined;
+    }
+  });
+
+  ipcMain.handle('config:setFilterPreference', (event, id: string, value: unknown) => {
+    try {
+      configLoader.setFilterPreference(id, value);
+      const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win === sourceWindow || win.isDestroyed()) continue;
+        win.webContents.send('config:filterPreferenceChanged', { id, value });
+      }
+      return { success: true };
+    } catch (error) {
+      logger.error(`[IPC] Failed to set filter preference ${id}: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('config:getHookInjections', () => {
     try {
       return { success: true, overrides: configLoader.getHookInjectionOverrides() };

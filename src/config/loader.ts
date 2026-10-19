@@ -28,6 +28,7 @@ import { migrateFromProfile } from './profile-migrator.js';
 import { migrateCliTypeIds, defaultCliTypeMigrationFiles } from './cli-type-migration.js';
 import { defaultComfyUiMigrationFiles, migrateComfyUiToolDefaults } from './comfyui-default-migration.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../session/project-identity.js';
+import type { FilterPreferenceState, PlanFilterPreferences } from '../types/filter-preference.js';
 import {
   DEFAULT_AUTO_MEMORY_SETTINGS,
   CLI_COST_NOTE,
@@ -316,14 +317,8 @@ export interface SortingConfig {
   bindings: AreaSortPrefs;
 }
 
-export type PlanFilterTriState = 'either' | 'yes' | 'no';
-
-export interface PlanFilterConfig {
-  types: { bug: PlanFilterTriState; feature: PlanFilterTriState; research: PlanFilterTriState; untyped: PlanFilterTriState };
-  statuses: { planning: PlanFilterTriState; ready: PlanFilterTriState; coding: PlanFilterTriState; review: PlanFilterTriState; blocked: PlanFilterTriState; done: PlanFilterTriState };
-  hasAttachment: { yes: PlanFilterTriState; no: PlanFilterTriState };
-  auto: PlanFilterTriState;
-}
+export type PlanFilterTriState = FilterPreferenceState;
+export type PlanFilterConfig = PlanFilterPreferences;
 
 const DEFAULT_SORTING: SortingConfig = {
   sessions: { field: 'state', direction: 'asc' },
@@ -425,6 +420,7 @@ export interface SettingsConfig {
   snapOutWindows?: Record<string, SnapOutWindowPrefs>;
   sorting?: SortingConfig;
   planFilters?: PlanFilterConfig;
+  filterPreferences?: Record<string, unknown>;
   sessionGroups?: SessionGroupPrefs;
   editorPrefs?: EditorPrefs;
   /**
@@ -1186,6 +1182,21 @@ export class ConfigLoader {
       if (isReminderDeliveryMode(value)) merged[id] = value;
     }
     this.settings!.reminderDelivery = merged;
+    this.saveSettings();
+  }
+
+  getFilterPreference(id: string): unknown {
+    this.ensureLoaded();
+    const saved = this.settings!.filterPreferences?.[id];
+    if (saved !== undefined) return saved;
+    if (id === 'plan.filters') return this.getPlanFilters();
+    return undefined;
+  }
+
+  setFilterPreference(id: string, value: unknown): void {
+    this.ensureLoaded();
+    this.settings!.filterPreferences ??= {};
+    this.settings!.filterPreferences[id] = value;
     this.saveSettings();
   }
 

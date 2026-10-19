@@ -297,6 +297,16 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   }) =>
     ipcRenderer.invoke('config:setPlanFilters', filters),
 
+  configGetFilterPreference: (id: string): Promise<unknown> =>
+    ipcRenderer.invoke('config:getFilterPreference', id),
+  configSetFilterPreference: (id: string, value: unknown) =>
+    ipcRenderer.invoke('config:setFilterPreference', id, value),
+  onFilterPreferenceChanged: (callback: (change: { id: string; value: unknown }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, change: { id: string; value: unknown }) => callback(change);
+    ipcRenderer.on('config:filterPreferenceChanged', listener);
+    return () => ipcRenderer.removeListener('config:filterPreferenceChanged', listener);
+  },
+
   configGetSessionGroupPrefs: () =>
     ipcRenderer.invoke('config:getSessionGroupPrefs') as Promise<{
       order: string[];

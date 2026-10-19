@@ -1453,6 +1453,35 @@ describe('slugify', () => {
   });
 });
 
+describe('ConfigLoader filter preferences', () => {
+  beforeEach(() => {
+    fs.mkdirSync(TEST_DIR, { recursive: true });
+    setupTestFiles();
+  });
+  afterEach(() => {
+    fs.rmSync(TEST_DIR, { recursive: true, force: true });
+  });
+
+  it('stores values by stable ID and preserves legacy Plan filter settings', () => {
+    const planFilters = {
+      types: { bug: 'yes' as const, feature: 'either' as const, research: 'either' as const, untyped: 'either' as const },
+      statuses: { planning: 'either' as const, ready: 'either' as const, coding: 'either' as const, review: 'either' as const, blocked: 'either' as const, done: 'no' as const },
+      hasAttachment: { yes: 'either' as const, no: 'either' as const },
+      auto: 'either' as const,
+    };
+    const loader = new ConfigLoader(TEST_DIR);
+    loader.load();
+    loader.setPlanFilters(planFilters);
+    expect(loader.getFilterPreference('plan.filters')).toEqual(planFilters);
+
+    loader.setFilterPreference('todo.done', 'no');
+    const reloaded = new ConfigLoader(TEST_DIR);
+    reloaded.load();
+    expect(reloaded.getFilterPreference('todo.done')).toBe('no');
+    expect(reloaded.getFilterPreference('plan.filters')).toEqual(planFilters);
+  });
+});
+
 describe('loader helper module', () => {
   it('parses CLI args and command templates outside ConfigLoader', () => {
     expect(parseCliArgs('codex --cd "X:\\coding\\My Project" --flag')).toEqual([
