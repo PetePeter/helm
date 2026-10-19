@@ -35,6 +35,8 @@ export class TerminalManager {
   private container: HTMLElement;
   private unsubscribers: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
+  private hostHidden = false;
+  private revealPending = false;
   private onEmpty: (() => void) | null = null;
   private visibleOrderProvider: (() => string[]) | null = null;
   private onSwitch: ((sessionId: string | null) => void) | null = null;
@@ -208,6 +210,7 @@ export class TerminalManager {
     cliType: string,
     cwd?: string,
     name?: string,
+    replay?: string,
   ): void {
     if (this.terminals.has(sessionId)) return;
 
@@ -250,9 +253,13 @@ export class TerminalManager {
       workingDir: cwd,
     });
 
-    // Flush any PTY data that arrived during the snap-back gap
+    // The main process's raw replay is authoritative (scrollback, screen mode)
+    // and already contains everything the snap-back gap buffered. Without it,
+    // fall back to the gap buffer.
     const buffered = this.snapBackBuffer.get(sessionId);
-    if (buffered?.length) {
+    if (replay !== undefined) {
+      if (replay) view.write(replay);
+    } else if (buffered?.length) {
       for (const chunk of buffered) view.write(chunk);
     }
     this.snapBackBuffer.delete(sessionId);
@@ -307,7 +314,7 @@ export class TerminalManager {
       session.view,
       (id, cols, rows) => terminalClient.ptyResize?.(id, cols, rows),
     );
-    session.view.focus();
+    session.view.reveal();
 
     this.onSwitch?.(sessionId);
   }
@@ -334,6 +341,7 @@ export class TerminalManager {
     this.resizeObserver = null;
     this.setupResizeObserver();
     this.fitActive();
+    this.getActiveView()?.reveal();
     return true;
   }
 
@@ -696,11 +704,21 @@ export class TerminalManager {
   /** Observe container resize to re-fit terminals.
    *  Debounced at 50ms so CSS transitions settle before FitAddon measures. */
   private setupResizeObserver(): void {
-    this.resizeObserver = new ResizeObserver(() => {
+    this.resizeObserver = new ResizeObserver((entries) => {
+      // A zero-size host means a hidden dock tab (v-show). Coming back from
+      // that needs a reveal, not just a fit — see TerminalView.reveal().
+      const rect = entries[entries.length - 1]?.contentRect;
+      const hidden = !!rect && (rect.width === 0 || rect.height === 0);
+      if (this.hostHidden && !hidden) this.revealPending = true;
+      this.hostHidden = hidden;
       if (this.fitDebounceTimer !== null) clearTimeout(this.fitDebounceTimer);
       this.fitDebounceTimer = setTimeout(() => {
         this.fitDebounceTimer = null;
         this.fitAll();
+        if (this.revealPending && !this.hostHidden) {
+          this.revealPending = false;
+          this.getActiveView()?.reveal();
+        }
       }, 50);
     });
     this.resizeObserver.observe(this.container);

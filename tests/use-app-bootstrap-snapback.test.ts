@@ -136,11 +136,12 @@ describe('useAppBootstrap restoreSnappedBackSession', () => {
         draftList: vi.fn().mockResolvedValue([]),
         planStartableForDir: vi.fn().mockResolvedValue([]),
         planDoingForSession: vi.fn().mockResolvedValue([]),
+        terminalAttach: vi.fn().mockResolvedValue({ success: true, replay: 'raw replay' }),
       },
     };
   });
 
-  it('refreshes sessions before re-adopting a snapped-back terminal', async () => {
+  it('refreshes sessions and re-adopts a snapped-back terminal from the main-process replay', async () => {
     state.snappedOutSessions.add('sess-1');
 
     const mod = await import('../renderer/composables/useAppBootstrap.js');
@@ -153,6 +154,7 @@ describe('useAppBootstrap restoreSnappedBackSession', () => {
       'claude-code',
       'X:\\coding\\gamepad-cli-hub',
       'Recovered Session',
+      'raw replay',
     );
     expect(mockSwitchTo).toHaveBeenCalledWith('sess-1');
   });

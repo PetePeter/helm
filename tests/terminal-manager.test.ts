@@ -39,6 +39,8 @@ function makeMockTerminal() {
     dispose: vi.fn(),
     scrollToBottom: vi.fn(),
     scrollLines: vi.fn(),
+    refresh: vi.fn(),
+    _core: { _viewport: { queueSync: vi.fn() } },
     hasSelection: vi.fn().mockReturnValue(false),
     getSelection: vi.fn().mockReturnValue(''),
     clearSelection: vi.fn(),
@@ -487,6 +489,85 @@ describe('TerminalManager', () => {
     expect(mockGamepadCli.ptyWrite).toHaveBeenCalledWith('adopt-1', 'typed after adoption');
 
     mgr.dispose();
+  });
+
+  // Regression: after a hidden dock tab (Chat) or a host move, xterm's viewport
+  // kept a stale scroll height and lost focus, so PageUp/PageDown misbehaved.
+  describe('reveal after hide / move / rebuild', () => {
+    const resize = (width: number, height: number) =>
+      MockResizeObserver.lastInstance!.callback(
+        [{ contentRect: { width, height } } as ResizeObserverEntry], {} as ResizeObserver);
+
+    function expectRevealed(t: any) {
+      expect(t._core._viewport.queueSync).toHaveBeenCalled();
+      expect(t.refresh).toHaveBeenCalledWith(0, t.rows - 1);
+      expect(t.focus).toHaveBeenCalled();
+    }
+
+    afterEach(() => vi.useRealTimers());
+
+    it('switchTo re-syncs the viewport and focuses the target', async () => {
+      const mgr = new TerminalManager(container);
+      await mgr.createTerminal('s1', 'codex', 'codex');
+      const t = lastTerminal();
+      t.focus.mockClear();
+      mgr.switchTo('s1');
+      expectRevealed(t);
+      mgr.dispose();
+    });
+
+    it('adoptHost reveals the active terminal in its new host', async () => {
+      const mgr = new TerminalManager(container);
+      await mgr.createTerminal('s1', 'codex', 'codex');
+      const t = lastTerminal();
+      t._core._viewport.queueSync.mockClear();
+      t.focus.mockClear();
+      mgr.adoptHost(createContainer());
+      expectRevealed(t);
+      mgr.dispose();
+    });
+
+    it('reveals when the host comes back from a hidden tab, but not on a plain resize', async () => {
+      vi.useFakeTimers();
+      const mgr = new TerminalManager(container);
+      await mgr.createTerminal('s1', 'codex', 'codex');
+      const t = lastTerminal();
+
+      t.focus.mockClear();
+      resize(800, 600);
+      vi.advanceTimersByTime(60);
+      expect(t.focus).not.toHaveBeenCalled();
+
+      resize(0, 0);
+      vi.advanceTimersByTime(60);
+      resize(800, 600);
+      resize(820, 600); // a second event inside the debounce must not drop the reveal
+      vi.advanceTimersByTime(60);
+      expectRevealed(t);
+      mgr.dispose();
+    });
+
+    it('snap-back adoption writes the main-process replay instead of the gap buffer', () => {
+      const mgr = new TerminalManager(container);
+      mgr.adoptTerminal('s1', 'codex');
+      mgr.detachTerminal('s1', true);
+      mgr.writeToTerminal('s1', 'gap chunk');
+      mgr.adoptTerminal('s1', 'codex', undefined, undefined, '[?1049hfull replay');
+      const t = lastTerminal();
+      expect(t.write).toHaveBeenCalledWith('[?1049hfull replay');
+      expect(t.write).not.toHaveBeenCalledWith('gap chunk');
+      mgr.dispose();
+    });
+
+    it('snap-back adoption falls back to the gap buffer without a replay', () => {
+      const mgr = new TerminalManager(container);
+      mgr.adoptTerminal('s1', 'codex');
+      mgr.detachTerminal('s1', true);
+      mgr.writeToTerminal('s1', 'gap chunk');
+      mgr.adoptTerminal('s1', 'codex');
+      expect(lastTerminal().write).toHaveBeenCalledWith('gap chunk');
+      mgr.dispose();
+    });
   });
 
   it('switchTo relies on xterm onResize when fit changes dimensions', async () => {

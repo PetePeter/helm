@@ -26,6 +26,11 @@ export interface TerminalViewOptions {
   mouseTracking?: boolean;
 }
 
+/** The one xterm internal reveal() reaches for — see reveal(). */
+interface XtermInternals {
+  _core?: { _viewport?: { queueSync?: () => void } };
+}
+
 export class TerminalView {
   readonly sessionId: string;
   private terminal: Terminal;
@@ -182,6 +187,20 @@ export class TerminalView {
     if (!this.disposed) {
       this.terminal.focus();
     }
+  }
+
+  /**
+   * Bring the terminal back after its host was hidden, moved or rebuilt.
+   * While hidden, xterm's viewport keeps a stale scroll height/position and
+   * only re-syncs on resize or buffer scroll — so relative scrolls (PageUp)
+   * jump or stall until then. Force the sync, redraw, and take focus back.
+   */
+  reveal(): void {
+    if (this.disposed) return;
+    // No public API re-syncs the viewport; queueSync is the internal hook xterm uses itself.
+    (this.terminal as unknown as XtermInternals)._core?._viewport?.queueSync?.();
+    this.terminal.refresh(0, this.terminal.rows - 1);
+    this.terminal.focus();
   }
 
   /** Paste text through xterm.js so it flows via terminal input handling to the PTY. */

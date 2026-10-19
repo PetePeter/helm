@@ -490,7 +490,15 @@ export async function restoreSnappedBackSession(sessionId: string): Promise<void
   if (!tm) return;
 
   if (!tm.has(sessionId)) {
-    tm.adoptTerminal(sessionId, session.cliType, session.workingDir, session.name);
+    // Rebuild from the main process's raw replay, as a pop-out does, so the
+    // new xterm gets scrollback and the CLI's screen mode back.
+    const attach = await terminalClient.terminalAttach?.(sessionId).catch((error: unknown) => {
+      console.warn(`[Bootstrap] Snap-back replay unavailable for ${sessionId}:`, error);
+      return undefined;
+    });
+    // adoptTerminal is a no-op if another path re-created the view during the await.
+    tm.adoptTerminal(sessionId, session.cliType, session.workingDir, session.name,
+      attach?.success ? attach.replay ?? '' : undefined);
   }
   tm.switchTo(sessionId);
 }

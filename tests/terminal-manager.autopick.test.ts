@@ -28,6 +28,7 @@ function makeMockTerminal() {
     dispose: vi.fn(),
     scrollToBottom: vi.fn(),
     scrollLines: vi.fn(),
+    refresh: vi.fn(),
     hasSelection: vi.fn().mockReturnValue(false),
     getSelection: vi.fn().mockReturnValue(''),
     clearSelection: vi.fn(),

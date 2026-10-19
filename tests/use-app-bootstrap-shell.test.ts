@@ -22,7 +22,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: vi.fn(function (this: Record<string, unknown>) {
     Object.assign(this, {
       loadAddon() {}, open() {}, write() {}, focus() {}, blur() {}, clear() {}, dispose() {},
-      scrollToBottom() {}, scrollLines() {}, hasSelection: () => false, getSelection: () => '',
+      scrollToBottom() {}, scrollLines() {}, refresh() {}, hasSelection: () => false, getSelection: () => '',
       clearSelection() {}, attachCustomKeyEventHandler() {}, attachCustomWheelEventHandler() {},
       onData: () => ({ dispose() {} }), onResize: () => ({ dispose() {} }),
       onTitleChange: () => ({ dispose() {} }),
