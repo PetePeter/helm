@@ -156,7 +156,7 @@ describe('dock pane shortcuts', () => {
     install({ getFocusedPane: () => PANE_TERMINAL });
 
     press({ key: 'T', code: 'KeyT', ctrlKey: true, shiftKey: true });
-    press({ key: 'J', code: 'KeyJ', ctrlKey: true, shiftKey: true });
+    press({ key: 'S', code: 'KeyS', ctrlKey: true, shiftKey: true });
     press({ key: 'g', code: 'KeyG', ctrlKey: true });
 
     expect(activated).toEqual([PANE_TERMINAL, PANE_DRAFT]);

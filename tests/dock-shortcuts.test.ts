@@ -51,7 +51,7 @@ describe('workspace shortcuts', () => {
 
   it('resolves only panes available to the selected window profile', () => {
     expect(getDockShortcutPane(chord('t'), null, 'popout')).toBe(PANE_TERMINAL);
-    expect(getDockShortcutPane(chord('j'), null, 'popout')).toBeNull();
+    expect(getDockShortcutPane(chord('s'), null, 'popout')).toBeNull();
   });
 
   it('matches Ctrl+Shift and Meta+Shift case-insensitively', () => {

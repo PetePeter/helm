@@ -699,11 +699,10 @@ export function registerIPCHandlers(
   // lifetime, and a purged session's replay dies with it.
   const mobileChatJournal = new MobileChatJournal({
     persist: saveMobileChatJournal,
-    // The desktop Chat pane renders the same journal as the phone for every session.
+    // The desktop Chat pane renders the same journal as the phone for every
+    // session, in the main window and in every pop-out.
     onAppend: (entry) => {
-      const win = windowManager.getMainWindow();
-      if (!win || win.isDestroyed()) return;
-      win.webContents.send('chat:entry', entry);
+      for (const win of windowManager.getAllWindows()) win.webContents.send('chat:entry', entry);
     },
   });
   mobileChatJournal.hydrate(loadMobileChatJournal());

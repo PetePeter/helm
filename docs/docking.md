@@ -58,7 +58,7 @@ and the View menu all read one allow-list.
 | Profile | Panes | Window |
 |---------|-------|--------|
 | `main` | every registered pane (derived, never re-listed), including runtime panes | `MainWindowApp.vue` |
-| `popout` | terminal, plans, memories, mess, artifacts, draft | `SnapOutWindow.vue` |
+| `popout` | terminal, chat, plans, memories, mess, artifacts, draft, todos | `SnapOutWindow.vue` |
 
 The pop-out omits the session list, quick spawn, scheduler and projects: those
 act on things the main shell owns.

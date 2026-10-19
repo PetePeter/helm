@@ -186,7 +186,7 @@ export const DOCK_PROFILE_PANES: Readonly<Record<DockProfileId, readonly PaneId[
   // Derived, never re-listed: a pane added to the registry is in the main
   // profile by construction.
   main: Object.freeze(DOCK_PANES.map(p => p.id)),
-  popout: Object.freeze([PANE_TERMINAL, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT, PANE_TODOS]),
+  popout: Object.freeze([PANE_TERMINAL, PANE_CHAT, PANE_PLAN_SCREEN, PANE_MEMORIES, PANE_MESS, PANE_ARTIFACTS, PANE_DRAFT, PANE_TODOS]),
 });
 
 /** Mutable registry for descriptors that exist only while their owner exists. */
