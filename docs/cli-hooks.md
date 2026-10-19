@@ -550,11 +550,19 @@ within a 15-minute window, the co-occurrence counts increment; anything else
 identify, failed fetches — records nothing.
 
 - Storage: one JSON file, `<configDir>/suggestion-usage.json` (the per-user
-  app-data dir — never the repo, invariant 4). Every write is fail-open.
-- Inspect and reset: Settings → CLI integrations → "Suggestion usage
-  feedback" shows the strongest associations, the recent learning events, and
-  a reset button. Reset empties the store; nothing is re-learned until new
-  fetches correlate with new suggestions.
+  app-data dir — never the repo, invariant 4), partitioned by project ID.
+  Every write is fail-open. Version-1 global feedback migrates to the
+  `unattributed-legacy` partition and remains visible, but never affects a
+  project's ranking. Sessions without a resolvable project neither record nor
+  receive a learned usage boost.
+- Inspect and reset: Settings → Auto memory → "Suggestion learning" shows all
+  learned items in a searchable master/detail view. The type chips filter
+  memories, skills, or both; the project selector can report across projects,
+  inspect one project, or inspect Unattributed legacy. All-project reporting
+  does not combine learning for scoring: each suggestion reads only its own
+  project's partition. The detail shows association counts, topic terms, and
+  recent correlated fetch times. Reset all clears every partition after a
+  confirmation.
 - Fresh install: no history → every usage boost is 0, no links means no
   adjacency, and all-zero signals produce output **identical to bare G4** —
   pinned by a whole-layer regression test, not just a unit.

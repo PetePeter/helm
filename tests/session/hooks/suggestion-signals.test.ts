@@ -167,6 +167,23 @@ describe('BoostedSuggestionScorer — usage', () => {
     expect(ranked[0]?.id).toBe('fetched');
   });
 
+  it('uses only the project supplied by the suggestion service', async () => {
+    const alpha = memory('alpha');
+    const zulu = memory('zulu');
+    const scorer = new BoostedSuggestionScorer(
+      fixedBase({ alpha: 3.6, zulu: 3.6 }),
+      {
+        ...emptyDeps(),
+        usageBoost: (key, terms, projectId) =>
+          projectId === 'project-a' && key === 'memory/zulu' && terms.length > 0 ? 0.5 : 0,
+      },
+    );
+    const inA = await scorer.score('the shared topic', [zulu, alpha], { projectId: 'project-a' });
+    const inB = await scorer.score('the shared topic', [zulu, alpha], { projectId: 'project-b' });
+    expect(inA[0]?.id).toBe('zulu');
+    expect(inB[0]?.id).toBe('alpha');
+  });
+
   it('repeated fetches still never cross the threshold on usage alone', async () => {
     // THE pinned invariant, usage side: base 0 + weight 100 → still nothing.
     const scorer = new BoostedSuggestionScorer(fixedBase({}), { ...emptyDeps(), usageBoost: () => 100 });
@@ -283,7 +300,7 @@ describe('BoostedSuggestionScorer — fresh-install guarantee', () => {
     const configDir = join(tmpdir(), `g5-fresh-${now}`);
     const scorerDeps: SuggestionSignalDeps = {
       ...emptyDeps(),
-      usageBoost: (key, terms) => new SuggestionUsageStore({ configDir }).boostFor(key, terms),
+      usageBoost: (key, terms, projectId) => new SuggestionUsageStore({ configDir }).boostFor(key, terms, projectId),
     };
     const g4 = await new SuggestionService({ getCandidates: () => REAL_CANDIDATES, scorer: new Bm25SuggestionScorer() })
       .suggest('s1', prompt, null);
@@ -306,24 +323,25 @@ describe('BoostedSuggestionScorer — fresh-install guarantee', () => {
       getCandidates: () => twins,
       scorer: new BoostedSuggestionScorer(new Bm25SuggestionScorer(), {
         ...emptyDeps(),
-        usageBoost: (key, terms) => store.boostFor(key, terms),
+        usageBoost: (key, terms, projectId) => store.boostFor(key, terms, projectId),
       }),
-      onSuggested: (sessionId, keys, terms) => store.noteSuggestion(sessionId, keys, terms),
+      onSuggested: (sessionId, keys, terms, projectId) => store.noteSuggestion(sessionId, keys, terms, projectId),
     });
     // Naming the candidates keeps this deterministic: equal scores, tie broken
     // by id — alpha first. (Ordering under usage is pinned at scorer level,
     // where base scores are controlled exactly.)
     const promptText = 'please run the twin tool on the folder';
-    const before = await service.suggest('s1', promptText, null);
+    const before = await service.suggest('s1', promptText, 'project-a');
     expect(before).toBe('possibly related: memory/alpha-tool (Twin Tool), memory/zulu-tool (Twin Tool)');
     // The agent fetched zulu after that suggestion (the dispatcher's call in
     // production); the correlation learns ONLY zulu.
-    store.recordFetch('s1', 'memory/zulu-tool');
-    expect(store.boostFor('memory/zulu-tool', usageTerms(promptText))).toBeGreaterThan(0);
-    expect(store.boostFor('memory/alpha-tool', usageTerms(promptText))).toBe(0);
+    store.recordFetch('s1', 'memory/zulu-tool', 'project-a');
+    expect(store.boostFor('memory/zulu-tool', usageTerms(promptText), 'project-a')).toBeGreaterThan(0);
+    expect(store.boostFor('memory/alpha-tool', usageTerms(promptText), 'project-a')).toBe(0);
     // And what was learned cannot ADD a tuple — the payload is unchanged,
     // fresh session ledger or not.
-    const after = await service.suggest('s2', promptText, null);
+    const after = await service.suggest('s2', promptText, 'project-a');
     expect(after).toBe(before);
+    expect(store.boostFor('memory/zulu-tool', usageTerms(promptText), 'project-b')).toBe(0);
   });
 });

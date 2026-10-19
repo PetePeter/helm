@@ -29,6 +29,7 @@ export function setupConfigHandlers(
   getFleetStatus?: () => FleetStatus,
   hookDeps?: HookInstallerDeps,
   suggestionUsage?: SuggestionUsageStore,
+  resolveSuggestionUsageItemName?: (key: string) => string | null,
 ): void {
   ipcMain.handle('config:getAll', () => {
     try {
@@ -736,7 +737,11 @@ export function setupConfigHandlers(
   ipcMain.handle('hooks:getSuggestionUsage', () => {
     if (!suggestionUsage) return { success: false, error: 'Suggestion usage store not wired' };
     try {
-      return { success: true, usage: summarizeSuggestionUsage(suggestionUsage.snapshot()) };
+      const projects = projectStore?.list().map(({ id, name }) => ({ id, name })) ?? [];
+      return {
+        success: true,
+        usage: summarizeSuggestionUsage(suggestionUsage.snapshot(), projects, resolveSuggestionUsageItemName),
+      };
     } catch (error) {
       logger.error(`[IPC] Failed to read suggestion usage: ${error}`);
       return { success: false, error: String(error) };

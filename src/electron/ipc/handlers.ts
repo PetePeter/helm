@@ -464,7 +464,7 @@ export function registerIPCHandlers(
       }
       return ids;
     },
-    usageBoost: (key, terms) => suggestionUsage.boostFor(key, terms),
+    usageBoost: (key, terms, projectId) => suggestionUsage.boostFor(key, terms, projectId),
   }, configLoader.getSuggestionScoring());
   let sessionContextUsageTracker: SessionContextUsageTracker | undefined;
   const localhostMcpServer = new LocalhostMcpServer(helmControlService, {
@@ -473,7 +473,11 @@ export function registerIPCHandlers(
     token: configLoader.getMcpConfig().authToken,
     // G5 usage feedback: correlate a fetch with a recent suggestion. Only
     // identifiable sessions land here; anonymous peers learn nothing.
-    onItemFetched: (sessionId, type, id) => suggestionUsage.recordFetch(sessionId, `${type}/${id}`),
+    onItemFetched: (sessionId, type, id) => {
+      const workingDir = sessionManager.getSession(sessionId)?.workingDir;
+      const projectId = workingDir ? planManager.getProjectIdForDirectory(workingDir) : null;
+      suggestionUsage.recordFetch(sessionId, `${type}/${id}`, projectId);
+    },
     onClaudeStatuslineUsage: (sessionId, cliSessionId, usage) => {
       const session = sessionManager.getSession(sessionId);
       if (!session || session.remote || configLoader.getCliTypeEntry(session.cliType)?.provider !== 'claude') return false;
@@ -608,6 +612,15 @@ export function registerIPCHandlers(
     () => fleetController!.status(),
     hookDeps,
     suggestionUsage,
+    (key) => {
+      const slash = key.indexOf('/');
+      if (slash < 0) return null;
+      const type = key.slice(0, slash);
+      const id = key.slice(slash + 1);
+      return type === 'skill'
+        ? skillManager.get(id)?.name ?? null
+        : type === 'memory' ? memoryManager.getRecord(id)?.tldr ?? null : null;
+    },
   );
   setupAutoMemoryHandlers(configLoader, recordingModelRunner);
   setupToolsHandlers(configLoader);
@@ -900,7 +913,7 @@ export function registerIPCHandlers(
     }),
     memoriesEnabled: () => configLoader.getAutoMemoryConfig().autoRecall,
     scorer: suggestionScorer,
-    onSuggested: (sessionId, keys, terms) => suggestionUsage.noteSuggestion(sessionId, keys, terms),
+    onSuggested: (sessionId, keys, terms, projectId) => suggestionUsage.noteSuggestion(sessionId, keys, terms, projectId),
   });
   const contextInjector = new ContextInjector({
     getSession: (sessionId) => sessionManager.getSession(sessionId),

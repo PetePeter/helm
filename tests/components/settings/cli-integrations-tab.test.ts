@@ -36,8 +36,6 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
     })),
     hooksInstall: vi.fn(async () => ({ success: true })),
     hooksUninstall: vi.fn(async () => ({ success: true })),
-    hooksGetSuggestionUsage: vi.fn(async () => ({ success: true, usage: { items: 0, totalWeight: 0, top: [], recent: [] } })),
-    hooksResetSuggestionUsage: vi.fn(async () => ({ success: true })),
     configGetReminderDelivery: vi.fn(async () => ({ success: true, modes })),
     configSetReminderDelivery: vi.fn(async (updates: Record<string, string>) => {
       setCalls.push(updates);

@@ -15,8 +15,9 @@
  * fetches after the session ended — records nothing.
  *
  * Storage is one small JSON file under the caller-provided config dir (the
- * per-user app-data dir — never the repo, invariant 4). It is inspectable
- * (snapshot) and resettable (reset) from the CLI Integrations settings pane.
+ * per-user app-data dir — never the repo, invariant 4), partitioned by project.
+ * Existing global feedback migrates to a visible legacy partition that is not
+ * used for scoring. The store is inspectable and resettable from Auto memory.
  * Every write is fail-open: a store that cannot be written must not break the
  * fetch that triggered it.
  */
@@ -24,6 +25,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../../utils/logger.js';
+import {
+  UNATTRIBUTED_SCOPE_ID,
+  type SuggestionUsageItemSummary,
+  type SuggestionUsagePartition,
+  type SuggestionUsageState,
+  type SuggestionUsageSummary,
+} from '../../types/suggestion-usage.js';
 
 export const USAGE_FILE_NAME = 'suggestion-usage.json';
 
@@ -64,14 +72,6 @@ export function usageTerms(text: string): string[] {
     .filter((token) => token.length > 2 && !STOPWORDS.has(token));
 }
 
-export interface SuggestionUsageState {
-  version: 1;
-  /** item key (type/id) → term → co-occurrence count */
-  weights: Record<string, Record<string, number>>;
-  /** Bounded log of learning events, for inspection. IDs and times only. */
-  recent: Array<{ at: number; key: string }>;
-}
-
 export interface SuggestionUsageOptions {
   /** Directory the JSON file lives in (the per-user config dir). */
   configDir: string;
@@ -85,6 +85,46 @@ interface PendingSuggestion {
   keys: Set<string>;
   terms: string[];
   at: number;
+  projectId: string;
+}
+
+function emptyPartition(): SuggestionUsagePartition {
+  return { weights: {}, recent: [] };
+}
+
+function emptyState(): SuggestionUsageState {
+  return { version: 2, projects: {}, legacy: emptyPartition() };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeWeights(value: unknown): Record<string, Record<string, number>> {
+  if (!isRecord(value)) return {};
+  const weights: Record<string, Record<string, number>> = {};
+  for (const [key, rawTerms] of Object.entries(value)) {
+    if (!isRecord(rawTerms)) continue;
+    const terms = Object.fromEntries(Object.entries(rawTerms)
+      .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isFinite(entry[1]) && entry[1] > 0));
+    if (Object.keys(terms).length > 0) weights[key] = terms;
+  }
+  return weights;
+}
+
+function normalizeRecent(value: unknown, maxRecent: number): SuggestionUsagePartition['recent'] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is { at: number; key: string } =>
+    isRecord(entry) && typeof entry.at === 'number' && Number.isFinite(entry.at) && typeof entry.key === 'string')
+    .slice(-maxRecent);
+}
+
+function normalizePartition(value: unknown, maxRecent: number): SuggestionUsagePartition {
+  if (!isRecord(value)) return emptyPartition();
+  return {
+    weights: normalizeWeights(value.weights),
+    recent: normalizeRecent(value.recent, maxRecent),
+  };
 }
 
 export class SuggestionUsageStore {
@@ -93,7 +133,7 @@ export class SuggestionUsageStore {
   private readonly correlationWindowMs: number;
   private readonly maxTermsPerKey: number;
   private readonly maxRecent: number;
-  private state: SuggestionUsageState = { version: 1, weights: {}, recent: [] };
+  private state: SuggestionUsageState = emptyState();
   /** Per-session recent suggestions awaiting (maybe) a fetch. In memory only. */
   private readonly pending = new Map<string, PendingSuggestion>();
 
@@ -111,9 +151,12 @@ export class SuggestionUsageStore {
    * terms are now eligible to be correlated with a fetch. Prompt terms live
    * in memory ONLY — they are correlation input, not stored state.
    */
-  noteSuggestion(sessionId: string, keys: readonly string[], promptTerms: readonly string[]): void {
-    if (keys.length === 0) return;
-    this.pending.set(sessionId, { keys: new Set(keys), terms: [...promptTerms], at: this.now() });
+  noteSuggestion(sessionId: string, keys: readonly string[], promptTerms: readonly string[], projectId: string | null): void {
+    if (!projectId || keys.length === 0 || promptTerms.length === 0) {
+      this.pending.delete(sessionId);
+      return;
+    }
+    this.pending.set(sessionId, { keys: new Set(keys), terms: [...promptTerms], at: this.now(), projectId });
   }
 
   /** A closed session takes its pending correlation with it. */
@@ -126,31 +169,35 @@ export class SuggestionUsageStore {
    * for the same session, record the co-occurrence; otherwise this fetch is
    * not evidence and nothing is written.
    */
-  recordFetch(sessionId: string, key: string): void {
+  recordFetch(sessionId: string, key: string, projectId: string | null): void {
     const entry = this.pending.get(sessionId);
     const correlated = entry
+      && projectId !== null
+      && entry.projectId === projectId
       && entry.keys.has(key)
       && entry.terms.length > 0
       && this.now() - entry.at <= this.correlationWindowMs;
     if (!correlated) return;
 
-    const terms = (this.state.weights[key] ??= {});
+    const partition = (this.state.projects[projectId] ??= emptyPartition());
+    const terms = (partition.weights[key] ??= {});
     for (const term of entry!.terms) {
       terms[term] = (terms[term] ?? 0) + 1;
     }
-    this.pruneTerms(key);
+    this.pruneTerms(partition, key);
 
-    this.state.recent.push({ at: this.now(), key });
-    if (this.state.recent.length > this.maxRecent) {
-      this.state.recent = this.state.recent.slice(-this.maxRecent);
+    partition.recent.push({ at: this.now(), key });
+    if (partition.recent.length > this.maxRecent) {
+      partition.recent = partition.recent.slice(-this.maxRecent);
     }
     this.persist();
     logger.debug(`[HookSuggestUsage] learned ${key} × ${entry!.terms.length} term(s) (session=${sessionId})`);
   }
 
   /** Σ co-occurrence counts over the terms this item shares with the prompt. */
-  boostFor(key: string, promptTerms: readonly string[]): number {
-    const terms = this.state.weights[key];
+  boostFor(key: string, promptTerms: readonly string[], projectId: string | null): number {
+    if (!projectId) return 0;
+    const terms = this.state.projects[projectId]?.weights[key];
     if (!terms || promptTerms.length === 0) return 0;
     let sum = 0;
     for (const term of promptTerms) sum += terms[term] ?? 0;
@@ -158,7 +205,7 @@ export class SuggestionUsageStore {
   }
 
   reset(): void {
-    this.state = { version: 1, weights: {}, recent: [] };
+    this.state = emptyState();
     this.pending.clear();
     try {
       rmSync(this.filePath, { force: true });
@@ -168,20 +215,28 @@ export class SuggestionUsageStore {
   }
 
   isEmpty(): boolean {
-    return Object.keys(this.state.weights).length === 0 && this.state.recent.length === 0;
+    return Object.keys(this.state.projects).length === 0
+      && Object.keys(this.state.legacy.weights).length === 0
+      && this.state.legacy.recent.length === 0;
   }
 
   /** What the settings pane shows. Terms and ids only, by construction. */
   snapshot(): SuggestionUsageState {
     return {
-      version: 1,
-      weights: Object.fromEntries(Object.entries(this.state.weights).map(([key, terms]) => [key, { ...terms }])),
-      recent: this.state.recent.map((entry) => ({ ...entry })),
+      version: 2,
+      projects: Object.fromEntries(Object.entries(this.state.projects).map(([id, partition]) => [id, {
+        weights: Object.fromEntries(Object.entries(partition.weights).map(([key, terms]) => [key, { ...terms }])),
+        recent: partition.recent.map((entry) => ({ ...entry })),
+      }])),
+      legacy: {
+        weights: Object.fromEntries(Object.entries(this.state.legacy.weights).map(([key, terms]) => [key, { ...terms }])),
+        recent: this.state.legacy.recent.map((entry) => ({ ...entry })),
+      },
     };
   }
 
-  private pruneTerms(key: string): void {
-    const terms = this.state.weights[key]!;
+  private pruneTerms(partition: SuggestionUsagePartition, key: string): void {
+    const terms = partition.weights[key]!;
     const entries = Object.entries(terms);
     if (entries.length <= this.maxTermsPerKey) return;
     entries.sort((a, b) => a[1] - b[1]);
@@ -203,45 +258,83 @@ export class SuggestionUsageStore {
   private load(): void {
     if (!existsSync(this.filePath)) return;
     try {
-      const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as Partial<SuggestionUsageState>;
-      this.state = {
-        version: 1,
-        weights: parsed.weights ?? {},
-        recent: Array.isArray(parsed.recent) ? parsed.recent.slice(-this.maxRecent) : [],
-      };
+      const parsed: unknown = JSON.parse(readFileSync(this.filePath, 'utf8'));
+      if (!isRecord(parsed)) throw new Error('invalid root');
+      if (parsed.version === 1) {
+        this.state = { ...emptyState(), legacy: normalizePartition(parsed, this.maxRecent) };
+        this.persist();
+      } else if (parsed.version === 2) {
+        const projects: Record<string, SuggestionUsagePartition> = {};
+        if (isRecord(parsed.projects)) {
+          for (const [projectId, partition] of Object.entries(parsed.projects)) {
+            if (projectId && projectId !== UNATTRIBUTED_SCOPE_ID) projects[projectId] = normalizePartition(partition, this.maxRecent);
+          }
+        }
+        this.state = {
+          version: 2,
+          projects,
+          legacy: normalizePartition(parsed.legacy, this.maxRecent),
+        };
+      } else {
+        throw new Error('unsupported version');
+      }
     } catch (error) {
       logger.warn(`[HookSuggestUsage] unreadable usage store, starting empty: ${String(error)}`);
-      this.state = { version: 1, weights: {}, recent: [] };
+      this.state = emptyState();
     }
   }
 }
 
-export interface SuggestionUsageSummary {
-  /** Items with any learned weight. */
-  items: number;
-  /** Σ of all co-occurrence counts across items. */
-  totalWeight: number;
-  /** The strongest associations, strongest first. */
-  top: Array<{ key: string; weight: number; topTerms: Array<{ term: string; count: number }> }>;
-  /** Recent learning events, oldest first (as stored). */
-  recent: Array<{ at: number; key: string }>;
-}
+/** All projects here are for reporting; the scorer reads only one project partition. */
+export function summarizeSuggestionUsage(
+  state: SuggestionUsageState,
+  knownProjects: ReadonlyArray<{ id: string; name: string }> = [],
+  resolveItemName: (key: string) => string | null = () => null,
+): SuggestionUsageSummary {
+  const projectNames = new Map(knownProjects.map(({ id, name }) => [id, name]));
+  const projectIds = new Set([...Object.keys(state.projects), ...knownProjects.map(({ id }) => id)]);
+  const projectStats = new Map<string, { items: number; totalWeight: number }>();
+  const items: SuggestionUsageItemSummary[] = [];
 
-/** What the CLI Integrations pane shows — the store's snapshot, ranked. */
-export function summarizeSuggestionUsage(state: SuggestionUsageState, topN = 10, recentN = 20): SuggestionUsageSummary {
-  const items = Object.entries(state.weights).map(([key, terms]) => {
-    const entries = Object.entries(terms).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    return {
-      key,
-      weight: entries.reduce((sum, [, count]) => sum + count, 0),
-      topTerms: entries.slice(0, 5).map(([term, count]) => ({ term, count })),
-    };
-  });
-  items.sort((a, b) => b.weight - a.weight || a.key.localeCompare(b.key));
+  const appendPartition = (projectId: string, projectName: string, partition: SuggestionUsagePartition): void => {
+    for (const [key, terms] of Object.entries(partition.weights)) {
+      const entries = Object.entries(terms).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const slash = key.indexOf('/');
+      const weight = entries.reduce((sum, [, count]) => sum + count, 0);
+      const stats = projectStats.get(projectId) ?? { items: 0, totalWeight: 0 };
+      stats.items += 1;
+      stats.totalWeight += weight;
+      projectStats.set(projectId, stats);
+      items.push({
+        id: JSON.stringify([projectId, key]),
+        key,
+        type: slash < 0 ? 'unknown' : key.slice(0, slash),
+        itemId: slash < 0 ? key : key.slice(slash + 1),
+        name: resolveItemName(key) || key,
+        projectId,
+        projectName,
+        weight,
+        topTerms: entries.slice(0, 5).map(([term, count]) => ({ term, count })),
+        recent: partition.recent.filter((event) => event.key === key).map((event) => event.at),
+      });
+    }
+  };
+
+  for (const projectId of projectIds) {
+    appendPartition(projectId, projectNames.get(projectId) ?? `Unknown project (${projectId})`, state.projects[projectId] ?? emptyPartition());
+  }
+  if (Object.keys(state.legacy.weights).length > 0 || state.legacy.recent.length > 0) {
+    appendPartition(UNATTRIBUTED_SCOPE_ID, 'Unattributed legacy', state.legacy);
+  }
+  items.sort((a, b) => b.weight - a.weight || a.projectName.localeCompare(b.projectName) || a.key.localeCompare(b.key));
+  const projects = [...projectIds].map((id) => ({
+    id,
+    name: projectNames.get(id) ?? `Unknown project (${id})`,
+    ...(projectStats.get(id) ?? { items: 0, totalWeight: 0 }),
+  })).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   return {
-    items: items.length,
+    items,
+    projects,
     totalWeight: items.reduce((sum, item) => sum + item.weight, 0),
-    top: items.slice(0, topN),
-    recent: state.recent.slice(-recentN),
   };
 }

@@ -33,6 +33,8 @@ vi.mock('../../../renderer/ipc/clients.js', () => ({
       return { success: true, settings: { ...stored }, models };
     }),
     configTestAutoMemoryModel: vi.fn(async () => testResult),
+    hooksGetSuggestionUsage: vi.fn(async () => ({ success: true, usage: { items: [], projects: [], totalWeight: 0 } })),
+    hooksResetSuggestionUsage: vi.fn(async () => ({ success: true })),
   },
 }));
 
@@ -52,7 +54,7 @@ describe('AutoMemoryTab', () => {
 
   it('lists what can record, marks a real CLI with its cost, and disables the rest with the reason', async () => {
     const wrapper = await factory();
-    const options = wrapper.findAll('select option');
+    const options = wrapper.find('select').findAll('option');
 
     expect(options.map((option) => option.text())).toEqual([
       'None', 'Local model', 'Claude Code (real CLI: its full prompt on every turn)', 'cmd (no headless command)',

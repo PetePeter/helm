@@ -69,21 +69,10 @@ const MODE_TEXT: Record<ReminderDeliveryMode, string> = {
   off: 'Off',
 };
 
-/** G5 suggester usage feedback — what the store has learned (ids + terms only). */
-interface SuggestionUsageSummary {
-  items: number;
-  totalWeight: number;
-  top: Array<{ key: string; weight: number; topTerms: Array<{ term: string; count: number }> }>;
-  recent: Array<{ at: number; key: string }>;
-}
-
 const items = ref<HookIntegrationItem[]>([]);
 const loading = ref(true);
 const busyId = ref<string | null>(null);
 const errorText = ref('');
-const usage = ref<SuggestionUsageSummary | null>(null);
-const usageLoading = ref(true);
-const resettingUsage = ref(false);
 
 /** Tool mapping: which CLI family each configured tool speaks (drives capability). */
 interface ToolMappingEntry {
@@ -307,33 +296,8 @@ async function resetHookInjections(): Promise<void> {
   await reset;
 }
 
-async function loadUsage(): Promise<void> {
-  const result = await configClient.hooksGetSuggestionUsage();
-  if (result.success) {
-    usage.value = result.usage;
-  } else {
-    usage.value = null;
-  }
-  usageLoading.value = false;
-}
-
-async function resetUsage(): Promise<void> {
-  resettingUsage.value = true;
-  try {
-    await configClient.hooksResetSuggestionUsage();
-    await loadUsage();
-  } finally {
-    resettingUsage.value = false;
-  }
-}
-
-function formatAt(at: number): string {
-  return new Date(at).toLocaleString();
-}
-
 onMounted(() => {
   void loadStatus();
-  void loadUsage();
   void loadReminderModes();
   void loadHookInjections();
   void loadToolMapping();
@@ -543,60 +507,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="tg-section settings-span">
-      <h3 class="tg-section-title">Suggestion usage feedback</h3>
-      <p class="settings-form__hint">
-        When a session fetches a suggested skill or memory, Helm learns the association —
-        item ids and prompt words only, never prompt text. This tunes the order of the
-        "possibly related" hints; it can reorder them, never add new ones. With no history
-        the suggester behaves exactly as it does today.
-      </p>
-      <div v-if="usageLoading" class="settings-list-item">
-        <div class="settings-list-item__info">
-          <span class="settings-list-item__name">Reading usage feedback…</span>
-        </div>
-      </div>
-      <template v-else-if="usage && usage.items > 0">
-        <div class="settings-form__hint">
-          {{ usage.items }} item{{ usage.items === 1 ? '' : 's' }} learned, {{ usage.totalWeight }}
-          association{{ usage.totalWeight === 1 ? '' : 's' }}, {{ usage.recent.length }} recent event{{ usage.recent.length === 1 ? '' : 's' }}.
-        </div>
-        <div
-          v-for="entry in usage.top"
-          :key="entry.key"
-          class="settings-list-item"
-        >
-          <div class="settings-list-item__info">
-            <span class="settings-list-item__name">{{ entry.key }}</span>
-            <span class="settings-list-item__detail">
-              weight {{ entry.weight }} · {{ entry.topTerms.map(term => `${term.term} ×${term.count}`).join(', ') }}
-            </span>
-          </div>
-        </div>
-        <div
-          v-for="(event, index) in [...usage.recent].reverse()"
-          :key="`${event.at}-${event.key}-${index}`"
-          class="settings-list-item"
-        >
-          <div class="settings-list-item__info">
-            <span class="settings-list-item__name">{{ event.key }}</span>
-            <span class="settings-list-item__detail">learned {{ formatAt(event.at) }}</span>
-          </div>
-        </div>
-        <div class="tg-btn-row">
-          <button
-            class="btn btn--secondary btn--sm focusable"
-            :disabled="resettingUsage"
-            @click="resetUsage"
-          >
-            Reset feedback
-          </button>
-        </div>
-      </template>
-      <p v-else class="settings-form__hint">
-        Nothing learned yet — this fills in as sessions fetch suggested items.
-      </p>
-    </div>
   </div>
 </template>
 

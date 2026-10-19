@@ -70,6 +70,7 @@ export interface ScoredSuggestion {
 /** Per-call scoring context; optional so 2-arg implementations stay valid. */
 export interface SuggestionScoreContext {
   sessionId?: string;
+  projectId?: string | null;
 }
 
 /**
@@ -236,7 +237,7 @@ export interface SuggestionSignalDeps {
    */
   getWorkspacePlanIds(sessionId: string): ReadonlySet<string>;
   /** Co-occurrence weight of an item for the prompt's terms (usage feedback). */
-  usageBoost(key: string, promptTerms: readonly string[]): number;
+  usageBoost(key: string, promptTerms: readonly string[], projectId: string | null): number;
 }
 
 /**
@@ -305,7 +306,7 @@ export class BoostedSuggestionScorer implements SuggestionScorer {
         ? this.weights.recencyMax * Math.max(0, 1 - ageDays / (this.weights.recencyWindowDays || 1))
         : 0;
       const usage = Math.min(
-        this.deps.usageBoost(`${passer.type}/${passer.id}`, promptTerms) * this.weights.usagePerCooccurrence,
+        this.deps.usageBoost(`${passer.type}/${passer.id}`, promptTerms, ctx?.projectId ?? null) * this.weights.usagePerCooccurrence,
         this.weights.usageMax,
       );
 
@@ -345,7 +346,7 @@ export interface SuggestionServiceDeps {
    * usable terms, for the usage store to correlate with a later fetch.
    * Absent (G4 wiring) means nothing is recorded.
    */
-  onSuggested?: (sessionId: string, keys: readonly string[], promptTerms: readonly string[]) => void;
+  onSuggested?: (sessionId: string, keys: readonly string[], promptTerms: readonly string[], projectId: string | null) => void;
 }
 
 export interface SuggestionServiceOptions {
@@ -408,7 +409,7 @@ export class SuggestionService {
     const named = explicitlyNamed(prompt, fresh);
     const ranked = named.length > 0
       ? named.map((candidate) => ({ ...candidate, score: TRIGGER_SCORE }))
-      : await this.scorer.score(prompt, fresh, { sessionId });
+      : await this.scorer.score(prompt, fresh, { sessionId, projectId });
 
     const chosen: ScoredSuggestion[] = [];
     let payload = '';
@@ -438,7 +439,7 @@ export class SuggestionService {
     logger.debug(`[HookSuggest] scored ${candidates.length} candidates in ${elapsedMs.toFixed(2)}ms`);
     // G5 usage feedback: what was sent, and the prompt's usable terms, for the
     // usage store to correlate with a fetch of one of these items.
-    this.deps.onSuggested?.(sessionId, chosen.map((item) => this.key(item)), usageTerms(prompt));
+    this.deps.onSuggested?.(sessionId, chosen.map((item) => this.key(item)), usageTerms(prompt), projectId);
     return payload;
   }
 

@@ -7,6 +7,7 @@
 import { computed, onMounted } from 'vue';
 import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
 import { DEFAULT_JUDGE_PROMPT, type RecordingModelOption } from '../../../../src/types/auto-memory.js';
+import SuggestionLearningSection from './SuggestionLearningSection.vue';
 
 const store = useAutoMemoryStore();
 
@@ -108,6 +109,8 @@ const promptEdited = computed(() => Boolean(store.settings.judgePrompt));
       >Reset to default</button>
       <span class="auto-memory-note">{{ promptEdited ? 'Using your edited prompt.' : 'Using the default prompt.' }}</span>
     </div>
+
+    <SuggestionLearningSection />
 
     <span v-if="store.error" class="auto-memory-note settings-span">{{ store.error }}</span>
   </div>

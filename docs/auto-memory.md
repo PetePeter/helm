@@ -13,6 +13,13 @@ Settings → **Auto memory** holds one global setting, stored as `autoMemory` in
 | `autoRecall` | on | Let the suggester hint at memories. Skill hints are unaffected. |
 | `judgePrompt` | empty | The judge's system prompt. The tab shows the default text to edit in place; empty (or text equal to the default) stores nothing, so a later change to the default still reaches you. **Reset to default** clears it. Read live by the recorder. |
 
+Suggestion learning is a separate section on this page. It learns from both
+memory and skill fetches, stores feedback by project, and only adjusts ranking
+inside that project. The searchable master/detail view includes project
+breakdowns; existing unscoped feedback remains visible as Unattributed legacy
+and is excluded from scoring. See [CLI hooks](cli-hooks.md) for the correlation
+window and privacy boundary.
+
 ```mermaid
 graph LR
     UI[Settings · Auto memory] -->|config:setAutoMemory| CL[ConfigLoader<br/>settings.yaml]
