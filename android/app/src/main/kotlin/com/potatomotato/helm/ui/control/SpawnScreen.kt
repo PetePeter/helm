@@ -303,6 +303,16 @@ fun SpawnScreen(
                 GhostButton(text = stringResource(R.string.spawn_cancel), onClick = onBack)
             }
         } else {
+            val chosenCli = cliType?.takeIf { selected -> cliChoices.any { it.first == selected } }
+            val canSpawn = chosenCli != null && directoriesError == null && !spawnInFlight && tappedAt == null
+            // The last pick spawns: the folder tap and the Start button share this latch.
+            val spawnFrom: (String) -> Unit = { path ->
+                // Re-read the latch live: `canSpawn` is the value from the last composition.
+                if (canSpawn && tappedAt == null) {
+                    tappedAt = SystemClock.uptimeMillis()
+                    onSpawn(path, chosenCli.orEmpty(), name.trim(), machineId)
+                }
+            }
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -379,7 +389,10 @@ fun SpawnScreen(
                                         subtitle = type,
                                         selected = type == cliType,
                                         showChevron = false,
-                                        onClick = { cliType = type },
+                                        onClick = {
+                                            cliType = type
+                                            wizardPage = "projects"
+                                        },
                                     )
                                     PickerDivider()
                                 }
@@ -418,6 +431,7 @@ fun SpawnScreen(
                                         onClick = {
                                             if (group.key != selectedProjectKey) dirPath = null
                                             selectedProjectKey = group.key
+                                            if (directoriesError == null) wizardPage = "folders"
                                         },
                                     )
                                     PickerDivider()
@@ -452,7 +466,10 @@ fun SpawnScreen(
                                         } else null,
                                         selected = directory.path == dirPath,
                                         showChevron = false,
-                                        onClick = { dirPath = directory.path },
+                                        onClick = {
+                                            dirPath = directory.path
+                                            spawnFrom(directory.path)
+                                        },
                                     )
                                     PickerDivider()
                                 }
@@ -463,9 +480,7 @@ fun SpawnScreen(
             }
 
             val selectedDirectory = selectedProject?.directories?.firstOrNull { it.path == dirPath }
-            val chosenCli = cliType?.takeIf { selected -> cliChoices.any { it.first == selected } }
-            val readyToSpawn = selectedDirectory != null && chosenCli != null
-                && directoriesError == null && !spawnInFlight && tappedAt == null
+            val readyToSpawn = selectedDirectory != null && canSpawn
             val machineAvailable = machineId == null
                 || (linkState == LinkState.Linked && machines.any { it.id == machineId })
             val canContinue = when (wizardPage) {
@@ -503,15 +518,7 @@ fun SpawnScreen(
                             "details" -> wizardPage = "cli"
                             "cli" -> wizardPage = "projects"
                             "projects" -> wizardPage = "folders"
-                            "folders" -> if (readyToSpawn && tappedAt == null) {
-                                tappedAt = SystemClock.uptimeMillis()
-                                onSpawn(
-                                    selectedDirectory.path,
-                                    chosenCli.orEmpty(),
-                                    name.trim(),
-                                    machineId,
-                                )
-                            }
+                            "folders" -> selectedDirectory?.let { spawnFrom(it.path) }
                         }
                     },
                 )
