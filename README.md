@@ -468,6 +468,28 @@ Each peer has its own allow-list (deny-by-default), a rate limit, and a rolling 
 
 See [fleet.md](docs/fleet.md) for the transport, pairing protocol and security model.
 
+## Memory & Dreaming
+
+Sessions store durable project knowledge as small linked memories through the Helm MCP `memory_*` tools. Each memory holds one idea, and Helm links related ones, so search returns precise hits.
+
+1. **Settings → Auto memory** — pick a **recording model**. With **auto-save** on, Helm silently records the key facts of each turn. With **auto-recall** on, it suggests relevant memories in later prompts. The judge prompt is editable, with a reset to the default.
+2. **Settings → Dreaming** — every project gets a disabled daily "dream", a scheduled run that prunes, merges and sharpens that project's memories and turns auto-saved notes into project knowledge. Enable a project's row and set its CLI and time; the header controls apply to every row. All projects share one editable prompt, and each row can add a project-specific addendum. A dream posts its results to the project's mess channel and closes itself.
+
+See [docs/memory.md](docs/memory.md), [docs/auto-memory.md](docs/auto-memory.md) and [docs/dreaming.md](docs/dreaming.md).
+
+## Missions, Todos, ETAs & Handover
+
+With CLI hooks installed (see [docs/cli-hooks.md](docs/cli-hooks.md)), each session's AI is reminded on every prompt to keep these up to date:
+
+- **Mission** — a one-line TL;DR pinned above the terminal. Click to edit it yourself; the AI updates it with `session_mission_set`. 500 characters max.
+- **Todos** — the AI keeps a checklist (`session_todo_*`), shown read-only in the **Todos** pane (Ctrl+Shift+K) and as a `done/total` chip on the session row. An item that needs your answer is parked as ⏳ *waiting on user*, so the AI stops instead of thrashing while you're away.
+- **ETA** — the AI sets a finish estimate (`session_eta_set`); the row shows `🏁 HH:MM` and `🏁 late Nm` once it's overdue. Helm scores each estimate when it is cleared and learns a `(~N)` confidence range. Accuracy is shown in **Statistics → Estimates**.
+- **Handover** — `session_compact` takes a note before compacting and Helm delivers it back afterwards, so the session keeps its working state. The terminal is locked until the note is delivered.
+
+The **Statistics** pane also shows a 5-minute You/AI timesheet per project and CLI token totals per folder, including sub-agents.
+
+See [docs/mission-statement.md](docs/mission-statement.md), [docs/todos.md](docs/todos.md), [docs/session-eta.md](docs/session-eta.md), [docs/handover.md](docs/handover.md) and [docs/time-tracking.md](docs/time-tracking.md).
+
 ## Configuration
 
 ### Settings Tabs
