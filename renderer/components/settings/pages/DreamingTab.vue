@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { configClient, eventsClient, projectsClient, schedulerClient, toolsClient } from '../../../ipc/clients.js';
 import type { ProjectRecord } from '../../../../src/types/project.js';
 import type { ScheduledTask, UpdateScheduledTaskParams } from '../../../../src/types/scheduled-task.js';
@@ -10,6 +10,8 @@ const tasks = ref<ScheduledTask[]>([]);
 const projects = ref<ProjectRecord[]>([]);
 const cliTypes = ref<Array<{ id: string; label: string }>>([]);
 const prompt = ref(DEFAULT_DREAM_PROMPT);
+/** Unsaved addendum text per task; wins over the polled server value until saved. */
+const addendumDrafts = reactive<Record<string, string>>({});
 const globalCliType = ref('');
 const globalTime = ref('09:00');
 const promptStatus = ref('');
@@ -185,8 +187,19 @@ function onCliChange(task: ScheduledTask, event: Event): void {
   void updateDream(task, { cliType: (event.target as HTMLSelectElement).value });
 }
 
-function onAddendumChange(task: ScheduledTask, event: Event): void {
-  void updateDream(task, { userPrompt: (event.target as HTMLTextAreaElement).value });
+function addendumValue(task: ScheduledTask): string {
+  return addendumDrafts[task.id] ?? task.userPrompt ?? '';
+}
+
+function onAddendumInput(task: ScheduledTask, event: Event): void {
+  addendumDrafts[task.id] = (event.target as HTMLTextAreaElement).value;
+}
+
+async function onAddendumChange(task: ScheduledTask, event: Event): Promise<void> {
+  const value = (event.target as HTMLTextAreaElement).value;
+  await updateDream(task, { userPrompt: value });
+  // Keep anything typed while the save was in flight.
+  if (addendumDrafts[task.id] === value) delete addendumDrafts[task.id];
 }
 
 function onTimeChange(task: ScheduledTask, event: Event): void {
@@ -250,9 +263,9 @@ onUnmounted(() => {
           rows="10"
           spellcheck="false"
           aria-label="Global dreaming prompt"
-          :value="prompt"
+          v-model="prompt"
           :disabled="savingPrompt"
-          @change="savePrompt(($event.target as HTMLTextAreaElement).value)"
+          @change="savePrompt()"
         />
       </label>
       <div class="dreaming-card__actions">
@@ -346,9 +359,10 @@ onUnmounted(() => {
                   class="dreaming-addendum focusable"
                   :data-focus-id="`dreaming:addendum:${task.id}`"
                   rows="2"
-                  :value="task.userPrompt ?? ''"
+                  :value="addendumValue(task)"
                   :aria-label="`Prompt additions for ${projectLabel(task)}`"
                   placeholder="Optional project-specific additions"
+                  @input="onAddendumInput(task, $event)"
                   @change="onAddendumChange(task, $event)"
                 />
               </td>

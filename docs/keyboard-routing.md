@@ -131,7 +131,6 @@ remain useful while typing. A modal always takes ownership before globals run.
 | Shortcut group | Terminal | Chat composer | Draft editor | Search fields | Modal fields | Artifact iframe | Mess / Memories / Plans | Snap-out |
 |----------------|----------|---------------|--------------|---------------|--------------|-----------------|-------------------------|----------|
 | `Ctrl+Shift+<pane>`, `Ctrl+G`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Ctrl+digit`, `Alt+digit`, `Ctrl+Shift+N` | Yes | Yes | Yes | Yes | No | Yes, when the iframe is focused; matching handlers act | Yes | Pane-profile shortcuts, `Ctrl+G`, `Ctrl/Alt+digit`; no session cycle or spawn |
-| `Ctrl+Shift+G` open Dreaming settings | Yes | Yes | Yes | Yes | No | Yes, when focused | Yes | Not registered |
 | `Ctrl+Shift+W` close session | Yes, with an active session | Yes, with an active session | Yes, with an active session | Yes, with an active session | No | Yes, when focused and an active session exists | Yes, with an active session | Not registered |
 | `Ctrl+Shift+R` rename, `Ctrl+Shift+B` clear notifications | Yes, with an active session | Yes, when the action is registered | Yes, when the action is registered | Yes, when the action is registered | No | Yes, when focused and an action is registered | Yes, with an active session | Not registered; the pop-out has no rename/notification callbacks |
 | `Ctrl+Shift+Space` voice toggle | Yes | Yes | Yes | Yes | No | Yes, when focused and the voice handler is registered | Yes | Not registered |

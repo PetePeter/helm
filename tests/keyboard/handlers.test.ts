@@ -28,7 +28,7 @@ import {
 // ── Fakes ───────────────────────────────────────────────────────────────────
 
 function fakeWorkspace() {
-  const calls = { activated: [] as PaneId[], cycled: [] as number[], jumped: [] as number[], chips: [] as number[], spawned: 0, closed: 0, dreamingOpened: 0 };
+  const calls = { activated: [] as PaneId[], cycled: [] as number[], jumped: [] as number[], chips: [] as number[], spawned: 0, closed: 0 };
   const deps: WorkspaceKeyDeps = {
     activatePane: (pane) => { calls.activated.push(pane); },
     cycleSession: (direction) => { calls.cycled.push(direction); },
@@ -36,7 +36,6 @@ function fakeWorkspace() {
     fireChipAction: (slot) => { calls.chips.push(slot); return true; },
     spawnSession: () => { calls.spawned += 1; },
     closeActiveSession: () => { calls.closed += 1; },
-    openDreamingSettings: () => { calls.dreamingOpened += 1; },
   };
   return { deps, calls };
 }
@@ -107,27 +106,6 @@ afterEach(() => {
 // ── Workspace shortcuts ─────────────────────────────────────────────────────
 
 describe('dock pane shortcuts', () => {
-  it('Ctrl+Shift+G opens Dreaming settings from a terminal', () => {
-    const workspace = fakeWorkspace();
-    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
-    install();
-
-    pressInTerminal({ key: 'G', code: 'KeyG', ctrlKey: true, shiftKey: true });
-
-    expect(workspace.calls.dreamingOpened).toBe(1);
-  });
-
-  it('Ctrl+Shift+G opens Dreaming settings while typing in a field', () => {
-    const workspace = fakeWorkspace();
-    createWorkspaceKeyHandlers(workspace.deps).forEach(registerKeyHandler);
-    install();
-
-    const event = pressInField({ key: 'G', code: 'KeyG', ctrlKey: true, shiftKey: true });
-
-    expect(workspace.calls.dreamingOpened).toBe(1);
-    expect(event.defaultPrevented).toBe(true);
-  });
-
   // The reported regression: MainWindowApp guarded on closest('textarea'), and
   // xterm's helper textarea matched, so every Ctrl+Shift+<pane> died the moment
   // you were actually using a terminal.

@@ -81,6 +81,30 @@ describe('DreamingTab', () => {
     wrapper = null;
   });
 
+  it('keeps unsaved prompt and addendum text when the task list reloads', async () => {
+    wrapper = mount(DreamingTab);
+    await flushPromises();
+    const prompt = wrapper.get('textarea[aria-label="Global dreaming prompt"]');
+    const addendum = wrapper.get('textarea[aria-label="Prompt additions for Alpha"]');
+    // Typing without leaving the field: input only, no change (setValue fires both).
+    for (const [field, text] of [[prompt, 'Half-typed prompt'], [addendum, 'Half-typed addition']] as const) {
+      (field.element as HTMLTextAreaElement).value = text;
+      await field.trigger('input');
+    }
+
+    // Another row changes on the server, so the reload re-renders the whole table.
+    mocks.scheduledTaskList.mockResolvedValue(tasks.map((task) => ({ ...task, enabled: true })));
+    mocks.onScheduledTaskChanged.mock.calls[0][0]();
+    await flushPromises();
+    await flushPromises();
+
+    expect((prompt.element as HTMLTextAreaElement).value).toBe('Half-typed prompt');
+    expect((addendum.element as HTMLTextAreaElement).value).toBe('Half-typed addition');
+    await addendum.trigger('change');
+    await flushPromises();
+    expect(mocks.scheduledTaskUpdate).toHaveBeenCalledWith('dream-alpha', { userPrompt: 'Half-typed addition' });
+  });
+
   it('renders project rows and saves each project addendum', async () => {
     wrapper = mount(DreamingTab);
     await flushPromises();

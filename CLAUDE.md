@@ -133,7 +133,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/config-boundary.md](docs/config-boundary.md) | Where writable config/logs/temp live, seeding, legacy migration |
 | [docs/self-update.md](docs/self-update.md) | Launch-time GitHub release check, silent NSIS self-update + relaunch |
 | [docs/preload-api-boundary.md](docs/preload-api-boundary.md) | IPC/contextBridge boundary rules |
-| [docs/settings.md](docs/settings.md) | Full-screen settings — page registry and optional shortcut hints, grouped nav, gamepad pane model, autosave, tinted-fill selection |
+| [docs/settings.md](docs/settings.md) | Full-screen settings — page registry, grouped nav, gamepad pane model, autosave, tinted-fill selection |
 | [docs/onboarding.md](docs/onboarding.md) | First-run flow, Configure hub, completion persistence, and extension points |
 | [docs/docking.md](docs/docking.md) | Dock workspace — pane registry, tabs/splits/edge docks, rails, close & restore, chips-in-pane |
 | [android/README.md](android/README.md) | Android companion app — Gradle build, permanent applicationId/keystore rules, derived versionCode, Node↔JVM toolchain boundary |

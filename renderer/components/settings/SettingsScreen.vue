@@ -138,7 +138,6 @@ defineExpose({ handleButton });
         >
           <svg viewBox="0 0 24 24" aria-hidden="true"><path :d="SETTINGS_ICONS[page.icon]" /></svg>
           {{ page.label }}
-          <kbd v-if="page.shortcut" class="dock-tab__shortcut jump-key">{{ page.shortcut }}</kbd>
         </button>
       </template>
     </nav>

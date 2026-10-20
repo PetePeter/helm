@@ -577,7 +577,6 @@ let uninstallKeyRouter: (() => void) | null = null;
  */
 const workspaceKeyHandlers = createWorkspaceKeyHandlers({
   activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT || paneId === PANE_TODOS); },
-  openDreamingSettings: () => { openSettingsTab('dreaming'); },
   cycleSession: (direction) => { cycleActiveSession(direction); },
   jumpToSession: (slot) => {
     for (const [sessionId, assignedSlot] of sessionsScreenStore.sessionShortcutMap) {

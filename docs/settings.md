@@ -21,8 +21,8 @@ graph LR
 
 | Piece | File | Role |
 |---|---|---|
-| Registry | `renderer/components/settings/settings-registry.ts` | The one list of pages: id, label, group, icon, and an optional shortcut hint. It also maps legacy persisted tab ids. Nav order is list order. |
-| Screen | `renderer/components/settings/SettingsScreen.vue` | Renders the grouped nav, shows a hint for pages with a registered shortcut, and owns gamepad input inside settings. |
+| Registry | `renderer/components/settings/settings-registry.ts` | The one list of pages: id, label, group, and icon. It also maps legacy persisted tab ids. Nav order is list order. |
+| Screen | `renderer/components/settings/SettingsScreen.vue` | Renders the grouped nav and owns gamepad input inside settings. |
 | Page frame | `primitives/SettingsPage.vue` | Header, body and footer. The footer carries the key hints and the save status. `flush` hands the body to a page that lays out its own panes. |
 | Primitives | `primitives/MasterDetail.vue`, `PillTabs.vue`, `SettingsCard.vue`, `FieldRow.vue` | Shared shells for list/detail pages, sub-tabs, cards and label/control rows. |
 | Tools | `tools/ToolsPage.vue`, `tools/ToolEditor.vue` | The CLI type list plus an inline editor. |
@@ -34,9 +34,7 @@ Nav groups:
 - **Connections:** Telegram, Mobile, Fleet, MCP server, CLI integrations.
 - **System:** Operator, Voice, Updates, Scheduled tasks.
 
-A page may set a `shortcut` in the registry; the nav shows the same keyboard
-hint styling used by dock tabs. **Dreaming** is in Knowledge and opens directly
-with Ctrl+Shift+G from the main workspace, including while typing. Its page
+**Dreaming** is in Knowledge. Its page
 keeps the shared dream prompt and the project-specific schedule controls
 together; [dreaming.md](dreaming.md) describes why the prompt is global.
 
