@@ -52,7 +52,7 @@ flowchart TD
 ## Settings and scheduling
 
 - Each row in Settings → **Dreaming** selects the project's CLI and daily local time, enables or pauses its schedule, edits its addendum, or runs it immediately.
-- The page-level **Apply to all projects** control applies the selected CLI and time to every dream row. It leaves each project's enabled state and addendum alone.
+- The table's **CLI**, **Daily at** and **Enabled** headers are controls for every row: each shows the value all rows share, or Mixed / blank / indeterminate when they differ, and changing one sets it on every row at once. The Enabled header only touches rows that have a CLI. Addenda stay per project.
 - Changing the CLI, enabled state, or addendum does not move the next run. A failed run returns to its configured daily time so a hiccup does not make the schedule drift.
 
 ## Run now

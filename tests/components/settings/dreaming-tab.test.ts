@@ -147,24 +147,53 @@ describe('DreamingTab', () => {
     expect(mocks.scheduledTaskUpdate).not.toHaveBeenCalled();
   });
 
-  it('applies the global CLI and daily time to every project row', async () => {
+  it('header controls show the shared value, or mixed when rows differ', async () => {
+    mocks.scheduledTaskList.mockResolvedValue([
+      { ...tasks[0] },
+      { ...tasks[1], cliType: 'claude', enabled: false, nextRunAt: new Date(2026, 4, 5, 22, 30) },
+    ]);
     wrapper = mount(DreamingTab);
     await flushPromises();
 
-    await wrapper.get('select[aria-label="Apply CLI to all projects"]').setValue('claude');
-    await wrapper.get('input[aria-label="Apply daily time to all projects"]').setValue('22:30');
-    await wrapper.findAll('button').find((button) => button.text() === 'Apply to all projects')!.trigger('click');
+    const cli = wrapper.get('select[aria-label="CLI for all projects"]');
+    const time = wrapper.get('input[aria-label="Daily time for all projects"]');
+    const enabled = wrapper.get('input[aria-label="Enable dreaming for all projects"]');
+    expect((cli.element as HTMLSelectElement).selectedOptions[0].text).toBe('Mixed');
+    expect((time.element as HTMLInputElement).value).toBe('');
+    expect((enabled.element as HTMLInputElement).indeterminate).toBe(true);
+
+    mocks.scheduledTaskList.mockResolvedValue(tasks.map((task) => ({ ...task, cliType: 'codex', enabled: true })));
+    mocks.onScheduledTaskChanged.mock.calls[0][0]();
+    await flushPromises();
+    expect((cli.element as HTMLSelectElement).value).toBe('codex');
+    expect((time.element as HTMLInputElement).value).toBe('09:00');
+    expect((enabled.element as HTMLInputElement).indeterminate).toBe(false);
+    expect((enabled.element as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('changing a header control sets every project row', async () => {
+    wrapper = mount(DreamingTab);
     await flushPromises();
 
-    expect(mocks.scheduledTaskUpdate).toHaveBeenCalledTimes(2);
+    await wrapper.get('select[aria-label="CLI for all projects"]').setValue('claude');
+    await flushPromises();
+    for (const task of tasks) expect(mocks.scheduledTaskUpdate).toHaveBeenCalledWith(task.id, { cliType: 'claude' });
+
+    mocks.scheduledTaskUpdate.mockClear();
+    await wrapper.get('input[aria-label="Daily time for all projects"]').setValue('22:30');
+    await flushPromises();
     for (const task of tasks) {
-      expect(mocks.scheduledTaskUpdate).toHaveBeenCalledWith(task.id, expect.objectContaining({
-        cliType: 'claude',
-        scheduleKind: 'cron',
-        cronExpression: '30 22 * * *',
-        scheduledTime: expect.any(Date),
-      }));
+      expect(mocks.scheduledTaskUpdate).toHaveBeenCalledWith(task.id, {
+        scheduleKind: 'cron', cronExpression: '30 22 * * *', scheduledTime: expect.any(Date),
+      });
     }
+
+    // Only rows with a CLI can be enabled; Beta has none in the fixture.
+    mocks.scheduledTaskUpdate.mockClear();
+    await wrapper.get('input[aria-label="Enable dreaming for all projects"]').setValue(false);
+    await flushPromises();
+    expect(mocks.scheduledTaskUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.scheduledTaskUpdate).toHaveBeenCalledWith('dream-alpha', { enabled: false });
   });
 
   it('saves the global prompt on change and resets it to the shipped default', async () => {

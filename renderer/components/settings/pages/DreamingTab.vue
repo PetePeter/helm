@@ -12,24 +12,30 @@ const cliTypes = ref<Array<{ id: string; label: string }>>([]);
 const prompt = ref(DEFAULT_DREAM_PROMPT);
 /** Unsaved addendum text per task; wins over the polled server value until saved. */
 const addendumDrafts = reactive<Record<string, string>>({});
-const globalCliType = ref('');
-const globalTime = ref('09:00');
 const promptStatus = ref('');
-const applyStatus = ref('');
 const error = ref('');
 const savingPrompt = ref(false);
-const applying = ref(false);
+/** Header select value while the rows use different CLIs. */
+const MIXED = '__mixed__';
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let offTasksChanged: (() => void) | null = null;
 let offProjectsChanged: (() => void) | null = null;
-let globalDefaultsInitialized = false;
 
 const promptEdited = computed(() => prompt.value !== DEFAULT_DREAM_PROMPT);
 const dreamTasks = computed(() => tasks.value
   .filter((task) => task.systemKind === 'dream')
   .sort((a, b) => projectLabel(a).localeCompare(projectLabel(b))));
 const projectById = computed(() => new Map(projects.value.map((project) => [project.id, project])));
-const canApplyToAll = computed(() => dreamTasks.value.length > 0 && Boolean(globalCliType.value) && Boolean(dailySchedule(globalTime.value)));
+/** Rows the enable switch applies to: a dream without a CLI cannot run. */
+const enableableTasks = computed(() => dreamTasks.value.filter((task) => task.cliType));
+// Header controls show the value every row shares; null means the rows differ.
+const sharedCliType = computed(() => sharedValue(dreamTasks.value.map((task) => task.cliType)));
+const sharedTime = computed(() => sharedValue(dreamTasks.value.map(dreamTime)));
+const sharedEnabled = computed(() => sharedValue(enableableTasks.value.map((task) => task.enabled === true)));
+
+function sharedValue<T>(values: T[]): T | null {
+  return values.length > 0 && values.every((value) => value === values[0]) ? values[0] : null;
+}
 
 function projectFor(task: ScheduledTask): ProjectRecord | undefined {
   if (task.projectId) {
@@ -111,20 +117,9 @@ function resetPrompt(): void {
   void savePrompt('');
 }
 
-function initializeGlobalDefaults(): void {
-  if (globalDefaultsInitialized || dreamTasks.value.length === 0) return;
-  globalDefaultsInitialized = true;
-  const first = dreamTasks.value[0];
-  if (!first) return;
-  const cli = first.cliType;
-  globalCliType.value = dreamTasks.value.every((task) => task.cliType === cli) ? cli : '';
-  globalTime.value = dreamTime(first);
-}
-
 async function loadTasks(): Promise<void> {
   try {
     tasks.value = await schedulerClient.scheduledTaskList() ?? [];
-    initializeGlobalDefaults();
   } catch (reason) {
     tasks.value = [];
     error.value = reason instanceof Error ? reason.message : String(reason);
@@ -207,19 +202,23 @@ function onTimeChange(task: ScheduledTask, event: Event): void {
   if (schedule) void updateDream(task, schedule);
 }
 
-async function applyToAll(): Promise<void> {
-  const schedule = dailySchedule(globalTime.value);
-  if (!globalCliType.value || !schedule || dreamTasks.value.length === 0) return;
-  applying.value = true;
-  applyStatus.value = '';
-  const patch: UpdateScheduledTaskParams = { cliType: globalCliType.value, ...schedule };
-  try {
-    const results = await Promise.all(dreamTasks.value.map((task) => updateDream(task, patch, false)));
-    await loadTasks();
-    applyStatus.value = results.every(Boolean) ? 'Applied to all projects.' : 'Some project rows could not be updated.';
-  } finally {
-    applying.value = false;
-  }
+async function updateAllDreams(targets: ScheduledTask[], patch: UpdateScheduledTaskParams): Promise<void> {
+  await Promise.all(targets.map((task) => updateDream(task, patch, false)));
+  await loadTasks();
+}
+
+function onAllCliChange(event: Event): void {
+  const cliType = (event.target as HTMLSelectElement).value;
+  if (cliType) void updateAllDreams(dreamTasks.value, { cliType });
+}
+
+function onAllTimeChange(event: Event): void {
+  const schedule = dailySchedule((event.target as HTMLInputElement).value);
+  if (schedule) void updateAllDreams(dreamTasks.value, schedule);
+}
+
+function onAllEnabledChange(event: Event): void {
+  void updateAllDreams(enableableTasks.value, { enabled: (event.target as HTMLInputElement).checked });
 }
 
 async function runDreamNow(task: ScheduledTask): Promise<void> {
@@ -273,23 +272,6 @@ onUnmounted(() => {
         <span class="dreaming-status" role="status">{{ promptStatus }}</span>
       </div>
 
-      <div class="dreaming-apply-all">
-        <label>
-          <span>CLI for all projects</span>
-          <select v-model="globalCliType" class="btn btn--secondary btn--sm focusable" aria-label="Apply CLI to all projects">
-            <option value="">Select CLI...</option>
-            <option v-for="cliType in cliTypes" :key="cliType.id" :value="cliType.id">{{ cliType.label }}</option>
-          </select>
-        </label>
-        <label>
-          <span>Daily at</span>
-          <input v-model="globalTime" class="focusable" type="time" aria-label="Apply daily time to all projects" />
-        </label>
-        <button type="button" class="btn btn--secondary btn--sm focusable" :disabled="!canApplyToAll || applying" @click="applyToAll">
-          {{ applying ? 'Applying…' : 'Apply to all projects' }}
-        </button>
-        <span class="dreaming-status" role="status">{{ applyStatus }}</span>
-      </div>
     </section>
 
     <section class="dreaming-projects settings-span">
@@ -305,9 +287,47 @@ onUnmounted(() => {
           <thead>
             <tr>
               <th scope="col">Project</th>
-              <th scope="col">CLI</th>
-              <th scope="col">Daily at</th>
-              <th scope="col">Enabled</th>
+              <th scope="col">
+                <label class="dreaming-header-control">
+                  <span>CLI</span>
+                  <select
+                    class="btn btn--secondary btn--sm focusable"
+                    :value="sharedCliType ?? MIXED"
+                    aria-label="CLI for all projects"
+                    @change="onAllCliChange"
+                  >
+                    <option :value="MIXED" disabled hidden>Mixed</option>
+                    <option value="" disabled>Select CLI...</option>
+                    <option v-for="cliType in cliTypes" :key="cliType.id" :value="cliType.id">{{ cliType.label }}</option>
+                  </select>
+                </label>
+              </th>
+              <th scope="col">
+                <label class="dreaming-header-control">
+                  <span>Daily at</span>
+                  <input
+                    class="dreaming-time focusable"
+                    type="time"
+                    :value="sharedTime ?? ''"
+                    aria-label="Daily time for all projects"
+                    @change="onAllTimeChange"
+                  />
+                </label>
+              </th>
+              <th scope="col">
+                <label class="dreaming-header-control">
+                  <span>Enabled</span>
+                  <input
+                    class="focusable"
+                    type="checkbox"
+                    :checked="sharedEnabled === true"
+                    :indeterminate="enableableTasks.length > 0 && sharedEnabled === null"
+                    :disabled="enableableTasks.length === 0"
+                    aria-label="Enable dreaming for all projects"
+                    @change="onAllEnabledChange"
+                  />
+                </label>
+              </th>
               <th scope="col">Prompt additions</th>
               <th scope="col"><span class="sr-only">Actions</span></th>
             </tr>
@@ -449,29 +469,20 @@ onUnmounted(() => {
   min-height: 10rem;
 }
 
-.dreaming-card__actions,
-.dreaming-apply-all {
+.dreaming-card__actions {
   display: flex;
   align-items: end;
   flex-wrap: wrap;
   gap: var(--spacing-sm);
 }
 
-.dreaming-apply-all {
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--border);
-}
-
-.dreaming-apply-all label {
+.dreaming-header-control {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--spacing-xs);
-  min-width: 10rem;
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
 }
 
-.dreaming-apply-all input[type='time'],
 .dreaming-time {
   min-height: 2rem;
   padding: 0 var(--spacing-sm);

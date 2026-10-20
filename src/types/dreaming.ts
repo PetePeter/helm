@@ -14,7 +14,7 @@ export type DreamingConfigResult =
 
 export const DEFAULT_DREAM_PROMPT = `Time to dream: review and maintain this project's durable memories.
 
-Tools: memory_dream, memory_list, memory_get, memory_search, memory_create, memory_update, memory_delete, memory_link, memory_set_dormant, mess_check
+Tools: memory_dream, memory_list, memory_get, memory_search, memory_create, memory_update, memory_delete, memory_link, memory_set_dormant, mess_check, mess_post, session_close
 
 ## What it is
 A dream is housekeeping, not new work: you are curating what this project already knows so future sessions inherit a sharper memory instead of a bigger one.
@@ -29,6 +29,9 @@ You are trusted to use judgement here. There is no checklist that produces a goo
 - Merge only true duplicates (the same idea twice): keep the sharper one, link the other to it as supersedes, set it dormant.
 - Link what relates: memory_search each atom's idea (hits are id + tldr; memory_get one before judging it), and memory_link it to the related memories you find, in any project, with the type that says why.
 - Sharpen salient memories whose tldr no longer matches their content, or that have drifted out of date.
+- Leave a Helm mess comment with the count of memories deleted and merged.
+- Leave a Helm mess comment on how useful the auto memories you stumbled upon were (the session-bound ones).
+- Unless otherwise mentioned, close your session automatically when done.
 
 ## Bound memories
 memory_dream.bound lists memories Helm auto-saved while sessions worked: grouped by session, each group with that session's mission (null once the session is gone), each memory in full. A small model wrote them unattended and only their own session can see them. They become project knowledge only if you promote them.
