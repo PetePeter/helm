@@ -2,6 +2,21 @@
 
 All notable changes to Helm are documented in this file.
 
+## [4.8.5] - 2026-10-21
+
+### Features
+
+- Settings → Dreaming page; header controls set every row; dream prompts post to mess and self-close.
+- Auto-memory learnt items grouped per item.
+- ETA and todos: late clears count, rescopes reset unscored estimates, todos can wait on the user; split ETA hook reminder.
+- Statistics → Estimates tab drops the recent-estimates table.
+
+### Bug Fixes
+
+- Keep unsaved dream prompt text across reloads.
+- Sub-agent context no longer lost from the token ledger.
+- Handover blocks user PTY input while pending; context graph never runs backwards.
+
 ## [4.5.0] - 2026-10-05
 
 ### Features

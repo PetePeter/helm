@@ -44,6 +44,10 @@ The desktop app ships for **Windows** (installer `.exe`) and **macOS** (universa
 - **Artifact viewer** — Sessions publish readable markdown/HTML reports into an in-app panel, with versions, mermaid diagrams, and inline local images
 - **Recycle bin** — Closed recoverable sessions are kept 30 days in a searchable Project › Group › Folder tree, restorable with their resume id and artifacts
 - **Runtime session groups** — Custom cross-directory groups alongside the folder groups, with drag-to-move and restore-to-group
+- **Memory graph + dreaming** — Project memories linked as a knowledge graph, with auto-save/auto-recall and scheduled maintenance "dreams" configured in Settings → Dreaming
+- **Session missions, todos & ETAs** — Sessions pin a one-line mission, keep a live todo list, and set finish estimates that Helm scores for accuracy
+- **Compaction handover** — A session's handover note is carried across its own `/compact` and pasted back on the next lull
+- **Statistics** — Project timesheet, per-folder CLI token totals (sub-agents included), and ETA accuracy
 - **Fleet** — Pair two machines and drive sessions, terminals, and plans on the other one from here
 - **Cross-platform** — Windows and macOS desktop, plus an Android companion
 
@@ -544,6 +548,14 @@ User-facing docs are in `docs/`:
 | [cli-hooks.md](docs/cli-hooks.md) | Shared CLI hooks and shipped command guardrails |
 | [apk-distribution.md](docs/apk-distribution.md) | Versioned Android APK release and signature verification |
 | [session-freeze.md](docs/session-freeze.md) | Prompt-cache status, session freezing, and keep-warm controls |
+| [memory.md](docs/memory.md) | Memory knowledge graph — links, ranking, cross-project search |
+| [auto-memory.md](docs/auto-memory.md) | Auto-save / auto-recall memory runs |
+| [dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams and the Settings → Dreaming page |
+| [mission-statement.md](docs/mission-statement.md) | Per-session pinned mission |
+| [todos.md](docs/todos.md) | Per-session todo list, including items waiting on the user |
+| [session-eta.md](docs/session-eta.md) | Session finish estimates and accuracy scoring |
+| [handover.md](docs/handover.md) | Compaction handover notes |
+| [time-tracking.md](docs/time-tracking.md) | Statistics — timesheet, tokens, estimates |
 | [plans-file-structure.md](docs/plans-file-structure.md) | Plan persistence format and file layout |
 | [CHANGELOG.md](CHANGELOG.md) | Versioned release notes |
 
