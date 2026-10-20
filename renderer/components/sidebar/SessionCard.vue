@@ -253,17 +253,18 @@ const metaText = computed(() => {
 });
 /** Ticker only when the text overflows — short lines stay still. */
 const metaEl = ref<HTMLElement | null>(null);
-const metaOverflows = ref(false);
+/** Pixels the text overflows by; the ticker scrolls exactly that far. */
+const metaOverflowPx = ref(0);
 function measureMeta(): void {
   const el = metaEl.value;
-  metaOverflows.value = !!el && el.scrollWidth > el.clientWidth;
+  metaOverflowPx.value = el ? Math.max(0, el.scrollWidth - el.clientWidth) : 0;
 }
 const metaResize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMeta);
 watch(metaEl, (el, prev) => {
   if (prev) metaResize?.unobserve(prev);
   if (el) metaResize?.observe(el);
 });
-watch(metaText, () => { metaOverflows.value = false; nextTick(measureMeta); }, { flush: 'post' });
+watch(metaText, () => { metaOverflowPx.value = 0; nextTick(measureMeta); }, { flush: 'post' });
 onUnmounted(() => metaResize?.disconnect());
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
@@ -581,7 +582,8 @@ function onCardClick(e: MouseEvent): void {
       v-if="metaText"
       ref="metaEl"
       class="session-meta"
-      :class="{ 'session-meta--ticker': metaOverflows }"
+      :class="{ 'session-meta--ticker': metaOverflowPx > 0 }"
+      :style="metaOverflowPx > 0 ? { '--ticker-shift': `-${metaOverflowPx}px` } : undefined"
       :title="metaText"
     ><span class="session-meta__text">{{ metaText }}</span></span>
 

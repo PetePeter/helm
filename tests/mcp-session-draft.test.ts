@@ -46,14 +46,19 @@ describe('MCP session_draft_*', () => {
   let pads: InstanceType<typeof DraftManager>;
   let call: (tool: string, args?: Record<string, unknown>, auth?: { sessionId?: string }) => Promise<any>;
 
+  let sessions: InstanceType<typeof SessionManager>;
+  let peerCall: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
-    const sessions = new SessionManager();
+    sessions = new SessionManager();
     sessions.addSession(session('me', 'caller'));
     sessions.addSession(session('other', 'sibling'));
     pads = new DraftManager(memoryStore(), () => 5000);
     const configLoader = { getCliTypeLabel: (ref: string) => ref, getCliTypeEntry: () => null, getCliTypes: () => [] };
     const service = new HelmControlService({} as never, sessions, {} as never, configLoader as never);
     service.setDraftManager(pads);
+    peerCall = vi.fn();
+    (service as unknown as { peerCall: unknown }).peerCall = peerCall;
     const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
     call = (tool, args = {}, auth = { sessionId: 'me' }) => callMcpTool(deps, tool, args, auth) as Promise<any>;
   });
@@ -73,13 +78,20 @@ describe('MCP session_draft_*', () => {
     });
   });
 
-  it('reads another session\'s pad by id or name but never writes it', async () => {
+  it("reads and writes another session's pad by id or name, frozen or locked, without sending it", async () => {
+    sessions.addSession({ ...session('cold', 'frozen-one'), frozen: true, locked: true });
     pads.set('other', 'theirs', 'user', 0);
     expect((await call('session_draft_get', { sessionId: 'sibling' })).text).toBe('theirs');
-    await expect(call('session_draft_set', { sessionId: 'other', text: 'x', revision: 1 })).rejects.toThrow(/only writes your own/);
-    await expect(call('session_draft_append', { sessionId: 'other', text: 'x' })).rejects.toThrow(/only writes your own/);
-    expect(pads.get('other').text).toBe('theirs');
+    expect(await call('session_draft_set', { sessionId: 'other', text: 'x', revision: 1 })).toMatchObject({ ok: true, revision: 2 });
+    expect(await call('session_draft_append', { sessionId: 'frozen-one', text: 'note' })).toMatchObject({ ok: true, revision: 1 });
+    expect(pads.get('other')).toMatchObject({ text: 'x', updatedBy: 'ai' });
+    expect(pads.get('cold').text).toBe('note');
     expect(pads.get('me').revision).toBe(0);
+  });
+
+  it("still refuses a stale write to another session's pad", async () => {
+    pads.set('other', 'theirs', 'user', 0);
+    expect(await call('session_draft_set', { sessionId: 'other', text: 'x', revision: 0 })).toMatchObject({ ok: false, reason: 'stale' });
   });
 
   it('writes as the AI and reaches the listener the pane mirrors', async () => {
@@ -120,5 +132,32 @@ describe('MCP session_draft_*', () => {
     await expect(call('session_draft_get', { sessionId: 'ghost' })).rejects.toThrow(/Session not found: ghost/);
     // A phone or fleet proxy identity is not a session: it has no pad to write.
     await expect(call('session_draft_append', { text: 'x' }, { sessionId: 'mobile:abc' })).rejects.toThrow(/Session not found/);
+  });
+
+  it("refuses a phone or peer proxy writing a named session's pad", async () => {
+    for (const proxy of ['mobile:abc', 'peer:xyz']) {
+      await expect(call('session_draft_append', { sessionId: 'other', text: 'x' }, { sessionId: proxy })).rejects.toThrow(/only Helm sessions/);
+      await expect(call('session_draft_set', { sessionId: 'other', text: 'x', revision: 0 }, { sessionId: proxy })).rejects.toThrow(/only Helm sessions/);
+    }
+    expect(pads.get('other').revision).toBe(0);
+  });
+
+  it('does not let a proxy pass as a session that happens to be named like it', async () => {
+    sessions.addSession(session('real', 'mobile:abc'));
+    await expect(call('session_draft_append', { sessionId: 'other', text: 'x' }, { sessionId: 'mobile:abc' })).rejects.toThrow(/only Helm sessions/);
+  });
+
+  it("forwards a write to an attached remote row to the owning peer's session", async () => {
+    sessions.addSession({ ...session('remote-1', 'remote-row'), remote: { peerId: 'p1', sessionId: 'owner-9' } } as SessionInfo);
+    peerCall.mockResolvedValue({ ok: true, revision: 4 });
+    expect(await call('session_draft_append', { sessionId: 'remote-row', text: 'hi' })).toEqual({ ok: true, revision: 4 });
+    expect(peerCall).toHaveBeenCalledWith('p1', 'session_draft_append', { sessionId: 'owner-9', text: 'hi' });
+    peerCall.mockResolvedValue({ ok: false, reason: 'stale', text: 't', revision: 5 });
+    expect(await call('session_draft_set', { sessionId: 'remote-1', text: 'x', revision: 1 })).toMatchObject({ reason: 'stale' });
+    expect(peerCall).toHaveBeenLastCalledWith('p1', 'session_draft_set', { sessionId: 'owner-9', text: 'x', revision: 1 });
+    peerCall.mockResolvedValue({ text: 'theirs', revision: 5 });
+    expect(await call('session_draft_get', { sessionId: 'remote-row' })).toMatchObject({ text: 'theirs' });
+    expect(peerCall).toHaveBeenLastCalledWith('p1', 'session_draft_get', { sessionId: 'owner-9' });
+    expect(pads.get('remote-1').revision).toBe(0);
   });
 });

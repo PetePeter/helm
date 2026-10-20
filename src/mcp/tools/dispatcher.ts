@@ -61,16 +61,22 @@ function requireCallerSession(authContext: AuthContext, tool: string): string {
 }
 
 /**
- * A draft is written only by its own session (and its user). Naming
- * another session is refused out loud: silently writing the caller's pad
- * instead would look like success.
+ * Any session's pad can be read by id or exact name. Writes also reach any
+ * session, frozen or locked too — a pad is notes, never input; only the user's
+ * Send delivers it — but only from a real Helm session: a phone or fleet proxy
+ * identity is not a session, so it may not write someone else's pad.
+ * Omitted, the target is the caller's own pad.
  */
-function requireOwnDraft(authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
-  const own = requireCallerSession(authContext, tool);
-  if (args.sessionId !== undefined && args.sessionId !== own) {
-    throw new Error(`${tool} only writes your own session's draft. Read another session's with session_draft_get.`);
+function draftTarget(service: HelmControlService, authContext: AuthContext, args: Record<string, unknown>, tool: string): string {
+  const caller = requireCallerSession(authContext, tool);
+  if (typeof args.sessionId !== 'string' || !args.sessionId.trim()) return caller;
+  // getSession also matches names: compare ids so a row named "mobile:x" is no pass.
+  if (tool !== 'session_draft_get' && service.getSession(caller)?.id !== caller) {
+    throw new Error(`${tool}: only Helm sessions can write another session's draft.`);
   }
-  return own;
+  const target = service.getSession(args.sessionId);
+  if (!target) throw new Error(`Session not found: ${args.sessionId}`);
+  return target.id;
 }
 
 /** Every todo tool mutates or reads only the server-authenticated caller's list. */
@@ -754,22 +760,24 @@ export async function callMcpTool(
       case 'session_eta_clear':
         return service.clearSessionEta(requireOwnEta(authContext, args, name));
       case 'session_draft_get': {
-        const target = typeof args.sessionId === 'string' && args.sessionId.trim()
-          ? args.sessionId
-          : requireCallerSession(authContext, 'session_draft_get');
-        return service.getSessionDraft(target);
+        const target = draftTarget(service, authContext, args, name);
+        return forwardIfRemoteRow(service, target, name, args) ?? service.getSessionDraft(target);
       }
-      case 'session_draft_set':
-        return service.setSessionDraft(
-          requireOwnDraft(authContext, args, 'session_draft_set'),
+      case 'session_draft_set': {
+        const target = draftTarget(service, authContext, args, name);
+        return forwardIfRemoteRow(service, target, name, args) ?? service.setSessionDraft(
+          target,
           asStringValue(args.text, 'text is required'),
           asFiniteNumber(args.revision, 'revision is required: pass the revision from session_draft_get'),
         );
-      case 'session_draft_append':
-        return service.appendSessionDraft(
-          requireOwnDraft(authContext, args, 'session_draft_append'),
+      }
+      case 'session_draft_append': {
+        const target = draftTarget(service, authContext, args, name);
+        return forwardIfRemoteRow(service, target, name, args) ?? service.appendSessionDraft(
+          target,
           asString(args.text, 'text is required'),
         );
+      }
       case 'session_todo_add':
         return service.addSessionTodo(requireOwnTodo(authContext, args, 'session_todo_add'), asStringValue(args.text, 'text is required'));
       case 'session_todo_done':

@@ -132,12 +132,16 @@ cannot create a pad nothing will ever read or delete.
 | Tool | Arguments | Notes |
 |---|---|---|
 | `session_draft_get` | `sessionId?` | Yours by default; another session's pad can be read by id or exact name. Returns `text`, `revision`, `bytes`, `maxBytes`. |
-| `session_draft_set` | `text`, `revision` | Your own pad only. A stale revision returns `ok: false, reason: "stale"` with the current `text` and `revision`. |
-| `session_draft_append` | `text` | Your own pad only. Adds the text on a new line at the end. |
+| `session_draft_set` | `sessionId?`, `text`, `revision` | Yours by default, any session's by id or exact name. A stale revision returns `ok: false, reason: "stale"` with the current `text` and `revision`. |
+| `session_draft_append` | `sessionId?`, `text` | Yours by default, any session's by id or exact name. Adds the text on a new line at the end. |
 
-Writes are always the **caller's own** session, taken from the server-derived
-identity; naming another session is an error rather than a silent write to your
-own pad. A successful write returns the new `revision` and size, not the text.
+Any Helm session may write any session's pad — frozen and locked included —
+because a pad is notes, never input: no tool sends it, only the user's Send
+button delivers it to the CLI. An attached Remote row's pad lives on the owning
+peer, so reads and writes are forwarded there under the owner's session id.
+A phone or fleet proxy identity is not a session and may not write another
+session's pad. Without `sessionId` the target is the
+caller's own pad, from the server-derived identity. A successful write returns the new `revision` and size, not the text.
 Helm does not inject the pad into prompts: the LLM reads it when it needs it.
 Phones and fleet peers get these tools only through their allow-lists, and their
 proxy identity is not a session, so they have no pad to write.

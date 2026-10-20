@@ -1224,10 +1224,11 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_draft_set',
     title: 'Replace Session Draft',
-    description: 'Replace the whole text of YOUR OWN session draft. Pass the revision you got from session_draft_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_draft_append.',
+    description: 'Replace the whole text of a session draft (yours by default, or another session’s by sessionId; frozen and locked included). Never sends it to the CLI. Pass the revision you got from session_draft_get: if the user (or anyone) changed the pad since, the write is refused with ok=false, reason="stale" and the current text and revision, so re-apply your change to that text and retry. Max 65536 bytes; an over-limit write is refused and nothing changes. Plain text only. To add a line without touching the rest, use session_draft_append.',
     inputSchema: {
       type: 'object',
       properties: {
+        sessionId: { type: 'string', description: 'Session ID or exact name to write. Defaults to your own session.' },
         text: { type: 'string', description: 'The full new text. Empty clears the pad.' },
         revision: { type: 'integer', description: 'The revision this text was based on (0 for a pad never written).' },
       },
@@ -1238,10 +1239,11 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_draft_append',
     title: 'Append To Session Draft',
-    description: 'Add text on a new line at the end of YOUR OWN session draft. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
+    description: 'Add text on a new line at the end of a session draft (yours by default, or another session’s by sessionId; frozen and locked included). Never sends it to the CLI. Needs no revision because it never removes what the user wrote. Refused when the pad would pass 65536 bytes.',
     inputSchema: {
       type: 'object',
       properties: {
+        sessionId: { type: 'string', description: 'Session ID or exact name to write. Defaults to your own session.' },
         text: { type: 'string', description: 'The text to add.' },
       },
       required: ['text'],
