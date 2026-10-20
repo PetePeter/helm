@@ -119,6 +119,8 @@ export interface HandoverArming {
   whenSettled(sessionId: string): Promise<void>;
 }
 
+type SendInputOptions = { senderSessionId?: string; senderSessionName?: string; impliedSubmit?: boolean; verify?: boolean };
+type SendInputResult = { ok: true; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean };
 type SendTextOptions = { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' };
 type SendTextResult = { ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport;
 
@@ -493,8 +495,17 @@ export class HelmSessionDeliveryService {
   async sendInputToSession(
     sessionRef: string,
     sequence: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; impliedSubmit?: boolean; verify?: boolean },
-  ): Promise<{ ok: true; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean }> {
+    options?: SendInputOptions,
+  ): Promise<SendInputResult> {
+    return this.sendInput(sessionRef, sequence, options, true);
+  }
+
+  private async sendInput(
+    sessionRef: string,
+    sequence: string,
+    options: SendInputOptions | undefined,
+    mayHold: boolean,
+  ): Promise<SendInputResult> {
     const session = this.findSession(sessionRef);
     if (!session) {
       throw new Error(`Session not found: ${sessionRef}`);
@@ -511,6 +522,9 @@ export class HelmSessionDeliveryService {
     if (session.comfyUiTool) {
       throw new Error('ComfyUI sessions accept prompts through chat; terminal input is disabled.');
     }
+    // Keys disturb a compacting TUI and reset the silence the handover waits on.
+    const held = this.holdBehindHandover(session.id, () => this.sendInput(sessionRef, sequence, options, false), mayHold);
+    if (held) return held;
 
     logger.debug(`[HelmSessionDelivery] session_send_input from "${options.senderSessionName}" to "${session.name}" (${session.id}): ${sequence.slice(0, 80)}`);
 

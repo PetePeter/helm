@@ -118,6 +118,18 @@ describe('HelmSessionDeliveryService', () => {
       handover.dispose();
     });
 
+    it('holds session_send_input keys too — an Esc mid-compaction would disturb the TUI', async () => {
+      const { service, ptyManager, receiver, handover, order } = withHandover();
+      handover.arm(receiver.id, 'note');
+
+      const keys = await service.sendInputToSession(receiver.id, 'msg-1', { ...from, verify: false });
+      expect(keys.deliveryStatus).toBe('held-for-handover');
+      expect(ptyManager.deliverText).not.toHaveBeenCalled();
+
+      await vi.waitFor(() => expect(order).toEqual(['handover:note', 'msg-1']));
+      handover.dispose();
+    });
+
     it('sends straight through with no handover pending', async () => {
       const { service, ptyManager, receiver, handover } = withHandover();
       const result = await service.sendTextToSession(receiver.id, 'msg-1', from);

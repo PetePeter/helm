@@ -325,6 +325,20 @@ describe('HandoverDelivery', () => {
       handover.dispose();
     });
 
+    it('stays listed for a reloaded renderer while its paste is still being written', async () => {
+      vi.useFakeTimers();
+      const { handover, finishPaste } = setupSlowPaste();
+      handover.arm('s1', 'note');
+      vi.advanceTimersByTime(FLOOR_MS);
+      await flush();
+      expect(handover.pendingIds()).toEqual(['s1']);
+
+      finishPaste();
+      await flush();
+      expect(handover.pendingIds()).toEqual([]);
+      handover.dispose();
+    });
+
     it('a note armed mid-paste is not unlocked by the earlier paste finishing', async () => {
       vi.useFakeTimers();
       const { handover, finishPaste } = setupSlowPaste();

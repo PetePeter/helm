@@ -179,9 +179,12 @@ export class HandoverDelivery extends EventEmitter {
     return this.pending.has(sessionId);
   }
 
-  /** Sessions with a handover waiting — seeds a reloaded renderer's lock. */
+  /**
+   * Sessions with a handover waiting or mid-paste — seeds a reloaded
+   * renderer's lock, which must hold until the delivered event.
+   */
   pendingIds(): string[] {
-    return [...this.pending.keys()];
+    return [...this.settlements.keys()];
   }
 
   /**

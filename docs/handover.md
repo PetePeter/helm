@@ -91,7 +91,7 @@ needs protecting. Cancel is a button, never a key.
 ## Messages wait for the handover
 
 Anything sent to the session meanwhile — phone, desktop Chat, the Draft pane's
-send, another session's `session_send_text` — is held by Helm and delivered
+send, another session's `session_send_text` or `session_send_input` keys — is held by Helm and delivered
 after the handover paste lands, in arrival order (`HandoverDelivery.whenSettled`).
 The sender is answered at once with `deliveryStatus: 'held-for-handover'`, so a
 phone never times out on a compaction that can take minutes.
