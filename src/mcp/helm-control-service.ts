@@ -519,6 +519,11 @@ export class HelmControlService extends EventEmitter {
     this.sessionService.setRuntimeGroupManager(manager);
   }
 
+  /** Wire the EtaTracker behind session_eta_set / session_eta_clear. */
+  setEtaTracker(tracker: import('../session/eta-tracker.js').EtaTracker): void {
+    this.sessionService.setEtaTracker(tracker);
+  }
+
   /** Wire the DraftManager behind the session_draft_* MCP tools. */
   setDraftManager(manager: DraftManager): void {
     this.draftManager = manager;

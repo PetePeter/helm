@@ -41,7 +41,7 @@ import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
 import { DraftManager } from '../../session/draft-manager.js';
 import type { Draft } from '../../types/draft.js';
 import { readSubagentContexts } from '../../session/subagent-usage.js';
-import type { SessionUpdatedEvent } from '../../types/session.js';
+import type { SessionInfo, SessionUpdatedEvent } from '../../types/session.js';
 import { createDraftStore } from '../../session/draft-persistence.js';
 import { TodoManager } from '../../session/todo-manager.js';
 import { createTodoStore } from '../../session/todo-persistence.js';
@@ -100,6 +100,8 @@ import { setupMessHandlers } from './mess-handlers.js';
 import { phoneActivityTarget, setupTimeTrackingHandlers, statisticsQuery } from './time-tracking-handlers.js';
 import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT } from '../../session/time-tracker.js';
 import { TimePersistence } from '../../session/time-persistence.js';
+import { EtaTracker, etaWhereOf, sweepOverdueEtas } from '../../session/eta-tracker.js';
+import { EtaPersistence } from '../../session/eta-persistence.js';
 import { TIME_TRACKING_DIR } from '../../session/persistence-paths.js';
 import { setDeliveryObserver } from '../../session/sequence-delivery.js';
 import { setupProjectHandlers } from './project-handlers.js';
@@ -704,7 +706,14 @@ export function registerIPCHandlers(
   sessionManager.on('session:removed', (event: { sessionId: string }) => subagentReadAt.delete(event.sessionId));
   // Twice per slot, so an active session never skips one.
   const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
-  const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id));
+  // ETA accuracy: unmarked after ETA + 10m, or when the session closes with one open.
+  const etaTracker = new EtaTracker({ persistence: new EtaPersistence(TIME_TRACKING_DIR) });
+  helmControlService.setEtaTracker?.(etaTracker);
+  sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
+    if (session.eta && !session.remote) etaTracker.close(session.eta, etaWhereOf(session), 'unmarked');
+  });
+  const etaSweepTimer = setInterval(() => sweepOverdueEtas(sessionManager, etaTracker), 60_000);
+  const cleanupTimeTracking = setupTimeTrackingHandlers(timeTracker, whereIsDir, () => configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id), etaTracker);
   // Keep lightweight handler fixtures (and embedders that do not enable
   // project services) compatible with the optional Mess surface.
   const messManager = helmControlService.getMessManager?.() ?? null;
@@ -1354,7 +1363,7 @@ export function registerIPCHandlers(
     sessionLookup: sessionManager,
     restartHelm: (resume) => helmControlService.restartHelm(resume),
     ringAnswered: (sessionId) => helmControlService.ringAnswered(sessionId),
-    timesheet: (params) => statisticsQuery(timeTracker, params, configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id)),
+    timesheet: (params) => statisticsQuery(timeTracker, params, configLoader.getCliTypes(), id => configLoader.getCliTypeLabel(id), etaTracker),
   });
 
   // The rolling record of chat messages fanned out to phones, so a phone that
@@ -1567,6 +1576,7 @@ export function registerIPCHandlers(
       keepWarmer.dispose();
       cleanupMess();
       clearInterval(timeTrackerTimer);
+      clearInterval(etaSweepTimer);
       setDeliveryObserver(null);
       timeTracker.flush();
       cleanupTimeTracking();

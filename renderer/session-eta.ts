@@ -16,9 +16,15 @@ export function formatSessionEta(eta: SessionEta, now = Date.now()): SessionEtaD
     : `in ${formatElapsed(eta.at - now)}`;
   const setTime = formatLocalTime(eta.setAt);
   const note = eta.note?.trim();
+  const range = eta.range;
+  // ~N: half the learned P10–P90 band, in minutes.
+  const spread = range ? ` (~${Math.round((range.hi - range.lo) / 2 / 60_000)})` : '';
+  const rangeText = range
+    ? `80% range ${formatLocalTime(range.lo)}–${formatLocalTime(range.hi)} (${range.samples} past tasks)`
+    : 'no range yet';
   return {
-    text: isLate ? `🏁 ${relative}` : `🏁 ${time}`,
-    title: `ETA ${time} (${relative}) · set ${setTime}${note ? ` · ${note}` : ''}`,
+    text: `🏁 ${isLate ? relative : time}${spread}`,
+    title: `ETA ${time} (${relative}) · ${rangeText} · set ${setTime}${note ? ` · ${note}` : ''}`,
     isLate,
   };
 }

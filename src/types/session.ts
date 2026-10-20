@@ -188,6 +188,12 @@ export interface SessionEta {
   at: number;
   setAt: number;
   note?: string;
+  /** When the estimate first opened; a re-set keeps it. Absent = setAt. */
+  startedAt?: number;
+  /** The first guess, scored on close; a re-set keeps it. Absent = at. */
+  firstAt?: number;
+  /** Learned confidence range (P10–P90) for this estimate, epoch ms. */
+  range?: { lo: number; hi: number; samples: number };
 }
 
 /**

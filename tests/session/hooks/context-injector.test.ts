@@ -191,6 +191,7 @@ describe('UserPromptSubmit', () => {
     expect(context).toContain('[HELM_TODOS]');
     expect(context).toContain('[HELM_ETA]');
     expect(context!.match(/\[HELM_ETA\]/g)).toHaveLength(1);
+    expect(context).toContain('Call session_eta_clear the moment the work is done');
     expect(context).toContain('session_eta_set');
     expect(context).toContain('multi-step work');
   });

@@ -11,7 +11,7 @@ function localTime(at: number): string {
   }).format(new Date(at));
 }
 
-function mountCard(eta: { at: number; setAt: number; note?: string }, elapsedText = '0:00:00:00') {
+function mountCard(eta: { at: number; setAt: number; note?: string; range?: { lo: number; hi: number; samples: number } }, elapsedText = '0:00:00:00') {
   return mount(SessionCard, {
     props: {
       session: { id: 's1', name: 'worker', cliType: 'claude-code', eta },
@@ -50,7 +50,7 @@ describe('SessionCard ETA timer', () => {
 
     expect(timer.text()).toBe(`🏁 ${localTime(at)}`);
     expect(timer.attributes('title')).toBe(
-      `ETA ${localTime(at)} (in 3h 20m) · set ${localTime(now - 8 * 60_000)} · review build`,
+      `ETA ${localTime(at)} (in 3h 20m) · no range yet · set ${localTime(now - 8 * 60_000)} · review build`,
     );
   });
 
@@ -67,5 +67,21 @@ describe('SessionCard ETA timer', () => {
     expect(timer.text()).toBe('🏁 late 12m');
     expect(timer.classes()).toContain('session-eta-timer--late');
     expect(timer.attributes('title')).toContain('(late 12m)');
+  });
+
+  it('appends the learned range as (~N) and spells it out in the tooltip', () => {
+    const now = Date.now();
+    const at = now + 30 * 60_000;
+    const range = { lo: at - 10 * 60_000, hi: at + 20 * 60_000, samples: 12 };
+    const timer = mountCard({ at, setAt: now, range }).find('.session-eta-timer');
+    expect(timer.text()).toBe(`🏁 ${localTime(at)} (~15)`);
+    expect(timer.attributes('title')).toContain(`80% range ${localTime(range.lo)}–${localTime(range.hi)} (12 past tasks)`);
+  });
+
+  it('says no range yet in the tooltip until enough history exists', () => {
+    const now = Date.now();
+    const timer = mountCard({ at: now + 30 * 60_000, setAt: now }).find('.session-eta-timer');
+    expect(timer.text()).not.toContain('~');
+    expect(timer.attributes('title')).toContain('no range yet');
   });
 });

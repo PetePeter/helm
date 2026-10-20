@@ -68,6 +68,6 @@ describe('statisticsQuery', () => {
 
   it('rejects an unknown view', () => {
     expect(() => statisticsQuery(tracker(), { view: 'models', period: 'day', anchor: NOW }, [], id => id))
-      .toThrow('view must be timesheet or tokens');
+      .toThrow('view must be timesheet, tokens or estimates');
   });
 });

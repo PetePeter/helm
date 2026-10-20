@@ -13,6 +13,7 @@ import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
+import type { EstimateView } from '../../session/eta-stats.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
 import type { ChatJournalEntry } from '../../mobile/mobile-chat-journal.js';
@@ -677,6 +678,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Tokens per configured CLI per column for a period, with the chart. */
   timeTokens: (period: TimesheetPeriod, anchor: number): Promise<TokenQueryResult> =>
     ipcRenderer.invoke('time:tokens', period, anchor),
+
+  /** ETA accuracy for a period, optionally one folder: tiles, charts, recent rows. */
+  timeEstimates: (period: TimesheetPeriod, anchor: number, dir?: string | null): Promise<EstimateView> =>
+    ipcRenderer.invoke('time:estimates', period, anchor, dir ?? null),
 
   /** One project's timesheet: minutes per directory per day/week/month column. */
   timeTimesheet: (projectKey: string, period: TimesheetPeriod, anchor: number): Promise<Timesheet> =>

@@ -11,6 +11,7 @@ import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
 import { columnLabel } from '../../../src/session/chart-model.js';
 import { formatTokens } from '../../../src/session/format-tokens.js';
 import { formatMinutes, useTimesheetPane } from '../../composables/useTimesheetPane.js';
+import EstimatesView from './EstimatesView.vue';
 import StatsChart from '../charts/StatsChart.vue';
 
 const PERIODS: { id: TimesheetPeriod; label: string }[] = [
@@ -39,12 +40,13 @@ const range = computed(() => {
 
 <template>
   <section class="timesheet-pane" aria-label="Statistics">
-    <PanelHeader title="Statistics" icon="📊" :subtitle="tab === 'tokens' ? 'Tokens per CLI' : selectedProject?.projectName ?? 'All projects'">
+    <PanelHeader title="Statistics" icon="📊" :subtitle="tab === 'tokens' ? 'Tokens per CLI' : tab === 'estimates' ? 'ETA accuracy' : selectedProject?.projectName ?? 'All projects'">
       <template #toolbar>
         <div class="timesheet-toolbar">
           <div class="timesheet-toggle" role="tablist" aria-label="Statistics">
             <button type="button" role="tab" :aria-selected="tab === 'timesheet'" :class="{ 'is-active': tab === 'timesheet' }" @click="tab = 'timesheet'">⏱ Timesheet</button>
             <button type="button" role="tab" :aria-selected="tab === 'tokens'" :class="{ 'is-active': tab === 'tokens' }" @click="tab = 'tokens'">🪙 Tokens</button>
+            <button type="button" role="tab" :aria-selected="tab === 'estimates'" :class="{ 'is-active': tab === 'estimates' }" @click="tab = 'estimates'">🏁 Estimates</button>
           </div>
           <div class="timesheet-toggle" role="group" aria-label="View">
             <button
@@ -63,7 +65,8 @@ const range = computed(() => {
       </template>
     </PanelHeader>
 
-    <template v-if="tab === 'tokens'">
+    <EstimatesView v-if="tab === 'estimates'" :period="period" :anchor="anchor" />
+    <template v-else-if="tab === 'tokens'">
       <EmptyState v-if="!tokenSheet" title="Loading tokens" loading />
       <div v-else class="timesheet-scroll">
         <div class="timesheet-chart"><StatsChart v-if="chartModel" :model="chartModel" kind="tokens" /></div>

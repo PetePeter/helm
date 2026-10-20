@@ -1,7 +1,7 @@
 /**
  * Statistics pane state. Timesheet tab: all-project totals with drilldown to
- * one project's folder grid. Tokens tab: tokens per configured CLI. Both share
- * the period and anchor. All arithmetic lives in the main process (time-tracker.ts).
+ * one project's folder grid. Tokens tab: tokens per configured CLI. Estimates
+ * tab: ETA accuracy (EstimatesView). All share the period and anchor. All arithmetic lives in the main process (time-tracker.ts).
  */
 import { onUnmounted, ref, watch } from 'vue';
 import type { ChartModel } from '../../src/session/chart-model.js';
@@ -10,7 +10,7 @@ import { timeClient } from '../ipc/clients.js';
 
 const REFRESH_MS = 60_000;
 
-export type StatisticsTab = 'timesheet' | 'tokens';
+export type StatisticsTab = 'timesheet' | 'tokens' | 'estimates';
 
 export function useTimesheetPane() {
   const tab = ref<StatisticsTab>('timesheet');
@@ -26,6 +26,8 @@ export function useTimesheetPane() {
   async function refresh(): Promise<void> {
     const target = selectedProject.value;
     const ticket = ++generation;
+    // EstimatesView fetches its own data.
+    if (tab.value === 'estimates') return;
     if (tab.value === 'tokens') {
       const tokens = await timeClient.timeTokens(period.value, anchor.value);
       if (ticket !== generation) return;

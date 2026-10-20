@@ -8,6 +8,7 @@ import type { TerminalReadMode, TerminalTail } from '../../session/terminal-outp
 import type { SessionInfo } from '../../types/session.js';
 import type { SessionEtaInput } from '../../session/session-eta.js';
 import { createSessionEta } from '../../session/session-eta.js';
+import { etaWhereOf, type EtaTracker } from '../../session/eta-tracker.js';
 import type { SessionDetails, SessionSummary, SessionTerminalTailResponse } from '../helm-control-service.js';
 import { spawnConfiguredSession } from '../../session/configured-session-spawn.js';
 import { HelmSessionPlanService } from './helm-session-plan-service.js';
@@ -33,6 +34,7 @@ export class HelmSessionService {
   private readonly gitBranchResolver = new GitBranchResolver();
   /** Runtime session groups (optional overlay on top of project grouping). */
   private runtimeGroupManager: RuntimeGroupManager | null = null;
+  private etaTracker: EtaTracker | null = null;
   private apiContextSizeLookup?: (sessionId: string) => ApiSessionContextSize;
 
   constructor(
@@ -48,6 +50,11 @@ export class HelmSessionService {
   /** Late-bound: the RuntimeGroupManager lives in the main process orchestrator. */
   setRuntimeGroupManager(manager: RuntimeGroupManager): void {
     this.runtimeGroupManager = manager;
+  }
+
+  /** Late-bound: scores ETAs and snapshots their learned range (docs/session-eta.md). */
+  setEtaTracker(tracker: EtaTracker): void {
+    this.etaTracker = tracker;
   }
 
   setApiContextSizeLookup(lookup: (sessionId: string) => ApiSessionContextSize): void {
@@ -316,7 +323,9 @@ export class HelmSessionService {
   setSessionEta(sessionRef: string, input: SessionEtaInput): { ok: true; eta: SessionInfo['eta'] } {
     const session = this.findSession(sessionRef);
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
-    const eta = createSessionEta(input);
+    const eta = this.etaTracker
+      ? this.etaTracker.set(session.eta, input, etaWhereOf(session))
+      : createSessionEta(input);
     this.sessionManager.updateSession(session.id, { eta });
     return { ok: true, eta };
   }
@@ -325,6 +334,7 @@ export class HelmSessionService {
   clearSessionEta(sessionRef: string): { ok: true; eta: null } {
     const session = this.findSession(sessionRef);
     if (!session) throw new Error(`Session not found: ${sessionRef}`);
+    if (session.eta) this.etaTracker?.close(session.eta, etaWhereOf(session), 'cleared');
     this.sessionManager.updateSession(session.id, { eta: undefined });
     return { ok: true, eta: null };
   }

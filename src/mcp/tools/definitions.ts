@@ -1193,7 +1193,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_set',
     title: 'Set Session ETA',
-    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. The caller identity comes from Helm, not arguments.',
+    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. Re-setting while one is open revises the shown time but keeps the clock and first guess it is scored against. The returned eta may carry range {lo, hi, samples}: the 80% band learned from your past estimates in this CLI and folder. The caller identity comes from Helm, not arguments.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1208,7 +1208,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_clear',
     title: 'Clear Session ETA',
-    description: 'Clear the expected completion time for YOUR OWN current request.',
+    description: 'Mark YOUR OWN current request finished: Helm scores the estimate against the actual time and removes it. Call it as soon as the work is done; an estimate still open 10 minutes past its ETA is recorded as unmarked.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {

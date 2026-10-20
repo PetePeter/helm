@@ -98,3 +98,36 @@ describe('MCP session_eta_*', () => {
     expect(manager.getSession('other')?.eta).toBeUndefined();
   });
 });
+
+describe('MCP session_eta_* with the EtaTracker', () => {
+  it('scores set -> re-set -> clear from the first set and clears the row; the sweep closes overdue ones', async () => {
+    vi.useFakeTimers();
+    const t0 = new Date(2026, 9, 20, 10, 0).getTime();
+    vi.setSystemTime(t0);
+    const { EtaTracker, sweepOverdueEtas } = await import('../src/session/eta-tracker.js');
+    const appended: unknown[] = [];
+    const tracker = new EtaTracker({ persistence: { append: r => appended.push(r), loadAll: () => [] } });
+    const manager = new SessionManager();
+    manager.addSession({ ...session('me', 'caller'), workingDir: 'X:/repo' });
+    const configLoader = { getCliTypeLabel: (r: string) => r, getCliTypeEntry: () => null, getCliTypes: () => [] };
+    const service = new HelmControlService({} as never, manager, {} as never, configLoader as never);
+    service.setEtaTracker(tracker);
+    const deps = { service, setPlanStateWithValidation: vi.fn(), completePlanWithValidation: vi.fn() };
+    const call = (tool: string, args = {}) => callMcpTool(deps, tool, args, { sessionId: 'me' }) as Promise<any>;
+
+    await call('session_eta_set', { minutes: 10 });
+    vi.setSystemTime(t0 + 8 * 60_000);
+    await call('session_eta_set', { minutes: 5 });
+    vi.setSystemTime(t0 + 12 * 60_000);
+    await call('session_eta_clear');
+    expect(appended).toEqual([expect.objectContaining({ startedAt: t0, firstAt: t0 + 10 * 60_000, endedAt: t0 + 12 * 60_000, outcome: 'cleared', dir: 'X:/repo' })]);
+    expect(manager.getSession('me')?.eta).toBeUndefined();
+
+    await call('session_eta_set', { minutes: 10 });
+    vi.setSystemTime(t0 + 40 * 60_000);
+    sweepOverdueEtas(manager, tracker);
+    expect(appended[1]).toMatchObject({ outcome: 'unmarked', endedAt: t0 + 32 * 60_000 });
+    expect(manager.getSession('me')?.eta).toBeUndefined();
+    vi.useRealTimers();
+  });
+});

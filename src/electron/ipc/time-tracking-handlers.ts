@@ -1,6 +1,8 @@
 /** Read-only timesheet queries over the TimeTracker (docs/time-tracking.md). */
 import { ipcMain } from 'electron';
 import { buildTimesheetChartModel, buildTokenChartModel } from '../../session/chart-model.js';
+import { buildEstimateView, type EstimateView } from '../../session/eta-stats.js';
+import type { EtaTracker } from '../../session/eta-tracker.js';
 import { buildTimesheet, buildTokenSheet, periodEdges, summarizeProjects, timesheetToCsv, SUBMIT_WEIGHT, type SessionWhere, type Timesheet, type TimesheetPeriod, type TimesheetQueryResult, type TimeTracker, type TokenQueryResult } from '../../session/time-tracker.js';
 
 const PERIODS: readonly TimesheetPeriod[] = ['hour', 'day', 'week', 'month'];
@@ -54,19 +56,32 @@ export function tokenQuery(tracker: SlotSource, cliTypes: string[], labelOf: (cl
   return { sheet, chartModel };
 }
 
-/** The phone's existing reserved route now selects either Statistics view. */
+type EstimateSource = Pick<EtaTracker, 'query'>;
+
+/** The Statistics pane's Estimates tab: ETA accuracy in the period, optionally one folder. */
+export function estimatesQuery(etas: EstimateSource, labelOf: (cliType: string) => string, period: unknown, anchor: unknown, dir?: unknown): EstimateView {
+  const [p, a] = validatePeriod(period, anchor);
+  if (dir !== undefined && dir !== null && typeof dir !== 'string') throw new Error('dir must be a string');
+  return buildEstimateView(etas.query(0, Infinity), p, a, dir || null, labelOf);
+}
+
+/** The phone's existing reserved route selects any Statistics view. */
 export function statisticsQuery(
   tracker: SlotSource,
   params: unknown,
   cliTypes: string[],
   labelOf: (cliType: string) => string,
-): TimesheetQueryResult | TokenQueryResult {
+  etas?: EstimateSource,
+): TimesheetQueryResult | TokenQueryResult | EstimateView {
   if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('statistics params must be an object');
   const request = params as Record<string, unknown>;
   switch (request.view ?? 'timesheet') {
     case 'timesheet': return timesheetQuery(tracker, request);
     case 'tokens': return tokenQuery(tracker, cliTypes, labelOf, request.period, request.anchor);
-    default: throw new Error('view must be timesheet or tokens');
+    case 'estimates':
+      if (!etas) throw new Error('estimates are unavailable');
+      return estimatesQuery(etas, labelOf, request.period, request.anchor, request.dir);
+    default: throw new Error('view must be timesheet, tokens or estimates');
   }
 }
 
@@ -105,7 +120,11 @@ export function setupTimeTrackingHandlers(
   whereIsDir: (dir: string) => SessionWhere,
   cliTypes: () => string[],
   cliTypeLabel: (cliType: string) => string,
+  etas?: EstimateSource,
 ): () => void {
+  if (etas) {
+    ipcMain.handle('time:estimates', (_event, period: unknown, anchor: unknown, dir: unknown) => estimatesQuery(etas, cliTypeLabel, period, anchor, dir));
+  }
   ipcMain.handle('time:query', (_event, params: unknown) => timesheetQuery(tracker, params));
   ipcMain.handle('time:tokens', (_event, period: unknown, anchor: unknown) => tokenQuery(tracker, cliTypes(), cliTypeLabel, period, anchor));
   ipcMain.handle('time:timesheet', (_event, projectKey: unknown, period: unknown, anchor: unknown) =>
@@ -129,5 +148,6 @@ export function setupTimeTrackingHandlers(
     ipcMain.removeHandler('time:tokens');
     ipcMain.removeHandler('time:timesheet');
     ipcMain.removeHandler('time:csv');
+    if (etas) ipcMain.removeHandler('time:estimates');
   };
 }
