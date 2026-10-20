@@ -21,6 +21,13 @@ describe('buildEstimateView', () => {
     rec(9, 10, 10), // next week: outside a 'day' period anchored on MON
   ];
 
+  it('a column of only rescoped estimates has no on-time value', () => {
+    const view = buildEstimateView([rec(0, 10, 30, { outcome: 'rescoped' })], 'day', MON, null, id => id);
+    expect(view.summary).toMatchObject({ total: 0, rescoped: 1 });
+    expect(view.trend.values[0]).toBeNull();
+    expect(view.recent).toHaveLength(1);
+  });
+
   it('filters by the period window and folder', () => {
     expect(buildEstimateView(records, 'day', MON, null, id => id).summary.total).toBe(3);
     const b = buildEstimateView(records, 'day', MON, 'X:/b', id => id);

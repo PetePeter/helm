@@ -20,7 +20,6 @@ import type { EtaPersistence } from './eta-persistence.js';
 
 export const UNMARKED_FACTOR = 3;
 export const UNMARKED_MIN_MS = 60 * 60_000;
-const UNMARKED_GRACE_MS = 10 * 60_000;
 export const MIN_LEARN_MS = 5 * 60_000;
 export const MIN_SAMPLES = 5;
 const MAX_SAMPLES = 50;
@@ -122,11 +121,10 @@ export class EtaTracker {
 const startOf = (eta: SessionEta): number => eta.startedAt ?? eta.setAt;
 const firstOf = (eta: SessionEta): number => eta.firstAt ?? eta.at;
 
-/** Past this an open estimate is abandoned: 3× the first guess, at least 1h, never before a re-set ETA + 10m. */
+/** Past this an open estimate is abandoned: 3× the first guess, at least 1h. Re-sets never move it — rescope does. */
 function capOf(eta: SessionEta): number {
   const start = startOf(eta);
-  const window = Math.max(UNMARKED_FACTOR * (firstOf(eta) - start), UNMARKED_MIN_MS);
-  return Math.max(start + window, eta.at + UNMARKED_GRACE_MS);
+  return start + Math.max(UNMARKED_FACTOR * (firstOf(eta) - start), UNMARKED_MIN_MS);
 }
 
 function rescopeReason(value: unknown): string | undefined {

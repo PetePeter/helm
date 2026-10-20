@@ -66,7 +66,7 @@ stateDiagram-v2
 - **A late clear still counts**, at its real end, so long overruns teach the
   learned range instead of vanishing from it.
 - **Unmarked**: never cleared within the cap — 3× the first guess, at least 1h,
-  and never before a re-set ETA + 10m (a 1-minute sweep) — or the session was
+  checked by a 1-minute sweep; a re-set never moves it, only a rescope does — or the session was
   closed with an estimate open. Its end is capped there.
 - **Learning** uses only cleared estimates whose first guess was 5m or more,
   for the same CLI type **and** folder, newest 50. With 5+ samples, the P10–P90

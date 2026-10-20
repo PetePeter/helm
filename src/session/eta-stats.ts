@@ -47,7 +47,8 @@ export function buildEstimateView(
   const columns = edges.slice(0, -1);
   const trend = columns.map((start, i) => {
     const inColumn = records.filter(r => r.startedAt >= start && r.startedAt < edges[i + 1]);
-    return inColumn.length ? summarizeEstimates(inColumn).onTimePct : null;
+    const summary = summarizeEstimates(inColumn);
+    return summary.total ? summary.onTimePct : null;
   });
 
   return {

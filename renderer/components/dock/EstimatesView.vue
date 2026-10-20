@@ -91,7 +91,7 @@ onBeforeUnmount(() => {
           <option v-for="d in view.dirs" :key="d" :value="d">{{ d }}</option>
         </select>
       </label>
-      <EmptyState v-if="!view.summary.total" title="No estimates in this period" />
+      <EmptyState v-if="!view.summary.total && !view.summary.rescoped" title="No estimates in this period" />
       <template v-else>
         <div class="estimates-tiles">
           <div class="estimates-tile">On time<b class="estimates-good">{{ view.summary.onTimePct }}%</b></div>

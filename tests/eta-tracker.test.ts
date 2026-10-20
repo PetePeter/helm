@@ -53,6 +53,14 @@ describe('EtaTracker', () => {
     expect(tracker.closeIfOverdue(eta, here)).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 90 * MIN });
   });
 
+  it('re-setting the ETA later never pushes the unmarked cap past 3x the first guess', () => {
+    let eta = tracker.set(undefined, { minutes: 30 }, here);
+    now = T0 + 80 * MIN;
+    eta = tracker.set(eta, { minutes: 60 }, here);
+    now = T0 + 91 * MIN;
+    expect(tracker.closeIfOverdue(eta, here)).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 90 * MIN });
+  });
+
   it('a short guess still gets the 1h minimum before going unmarked', () => {
     const eta = tracker.set(undefined, { minutes: 5 }, here);
     now = T0 + 59 * MIN;
