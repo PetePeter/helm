@@ -114,21 +114,6 @@ onBeforeUnmount(() => {
             <div class="estimates-chart estimates-chart--short"><canvas ref="trendCanvas" aria-label="On-time percentage" /></div>
           </figure>
         </div>
-        <table class="timesheet-table">
-          <thead><tr><th>Session</th><th>Note</th><th>Predicted</th><th>Actual</th><th>Δ</th></tr></thead>
-          <tbody>
-            <tr v-for="(row, i) in view.recent" :key="i">
-              <td>{{ row.sessionName }}</td>
-              <td class="estimates-note" :title="row.note">{{ row.note ?? '' }}</td>
-              <td>{{ row.predictedMin }}m</td>
-              <td>{{ row.actualMin }}m{{ row.outcome === 'unmarked' ? '+' : '' }}</td>
-              <td v-if="row.outcome === 'rescoped'">rescoped</td>
-              <td v-else :class="row.outcome === 'unmarked' || row.slipMin > 0 ? 'estimates-late' : 'estimates-good'">
-                {{ row.outcome === 'unmarked' ? 'unmarked' : signed(row.slipMin) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
       </template>
     </template>
   </div>
@@ -136,10 +121,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .timesheet-scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--spacing-sm) var(--spacing-md); }
-.timesheet-table { border-collapse: collapse; font-size: var(--font-size-sm); }
-.timesheet-table th, .timesheet-table td { padding: var(--spacing-xs) var(--spacing-sm); border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
-.timesheet-table th:first-child, .timesheet-table td:first-child { text-align: left; }
-.timesheet-table th { color: var(--text-secondary); font-weight: normal; position: sticky; top: 0; background: var(--bg-primary); }
 .estimates-filter { display: inline-flex; gap: var(--spacing-sm); align-items: center; margin-bottom: var(--spacing-sm); font-size: var(--font-size-sm); color: var(--text-secondary); }
 .estimates-filter select { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px var(--spacing-xs); font: inherit; }
 .estimates-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spacing-sm); max-width: 720px; margin-bottom: var(--spacing-md); }
@@ -153,5 +134,4 @@ onBeforeUnmount(() => {
 .estimates-chart--short { height: 160px; }
 .estimates .estimates-good { color: var(--accent); }
 .estimates .estimates-late { color: var(--warning, #b58900); }
-.estimates-note { max-width: 240px; overflow: hidden; text-overflow: ellipsis; text-align: left !important; }
 </style>

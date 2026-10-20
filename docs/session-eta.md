@@ -81,6 +81,6 @@ The Statistics pane's third tab (`EstimatesView.vue`) shares the period and
 anchor with Timesheet/Tokens and adds a folder filter: tiles (on-time % against
 the first guess, median slip, count, unmarked), a predicted-vs-actual scatter
 coloured by CLI with unmarked as amber rings, an actual ÷ predicted histogram,
-an on-time % trend per period column, and the 30 most recent estimates. The
+and an on-time % trend per period column. The
 data comes from `time:estimates` (also `view: 'estimates'` on the phone's
 statistics route); see `src/session/eta-stats.ts`.

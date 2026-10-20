@@ -2,14 +2,12 @@
 
 import { columnLabel } from './chart-model.js';
 import { periodEdges, type TimesheetPeriod } from './time-tracker.js';
-import { summarizeEstimates, type EtaOutcome, type EtaRecord, type EtaSummary } from './eta-tracker.js';
+import { summarizeEstimates, type EtaRecord, type EtaSummary } from './eta-tracker.js';
 
 /** Upper edges of the actual ÷ predicted bins; the last bin is open-ended. */
 const RATIO_BINS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
-const RECENT_ROWS = 30;
 
 export interface EstimatePoint { predictedMin: number; actualMin: number; cliType: string; label: string; unmarked: boolean }
-export interface EstimateRow { sessionName: string; note?: string; predictedMin: number; actualMin: number; slipMin: number; outcome: EtaOutcome; endedAt: number }
 
 export interface EstimateView {
   summary: EtaSummary;
@@ -18,7 +16,6 @@ export interface EstimateView {
   histogram: { labels: string[]; counts: number[]; unmarked: number };
   /** On-time % per period column; null where nothing finished. */
   trend: { labels: string[]; values: (number | null)[] };
-  recent: EstimateRow[];
   /** Every folder with estimates in the period, for the filter. */
   dirs: string[];
 }
@@ -66,15 +63,6 @@ export function buildEstimateView(
       unmarked: records.filter(r => r.outcome === 'unmarked').length,
     },
     trend: { labels: columns.map(start => columnLabel(period, start)), values: trend },
-    recent: [...records].sort((a, b) => b.endedAt - a.endedAt).slice(0, RECENT_ROWS).map(r => ({
-      sessionName: r.sessionName,
-      ...(r.reason ?? r.note ? { note: r.reason ?? r.note } : {}),
-      predictedMin: minutes(r.firstAt - r.startedAt),
-      actualMin: minutes(r.endedAt - r.startedAt),
-      slipMin: minutes(r.endedAt - r.firstAt),
-      outcome: r.outcome,
-      endedAt: r.endedAt,
-    })),
     dirs: [...new Set(inPeriod.map(r => r.dir))].sort(),
   };
 }

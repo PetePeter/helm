@@ -25,7 +25,6 @@ describe('buildEstimateView', () => {
     const view = buildEstimateView([rec(0, 10, 30, { outcome: 'rescoped' })], 'day', MON, null, id => id);
     expect(view.summary).toMatchObject({ total: 0, rescoped: 1 });
     expect(view.trend.values[0]).toBeNull();
-    expect(view.recent).toHaveLength(1);
   });
 
   it('filters by the period window and folder', () => {
@@ -35,7 +34,7 @@ describe('buildEstimateView', () => {
     expect(b.dirs).toEqual(['X:/a', 'X:/b']);
   });
 
-  it('builds scatter points, ratio histogram, per-column on-time trend, and newest-first rows', () => {
+  it('builds scatter points, ratio histogram, per-column on-time trend', () => {
     const view = buildEstimateView(records, 'day', MON, null, id => id.toUpperCase());
     expect(view.points).toEqual(expect.arrayContaining([
       { predictedMin: 10, actualMin: 15, cliType: 'codex', label: 'CODEX', unmarked: false },
@@ -45,6 +44,5 @@ describe('buildEstimateView', () => {
     expect(view.histogram.unmarked).toBe(1);
     expect(view.trend.values.slice(0, 2)).toEqual([50, 0]);
     expect(view.trend.values[2]).toBeNull();
-    expect(view.recent[0]).toMatchObject({ outcome: 'unmarked', predictedMin: 20, actualMin: 30, slipMin: 10 });
   });
 });
