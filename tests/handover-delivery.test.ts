@@ -44,6 +44,81 @@ describe('HandoverDelivery', () => {
     vi.useRealTimers();
   });
 
+  describe('PTY silence fallback (hook sessions emit no idle edge after /clear)', () => {
+    const SILENCE_MS = 10_000;
+    function setupWithOutput(floorMs = FLOOR_MS) {
+      const stateDetector = new EventEmitter();
+      const ptyOutput = new EventEmitter();
+      const delivered: string[] = [];
+      const handover = new HandoverDelivery(
+        stateDetector as any, new EventEmitter() as any,
+        async (_id, text) => { delivered.push(text); }, () => {},
+        { floorMs, ceilingMs: CEILING_MS, silenceMs: SILENCE_MS, ptyOutput },
+      );
+      return { handover, delivered, ptyOutput };
+    }
+
+    it('delivers after the floor once the PTY has been silent, with no state edge', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered } = setupWithOutput(2_000);
+      handover.arm('s1', 'cleared');
+      vi.advanceTimersByTime(SILENCE_MS - 1);
+      await flush();
+      expect(delivered).toEqual([]);
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(delivered).toEqual(['cleared']);
+      handover.dispose();
+    });
+
+    it('output restarts the silence window; output from other sessions does not', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered, ptyOutput } = setupWithOutput(0);
+      handover.arm('s1', 'note');
+      vi.advanceTimersByTime(SILENCE_MS - 1000);
+      ptyOutput.emit('data', 's1', 'spinner');
+      ptyOutput.emit('data', 's2', 'other');
+      vi.advanceTimersByTime(SILENCE_MS - 1);
+      await flush();
+      expect(delivered).toEqual([]);
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(delivered).toEqual(['note']);
+      handover.dispose();
+    });
+
+    it('silence inside the floor waits for the floor to pass', async () => {
+      vi.useFakeTimers();
+      const { handover, delivered } = setupWithOutput(FLOOR_MS);
+      handover.arm('s1', 'compact');
+      vi.advanceTimersByTime(FLOOR_MS - 1);
+      await flush();
+      expect(delivered).toEqual([]);
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(delivered).toEqual(['compact']);
+      handover.dispose();
+    });
+  });
+
+  it('sendNow pastes immediately inside the floor, once, and settles', async () => {
+    vi.useFakeTimers();
+    const { handover, delivered, goInactive } = setup();
+
+    handover.arm('s1', 'forced');
+    const settled = handover.whenSettled('s1');
+    handover.sendNow('s1');
+    await flush();
+    await settled;
+    goInactive('s1');
+    vi.advanceTimersByTime(CEILING_MS);
+    await flush();
+
+    expect(delivered).toEqual([{ sessionId: 's1', text: 'forced' }]);
+    expect(handover.isPending('s1')).toBe(false);
+    handover.dispose();
+  });
+
   it('delivers on the first inactive edge after arming, and stays inert without one', async () => {
     vi.useFakeTimers();
     const { handover, delivered, goInactive } = setup();

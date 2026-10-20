@@ -61,13 +61,16 @@ compaction.
 ### The trigger is silence, not a completion signal
 
 `inactive` is 10 seconds of PTY quiet (`StateDetector`), the same best-effort
-bet the Mess notifier makes. It is not proof the CLI finished. Two bounds
-contain that:
+bet the Mess notifier makes. Hook-aware sessions (e.g. Copilot) ignore PTY
+output for activity, and a `/clear` fires no Stop hook, so no edge comes; the
+handover therefore also watches PTY silence itself. Whichever signal — the
+`inactive` edge or 10 s with no PTY output — arrives first after the floor
+wins. It is not proof the CLI finished. Two bounds contain that:
 
 | Bound | Default | Guards against |
 |---|---|---|
 | **Floor** | 15 s | A stall *before* compaction starts, which looks identical to completion. Edges inside the window are ignored. |
-| **Ceiling** | 5 min | A CLI that renders a spinner forever and never falls silent. The handover is delivered anyway — an awkward moment beats total loss. |
+| **Ceiling** | 2 min | A CLI that renders a spinner forever and never falls silent. The handover is delivered anyway — an awkward moment beats total loss. |
 
 Making this exact would require parsing per-CLI "compaction complete" banner
 text, which is version-fragile in a way the silence heuristic is not.
@@ -75,8 +78,8 @@ text, which is version-fragile in a way the silence heuristic is not.
 ## The terminal lock
 
 While a handover is pending, that session's terminal is read-only, like a
-frozen one: a bar above it says it is compacting and offers **Cancel
-handover**. Keys aimed at it are dropped (`useTerminalKeys` and the xterm key
+frozen one: a bar above it says it is compacting and offers **Send now**
+(paste immediately — the user judged it ready) and **Cancel handover**. Keys aimed at it are dropped (`useTerminalKeys` and the xterm key
 gate), and scrolling and selection still work.
 
 This is mechanical, not decorative: user keystrokes are PTY output, and PTY
@@ -124,7 +127,7 @@ than the interruption.
 |------|------|
 | `src/session/handover-delivery.ts` | `HandoverDelivery` — arm, floor/ceiling, idle-edge delivery, loss reporting |
 | `src/mcp/services/helm-session-delivery-service.ts` | `compactSession` — arms then delivers the compact sequence; `offloadIfLarge` |
-| `src/electron/ipc/handover-handlers.ts` | `handover:cancel` / `handover:pending` + event forwarding |
+| `src/electron/ipc/handover-handlers.ts` | `handover:cancel` / `handover:send-now` / `handover:pending` + event forwarding |
 | `renderer/composables/useHandover.ts` | Reactive mirror of pending handovers |
 | `renderer/components/dock/TerminalPane.vue` | The lock bar + Cancel |
 | `renderer/composables/useTerminalKeys.ts` | Drops keys aimed at the locked terminal |

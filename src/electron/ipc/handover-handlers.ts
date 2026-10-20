@@ -16,6 +16,11 @@ export function setupHandoverHandlers(handover: HandoverDelivery, windowManager:
     return { success: true };
   });
 
+  ipcMain.handle('handover:send-now', (_event, sessionId: string) => {
+    handover.sendNow(sessionId);
+    return { success: true };
+  });
+
   ipcMain.handle('handover:list', () => handover.pendingIds());
 
   ipcMain.handle('handover:pending', (_event, sessionId: string) => ({
@@ -47,6 +52,7 @@ export function setupHandoverHandlers(handover: HandoverDelivery, windowManager:
 
   return () => {
     ipcMain.removeHandler('handover:cancel');
+    ipcMain.removeHandler('handover:send-now');
     ipcMain.removeHandler('handover:pending');
     ipcMain.removeHandler('handover:list');
     handover.off('handover-armed', onArmed);

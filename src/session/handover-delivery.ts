@@ -20,7 +20,16 @@ export const DEFAULT_HANDOVER_FLOOR_MS = 15_000;
  * is never delivered is strictly worse than one delivered at an awkward moment:
  * the session's whole working state was riding on it.
  */
-export const DEFAULT_HANDOVER_CEILING_MS = 300_000;
+export const DEFAULT_HANDOVER_CEILING_MS = 120_000;
+
+/**
+ * PTY silence that counts as a lull even without an `inactive` edge.
+ *
+ * Hook-aware sessions ignore PTY output for activity, and a /clear is not a
+ * model turn, so no Stop hook fires and no edge ever comes. Silence on the
+ * wire is the second signal; whichever arrives first after the floor wins.
+ */
+export const DEFAULT_HANDOVER_SILENCE_MS = 10_000;
 
 /** Why a pending handover was dropped without being delivered. */
 export type HandoverLossReason = 'cancelled' | 'session-closed' | 'delivery-failed';
@@ -28,6 +37,9 @@ export type HandoverLossReason = 'cancelled' | 'session-closed' | 'delivery-fail
 export interface HandoverDeliveryOptions {
   floorMs?: number;
   ceilingMs?: number;
+  silenceMs?: number;
+  /** Emits `data (sessionId, chunk)` per PTY write — the silence fallback's clock. */
+  ptyOutput?: EventEmitter;
 }
 
 interface PendingHandover {
@@ -36,6 +48,7 @@ interface PendingHandover {
   /** Edges inside this window are ignored (see DEFAULT_HANDOVER_FLOOR_MS). */
   floorMs: number;
   ceiling: ReturnType<typeof setTimeout>;
+  silence?: ReturnType<typeof setTimeout>;
 }
 
 /** Resolves once a session's handover is pasted or dropped. */
@@ -77,6 +90,8 @@ export class HandoverDelivery extends EventEmitter {
   private readonly settlements = new Map<string, Settlement>();
   private readonly floorMs: number;
   private readonly ceilingMs: number;
+  private readonly silenceMs: number;
+  private readonly ptyOutput: EventEmitter | undefined;
   private disposed = false;
 
   private readonly onActivityChange = (event: ActivityChange): void => {
@@ -85,6 +100,10 @@ export class HandoverDelivery extends EventEmitter {
     if (!entry) return;
     if (Date.now() - entry.armedAt < entry.floorMs) return;
     void this.deliverNow(event.sessionId, 'idle');
+  };
+
+  private readonly onPtyOutput = (sessionId: string): void => {
+    if (this.pending.has(sessionId)) this.armSilence(sessionId, this.silenceMs);
   };
 
   private readonly onSessionRemoved = (event: { sessionId: string }): void => {
@@ -101,7 +120,10 @@ export class HandoverDelivery extends EventEmitter {
     super();
     this.floorMs = options.floorMs ?? DEFAULT_HANDOVER_FLOOR_MS;
     this.ceilingMs = options.ceilingMs ?? DEFAULT_HANDOVER_CEILING_MS;
+    this.silenceMs = options.silenceMs ?? DEFAULT_HANDOVER_SILENCE_MS;
+    this.ptyOutput = options.ptyOutput;
     this.stateDetector.on('activity-change', this.onActivityChange);
+    this.ptyOutput?.on('data', this.onPtyOutput);
     this.sessionManager.on('session:removed', this.onSessionRemoved);
   }
 
@@ -130,6 +152,7 @@ export class HandoverDelivery extends EventEmitter {
       floorMs: opts.floorMs ?? this.floorMs,
       ceiling: setTimeout(() => void this.deliverNow(sessionId, 'ceiling'), this.ceilingMs),
     });
+    this.armSilence(sessionId, this.silenceMs);
     logger.info(`[HandoverDelivery] Armed handover for ${sessionId} (${text.length} chars)`);
     this.emit('handover-armed', { sessionId });
   }
@@ -150,6 +173,12 @@ export class HandoverDelivery extends EventEmitter {
   deliverFromPreCompact(sessionId: string): void {
     if (this.disposed) return;
     void this.deliverNow(sessionId, 'precompact');
+  }
+
+  /** The user's "Send now": they judged the session ready, so skip the wait. */
+  sendNow(sessionId: string): void {
+    if (this.disposed) return;
+    void this.deliverNow(sessionId, 'manual');
   }
 
   isPending(sessionId: string): boolean {
@@ -179,13 +208,14 @@ export class HandoverDelivery extends EventEmitter {
     if (this.disposed) return;
     this.disposed = true;
     this.stateDetector.off('activity-change', this.onActivityChange);
+    this.ptyOutput?.off('data', this.onPtyOutput);
     this.sessionManager.off('session:removed', this.onSessionRemoved);
     for (const sessionId of [...this.pending.keys()]) this.clearTimer(sessionId);
     this.pending.clear();
     for (const sessionId of [...this.settlements.keys()]) this.settle(sessionId);
   }
 
-  private async deliverNow(sessionId: string, trigger: 'idle' | 'ceiling' | 'precompact'): Promise<void> {
+  private async deliverNow(sessionId: string, trigger: 'idle' | 'silence' | 'ceiling' | 'precompact' | 'manual'): Promise<void> {
     const entry = this.pending.get(sessionId);
     if (!entry) return;
     // Taken before the await so a racing edge cannot paste the same text twice.
@@ -223,11 +253,25 @@ export class HandoverDelivery extends EventEmitter {
     this.settlements.delete(sessionId);
   }
 
-  /** Remove the pending entry and cancel its ceiling timer. */
+  /** (Re)start the silence clock; silence inside the floor defers to its end. */
+  private armSilence(sessionId: string, delayMs: number): void {
+    if (!this.ptyOutput) return;
+    const entry = this.pending.get(sessionId);
+    if (!entry) return;
+    clearTimeout(entry.silence);
+    entry.silence = setTimeout(() => {
+      const remainingFloor = entry.armedAt + entry.floorMs - Date.now();
+      if (remainingFloor > 0) this.armSilence(sessionId, remainingFloor);
+      else void this.deliverNow(sessionId, 'silence');
+    }, delayMs);
+  }
+
+  /** Remove the pending entry and cancel its timers. */
   private clearTimer(sessionId: string): void {
     const entry = this.pending.get(sessionId);
     if (!entry) return;
     clearTimeout(entry.ceiling);
+    clearTimeout(entry.silence);
     this.pending.delete(sessionId);
   }
 }

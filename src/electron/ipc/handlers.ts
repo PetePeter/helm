@@ -854,6 +854,7 @@ export function registerIPCHandlers(
             : `The handover for "${name}" could not be written to its terminal.`,
       );
     },
+    { ptyOutput: ptyManager },
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
   isHandoverPending = (sessionId) => handoverDelivery.isPending(sessionId);

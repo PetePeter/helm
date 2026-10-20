@@ -54,6 +54,7 @@ export const PRELOAD_API_DOMAINS = {
     'pipelineGetQueue',
     'pipelineGetPosition',
     'handoverCancel',
+    'handoverSendNow',
     'handoverPending',
     'handoverList',
   ],

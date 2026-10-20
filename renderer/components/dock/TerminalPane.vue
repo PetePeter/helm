@@ -67,6 +67,7 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     <!-- Typing would reset the silence the handover paste waits on; the rest of the app stays usable. -->
     <div v-else-if="handover.isPending(appStore.activeSession?.id)" class="terminal-view__frozen-bar">
       <span>Compacting. The handover note pastes back once it falls quiet; messages wait until then.</span>
+      <button class="btn btn--sm focusable" type="button" @click="handover.sendNow(appStore.activeSession!.id)">Send now</button>
       <button class="btn btn--sm focusable" type="button" @click="handover.cancel(appStore.activeSession!.id)">Cancel handover</button>
     </div>
     <div class="terminal-view__stage">

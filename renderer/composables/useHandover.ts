@@ -43,5 +43,9 @@ export function useHandover() {
       await deliveryClient.handoverCancel(sessionId);
       pending.delete(sessionId);
     },
+    /** Paste now; the lock lifts on the delivered event, once the paste lands. */
+    sendNow: async (sessionId: string): Promise<void> => {
+      await deliveryClient.handoverSendNow(sessionId);
+    },
   };
 }
