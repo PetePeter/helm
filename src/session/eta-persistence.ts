@@ -17,7 +17,7 @@ function isEtaRecord(v: unknown): v is EtaRecord {
     && typeof v.endedAt === 'number'
     && typeof v.firstAt === 'number'
     && typeof v.finalAt === 'number'
-    && (v.outcome === 'cleared' || v.outcome === 'unmarked')
+    && (v.outcome === 'cleared' || v.outcome === 'unmarked' || v.outcome === 'rescoped')
     && typeof v.cliType === 'string'
     && typeof v.dir === 'string'
     && typeof v.sessionName === 'string';

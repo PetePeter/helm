@@ -32,7 +32,7 @@ function memoryStore() {
   };
 }
 
-const TOOLS = ['session_todo_add', 'session_todo_done', 'session_todo_delete', 'session_todo_clear', 'session_todo_list'];
+const TOOLS = ['session_todo_add', 'session_todo_done', 'session_todo_delete', 'session_todo_clear', 'session_todo_list', 'session_todo_wait'];
 
 describe('MCP session_todo_*', () => {
   let todos: InstanceType<typeof TodoManager>;
@@ -50,7 +50,7 @@ describe('MCP session_todo_*', () => {
     call = (tool, args = {}, auth = { sessionId: 'me' }) => callMcpTool(deps, tool, args, auth) as Promise<any>;
   });
 
-  it('publishes the five tools with the requested arguments', () => {
+  it('publishes the six tools with the requested arguments', () => {
     const byName = new Map(MCP_TOOLS.map(tool => [tool.name, tool]));
     expect(getAvailableTools().map(tool => tool.name)).toEqual(expect.arrayContaining(TOOLS));
     expect(byName.get('session_todo_add')?.inputSchema.required).toEqual(['text']);
@@ -58,6 +58,7 @@ describe('MCP session_todo_*', () => {
     expect(byName.get('session_todo_delete')?.inputSchema.required).toEqual(['id']);
     expect(byName.get('session_todo_clear')?.inputSchema.required).toBeUndefined();
     expect(byName.get('session_todo_list')?.inputSchema.required).toBeUndefined();
+    expect(byName.get('session_todo_wait')?.inputSchema.required).toEqual(['id', 'waiting']);
     for (const name of TOOLS) expect(byName.get(name)?.inputSchema.additionalProperties).toBe(false);
   });
 
@@ -80,6 +81,13 @@ describe('MCP session_todo_*', () => {
     await expect(call('session_todo_done', { id: other.id, sessionId: 'other' })).rejects.toThrow(/own session/);
     expect(await call('session_todo_list')).toEqual([own]);
     expect(todos.list('other')).toEqual([other]);
+  });
+
+  it('parks and resumes its own todo with session_todo_wait', async () => {
+    const own = await call('session_todo_add', { text: 'Ask which port' });
+    expect(await call('session_todo_wait', { id: own.id, waiting: true })).toMatchObject({ status: 'waiting' });
+    expect(await call('session_todo_wait', { id: own.id, waiting: false })).toMatchObject({ status: 'open' });
+    await expect(call('session_todo_wait', { id: own.id })).rejects.toThrow(/waiting/);
   });
 
   it('requires authenticated callers and validates IDs and text', async () => {

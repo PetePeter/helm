@@ -25,7 +25,7 @@ function sessionIdOf(fileName: string): string[] {
 
 function parseTodo(raw: unknown): SessionTodo | null {
   if (!isRecord(raw) || !isString(raw.id) || !isString(raw.text) || !isNumber(raw.createdAt)) return null;
-  if (raw.status !== 'open' && raw.status !== 'done') return null;
+  if (raw.status !== 'open' && raw.status !== 'waiting' && raw.status !== 'done') return null;
   return {
     id: raw.id,
     text: raw.text,

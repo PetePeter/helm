@@ -7,7 +7,7 @@ describe('appendContextSample', () => {
     for (let i = 1; i <= CONTEXT_HISTORY_LIMIT + 5; i++) history = appendContextSample(history, { at: i, tokens: i * 10 });
     expect(history).toHaveLength(CONTEXT_HISTORY_LIMIT);
     expect(history![0]).toEqual({ at: 6, tokens: 60 });
-    expect(history!.at(-1)).toEqual({ at: CONTEXT_HISTORY_LIMIT + 5, tokens: (CONTEXT_HISTORY_LIMIT + 5) * 10 });
+    expect(history![history!.length - 1]).toEqual({ at: CONTEXT_HISTORY_LIMIT + 5, tokens: (CONTEXT_HISTORY_LIMIT + 5) * 10 });
   });
 
   it('does not add a point when the token count is unchanged', () => {

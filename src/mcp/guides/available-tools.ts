@@ -82,6 +82,7 @@ export function getAvailableTools(): McpToolSummary[] {
     { name: 'session_todo_add', title: 'Add Session Todo', description: 'Add an open item to your own LLM-maintained session todo list.' },
     { name: 'session_todo_done', title: 'Complete Session Todo', description: 'Mark an item in your own session todo list done.' },
     { name: 'session_todo_delete', title: 'Delete Completed Session Todo', description: 'Delete a completed item from your own session todo list.' },
+    { name: 'session_todo_wait', title: 'Park Session Todo On User', description: 'Mark your own todo as waiting on a user answer (or resume it) so it stops blocking Stop.' },
     { name: 'session_todo_clear', title: 'Clear Session Todos', description: 'Clear your own session todo list.' },
     { name: 'session_todo_list', title: 'List Session Todos', description: 'List your own session todo items, open first.' },
     { name: 'session_rename', title: 'Rename Session', description: 'Rename a Helm session by ID or name. Also updates the Telegram topic name.' },

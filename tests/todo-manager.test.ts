@@ -19,6 +19,23 @@ describe('TodoManager', () => {
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
+  it('parks a todo as waiting on the user, resumes it, and keeps the state across a restart', () => {
+    const manager = open();
+    const todo = manager.add('s1', 'Ask which port');
+    expect(manager.setWaiting('s1', todo.id, true)).toMatchObject({ status: 'waiting' });
+    expect(open().list('s1')).toEqual([expect.objectContaining({ id: todo.id, status: 'waiting' })]);
+    expect(manager.setWaiting('s1', todo.id, false)).toMatchObject({ status: 'open' });
+    expect(() => manager.setWaiting('s1', 'nope', true)).toThrow(/not found/);
+  });
+
+  it('completes a waiting todo directly but never parks a done one', () => {
+    const manager = open();
+    const todo = manager.add('s1', 'Ask which port');
+    manager.setWaiting('s1', todo.id, true);
+    expect(manager.markDone('s1', todo.id)).toMatchObject({ status: 'done' });
+    expect(() => manager.setWaiting('s1', todo.id, true)).toThrow(/done/);
+  });
+
   it('persists independent session lists and survives a restart', () => {
     const manager = open();
     const first = manager.add('s1', 'Ship the feature');

@@ -50,9 +50,10 @@ watch(sessionId, async id => {
           v-for="todo in visibleTodos"
           :key="todo.id"
           class="todos-pane__item"
-          :class="{ 'todos-pane__item--done': todo.status === 'done' }"
+          :class="{ 'todos-pane__item--done': todo.status === 'done', 'todos-pane__item--waiting': todo.status === 'waiting' }"
           :data-todo-id="todo.id"
-        >{{ todo.text }}</li>
+          :title="todo.status === 'waiting' ? 'Waiting on you' : undefined"
+        >{{ todo.status === 'waiting' ? '⏳ ' : '' }}{{ todo.text }}</li>
       </ol>
     </div>
   </section>
@@ -64,5 +65,6 @@ watch(sessionId, async id => {
 .todos-pane__scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--spacing-sm) var(--spacing-md); }
 .todos-pane__list { margin: 0; padding-left: 1.5rem; color: var(--text-primary); }
 .todos-pane__item { padding: var(--spacing-xs) 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.todos-pane__item--waiting { color: var(--text-secondary); }
 .todos-pane__item--done { color: var(--text-secondary); text-decoration: line-through; }
 </style>

@@ -1193,13 +1193,14 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_set',
     title: 'Set Session ETA',
-    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. Re-setting while one is open revises the shown time but keeps the clock and first guess it is scored against. The returned eta may carry range {lo, hi, samples}: the 80% band learned from your past estimates in this CLI and folder. The caller identity comes from Helm, not arguments.',
+    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. Re-setting while one is open revises the shown time but keeps the clock and first guess it is scored against — unless you pass rescope: then the open estimate closes unscored and a fresh clock starts. Use rescope only when the work itself changed (new or dropped requirements), never to hide a slip. The returned eta may carry range {lo, hi, samples}: the 80% band learned from your past estimates in this CLI and folder. The caller identity comes from Helm, not arguments.',
     inputSchema: {
       type: 'object',
       properties: {
         minutes: { type: 'number', exclusiveMinimum: 0, description: 'Positive minutes from now.' },
         at: { type: 'number', description: 'Absolute completion time as epoch milliseconds.' },
         note: { type: 'string', description: 'Optional short note shown in the desktop row tooltip.' },
+        rescope: { type: 'string', minLength: 1, description: 'Why the scope changed. Closes the open estimate unscored and starts a fresh clock and first guess.' },
       },
       oneOf: [{ required: ['minutes'] }, { required: ['at'] }],
       additionalProperties: false,
@@ -1208,7 +1209,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_clear',
     title: 'Clear Session ETA',
-    description: 'Mark YOUR OWN current request finished: Helm scores the estimate against the actual time and removes it. Call it as soon as the work is done; an estimate still open 10 minutes past its ETA is recorded as unmarked.',
+    description: 'Mark YOUR OWN current request finished: Helm scores the estimate against the actual time and removes it. Call it as soon as the work is done — a late clear still counts, at its real end; an estimate never cleared within 3× its first guess (at least 1h) is recorded as unmarked.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -1282,6 +1283,20 @@ export const MCP_TOOLS: McpTool[] = [
       type: 'object',
       properties: { id: { type: 'string', description: 'Completed todo id.' } },
       required: ['id'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'session_todo_wait',
+    title: 'Park Session Todo On User',
+    description: 'Mark a todo in YOUR OWN session checklist as waiting on the user (waiting: true), or resume it (false). A waiting todo stays listed but no longer blocks you from stopping — use it when you need an answer and the user may be away; never loop trying to finish it. session_todo_done still completes it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Todo id.' },
+        waiting: { type: 'boolean', description: 'true parks it on the user; false makes it open again.' },
+      },
+      required: ['id', 'waiting'],
       additionalProperties: false,
     },
   },

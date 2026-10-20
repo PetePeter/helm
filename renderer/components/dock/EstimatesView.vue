@@ -98,6 +98,7 @@ onBeforeUnmount(() => {
           <div class="estimates-tile">Median slip<b>{{ signed(view.summary.medianSlipMin) }}</b></div>
           <div class="estimates-tile">Estimates<b>{{ view.summary.total }}</b></div>
           <div class="estimates-tile">Unmarked<b class="estimates-late">{{ view.summary.unmarked }}</b></div>
+          <div class="estimates-tile">Rescoped<b>{{ view.summary.rescoped }}</b></div>
         </div>
         <div class="estimates-grid">
           <figure>
@@ -121,7 +122,8 @@ onBeforeUnmount(() => {
               <td class="estimates-note" :title="row.note">{{ row.note ?? '' }}</td>
               <td>{{ row.predictedMin }}m</td>
               <td>{{ row.actualMin }}m{{ row.outcome === 'unmarked' ? '+' : '' }}</td>
-              <td :class="row.outcome === 'unmarked' || row.slipMin > 0 ? 'estimates-late' : 'estimates-good'">
+              <td v-if="row.outcome === 'rescoped'">rescoped</td>
+              <td v-else :class="row.outcome === 'unmarked' || row.slipMin > 0 ? 'estimates-late' : 'estimates-good'">
                 {{ row.outcome === 'unmarked' ? 'unmarked' : signed(row.slipMin) }}
               </td>
             </tr>

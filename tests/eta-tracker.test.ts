@@ -45,26 +45,58 @@ describe('EtaTracker', () => {
     expect(tracker.close(second, here, 'cleared')).toMatchObject({ startedAt: T0, firstAt: T0 + 10 * MIN, finalAt: T0 + 10 * MIN });
   });
 
-  it('marks an estimate unmarked once ETA + 10m passes, capping its end there', () => {
-    const eta = tracker.set(undefined, { minutes: 15 }, here);
-    now = T0 + 24 * MIN;
+  it('stays open past ETA + 10m; unmarked only after 3x the guess (min 1h), capped there', () => {
+    const eta = tracker.set(undefined, { minutes: 30 }, here);
+    now = T0 + 60 * MIN;
     expect(tracker.closeIfOverdue(eta, here)).toBeNull();
-    now = T0 + 90 * MIN;
-    expect(tracker.closeIfOverdue(eta, here)).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 25 * MIN });
+    now = T0 + 91 * MIN;
+    expect(tracker.closeIfOverdue(eta, here)).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 90 * MIN });
   });
 
-  it('a re-set after the grace closes the old estimate as unmarked and starts fresh', () => {
+  it('a short guess still gets the 1h minimum before going unmarked', () => {
+    const eta = tracker.set(undefined, { minutes: 5 }, here);
+    now = T0 + 59 * MIN;
+    expect(tracker.closeIfOverdue(eta, here)).toBeNull();
+    now = T0 + 61 * MIN;
+    expect(tracker.closeIfOverdue(eta, here)).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 60 * MIN });
+  });
+
+  it('a re-set past the cap closes the old estimate as unmarked and starts fresh', () => {
     const old = tracker.set(undefined, { minutes: 15 }, here);
-    now = T0 + 30 * MIN;
+    now = T0 + 70 * MIN;
     const fresh = tracker.set(old, { minutes: 10 }, here);
-    expect(tracker.query(0, Infinity)).toEqual([expect.objectContaining({ outcome: 'unmarked', endedAt: T0 + 25 * MIN })]);
+    expect(tracker.query(0, Infinity)).toEqual([expect.objectContaining({ outcome: 'unmarked', endedAt: T0 + 60 * MIN })]);
     expect(fresh).toMatchObject({ startedAt: now, firstAt: now + 10 * MIN });
   });
 
-  it('a clear that arrives after the grace counts as unmarked, capped', () => {
+  it('a late clear counts as cleared with its real end, and is learnable', () => {
     const eta = tracker.set(undefined, { minutes: 15 }, here);
-    now = T0 + 60 * MIN;
-    expect(tracker.close(eta, here, 'cleared')).toMatchObject({ outcome: 'unmarked', endedAt: T0 + 25 * MIN });
+    now = T0 + 55 * MIN;
+    const rec = tracker.close(eta, here, 'cleared');
+    expect(rec).toMatchObject({ outcome: 'cleared', endedAt: T0 + 55 * MIN });
+    const history = Array.from({ length: 5 }, () => rec);
+    expect(computeEtaRange(history, here, T0, T0 + 10 * MIN)?.samples).toBe(5);
+  });
+
+  it('a rescope closes the old estimate unpunished and starts a fresh clock and first guess', () => {
+    const old = tracker.set(undefined, { minutes: 10 }, here);
+    now = T0 + 30 * MIN;
+    const fresh = tracker.set(old, { minutes: 20, rescope: 'user added the export step' }, here);
+    expect(fresh).toMatchObject({ startedAt: now, firstAt: now + 20 * MIN });
+    expect(tracker.query(0, Infinity)).toEqual([expect.objectContaining({
+      outcome: 'rescoped', endedAt: T0 + 30 * MIN, reason: 'user added the export step',
+    })]);
+  });
+
+  it('a rescope with no open estimate just opens one', () => {
+    const eta = tracker.set(undefined, { minutes: 20, rescope: 'new scope' }, here);
+    expect(eta).toMatchObject({ startedAt: T0, firstAt: T0 + 20 * MIN });
+    expect(tracker.query(0, Infinity)).toEqual([]);
+  });
+
+  it('rejects a blank rescope reason', () => {
+    const old = tracker.set(undefined, { minutes: 10 }, here);
+    expect(() => tracker.set(old, { minutes: 5, rescope: '  ' }, here)).toThrow(/rescope/);
   });
 
   it('closing a session early records an unmarked estimate ending now', () => {
@@ -101,6 +133,7 @@ describe('computeEtaRange', () => {
   it('ignores unmarked records, first guesses under 5m, and other CLI or folder', () => {
     const noise = [
       record(10, 30, { outcome: 'unmarked' }),
+      record(10, 30, { outcome: 'rescoped' }),
       record(4, 40),
       record(10, 30, { cliType: 'codex' }),
       record(10, 30, { dir: 'X:/other' }),
@@ -125,6 +158,11 @@ describe('summarizeEstimates', () => {
       record(10, 14),
       record(10, 20, { outcome: 'unmarked' }),
     ]);
-    expect(s).toEqual({ total: 3, onTimePct: 33, medianSlipMin: 4, unmarked: 1 });
+    expect(s).toEqual({ total: 3, onTimePct: 33, medianSlipMin: 4, unmarked: 1, rescoped: 0 });
+  });
+
+  it('leaves rescoped estimates out of on-time and slip, counting them apart', () => {
+    const s = summarizeEstimates([record(10, 8), record(10, 90, { outcome: 'rescoped' })]);
+    expect(s).toEqual({ total: 1, onTimePct: 100, medianSlipMin: -2, unmarked: 0, rescoped: 1 });
   });
 });

@@ -126,7 +126,16 @@ describe('MCP session_eta_* with the EtaTracker', () => {
     await call('session_eta_set', { minutes: 10 });
     vi.setSystemTime(t0 + 40 * 60_000);
     sweepOverdueEtas(manager, tracker);
-    expect(appended[1]).toMatchObject({ outcome: 'unmarked', endedAt: t0 + 32 * 60_000 });
+    expect(appended).toHaveLength(1);
+    expect(manager.getSession('me')?.eta).toBeDefined();
+    vi.setSystemTime(t0 + 80 * 60_000);
+    sweepOverdueEtas(manager, tracker);
+    expect(appended[1]).toMatchObject({ outcome: 'unmarked', endedAt: t0 + 72 * 60_000 });
+
+    await call('session_eta_set', { minutes: 10 });
+    await call('session_eta_set', { minutes: 30, rescope: 'user widened the task' });
+    expect(appended[2]).toMatchObject({ outcome: 'rescoped', reason: 'user widened the task' });
+    await call('session_eta_clear');
     expect(manager.getSession('me')?.eta).toBeUndefined();
     vi.useRealTimers();
   });

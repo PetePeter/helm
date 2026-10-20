@@ -7,8 +7,8 @@ export function renderSessionTodoContext(
   overrides?: HookInjectionOverrides,
 ): string {
   const items = todos
-    .filter(todo => todo.status === 'open')
-    .map(todo => `- ${todo.id}: ${todo.text}`);
+    .filter(todo => todo.status !== 'done')
+    .map(todo => `- ${todo.id}: ${todo.text}${todo.status === 'waiting' ? ' (waiting on user)' : ''}`);
   return renderHookInjection('todosPrompt', { items: items.length ? items.join('\n') : '- (none)' }, overrides);
 }
 

@@ -757,6 +757,7 @@ export async function callMcpTool(
           minutes: args.minutes,
           at: args.at,
           note: args.note,
+          rescope: args.rescope,
         });
       case 'session_eta_clear':
         return service.clearSessionEta(requireOwnEta(authContext, args, name));
@@ -785,6 +786,12 @@ export async function callMcpTool(
         return service.completeSessionTodo(requireOwnTodo(authContext, args, 'session_todo_done'), asString(args.id, 'id is required'));
       case 'session_todo_delete':
         return service.deleteSessionTodo(requireOwnTodo(authContext, args, 'session_todo_delete'), asString(args.id, 'id is required'));
+      case 'session_todo_wait':
+        return service.setSessionTodoWaiting(
+          requireOwnTodo(authContext, args, 'session_todo_wait'),
+          asString(args.id, 'id is required'),
+          asBoolean(args.waiting, 'waiting must be true or false'),
+        );
       case 'session_todo_clear':
         return service.clearSessionTodos(requireOwnTodo(authContext, args, 'session_todo_clear'));
       case 'session_todo_list':

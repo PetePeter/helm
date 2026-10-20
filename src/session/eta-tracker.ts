@@ -4,8 +4,11 @@
  * session_eta_set opens an estimate; session_eta_clear closes it. A re-set
  * never restarts the clock: actual time runs from the first set and is scored
  * against the first guess, so re-setting a tiny ETA over and over only shows
- * as late. An estimate not cleared by ETA + 10m is "unmarked" — its end is
- * capped there and it is kept out of learning, as are first guesses under 5m.
+ * as late — unless the set passes a rescope reason, which closes the old
+ * estimate as "rescoped" (unscored) and starts a fresh clock. A late clear
+ * still counts, at its real end. Only an estimate never cleared within 3× its
+ * first guess (at least 1h) is "unmarked": its end is capped there and it is
+ * kept out of learning, as are first guesses under 5m.
  * The learned P10–P90 ratio band (actual ÷ predicted, per CLI + folder) is
  * snapshotted onto each new ETA as its confidence range. See docs/session-eta.md.
  */
@@ -15,12 +18,14 @@ import type { SessionManager } from './manager.js';
 import { createSessionEta, type SessionEtaInput } from './session-eta.js';
 import type { EtaPersistence } from './eta-persistence.js';
 
-export const UNMARKED_GRACE_MS = 10 * 60_000;
+export const UNMARKED_FACTOR = 3;
+export const UNMARKED_MIN_MS = 60 * 60_000;
+const UNMARKED_GRACE_MS = 10 * 60_000;
 export const MIN_LEARN_MS = 5 * 60_000;
 export const MIN_SAMPLES = 5;
 const MAX_SAMPLES = 50;
 
-export type EtaOutcome = 'cleared' | 'unmarked';
+export type EtaOutcome = 'cleared' | 'unmarked' | 'rescoped';
 
 export interface EtaRecord {
   startedAt: number;
@@ -34,6 +39,8 @@ export interface EtaRecord {
   dir: string;
   sessionName: string;
   note?: string;
+  /** Why the scope changed, on a rescoped record. */
+  reason?: string;
 }
 
 export interface EtaWhere {
@@ -47,6 +54,7 @@ export interface EtaSummary {
   onTimePct: number;
   medianSlipMin: number;
   unmarked: number;
+  rescoped: number;
 }
 
 export interface EtaTrackerDeps {
@@ -67,18 +75,23 @@ export class EtaTracker {
   set(prev: SessionEta | undefined, input: SessionEtaInput, where: EtaWhere): SessionEta {
     const now = this.now();
     const eta = createSessionEta(input, now);
+    const reason = rescopeReason(input.rescope);
     // An overdue one the sweep hasn't reached yet is closed, not revived.
     if (prev && this.closeIfOverdue(prev, where)) prev = undefined;
+    if (prev && reason) {
+      this.close(prev, where, 'rescoped', reason);
+      prev = undefined;
+    }
     const startedAt = prev ? startOf(prev) : now;
     const firstAt = prev ? firstOf(prev) : eta.at;
     const range = computeEtaRange(this.records, where, startedAt, eta.at);
     return { ...eta, startedAt, firstAt, ...(range ? { range } : {}) };
   }
 
-  /** Record a finished estimate. A clear past the grace still counts as unmarked. */
-  close(eta: SessionEta, where: EtaWhere, outcome: EtaOutcome): EtaRecord {
+  /** Record a finished estimate. A close past the cap counts as unmarked, ending at the cap. */
+  close(eta: SessionEta, where: EtaWhere, outcome: EtaOutcome, reason?: string): EtaRecord {
     const now = this.now();
-    const cap = eta.at + UNMARKED_GRACE_MS;
+    const cap = capOf(eta);
     const finalOutcome: EtaOutcome = now > cap ? 'unmarked' : outcome;
     const record: EtaRecord = {
       startedAt: startOf(eta),
@@ -88,15 +101,16 @@ export class EtaTracker {
       outcome: finalOutcome,
       ...where,
       ...(eta.note ? { note: eta.note } : {}),
+      ...(reason && finalOutcome === 'rescoped' ? { reason } : {}),
     };
     this.records.push(record);
     this.deps.persistence.append(record);
     return record;
   }
 
-  /** Close as unmarked once ETA + grace has passed; null while still in time. */
+  /** Close as unmarked once the cap has passed; null while it may still be cleared. */
   closeIfOverdue(eta: SessionEta, where: EtaWhere): EtaRecord | null {
-    return this.now() > eta.at + UNMARKED_GRACE_MS ? this.close(eta, where, 'unmarked') : null;
+    return this.now() > capOf(eta) ? this.close(eta, where, 'unmarked') : null;
   }
 
   /** Records that started in [from, to). */
@@ -107,6 +121,20 @@ export class EtaTracker {
 
 const startOf = (eta: SessionEta): number => eta.startedAt ?? eta.setAt;
 const firstOf = (eta: SessionEta): number => eta.firstAt ?? eta.at;
+
+/** Past this an open estimate is abandoned: 3× the first guess, at least 1h, never before a re-set ETA + 10m. */
+function capOf(eta: SessionEta): number {
+  const start = startOf(eta);
+  const window = Math.max(UNMARKED_FACTOR * (firstOf(eta) - start), UNMARKED_MIN_MS);
+  return Math.max(start + window, eta.at + UNMARKED_GRACE_MS);
+}
+
+function rescopeReason(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const reason = typeof value === 'string' ? value.trim() : '';
+  if (!reason) throw new Error('rescope must be a non-empty reason');
+  return reason;
+}
 
 function isLearnable(r: EtaRecord): boolean {
   return r.outcome === 'cleared' && r.firstAt - r.startedAt >= MIN_LEARN_MS;
@@ -136,10 +164,12 @@ export function computeEtaRange(
   };
 }
 
-/** Headline tiles: on time = finished by the first guess; slip = end − first guess. */
-export function summarizeEstimates(records: EtaRecord[]): EtaSummary {
+/** Headline tiles: on time = finished by the first guess; slip = end − first guess. Rescoped ones are unscored. */
+export function summarizeEstimates(all: EtaRecord[]): EtaSummary {
+  const rescoped = all.filter(r => r.outcome === 'rescoped').length;
+  const records = all.filter(r => r.outcome !== 'rescoped');
   const total = records.length;
-  if (!total) return { total: 0, onTimePct: 0, medianSlipMin: 0, unmarked: 0 };
+  if (!total) return { total: 0, onTimePct: 0, medianSlipMin: 0, unmarked: 0, rescoped };
   const onTime = records.filter(r => r.outcome === 'cleared' && r.endedAt <= r.firstAt).length;
   const slips = records.map(r => (r.endedAt - r.firstAt) / 60_000).sort((a, b) => a - b);
   const mid = slips.length >> 1;
@@ -149,6 +179,7 @@ export function summarizeEstimates(records: EtaRecord[]): EtaSummary {
     onTimePct: Math.round((onTime / total) * 100),
     medianSlipMin: Math.round(median),
     unmarked: records.filter(r => r.outcome === 'unmarked').length,
+    rescoped,
   };
 }
 
@@ -157,7 +188,7 @@ export function etaWhereOf(session: Pick<SessionInfo, 'cliType' | 'workingDir' |
   return { cliType: session.cliType, dir: session.workingDir ?? '', sessionName: session.name };
 }
 
-/** Close every open estimate past ETA + grace as unmarked and drop it from its session. */
+/** Close every open estimate past its cap as unmarked and drop it from its session. */
 export function sweepOverdueEtas(
   sessions: Pick<SessionManager, 'getAllSessions' | 'updateSession'>,
   tracker: Pick<EtaTracker, 'closeIfOverdue'>,

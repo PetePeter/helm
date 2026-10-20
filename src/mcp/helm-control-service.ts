@@ -1,3 +1,4 @@
+import type { SessionEtaInput } from '../session/session-eta.js';
 import type { ChatTurnUsage } from '../session/chat/chat-bridge.js';
 import { EventEmitter } from 'node:events';
 import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
@@ -1561,7 +1562,7 @@ export class HelmControlService extends EventEmitter {
     return this.sessionService.setSessionMission(sessionRef, text);
   }
 
-  setSessionEta(sessionRef: string, input: { minutes?: unknown; at?: unknown; note?: unknown }) {
+  setSessionEta(sessionRef: string, input: SessionEtaInput) {
     return this.sessionService.setSessionEta(sessionRef, input);
   }
 
@@ -1621,6 +1622,11 @@ export class HelmControlService extends EventEmitter {
   completeSessionTodo(sessionRef: string, id: string): SessionTodo {
     const { manager, sessionId } = this.todosFor(sessionRef);
     return manager.markDone(sessionId, id);
+  }
+
+  setSessionTodoWaiting(sessionRef: string, id: string, waiting: boolean): SessionTodo {
+    const { manager, sessionId } = this.todosFor(sessionRef);
+    return manager.setWaiting(sessionId, id, waiting);
   }
 
   deleteSessionTodo(sessionRef: string, id: string): boolean {

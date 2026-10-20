@@ -48,6 +48,17 @@ export class TodoManager extends EventEmitter {
     return { ...completed };
   }
 
+  /** Park an unfinished todo on a user answer, or resume it. */
+  setWaiting(sessionId: string, id: string, waiting: boolean): SessionTodo {
+    const todos = this.current(sessionId);
+    const current = todos.find(todo => todo.id === id);
+    if (!current) throw new Error(`Todo not found: ${id}`);
+    if (current.status === 'done') throw new Error('Cannot park a done todo.');
+    const next: SessionTodo = { ...current, status: waiting ? 'waiting' : 'open' };
+    if (next.status !== current.status) this.write(sessionId, todos.map(todo => todo.id === id ? next : todo));
+    return { ...next };
+  }
+
   /** Completed items can be removed; open items must first be marked done. */
   delete(sessionId: string, id: string): boolean {
     const todos = this.current(sessionId);

@@ -33,8 +33,9 @@ note. After the ETA passes, the row
 shows `🏁 late Nm` in warning amber. It uses the existing elapsed-timer tick.
 
 The hook places one `[HELM_ETA]` reminder beside `[HELM_TODOS]`, asking the LLM
-to set and update its estimate when it takes on multi-step work, and to call
-`session_eta_clear` the moment the work is done. The phone has
+to set and update its estimate when it takes on multi-step work, to re-set with
+`rescope` when the scope changes, and to call `session_eta_clear` the moment the
+work is done. The phone has
 no ETA display.
 
 ## Accuracy and confidence range
@@ -46,8 +47,10 @@ appended to `estimates.jsonl` in the time-tracking dir.
 stateDiagram-v2
     [*] --> Open: session_eta_set
     Open --> Open: session_eta_set (revise)
-    Open --> Cleared: session_eta_clear
-    Open --> Unmarked: ETA + 10m passes
+    Open --> Cleared: session_eta_clear (any time before the cap)
+    Open --> Rescoped: session_eta_set with rescope
+    Rescoped --> Open: fresh clock + first guess
+    Open --> Unmarked: cap passes (3× first guess, min 1h)
     Open --> Unmarked: session closed
     Cleared --> [*]
     Unmarked --> [*]
@@ -56,9 +59,15 @@ stateDiagram-v2
 - **Re-setting never restarts the clock.** The actual time runs from the first
   set to the clear and is scored against the *first* guess, so re-setting a
   tiny ETA over and over only shows as late. A re-set moves the shown time.
-- **Unmarked**: not cleared by ETA + 10m (a 1-minute sweep), or the session was
-  closed with an estimate open. Its end is capped at ETA + 10m. A clear that
-  arrives after that cap also counts as unmarked.
+- **Rescope** is the honest exit when the work itself changes: `session_eta_set`
+  with `rescope: "<reason>"` closes the open estimate as *rescoped* — left out of
+  on-time, slip and learning, but counted on its own tile and listed with its
+  reason — and starts a fresh clock and first guess.
+- **A late clear still counts**, at its real end, so long overruns teach the
+  learned range instead of vanishing from it.
+- **Unmarked**: never cleared within the cap — 3× the first guess, at least 1h,
+  and never before a re-set ETA + 10m (a 1-minute sweep) — or the session was
+  closed with an estimate open. Its end is capped there.
 - **Learning** uses only cleared estimates whose first guess was 5m or more,
   for the same CLI type **and** folder, newest 50. With 5+ samples, the P10–P90
   of actual ÷ predicted is scaled onto each new estimate and stored on it as

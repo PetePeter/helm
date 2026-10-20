@@ -4,6 +4,8 @@ export interface SessionEtaInput {
   minutes?: unknown;
   at?: unknown;
   note?: unknown;
+  /** Why the scope changed: closes the open estimate unscored and starts fresh. */
+  rescope?: unknown;
 }
 
 /** Create the durable ETA record from exactly one relative or absolute time. */

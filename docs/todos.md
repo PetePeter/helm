@@ -9,9 +9,22 @@ Every `session_todo_*` call uses the authenticated caller's own session. These t
 ```text
 session_todo_add(text="Add a regression test") -> { id, text, status, createdAt }
 session_todo_done(id="...")                 -> the completed todo
+session_todo_wait(id="...", waiting=true)   -> the todo, parked on the user (false resumes it)
 session_todo_delete(id="...")               -> true when deleted
 session_todo_clear()                          -> number of removed items
 session_todo_list()                           -> todos, open items first
+```
+
+A todo that needs a user answer is parked with `session_todo_wait`. Without it, the Stop hook's once-per-turn open-todo nudge pushed the LLM to keep trying to finish work only the user could unblock, so it thrashed while the user was away. A waiting todo stays in the list, shows ⏳ in the pane, and is tagged `(waiting on user)` in `[HELM_TODOS]`, but never blocks a Stop. `session_todo_done` completes it directly.
+
+```mermaid
+stateDiagram-v2
+    [*] --> open: session_todo_add
+    open --> waiting: session_todo_wait(true)
+    waiting --> open: session_todo_wait(false)
+    open --> done: session_todo_done
+    waiting --> done: session_todo_done
+    done --> [*]: session_todo_delete
 ```
 
 Only completed items can be deleted. Mark an open todo done first. `clear` removes both open and completed items. Keep entries short and actionable; use the Draft pane for unstructured working notes.

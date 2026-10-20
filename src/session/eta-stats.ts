@@ -52,7 +52,7 @@ export function buildEstimateView(
 
   return {
     summary: summarizeEstimates(records),
-    points: records.map(r => ({
+    points: records.filter(r => r.outcome !== 'rescoped').map(r => ({
       predictedMin: minutes(r.firstAt - r.startedAt),
       actualMin: minutes(r.endedAt - r.startedAt),
       cliType: r.cliType,
@@ -67,7 +67,7 @@ export function buildEstimateView(
     trend: { labels: columns.map(start => columnLabel(period, start)), values: trend },
     recent: [...records].sort((a, b) => b.endedAt - a.endedAt).slice(0, RECENT_ROWS).map(r => ({
       sessionName: r.sessionName,
-      ...(r.note ? { note: r.note } : {}),
+      ...(r.reason ?? r.note ? { note: r.reason ?? r.note } : {}),
       predictedMin: minutes(r.firstAt - r.startedAt),
       actualMin: minutes(r.endedAt - r.startedAt),
       slipMin: minutes(r.endedAt - r.firstAt),

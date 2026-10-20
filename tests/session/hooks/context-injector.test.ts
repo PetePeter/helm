@@ -526,6 +526,13 @@ describe('Stop — the one-shot nudge', () => {
     expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
   });
 
+  it('lets a Stop pass when the only unfinished todo waits on the user', async () => {
+    const { injector } = makeInjector({
+      getTodos: () => [{ id: 't1', text: 'Ask which port', status: 'waiting', createdAt: 1 }],
+    });
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+  });
+
   it('lets a Stop pass when every todo is done', async () => {
     const { injector } = makeInjector({
       getTodos: () => [{ id: 't1', text: 'Done', status: 'done', createdAt: 1, doneAt: 2 }],
@@ -646,6 +653,13 @@ describe('Mission statement ([HELM_MISSION])', () => {
     const { injector } = makeInjector({ getMission: () => mission });
     const result = await injector.respond(hookEvent());
     expect(contextOf(result!.body)).toContain('Ship the mission bar');
+  });
+
+  it('lists waiting todos in the prompt context, tagged as waiting on the user', async () => {
+    const todo: SessionTodo = { id: 'todo-1', text: 'Ask which port', status: 'waiting', createdAt: 1 };
+    const { injector } = makeInjector({ getTodos: () => [todo] });
+    const context = contextOf((await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'p' })))!.body);
+    expect(context).toContain('todo-1: Ask which port (waiting on user)');
   });
 
   it('re-supplies open todos on every prompt beside the mission', async () => {

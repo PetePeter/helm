@@ -2,7 +2,8 @@
 export interface SessionTodo {
   id: string;
   text: string;
-  status: 'open' | 'done';
+  /** waiting = parked on a user answer: listed, but never nags the LLM at Stop. */
+  status: 'open' | 'waiting' | 'done';
   createdAt: number;
   doneAt?: number;
 }
