@@ -48,7 +48,7 @@ class MockStateDetector extends EventEmitter {
   });
 }
 
-function setup(onPtyInput = vi.fn()) {
+function setup(onPtyInput = vi.fn(), isHandoverPending = (_id: string) => false) {
   handlers.clear();
   const ptyManager = new MockPtyManager();
   const stateDetector = new MockStateDetector();
@@ -77,6 +77,9 @@ function setup(onPtyInput = vi.fn()) {
     undefined,
     undefined,
     onPtyInput,
+    undefined,
+    undefined,
+    isHandoverPending,
   );
 
   return { ptyManager, stateDetector, sessionManager, onPtyInput, windowManager };
@@ -165,6 +168,20 @@ describe('pty:write input origin', () => {
     ptyManager.write.mockReturnValue(false);
     await handlers.get('pty:write')?.({}, 's1', '\r');
     expect(aiSlots()).toHaveLength(1);
+  });
+
+  // Regression: the renderer's keydown gate missed pastes, so the user could
+  // still type into a session waiting on its compaction handover.
+  it('drops user input while a handover is pending, but not programmatic writes', async () => {
+    const { ptyManager, onPtyInput } = setup(vi.fn(), id => id === 's1');
+
+    const result = await handlers.get('pty:write')?.({}, 's1', 'pasted text');
+    await handlers.get('pty:write')?.({}, 's1', 'chip', { inputOrigin: 'programmatic' });
+
+    expect(result).toMatchObject({ success: false });
+    expect(ptyManager.write).toHaveBeenCalledTimes(1);
+    expect(ptyManager.write).toHaveBeenCalledWith('s1', 'chip', 'system');
+    expect(onPtyInput).not.toHaveBeenCalled();
   });
 
   it('rejects input from a renderer that does not own the session', async () => {

@@ -37,6 +37,8 @@ export function setupPtyHandlers(
   patternMatcher?: PatternMatcher,
   /** A restored bin entry keeps its session id; its record carries the CLI thread id. */
   recycleBin?: Pick<RecycleBinManager, 'list'>,
+  /** A session compacting behind a handover takes no user input; see docs/handover.md. */
+  isHandoverPending: (sessionId: string) => boolean = () => false,
 ): void {
   const isRendererOwner = (event: Electron.IpcMainInvokeEvent, sessionId: string): boolean => {
     // Electron always supplies sender for a real invoke. The missing-sender
@@ -132,6 +134,11 @@ export function setupPtyHandlers(
     if (!isRendererOwner(event, sessionId)) return { success: false, error: 'Renderer does not own session' };
     try {
       const inputOrigin = options?.inputOrigin === 'programmatic' ? 'programmatic' : 'user';
+      // Enforced here, not only at the xterm keydown gate: pastes and IME input
+      // bypass keydown, and typing resets the silence the handover waits on.
+      if (inputOrigin === 'user' && isHandoverPending(sessionId)) {
+        return { success: false, error: 'Session is compacting behind a handover' };
+      }
       if (ptyManager.write(sessionId, data, inputOrigin === 'user' ? 'input' : 'system') === false) {
         return { success: false, error: 'PTY could not accept the input' };
       }

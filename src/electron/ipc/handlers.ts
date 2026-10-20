@@ -802,7 +802,7 @@ export function registerIPCHandlers(
       if (!win.isDestroyed()) win.webContents.send('todos:changed', change);
     }
   });
-  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager);
+  setupPtyHandlers(ptyManager, stateDetector, sessionManager, pipelineQueue, windowManager, configLoader, notificationManager, undefined, undefined, (sessionId, data) => timeTracker.recordTerminalInput(sessionId, data), patternMatcher, recycleBinManager, (sessionId) => isHandoverPending(sessionId));
   // Freezes sessions past their CLI type's long prompt cache (docs/mess.md).
   const autoFreezer = new AutoFreezer(sessionManager, cliType => configLoader.getCliTypeEntry(cliType));
   autoFreezer.start();

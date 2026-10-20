@@ -103,7 +103,8 @@ text, which is version-fragile in a way the silence heuristic is not.
 While a handover is pending, that session's terminal is read-only, like a
 frozen one: a bar above it says it is compacting and offers **Send now**
 (paste immediately — the user judged it ready) and **Cancel handover**. Keys aimed at it are dropped (`useTerminalKeys` and the xterm key
-gate), and scrolling and selection still work.
+gate), and `pty:write` refuses user input in the main process so pastes and
+IME input cannot slip past keydown. Scrolling and selection still work.
 
 This is mechanical, not decorative: user keystrokes are PTY output, and PTY
 output resets the silence timer. Idly typing into a compacting session defers
