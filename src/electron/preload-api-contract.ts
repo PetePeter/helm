@@ -110,6 +110,8 @@ export const PRELOAD_API_DOMAINS = {
     'configGetAutoMemory',
     'configSetAutoMemory',
     'configTestAutoMemoryModel',
+    'configGetDreaming',
+    'configSetDreaming',
     'configGetReminderDelivery',
     'configSetReminderDelivery',
     'configGetHookInjections',

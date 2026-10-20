@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { HelmControlService } from '../src/mcp/helm-control-service.js';
 import { callMcpTool } from '../src/mcp/tools/dispatcher.js';
 import { MCP_TOOLS } from '../src/mcp/tools/definitions.js';
-import { buildDreamGuide } from '../src/mcp/guides/dream-guide.js';
+import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
 import { MemoryAttachmentManager } from '../src/session/memory-attachment-manager.js';
 import { MemoryManager } from '../src/session/memory-manager.js';
 import { MEMORY_DREAM_MIN_CANDIDATES } from '../src/types/memory.js';
@@ -258,7 +258,7 @@ describe('MCP: memory_update promote', () => {
 
 describe('dream guide', () => {
   it('names only real tools, including the ones digesting needs', () => {
-    const tools = JSON.parse(/^tools = (\[.*\])$/m.exec(buildDreamGuide())![1]) as string[];
+    const tools = /^Tools: (.*)$/m.exec(DEFAULT_DREAM_PROMPT)![1].split(', ');
     const known = new Set(MCP_TOOLS.map((tool) => tool.name));
 
     expect(tools.filter((tool) => !known.has(tool))).toEqual([]);

@@ -17,14 +17,18 @@ export interface SuggestionUsageState {
   legacy: SuggestionUsagePartition;
 }
 
+/** One learnt skill or memory, merged across every project that learnt it. */
 export interface SuggestionUsageItemSummary {
+  /** The item key; one row per item, however many projects learnt it. */
   id: string;
   key: string;
   type: string;
   itemId: string;
   name: string;
-  projectId: string;
-  projectName: string;
+  /** The item's live text (skill body or memory content), when it still exists. */
+  body?: string;
+  /** Projects that learnt it, heaviest first. */
+  projects: Array<{ id: string; name: string; weight: number }>;
   weight: number;
   topTerms: Array<{ term: string; count: number }>;
   recent: number[];

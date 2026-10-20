@@ -10,6 +10,7 @@ import { EventEmitter } from 'events';
 import { ScheduledTaskManager, MAX_TIMER_DELAY_MS } from '../src/session/scheduled-task-manager.js';
 import { normalizeProjectPath } from '../src/session/project-identity.js';
 import { saveScheduledTasks } from '../src/session/persistence.js';
+import { DEFAULT_DREAM_PROMPT } from '../src/types/dreaming.js';
 
 /** The raw directory the tests schedule into, and the shape it is stored in. */
 const TEST_DIR = 'X:\\\\coding\\\\test';
@@ -171,6 +172,7 @@ class FakeConfigLoader {
 
   getWorkingDirectories() { return [{ path: 'X:\\\\coding\\\\test', name: 'test' }]; }
   getMcpConfig() { return { authToken: 'test-token', port: 47373, enabled: true }; }
+  getDreamingConfig() { return { prompt: DEFAULT_DREAM_PROMPT }; }
   reloadActiveProfileIfChanged() {}
 }
 

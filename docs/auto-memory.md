@@ -15,10 +15,14 @@ Settings → **Auto memory** holds one global setting, stored as `autoMemory` in
 
 Suggestion learning is a separate section on this page. It learns from both
 memory and skill fetches, stores feedback by project, and only adjusts ranking
-inside that project. The searchable master/detail view includes project
-breakdowns; existing unscoped feedback remains visible as Unattributed legacy
-and is excluded from scoring. See [CLI hooks](cli-hooks.md) for the correlation
-window and privacy boundary.
+inside that project. Each learned skill or memory appears once, with the
+projects where it was learned listed in its detail. Selecting an item shows its
+skill or memory text read-only when it still exists. The fixed-height
+master/detail keeps the item list and detail independently scrollable instead
+of letting long text grow the Settings page. Project filters change the report;
+**All projects** does not combine project rankings. Existing unscoped feedback
+remains visible as Unattributed legacy and is excluded from scoring. See
+[CLI hooks](cli-hooks.md) for the correlation window and privacy boundary.
 
 ```mermaid
 graph LR

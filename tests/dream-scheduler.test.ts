@@ -44,8 +44,7 @@ vi.mock('../src/session/configured-session-spawn.js', async (importOriginal) => 
 
 import {
   ScheduledTaskManager,
-  DREAM_BASE_PROMPT,
-  DREAM_SKILL_CUE,
+  DREAM_UNATTENDED_CUE,
   DREAM_MESS_CUE,
 } from '../src/session/scheduled-task-manager.js';
 import { saveScheduledTasks } from '../src/session/persistence.js';
@@ -118,6 +117,8 @@ class FakeConfigLoader {
     return { id: ref, config: this.getCliTypeEntry(ref) };
   }
   getMcpConfig() { return { authToken: 'test-token', port: 47373, enabled: true }; }
+  dreamPrompt = 'Global dream prompt: tend the memories.';
+  getDreamingConfig() { return { prompt: this.dreamPrompt }; }
   reloadActiveProfileIfChanged() {}
 }
 
@@ -293,13 +294,13 @@ describe('dream scheduled task', () => {
 
       expect(spawnCalls).toHaveLength(1);
       expect(spawnCalls[0].onPromptComplete).toBeUndefined();
-      expect(spawnCalls[0].contextText).toContain(DREAM_BASE_PROMPT);
+      expect(spawnCalls[0].contextText).toContain(configLoader.dreamPrompt);
 
       const sessionId = manager.getTask(dream.id)!.sessionId!;
-      expect(ptyManager.getWrites(sessionId).join('')).toContain(DREAM_BASE_PROMPT);
+      expect(ptyManager.getWrites(sessionId).join('')).toContain(configLoader.dreamPrompt);
     });
 
-    it('orders the prompt as base, skill cue, user addendum, mess cue', () => {
+    it('orders the prompt as global prompt, unattended cue, project addendum, mess cue', () => {
       const dream = seedEnabledDream();
       manager.updateTask(dream.id, { userPrompt: 'Prioritise architecture notes.' });
 
@@ -307,15 +308,24 @@ describe('dream scheduled task', () => {
         .buildTaskPrompt(manager.getTask(dream.id)!);
 
       const positions = [
-        prompt.indexOf(DREAM_BASE_PROMPT),
-        prompt.indexOf(DREAM_SKILL_CUE),
+        prompt.indexOf(configLoader.dreamPrompt),
+        prompt.indexOf(DREAM_UNATTENDED_CUE),
         prompt.indexOf('Prioritise architecture notes.'),
         prompt.indexOf(DREAM_MESS_CUE),
       ];
       expect(positions.every((index) => index >= 0)).toBe(true);
       expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-      expect(DREAM_SKILL_CUE).toContain('skill_get(type:"dreaming")');
-      expect(DREAM_MESS_CUE).toContain('mess_check');
+      expect(prompt).not.toContain('skill_get');
+    });
+
+    it('uses the global prompt as edited at run time, not as it was at creation', () => {
+      const dream = seedEnabledDream();
+      configLoader.dreamPrompt = 'Edited later in Settings.';
+
+      const prompt = (manager as unknown as { buildTaskPrompt(task: ScheduledTask): string })
+        .buildTaskPrompt(manager.getTask(dream.id)!);
+
+      expect(prompt.startsWith('Edited later in Settings.')).toBe(true);
     });
 
     it('omits the user additions section when the addendum is empty', () => {

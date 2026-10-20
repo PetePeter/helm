@@ -16,7 +16,7 @@ import { buildHookSnippet, installCliHooks, probeInterpreter, readHookIntegratio
 import { HOOK_PROVIDERS, getHookProviderConfig } from '../../session/hooks/hook-providers.js';
 import { PROMPT_INJECTION_PROVIDERS } from '../../session/hooks/context-injector.js';
 import { REMINDER_IDS, isReminderDeliveryMode, type ReminderDeliveryMode, type ReminderId } from '../../session/reminder-delivery.js';
-import { summarizeSuggestionUsage, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
+import { summarizeSuggestionUsage, type SuggestionUsageItemResolver, type SuggestionUsageStore } from '../../session/hooks/suggestion-usage-store.js';
 import { isHookInjectionId, type HookInjectionOverrides } from '../../session/hooks/hook-injections.js';
 import { normalizeProjectPath, dirDisplayNameFromPath } from '../../session/project-identity.js';
 import { logger } from '../../utils/logger.js';
@@ -29,7 +29,7 @@ export function setupConfigHandlers(
   getFleetStatus?: () => FleetStatus,
   hookDeps?: HookInstallerDeps,
   suggestionUsage?: SuggestionUsageStore,
-  resolveSuggestionUsageItemName?: (key: string) => string | null,
+  resolveSuggestionUsageItem?: SuggestionUsageItemResolver,
 ): void {
   ipcMain.handle('config:getAll', () => {
     try {
@@ -740,7 +740,7 @@ export function setupConfigHandlers(
       const projects = projectStore?.list().map(({ id, name }) => ({ id, name })) ?? [];
       return {
         success: true,
-        usage: summarizeSuggestionUsage(suggestionUsage.snapshot(), projects, resolveSuggestionUsageItemName),
+        usage: summarizeSuggestionUsage(suggestionUsage.snapshot(), projects, resolveSuggestionUsageItem),
       };
     } catch (error) {
       logger.error(`[IPC] Failed to read suggestion usage: ${error}`);

@@ -25,7 +25,7 @@ const typeFilters: Array<{ id: TypeFilter; label: string }> = [
 const projectOptions = computed(() => [
   { id: 'all', name: 'All projects' },
   ...(usage.value?.projects ?? []).map(({ id, name }) => ({ id, name })),
-  ...((usage.value?.items.some((item) => item.projectId === UNATTRIBUTED_SCOPE_ID))
+  ...((usage.value?.items.some((item) => item.projects.some(({ id }) => id === UNATTRIBUTED_SCOPE_ID)))
     ? [{ id: UNATTRIBUTED_SCOPE_ID, name: 'Unattributed legacy' }]
     : []),
 ]);
@@ -33,10 +33,10 @@ const projectOptions = computed(() => [
 const filteredItems = computed(() => {
   const query = search.value.trim().toLowerCase();
   return (usage.value?.items ?? []).filter((item) => {
-    if (projectFilter.value !== 'all' && item.projectId !== projectFilter.value) return false;
+    if (projectFilter.value !== 'all' && !item.projects.some(({ id }) => id === projectFilter.value)) return false;
     if (typeFilter.value !== 'both' && item.type !== typeFilter.value) return false;
     if (!query) return true;
-    return [item.name, item.key, item.projectName, ...item.topTerms.map(({ term }) => term)]
+    return [item.name, item.key, ...item.projects.map(({ name }) => name), ...item.topTerms.map(({ term }) => term)]
       .some((value) => value.toLowerCase().includes(query));
   });
 });
@@ -44,7 +44,7 @@ const filteredItems = computed(() => {
 const masterItems = computed<MasterDetailItem[]>(() => filteredItems.value.map((item) => ({
   id: item.id,
   name: item.name,
-  detail: `${item.projectName} · ${item.weight} association${item.weight === 1 ? '' : 's'}`,
+  detail: `${item.projects.map(({ name }) => name).join(', ')} · ${item.weight} association${item.weight === 1 ? '' : 's'}`,
   tag: item.type,
 })));
 
@@ -152,9 +152,21 @@ onMounted(() => { void loadUsage(); });
           <dl class="suggestion-learning__facts">
             <div><dt>Item</dt><dd>{{ selectedItem.key }}</dd></div>
             <div><dt>Type</dt><dd>{{ selectedItem.type }}</dd></div>
-            <div><dt>Project</dt><dd>{{ selectedItem.projectName }}</dd></div>
             <div><dt>Associations</dt><dd>{{ selectedItem.weight }}</dd></div>
           </dl>
+
+          <section class="suggestion-learning__group">
+            <h5>Learnt in</h5>
+            <ul class="suggestion-learning__terms">
+              <li v-for="project in selectedItem.projects" :key="project.id">{{ project.name }} <span>×{{ project.weight }}</span></li>
+            </ul>
+          </section>
+
+          <section class="suggestion-learning__group">
+            <h5>{{ selectedItem.type === 'skill' ? 'Skill' : 'Memory' }} text</h5>
+            <pre v-if="selectedItem.body" class="suggestion-learning__body">{{ selectedItem.body }}</pre>
+            <p v-else class="suggestion-learning__empty">This item no longer exists.</p>
+          </section>
 
           <section class="suggestion-learning__group">
             <h5>Topic terms</h5>
@@ -183,7 +195,6 @@ onMounted(() => { void loadUsage(); });
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  min-height: 460px;
   padding-top: var(--spacing-md);
   border-top: 1px solid var(--border);
 }
@@ -202,7 +213,8 @@ onMounted(() => { void loadUsage(); });
   width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-primary); font: inherit;
 }
-.suggestion-learning__master-detail { flex: 1; min-height: 320px; }
+/* Fixed height: the list and the detail each scroll inside it instead of growing the page. */
+.suggestion-learning__master-detail { flex: none; height: 520px; }
 .suggestion-learning__status--error { color: var(--danger, #e5534b); }
 .suggestion-learning__detail { padding: var(--spacing-md); }
 .suggestion-learning__detail h4 { margin: 0 0 var(--spacing-md); color: var(--text-primary); font-size: var(--font-size-lg); }
@@ -216,6 +228,10 @@ onMounted(() => { void loadUsage(); });
 .suggestion-learning__terms li { padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text-primary); font-size: var(--font-size-sm); }
 .suggestion-learning__terms span { color: var(--text-secondary); }
 .suggestion-learning__events li { padding: 2px 0; color: var(--text-primary); font-size: var(--font-size-sm); }
+.suggestion-learning__body {
+  margin: 0; padding: var(--spacing-sm) var(--spacing-md); max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text-primary); font: var(--font-size-sm) var(--font-mono);
+}
 .suggestion-learning__empty { margin: 0; color: var(--text-dim); font-size: var(--font-size-sm); }
 .suggestion-learning__privacy { font-size: var(--font-size-xs); }
 @media (max-width: 720px) {

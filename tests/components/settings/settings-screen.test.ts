@@ -63,6 +63,13 @@ describe('SettingsScreen', () => {
     expect(w.find('.settings-nav').text()).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 
+  it('renders a registered page shortcut hint with the generic nav styling', () => {
+    const w = mountScreen('dreaming');
+    const dreaming = w.findAll('.settings-nav__item').find((item) => item.text().includes('Dreaming'))!;
+    expect(dreaming.get('kbd').text()).toBe('Ctrl+Shift+G');
+    expect(dreaming.get('kbd').classes()).toEqual(expect.arrayContaining(['dock-tab__shortcut', 'jump-key']));
+  });
+
   it('clicking a nav item selects that page', async () => {
     const w = mountScreen();
     await w.findAll('.settings-nav__item')[2].trigger('click');

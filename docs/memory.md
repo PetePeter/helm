@@ -127,26 +127,26 @@ flowchart LR
 
 ## Dreaming
 
-The dream guide now splits essays into linked atoms (candidates carry
-`contentChars`), merges only true duplicates (`supersedes`), links related
-memories across projects, and digests session-bound memories: delete, merge
-or promote. See [dreaming.md](dreaming.md).
+Scheduled dreams use one editable global prompt to guide memory maintenance
+across projects. The default covers splitting, merging, linking, and digesting
+session-bound memories; Settings → Dreaming also provides per-project
+addenda. See [dreaming.md](dreaming.md).
 
-## Memory skills across the plan lifecycle
+## Memory guidance across the plan lifecycle
 
-Three system skills teach agents to use memory; each is cued by the tool reply
-at the moment it matters, so the procedure lives in one place and can change
-without touching callers.
+Plan work still cues the recalling and memorising system skills. Scheduled
+dreams use the global prompt instead, so the maintenance procedure is editable
+for all projects without depending on a skill lookup.
 
 ```mermaid
 graph LR
     C[session_plan_claim] -->|cues| R[recalling<br/>search before work]
     P[plan_complete] -->|cues| M[memorising<br/>record what was learned]
-    S[scheduled dream] -->|cues| D[dreaming<br/>prune + consolidate]
+    S[scheduled dream] -->|global prompt| D[project memory maintenance]
 ```
 
 - **recalling** (`sys-recall`) — search specific-to-broad, follow links, verify stale facts before acting.
 - **memorising** (`sys-memorise`) — search first and update rather than duplicate, one atom per idea with why/how-to-apply, link it.
-- **dreaming** (`sys-dream`) — see [dreaming.md](dreaming.md).
+- **Scheduled dreams** — use the shared editable prompt and a project-specific addendum, if present; see [dreaming.md](dreaming.md).
 
-A user skill of the same type shadows the system one.
+A user skill of the same type can shadow the recalling or memorising system skill. Scheduled-run instructions come from the global prompt instead.

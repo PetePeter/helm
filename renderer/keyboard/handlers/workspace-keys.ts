@@ -18,6 +18,8 @@ import { createNumberKeyHandlers, type NumberKeyDeps } from './number-keys.js';
 export interface WorkspaceKeyDeps extends NumberKeyDeps {
   /** Show a pane. Reveal-vs-toggle policy belongs to the caller, not the keymap. */
   activatePane: (pane: PaneId) => void;
+  /** Open Settings directly on the Dreaming page. */
+  openDreamingSettings: () => void;
   /** Move the session spine. Panes stay where they are. */
   cycleSession: (direction: 1 | -1) => void;
   spawnSession: () => void;
@@ -57,6 +59,17 @@ export function createDockShortcutKeyHandlers(
 export function createWorkspaceKeyHandlers(deps: WorkspaceKeyDeps): KeyHandler[] {
   return [
     ...createDockShortcutKeyHandlers(deps.activatePane),
+
+    {
+      id: 'settings-dreaming',
+      scope: 'global',
+      allowInEditable: true,
+      handle: (ctx) => {
+        if (ctx.combo !== 'ctrl+shift+g') return false;
+        deps.openDreamingSettings();
+        return true;
+      },
+    },
 
     {
       id: 'session-cycle',

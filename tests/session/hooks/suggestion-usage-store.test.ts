@@ -140,7 +140,7 @@ describe('SuggestionUsageStore', () => {
     store.recordFetch('s1', 'skill/deploy-check', PROJECT);
     store.recordFetch('s1', 'skill/deploy-check', PROJECT);
     store.recordFetch('s1', 'skill/pdf-extract', PROJECT);
-    const summary = summarizeSuggestionUsage(store.snapshot(), [{ id: PROJECT, name: 'Gamepad CLI Hub' }], (key) => `Live: ${key}`);
+    const summary = summarizeSuggestionUsage(store.snapshot(), [{ id: PROJECT, name: 'Gamepad CLI Hub' }], (key) => ({ name: `Live: ${key}`, body: `Body of ${key}` }));
     expect(summary.items).toHaveLength(2);
     expect(summary.items[0]?.key).toBe('skill/deploy-check');
     expect(summary.items[0]?.weight).toBe(2 * 3);
@@ -148,6 +148,7 @@ describe('SuggestionUsageStore', () => {
     expect(summary.items[0]?.topTerms[0]).toEqual({ term: 'checklist', count: 2 });
     expect(summary.items[0]?.recent).toHaveLength(2);
     expect(summary.items[0]?.name).toBe('Live: skill/deploy-check');
+    expect(summary.items[0]?.body).toBe('Body of skill/deploy-check');
     expect(summary.projects).toContainEqual({ id: PROJECT, name: 'Gamepad CLI Hub', items: 2, totalWeight: 9 });
   });
 
@@ -176,9 +177,28 @@ describe('SuggestionUsageStore', () => {
     const store = new SuggestionUsageStore({ configDir: dir });
     expect(store.boostFor('skill/old', ['deploy'], 'project-a')).toBe(0);
     const summary = summarizeSuggestionUsage(store.snapshot());
-    expect(summary.items[0]).toMatchObject({ projectId: 'unattributed-legacy', projectName: 'Unattributed legacy', key: 'skill/old', weight: 4 });
+    expect(summary.items[0]).toMatchObject({ key: 'skill/old', weight: 4, projects: [{ id: 'unattributed-legacy', name: 'Unattributed legacy', weight: 4 }] });
     expect(summary.items[0]?.name).toBe('skill/old');
     expect(summary.items[0]?.recent).toEqual([1]);
     expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ version: 2, legacy: { weights: { 'skill/old': { deploy: 4 } } } });
+  });
+
+  it('lists an item learnt in several projects once, with every project and merged terms', () => {
+    const store = new SuggestionUsageStore({ configDir: freshDir() });
+    store.noteSuggestion('s1', ['skill/coding'], ['tdd'], 'project-a');
+    store.recordFetch('s1', 'skill/coding', 'project-a');
+    store.noteSuggestion('s2', ['skill/coding'], ['tdd', 'fakes'], 'project-b');
+    store.recordFetch('s2', 'skill/coding', 'project-b');
+    const summary = summarizeSuggestionUsage(store.snapshot(), [{ id: 'project-a', name: 'Alpha' }, { id: 'project-b', name: 'Beta' }]);
+    expect(summary.items).toHaveLength(1);
+    expect(summary.items[0]).toMatchObject({ id: 'skill/coding', key: 'skill/coding', weight: 3 });
+    expect(summary.items[0]?.projects).toEqual([
+      { id: 'project-b', name: 'Beta', weight: 2 },
+      { id: 'project-a', name: 'Alpha', weight: 1 },
+    ]);
+    expect(summary.items[0]?.topTerms[0]).toEqual({ term: 'tdd', count: 2 });
+    expect(summary.items[0]?.recent).toHaveLength(2);
+    // Per-project stats still count the item in each project it was learnt in.
+    expect(summary.projects.map(({ id, items }) => [id, items])).toEqual([['project-a', 1], ['project-b', 1]]);
   });
 });

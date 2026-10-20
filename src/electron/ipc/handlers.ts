@@ -71,6 +71,7 @@ import { initTelegramModules } from '../../telegram/orchestrator.js';
 import { setupSessionHandlers } from './session-handlers.js';
 import { setupConfigHandlers } from './config-handlers.js';
 import { setupAutoMemoryHandlers } from './auto-memory-handlers.js';
+import { setupDreamingHandlers } from './dreaming-handlers.js';
 import { setupToolsHandlers } from './tools-handlers.js';
 import { setupKeyboardHandlers } from './keyboard-handlers.js';
 import { setupSystemHandlers, cleanupWorkTempFiles } from './system-handlers.js';
@@ -620,12 +621,16 @@ export function registerIPCHandlers(
       if (slash < 0) return null;
       const type = key.slice(0, slash);
       const id = key.slice(slash + 1);
-      return type === 'skill'
-        ? skillManager.get(id)?.name ?? null
-        : type === 'memory' ? memoryManager.getRecord(id)?.tldr ?? null : null;
+      if (type === 'skill') {
+        const skill = skillManager.get(id);
+        return skill ? { name: skill.name, body: skill.body } : null;
+      }
+      const memory = type === 'memory' ? memoryManager.getRecord(id) : undefined;
+      return memory ? { name: memory.tldr, body: memory.content } : null;
     },
   );
   setupAutoMemoryHandlers(configLoader, recordingModelRunner);
+  setupDreamingHandlers(configLoader);
   setupToolsHandlers(configLoader);
   setupKeyboardHandlers(keyboard);
   setupSystemHandlers(dirname ?? process.cwd());

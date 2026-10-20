@@ -109,6 +109,7 @@ import VoiceTab from './components/settings/pages/VoiceTab.vue';
 import UpdatesTab from './components/settings/pages/UpdatesTab.vue';
 import OperatorTab from './components/settings/pages/OperatorTab.vue';
 import AutoMemoryTab from './components/settings/pages/AutoMemoryTab.vue';
+import DreamingTab from './components/settings/pages/DreamingTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/settings/pages/MobileTab.vue';
 import CliIntegrationsTab from './components/settings/pages/CliIntegrationsTab.vue';
@@ -576,6 +577,7 @@ let uninstallKeyRouter: (() => void) | null = null;
  */
 const workspaceKeyHandlers = createWorkspaceKeyHandlers({
   activatePane: (paneId) => { void activateDockPane(paneId, paneId === PANE_ARTIFACTS || paneId === PANE_DRAFT || paneId === PANE_TODOS); },
+  openDreamingSettings: () => { openSettingsTab('dreaming'); },
   cycleSession: (direction) => { cycleActiveSession(direction); },
   jumpToSession: (slot) => {
     for (const [sessionId, assignedSlot] of sessionsScreenStore.sessionShortcutMap) {
@@ -1252,6 +1254,9 @@ onUnmounted(() => {
               />
               <AutoMemoryTab
                 v-else-if="activeTab === 'auto-memory'"
+              />
+              <DreamingTab
+                v-else-if="activeTab === 'dreaming'"
               />
               <SessionListSettings
                 v-else-if="activeTab === 'session-list'"

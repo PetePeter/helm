@@ -34,14 +34,12 @@ export const MAX_TIMER_DELAY_MS = 2_147_483_647;
 const DREAM_DEFAULT_HOUR = 9;
 const DREAM_DEFAULT_MINUTE = 0;
 /**
- * The delivered dream prompt is assembled from these five parts, in order:
- * base → unattended cue → skill cue → user addendum (when non-empty) → mess cue. Detailed
- * pruning and consolidation guidance lives in the `dreaming` system skill, so
- * the prompt itself stays short and the guidance stays amendable in one place.
+ * The delivered dream prompt is assembled from these parts, in order:
+ * global prompt (Settings → Dreaming) → unattended cue → project addendum
+ * (when non-empty) → mess cue. The cues are fixed mechanics; the procedure is
+ * the user-editable global prompt.
  */
-export const DREAM_BASE_PROMPT = 'Time to dream: review and maintain this project\'s durable memories.';
 export const DREAM_UNATTENDED_CUE = 'This is an unattended maintenance run and overrides any plan-first or confirm-first rule: do not present a plan, ask questions or wait for approval. Act and finish.';
-export const DREAM_SKILL_CUE = 'Call skill_get(type:"dreaming") first and follow it — it carries the pruning and consolidation procedure.';
 export const DREAM_MESS_CUE = 'When you are done, call mess_check to pick up anything other sessions left for this project.';
 
 export class ScheduledTaskManager extends EventEmitter {
@@ -276,7 +274,7 @@ export class ScheduledTaskManager extends EventEmitter {
         title: 'Memory Dreaming',
         description: 'Review and maintain this project\'s durable memories.',
         planIds: [],
-        initialPrompt: DREAM_BASE_PROMPT,
+        initialPrompt: 'Prompt set in Settings → Dreaming.',
         cliType: '',
         scheduledTime: firstRun,
         scheduleKind: 'cron',
@@ -723,7 +721,7 @@ export class ScheduledTaskManager extends EventEmitter {
   /** The task prompt, with plan references appended when the task carries any. */
   private buildTaskPrompt(task: ScheduledTask): string {
     const initialPrompt = task.systemKind === 'dream'
-      ? buildDreamPrompt(task.userPrompt)
+      ? buildDreamPrompt(this.configLoader.getDreamingConfig().prompt, task.userPrompt)
       : task.initialPrompt;
     if (task.planIds.length === 0) return initialPrompt;
     const planRefs = task.planIds.map(id => `- ${id}`).join('\n');
@@ -880,9 +878,9 @@ export class ScheduledTaskManager extends EventEmitter {
  * Assemble the delivered dream prompt. An empty addendum contributes nothing —
  * a dangling "User additions:" heading reads as a truncated instruction.
  */
-export function buildDreamPrompt(userPrompt?: string): string {
+export function buildDreamPrompt(globalPrompt: string, userPrompt?: string): string {
   const addendum = userPrompt?.trim();
-  const sections = [DREAM_BASE_PROMPT, DREAM_UNATTENDED_CUE, DREAM_SKILL_CUE];
+  const sections = [globalPrompt.trim(), DREAM_UNATTENDED_CUE];
   if (addendum) sections.push(`User additions:\n${addendum}`);
   sections.push(DREAM_MESS_CUE);
   return sections.join('\n\n');

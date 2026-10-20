@@ -12,6 +12,8 @@ export interface SettingsPageDef {
   group: SettingsGroup;
   /** Key into SETTINGS_ICONS. */
   icon: string;
+  /** Optional keyboard shortcut displayed beside this nav entry. */
+  shortcut?: string;
 }
 
 export const SETTINGS_GROUPS: readonly SettingsGroup[] = ['Sessions', 'Knowledge', 'Connections', 'System'];
@@ -24,6 +26,7 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   { id: 'projects', label: 'Projects', group: 'Knowledge', icon: 'folder' },
   { id: 'skills', label: 'Skills', group: 'Knowledge', icon: 'book' },
   { id: 'auto-memory', label: 'Auto memory', group: 'Knowledge', icon: 'database' },
+  { id: 'dreaming', label: 'Dreaming', group: 'Knowledge', icon: 'moon', shortcut: 'Ctrl+Shift+G' },
   { id: 'telegram', label: 'Telegram', group: 'Connections', icon: 'send' },
   { id: 'mobile', label: 'Mobile', group: 'Connections', icon: 'phone' },
   { id: 'peers', label: 'Fleet', group: 'Connections', icon: 'link' },
@@ -77,4 +80,5 @@ export const SETTINGS_ICONS: Record<string, string> = {
   speaker: 'M11 5L6 9H2v6h4l5 4zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14',
   download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
   clock: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 6v6l4 2',
+  moon: 'M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13z',
 };

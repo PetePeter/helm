@@ -12,6 +12,7 @@ import type { Draft, DraftWriteResult } from '../../types/draft.js';
 import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
+import type { DreamingConfigResult, DreamingSettings } from '../../types/dreaming.js';
 import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
 import type { EstimateView } from '../../session/eta-stats.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
@@ -597,6 +598,11 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
 
   /** One silent request to the picked recording model, to prove it answers. */
   configTestAutoMemoryModel: (): Promise<SilentRunResult> => ipcRenderer.invoke('config:testAutoMemoryModel'),
+
+  /** The global dreaming prompt shared by each project's scheduled dream. */
+  configGetDreaming: (): Promise<DreamingConfigResult> => ipcRenderer.invoke('config:getDreaming'),
+  configSetDreaming: (updates: Partial<DreamingSettings>): Promise<DreamingConfigResult> =>
+    ipcRenderer.invoke('config:setDreaming', updates),
 
   /**
    * G9 reminder delivery: the user's per-reminder mode overrides

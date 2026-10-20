@@ -37,6 +37,7 @@ import {
   type AutoMemorySettings,
   type RecordingModelOption,
 } from '../types/auto-memory.js';
+import { DEFAULT_DREAM_PROMPT, type DreamingSettings } from '../types/dreaming.js';
 import type { ProjectStore } from '../session/project-store.js';
 import {
   DEFAULT_FLEET_CONFIG,
@@ -456,6 +457,8 @@ export interface SettingsConfig {
   operator?: OperatorConfig;
   /** Auto memory: the recording model and the auto-save / auto-recall switches. */
   autoMemory?: Partial<AutoMemorySettings>;
+  /** Dreaming: the global dream prompt override. Absent means the shipped prompt. */
+  dreaming?: Partial<DreamingSettings>;
   /**
    * G8 loop driving (docs/cli-hooks.md, G8): the global kill switch and the
    * consecutive auto-continue cap. Absent means allowed at the shipped cap —
@@ -1288,6 +1291,21 @@ export class ConfigLoader {
       next.recordingModel = ref ? this.requireRecordingModel(ref) : '';
     }
     this.settings!.autoMemory = next;
+    this.saveSettings();
+  }
+
+  /** Dreaming: the global dream prompt. Absent, malformed or empty means the shipped prompt. */
+  getDreamingConfig(): DreamingSettings {
+    const prompt = this.settings?.dreaming?.prompt;
+    return { prompt: typeof prompt === 'string' && prompt.trim() ? prompt : DEFAULT_DREAM_PROMPT };
+  }
+
+  /** The default is stored as "no override", so a later change to it still reaches this user. */
+  setDreamingConfig(updates: Partial<DreamingSettings>): void {
+    this.ensureLoaded();
+    if (typeof updates.prompt !== 'string') return;
+    const prompt = updates.prompt.trim();
+    this.settings!.dreaming = { prompt: prompt === DEFAULT_DREAM_PROMPT.trim() ? '' : prompt };
     this.saveSettings();
   }
 

@@ -285,38 +285,55 @@ export class SuggestionUsageStore {
   }
 }
 
-/** All projects here are for reporting; the scorer reads only one project partition. */
+/** A learnt item's display name and text, or null once it no longer exists. */
+export type SuggestionUsageItemResolver = (key: string) => { name: string; body?: string } | null;
+
+/**
+ * All projects here are for reporting; the scorer reads only one project
+ * partition. An item learnt in several projects is one row listing each of them.
+ */
 export function summarizeSuggestionUsage(
   state: SuggestionUsageState,
   knownProjects: ReadonlyArray<{ id: string; name: string }> = [],
-  resolveItemName: (key: string) => string | null = () => null,
+  resolveItem: SuggestionUsageItemResolver = () => null,
 ): SuggestionUsageSummary {
   const projectNames = new Map(knownProjects.map(({ id, name }) => [id, name]));
   const projectIds = new Set([...Object.keys(state.projects), ...knownProjects.map(({ id }) => id)]);
   const projectStats = new Map<string, { items: number; totalWeight: number }>();
-  const items: SuggestionUsageItemSummary[] = [];
+  const byKey = new Map<string, { item: SuggestionUsageItemSummary; terms: Map<string, number> }>();
 
   const appendPartition = (projectId: string, projectName: string, partition: SuggestionUsagePartition): void => {
     for (const [key, terms] of Object.entries(partition.weights)) {
-      const entries = Object.entries(terms).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      const slash = key.indexOf('/');
-      const weight = entries.reduce((sum, [, count]) => sum + count, 0);
+      const weight = Object.values(terms).reduce((sum, count) => sum + count, 0);
       const stats = projectStats.get(projectId) ?? { items: 0, totalWeight: 0 };
       stats.items += 1;
       stats.totalWeight += weight;
       projectStats.set(projectId, stats);
-      items.push({
-        id: JSON.stringify([projectId, key]),
-        key,
-        type: slash < 0 ? 'unknown' : key.slice(0, slash),
-        itemId: slash < 0 ? key : key.slice(slash + 1),
-        name: resolveItemName(key) || key,
-        projectId,
-        projectName,
-        weight,
-        topTerms: entries.slice(0, 5).map(([term, count]) => ({ term, count })),
-        recent: partition.recent.filter((event) => event.key === key).map((event) => event.at),
-      });
+      let entry = byKey.get(key);
+      if (!entry) {
+        const slash = key.indexOf('/');
+        const resolved = resolveItem(key);
+        entry = {
+          item: {
+            id: key,
+            key,
+            type: slash < 0 ? 'unknown' : key.slice(0, slash),
+            itemId: slash < 0 ? key : key.slice(slash + 1),
+            name: resolved?.name || key,
+            ...(resolved?.body !== undefined ? { body: resolved.body } : {}),
+            projects: [],
+            weight: 0,
+            topTerms: [],
+            recent: [],
+          },
+          terms: new Map(),
+        };
+        byKey.set(key, entry);
+      }
+      entry.item.projects.push({ id: projectId, name: projectName, weight });
+      entry.item.weight += weight;
+      for (const [term, count] of Object.entries(terms)) entry.terms.set(term, (entry.terms.get(term) ?? 0) + count);
+      entry.item.recent.push(...partition.recent.filter((event) => event.key === key).map((event) => event.at));
     }
   };
 
@@ -326,7 +343,12 @@ export function summarizeSuggestionUsage(
   if (Object.keys(state.legacy.weights).length > 0 || state.legacy.recent.length > 0) {
     appendPartition(UNATTRIBUTED_SCOPE_ID, 'Unattributed legacy', state.legacy);
   }
-  items.sort((a, b) => b.weight - a.weight || a.projectName.localeCompare(b.projectName) || a.key.localeCompare(b.key));
+  const items = [...byKey.values()].map(({ item, terms }) => {
+    item.projects.sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+    item.topTerms = [...terms].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5).map(([term, count]) => ({ term, count }));
+    item.recent.sort((a, b) => a - b);
+    return item;
+  }).sort((a, b) => b.weight - a.weight || a.key.localeCompare(b.key));
   const projects = [...projectIds].map((id) => ({
     id,
     name: projectNames.get(id) ?? `Unknown project (${id})`,

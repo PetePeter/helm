@@ -133,7 +133,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/config-boundary.md](docs/config-boundary.md) | Where writable config/logs/temp live, seeding, legacy migration |
 | [docs/self-update.md](docs/self-update.md) | Launch-time GitHub release check, silent NSIS self-update + relaunch |
 | [docs/preload-api-boundary.md](docs/preload-api-boundary.md) | IPC/contextBridge boundary rules |
-| [docs/settings.md](docs/settings.md) | Full-screen settings — page registry, grouped nav, gamepad pane model, autosave, tinted-fill selection |
+| [docs/settings.md](docs/settings.md) | Full-screen settings — page registry and optional shortcut hints, grouped nav, gamepad pane model, autosave, tinted-fill selection |
 | [docs/onboarding.md](docs/onboarding.md) | First-run flow, Configure hub, completion persistence, and extension points |
 | [docs/docking.md](docs/docking.md) | Dock workspace — pane registry, tabs/splits/edge docks, rails, close & restore, chips-in-pane |
 | [android/README.md](android/README.md) | Android companion app — Gradle build, permanent applicationId/keystore rules, derived versionCode, Node↔JVM toolchain boundary |
@@ -176,7 +176,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 |----------|---------|
 | [docs/memory.md](docs/memory.md) | Memory as a knowledge graph — atoms, similar-on-write, typed links, MiniSearch ranking, cross-project search + privacy |
 | [docs/auto-memory.md](docs/auto-memory.md) | Auto memory — recording model picker, auto-save / auto-recall switches, silent runs through an API tool's slots |
-| [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — prompt assembly, `dreaming` system skill, scheduling rules, run-now |
+| [docs/dreaming.md](docs/dreaming.md) | Scheduled memory-maintenance dreams — shared editable prompt, per-project controls, prompt assembly, bound-memory digest, run-now |
 | [docs/directory-plans.md](docs/directory-plans.md) | Directory Plans — DAG work items, lifecycle, canvas, layout, badges |
 | [docs/plans-file-structure.md](docs/plans-file-structure.md) | On-disk plan file layout |
 | [docs/scheduled-task-history.md](docs/scheduled-task-history.md) | 7-day rolling run log of scheduled-task executions |

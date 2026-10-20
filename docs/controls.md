@@ -50,6 +50,7 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+Shift+M | Focus the Memories pane |
 | Ctrl+Shift+P | Open/focus the Plans pane for the active session folder |
 | Ctrl+Shift+S | Focus the Sessions pane |
+| Ctrl+Shift+G | Open Settings on the Dreaming page |
 | Ctrl+Shift+A | Show/focus the Artifacts pane; never toggles it |
 | Ctrl+Shift+N | Open the machine-first Quick Spawn picker |
 | Ctrl+Shift+W | Close the active session; works while typing and with Terminal hidden |
