@@ -114,7 +114,7 @@ function getClearSettleDelayMs(): number {
  * messages back until it has been pasted.
  */
 export interface HandoverArming {
-  arm(sessionId: string, text: string, opts?: { floorMs?: number }): void;
+  arm(sessionId: string, text: string, opts?: { floorMs?: number; escRetry?: boolean }): void;
   isPending(sessionId: string): boolean;
   whenSettled(sessionId: string): Promise<void>;
 }
@@ -595,7 +595,7 @@ export class HelmSessionDeliveryService {
     if (context && this.handover) {
       const rawContext = options.context as string;
       const deliveryText = this.offloadIfLarge(session.cliType, rawContext, 'session-clear-context', 'session_clear context');
-      this.handover.arm(session.id, deliveryText, { floorMs: entry?.initialPromptDelay ?? 0 });
+      this.handover.arm(session.id, deliveryText, { floorMs: entry?.initialPromptDelay ?? 0, escRetry: true });
       await this.deliverActionSequence(session.id, template);
       return {
         ok: true, action: 'clear', sessionId: session.id, contextRelayed: true,

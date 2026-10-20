@@ -827,10 +827,10 @@ export function registerIPCHandlers(
     )
     : null;
   // Carries a session's handover note across its own compaction: session_compact
-  // arms the text while the context still exists, and it is pasted back on the
-  // first lull after the compact command.
+  // arms the text while the context still exists, and it is pasted back once
+  // the terminal falls silent after the compact command.
   const handoverDelivery = new HandoverDelivery(
-    stateDetector,
+    ptyManager,
     sessionManager,
     async (sessionId, text) => { await deliverPromptSequenceToSession({
       sessionId,
@@ -854,7 +854,7 @@ export function registerIPCHandlers(
             : `The handover for "${name}" could not be written to its terminal.`,
       );
     },
-    { ptyOutput: ptyManager },
+    { nudge: sessionId => { ptyManager.write(sessionId, '\x1b\x1b\x1b', 'system'); } },
   );
   helmControlService.setHandoverDelivery(handoverDelivery);
   isHandoverPending = (sessionId) => handoverDelivery.isPending(sessionId);

@@ -112,10 +112,8 @@ function setup(): Setup {
   const attachmentDir = mkdtempSync(join(tmpdir(), 'helm-tracker-attachments-'));
   const attachments = new ArtifactAttachmentManager(attachmentDir);
 
-  // Same StateDetector instance — the double-delivery edge comes from the
-  // real producer, not a re-creation of it.
   const handover = new HandoverDelivery(
-    stateDetector,
+    new EventEmitter(),
     sessionManager,
     async (sessionId, text) => { delivered.push({ sessionId, text }); },
     (sessionId, reason) => { losses.push({ sessionId, reason }); },
@@ -543,7 +541,7 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
     }
   });
 
-  it('delivers the armed handover at PreCompact, and the later lull edge does not double it', async () => {
+  it('delivers the armed handover at PreCompact, and the later silence does not double it', async () => {
     const s = setup();
     try {
       workingSession(s);
@@ -552,8 +550,8 @@ describe('HookTracker — PreCompact: Helm composes the snapshot', () => {
       expect(s.delivered).toEqual([{ sessionId: 's1', text: 'remember the handover note' }]);
       expect(s.handover.isPending('s1')).toBe(false);
 
-      // Post-compaction silence: the fallback heuristic's edge. Nothing left.
-      vi.advanceTimersByTime(10_000 + 1);
+      // Post-compaction silence would deliver; nothing is left to deliver.
+      vi.advanceTimersByTime(CEILING_MS + 1);
       await flush();
       expect(s.delivered).toHaveLength(1);
     } finally {

@@ -84,21 +84,19 @@ describe('HelmSessionDeliveryService', () => {
 
     function withHandover() {
       const deps = makeDeps();
-      const stateDetector = new EventEmitter();
       const order: string[] = [];
       const handover = new HandoverDelivery(
-        stateDetector as any,
+        new EventEmitter(),
         new EventEmitter() as any,
         async (_id, text) => { order.push(`handover:${text}`); },
         () => {},
-        { floorMs: 0, ceilingMs: 60_000 },
+        { floorMs: 0, ceilingMs: 60_000, silenceMs: 0 },
       );
       deps.service.setHandoverDelivery(handover);
       deps.ptyManager.deliverText.mockImplementation(async (_id: string, text: string) => {
         if (text.includes('msg-')) order.push(text.match(/msg-\d/)![0]);
       });
       const settle = async () => {
-        stateDetector.emit('activity-change', { sessionId: deps.receiver.id, level: 'inactive', lastOutputAt: Date.now() });
         await vi.waitFor(() => expect(order.filter(o => o.startsWith('msg-'))).toHaveLength(2));
       };
       return { ...deps, handover, order, settle };
@@ -666,7 +664,7 @@ describe('HelmSessionDeliveryService', () => {
 
       const result = await service.clearSession(receiver.id, { context: 'read the transcript' });
 
-      expect(armed).toEqual([[receiver.id, 'read the transcript', { floorMs: 2500 }]]);
+      expect(armed).toEqual([[receiver.id, 'read the transcript', { floorMs: 2500, escRetry: true }]]);
       expect(clearSentBeforeArm).toBe(false); // armed first, so the clear's own output is the edge it waits past
       expect(allDelivered(ptyManager)).toContain('/clear');
       expect(allDelivered(ptyManager)).not.toContain('read the transcript');

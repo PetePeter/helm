@@ -27,7 +27,6 @@ sequenceDiagram
     participant SC as compactSession
     participant HD as HandoverDelivery
     participant UI as Terminal lock bar
-    participant SD as StateDetector
     participant PTY
 
     LLM->>SC: session_compact(self, instruction, handover)
@@ -35,9 +34,8 @@ sequenceDiagram
     HD-->>UI: handover-armed → terminal locked
     SC->>PTY: helmActions.compact sequence
     SC-->>LLM: {handoverPending:true} — returns now
-    PTY->>SD: compaction output → active
-    Note over PTY: 10s silence
-    SD->>HD: activity-change → 'inactive'
+    PTY->>HD: compaction output (restarts silence clock)
+    Note over PTY: 10s silence, past the floor
     HD->>PTY: handover text (submitted, verified)
     HD-->>UI: handover-delivered → unlocked
 ```
@@ -53,24 +51,23 @@ happens asynchronously.
 
 ### Armed before the command is written, never after
 
-The compact command's own output drives the session back to `active`, and the
-delivery waits on the **next** fall to silence. Arming afterwards races that
-output and can miss the edge entirely — or match a state that predates the
-compaction.
+Arming starts the silence clock, and the compact command's own output restarts
+it. Arming afterwards would start the clock late, after output it should have
+seen.
 
 ### The trigger is silence, not a completion signal
 
-`inactive` is 10 seconds of PTY quiet (`StateDetector`), the same best-effort
-bet the Mess notifier makes. Hook-aware sessions (e.g. Copilot) ignore PTY
-output for activity, and a `/clear` fires no Stop hook, so no edge comes; the
-handover therefore also watches PTY silence itself. Whichever signal — the
-`inactive` edge or 10 s with no PTY output — arrives first after the floor
-wins. It is not proof the CLI finished. Two bounds contain that:
+The handover watches the terminal itself: 10 seconds with no PTY output, past
+the floor, delivers. It deliberately ignores the session's activity state —
+hook-aware sessions (e.g. Copilot) take activity from hooks only, and a
+`/clear` fires no Stop hook, so that state may never change. Silence is not
+proof the CLI finished. Two bounds contain that:
 
 | Bound | Default | Guards against |
 |---|---|---|
-| **Floor** | 15 s | A stall *before* compaction starts, which looks identical to completion. Edges inside the window are ignored. |
+| **Floor** | 15 s | A stall *before* compaction starts, which looks identical to completion. Silence inside the window is ignored. |
 | **Ceiling** | 2 min | A CLI that renders a spinner forever and never falls silent. The handover is delivered anyway — an awkward moment beats total loss. |
+| **Esc retry** | quick compact only | A `/clear` whose TUI never settles (stuck menu, spinner). At the first ceiling Helm sends Esc ×3 and waits one more ceiling for silence, then pastes anyway. Never for `/compact` — Esc would abort the compaction. |
 
 Making this exact would require parsing per-CLI "compaction complete" banner
 text, which is version-fragile in a way the silence heuristic is not.
@@ -125,7 +122,7 @@ than the interruption.
 
 | File | Role |
 |------|------|
-| `src/session/handover-delivery.ts` | `HandoverDelivery` — arm, floor/ceiling, idle-edge delivery, loss reporting |
+| `src/session/handover-delivery.ts` | `HandoverDelivery` — arm, floor/ceiling, PTY-silence delivery, loss reporting |
 | `src/mcp/services/helm-session-delivery-service.ts` | `compactSession` — arms then delivers the compact sequence; `offloadIfLarge` |
 | `src/electron/ipc/handover-handlers.ts` | `handover:cancel` / `handover:send-now` / `handover:pending` + event forwarding |
 | `renderer/composables/useHandover.ts` | Reactive mirror of pending handovers |
