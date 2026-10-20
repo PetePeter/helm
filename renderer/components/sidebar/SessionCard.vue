@@ -19,6 +19,7 @@ import type { SessionTodoCount } from '../../../src/types/todo.js';
 import { contextMenu, showSessionMenu } from '../../stores/modal-bridge.js';
 import { formatSessionContextUsage, sessionContextUsageTitle } from '../../session-context-usage.js';
 import ContextSparkline from './ContextSparkline.vue';
+import TickerText from '../common/TickerText.vue';
 import { ROW_GRAPH_SPAN_MS, windowSamples } from '../../context-sparkline.js';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import { formatSessionEta } from '../../session-eta.js';
@@ -251,21 +252,6 @@ const metaText = computed(() => {
   const title = props.session.title?.trim();
   return title && title !== props.displayName ? title : '';
 });
-/** Ticker only when the text overflows — short lines stay still. */
-const metaEl = ref<HTMLElement | null>(null);
-/** Pixels the text overflows by; the ticker scrolls exactly that far. */
-const metaOverflowPx = ref(0);
-function measureMeta(): void {
-  const el = metaEl.value;
-  metaOverflowPx.value = el ? Math.max(0, el.scrollWidth - el.clientWidth) : 0;
-}
-const metaResize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMeta);
-watch(metaEl, (el, prev) => {
-  if (prev) metaResize?.unobserve(prev);
-  if (el) metaResize?.observe(el);
-});
-watch(metaText, () => { metaOverflowPx.value = 0; nextTick(measureMeta); }, { flush: 'post' });
-onUnmounted(() => metaResize?.disconnect());
 const contextUsageText = computed(() => formatSessionContextUsage(props.session.contextUsage));
 const contextUsageTooltip = computed(() => sessionContextUsageTitle(props.session.contextUsage));
 const todoProgress = computed(() => props.todoCount ?? { done: 0, total: 0 });
@@ -578,14 +564,7 @@ function onCardClick(e: MouseEvent): void {
     </div>
 
     <!-- Line 3: mission, else terminal title — ticker-scrolls when it overflows -->
-    <span
-      v-if="metaText"
-      ref="metaEl"
-      class="session-meta"
-      :class="{ 'session-meta--ticker': metaOverflowPx > 0 }"
-      :style="metaOverflowPx > 0 ? { '--ticker-shift': `-${metaOverflowPx}px` } : undefined"
-      :title="metaText"
-    ><span class="session-meta__text">{{ metaText }}</span></span>
+    <TickerText v-if="metaText" class="session-meta" :text="metaText" :title="metaText" />
 
     <!-- Line 4: working plan claim -->
     <span v-if="workingPlanLabel" class="session-working-plan" :title="workingPlanTooltip">

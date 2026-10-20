@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { getDisplayTitle } from '../../types.js';
-import TickerText from './TickerText.vue';
+import TickerText from '../common/TickerText.vue';
 
 const props = defineProps<{
   humanId?: string;

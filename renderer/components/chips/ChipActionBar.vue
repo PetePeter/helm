@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import TickerText from './TickerText.vue';
+import TickerText from '../common/TickerText.vue';
 
 defineProps<{
   actions: Array<{ label: string; sequence: string; preview: string }>;

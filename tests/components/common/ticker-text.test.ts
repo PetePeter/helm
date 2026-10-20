@@ -12,7 +12,7 @@
 import { nextTick } from 'vue';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
-import TickerText from '../../../renderer/components/chips/TickerText.vue';
+import TickerText from '../../../renderer/components/common/TickerText.vue';
 
 function stubMotion(reduced = false): void {
   (window as any).matchMedia = vi.fn().mockReturnValue({ matches: reduced });

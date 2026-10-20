@@ -211,7 +211,7 @@ the docked pane and a snapped-out window, so there is one chip-row
 implementation.
 
 Chip text lines that would be clipped by the fixed 180px chip width tick
-continuously instead: `TickerText` (renderer/components/chips/) measures each
+continuously instead: `TickerText` (renderer/components/common/) measures each
 line, and only clipped ones loop as a seamless two-copy marquee at a constant
 speed. Lines that fit stay static with ellipsis, and `prefers-reduced-motion`
 falls back to plain ellipsis.

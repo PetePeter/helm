@@ -980,19 +980,9 @@ body.dock-dragging { cursor: grabbing; user-select: none; }
 
 /* State icon — removed, state shown via dropdown button only */
 
-.session-card .session-name { flex: 0 1 auto; min-width: 0; font-size: var(--font-size-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: inherit; }
-.session-card .session-meta { display: block; min-width: 0; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Overflowing line scrolls until its end is visible, pauses, returns; hover holds it.
-   --ticker-shift is the measured overflow, so the end never leaves the row. */
-.session-card .session-meta--ticker { text-overflow: clip; }
-.session-card .session-meta--ticker .session-meta__text { display: inline-block; animation: session-meta-ticker 12s ease-in-out infinite alternate; }
-.session-card .session-meta--ticker:hover .session-meta__text { animation-play-state: paused; }
-@keyframes session-meta-ticker { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(var(--ticker-shift, 0)); } }
-/* Reduced motion: no scroll, the ellipsis + tooltip carry the rest. */
-@media (prefers-reduced-motion: reduce) {
-  .session-card .session-meta--ticker { text-overflow: ellipsis; }
-  .session-card .session-meta--ticker .session-meta__text { display: inline; animation: none; }
-}
+.session-card .session-name { flex: 1 1 auto; min-width: 0; font-size: var(--font-size-md); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: inherit; }
+/* Clipping, ellipsis and ticker scrolling live in TickerText. */
+.session-card .session-meta { font-size: var(--font-size-sm); color: var(--text-secondary); }
 
 /* Pending schedule chip */
 .session-schedule-chip {
