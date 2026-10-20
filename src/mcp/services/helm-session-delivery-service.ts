@@ -35,6 +35,9 @@ const API_COMPACT_COMMAND = '/compact $instruction{Enter}';
 const ACTION_WAIT_NOTE =
   'Command delivered. The CLI may take up to ~1 minute to finish — wait before reading its output.';
 
+const IDLE_WAIT_NOTE =
+  'Queued: the command is sent once the session has been quiet for 10s (Esc first if still busy after 2 min). End your turn now if this is your own session; after that the CLI may take up to ~1 minute to finish.';
+
 /**
  * Directive appended to every enveloped inter-session message — now shared
  * with the hook-injected form (src/session/intersession-directive.ts), so
@@ -117,6 +120,8 @@ export interface HandoverArming {
   arm(sessionId: string, text: string, opts?: { floorMs?: number; escRetry?: boolean }): void;
   isPending(sessionId: string): boolean;
   whenSettled(sessionId: string): Promise<void>;
+  /** Queue a compact until the session falls quiet (Esc at the ceiling). */
+  runWhenIdle(sessionId: string, run: () => Promise<void>): void;
 }
 
 type SendInputOptions = { senderSessionId?: string; senderSessionName?: string; impliedSubmit?: boolean; verify?: boolean };
@@ -700,11 +705,17 @@ export class HelmSessionDeliveryService {
     // /clear and the resume prompt both have to reach it.
     if (session.frozen) this.sessionManager.setSessionFrozen(session.id, false);
     logger.info(`[HelmSessionDelivery] session_quick_compact for "${session.name}" (${session.id}) → ${transcriptFile}`);
-    await this.clearSession(session.id, {
+    const clear = () => this.clearSession(session.id, {
       ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),
       ...(options.senderSessionName ? { senderSessionName: options.senderSessionName } : {}),
       context: buildTranscriptResumePrompt(transcriptFile, options.handover),
-    });
+    }).then(() => {});
+    // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
+    if (this.handover) {
+      this.handover.runWhenIdle(session.id, clear);
+      return { ok: true, action: 'quick_compact', sessionId: session.id, transcriptFile, note: IDLE_WAIT_NOTE };
+    }
+    await clear();
     return { ok: true, action: 'quick_compact', sessionId: session.id, transcriptFile, note: ACTION_WAIT_NOTE };
   }
 
@@ -720,29 +731,33 @@ export class HelmSessionDeliveryService {
     const template = this.requireActionTemplate(session.cliType, 'compact');
     const sequence = substituteActionParams(template, { $instruction: options?.instruction?.trim() ?? '' });
 
-    // Armed before the write, never after: the compact command's own output is
-    // what drives the session back to `active`, and the delivery waits on the
-    // *next* fall to silence. Arming late would miss that edge entirely.
     const handoverText = options?.handover?.trim();
-    const handoverPending = Boolean(handoverText && this.handover);
-    if (handoverText && this.handover) {
-      this.handover.arm(
-        session.id,
-        this.offloadIfLarge(session.cliType, handoverText, 'session-compact-handover', 'session_compact handover'),
-      );
-    }
+    const handover = this.handover;
+    const handoverPending = Boolean(handoverText && handover);
+    const deliveryText = handoverText && handover
+      ? this.offloadIfLarge(session.cliType, handoverText, 'session-compact-handover', 'session_compact handover')
+      : undefined;
 
-    logger.info(`[HelmSessionDelivery] session_compact for "${session.name}" (${session.id})`);
-    await this.deliverActionSequence(session.id, sequence);
+    const compact = async (): Promise<void> => {
+      // Armed before the write, never after: the compact command's own output
+      // is the edge the delivery's silence clock waits behind.
+      if (deliveryText) handover?.arm(session.id, deliveryText);
+      logger.info(`[HelmSessionDelivery] session_compact for "${session.name}" (${session.id})`);
+      await this.deliverActionSequence(session.id, sequence);
+    };
+    // Never compact mid-turn: a session compacting itself finishes its turn first.
+    if (handover) handover.runWhenIdle(session.id, compact);
+    else await compact();
 
+    const waitNote = handover ? IDLE_WAIT_NOTE : ACTION_WAIT_NOTE;
     return {
       ok: true,
       action: 'compact',
       sessionId: session.id,
       handoverPending,
       note: handoverPending
-        ? `${ACTION_WAIT_NOTE} Your handover will be pasted back automatically once the session falls quiet.`
-        : ACTION_WAIT_NOTE,
+        ? `${waitNote} Your handover will be pasted back automatically once the session falls quiet.`
+        : waitNote,
     };
   }
 

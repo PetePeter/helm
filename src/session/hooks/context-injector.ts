@@ -64,6 +64,8 @@ export interface ContextInjectorDeps {
   getManifestos?(sessionId: string): Array<{ title: string; content: string }>;
   /** Handover text pending across a compaction, when armed. */
   getHandover(sessionId: string): string | undefined;
+  /** The handover just went out in SessionStart context; no paste needed. */
+  onHandoverInjected?(sessionId: string): void;
   /**
    * The session's mission TL;DR. Absent dep = mission feature not wired (the
    * injector stays byte-identical to before); present and returning undefined
@@ -269,6 +271,7 @@ export class ContextInjector {
     // every one plus the ordinary allowance for other context sources.
     const protectedLength = manifestoContext ? persistentContext?.length ?? 0 : 0;
     const context = capJoined(parts, protectedLength + TOTAL_CAP_CHARS);
+    if (handover) this.deps.onHandoverInjected?.(session.id);
     logger.info(
       `[HookInject] SessionStart session=${session.id} (${session.name}): ` +
         `${parts.length} source(s), ${context.length} chars`,

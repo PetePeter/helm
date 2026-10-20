@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HandoverDelivery } from '../src/session/handover-delivery.js';
+import { ESC_SETTLE_MS, HandoverDelivery } from '../src/session/handover-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -370,6 +370,108 @@ describe('HandoverDelivery', () => {
       vi.advanceTimersByTime(FLOOR_MS);
       await flush();
       expect(settled).toBe(true);
+      handover.dispose();
+    });
+  });
+
+  it('a note the SessionStart hook carried is delivered without any paste', async () => {
+    vi.useFakeTimers();
+    const { handover, delivered } = setup();
+    const events: string[] = [];
+    handover.on('handover-delivered', ({ sessionId }) => events.push(sessionId));
+    handover.arm('s1', 'resume');
+    const settled = handover.whenSettled('s1');
+
+    handover.markDeliveredByHook('s1');
+    await settled;
+    vi.advanceTimersByTime(CEILING_MS);
+    await flush();
+
+    expect(delivered).toEqual([]);
+    expect(events).toEqual(['s1']);
+    expect(handover.isPending('s1')).toBe(false);
+    expect(handover.pendingIds()).toEqual([]);
+    handover.dispose();
+  });
+
+  describe('runWhenIdle (gate before a compact)', () => {
+    function setupGate() {
+      const ptyOutput = new EventEmitter();
+      const sessionManager = new EventEmitter();
+      const nudged: string[] = [];
+      const ran: string[] = [];
+      const handover = new HandoverDelivery(
+        ptyOutput, sessionManager as any, async () => {}, () => {},
+        { floorMs: 0, ceilingMs: CEILING_MS, silenceMs: SILENCE_MS, nudge: id => nudged.push(id) },
+      );
+      const output = () => ptyOutput.emit('data', 's1', 'x');
+      const run = (label: string) => handover.runWhenIdle('s1', async () => { ran.push(label); });
+      return { handover, sessionManager, nudged, ran, output, run };
+    }
+
+    it('runs at once when the terminal has been quiet for the silence window', async () => {
+      vi.useFakeTimers();
+      const { handover, ran, output, run } = setupGate();
+      output();
+      vi.advanceTimersByTime(SILENCE_MS);
+      run('compact');
+      await flush();
+      expect(ran).toEqual(['compact']);
+      handover.dispose();
+    });
+
+    it('waits out ongoing output, each chunk restarting the window', async () => {
+      vi.useFakeTimers();
+      const { handover, ran, output, run } = setupGate();
+      output();
+      run('compact');
+      vi.advanceTimersByTime(SILENCE_MS - 1);
+      output();
+      vi.advanceTimersByTime(SILENCE_MS - 1);
+      await flush();
+      expect(ran).toEqual([]);
+      vi.advanceTimersByTime(1);
+      await flush();
+      expect(ran).toEqual(['compact']);
+      handover.dispose();
+    });
+
+    it('still busy at the ceiling: sends Esc, settles briefly, then runs', async () => {
+      vi.useFakeTimers();
+      const { handover, nudged, ran, output, run } = setupGate();
+      output();
+      run('compact');
+      for (let t = 0; t < CEILING_MS; t += 1000) { vi.advanceTimersByTime(1000); output(); }
+      await flush();
+      expect(nudged).toEqual(['s1']);
+      expect(ran).toEqual([]);
+      vi.advanceTimersByTime(ESC_SETTLE_MS);
+      await flush();
+      expect(ran).toEqual(['compact']);
+      handover.dispose();
+    });
+
+    it('a closed session never runs its queued compact', async () => {
+      vi.useFakeTimers();
+      const { handover, sessionManager, ran, output, run } = setupGate();
+      output();
+      run('compact');
+      sessionManager.emit('session:removed', { sessionId: 's1' });
+      vi.advanceTimersByTime(CEILING_MS + ESC_SETTLE_MS);
+      await flush();
+      expect(ran).toEqual([]);
+      handover.dispose();
+    });
+
+    it('a second request while waiting replaces the first: one compact', async () => {
+      vi.useFakeTimers();
+      const { handover, ran, output, run } = setupGate();
+      output();
+      run('first');
+      run('second');
+      vi.advanceTimersByTime(SILENCE_MS);
+      await flush();
+      expect(ran).toEqual(['second']);
       handover.dispose();
     });
   });

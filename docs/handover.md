@@ -34,10 +34,36 @@ sequenceDiagram
     HD-->>UI: handover-armed → terminal locked
     SC->>PTY: helmActions.compact sequence
     SC-->>LLM: {handoverPending:true} — returns now
-    PTY->>HD: compaction output (restarts silence clock)
-    Note over PTY: 10s silence, past the floor
-    HD->>PTY: handover text (submitted, verified)
+    alt CLI with hooks (Claude Code)
+        PTY->>HD: SessionStart hook injects the note → markDeliveredByHook
+    else no hooks
+        PTY->>HD: compaction output (restarts silence clock)
+        Note over PTY: 10s silence, past the floor
+        HD->>PTY: handover text (submitted, verified)
+    end
     HD-->>UI: handover-delivered → unlocked
+```
+
+A hook-aware CLI receives the note as SessionStart context after its
+compaction or clear, so Helm settles the handover there and never pastes it —
+pasting too would hand the model the same note twice.
+
+## Never compact mid-turn
+
+`session_compact` and `session_quick_compact` don't write their command
+straight away. `HandoverDelivery.runWhenIdle` queues it until the terminal has
+been quiet for 10s; if the session is still busy at the 2-minute ceiling, Helm
+sends Esc to stop it, waits 2s, and compacts anyway. The tool call returns at
+once, so a session compacting *itself* ends its turn first rather than waiting
+on itself. A newer request replaces a queued one; closing the session drops it.
+The handover is armed only when the command is finally written.
+
+```mermaid
+flowchart LR
+    R[compact requested] --> Q{quiet 10s?}
+    Q -- yes --> C[arm handover, write command]
+    Q -- output --> Q
+    Q -- 2 min --> E[Esc, wait 2s] --> C
 ```
 
 ## Three decisions worth knowing

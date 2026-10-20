@@ -29,7 +29,13 @@ vi.mock('../src/utils/logger.js', () => ({
 import { HelmSessionDeliveryService } from '../src/mcp/services/helm-session-delivery-service.js';
 import type { CliTypeConfig } from '../src/config/loader.js';
 
-function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true) {
+/** Compacts the fake gate let through; await them before asserting delivery. */
+let idleRuns: Promise<void>[] = [];
+const afterIdle = () => Promise.all(idleRuns);
+
+function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true, opts: { holdIdle?: boolean } = {}) {
+  idleRuns = [];
+  const held: Array<() => Promise<void>> = [];
   const session: { id: string; name: string; cliType: string; frozen?: boolean } = { id: 's1', name: 'worker', cliType: 'claude-code' };
   const sessionManager = {
     getSession: (id: string) => (id === 's1' ? session : null),
@@ -46,14 +52,20 @@ function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true) {
       armed.push({ sessionId, text, deliveriesBefore: deliverSpy.mock.calls.length }),
     isPending: () => false,
     whenSettled: async () => {},
+    // Idle by default; holdIdle keeps the session busy until release().
+    runWhenIdle: (_sessionId: string, run: () => Promise<void>) => {
+      if (opts.holdIdle) held.splice(0, held.length, run);
+      else idleRuns.push(run());
+    },
   };
+  const release = () => Promise.all(held.splice(0).map(run => run()));
   const service = new HelmSessionDeliveryService(
     sessionManager as any,
     ptyManager as any,
     configLoader as any,
     handover,
   );
-  return { service, session, armed };
+  return { service, session, armed, release };
 }
 
 /** Extract the `text` passed to the (mocked) delivery call at index. */
@@ -71,6 +83,7 @@ describe('session_compact', () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instruction{Enter}' } });
 
     const result = await service.compactSession('s1', { instruction: 'keep the auth work' });
+    await afterIdle();
 
     expect(deliveredText()).toBe('/compact keep the auth work{Enter}');
     expect(result).toMatchObject({ ok: true, action: 'compact', sessionId: 's1' });
@@ -80,6 +93,7 @@ describe('session_compact', () => {
   it('substitutes empty string when no instruction is given', async () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instruction{Enter}' } });
     await service.compactSession('s1', {});
+    await afterIdle();
     expect(deliveredText()).toBe('/compact {Enter}');
   });
 
@@ -88,14 +102,17 @@ describe('session_compact', () => {
   it('treats $instructions as the same placeholder, leaving no stray suffix', async () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instructions{Enter}' } });
     await service.compactSession('s1', {});
+    await afterIdle();
     expect(deliveredText()).toBe('/compact {Enter}');
     await service.compactSession('s1', { instruction: 'focus' });
+    await afterIdle();
     expect(deliveredText(1)).toBe('/compact focus{Enter}');
   });
 
   it('leaves unknown $placeholders untouched rather than splicing a known prefix', async () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instructionFoo{Enter}' } });
     await service.compactSession('s1', { instruction: 'x' });
+    await afterIdle();
     expect(deliveredText()).toBe('/compact $instructionFoo{Enter}');
   });
 
@@ -108,12 +125,14 @@ describe('session_compact', () => {
   it('an API tool compacts through Helm\'s own /compact without any configured action', async () => {
     const { service } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: [] } });
     await service.compactSession('s1', { instruction: 'keep ids' });
+    await afterIdle();
     expect(deliveredText()).toBe('/compact keep ids{Enter}');
   });
 
   it('preserves {Wait N} in the sequence (delivery awaits it to hold the MCP return)', async () => {
     const { service } = makeService({ helmActions: { compact: '/compact $instruction{Enter}{Wait 60000}' } });
     await service.compactSession('s1', { instruction: 'x' });
+    await afterIdle();
     expect(deliveredText()).toContain('{Wait 60000}');
   });
 
@@ -121,6 +140,7 @@ describe('session_compact', () => {
     const { service, armed } = makeService({ helmActions: { compact: '/compact $instruction{Enter}' } });
 
     const result = await service.compactSession('s1', { instruction: 'auth', handover: 'resume the migration' });
+    await afterIdle();
 
     // Arming after the write would race the compaction's own output, losing the
     // fresh active→inactive edge the delivery waits on.
@@ -131,10 +151,24 @@ describe('session_compact', () => {
     expect(result).toMatchObject({ ok: true, action: 'compact', sessionId: 's1', handoverPending: true });
   });
 
+  it('writes nothing until the session is idle, then arms the handover and compacts', async () => {
+    const { service, armed, release } = makeService({ helmActions: { compact: '/compact{Enter}' } }, true, { holdIdle: true });
+
+    const result = await service.compactSession('s1', { handover: 'resume' });
+    expect(deliverSpy).not.toHaveBeenCalled();
+    expect(armed).toEqual([]);
+    expect(result.note).toContain('Queued');
+
+    await release();
+    expect(armed).toEqual([{ sessionId: 's1', text: 'resume', deliveriesBefore: 0 }]);
+    expect(deliveredText()).toBe('/compact{Enter}');
+  });
+
   it('arms nothing and keeps the return shape when no handover is given', async () => {
     const { service, armed } = makeService({ helmActions: { compact: '/compact $instruction{Enter}' } });
 
     const result = await service.compactSession('s1', { instruction: 'auth' });
+    await afterIdle();
 
     expect(armed).toEqual([]);
     expect(result).toMatchObject({ ok: true, action: 'compact', sessionId: 's1', handoverPending: false });
@@ -223,6 +257,7 @@ describe('session_quick_compact', () => {
     Object.assign(session, { cliTranscriptPath: log });
 
     const result = await service.quickCompactSession('s1', { handover: 'next: wire the CLI' });
+    await afterIdle();
 
     expect(deliveredText(0)).toBe('/clear{Enter}');
     // Pasted by the idle-wait once the cleared CLI falls quiet, not inline.
@@ -237,6 +272,19 @@ describe('session_quick_compact', () => {
     rmSync(result.transcriptFile, { force: true });
   });
 
+  it('sends /clear only once the session is idle', async () => {
+    const { service, session, release } = makeService({ helmActions: { clear: '/clear{Enter}' } }, true, { holdIdle: true });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'hi' } }));
+    Object.assign(session, { cliTranscriptPath: log });
+
+    const result = await service.quickCompactSession('s1', {});
+    expect(deliverSpy).not.toHaveBeenCalled();
+    await release();
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    if ('transcriptFile' in result) rmSync(result.transcriptFile, { force: true });
+  });
+
   it('skips a quick compact the CLI overtook with its own compaction, unless forced', async () => {
     const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
     const log = join(dir, 'log.jsonl');
@@ -244,11 +292,13 @@ describe('session_quick_compact', () => {
     Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 60_000 });
 
     const skipped = await service.quickCompactSession('s1', { handover: 'next' });
+    await afterIdle();
     expect(skipped).toMatchObject({ skipped: true });
     expect(deliverSpy).not.toHaveBeenCalled();
     expect(armed).toHaveLength(0);
 
     const forced = await service.quickCompactSession('s1', { force: true });
+    await afterIdle();
     expect(deliveredText(0)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync((forced as { transcriptFile: string }).transcriptFile, { force: true });
@@ -261,6 +311,7 @@ describe('session_quick_compact', () => {
     Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 5 * 60_000 - 1 });
 
     const result = await service.quickCompactSession('s1', {});
+    await afterIdle();
     expect(deliveredText(0)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
@@ -273,6 +324,7 @@ describe('session_quick_compact', () => {
     Object.assign(session, { cliTranscriptPath: log, frozen: true });
 
     const result = await service.quickCompactSession('s1', {});
+    await afterIdle();
 
     expect(session.frozen).toBe(false);
     expect(deliveredText(0)).toBe('/clear{Enter}');
@@ -286,6 +338,7 @@ describe('session_quick_compact', () => {
     session.frozen = true;
 
     const result = await service.quickCompactSession('s1', { handover: 'keep the ids' });
+    await afterIdle();
 
     expect(quickCompactSpy).toHaveBeenCalledWith('s1', 'keep the ids');
     expect(deliverSpy).not.toHaveBeenCalled();
@@ -298,6 +351,7 @@ describe('session_quick_compact', () => {
     const { service } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: ['Read'] } });
 
     const result = await service.quickCompactSession('s1', {});
+    await afterIdle();
 
     expect(result).toMatchObject({ queued: true, action: 'quick_compact' });
     expect(deliverSpy).not.toHaveBeenCalled();

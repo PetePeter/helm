@@ -936,6 +936,7 @@ export function registerIPCHandlers(
       humanId: plan.humanId, title: plan.title, status: plan.status,
     })),
     getHandover: (sessionId) => handoverDelivery.peek(sessionId),
+    onHandoverInjected: (sessionId) => handoverDelivery.markDeliveredByHook(sessionId),
     getManifestos: (sessionId) => artifactManager.getManifestosForSession(sessionId),
     getMission: (sessionId) => sessionManager.getSession(sessionId)?.mission,
     getTodos: (sessionId) => todoManager.list(sessionId),

@@ -29,6 +29,9 @@ export const DEFAULT_HANDOVER_CEILING_MS = 120_000;
  */
 export const DEFAULT_HANDOVER_SILENCE_MS = 10_000;
 
+/** After the ceiling's Esc, how long a busy CLI gets to stop before the compact. */
+export const ESC_SETTLE_MS = 2_000;
+
 /** Why a pending handover was dropped without being delivered. */
 export type HandoverLossReason = 'cancelled' | 'session-closed' | 'delivery-failed';
 
@@ -38,6 +41,14 @@ export interface HandoverDeliveryOptions {
   silenceMs?: number;
   /** Writes Esc to a session whose terminal never fell quiet (escRetry arms only). */
   nudge?: (sessionId: string) => void;
+}
+
+interface IdleWait {
+  run: () => Promise<void>;
+  /** Esc sent at the ceiling: run after the settle whatever the terminal does. */
+  escSent?: boolean;
+  silence?: ReturnType<typeof setTimeout>;
+  ceiling: ReturnType<typeof setTimeout>;
 }
 
 interface PendingHandover {
@@ -92,13 +103,20 @@ export class HandoverDelivery extends EventEmitter {
   private readonly ceilingMs: number;
   private readonly silenceMs: number;
   private readonly nudge: ((sessionId: string) => void) | undefined;
+  /** Compacts queued behind the session going idle (runWhenIdle). */
+  private readonly idleWaits = new Map<string, IdleWait>();
+  private readonly lastOutputAt = new Map<string, number>();
   private disposed = false;
 
   private readonly onPtyOutput = (sessionId: string): void => {
+    this.lastOutputAt.set(sessionId, Date.now());
     if (this.pending.has(sessionId)) this.armSilence(sessionId, this.silenceMs);
+    if (this.idleWaits.has(sessionId)) this.armIdleSilence(sessionId, this.silenceMs);
   };
 
   private readonly onSessionRemoved = (event: { sessionId: string }): void => {
+    this.clearIdleWait(event.sessionId);
+    this.lastOutputAt.delete(event.sessionId);
     this.drop(event.sessionId, 'session-closed');
   };
 
@@ -152,6 +170,32 @@ export class HandoverDelivery extends EventEmitter {
     this.emit('handover-armed', { sessionId });
   }
 
+  /**
+   * Run `run` (a compact) once the session's terminal has been quiet for the
+   * silence window, so a compact never lands mid-turn. Still busy at the
+   * ceiling: Esc to stop it, a short settle, then run anyway. A newer request
+   * replaces a queued one; session close drops it.
+   */
+  runWhenIdle(sessionId: string, run: () => Promise<void>): void {
+    if (this.disposed) return;
+    this.clearIdleWait(sessionId);
+    this.idleWaits.set(sessionId, {
+      run,
+      ceiling: setTimeout(() => {
+        logger.info(`[HandoverDelivery] ${sessionId} still busy before compact; sending Esc`);
+        this.nudge?.(sessionId);
+        const wait = this.idleWaits.get(sessionId);
+        if (wait) {
+          wait.escSent = true;
+          clearTimeout(wait.silence);
+          wait.silence = setTimeout(() => this.runIdle(sessionId), ESC_SETTLE_MS);
+        }
+      }, this.ceilingMs),
+    });
+    const last = this.lastOutputAt.get(sessionId);
+    this.armIdleSilence(sessionId, last === undefined ? 0 : last + this.silenceMs - Date.now());
+  }
+
   /** Drop a pending handover at the user's request. */
   cancel(sessionId: string): void {
     this.drop(sessionId, 'cancelled');
@@ -167,6 +211,18 @@ export class HandoverDelivery extends EventEmitter {
   deliverFromPreCompact(sessionId: string): void {
     if (this.disposed) return;
     void this.deliverNow(sessionId, 'precompact');
+  }
+
+  /**
+   * A hook-aware CLI got the note through its SessionStart hook, so pasting it
+   * as well would only duplicate it: settle and unlock without writing.
+   */
+  markDeliveredByHook(sessionId: string): void {
+    if (this.disposed || !this.pending.has(sessionId)) return;
+    this.clearTimer(sessionId);
+    logger.info(`[HandoverDelivery] Handover for ${sessionId} delivered by the SessionStart hook`);
+    this.settle(sessionId);
+    this.emit('handover-delivered', { sessionId });
   }
 
   /** The user's "Send now": they judged the session ready, so skip the wait. */
@@ -208,6 +264,7 @@ export class HandoverDelivery extends EventEmitter {
     this.sessionManager.off('session:removed', this.onSessionRemoved);
     for (const sessionId of [...this.pending.keys()]) this.clearTimer(sessionId);
     this.pending.clear();
+    for (const sessionId of [...this.idleWaits.keys()]) this.clearIdleWait(sessionId);
     for (const sessionId of [...this.settlements.keys()]) this.settle(sessionId);
   }
 
@@ -277,6 +334,29 @@ export class HandoverDelivery extends EventEmitter {
       if (remainingFloor > 0) this.armSilence(sessionId, remainingFloor);
       else void this.deliverNow(sessionId, 'silence');
     }, delayMs);
+  }
+
+  private armIdleSilence(sessionId: string, delayMs: number): void {
+    const wait = this.idleWaits.get(sessionId);
+    if (!wait || wait.escSent) return;
+    clearTimeout(wait.silence);
+    if (delayMs <= 0) this.runIdle(sessionId);
+    else wait.silence = setTimeout(() => this.runIdle(sessionId), delayMs);
+  }
+
+  private runIdle(sessionId: string): void {
+    const wait = this.idleWaits.get(sessionId);
+    if (!wait) return;
+    this.clearIdleWait(sessionId);
+    wait.run().catch(error => logger.error(`[HandoverDelivery] Compact after idle failed for ${sessionId}: ${error}`));
+  }
+
+  private clearIdleWait(sessionId: string): void {
+    const wait = this.idleWaits.get(sessionId);
+    if (!wait) return;
+    clearTimeout(wait.ceiling);
+    clearTimeout(wait.silence);
+    this.idleWaits.delete(sessionId);
   }
 
   /** Remove the pending entry and cancel its timers. */

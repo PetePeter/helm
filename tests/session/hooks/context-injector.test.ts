@@ -135,6 +135,17 @@ describe('SessionStart injection', () => {
     expect(context).toContain('mid-checkpoint');
   });
 
+  it('reports the handover as delivered once SessionStart carries it, and only then', async () => {
+    const injected: string[] = [];
+    const withNote = makeInjector({ getHandover: () => 'next step', onHandoverInjected: id => injected.push(id) });
+    await withNote.injector.respond(hookEvent());
+    expect(injected).toEqual(['s1']);
+
+    const without = makeInjector({ onHandoverInjected: id => injected.push(id) });
+    await without.injector.respond(hookEvent());
+    expect(injected).toEqual(['s1']);
+  });
+
   it('includes every manifesto beside the one-shot handover, even above the ordinary context cap', async () => {
     const { injector } = makeInjector({
       getHandover: () => 'explicit next step',
