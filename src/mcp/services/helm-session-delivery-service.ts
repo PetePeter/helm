@@ -110,12 +110,20 @@ function getClearSettleDelayMs(): number {
  * Wraps messages in [HELM_MSG] envelopes unless the recipient CLI disables preamble.
  */
 /**
- * The slice of HandoverDelivery this service needs. Narrow on purpose: the MCP
- * layer only ever hands a handover over, it never waits on or inspects one.
+ * The slice of HandoverDelivery this service needs: arm a note, and hold other
+ * messages back until it has been pasted.
  */
 export interface HandoverArming {
   arm(sessionId: string, text: string, opts?: { floorMs?: number }): void;
+  isPending(sessionId: string): boolean;
+  whenSettled(sessionId: string): Promise<void>;
 }
+
+type SendTextOptions = { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' };
+type SendTextResult = { ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport;
+
+/** A quick compact this soon after the CLI's own compaction has nothing left to save. */
+export const RECENT_CLI_COMPACT_MS = 5 * 60_000;
 
 /** What a sender learns about the recipient's turn at the moment it sent. */
 interface TargetBusyReport {
@@ -145,6 +153,8 @@ export class HelmSessionDeliveryService {
   private messageFlightSink?: (flight: SessionMessageFlight) => Promise<void> | void;
   /** Ordered pair → last send time, for reverse-direction reply detection. */
   private lastDirectionAt = new Map<string, number>();
+  /** Per-session tail of messages held behind a pending handover, in arrival order. */
+  private heldBehindHandover = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly sessionManager: SessionManager,
@@ -227,6 +237,35 @@ export class HelmSessionDeliveryService {
     }
   }
 
+  /**
+   * Queue a send behind the session's pending handover.
+   *
+   * A message pasted mid-compaction resets the silence the handover waits on,
+   * and during a quick compact it can land before the /clear and be wiped with
+   * the old context. Held messages run after the handover in arrival order;
+   * the caller is answered at once so a phone or MCP client never times out on
+   * a compaction that can take minutes. Returns null when nothing is held.
+   */
+  private holdBehindHandover(
+    sessionId: string,
+    send: () => Promise<unknown>,
+    joinQueue: boolean,
+  ): { ok: true; preambleUsed: false; verified: false; deliveryStatus: 'held-for-handover'; retryCount: 0; codexBusySubmitRecoverySent: false } | null {
+    // A released message is the queue's own head: it may only re-wait on a
+    // handover armed since, never on the tail it is part of.
+    const tail = joinQueue ? this.heldBehindHandover.get(sessionId) : undefined;
+    if (!tail && !this.handover?.isPending(sessionId)) return null;
+    const next = (tail ?? this.handover!.whenSettled(sessionId))
+      .then(send)
+      .catch(error => logger.warn(`[HelmSessionDelivery] Held message for ${sessionId} failed after handover: ${error}`))
+      .finally(() => {
+        if (this.heldBehindHandover.get(sessionId) === next) this.heldBehindHandover.delete(sessionId);
+      });
+    this.heldBehindHandover.set(sessionId, next);
+    logger.info(`[HelmSessionDelivery] Holding message for ${sessionId} until its handover is pasted`);
+    return { ok: true, preambleUsed: false, verified: false, deliveryStatus: 'held-for-handover', retryCount: 0, codexBusySubmitRecoverySent: false };
+  }
+
   /** A user turn from the desktop Chat pane; CLI recipients reply into that same pane. */
   async sendDesktopChatTextToSession(
     sessionRef: string,
@@ -242,8 +281,17 @@ export class HelmSessionDeliveryService {
   async sendTextToSession(
     sessionRef: string,
     text: string,
-    options?: { senderSessionId?: string; senderSessionName?: string; expectsResponse?: boolean; userPromptSource?: UserPromptSource; comfyProfileId?: string; comfyImageSizeId?: string; comfyInputImagePath?: string; comfyInputAttachmentIds?: string[]; source?: 'desktop' },
-  ): Promise<{ ok: true; preambleUsed: boolean; verified: boolean; deliveryStatus: string; retryCount: number; codexBusySubmitRecoverySent: boolean } & TargetBusyReport> {
+    options?: SendTextOptions,
+  ): Promise<SendTextResult> {
+    return this.sendText(sessionRef, text, options, true);
+  }
+
+  private async sendText(
+    sessionRef: string,
+    text: string,
+    options: SendTextOptions | undefined,
+    mayHold: boolean,
+  ): Promise<SendTextResult> {
     const session = this.findSession(sessionRef);
     if (!session) {
       throw new Error(`Session not found: ${sessionRef}`);
@@ -259,6 +307,8 @@ export class HelmSessionDeliveryService {
       throw new Error('Cannot send a message from a session to itself — sender and receiver must be different sessions');
     }
     assertSessionWritable(session);
+    const held = this.holdBehindHandover(session.id, () => this.sendText(sessionRef, text, options, false), mayHold);
+    if (held) return { ...held, ...reportTargetBusy(session, false) };
     const hasComfyImageInput = Boolean(options?.comfyInputImagePath || options?.comfyInputAttachmentIds?.length);
     if (isEmptyMessage(text) && !(session.comfyUiTool && hasComfyImageInput)) {
       throw new Error('text is empty — session_send_text delivers a message; use session_send_input for bare keys like {Enter}');
@@ -594,13 +644,25 @@ export class HelmSessionDeliveryService {
    */
   async quickCompactSession(
     sessionRef: string,
-    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string; force?: boolean },
   ): Promise<
+    | { ok: true; action: 'quick_compact'; sessionId: string; skipped: true; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; archiveFile: string; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; queued: true; note: string }
     | { ok: true; action: 'quick_compact'; sessionId: string; transcriptFile: string; note: string }
   > {
     const session = this.requireRunningSession(sessionRef);
+    // An agent that decides to quick compact can be overtaken by its CLI's own
+    // compaction; by the time the call lands, its context is already small.
+    const compactedAgoMs = Date.now() - (session.lastCliCompactAt ?? Number.NEGATIVE_INFINITY);
+    if (!options.force && compactedAgoMs < RECENT_CLI_COMPACT_MS) {
+      const at = new Date(session.lastCliCompactAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      logger.info(`[HelmSessionDelivery] session_quick_compact skipped for "${session.name}" (${session.id}): CLI compacted ${Math.round(compactedAgoMs / 1000)}s ago`);
+      return {
+        ok: true, action: 'quick_compact', sessionId: session.id, skipped: true,
+        note: `Skipped: the CLI already compacted this session at ${at}. Continue from its compacted context; pass force: true to quick compact anyway.`,
+      };
+    }
     if (this.configLoader.getCliTypeEntry(session.cliType)?.api) {
       // The API process owns the canonical ChatMessage history; there is no CLI transcript or /clear to deliver.
       const compacted = await getApiSessionHost().quickCompactSession(session.id, options.handover);

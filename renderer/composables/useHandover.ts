@@ -19,9 +19,13 @@ let subscribed = false;
 function subscribe(): void {
   if (subscribed) return;
   subscribed = true;
-  eventsClient.onHandoverArmed((event: { sessionId: string }) => pending.add(event.sessionId));
-  eventsClient.onHandoverDelivered((event: { sessionId: string }) => pending.delete(event.sessionId));
-  eventsClient.onHandoverLost((event: { sessionId: string }) => pending.delete(event.sessionId));
+  eventsClient.onHandoverArmed?.((event: { sessionId: string }) => pending.add(event.sessionId));
+  eventsClient.onHandoverDelivered?.((event: { sessionId: string }) => pending.delete(event.sessionId));
+  eventsClient.onHandoverLost?.((event: { sessionId: string }) => pending.delete(event.sessionId));
+  // A reloaded renderer missed the armed events; main still holds the truth.
+  void Promise.resolve(deliveryClient.handoverList?.())
+    .then(ids => { for (const id of ids ?? []) pending.add(id); })
+    .catch(error => console.warn('[Handover] Could not load pending handovers:', error));
 }
 
 export function useHandover() {

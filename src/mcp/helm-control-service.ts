@@ -1870,7 +1870,7 @@ export class HelmControlService extends EventEmitter {
 
   async quickCompactSession(
     sessionRef: string,
-    options: { senderSessionId?: string; senderSessionName?: string; handover?: string },
+    options: { senderSessionId?: string; senderSessionName?: string; handover?: string; force?: boolean },
   ) {
     return this.sessionDelivery.quickCompactSession(sessionRef, options);
   }

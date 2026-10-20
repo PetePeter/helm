@@ -26,7 +26,7 @@ sequenceDiagram
     participant LLM
     participant SC as compactSession
     participant HD as HandoverDelivery
-    participant UI as PendingHandoverModal
+    participant UI as Terminal lock bar
     participant SD as StateDetector
     participant PTY
 
@@ -74,17 +74,38 @@ text, which is version-fragile in a way the silence heuristic is not.
 
 ## The terminal lock
 
-While a handover is pending, the session's terminal is covered by a modal
-offering **Cancel handover** or waiting.
+While a handover is pending, that session's terminal is read-only, like a
+frozen one: a bar above it says it is compacting and offers **Cancel
+handover**. Keys aimed at it are dropped (`useTerminalKeys` and the xterm key
+gate), and scrolling and selection still work.
 
 This is mechanical, not decorative: user keystrokes are PTY output, and PTY
 output resets the silence timer. Idly typing into a compacting session defers
 its own handover indefinitely.
 
-The dialog claims the keyboard **only while the pending session's terminal is
-the focused pane** — a background session compacting must not freeze the app.
-It joins the modal stack *and* registers a `scope: 'modal'` handler, because
-either alone leaks keys (see [keyboard-routing.md](keyboard-routing.md)).
+It is deliberately **not a modal**. An earlier full-screen dialog locked the
+whole app — no switching sessions, no Draft, no Chat — and its Esc-to-cancel
+turned a stray controller B press into a lost handover. Only the one terminal
+needs protecting. Cancel is a button, never a key.
+
+## Messages wait for the handover
+
+Anything sent to the session meanwhile — phone, desktop Chat, the Draft pane's
+send, another session's `session_send_text` — is held by Helm and delivered
+after the handover paste lands, in arrival order (`HandoverDelivery.whenSettled`).
+The sender is answered at once with `deliveryStatus: 'held-for-handover'`, so a
+phone never times out on a compaction that can take minutes.
+
+Holding rather than pasting matters twice over: a paste resets the silence the
+handover waits on, and during a quick compact it could land before the `/clear`
+and be wiped with the old context.
+
+```mermaid
+flowchart LR
+    M[phone / Chat / Draft / session msg] --> P{handover pending?}
+    P -- no --> PTY
+    P -- yes --> Q[held, answered now] --> W[whenSettled] --> H[handover pasted] --> PTY
+```
 
 ## Nothing is persisted
 
@@ -105,7 +126,8 @@ than the interruption.
 | `src/mcp/services/helm-session-delivery-service.ts` | `compactSession` — arms then delivers the compact sequence; `offloadIfLarge` |
 | `src/electron/ipc/handover-handlers.ts` | `handover:cancel` / `handover:pending` + event forwarding |
 | `renderer/composables/useHandover.ts` | Reactive mirror of pending handovers |
-| `renderer/components/modals/PendingHandoverModal.vue` | The terminal lock |
+| `renderer/components/dock/TerminalPane.vue` | The lock bar + Cancel |
+| `renderer/composables/useTerminalKeys.ts` | Drops keys aimed at the locked terminal |
 
 `HandoverDelivery` takes its delivery and notification sinks as injected
 functions, so it has no direct dependency on `PtyManager` or

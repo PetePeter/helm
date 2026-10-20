@@ -117,6 +117,9 @@ export interface SessionInfo {
    *  timer counts from it. Set by the UserPromptSubmit hook and by Enter typed
    *  on the desktop. Persists. */
   lastPromptAt?: number;
+  /** When the CLI last compacted its own context (PreCompact hook, epoch ms).
+   *  Lets a quick compact asked for just after it be skipped as redundant. */
+  lastCliCompactAt?: number;
   /** Timestamp and source of the last actual user-submitted prompt. */
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;

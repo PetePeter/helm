@@ -13,6 +13,7 @@ import { BUILTIN_SHELL_CLI_TYPE, type SessionInfo } from '../../src/types/sessio
 import { loadStoredSessions } from '../session-store.js';
 import { eventsClient, terminalClient } from '../ipc/clients.js';
 import { cliTypeWantsMouseTracking } from '../utils.js';
+import { useHandover } from '../composables/useHandover.js';
 
 export interface TerminalSession {
   sessionId: string;
@@ -114,7 +115,7 @@ export class TerminalManager {
       onScrollInput: (data) => {
         terminalClient.ptyScrollInput?.(sessionId, data);
       },
-      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
+      isFrozen: () => this.isReadOnly(sessionId),
       onResize: (cols, rows) => {
         terminalClient.ptyResize?.(sessionId, cols, rows);
       },
@@ -230,7 +231,7 @@ export class TerminalManager {
       onScrollInput: (data) => {
         terminalClient.ptyScrollInput?.(sessionId, data);
       },
-      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
+      isFrozen: () => this.isReadOnly(sessionId),
       onResize: (cols, rows) => {
         terminalClient.ptyResize?.(sessionId, cols, rows);
       },
@@ -474,6 +475,11 @@ export class TerminalManager {
    * visible (all in collapsed groups) we deselect rather than activate a session
    * the user cannot see. onEmpty stays reserved for "no terminals at all".
    */
+  /** Frozen, or compacting behind a pending handover: readable, never typed into. */
+  private isReadOnly(sessionId: string): boolean {
+    return this.managedSessions.get(sessionId)?.frozen === true || useHandover().isPending(sessionId);
+  }
+
   private handOverActive(sessionId: string): void {
     if (this.activeSessionId !== sessionId) return;
     this.activeSessionId = null;
@@ -578,7 +584,7 @@ export class TerminalManager {
       mouseTracking: cliTypeWantsMouseTracking(managed.cliType),
       onData: (data) => { terminalClient.ptyWrite?.(sessionId, data); },
       onScrollInput: (data) => { terminalClient.ptyScrollInput?.(sessionId, data); },
-      isFrozen: () => this.managedSessions.get(sessionId)?.frozen === true,
+      isFrozen: () => this.isReadOnly(sessionId),
       onResize: (cols, rows) => { terminalClient.ptyResize?.(sessionId, cols, rows); },
       onTitleChange: (title) => {
         const sess = this.terminals.get(sessionId);

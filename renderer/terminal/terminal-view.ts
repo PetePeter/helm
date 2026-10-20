@@ -18,7 +18,7 @@ export interface TerminalViewOptions {
   onData?: (data: string) => void;
   /** Callback for scroll input — bypasses AIAGENT keyword detection. */
   onScrollInput?: (data: string) => void;
-  /** Read-only snapshot; lets scrolling remain available while frozen. */
+  /** Read-only snapshot (frozen, or compacting behind a handover); scrolling stays available. */
   isFrozen?: () => boolean;
   onResize?: (cols: number, rows: number) => void;
   onTitleChange?: (title: string) => void;

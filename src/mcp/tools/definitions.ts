@@ -1009,6 +1009,7 @@ export const MCP_TOOLS: McpTool[] = [
       'then replaces live context with a short instruction to read the file and continue. Keeps exact details /compact loses, ' +
       'at a somewhat larger context. CLI sessions need transcript hooks; API sessions archive their own history and require the Read tool. ' +
       'An API request during an active turn queues after that turn and returns immediately. CLI sessions process the clear asynchronously. ' +
+      'Skipped (skipped: true) when the CLI compacted itself in the last 5 minutes, unless force is true. ' +
       'DESTINATION: sessionId is REQUIRED — a session may target itself.',
     inputSchema: {
       type: 'object',
@@ -1020,6 +1021,7 @@ export const MCP_TOOLS: McpTool[] = [
             'Optional note to the continuing session: current goal, decisions made, the next concrete step, open questions. ' +
             'Appended to the prompt that points it at the stripped transcript.',
         },
+        force: { type: 'boolean', description: 'Quick compact even if the CLI compacted itself in the last 5 minutes.' },
       },
       required: ['sessionId'],
       additionalProperties: false,

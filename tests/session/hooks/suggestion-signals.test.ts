@@ -18,7 +18,7 @@
  * regression (real store + real scorer, wired like production).
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -193,6 +193,10 @@ describe('BoostedSuggestionScorer — usage', () => {
 });
 
 describe('BoostedSuggestionScorer — scope and recency', () => {
+  // Recency is measured against the wall clock; pin it to the fixtures' `now`.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(now); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('a project-scoped skill outranks an equal-scoring global one', async () => {
     const scoped = skill('scoped', { allProjects: false });
     const global = skill('global', { allProjects: true });

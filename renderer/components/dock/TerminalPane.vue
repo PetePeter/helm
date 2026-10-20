@@ -22,6 +22,9 @@ import TerminalChips from '../chips/TerminalChips.vue';
 import MissionBar from './MissionBar.vue';
 import PromptCacheBanner from './PromptCacheBanner.vue';
 import { setSessionFrozen } from '../../screens/sessions.js';
+import { useHandover } from '../../composables/useHandover.js';
+
+const handover = useHandover();
 
 function thaw(sessionId: string): void {
   void setSessionFrozen(sessionId, false);
@@ -60,6 +63,11 @@ onBeforeUnmount(() => { pane.terminalContainerRef.value = null; });
     <div v-if="appStore.activeSession?.frozen" class="terminal-view__frozen-bar">
       <span>Scroll and select text to read. Input and paste are disabled.</span>
       <button class="btn btn--sm btn--primary focusable" type="button" @click="thaw(appStore.activeSession.id)">Unfreeze</button>
+    </div>
+    <!-- Typing would reset the silence the handover paste waits on; the rest of the app stays usable. -->
+    <div v-else-if="handover.isPending(appStore.activeSession?.id)" class="terminal-view__frozen-bar">
+      <span>Compacting. The handover note pastes back once it falls quiet; messages wait until then.</span>
+      <button class="btn btn--sm focusable" type="button" @click="handover.cancel(appStore.activeSession!.id)">Cancel handover</button>
     </div>
     <div class="terminal-view__stage">
       <div class="terminal-container" id="terminalContainer" :ref="setContainer">

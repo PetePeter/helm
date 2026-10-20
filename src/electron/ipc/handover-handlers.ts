@@ -16,6 +16,8 @@ export function setupHandoverHandlers(handover: HandoverDelivery, windowManager:
     return { success: true };
   });
 
+  ipcMain.handle('handover:list', () => handover.pendingIds());
+
   ipcMain.handle('handover:pending', (_event, sessionId: string) => ({
     pending: handover.isPending(sessionId),
     text: handover.peek(sessionId),
@@ -46,6 +48,7 @@ export function setupHandoverHandlers(handover: HandoverDelivery, windowManager:
   return () => {
     ipcMain.removeHandler('handover:cancel');
     ipcMain.removeHandler('handover:pending');
+    ipcMain.removeHandler('handover:list');
     handover.off('handover-armed', onArmed);
     handover.off('handover-delivered', onDelivered);
     handover.off('handover-lost', onLost);

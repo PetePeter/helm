@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTempDir } from '../src/utils/app-paths.js';
 import { setDeliveryObserver } from '../src/session/sequence-delivery.js';
+import { EventEmitter } from 'node:events';
+import { HandoverDelivery } from '../src/session/handover-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -77,6 +79,56 @@ function getSentText(ptyManager: ReturnType<typeof makeDeps>['ptyManager']): str
 }
 
 describe('HelmSessionDeliveryService', () => {
+  describe('messages behind a pending handover', () => {
+    const from = { senderSessionId: 'sender-session', senderSessionName: 'SenderSession' };
+
+    function withHandover() {
+      const deps = makeDeps();
+      const stateDetector = new EventEmitter();
+      const order: string[] = [];
+      const handover = new HandoverDelivery(
+        stateDetector as any,
+        new EventEmitter() as any,
+        async (_id, text) => { order.push(`handover:${text}`); },
+        () => {},
+        { floorMs: 0, ceilingMs: 60_000 },
+      );
+      deps.service.setHandoverDelivery(handover);
+      deps.ptyManager.deliverText.mockImplementation(async (_id: string, text: string) => {
+        if (text.includes('msg-')) order.push(text.match(/msg-\d/)![0]);
+      });
+      const settle = async () => {
+        stateDetector.emit('activity-change', { sessionId: deps.receiver.id, level: 'inactive', lastOutputAt: Date.now() });
+        await vi.waitFor(() => expect(order.filter(o => o.startsWith('msg-'))).toHaveLength(2));
+      };
+      return { ...deps, handover, order, settle };
+    }
+
+    it('holds phone and chat messages until the handover pastes, then sends them in order', async () => {
+      const { service, ptyManager, receiver, handover, order, settle } = withHandover();
+      handover.arm(receiver.id, 'note');
+
+      const phone = await service.sendTextToSession(receiver.id, 'msg-1', from);
+      const chat = await service.sendDesktopChatTextToSession(receiver.id, 'msg-2');
+      // Answered at once, nothing written: a paste now would reset the silence.
+      expect(phone.deliveryStatus).toBe('held-for-handover');
+      expect(chat.deliveryStatus).toBe('held-for-handover');
+      expect(ptyManager.deliverText).not.toHaveBeenCalled();
+
+      await settle();
+      expect(order).toEqual(['handover:note', 'msg-1', 'msg-2']);
+      handover.dispose();
+    });
+
+    it('sends straight through with no handover pending', async () => {
+      const { service, ptyManager, receiver, handover } = withHandover();
+      const result = await service.sendTextToSession(receiver.id, 'msg-1', from);
+      expect(result.deliveryStatus).not.toBe('held-for-handover');
+      expect(ptyManager.deliverText).toHaveBeenCalled();
+      handover.dispose();
+    });
+  });
+
   describe('wake and freeze', () => {
     const from = { senderSessionId: 'sender-session', senderSessionName: 'SenderSession' };
 

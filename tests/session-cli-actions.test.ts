@@ -44,6 +44,8 @@ function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true) {
   const handover = {
     arm: (sessionId: string, text: string) =>
       armed.push({ sessionId, text, deliveriesBefore: deliverSpy.mock.calls.length }),
+    isPending: () => false,
+    whenSettled: async () => {},
   };
   const service = new HelmSessionDeliveryService(
     sessionManager as any,
@@ -233,6 +235,35 @@ describe('session_quick_compact', () => {
     expect(stripped).toContain('Parser built.');
     expect(stripped).not.toContain('hmm');
     rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('skips a quick compact the CLI overtook with its own compaction, unless forced', async () => {
+    const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 60_000 });
+
+    const skipped = await service.quickCompactSession('s1', { handover: 'next' });
+    expect(skipped).toMatchObject({ skipped: true });
+    expect(deliverSpy).not.toHaveBeenCalled();
+    expect(armed).toHaveLength(0);
+
+    const forced = await service.quickCompactSession('s1', { force: true });
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(armed).toHaveLength(1);
+    rmSync((forced as { transcriptFile: string }).transcriptFile, { force: true });
+  });
+
+  it('runs a quick compact once the CLI compaction is more than 5 minutes old', async () => {
+    const { service, session, armed } = makeService({ helmActions: { clear: '/clear{Enter}' } });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 5 * 60_000 - 1 });
+
+    const result = await service.quickCompactSession('s1', {});
+    expect(deliveredText(0)).toBe('/clear{Enter}');
+    expect(armed).toHaveLength(1);
+    rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
 
   it('thaws a frozen session first — Quick compact must type /clear into it', async () => {

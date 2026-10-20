@@ -38,6 +38,12 @@ interface PendingHandover {
   ceiling: ReturnType<typeof setTimeout>;
 }
 
+/** Resolves once a session's handover is pasted or dropped. */
+interface Settlement {
+  promise: Promise<void>;
+  resolve: () => void;
+}
+
 /**
  * Holds a session's handover text across a compaction and pastes it back when
  * the session falls quiet.
@@ -64,6 +70,11 @@ interface PendingHandover {
  */
 export class HandoverDelivery extends EventEmitter {
   private readonly pending = new Map<string, PendingHandover>();
+  /**
+   * Outlives `pending`: an entry leaves `pending` before its paste is awaited,
+   * but whoever waits on it must not run until that paste has landed.
+   */
+  private readonly settlements = new Map<string, Settlement>();
   private readonly floorMs: number;
   private readonly ceilingMs: number;
   private disposed = false;
@@ -108,6 +119,11 @@ export class HandoverDelivery extends EventEmitter {
     if (this.disposed) return;
     // A second compaction supersedes the first; only the newer text is wanted.
     this.clearTimer(sessionId);
+    if (!this.settlements.has(sessionId)) {
+      let resolve!: () => void;
+      const promise = new Promise<void>(r => { resolve = r; });
+      this.settlements.set(sessionId, { promise, resolve });
+    }
     this.pending.set(sessionId, {
       text,
       armedAt: Date.now(),
@@ -140,6 +156,20 @@ export class HandoverDelivery extends EventEmitter {
     return this.pending.has(sessionId);
   }
 
+  /** Sessions with a handover waiting — seeds a reloaded renderer's lock. */
+  pendingIds(): string[] {
+    return [...this.pending.keys()];
+  }
+
+  /**
+   * Resolves once the session has no handover in flight: immediately when none
+   * is armed, otherwise after it is pasted or dropped. A re-arm before then
+   * extends the wait to the newer note.
+   */
+  whenSettled(sessionId: string): Promise<void> {
+    return this.settlements.get(sessionId)?.promise ?? Promise.resolve();
+  }
+
   /** Text of the pending handover, for the confirmation dialog to show. */
   peek(sessionId: string): string | undefined {
     return this.pending.get(sessionId)?.text;
@@ -152,6 +182,7 @@ export class HandoverDelivery extends EventEmitter {
     this.sessionManager.off('session:removed', this.onSessionRemoved);
     for (const sessionId of [...this.pending.keys()]) this.clearTimer(sessionId);
     this.pending.clear();
+    for (const sessionId of [...this.settlements.keys()]) this.settle(sessionId);
   }
 
   private async deliverNow(sessionId: string, trigger: 'idle' | 'ceiling' | 'precompact'): Promise<void> {
@@ -163,12 +194,17 @@ export class HandoverDelivery extends EventEmitter {
     logger.info(`[HandoverDelivery] Delivering handover to ${sessionId} (trigger: ${trigger})`);
     try {
       await this.deliver(sessionId, entry.text);
+      // A note armed mid-paste keeps the terminal locked: no stale unlock.
+      if (this.pending.has(sessionId)) return;
+      this.settle(sessionId);
       this.emit('handover-delivered', { sessionId });
     } catch (error) {
       // Per invariant 7 a failed PTY write never throws upward. The handover is
       // already gone from the map, so this is terminal — say so loudly.
       logger.error(`[HandoverDelivery] Handover delivery failed for ${sessionId}: ${error}`);
       this.notifyLoss(sessionId, 'delivery-failed');
+      if (this.pending.has(sessionId)) return;
+      this.settle(sessionId);
       this.emit('handover-lost', { sessionId, reason: 'delivery-failed' });
     }
   }
@@ -178,7 +214,13 @@ export class HandoverDelivery extends EventEmitter {
     this.clearTimer(sessionId);
     logger.warn(`[HandoverDelivery] Handover for ${sessionId} dropped undelivered (${reason})`);
     this.notifyLoss(sessionId, reason);
+    this.settle(sessionId);
     this.emit('handover-lost', { sessionId, reason });
+  }
+
+  private settle(sessionId: string): void {
+    this.settlements.get(sessionId)?.resolve();
+    this.settlements.delete(sessionId);
   }
 
   /** Remove the pending entry and cancel its ceiling timer. */

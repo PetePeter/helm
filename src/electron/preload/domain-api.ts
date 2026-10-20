@@ -440,6 +440,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Drop a pending handover instead of waiting for it to be pasted back */
   handoverCancel: (sessionId: string) => ipcRenderer.invoke('handover:cancel', sessionId),
 
+  /** Session ids with a handover waiting */
+  handoverList: (): Promise<string[]> => ipcRenderer.invoke('handover:list'),
+
   /** Whether a session has a handover waiting, and its text */
   handoverPending: (sessionId: string) => ipcRenderer.invoke('handover:pending', sessionId),
 

@@ -219,4 +219,99 @@ describe('HandoverDelivery', () => {
       handover.dispose();
     });
   });
+
+  describe('whenSettled', () => {
+    it('resolves at once with nothing armed', async () => {
+      const { handover } = setup();
+      await expect(handover.whenSettled('s1')).resolves.toBeUndefined();
+      handover.dispose();
+    });
+
+    it('resolves only after the handover paste has landed', async () => {
+      vi.useFakeTimers();
+      const stateDetector = new EventEmitter();
+      const order: string[] = [];
+      let finishPaste!: () => void;
+      const handover = new HandoverDelivery(
+        stateDetector as any,
+        new EventEmitter() as any,
+        () => new Promise<void>(resolve => { order.push('paste-start'); finishPaste = resolve; }),
+        () => {},
+        { floorMs: FLOOR_MS, ceilingMs: CEILING_MS },
+      );
+      handover.arm('s1', 'note');
+      void handover.whenSettled('s1').then(() => order.push('settled'));
+
+      vi.advanceTimersByTime(FLOOR_MS + 1);
+      stateDetector.emit('activity-change', { sessionId: 's1', level: 'inactive', lastOutputAt: Date.now() });
+      await flush();
+      // Off the pending map already, but the paste is still being written.
+      expect(handover.isPending('s1')).toBe(false);
+      expect(order).toEqual(['paste-start']);
+
+      finishPaste();
+      await flush();
+      expect(order).toEqual(['paste-start', 'settled']);
+      handover.dispose();
+    });
+
+    it('resolves when the handover is cancelled or its session closes', async () => {
+      const { handover, sessionManager } = setup();
+      handover.arm('s1', 'a');
+      handover.arm('s2', 'b');
+      const settled: string[] = [];
+      void handover.whenSettled('s1').then(() => settled.push('s1'));
+      void handover.whenSettled('s2').then(() => settled.push('s2'));
+
+      handover.cancel('s1');
+      sessionManager.emit('session:removed', { sessionId: 's2' });
+      await flush();
+      expect(settled).toEqual(['s1', 's2']);
+      handover.dispose();
+    });
+
+    it('a note armed mid-paste is not unlocked by the earlier paste finishing', async () => {
+      vi.useFakeTimers();
+      const stateDetector = new EventEmitter();
+      let finishPaste!: () => void;
+      const delivered: string[] = [];
+      const handover = new HandoverDelivery(
+        stateDetector as any,
+        new EventEmitter() as any,
+        () => new Promise<void>(resolve => { finishPaste = resolve; }),
+        () => {},
+        { floorMs: FLOOR_MS, ceilingMs: CEILING_MS },
+      );
+      handover.on('handover-delivered', ({ sessionId }) => delivered.push(sessionId));
+      handover.arm('s1', 'first');
+      vi.advanceTimersByTime(FLOOR_MS + 1);
+      stateDetector.emit('activity-change', { sessionId: 's1', level: 'inactive', lastOutputAt: Date.now() });
+      await flush();
+
+      handover.arm('s1', 'second');
+      finishPaste();
+      await flush();
+      expect(delivered).toEqual([]);
+      expect(handover.pendingIds()).toEqual(['s1']);
+      handover.dispose();
+    });
+
+    it('keeps waiting through a re-arm until the newer note is pasted', async () => {
+      vi.useFakeTimers();
+      const { handover, goInactive } = setup();
+      handover.arm('s1', 'first');
+      let settled = false;
+      void handover.whenSettled('s1').then(() => { settled = true; });
+
+      handover.arm('s1', 'second');
+      await flush();
+      expect(settled).toBe(false);
+
+      vi.advanceTimersByTime(FLOOR_MS + 1);
+      goInactive('s1');
+      await flush();
+      expect(settled).toBe(true);
+      handover.dispose();
+    });
+  });
 });

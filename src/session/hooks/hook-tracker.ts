@@ -197,6 +197,7 @@ export class HookTracker {
         // Snapshot BEFORE delivery: peek() must still see the pending note.
         this.composePreCompactSnapshot(event);
         this.deps.handoverDelivery.deliverFromPreCompact(sessionId);
+        this.deps.sessionManager.updateSession(sessionId, { lastCliCompactAt: this.now() });
         this.restartCacheTimer(sessionId);
         break;
 

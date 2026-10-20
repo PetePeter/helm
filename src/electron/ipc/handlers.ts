@@ -593,7 +593,8 @@ export function registerIPCHandlers(
   );
 
   const cleanupSession = setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, {
-    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, {}),
+    // The user asked for it outright: never second-guessed as redundant.
+    quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, { force: true }),
     switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
     clone: (sessionId) => helmControlService.cloneSession(sessionId),
   });

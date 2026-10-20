@@ -13,6 +13,7 @@ import { registerKeyHandler } from '../keyboard/router.js';
 import { deliverBulkText } from '../paste-handler.js';
 import { terminalClient } from '../ipc/clients.js';
 import { useEscProtection } from './useEscProtection.js';
+import { useHandover } from './useHandover.js';
 
 export interface TerminalKeysOptions {
   getActiveSessionId: () => string | null;
@@ -25,6 +26,7 @@ export interface TerminalKeysOptions {
 export function useTerminalKeys(options: TerminalKeysOptions): void {
   const unregisters: Array<() => void> = [];
   const escProtection = useEscProtection();
+  const handover = useHandover();
 
   // The setting lives behind async IPC but the key path must answer
   // synchronously, so it is cached and refreshed after every Escape. A toggle
@@ -41,16 +43,22 @@ export function useTerminalKeys(options: TerminalKeysOptions): void {
     }
   }
 
+  // A compacting session waiting on its handover takes no keys: PTY input
+  // resets the silence the paste waits on. The handlers still consume the key.
   function writePty(sessionId: string, data: string): void {
+    if (handover.isPending(sessionId)) return;
     void terminalClient.ptyWrite(sessionId, data);
     if (data === '\x1b') void refreshEscProtection();
   }
 
   const handlers = createTerminalKeyHandlers({
     writePty,
-    deliverText: (sessionId, text) => deliverBulkText(sessionId, text),
+    deliverText: async (sessionId, text) => {
+      if (!handover.isPending(sessionId)) await deliverBulkText(sessionId, text);
+    },
     readClipboardText: () => navigator.clipboard.readText(),
-    isEscProtectionArmed: () => escProtectionEnabled.value,
+    // Nothing to protect while the Escape would be dropped anyway.
+    isEscProtectionArmed: () => escProtectionEnabled.value && !handover.isPending(options.getActiveSessionId()),
     openEscProtection: (sessionId) => escProtection.openProtection(
       sessionId,
       () => writePty(sessionId, '\x1b'),
