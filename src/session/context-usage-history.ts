@@ -10,7 +10,9 @@ export function appendContextSample(
   sample: ContextUsageSample,
 ): ContextUsageSample[] {
   const current = history ?? [];
-  if (current.at(-1)?.tokens === sample.tokens) return [...current];
+  const last = current.at(-1);
+  // Sources stamp their own measured-at; a stale reading must not draw the graph backwards.
+  if (last && (last.tokens === sample.tokens || sample.at < last.at)) return [...current];
   return [...current, sample].slice(-CONTEXT_HISTORY_LIMIT);
 }
 

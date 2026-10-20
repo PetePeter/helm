@@ -19,4 +19,11 @@ describe('appendContextSample', () => {
     const history = appendContextSample([{ at: 1, tokens: 150_000 }], { at: 2, tokens: 20_000 });
     expect(history.map((s) => s.tokens)).toEqual([150_000, 20_000]);
   });
+
+  // Regression: statusline and transcript readings carry their own measured-at,
+  // so a stale reading could land last and the graph drew backwards in time.
+  it('ignores a reading older than the newest one', () => {
+    const history = appendContextSample([{ at: 10, tokens: 500 }], { at: 5, tokens: 400 });
+    expect(history).toEqual([{ at: 10, tokens: 500 }]);
+  });
 });
