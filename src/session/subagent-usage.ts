@@ -10,7 +10,7 @@
  * - Copilot: inside the parent's `events.jsonl`, tagged with an `agentId`.
  */
 
-import { closeSync, existsSync, openSync, readdirSync, readSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { ChatTurnUsage } from './chat/chat-bridge.js';
 import {
@@ -18,6 +18,7 @@ import {
 } from './transcript-usage.js';
 
 const TAIL_BYTES = 1024 * 1024;
+const MAX_TAIL_BYTES = 64 * TAIL_BYTES;
 /** session_meta comes first; this is enough to reach its parent_thread_id. */
 const HEAD_BYTES = 64 * 1024;
 const CODEX_ROLLOUT = /^rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
@@ -50,13 +51,22 @@ function parsed(lines: string[]): Json[] {
   return out;
 }
 
+/** A file nobody wrote to since the last sweep is not read again. */
+const latestCache = new Map<string, { size: number; mtimeMs: number; tokens: number | undefined }>();
+
+/** The newest usage line, widening the tail while a stretch of tool output hides it. */
 function latest(path: string, read: (line: Json) => ChatTurnUsage | undefined): number | undefined {
-  const lines = parsed(tailLines(path, TAIL_BYTES));
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const usage = read(lines[i]);
-    if (usage) return usage.contextTokens;
+  const { size, mtimeMs } = statSync(path);
+  const cached = latestCache.get(path);
+  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached.tokens;
+  let tokens: number | undefined;
+  for (let window = TAIL_BYTES; tokens === undefined; window *= 4) {
+    const lines = parsed(tailLines(path, window));
+    for (let i = lines.length - 1; i >= 0 && tokens === undefined; i--) tokens = read(lines[i])?.contextTokens;
+    if (window >= size || window >= MAX_TAIL_BYTES) break;
   }
-  return undefined;
+  latestCache.set(path, { size, mtimeMs, tokens });
+  return tokens;
 }
 
 function readClaude(transcriptPath: string, out: Map<string, number>): void {

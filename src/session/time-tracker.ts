@@ -51,7 +51,7 @@ interface UserTally { name: string; count: number; last: number; dirs: Map<strin
 interface OpenSlot { user: Map<string, UserTally>; ai: Map<string, TimeSlot>; tokens: Map<string, TimeSlot> }
 
 export interface TimeTrackerDeps {
-  persistence: Pick<TimePersistence, 'append' | 'load'>;
+  persistence: Pick<TimePersistence, 'append' | 'load' | 'saveBaselines' | 'loadBaselines'>;
   resolve: (sessionId: string) => SessionWhere | null;
   now?: () => number;
 }
@@ -60,13 +60,18 @@ export class TimeTracker {
   private readonly open = new Map<number, OpenSlot>();
   /** Sessions whose current turn is user-originated or has proven agent work. */
   private readonly aiArmed = new Set<string>();
-  /** Last context reading per session; the first is only a baseline. */
-  private readonly lastTokens = new Map<string, number>();
+  /** Last context reading per stream, saved with the ledger so a restart loses no growth. */
+  private readonly lastTokens: Map<string, number>;
+  /** False on a first run: streams already counted by an earlier version are unknown, so readings only prime. */
+  readonly hasSavedBaselines: boolean;
   private readonly now: () => number;
   private seq = 0;
 
   constructor(private readonly deps: TimeTrackerDeps) {
     this.now = deps.now ?? Date.now;
+    const saved = deps.persistence.loadBaselines();
+    this.hasSavedBaselines = saved !== null;
+    this.lastTokens = saved ?? new Map();
   }
 
   recordUser(weight: number, sessionId: string): boolean {
@@ -126,13 +131,14 @@ export class TimeTracker {
   }
 
   private addTokens(sessionId: string, stream: string, tokens: number, baseline: number | undefined): void {
+    // A reading that cannot be placed leaves the baseline alone, so its growth counts once it can.
+    const where = this.deps.resolve(sessionId);
+    if (!where) return;
     const prev = this.lastTokens.get(stream) ?? baseline;
     this.lastTokens.set(stream, tokens);
     if (prev === undefined) return;
     const added = tokens >= prev ? tokens - prev : tokens;
     if (!added) return;
-    const where = this.deps.resolve(sessionId);
-    if (!where) return;
     const start = slotStart(this.now());
     const map = this.slotFor().tokens;
     const key = tokenKey(where.projectKey, where.cliType, where.dir);
@@ -141,7 +147,8 @@ export class TimeTracker {
     map.set(key, slot);
   }
 
-  private forgetTokens(sessionId: string): void {
+  /** A removed session's streams: its id is never reused, but its baselines would live in the file forever. */
+  forgetSession(sessionId: string): void {
     for (const stream of this.lastTokens.keys()) {
       if (stream === sessionId || stream.startsWith(`${sessionId}#`)) this.lastTokens.delete(stream);
     }
@@ -162,15 +169,17 @@ export class TimeTracker {
   tick(): void {
     for (const id of this.aiArmed) {
       // A closed session never reports a turn end; drop it once it cannot be placed.
-      if (!this.deps.resolve(id)) { this.aiArmed.delete(id); this.forgetTokens(id); }
+      if (!this.deps.resolve(id)) { this.aiArmed.delete(id); this.forgetSession(id); }
       else this.recordAi(id);
     }
     this.closeBefore(slotStart(this.now()));
+    this.deps.persistence.saveBaselines(this.lastTokens);
   }
 
   /** Persist every open slot, ended or not. Call at shutdown. */
   flush(): void {
     this.closeBefore(Infinity);
+    this.deps.persistence.saveBaselines(this.lastTokens);
   }
 
   /** Slots starting in [from, to), persisted plus still open. */

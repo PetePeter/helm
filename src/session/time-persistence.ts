@@ -4,11 +4,13 @@
  * slot; a corrupt line is skipped rather than costing the whole month.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { isRecord } from './persistence-utils.js';
 import type { TimeSlot } from './time-tracker.js';
+
+const BASELINES_FILE = 'token-baselines.json';
 
 export function monthKey(ms: number): string {
   const d = new Date(ms);
@@ -38,6 +40,33 @@ export class TimePersistence {
       for (const [key, text] of byMonth) appendFileSync(join(this.dir, `${key}.jsonl`), text, 'utf8');
     } catch (err) {
       logger.error(`[TimeTracking] Failed to append slots: ${err}`);
+    }
+  }
+
+  /**
+   * The last context reading per token stream, so growth that happens while
+   * Helm is down still counts. Rewritten whole: it is a snapshot, not a log.
+   */
+  saveBaselines(baselines: ReadonlyMap<string, number>): void {
+    try {
+      mkdirSync(this.dir, { recursive: true });
+      writeFileSync(join(this.dir, BASELINES_FILE), JSON.stringify(Object.fromEntries(baselines)), 'utf8');
+    } catch (err) {
+      logger.error(`[TimeTracking] Failed to save token baselines: ${err}`);
+    }
+  }
+
+  /** Null when nothing was ever saved (first run, or an install from before baselines existed). */
+  loadBaselines(): Map<string, number> | null {
+    const file = join(this.dir, BASELINES_FILE);
+    if (!existsSync(file)) return null;
+    try {
+      const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
+      if (!isRecord(raw)) return null;
+      return new Map(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number'));
+    } catch (err) {
+      logger.error(`[TimeTracking] Failed to read token baselines: ${err}`);
+      return null;
     }
   }
 

@@ -10,7 +10,7 @@ function tracker(): TimeTracker {
     old: { projectKey: 'p2', projectName: 'Other', dir: 'C:/other', cliType: 'retired-cli' },
   };
   const result = new TimeTracker({
-    persistence: { append: () => {}, load: () => [] },
+    persistence: { append: () => {}, load: () => [], saveBaselines: () => {}, loadBaselines: () => null },
     resolve: id => sessions[id] ?? null,
     now: () => NOW,
   });

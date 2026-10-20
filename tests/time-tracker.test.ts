@@ -181,7 +181,7 @@ describe('TimeTracker', () => {
     clock = new Date(2026, 9, 31, 23, 58).getTime(); t.recordUser(SUBMIT, 'a1');
     clock = new Date(2026, 10, 1, 0, 1).getTime(); t.recordUser(SUBMIT, 'a1');
     t.flush();
-    expect(fs.readdirSync(dir).sort()).toEqual(['2026-10.jsonl', '2026-11.jsonl']);
+    expect(fs.readdirSync(dir).filter(f => f.endsWith('.jsonl')).sort()).toEqual(['2026-10.jsonl', '2026-11.jsonl']);
   });
 });
 
@@ -286,8 +286,47 @@ describe('TimeTracker tokens', () => {
     first.recordTokens('a1', 0); first.recordTokens('a1', 700);
     first.flush();
     const second = tracker();
-    second.recordTokens('a1', 100); second.recordTokens('a1', 400);
+    second.recordTokens('a1', 700); second.recordTokens('a1', 1_000);
     expect(total(second)).toBe(1_000);
+  });
+
+  it('keeps counting from the saved baselines after a restart, main context and sub-agents alike', () => {
+    const first = tracker();
+    expect(first.hasSavedBaselines).toBe(false);
+    first.recordTokens('a1', 0); first.recordTokens('a1', 4_000);
+    first.recordSubagentTokens('a1', 'agent-x', 30_000);
+    first.flush();
+
+    const second = tracker();
+    expect(second.hasSavedBaselines).toBe(true);
+    second.recordTokens('a1', 5_000); // grew 1k while Helm was down
+    second.recordSubagentTokens('a1', 'agent-x', 34_000); // only the 4k since
+    second.recordSubagentTokens('a1', 'agent-y', 2_000); // started while Helm was down: all new
+    expect(total(second)).toBe(4_000 + 30_000 + 1_000 + 4_000 + 2_000);
+  });
+
+  it('forgets a removed session, so a reused id starts from a fresh baseline', () => {
+    const first = tracker();
+    first.recordTokens('a1', 3_000);
+    first.recordSubagentTokens('a1', 'agent-x', 9_000);
+    first.forgetSession('a1');
+    first.flush();
+    const second = tracker();
+    second.recordTokens('a1', 100);
+    second.recordSubagentTokens('a1', 'agent-x', 500);
+    expect(total(second)).toBe(9_000 + 500);
+  });
+
+  it('does not lose growth from a reading it could not place yet', () => {
+    const live: Record<string, SessionWhere> = {};
+    const t = new TimeTracker({ persistence: new TimePersistence(dir), resolve: id => live[id] ?? null, now: () => clock });
+    live.a1 = SESSIONS.a1;
+    t.recordTokens('a1', 1_000);
+    delete live.a1;
+    t.recordTokens('a1', 6_000); // unplaceable: must not become the new baseline
+    live.a1 = SESSIONS.a1;
+    t.recordTokens('a1', 7_000);
+    expect(total(t)).toBe(6_000);
   });
 
   it('totals tokens per column across all projects, or for one', () => {

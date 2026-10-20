@@ -40,7 +40,7 @@ import { saveArtifacts, loadArtifacts } from '../../session/artifact-persistence
 import { pruneOrphanArtifacts } from '../../session/artifact-orphan-prune.js';
 import { DraftManager } from '../../session/draft-manager.js';
 import type { Draft } from '../../types/draft.js';
-import { readSubagentContexts } from '../../session/subagent-usage.js';
+import { SubagentTokenIngest } from '../../session/subagent-token-ingest.js';
 import type { SessionInfo, SessionUpdatedEvent } from '../../types/session.js';
 import { createDraftStore } from '../../session/draft-persistence.js';
 import { TodoManager } from '../../session/todo-manager.js';
@@ -693,22 +693,21 @@ export function registerIPCHandlers(
     if (level === 'idle' && !stateDetector.hasObservedHooks(sessionId)) timeTracker.disarmAi(sessionId);
   });
   // Every context reading feeds the token ledger; unchanged readings add nothing.
-  // Sub-agents run inside a main turn, so their logs are re-read only when the main reading moves.
-  const subagentReadAt = new Map<string, string | number>();
   sessionManager.on('session:updated', (session: SessionUpdatedEvent) => {
     if (!session.contextUsage || session.remote) return;
     timeTracker.recordTokens(session.id, session.contextUsage.tokens);
-    const stamp = session.contextUsage.measuredAtIso ?? session.contextUsage.tokens;
-    const lastRead = subagentReadAt.get(session.id);
-    if (lastRead === stamp) return;
-    subagentReadAt.set(session.id, stamp);
-    // The first read after startup sees sub-agents a previous run already counted.
-    const record = lastRead === undefined ? timeTracker.primeSubagentTokens : timeTracker.recordSubagentTokens;
-    for (const [agent, tokens] of readSubagentContexts(session.cliTranscriptPath)) {
-      record.call(timeTracker, session.id, agent, tokens);
-    }
   });
-  sessionManager.on('session:removed', (event: { sessionId: string }) => subagentReadAt.delete(event.sessionId));
+  // Sub-agents run while the main context stands still, so their logs are swept on a timer of their own.
+  const SUBAGENT_SWEEP_MS = 60_000;
+  const subagentIngest = new SubagentTokenIngest(timeTracker, !timeTracker.hasSavedBaselines);
+  const sweepSubagents = () => subagentIngest.sweep(sessionManager.getAllSessions());
+  const subagentSweepTimer = setInterval(sweepSubagents, SUBAGENT_SWEEP_MS);
+  // A closing session gets one last read: its sub-agents may have finished since the last sweep.
+  sessionManager.on('session:removed', ({ session }: { session: SessionInfo }) => {
+    subagentIngest.sweep([session]);
+    subagentIngest.forget(session.id);
+    timeTracker.forgetSession(session.id);
+  });
   // Twice per slot, so an active session never skips one.
   const timeTrackerTimer = setInterval(() => timeTracker.tick(), SLOT_MS / 2);
   // ETA accuracy: unmarked after ETA + 10m, or when the session closes with one open.
@@ -1582,8 +1581,10 @@ export function registerIPCHandlers(
       keepWarmer.dispose();
       cleanupMess();
       clearInterval(timeTrackerTimer);
+      clearInterval(subagentSweepTimer);
       clearInterval(etaSweepTimer);
       setDeliveryObserver(null);
+      sweepSubagents();
       timeTracker.flush();
       cleanupTimeTracking();
       hookTracker.dispose();

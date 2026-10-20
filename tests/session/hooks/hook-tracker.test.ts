@@ -100,6 +100,8 @@ function setup(): Setup {
     persistence: {
       append: slots => persistedSlots.push(...slots),
       load: (from, to) => persistedSlots.filter(slot => slot.start >= from && slot.start < to),
+      saveBaselines: () => {},
+      loadBaselines: () => null,
     },
     resolve: sessionId => sessionManager.hasSession(sessionId)
       ? { projectKey: 'p1', projectName: 'Project', dir: 'x:/repo' }

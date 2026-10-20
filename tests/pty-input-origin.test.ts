@@ -151,6 +151,8 @@ describe('pty:write input origin', () => {
       persistence: {
         append: slots => persisted.push(...slots),
         load: (from, to) => persisted.filter(slot => slot.start >= from && slot.start < to),
+        saveBaselines: () => {},
+        loadBaselines: () => null,
       },
       resolve: id => id === 's1' ? { projectKey: 'p1', projectName: 'Project', dir: 'C:/work' } : null,
       now: () => now,

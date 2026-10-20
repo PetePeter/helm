@@ -63,6 +63,20 @@ describe('readSubagentContexts', () => {
     expect(readSubagentContexts(main)).toEqual(new Map([['dc127fa9', 31_400], ['f4da0e31', 5_010]]));
   });
 
+  it('reaches a sub-agent reply buried under more than the tail window of tool output', () => {
+    const root = dir();
+    const main = join(root, 'sess-3.jsonl');
+    writeFileSync(main, jsonl([{ type: 'assistant', message: { usage: { input_tokens: 1 } } }]));
+    mkdirSync(join(root, 'sess-3', 'subagents'), { recursive: true });
+    const bulk = { type: 'user', message: { role: 'user', content: 'x'.repeat(100_000) } };
+    writeFileSync(join(root, 'sess-3', 'subagents', 'agent-zz.jsonl'), jsonl([
+      { type: 'assistant', message: { usage: { cache_read_input_tokens: 22_000, output_tokens: 0 } } },
+      ...Array.from({ length: 12 }, () => bulk),
+    ]));
+
+    expect(readSubagentContexts(main)).toEqual(new Map([['agent-zz.jsonl', 22_000]]));
+  });
+
   it('finds nothing for a session that spawned no sub-agents', () => {
     const main = join(dir(), 'sess-2.jsonl');
     writeFileSync(main, jsonl([{ type: 'assistant', message: { usage: { input_tokens: 9_000 } } }]));
