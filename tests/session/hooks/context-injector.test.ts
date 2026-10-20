@@ -202,7 +202,7 @@ describe('UserPromptSubmit', () => {
     expect(context).toContain('[HELM_TODOS]');
     expect(context).toContain('[HELM_ETA]');
     expect(context!.match(/\[HELM_ETA\]/g)).toHaveLength(1);
-    expect(context).toContain('Call session_eta_clear the moment the work is done');
+    expect(context).toContain('Done? Call session_eta_clear at once');
     expect(context).toContain('session_eta_set');
     expect(context).toContain('multi-step work');
   });
@@ -538,6 +538,29 @@ describe('Stop — the one-shot nudge', () => {
       getTodos: () => [{ id: 't1', text: 'Done', status: 'done', createdAt: 1, doneAt: 2 }],
     });
     expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+  });
+
+  it('blocks a Stop once per user turn while an ETA is still open', async () => {
+    const eta = { at: 2, setAt: 1 };
+    const { injector } = makeInjector({}, { eta });
+    const first = await injector.respond(hookEvent({ event: 'Stop' }));
+    expect((first!.body as { reason: string }).reason).toContain('session_eta_clear');
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+
+    await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'next' }));
+    expect((await injector.respond(hookEvent({ event: 'Stop' })))!.body).toHaveProperty('decision', 'block');
+  });
+
+  it('lets a Stop pass when no ETA is open', async () => {
+    const { injector } = makeInjector();
+    expect(await injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+  });
+
+  it('keeps the todo and ETA reminders as separate prompt blocks', async () => {
+    const { injector } = makeInjector({ getTodos: () => [] });
+    const context = contextOf((await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'p' })))!.body);
+    expect(context).toContain('[HELM_TODOS]');
+    expect(context).toContain('[HELM_ETA] Starting multi-step work? Call session_eta_set {minutes: N}');
   });
 
   it('forgets a session with its ledgers', async () => {

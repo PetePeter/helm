@@ -140,6 +140,7 @@ export class ContextInjector {
   private readonly stopNudged = new Set<string>();
   /** Open-todo Stop reminder: once per user turn, re-armed by the next prompt. */
   private readonly stopTodosNudged = new Set<string>();
+  private readonly stopEtaNudged = new Set<string>();
   /** Sessions whose telegram-mode entry the injected mode block covered. */
   private readonly telegramModeAnnounced = new Set<string>();
 
@@ -156,6 +157,7 @@ export class ContextInjector {
     this.nudged.delete(sessionId);
     this.stopNudged.delete(sessionId);
     this.stopTodosNudged.delete(sessionId);
+    this.stopEtaNudged.delete(sessionId);
     this.telegramModeAnnounced.delete(sessionId);
   }
 
@@ -172,6 +174,7 @@ export class ContextInjector {
 
     if (event.event === 'UserPromptSubmit' || event.event === 'UserPromptTransformed') {
       this.stopTodosNudged.delete(session.id);
+      this.stopEtaNudged.delete(session.id);
       this.deps.resetToolSuggestionTurn?.(session.id);
     }
     if (event.event === 'PreCompact' ||
@@ -485,7 +488,8 @@ export class ContextInjector {
     const openTodos = this.stopTodosNudged.has(session.id)
       ? []
       : (this.deps.getTodos?.(session.id) ?? []).filter(todo => todo.status === 'open');
-    if (!nudge && openTodos.length === 0) return null;
+    const openEta = session.eta !== undefined && !this.stopEtaNudged.has(session.id);
+    if (!nudge && openTodos.length === 0 && !openEta) return null;
 
     const lines: string[] = [];
     if (nudge) {
@@ -496,6 +500,10 @@ export class ContextInjector {
     if (openTodos.length) {
       this.stopTodosNudged.add(session.id);
       lines.push(this.injection('stopTodosNudge', { todos: openTodos.map(todo => `- ${todo.text}`).join('\n') }));
+    }
+    if (openEta) {
+      this.stopEtaNudged.add(session.id);
+      lines.push(this.injection('stopEtaNudge'));
     }
     logger.info(`[HookInject] Stop nudge session=${session.id} (${session.name}): blocked once`);
     return { statusCode: 200, body: encodeStopBlock(event, lines.join('\n')) };

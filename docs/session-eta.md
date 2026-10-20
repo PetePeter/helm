@@ -32,11 +32,12 @@ ETA, time remaining, the 80% range (or "no range yet"), set time, and optional
 note. After the ETA passes, the row
 shows `🏁 late Nm` in warning amber. It uses the existing elapsed-timer tick.
 
-The hook places one `[HELM_ETA]` reminder beside `[HELM_TODOS]`, asking the LLM
-to set and update its estimate when it takes on multi-step work, to re-set with
-`rescope` when the scope changes, and to call `session_eta_clear` the moment the
-work is done. The phone has
-no ETA display.
+The hook places one `[HELM_ETA]` reminder (its own `etaPrompt` injection) beside
+`[HELM_TODOS]`, asking the LLM to set and update its estimate when it takes on
+multi-step work, to re-set with `rescope` when the scope changes, and to call
+`session_eta_clear` the moment the work is done. A Stop with an ETA still open is
+blocked once per user turn (`stopEtaNudge`, same shape as the open-todos nudge).
+The phone has no ETA display.
 
 ## Accuracy and confidence range
 

@@ -117,7 +117,15 @@ export const HOOK_INJECTION_DEFINITIONS = [
     group: 'Prompt',
     description: 'The open items in this session checklist. Value: {{items}}.',
     defaultTemplate:
-      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Keep your session manifesto current and update the mission with session_mission_set when the direction changes.\n[HELM_ETA] When you take on multi-step work, set an estimate with session_eta_set and update it when your expected finish changes. If the scope changes, re-set with rescope and a reason to start a fresh estimate. Call session_eta_clear the moment the work is done — Helm scores the estimate then, and one left open is counted as unmarked.',
+      '[HELM_TODOS]\nOpen items:\n{{items}}\nBefore acting on a request with more than one step, call session_todo_add once per step — do this first, even when the list is empty. Call session_todo_done as each step finishes, not at the end. If a step needs a user answer, park it with session_todo_wait and stop; resume it when they reply. Keep your session manifesto current and update the mission with session_mission_set when the direction changes.',
+  },
+  {
+    id: 'etaPrompt',
+    label: 'Session ETA',
+    group: 'Prompt',
+    description: 'Reminder to estimate multi-step work and clear the estimate when done.',
+    defaultTemplate:
+      '[HELM_ETA] Starting multi-step work? Call session_eta_set {minutes: N} first. Scope changed? Call it again with rescope: "why". Done? Call session_eta_clear at once — Helm scores the estimate then, and one left open counts as unmarked.',
   },
   {
     id: 'suggestionPointer',
@@ -176,6 +184,14 @@ export const HOOK_INJECTION_DEFINITIONS = [
     description: 'Reminder, once per user turn, not to stop with open todos. Values: {{todos}}.',
     defaultTemplate:
       'You are stopping with open todos:\n{{todos}}\nFinish them, mark finished ones with session_todo_done, delete ones no longer wanted with session_todo_delete, then stop again. If one needs a user answer, park it with session_todo_wait and stop.',
+  },
+  {
+    id: 'stopEtaNudge',
+    label: 'Open ETA stop nudge',
+    group: 'Stop',
+    description: 'Reminder, once per user turn, not to stop with an estimate still open.',
+    defaultTemplate:
+      'You are stopping with a session ETA still open. If the work is done, call session_eta_clear now — Helm scores the estimate then. If you are waiting on the user, say so and stop again; otherwise keep working or call session_eta_set with a new estimate.',
   },
   {
     id: 'amberContextAlert',

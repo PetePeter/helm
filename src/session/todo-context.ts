@@ -9,7 +9,10 @@ export function renderSessionTodoContext(
   const items = todos
     .filter(todo => todo.status !== 'done')
     .map(todo => `- ${todo.id}: ${todo.text}${todo.status === 'waiting' ? ' (waiting on user)' : ''}`);
-  return renderHookInjection('todosPrompt', { items: items.length ? items.join('\n') : '- (none)' }, overrides);
+  return [
+    renderHookInjection('todosPrompt', { items: items.length ? items.join('\n') : '- (none)' }, overrides),
+    renderHookInjection('etaPrompt', {}, overrides),
+  ].join('\n');
 }
 
 /** Put the current checklist beside persistent manifesto text on API reset paths. */

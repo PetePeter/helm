@@ -1193,7 +1193,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_set',
     title: 'Set Session ETA',
-    description: 'Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. Re-setting while one is open revises the shown time but keeps the clock and first guess it is scored against — unless you pass rescope: then the open estimate closes unscored and a fresh clock starts. Use rescope only when the work itself changed (new or dropped requirements), never to hide a slip. The returned eta may carry range {lo, hi, samples}: the 80% band learned from your past estimates in this CLI and folder. The caller identity comes from Helm, not arguments.',
+    description: 'CALL FIRST on any request needing more than one action, before the work starts; call session_eta_clear when it is done. Set the expected completion time for YOUR OWN current request. Supply exactly one of minutes (from now) or at (absolute epoch milliseconds); an optional note is shown in the desktop session row. Re-setting while one is open revises the shown time but keeps the clock and first guess it is scored against — unless you pass rescope: then the open estimate closes unscored and a fresh clock starts. Use rescope only when the work itself changed (new or dropped requirements), never to hide a slip. The returned eta may carry range {lo, hi, samples}: the 80% band learned from your past estimates in this CLI and folder. The caller identity comes from Helm, not arguments.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1209,7 +1209,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_eta_clear',
     title: 'Clear Session ETA',
-    description: 'Mark YOUR OWN current request finished: Helm scores the estimate against the actual time and removes it. Call it as soon as the work is done — a late clear still counts, at its real end; an estimate never cleared within 3× its first guess (at least 1h) is recorded as unmarked.',
+    description: 'CALL THE MOMENT the work you set an estimate for is done — before your final answer, and before stopping. Mark YOUR OWN current request finished: Helm scores the estimate against the actual time and removes it. Call it as soon as the work is done — a late clear still counts, at its real end; an estimate never cleared within 3× its first guess (at least 1h) is recorded as unmarked.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -1256,7 +1256,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_todo_add',
     title: 'Add Session Todo',
-    description: 'Add an open todo to YOUR OWN session checklist. The desktop Todos pane is a read-only view; use this MCP tool to maintain the list. Returns the new todo including its id.',
+    description: 'CALL FIRST, once per step, on any request needing more than one action — before doing the work. Add an open todo to YOUR OWN session checklist. The desktop Todos pane is a read-only view; use this MCP tool to maintain the list. Returns the new todo including its id.',
     inputSchema: {
       type: 'object',
       properties: { text: { type: 'string', description: 'A short, actionable todo.' } },
@@ -1267,7 +1267,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'session_todo_done',
     title: 'Complete Session Todo',
-    description: 'Mark an open todo in YOUR OWN session checklist done. Pass the id returned by session_todo_add or session_todo_list.',
+    description: 'CALL AS EACH STEP FINISHES, not at the end. Mark an open todo in YOUR OWN session checklist done. Pass the id returned by session_todo_add or session_todo_list.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: 'Todo id.' } },
