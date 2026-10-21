@@ -20,7 +20,8 @@ const activeTasks = computed(() => tasks.value
     if ((a.scheduleKind === 'none') !== (b.scheduleKind === 'none')) return a.scheduleKind === 'none' ? 1 : -1;
     return nextRunMs(a) - nextRunMs(b);
   }));
-const scheduleTasks = computed(() => activeTasks.value.filter((task) => !task.systemKind).slice(0, 4));
+const userTasks = computed(() => activeTasks.value.filter((task) => !task.systemKind));
+const scheduleTasks = computed(() => userTasks.value.slice(0, 4));
 
 async function loadTasks(): Promise<void> {
   try {
@@ -66,7 +67,7 @@ onUnmounted(() => {
     <div class="scheduler-create-split">
       <button class="scheduler-create scheduler-create--main focusable" data-focus-id="scheduler:new" @click.stop="emit('open', null)">
         <span>New Schedule</span>
-        <span class="scheduler-count-badge" aria-label="Total schedules">{{ tasks.filter((task) => !task.systemKind).length }}</span>
+        <span class="scheduler-count-badge" aria-label="Total schedules">{{ userTasks.length }}</span>
       </button>
       <button class="scheduler-create scheduler-create--hist focusable" data-focus-id="scheduler:history" type="button" title="Past Schedules" aria-label="Past Schedules" @click.stop="emit('history')">🕘</button>
     </div>

@@ -63,6 +63,19 @@ describe('SchedulerSection', () => {
     vi.useRealTimers();
   });
 
+  it('does not count finished schedules in the badge', async () => {
+    mockScheduledTaskList.mockResolvedValue([
+      { ...task, id: 'done', title: 'Restart self-resume', status: 'completed' },
+      { ...task, id: 'failed', title: 'Failed', status: 'failed' },
+    ]);
+    const wrapper = mount(SchedulerSection, { props: { collapsed: false } });
+    await flushPromises();
+
+    expect(wrapper.find('.scheduler-count-badge').text()).toBe('0');
+    expect(wrapper.findAll('.scheduler-row')).toHaveLength(0);
+    wrapper.unmount();
+  });
+
   it('keeps unscheduled tasks visible after active schedules without treating them as due', async () => {
     mockScheduledTaskList.mockResolvedValue([
       { ...task, id: 'paused', title: 'Paused', scheduleKind: 'none', scheduledTime: new Date(2026, 4, 4, 8, 0, 0) },
