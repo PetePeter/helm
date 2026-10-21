@@ -127,6 +127,8 @@ export const PROMPT_INJECTION_PROVIDERS = new Set(['claude', 'codex']);
 const SOURCE_CAP_CHARS = 800;
 /** Whole-payload cap for any one injected context. */
 const TOTAL_CAP_CHARS = 2500;
+/** A requested compact that never lands stops suspending todo/ETA bookkeeping after this. */
+const COMPACT_PENDING_TTL_MS = 10 * 60_000;
 
 function truncate(text: string, cap: number): string {
   return text.length <= cap ? text : text.slice(0, cap - 1) + '…';
@@ -141,6 +143,8 @@ export class ContextInjector {
   /** Open-todo Stop reminder: once per user turn, re-armed by the next prompt. */
   private readonly stopTodosNudged = new Set<string>();
   private readonly stopEtaNudged = new Set<string>();
+  /** Last context reset (SessionStart compact/clear or PreCompact) per session, epoch ms. */
+  private readonly contextResetAt = new Map<string, number>();
   /** Sessions whose telegram-mode entry the injected mode block covered. */
   private readonly telegramModeAnnounced = new Set<string>();
 
@@ -158,6 +162,7 @@ export class ContextInjector {
     this.stopNudged.delete(sessionId);
     this.stopTodosNudged.delete(sessionId);
     this.stopEtaNudged.delete(sessionId);
+    this.contextResetAt.delete(sessionId);
     this.telegramModeAnnounced.delete(sessionId);
   }
 
@@ -180,6 +185,7 @@ export class ContextInjector {
     if (event.event === 'PreCompact' ||
       (event.event === 'SessionStart' && ['clear', 'compact'].includes(event.source?.toLowerCase() ?? ''))) {
       this.deps.resetSuggestions?.(session.id);
+      this.contextResetAt.set(session.id, Date.now());
     }
 
     let response: InjectorResponse;
@@ -251,7 +257,7 @@ export class ContextInjector {
     const mission = this.deps.getMission?.(session.id);
     if (mission) parts.push(truncate(this.injection('missionStart', { text: mission.text }), SOURCE_CAP_CHARS));
     const todos = this.deps.getTodos?.(session.id);
-    if (todos) parts.push(truncate(renderSessionTodoContext(todos, this.deps.getHookInjectionOverrides?.()), SOURCE_CAP_CHARS));
+    if (todos && !this.compactPending(session)) parts.push(truncate(renderSessionTodoContext(todos, this.deps.getHookInjectionOverrides?.()), SOURCE_CAP_CHARS));
     const rings = session.role === 'operator' ? this.deps.getRingRequests?.(session.id) ?? [] : [];
     if (rings.length > 0) {
       parts.push(truncate(
@@ -375,7 +381,7 @@ export class ContextInjector {
       } else if (mission) parts.push(this.injection('missionStart', { text: mission.text }));
     }
 
-    if (this.deps.getTodos) {
+    if (this.deps.getTodos && !this.compactPending(session)) {
       parts.push(truncate(
         renderSessionTodoContext(this.deps.getTodos(session.id), this.deps.getHookInjectionOverrides?.()),
         SOURCE_CAP_CHARS,
@@ -397,6 +403,13 @@ export class ContextInjector {
       `[HookInject] UserPromptSubmit session=${session.id}: ${parts.length} part(s), ${context.length} chars`,
     );
     return context;
+  }
+
+  /** The session asked to be compacted and no compact or clear has landed since. */
+  private compactPending(session: SessionInfo): boolean {
+    const at = session.compactRequestedAt;
+    if (at === undefined || Date.now() - at > COMPACT_PENDING_TTL_MS) return false;
+    return Math.max(session.lastCliCompactAt ?? 0, this.contextResetAt.get(session.id) ?? 0) < at;
   }
 
   private contextAlert(session: SessionInfo, promptEvent: boolean): string | null {
@@ -485,10 +498,13 @@ export class ContextInjector {
     // The plan/state nudge fires once per session (the second Stop always passes);
     // the todo reminder once per user turn.
     const nudge = (plan || unsettled) && !this.stopNudged.has(session.id);
-    const openTodos = this.stopTodosNudged.has(session.id)
+    // A requested compact makes todo/ETA nudges moot: the turn ends so the
+    // compact can run, and the nudges re-arm once it lands.
+    const bookkeeping = !this.compactPending(session);
+    const openTodos = !bookkeeping || this.stopTodosNudged.has(session.id)
       ? []
       : (this.deps.getTodos?.(session.id) ?? []).filter(todo => todo.status === 'open');
-    const openEta = session.eta !== undefined && !this.stopEtaNudged.has(session.id);
+    const openEta = bookkeeping && session.eta !== undefined && !this.stopEtaNudged.has(session.id);
     if (!nudge && openTodos.length === 0 && !openEta) return null;
 
     const lines: string[] = [];

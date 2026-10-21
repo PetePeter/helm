@@ -120,6 +120,9 @@ export interface SessionInfo {
   /** When the CLI last compacted its own context (PreCompact hook, epoch ms).
    *  Lets a quick compact asked for just after it be skipped as redundant. */
   lastCliCompactAt?: number;
+  /** When Helm was last asked to compact this session (epoch ms).
+   *  Runtime only: todo/ETA bookkeeping stands down until the compact lands. */
+  compactRequestedAt?: number;
   /** Timestamp and source of the last actual user-submitted prompt. */
   lastUserPromptAt?: number;
   lastUserPromptSource?: UserPromptSource;

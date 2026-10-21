@@ -36,11 +36,12 @@ const afterIdle = () => Promise.all(idleRuns);
 function makeService(entry: Partial<CliTypeConfig> | null, ptyRunning = true, opts: { holdIdle?: boolean } = {}) {
   idleRuns = [];
   const held: Array<() => Promise<void>> = [];
-  const session: { id: string; name: string; cliType: string; frozen?: boolean } = { id: 's1', name: 'worker', cliType: 'claude-code' };
+  const session: { id: string; name: string; cliType: string; frozen?: boolean; compactRequestedAt?: number } = { id: 's1', name: 'worker', cliType: 'claude-code' };
   const sessionManager = {
     getSession: (id: string) => (id === 's1' ? session : null),
     getAllSessions: () => [session],
     setSessionFrozen: (_id: string, frozen: boolean) => { session.frozen = frozen; return session; },
+    updateSession: (_id: string, patch: object) => Object.assign(session, patch),
   };
   const ptyManager = { has: () => ptyRunning };
   const configLoader = { getCliTypeEntry: () => entry, getCliTypeLabel: (ref: string) => ref };
@@ -123,10 +124,12 @@ describe('session_compact', () => {
   });
 
   it('an API tool compacts through Helm\'s own /compact without any configured action', async () => {
-    const { service } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: [] } });
+    const { service, session } = makeService({ api: { baseUrl: 'http://x/v1', model: 'm', allowedTools: [] } });
     await service.compactSession('s1', { instruction: 'keep ids' });
     await afterIdle();
     expect(deliveredText()).toBe('/compact keep ids{Enter}');
+    // No compact hook would ever spend the stamp.
+    expect(session.compactRequestedAt).toBeUndefined();
   });
 
   it('preserves {Wait N} in the sequence (delivery awaits it to hold the MCP return)', async () => {
@@ -162,6 +165,18 @@ describe('session_compact', () => {
     await release();
     expect(armed).toEqual([{ sessionId: 's1', text: 'resume', deliveriesBefore: 0 }]);
     expect(deliveredText()).toBe('/compact{Enter}');
+  });
+
+  it('flags the compact as requested at call time, before the idle run, and withdraws it if the send fails', async () => {
+    const { service, session, release } = makeService({ helmActions: { compact: '/compact{Enter}' } }, true, { holdIdle: true });
+
+    await service.compactSession('s1', {});
+    // Set before the session's own Stop, so that Stop is not held up by todo nudges.
+    expect(session.compactRequestedAt).toEqual(expect.any(Number));
+
+    deliverSpy.mockRejectedValueOnce(new Error('pty gone'));
+    await release().catch(() => {});
+    expect(session.compactRequestedAt).toBeUndefined();
   });
 
   it('arms nothing and keeps the return shape when no handover is given', async () => {
@@ -302,6 +317,20 @@ describe('session_quick_compact', () => {
     expect(deliveredText(0)).toBe('/clear{Enter}');
     expect(armed).toHaveLength(1);
     rmSync((forced as { transcriptFile: string }).transcriptFile, { force: true });
+  });
+
+  it('flags a CLI quick compact as requested, but not one it skipped', async () => {
+    const { service, session } = makeService({ helmActions: { clear: '/clear{Enter}' } }, true, { holdIdle: true });
+    const log = join(dir, 'log.jsonl');
+    writeFileSync(log, JSON.stringify({ type: 'user', message: { content: 'x' } }));
+    Object.assign(session, { cliTranscriptPath: log, lastCliCompactAt: Date.now() - 60_000 });
+
+    await service.quickCompactSession('s1', {});
+    expect(session.compactRequestedAt).toBeUndefined();
+
+    const result = await service.quickCompactSession('s1', { force: true });
+    expect(session.compactRequestedAt).toEqual(expect.any(Number));
+    rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
 
   it('runs a quick compact once the CLI compaction is more than 5 minutes old', async () => {

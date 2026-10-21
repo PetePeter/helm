@@ -13,7 +13,7 @@
  * Deps are plain functions over real-shaped data — no mocks beyond winston.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContextInjector, type ContextInjectorDeps } from '../../../src/session/hooks/context-injector';
 import type { HookEvent } from '../../../src/session/hooks/hook-normaliser';
 import { SuggestionService } from '../../../src/session/hooks/suggestion-scorer';
@@ -800,6 +800,48 @@ describe('context pressure reminders', () => {
     const result = await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'hello' }));
     expect(contextOf(result!.body)).toContain('Custom alert for amber.');
     expect(contextOf(result!.body)).not.toContain('session_quick_compact');
+  });
+
+  describe('a requested compact suspends todo/ETA bookkeeping until it lands', () => {
+    const todo = { id: 't1', text: 'Wire the chart', status: 'open' as const, createdAt: 1 };
+    afterEach(() => vi.useRealTimers());
+    const pending = (patch: Partial<SessionInfo> = {}) => {
+      const state: Partial<SessionInfo> = { compactRequestedAt: Date.now(), ...patch };
+      const { injector } = makeInjector({ getTodos: () => [todo], getSession: () => session(state) });
+      return { injector, state };
+    };
+    const promptText = async (injector: ContextInjector) =>
+      contextOf((await injector.respond(hookEvent({ event: 'UserPromptSubmit', prompt: 'next' })))?.body);
+
+    it('drops the todo and ETA prompt guidance', async () => {
+      const text = await promptText(pending().injector);
+      expect(text).not.toContain('[HELM_TODOS]');
+      expect(text).not.toContain('[HELM_ETA]');
+    });
+
+    it('lets the Stop through with open todos', async () => {
+      expect(await pending().injector.respond(hookEvent({ event: 'Stop' }))).toBeNull();
+    });
+
+    it.each([
+      ['SessionStart compact', hookEvent({ event: 'SessionStart', source: 'compact' })],
+      ['SessionStart clear', hookEvent({ event: 'SessionStart', source: 'clear' })],
+      ['PreCompact', hookEvent({ event: 'PreCompact' })],
+    ])('restores todos and the Stop nudge once %s lands', async (_name, landed) => {
+      vi.useFakeTimers({ now: 1_000 });
+      const { injector } = pending();
+      vi.setSystemTime(2_000);
+      await injector.respond(landed);
+      expect(await promptText(injector)).toContain('[HELM_TODOS]');
+      expect(JSON.stringify((await injector.respond(hookEvent({ event: 'Stop' })))?.body)).toContain('Wire the chart');
+    });
+
+    it('restores todos after 10 minutes when no compact arrives', async () => {
+      vi.useFakeTimers({ now: 1_000 });
+      const { injector } = pending();
+      vi.setSystemTime(1_000 + 10 * 60_000 + 1);
+      expect(await promptText(injector)).toContain('[HELM_TODOS]');
+    });
   });
 
   it('does not alert without a measured context or valid limits', async () => {

@@ -37,6 +37,7 @@ The hook places one `[HELM_ETA]` reminder (its own `etaPrompt` injection) beside
 multi-step work, to re-set with `rescope` when the scope changes, and to call
 `session_eta_clear` the moment the work is done. A Stop with an ETA still open is
 blocked once per user turn (`stopEtaNudge`, same shape as the open-todos nudge).
+Both stand down while a self-requested compact is pending — see [todos.md](todos.md).
 The phone has no ETA display.
 
 ## Accuracy and confidence range

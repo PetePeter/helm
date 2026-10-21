@@ -33,6 +33,22 @@ Only completed items can be deleted. Mark an open todo done first. `clear` remov
 
 The UserPromptSubmit hook supplies a `[HELM_TODOS]` block with the open items and asks the LLM to keep the checklist and session mission current. The same context is supplied on SessionStart, including after CLI compaction. API sessions add it beside persistent manifesto context after `/clear`, `/compact`, and quick compact.
 
+A session that asks to compact itself (`session_compact`, or `session_quick_compact` on a CLI) has its todo and ETA bookkeeping suspended until the compact lands. Otherwise the prompt's "add todos first" and the Stop nudge fight the compact request, and the LLM does bookkeeping instead of compacting.
+
+```mermaid
+sequenceDiagram
+    participant LLM
+    participant Helm
+    LLM->>Helm: session_compact / session_quick_compact
+    Helm->>Helm: compactRequestedAt = now
+    Note over Helm: prompts omit [HELM_TODOS]/[HELM_ETA]<br/>Stop passes without todo/ETA nudge
+    Helm->>LLM: compact or /clear (once idle)
+    LLM-->>Helm: PreCompact / SessionStart compact|clear
+    Note over Helm: suspension spent, todos re-supplied<br/>in the fresh context
+```
+
+The stamp is runtime-only. A failed send withdraws it, and it expires after 10 minutes if no compact arrives. Todos persist across the compact, so nothing is lost.
+
 Lists are persisted per session. They survive restarts, compaction, and recycle-bin restores. A permanent session deletion, recycle-bin forget/expiry, or startup orphan cleanup removes its list.
 
 The renderer reads the list through IPC and receives live changes from MCP calls. Only the session's LLM can add, complete, delete, or clear items; the desktop pane has no editing controls.

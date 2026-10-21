@@ -701,6 +701,7 @@ export class HelmSessionDeliveryService {
     }
 
     const transcriptFile = writeStrippedTranscript(session);
+    const withdrawCompactRequest = this.noteCompactRequested(session);
     // Compacting a frozen session is an explicit ask to bring it back: the
     // /clear and the resume prompt both have to reach it.
     if (session.frozen) this.sessionManager.setSessionFrozen(session.id, false);
@@ -709,7 +710,7 @@ export class HelmSessionDeliveryService {
       ...(options.senderSessionId ? { senderSessionId: options.senderSessionId } : {}),
       ...(options.senderSessionName ? { senderSessionName: options.senderSessionName } : {}),
       context: buildTranscriptResumePrompt(transcriptFile, options.handover),
-    }).then(() => {});
+    }).then(() => {}, withdrawCompactRequest);
     // Never clear mid-turn: a session quick-compacting itself finishes its turn first.
     if (this.handover) {
       this.handover.runWhenIdle(session.id, clear);
@@ -717,6 +718,26 @@ export class HelmSessionDeliveryService {
     }
     await clear();
     return { ok: true, action: 'quick_compact', sessionId: session.id, transcriptFile, note: ACTION_WAIT_NOTE };
+  }
+
+  /**
+   * Stamp the compact as requested at call time — before the session's own
+   * Stop, which would otherwise be held up by todo/ETA nudges the compact
+   * makes moot. The hook injector treats the stamp as spent once a compact or
+   * clear lands. Returns a rejection handler that withdraws the stamp and rethrows.
+   */
+  private noteCompactRequested(session: SessionInfo): (err: unknown) => never {
+    // API tools fire no compact hooks to spend the stamp, and their reset path
+    // re-supplies todos itself — only CLI sessions are stamped.
+    if (this.configLoader.getCliTypeEntry(session.cliType)?.api) return err => { throw err; };
+    const at = Date.now();
+    this.sessionManager.updateSession(session.id, { compactRequestedAt: at });
+    return err => {
+      if (this.sessionManager.getSession(session.id)?.compactRequestedAt === at) {
+        this.sessionManager.updateSession(session.id, { compactRequestedAt: undefined });
+      }
+      throw err;
+    };
   }
 
   /**
@@ -738,12 +759,13 @@ export class HelmSessionDeliveryService {
       ? this.offloadIfLarge(session.cliType, handoverText, 'session-compact-handover', 'session_compact handover')
       : undefined;
 
+    const withdrawCompactRequest = this.noteCompactRequested(session);
     const compact = async (): Promise<void> => {
       // Armed before the write, never after: the compact command's own output
       // is the edge the delivery's silence clock waits behind.
       if (deliveryText) handover?.arm(session.id, deliveryText);
       logger.info(`[HelmSessionDelivery] session_compact for "${session.name}" (${session.id})`);
-      await this.deliverActionSequence(session.id, sequence);
+      await this.deliverActionSequence(session.id, sequence).catch(withdrawCompactRequest);
     };
     // Never compact mid-turn: a session compacting itself finishes its turn first.
     if (handover) handover.runWhenIdle(session.id, compact);
