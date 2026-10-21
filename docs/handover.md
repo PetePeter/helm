@@ -36,6 +36,8 @@ sequenceDiagram
     SC-->>LLM: {handoverPending:true} — returns now
     alt CLI with hooks (Claude Code)
         PTY->>HD: SessionStart hook injects the note → markDeliveredByHook
+        Note over PTY: 10s silence, past the floor
+        HD->>PTY: kick-off prompt (not the note)
     else no hooks
         PTY->>HD: compaction output (restarts silence clock)
         Note over PTY: 10s silence, past the floor
@@ -45,8 +47,10 @@ sequenceDiagram
 ```
 
 A hook-aware CLI receives the note as SessionStart context after its
-compaction or clear, so Helm settles the handover there and never pastes it —
-pasting too would hand the model the same note twice.
+compaction or clear, so Helm never pastes it — pasting too would hand the
+model the same note twice. But hook context never starts a turn, so Helm still
+pastes a one-line kick-off (`HANDOVER_KICKOFF`) at the usual lull; without it
+the cleared session sits idle holding its handover.
 
 ## Never compact mid-turn
 

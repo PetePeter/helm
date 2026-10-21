@@ -29,6 +29,13 @@ export const DEFAULT_HANDOVER_CEILING_MS = 120_000;
  */
 export const DEFAULT_HANDOVER_SILENCE_MS = 10_000;
 
+/**
+ * Pasted in place of a note the SessionStart hook already carried. Hook
+ * context only enters the window — it never starts a turn — so without a
+ * prompt the freshly cleared session sits idle holding its handover.
+ */
+export const HANDOVER_KICKOFF = 'Continue from the handover in your context.';
+
 /** After the ceiling's Esc, how long a busy CLI gets to stop before the compact. */
 export const ESC_SETTLE_MS = 2_000;
 
@@ -60,6 +67,8 @@ interface PendingHandover {
   silence?: ReturnType<typeof setTimeout>;
   /** Nudge with Esc and wait once more before pasting at the ceiling. */
   escRetry: boolean;
+  /** SessionStart already carried the note; `text` is now the kick-off. */
+  injected?: boolean;
 }
 
 /** Resolves once a session's handover is pasted or dropped. */
@@ -215,14 +224,15 @@ export class HandoverDelivery extends EventEmitter {
 
   /**
    * A hook-aware CLI got the note through its SessionStart hook, so pasting it
-   * as well would only duplicate it: settle and unlock without writing.
+   * as well would only duplicate it. Swap in the kick-off prompt and let the
+   * usual lull deliver that instead — the turn still needs starting.
    */
   markDeliveredByHook(sessionId: string): void {
-    if (this.disposed || !this.pending.has(sessionId)) return;
-    this.clearTimer(sessionId);
-    logger.info(`[HandoverDelivery] Handover for ${sessionId} delivered by the SessionStart hook`);
-    this.settle(sessionId);
-    this.emit('handover-delivered', { sessionId });
+    const entry = this.pending.get(sessionId);
+    if (this.disposed || !entry) return;
+    entry.text = HANDOVER_KICKOFF;
+    entry.injected = true;
+    logger.info(`[HandoverDelivery] Handover for ${sessionId} carried by the SessionStart hook; kick-off pending`);
   }
 
   /** The user's "Send now": they judged the session ready, so skip the wait. */
@@ -254,7 +264,8 @@ export class HandoverDelivery extends EventEmitter {
 
   /** Text of the pending handover, for the confirmation dialog to show. */
   peek(sessionId: string): string | undefined {
-    return this.pending.get(sessionId)?.text;
+    const entry = this.pending.get(sessionId);
+    return entry?.injected ? undefined : entry?.text;
   }
 
   dispose(): void {

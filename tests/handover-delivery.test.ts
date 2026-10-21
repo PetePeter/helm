@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ESC_SETTLE_MS, HandoverDelivery } from '../src/session/handover-delivery.js';
+import { ESC_SETTLE_MS, HANDOVER_KICKOFF, HandoverDelivery } from '../src/session/handover-delivery.js';
 
 vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -374,22 +374,24 @@ describe('HandoverDelivery', () => {
     });
   });
 
-  it('a note the SessionStart hook carried is delivered without any paste', async () => {
+  it('a note the SessionStart hook carried is not re-pasted, but a kick-off prompt still starts the turn', async () => {
+    // Regression: SessionStart context never starts a model turn, so settling
+    // here left a freshly cleared session sitting idle with its handover.
     vi.useFakeTimers();
     const { handover, delivered } = setup();
     const events: string[] = [];
     handover.on('handover-delivered', ({ sessionId }) => events.push(sessionId));
     handover.arm('s1', 'resume');
-    const settled = handover.whenSettled('s1');
 
     handover.markDeliveredByHook('s1');
-    await settled;
-    vi.advanceTimersByTime(CEILING_MS);
+    expect(handover.peek('s1')).toBeUndefined();
+    expect(events).toEqual([]);
+
+    vi.advanceTimersByTime(FLOOR_MS);
     await flush();
 
-    expect(delivered).toEqual([]);
+    expect(delivered).toEqual([{ sessionId: 's1', text: HANDOVER_KICKOFF }]);
     expect(events).toEqual(['s1']);
-    expect(handover.isPending('s1')).toBe(false);
     expect(handover.pendingIds()).toEqual([]);
     handover.dispose();
   });
