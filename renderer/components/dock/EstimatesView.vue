@@ -18,6 +18,7 @@ import {
   Tooltip,
   type ChartConfiguration,
 } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import type { EstimateView } from '../../../src/session/eta-stats.js';
 import type { TimesheetPeriod } from '../../../src/session/time-tracker.js';
 import { timeClient } from '../../ipc/clients.js';
@@ -25,7 +26,7 @@ import { readStatsChartTheme } from '../charts/stats-chart-config.js';
 import { buildRatioConfig, buildScatterConfig, buildTrendConfig, type EstimateChartTheme } from '../charts/estimate-chart-config.js';
 import EmptyState from '../common/EmptyState.vue';
 
-Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip);
+Chart.register(BarController, BarElement, CategoryScale, Legend, LinearScale, LineController, LineElement, PointElement, ScatterController, Tooltip, zoomPlugin);
 
 const props = defineProps<{ period: TimesheetPeriod; anchor: number }>();
 const REFRESH_MS = 60_000;
@@ -42,7 +43,8 @@ let generation = 0;
 async function refresh(): Promise<void> {
   const ticket = ++generation;
   const next = await timeClient.timeEstimates(props.period, props.anchor, dir.value || null);
-  if (ticket === generation) view.value = next;
+  // Unchanged data keeps the charts (and the user's zoom) as they are.
+  if (ticket === generation && JSON.stringify(next) !== JSON.stringify(view.value)) view.value = next;
 }
 
 function readTheme(el: HTMLElement): EstimateChartTheme {
@@ -65,7 +67,12 @@ function render(): void {
     [ratioCanvas.value, buildRatioConfig(v, theme)],
     [trendCanvas.value, buildTrendConfig(v, theme)],
   ];
-  for (const [canvas, config] of targets) if (canvas) charts.push(new Chart(canvas, config));
+  for (const [canvas, config] of targets) {
+    if (!canvas) continue;
+    const chart = new Chart(canvas, config);
+    canvas.ondblclick = () => chart.resetZoom();
+    charts.push(chart);
+  }
 }
 
 const signed = (m: number): string => (m > 0 ? `+${m}m` : m < 0 ? `−${-m}m` : '0m');
@@ -109,9 +116,9 @@ onBeforeUnmount(() => {
             <figcaption>Actual ÷ predicted</figcaption>
             <div class="estimates-chart"><canvas ref="ratioCanvas" aria-label="Estimate ratio histogram" /></div>
           </figure>
-          <figure class="estimates-wide">
+          <figure>
             <figcaption>On time %</figcaption>
-            <div class="estimates-chart estimates-chart--short"><canvas ref="trendCanvas" aria-label="On-time percentage" /></div>
+            <div class="estimates-chart"><canvas ref="trendCanvas" aria-label="On-time percentage" /></div>
           </figure>
         </div>
       </template>
@@ -126,12 +133,10 @@ onBeforeUnmount(() => {
 .estimates-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spacing-sm); max-width: 720px; margin-bottom: var(--spacing-md); }
 .estimates-tile { background: var(--bg-tertiary); border-radius: var(--radius-sm); padding: var(--spacing-sm); color: var(--text-secondary); font-size: var(--font-size-sm); }
 .estimates-tile b { display: block; margin-top: var(--spacing-xs); color: var(--text-primary); font-size: var(--font-size-lg); }
-.estimates-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--spacing-md); max-width: 960px; margin-bottom: var(--spacing-md); }
+.estimates-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
 .estimates-grid figure { margin: 0; min-width: 0; }
 .estimates-grid figcaption { color: var(--text-secondary); font-size: var(--font-size-sm); margin-bottom: var(--spacing-xs); }
-.estimates-wide { grid-column: 1 / -1; }
-.estimates-chart { position: relative; height: 240px; }
-.estimates-chart--short { height: 160px; }
+.estimates-chart { position: relative; height: 240px; touch-action: none; }
 .estimates .estimates-good { color: var(--accent); }
 .estimates .estimates-late { color: var(--warning, #b58900); }
 </style>

@@ -14,8 +14,18 @@ function axis(theme: StatsChartTheme, title?: string) {
   };
 }
 
-function plugins(theme: StatsChartTheme, legend: boolean) {
+/** Wheel/pinch zooms, drag pans, never past the data; double-click resets (EstimatesView). */
+function zoom(mode: 'x' | 'xy') {
   return {
+    pan: { enabled: true, mode },
+    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode },
+    limits: { x: { min: 'original', max: 'original' }, y: { min: 'original', max: 'original' } },
+  } as const;
+}
+
+function plugins(theme: StatsChartTheme, legend: boolean, zoomMode: 'x' | 'xy' = 'x') {
+  return {
+    zoom: zoom(zoomMode),
     legend: { display: legend, labels: { color: theme.text } },
     tooltip: { backgroundColor: theme.tooltip, titleColor: theme.text, bodyColor: theme.text, borderColor: theme.grid, borderWidth: 1 },
   };
@@ -44,7 +54,7 @@ export function buildScatterConfig(view: EstimateView, theme: EstimateChartTheme
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: plugins(theme, true),
+      plugins: plugins(theme, true, 'xy'),
       scales: { x: { ...axis(theme, 'predicted (min)'), min: 0 }, y: { ...axis(theme, 'actual (min)'), min: 0 } },
     },
   } as ChartConfiguration;
