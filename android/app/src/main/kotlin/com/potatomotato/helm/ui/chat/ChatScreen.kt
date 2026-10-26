@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,6 +78,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,6 +121,7 @@ import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -307,29 +310,27 @@ fun ChatScreen(
     val clipboard = LocalClipboardManager.current
     BackHandler(enabled = selecting) { selectedKeys = emptyList() }
 
-    // Every entry into a thread starts at the newest bubble. Seeding the list
-    // state is not enough: history often lands AFTER first composition (empty →
-    // filled), by which time the initial index is already captured at 0. So the
-    // anchor fires on the first non-empty frame of each session instead. The
-    // flag is saveable and keyed like the draft: a rotation restores it as true
-    // (position keeps), while a session switch re-keys it to false (re-anchor).
-    var anchored by rememberSaveable(sessionId) { mutableStateOf(false) }
-    LaunchedEffect(sessionId, messages.isEmpty()) {
-        if (!anchored && messages.isNotEmpty()) {
-            listState.scrollToItem(messages.lastIndex)
-            anchored = true
-        }
+    // Follow the conversation, but only from the bottom. A user who has scrolled
+    // up is READING; yanking them back on every arriving message — or on a
+    // reconnect that delivers a backlog — loses their place. So "following" is
+    // decided when a scroll SETTLES, never from the layout after a message has
+    // already landed (by then the new bubble has pushed the bottom away). It
+    // starts true, which is also what anchors every entry into a thread at the
+    // newest bubble; saveable and keyed like the draft, so a rotation keeps the
+    // reader's choice and a session switch starts following again.
+    var following by rememberSaveable(sessionId) { mutableStateOf(true) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .filter { !it }
+            .collect { following = !listState.canScrollForward }
     }
 
-    // Follow the conversation, but only from the bottom. A user who has scrolled
-    // up is READING; yanking them back to the newest line on every arriving
-    // message — or on a reconnect that delivers a backlog — loses their place,
-    // which is exactly what a link drop must not do. The check reads the layout
-    // as it is when the message lands, never a value captured earlier.
-    LaunchedEffect(messages.size) {
-        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-        val wasAtBottom = lastVisible < 0 || lastVisible >= messages.size - 2
-        if (messages.isNotEmpty() && wasAtBottom) listState.scrollToItem(messages.lastIndex)
+    // The tail's identity AND size: a reply that grows in place, or a pending
+    // row that gains an attachment, must keep the bottom in view just like a
+    // new row does. The user's own send always follows — they wrote it.
+    val tail = messages.lastOrNull()
+    LaunchedEffect(tail?.key, tail?.text?.length, tail?.attachment != null) {
+        if (tail != null && (following || tail.fromPhone)) listState.scrollToBottom(messages.lastIndex)
     }
 
     // The keyboard opening shrinks the thread from the bottom, which on its own
@@ -338,7 +339,7 @@ fun ChatScreen(
     // see InsetsOwnedByThemeTest for the line between the two.
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 0 && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
+        if (imeBottom > 0 && messages.isNotEmpty()) listState.scrollToBottom(messages.lastIndex)
     }
 
     // No app bar here: the session's chrome (title, link badge, back, overflow,
@@ -1694,3 +1695,10 @@ private val bubbleTime = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
 /** The mockup shows "09:38" — local wall-clock, the only clock the reader has. */
 private fun formatBubbleTime(at: Long): String =
     bubbleTime.format(java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault()))
+
+/**
+ * The true end of the thread, not the top of the last bubble: a reply taller
+ * than the viewport would otherwise leave its newest lines below the fold. The
+ * oversized offset is clamped by the list to its maximum scroll.
+ */
+private suspend fun LazyListState.scrollToBottom(lastIndex: Int) = scrollToItem(lastIndex, Int.MAX_VALUE)
