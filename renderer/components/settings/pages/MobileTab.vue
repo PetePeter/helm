@@ -15,6 +15,7 @@
  */
 import { onMounted, ref } from 'vue';
 import { useMobileDevices, type MobileDeviceItem } from '../../../composables/useMobileDevices.js';
+import { useCopiedFlash } from '../../../composables/useCopiedFlash.js';
 import { ALLOW_PRESETS } from '../../../lib/mobile-allow-presets.js';
 import { getPeerStatusColor } from '../../../state-colors.js';
 import QrCode from './QrCode.vue';
@@ -39,7 +40,7 @@ const confirmRevokeId = ref<string | null>(null);
 const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 const copiedUrl = ref(false);
-const copiedAddress = ref<string | null>(null);
+const { copied: copiedAddress, copy: copyAddress } = useCopiedFlash();
 /** The port box is a draft until committed, so typing "4" is not port 4. */
 const portDraft = ref('');
 
@@ -64,13 +65,6 @@ function commitPort(): void {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return;
   if (port === lan.value.port) return;
   void setLanConfig({ enabled: lan.value.enabled, port });
-}
-
-function copyAddress(address: string): void {
-  void navigator.clipboard.writeText(address).then(() => {
-    copiedAddress.value = address;
-    setTimeout(() => { copiedAddress.value = null; }, 1500);
-  });
 }
 
 function copyUrl(): void {
@@ -189,7 +183,6 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
       <p class="mobile-empty">
         Bluetooth works anywhere but is slow. On your own network the phone can
         connect over LAN instead, and Helm switches to it automatically.
-        Pairing still happens over Bluetooth.
       </p>
 
       <div class="mobile-lan-port">
@@ -208,11 +201,26 @@ function applyPreset(device: MobileDeviceItem, globs: string[]): void {
       </div>
 
       <template v-if="lan.enabled">
+        <template v-if="lan.pairingAddresses.length > 0">
+          <p class="mobile-empty">
+            To pair a new phone over Wi-Fi, press “Pair a phone”, then enter this on the phone:
+          </p>
+          <div class="mobile-lan-chips">
+            <button
+              v-for="address in lan.pairingAddresses"
+              :key="address"
+              class="mobile-lan-chip"
+              @click="copyAddress(address)"
+            >
+              {{ copiedAddress === address ? 'Copied' : address }}
+            </button>
+          </div>
+        </template>
         <p v-if="!lan.listening" class="mobile-empty">
-          Not listening yet — nothing binds until a phone is paired.
+          Paired phones are sent the connection address automatically.
         </p>
         <template v-else>
-          <p class="mobile-empty">Enter one of these on the phone:</p>
+          <p class="mobile-empty">Connection address — paired phones are sent it automatically:</p>
           <div class="mobile-lan-chips">
             <button
               v-for="address in lan.addresses"

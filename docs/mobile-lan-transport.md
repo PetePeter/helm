@@ -71,6 +71,10 @@ sequenceDiagram
     Note over L: pairing ends → stop LISTENING; the adopted link stays
 ```
 
+- **The desktop shows where to dial.** `mobile:lanConfig` returns `pairingAddresses`
+  (default-route IP + pairing port) whenever LAN is on — even with zero phones paired
+  and nothing bound — because a first phone has no other way to learn the address.
+  The pairing dialog and Settings → Mobile both render them as copyable chips.
 - **Bound only while pairing is armed.** `MobileLinkManager.syncPairingTransports`
   opens it on arm and closes it on pair, cancel or expiry.
 - **Stopping it stops listening, nothing more.** The phone just paired is still on

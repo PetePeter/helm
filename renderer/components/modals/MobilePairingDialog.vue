@@ -16,10 +16,12 @@
 import { computed, onUnmounted, watch } from 'vue';
 import { SELECTION_KEYS, useModalStack } from '../../composables/useModalStack.js';
 import { useMobileDevices } from '../../composables/useMobileDevices.js';
+import { useCopiedFlash } from '../../composables/useCopiedFlash.js';
 
 const MODAL_ID = 'mobile-pairing';
 
-const { pairing, dialogOpen, confirmPairing, cancelPairing } = useMobileDevices();
+const { pairing, dialogOpen, confirmPairing, cancelPairing, lan } = useMobileDevices();
+const { copied, copy } = useCopiedFlash();
 const modalStack = useModalStack();
 
 const visible = computed(() => dialogOpen.value);
@@ -100,6 +102,19 @@ defineExpose({ handleButton });
             <p class="mp-hint">
               Open Helm on your phone and put it into pairing mode so it starts advertising.
             </p>
+            <div class="mp-or">or over Wi-Fi</div>
+            <template v-if="lan.pairingAddresses.length > 0">
+              <p class="mp-hint">On the phone, tap <strong>Pair over Wi-Fi</strong> and enter:</p>
+              <button
+                v-for="address in lan.pairingAddresses"
+                :key="address"
+                type="button"
+                class="mp-address"
+                title="Click to copy"
+                @click="copy(address)"
+              >{{ copied === address ? 'Copied' : address }}</button>
+            </template>
+            <p v-else class="mp-hint mp-lan-off">Wi-Fi pairing is off. Turn on LAN in Settings → Mobile.</p>
           </template>
 
           <template v-else-if="status !== 'paired'">
@@ -149,6 +164,26 @@ defineExpose({ handleButton });
 .mp-instruction { margin: 0; color: var(--text-primary); font-size: 0.95rem; text-align: center; }
 .mp-instruction strong { color: var(--text-primary); }
 .mp-hint { margin: 0; color: var(--text-secondary); font-size: 0.8rem; text-align: center; }
+.mp-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+.mp-or::before, .mp-or::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+.mp-address {
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  font-size: 1rem;
+  padding: 8px 14px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+}
 .mp-sas { display: flex; gap: 8px; }
 .mp-sas-cell {
   min-width: 40px;

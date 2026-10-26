@@ -21,6 +21,7 @@ import type { MobileDeviceStore } from '../../mobile/mobile-device-store.js';
 import type { MobilePairing, MobilePairingState } from '../../mobile/mobile-pairing.js';
 import { describeApkRelease, apkReleaseUrl, type ApkReleaseInfo } from '../../mobile/apk-release.js';
 import { reachableAddresses } from '../../mcp/peer/reachable-addresses.js';
+import { mobilePairingPort } from '../../mobile/lan/socket-link-transport.js';
 import type { MobileLanConfig } from '../../config/loader.js';
 
 export interface MobileHandlerDeps {
@@ -79,6 +80,12 @@ export interface MobileLanStatus {
   /** True only when a socket is genuinely bound — not merely `enabled`. */
   listening: boolean;
   addresses: string[];
+  /**
+   * Where a NEW phone dials to pair over Wi-Fi. Offered whenever LAN is on,
+   * because the pairing listener binds only once pairing is armed — and the
+   * very first phone has nothing else to read the desktop's address off.
+   */
+  pairingAddresses: string[];
 }
 
 /** A paired phone as the settings tab renders it. */
@@ -199,6 +206,9 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
    * because "enabled but nothing bound" is a real state — no paired phone, or a
    * port already taken — and a panel that conflated them would be lying.
    */
+  const lanAddresses = (port: number): string[] =>
+    deps.lan?.addresses?.(port) ?? reachableAddresses('0.0.0.0', port).addresses;
+
   ipcMain.handle('mobile:lanConfig', (): MobileLanStatus => {
     const config = deps.lan?.get() ?? { enabled: false, port: 0 };
     const boundPort = deps.lan?.boundPort() ?? null;
@@ -209,7 +219,8 @@ export function setupMobileHandlers(deps: MobileHandlerDeps): () => void {
       // The same address the phone is told to dial (default-route IPv4 in the
       // app); the all-interfaces expansion is only the fallback when unwired.
       addresses: boundPort === null ? []
-        : deps.lan?.addresses?.(boundPort) ?? reachableAddresses('0.0.0.0', boundPort).addresses,
+        : lanAddresses(boundPort),
+      pairingAddresses: config.enabled ? lanAddresses(mobilePairingPort(config.port)) : [],
     };
   });
 

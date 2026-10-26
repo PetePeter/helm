@@ -42,6 +42,8 @@ export interface MobileLanView {
   listening: boolean;
   /** `host:port` strings to read off and type into the phone. */
   addresses: string[];
+  /** `host:port` a NEW phone types into "Pair over Wi-Fi"; empty while LAN is off. */
+  pairingAddresses: string[];
 }
 
 /** How the tab renders the "install it on your phone" panel. */
@@ -66,7 +68,8 @@ const apkError = ref<string | null>(null);
  * `listening` is NOT `enabled`: enabled-but-unbound is a real state (no paired
  * phone yet, or a port already taken) and the panel must be able to say so.
  */
-const lan = ref<MobileLanView>({ enabled: false, port: 0, listening: false, addresses: [] });
+const EMPTY_LAN: MobileLanView = { enabled: false, port: 0, listening: false, addresses: [], pairingAddresses: [] };
+const lan = ref<MobileLanView>({ ...EMPTY_LAN });
 
 let subscribed = false;
 let dismissTimer: ReturnType<typeof setTimeout> | null = null;
@@ -153,6 +156,8 @@ async function startPairing(): Promise<{ ok: boolean; reason?: string }> {
   cancelDismiss();
   dialogOpen.value = true;
   pairing.value = { status: 'scanning' };
+  // The dialog offers the Wi-Fi address too; read it fresh in case the DHCP lease moved.
+  void refreshLan();
   const result = await mobileClient.mobileStartPairing();
   if (!result.ok) pairing.value = { status: 'failed', reason: result.reason };
   return result;
@@ -204,7 +209,7 @@ export function resetMobileDevicesStateForTesting(): void {
   dialogOpen.value = false;
   apkRelease.value = null;
   apkError.value = null;
-  lan.value = { enabled: false, port: 0, listening: false, addresses: [] };
+  lan.value = { ...EMPTY_LAN };
 }
 
 export function useMobileDevices() {

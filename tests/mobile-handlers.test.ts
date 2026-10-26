@@ -43,7 +43,7 @@ interface Harness {
   dispose: () => void;
 }
 
-function setup(options: { withPairing?: boolean } = {}): Harness {
+function setup(options: { withPairing?: boolean; lan?: Parameters<typeof setupMobileHandlers>[0]['lan'] } = {}): Harness {
   const devices = new MobileDeviceStore();
   const secrets = new SecretStore();
   const dropped: string[] = [];
@@ -59,6 +59,7 @@ function setup(options: { withPairing?: boolean } = {}): Harness {
     getPairing: () => (options.withPairing === false ? null : pairing),
     isOnline: (machineId: string) => machineId === 'phone-online',
     dropLink: (machineId: string) => { dropped.push(machineId); },
+    lan: options.lan,
   });
 
   return { devices, secrets, pairing, dropped, dispose };
@@ -164,5 +165,30 @@ describe('mobile IPC handlers', () => {
     expect(handleCalls.size).toBeGreaterThan(0);
     h.dispose();
     expect(handleCalls.size).toBe(0);
+  });
+});
+
+describe('mobile:lanConfig pairing addresses', () => {
+  const lanDeps = (enabled: boolean, boundPort: number | null) => ({
+    get: () => ({ enabled, port: 47475 }),
+    set: async () => {},
+    boundPort: () => boundPort,
+    addresses: (port: number) => [`10.98.1.140:${port}`],
+  });
+
+  it('offers the pairing address before any phone is paired, when nothing is bound yet', async () => {
+    const h = setup({ lan: lanDeps(true, null) });
+    const status = await getHandler('mobile:lanConfig')();
+    expect(status.listening).toBe(false);
+    expect(status.addresses).toEqual([]);
+    expect(status.pairingAddresses).toEqual(['10.98.1.140:47476']);
+    h.dispose();
+  });
+
+  it('offers no pairing address while LAN is off', async () => {
+    const h = setup({ lan: lanDeps(false, null) });
+    const status = await getHandler('mobile:lanConfig')();
+    expect(status.pairingAddresses).toEqual([]);
+    h.dispose();
   });
 });

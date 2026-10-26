@@ -1711,6 +1711,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     port: number;
     listening: boolean;
     addresses: string[];
+    pairingAddresses: string[];
   }> => ipcRenderer.invoke('mobile:lanConfig'),
 
   /** Persists AND hot-applies — no restart, same as the fleet panel. */
