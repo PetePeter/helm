@@ -52,7 +52,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -121,6 +120,7 @@ import com.potatomotato.helm.ui.theme.HelmRadius
 import com.potatomotato.helm.ui.theme.HelmSize
 import com.potatomotato.helm.ui.theme.HelmSpacing
 import com.potatomotato.helm.ui.theme.HelmType
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -195,7 +195,11 @@ fun ChatScreen(
             drafts.load(sessionId)?.let { TextFieldValue(it.text, TextRange(it.caret)) } ?: TextFieldValue(),
         )
     }
-    val listState = rememberLazyListState()
+    // One list state PER THREAD, seeded from where that thread was left (see
+    // ChatScrollMemory) — a single shared state carried one thread's scroll
+    // into the next on every swipe.
+    val scrollSpot = remember(sessionId) { ChatScrollMemory.Process.recall(sessionId) }
+    val listState = remember(sessionId) { LazyListState(scrollSpot?.index ?: 0, scrollSpot?.offset ?: 0) }
     val currentSwipeSession by rememberUpdatedState(onSwipeSession)
     val currentSwipePreview by rememberUpdatedState(onSwipePreview)
     var swipeWidthPx by remember(sessionId) { mutableIntStateOf(0) }
@@ -314,23 +318,40 @@ fun ChatScreen(
     // up is READING; yanking them back on every arriving message — or on a
     // reconnect that delivers a backlog — loses their place. So "following" is
     // decided when a scroll SETTLES, never from the layout after a message has
-    // already landed (by then the new bubble has pushed the bottom away). It
-    // starts true, which is also what anchors every entry into a thread at the
-    // newest bubble; saveable and keyed like the draft, so a rotation keeps the
-    // reader's choice and a session switch starts following again.
-    var following by rememberSaveable(sessionId) { mutableStateOf(true) }
+    // already landed (by then the new bubble has pushed the bottom away). A
+    // thread with no remembered spot starts following, which is also what
+    // anchors it at the newest bubble. The first emission is the idle state at
+    // composition, before the list has measured — not a scroll — so it's dropped.
+    var following by remember(sessionId) { mutableStateOf(scrollSpot == null) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
+            .drop(1)
             .filter { !it }
-            .collect { following = !listState.canScrollForward }
+            .collect {
+                following = !listState.canScrollForward
+                ChatScrollMemory.Process.settle(
+                    sessionId,
+                    atEnd = following,
+                    index = listState.firstVisibleItemIndex,
+                    offset = listState.firstVisibleItemScrollOffset,
+                )
+            }
     }
 
     // The tail's identity AND size: a reply that grows in place, or a pending
     // row that gains an attachment, must keep the bottom in view just like a
     // new row does. The user's own send always follows — they wrote it.
+    //
+    // A programmatic jump starts and ends inside one frame, so the settle
+    // watcher above never sees it — every jump declares "following" itself.
+    suspend fun jumpToEnd() {
+        listState.scrollToBottom(messages.lastIndex)
+        following = true
+        ChatScrollMemory.Process.settle(sessionId, atEnd = true, index = 0, offset = 0)
+    }
     val tail = messages.lastOrNull()
     LaunchedEffect(tail?.key, tail?.text?.length, tail?.attachment != null) {
-        if (tail != null && (following || tail.fromPhone)) listState.scrollToBottom(messages.lastIndex)
+        if (tail != null && (following || tail.fromPhone)) jumpToEnd()
     }
 
     // The keyboard opening shrinks the thread from the bottom, which on its own
@@ -339,7 +360,7 @@ fun ChatScreen(
     // see InsetsOwnedByThemeTest for the line between the two.
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 0 && messages.isNotEmpty()) listState.scrollToBottom(messages.lastIndex)
+        if (imeBottom > 0 && messages.isNotEmpty()) jumpToEnd()
     }
 
     // No app bar here: the session's chrome (title, link badge, back, overflow,
@@ -407,7 +428,16 @@ fun ChatScreen(
                                 }
                             }
                         }
-                        if (earlierUnreadSessions > 0 || laterUnreadSessions > 0) {
+                        val swipeHint = earlierUnreadSessions > 0 || laterUnreadSessions > 0
+                        if (!following && messages.isNotEmpty()) {
+                            JumpToBottomButton(
+                                onClick = { swipeScope.launch { jumpToEnd() } },
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = HelmSpacing.Gutter, bottom = if (swipeHint) 56.dp else HelmSpacing.Md),
+                            )
+                        }
+                        if (swipeHint) {
                             SessionSwipeCueHint(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -601,6 +631,24 @@ private fun SessionSwipeCueHint(modifier: Modifier = Modifier) {
             .semantics { contentDescription = label }
             .padding(horizontal = HelmSpacing.Md, vertical = HelmSpacing.Sm),
     )
+}
+
+/** Shown only while the reader is scrolled up; landing at the end resumes following. */
+@Composable
+private fun JumpToBottomButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.chat_jump_to_bottom)
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(HelmSize.MicButton)
+            .clip(CircleShape)
+            .background(HelmColors.Accent)
+            .border(HelmSize.Hairline, HelmColors.Bg, CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+    ) {
+        Text(text = "↓", color = HelmColors.OnAccent, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    }
 }
 
 /**
