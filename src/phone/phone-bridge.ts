@@ -6,6 +6,7 @@
  * holding a call answers with `chat_send`, which this bridge speaks into the
  * call (or texts back to the last SMS sender). Sessions never see digits —
  * only contact labels. Third-party speech and SMS bodies are quoted as data.
+ * Callers not in the contact list never reach a session: `Reception` answers them.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -17,6 +18,7 @@ import {
   decide, fillTemplate, findContact, maskOtp, normalizeNumber, ownerContact,
   type Decision, type PhoneAction, type PhoneContact, type PhoneLineConfig,
 } from './phone-config.js';
+import { Reception } from './phone-reception.js';
 
 export const PHONE_PROVIDER = 'phone';
 const SMS_REPLY_WINDOW_MS = 30 * 60_000;
@@ -61,7 +63,12 @@ interface LiveCall {
   maxTimer?: NodeJS.Timeout;
   /** Owner PIN state: keypad digits so far (never logged), wrong tries, and the result. */
   pin: { digits: string; tries: number; verified: boolean };
+  /** A caller not in the contact list: plain code answers, no session hears them. */
+  reception?: Reception;
 }
+
+/** Inbound callers these reasons refuse are strangers, and Reception answers them. */
+const STRANGER_REASONS = new Set(['not listed', 'withheld or invalid number']);
 
 const MAX_PIN_TRIES = 3;
 
@@ -305,6 +312,7 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
     const client = this.deps.client;
     const operator = this.deps.getOperatorId();
     const d = this.check('call.in', number);
+    if (!d.allow && STRANGER_REASONS.has(d.reason)) return this.answerStranger(callId, number);
     if (!d.allow) { await client.request('call.reject', { callId }).catch(() => undefined); return; }
     // One call at a time, and nobody to talk to → leave it to the phone.
     if (this.call || !operator) {
@@ -320,6 +328,49 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
     } catch (err) {
       this.log(`answer failed: ${(err as Error).message}`);
       if (this.call?.callId === callId) this.call = null;
+    }
+    this.emitStatus();
+  }
+
+  private async answerStranger(callId: string, number: string): Promise<void> {
+    if (this.call) { this.log('stranger ringing: line busy, left to the phone'); return; }
+    const contact: PhoneContact = {
+      label: 'Unknown caller', pattern: number, role: 'trusted',
+      callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false, pin: '', messages: false,
+    };
+    const call: LiveCall = {
+      callId, contact, direction: 'inbound', sessionId: '', state: 'ringing',
+      startedAt: this.now(), participants: 2, handledBy: [], pin: { digits: '', tries: 0, verified: false },
+    };
+    const client = this.deps.client;
+    const req = (method: string, extra: Record<string, unknown> = {}) => client.request(method, { callId, ...extra }).then(() => undefined);
+    call.reception = new Reception({
+      caller: number,
+      getConfig: this.deps.getConfig,
+      port: {
+        say: (text) => req('call.say', { text: speakable(text) }),
+        hold: () => req('call.hold'),
+        resume: () => req('call.resume'),
+        hangup: () => req('call.hangup'),
+        conference: async (target) => {
+          const d = this.check('conf.add', target.pattern, { participants: call.participants });
+          if (!d.allow) throw new Error(`Not allowed: ${d.reason}.`);
+          this.outCalls.push(this.now().getTime());
+          await req('conference.create', { number: d.number });
+          call.participants += 1;
+        },
+        sms: async (target, text) => {
+          const r = await this.sendSms(target, text);
+          if (!r.sent) this.log(`reception SMS to ${target.label} not sent: ${r.reason}`);
+        },
+      },
+    });
+    this.call = call;
+    try {
+      await client.request('call.answer', { callId });
+    } catch (err) {
+      this.log(`answer failed: ${(err as Error).message}`);
+      if (this.call === call) this.call = null;
     }
     this.emitStatus();
   }
@@ -347,6 +398,7 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
         void this.deps.client.request('call.hangup', { callId: call.callId }).catch(() => undefined);
       }, cfg.limits.maxCallMin * 60_000);
     }
+    if (call.reception) return call.reception.onAnswered();
     await this.deps.deliver(call.sessionId, this.callBriefing(call, call.direction === 'inbound' ? 'answered' : 'connected'));
     const greeting = this.greeting(call, cfg);
     if (greeting) await this.deps.client.request('call.say', { callId: call.callId, text: greeting }).catch(() => undefined);
@@ -389,20 +441,27 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
   }
 
   /**
-   * Owner trust on an inbound call needs the keypad PIN when one is set:
-   * caller ID can be spoofed. A call Helm dialled itself reached the owner's
-   * real number, so it needs no PIN.
+   * Owner trust on an inbound call needs the owner's keypad PIN when one is
+   * set: caller ID can be spoofed. A call Helm dialled itself reached the
+   * owner's real number, so it needs no PIN.
    */
   private isOwner(call: LiveCall): boolean {
     if (call.contact.role !== 'owner') return false;
-    return !this.deps.getConfig().ownerPin || call.direction === 'outbound' || call.pin.verified;
+    return !call.contact.pin || call.direction === 'outbound' || call.pin.verified;
   }
 
-  /** Collect keypad digits until #. The digits are never logged or delivered. */
+  /** The current call is the owner, or a trusted contact who entered their own PIN. */
+  isVerifiedCaller(): boolean {
+    const call = this.call;
+    if (!call) return false;
+    return this.isOwner(call) || (call.contact.role === 'trusted' && call.pin.verified);
+  }
+
+  /** Collect keypad digits until #, checked against the caller's own PIN. The digits are never logged or delivered. */
   private async onDtmf(callId: string, digit: string): Promise<void> {
     const call = this.call;
-    const pin = this.deps.getConfig().ownerPin;
-    if (!call || call.callId !== callId || !pin || call.contact.role !== 'owner' || call.pin.verified || call.pin.tries >= MAX_PIN_TRIES) return;
+    const pin = call?.contact.pin;
+    if (!call || call.callId !== callId || !pin || call.contact.role === 'blocked' || call.pin.verified || call.pin.tries >= MAX_PIN_TRIES) return;
     if (digit !== '#') {
       if (/^[0-9*]$/.test(digit) && call.pin.digits.length < 16) call.pin.digits += digit;
       return;
@@ -411,17 +470,21 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
     call.pin.digits = '';
     if (safeEqual(entered, pin)) {
       call.pin.verified = true;
-      this.log(`owner PIN verified on call with ${call.contact.label}`);
-      await this.deps.deliver(call.sessionId, ['[PHONE] The caller entered the correct owner PIN: they are the owner from now on.', ...this.ownerLines()].join('\n'));
+      this.log(`PIN verified on call with ${call.contact.label}`);
+      const lines = call.contact.role === 'owner'
+        ? ['[PHONE] The caller entered the correct PIN: they are the owner from now on.', ...this.ownerLines()]
+        : [`[PHONE] The caller entered the correct PIN: they are verified ${untrusted(call.contact.label)}, a trusted contact (not the owner).`];
+      await this.deps.deliver(call.sessionId, lines.join('\n'));
       return;
     }
     call.pin.tries += 1;
-    this.log(`wrong owner PIN on call with ${call.contact.label} (${call.pin.tries}/${MAX_PIN_TRIES})`);
+    this.log(`wrong PIN on call with ${call.contact.label} (${call.pin.tries}/${MAX_PIN_TRIES})`);
   }
 
   private async onUtterance(callId: string, text: string): Promise<void> {
     const call = this.call;
     if (!call || call.callId !== callId || !text.trim()) return;
+    if (call.reception) return call.reception.onUtterance(text);
     await this.deps.deliver(call.sessionId, `[PHONE] ${untrusted(call.contact.label)} said: ${JSON.stringify(untrusted(text.trim()))}`);
   }
 
@@ -431,6 +494,11 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
     const cfg = this.deps.getConfig();
     if (call.ringReason && !call.answeredAt) {
       await this.sendSms(call.contact, `${cfg.persona.name}: ${call.ringReason}`).catch(() => undefined);
+    }
+    if (call.reception) {
+      await call.reception.onEnded();
+      if (call.answeredAt) await this.saveTranscript(call).catch((err) => this.log(`transcript save failed: ${(err as Error).message}`));
+      return;
     }
     if (call.answeredAt) {
       await this.deps.deliver(call.sessionId, `[PHONE] The call with ${untrusted(call.contact.label)} ended (${reason ?? 'ended'}).`).catch(() => undefined);
@@ -460,19 +528,37 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
   private async onSms(m: SmsSummary): Promise<void> {
     if (this.sms.seen.has(m.handle)) return;
     const operator = this.deps.getOperatorId();
-    // No operator yet: leave it unseen so the next poll delivers it.
-    if (!operator) return;
-    this.sms.seen.add(m.handle);
+    const reception = this.call?.reception;
     const d = this.check('sms.in', m.number);
-    if (!d.allow) return;
-    this.sms.received.add(m.handle);
+    const stranger = !d.allow && STRANGER_REASONS.has(d.reason);
+    // No operator yet: leave it unseen so the next poll delivers it.
+    if (!operator && !reception && !stranger) return;
+    this.sms.seen.add(m.handle);
+    if (!d.allow && !stranger) return;
     let text = m.preview;
     try {
       text = (await this.deps.client.request<{ text: string }>('sms.read', { handle: m.handle })).text ?? text;
     } catch { /* the preview will do */ }
+    if (!d.allow) return this.forwardStrangerSms(m.number, text);
+    this.sms.received.add(m.handle);
+    // A contact answering a stranger's hold text: Reception consumes it.
+    if (reception && await reception.onSmsFrom(d.contact, text)) return;
+    if (!operator) return;
     this.lastSms = { contact: d.contact, sessionId: operator, at: this.now().getTime() };
     const role = d.contact.role === 'owner' ? '' : ' They are NOT the owner: take a message only.';
     await this.deps.deliver(operator, `[PHONE SMS] ${untrusted(d.contact.label)} wrote: ${JSON.stringify(untrusted(text))}\nReply with chat_send to answer by SMS.${role}`);
+  }
+
+  /**
+   * A text from outside the contact list (a one-time code, a stranger) goes to
+   * the owner's phone and nowhere else: no session reads it, and the owner
+   * decides any onward forwarding.
+   */
+  private async forwardStrangerSms(from: string, text: string): Promise<void> {
+    const owner = ownerContact(this.deps.getConfig());
+    if (!owner) return;
+    const r = await this.sendSms(owner, `SMS from ${from || 'unknown'}: ${text}`.slice(0, 640));
+    if (!r.sent) this.log(`stranger SMS not forwarded: ${r.reason}`);
   }
 
   private async sendSms(contact: PhoneContact, text: string): Promise<ChatSendResult> {

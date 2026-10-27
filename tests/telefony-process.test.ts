@@ -44,6 +44,10 @@ describe('renderTelefonyToml', () => {
     expect(toml).toContain('token = "tok"');
     expect(toml).not.toContain('piper_model');
   });
+  it('lets Helm dial any number: the dial-out guard lives in Helm, not the allowlist', () => {
+    const policy = renderTelefonyToml(cfg()).split('[policy]')[1].split(/\n\[/)[0];
+    expect(policy).toContain('\noutbound = "all"\n');
+  });
   it('quotes values safely', () => {
     expect(renderTelefonyToml(cfg({ transport: 'a"b\\c' }))).toContain('transport = "a\\"b\\\\c"');
   });

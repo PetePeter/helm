@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  decide, normalizeNumber, resolvePhoneLineConfig, inQuietHours, fillTemplate, maskOtp, findContact,
+  decide, decideDialOut, normalizeNumber, resolvePhoneLineConfig, inQuietHours, fillTemplate, maskOtp, findContact,
   type PhoneLineConfig, type DecideContext,
 } from '../src/phone/phone-config.js';
 
@@ -80,6 +80,45 @@ describe('decide', () => {
   });
   it('refuses to grow a full conference', () => {
     expect(decide('conf.add', '+61491570187', cfg(), ctx({ participants: 3 }))).toEqual({ allow: false, reason: 'conference is full' });
+  });
+});
+
+describe('decideDialOut', () => {
+  const out = (n: string, over: Partial<Parameters<typeof decideDialOut>[2]> = {}, c = cfg()) =>
+    decideDialOut(n, c, { verified: true, callsLastHour: 0, ...over });
+
+  it('lets a verified caller dial any national number, listed or not', () => {
+    expect(out('02 9374 4000')).toEqual({ allow: true, number: '+61293744000' });
+  });
+  it('refuses an unverified caller', () => {
+    expect(out('0293744000', { verified: false })).toMatchObject({ allow: false, reason: expect.stringMatching(/PIN/) });
+  });
+  it('blocks international numbers for everyone, in every spelling', () => {
+    for (const n of ['+44 20 7946 0000', '0044207946000', '0011 44 20 7946 0000', '+1 212 555 0100']) {
+      expect(out(n)).toMatchObject({ allow: false, reason: 'international numbers are blocked' });
+    }
+  });
+  it('blocks premium 19xx numbers and any extra prefix from settings', () => {
+    expect(out('1900 123 456')).toMatchObject({ allow: false });
+    expect(out('0190 0123 456')).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
+    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: ['02 9374'] } });
+    expect(out('0293744000', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
+  });
+  it('caps dial-outs per hour', () => {
+    expect(out('0293744000', { callsLastHour: 3 })).toMatchObject({ allow: false, reason: 'hourly call limit reached' });
+  });
+  it('still honours a blocked entry and the outgoing-calls master switch', () => {
+    expect(out('+61299912345')).toMatchObject({ allow: false, reason: 'blocked' });
+    const c = cfg({ masters: { callIn: true, callOut: false, smsIn: true, smsOut: true, conference: true } });
+    expect(out('0293744000', {}, c)).toMatchObject({ allow: false });
+  });
+});
+
+describe('decide — cost guard', () => {
+  it('blocks premium and international even for the owner row', () => {
+    const c = cfg({ contacts: [{ label: 'Me', pattern: '+447946000000', role: 'owner', callOut: true, smsOut: true }] });
+    expect(decide('call.out', '+447946000000', c, ctx())).toMatchObject({ allow: false, reason: 'international numbers are blocked' });
+    expect(decide('sms.out', '+447946000000', c, ctx())).toMatchObject({ allow: false });
   });
 });
 

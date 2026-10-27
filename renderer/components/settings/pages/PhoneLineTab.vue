@@ -73,10 +73,11 @@ const CONTACT_SWITCHES: Array<{ key: keyof PhoneContact; label: string }> = [
   { key: 'smsIn', label: 'SMS in' },
   { key: 'smsOut', label: 'SMS out' },
   { key: 'conf', label: 'Conf' },
+  { key: 'messages', label: 'Messages' },
 ];
 
 function addContact(): void {
-  cfg.value.contacts.push({ label: '', pattern: '', role: 'trusted', callIn: true, callOut: false, smsIn: true, smsOut: false, conf: false });
+  cfg.value.contacts.push({ label: '', pattern: '', role: 'trusted', callIn: true, callOut: false, smsIn: true, smsOut: false, conf: false, pin: '', messages: false });
 }
 function removeContact(i: number): void {
   cfg.value.contacts.splice(i, 1);
@@ -193,24 +194,20 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <label class="phone-setting"><input type="checkbox" class="focusable" :checked="cfg.masters.conference" @change="cfg.masters.conference = checked($event); save()" /><span>Conference calls</span></label>
     </div>
 
-    <div class="field-group">
-      <label class="field-label">Owner PIN (4-12 digits; blank = caller ID is enough)</label>
-      <input class="field-input focusable" type="password" inputmode="numeric" autocomplete="off" :value="cfg.ownerPin" @change="cfg.ownerPin = str($event); save()" />
-    </div>
-    <div class="settings-help">
-      <p>Caller ID can be faked. With a PIN set, an incoming call from the owner number stays a guest until the PIN is keyed, then <code>#</code>.
-        Dial it in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places to you need no PIN.</p>
-    </div>
-
     <!-- Numbers -->
     <div class="settings-panel__header settings-span"><span class="settings-panel__title">Numbers</span></div>
     <div class="settings-help settings-span">
-      <p>Only listed numbers get through; withheld numbers never do. A trailing <code>*</code> is a prefix match (Helm only — telefony itself takes exact numbers).
+      <p>A trailing <code>*</code> is a prefix match (Helm only — telefony itself takes exact numbers).
         A blocked entry always wins. <strong>owner</strong> drives the operator; <strong>trusted</strong> can only leave a message.</p>
+      <p>Anyone else who rings is answered by plain code, never the AI: they say a contact's name to be put on hold while that person is texted
+        (reply <code>JOIN</code> to take the call, or text back a message), or they leave a message. A message for nobody in particular goes to every
+        number ticked <strong>Messages</strong>. Contact names are never read out.</p>
+      <p>Caller ID can be faked. A <strong>PIN</strong> (4-12 digits) makes an incoming call from that number key it, then <code>#</code>, before it is trusted:
+        dial in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places need no PIN. Blank = caller ID is enough for the owner.</p>
     </div>
     <table class="phone-contacts settings-span">
       <thead>
-        <tr><th>Label</th><th>Number</th><th v-for="s in CONTACT_SWITCHES" :key="s.key">{{ s.label }}</th><th>Role</th><th /></tr>
+        <tr><th>Label</th><th>Number</th><th v-for="s in CONTACT_SWITCHES" :key="s.key">{{ s.label }}</th><th>Role</th><th>PIN</th><th /></tr>
       </thead>
       <tbody>
         <tr v-for="(c, i) in cfg.contacts" :key="i">
@@ -226,6 +223,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
               <option value="blocked">blocked</option>
             </select>
           </td>
+          <td><input class="field-input focusable phone-pin" type="password" inputmode="numeric" autocomplete="off" :disabled="c.role === 'blocked'" :value="c.pin" @change="c.pin = str($event); save()" /></td>
           <td><button class="btn btn--secondary btn--sm focusable" title="Remove" @click="removeContact(i)">✕</button></td>
         </tr>
       </tbody>
@@ -305,6 +303,11 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <div class="field-group">
       <label class="field-label">Max calls out / hour</label>
       <input class="field-input focusable" type="number" :value="cfg.limits.callsPerHour" @change="cfg.limits.callsPerHour = num($event); save()" />
+    </div>
+    <div class="field-group">
+      <label class="field-label">Blocked prefixes (comma-separated; international is always blocked)</label>
+      <input class="field-input focusable phone-mono" :value="cfg.limits.blockedPrefixes.join(', ')" placeholder="+6119"
+        @change="cfg.limits.blockedPrefixes = str($event).split(',').map((p) => p.trim()).filter(Boolean); save()" />
     </div>
     <div class="field-group">
       <label class="field-label">Max SMS out / hour</label>
@@ -406,4 +409,5 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
 .phone-contacts td { padding: var(--spacing-xs); border-top: 1px solid var(--border); }
 .phone-center { text-align: center; }
 .phone-mono { font-family: var(--font-mono); }
+.phone-pin { width: 7em; }
 </style>

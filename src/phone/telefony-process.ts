@@ -24,6 +24,8 @@ export function renderTelefonyToml(cfg: PhoneLineConfig): string {
     '',
     '[policy]',
     `allowlist = [${allow.map(q).join(', ')}]`,
+    // Helm's dial-out guard decides who may dial what; telefony must not second-guess it.
+    'outbound = "all"',
     `country_code = ${q(cfg.countryCode)}`,
     `fallback_policy = ${q(cfg.ringFallback)}`,
     `ring_timeout_s = ${cfg.ringTimeoutS}`,

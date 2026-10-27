@@ -21,6 +21,14 @@ export interface PhoneContact {
   smsIn: boolean;
   smsOut: boolean;
   conf: boolean;
+  /**
+   * Keypad PIN (4-12 digits, then #) an inbound call from this number enters to
+   * be verified; caller ID alone can be spoofed. '' = caller ID is enough for the
+   * owner, and a trusted contact stays unverified.
+   */
+  pin: string;
+  /** Receives messages a stranger leaves without naming anyone. */
+  messages: boolean;
 }
 
 export interface PhoneLineConfig {
@@ -36,14 +44,13 @@ export interface PhoneLineConfig {
   ringTimeoutS: number;
   countryCode: string;
   masters: { callIn: boolean; callOut: boolean; smsIn: boolean; smsOut: boolean; conference: boolean };
-  /**
-   * Keypad PIN (4-12 digits, then #) an inbound owner call must enter before it
-   * gets owner trust; caller ID alone can be spoofed. '' = caller ID is enough.
-   */
-  ownerPin: string;
   contacts: PhoneContact[];
   smsRead: { scope: 'received' | 'window' | 'all' | 'none'; windowMin: number; maskOtp: boolean };
-  limits: { callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string };
+  limits: {
+    callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string;
+    /** Costly prefixes no one may dial or text, on top of international numbers. */
+    blockedPrefixes: string[];
+  };
   persona: {
     name: string;
     greetIn: boolean;
@@ -79,10 +86,9 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   ringTimeoutS: 15,
   countryCode: '+61',
   masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: false },
-  ownerPin: '',
   contacts: [],
   smsRead: { scope: 'window', windowMin: 30, maskOtp: true },
-  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '' },
+  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '', blockedPrefixes: ['+6119'] },
   persona: {
     name: 'Helm',
     greetIn: true,
@@ -109,20 +115,31 @@ export function resolvePhoneLineConfig(raw: unknown): PhoneLineConfig {
     return out as T;
   };
   const base = pick({ ...d, masters: undefined, contacts: undefined, fallback: undefined, smsRead: undefined, limits: undefined, persona: undefined, voice: undefined, transcripts: undefined, conference: undefined } as unknown as PhoneLineConfig, src);
+  const validPin = (pin: unknown) => (typeof pin === 'string' && /^\d{4,12}$/.test(pin) ? pin : '');
+  // Before per-contact PINs there was one `ownerPin`; it belongs to the owner row.
+  const legacyOwnerPin = validPin(src.ownerPin);
   const contacts = Array.isArray(src.contacts)
-    ? src.contacts.map((c) => pick<PhoneContact>({ label: '', pattern: '', role: 'trusted', callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false }, c))
+    ? src.contacts.map((raw) => {
+      const c = pick<PhoneContact>({ label: '', pattern: '', role: 'trusted', callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false, pin: '', messages: false }, raw);
+      // Rows saved before the switch existed: the owner gets general messages.
+      return typeof (raw as Record<string, unknown> | null)?.messages === 'boolean' ? c : { ...c, messages: c.role === 'owner' };
+    })
       // Rows with no number yet stay (the user is still typing); they never match anything.
       .filter((c) => ['owner', 'trusted', 'blocked'].includes(c.role))
       // Owner rights belong to one number, never a whole prefix.
       .map((c) => (c.role === 'owner' && c.pattern.trim().endsWith('*') ? { ...c, role: 'trusted' as const } : c))
+      .map((c) => ({
+        ...c,
+        pin: c.role === 'blocked' ? '' : validPin(c.pin) || (c.role === 'owner' ? legacyOwnerPin : ''),
+        messages: c.role !== 'blocked' && c.messages,
+      }))
     : [];
   return {
     ...base,
-    ownerPin: /^\d{4,12}$/.test(base.ownerPin) ? base.ownerPin : '',
     masters: pick(d.masters, src.masters),
     contacts,
     smsRead: pick(d.smsRead, src.smsRead),
-    limits: pick(d.limits, src.limits),
+    limits: resolveLimits(pick(d.limits, src.limits)),
     persona: pick(d.persona, src.persona),
     voice: pick(d.voice, src.voice),
     transcripts: pick(d.transcripts, src.transcripts),
@@ -218,6 +235,44 @@ export function inQuietHours(cfg: PhoneLineConfig, now: Date): boolean {
   return start < end ? t >= start && t < end : t >= start || t < end;
 }
 
+function resolveLimits(l: PhoneLineConfig['limits']): PhoneLineConfig['limits'] {
+  return { ...l, blockedPrefixes: Array.isArray(l.blockedPrefixes) ? l.blockedPrefixes.filter((p): p is string => typeof p === 'string' && p.trim() !== '') : [] };
+}
+
+/**
+ * Numbers that cost money are refused for everyone, the owner included: a
+ * talked-into-it assistant must not be able to run up a bill. International is
+ * anything outside the home country code; `0011` is the Australian exit prefix,
+ * which `normalizeNumber` would otherwise read as a national number.
+ */
+function costBlock(rawNumber: string, number: string, cfg: PhoneLineConfig): string | null {
+  if (/^\s*0011/.test(rawNumber) || !number.startsWith(cfg.countryCode)) return 'international numbers are blocked';
+  const premium = cfg.limits.blockedPrefixes.some((p) => {
+    const prefix = normalizeNumber(p.replace(/\*$/, ''), cfg.countryCode);
+    return prefix !== null && number.startsWith(prefix);
+  });
+  return premium ? 'premium numbers are blocked' : null;
+}
+
+/**
+ * Dial-out for a caller on the line ("call this number for me"): any number
+ * goes, but only for a PIN-verified caller, never a costly number, and within
+ * the hourly call cap. A blocked entry still wins.
+ */
+export function decideDialOut(
+  rawNumber: string, cfg: PhoneLineConfig, ctx: { verified: boolean; callsLastHour: number },
+): { allow: true; number: string } | { allow: false; reason: string } {
+  if (!cfg.masters.callOut) return { allow: false, reason: 'call.out is switched off' };
+  if (!ctx.verified) return { allow: false, reason: 'only a caller who entered their PIN can dial out' };
+  const number = normalizeNumber(rawNumber, cfg.countryCode);
+  if (!number) return { allow: false, reason: 'withheld or invalid number' };
+  const cost = costBlock(rawNumber, number, cfg);
+  if (cost) return { allow: false, reason: cost };
+  if (matchContacts(number, cfg).some((m) => m.contact.role === 'blocked')) return { allow: false, reason: 'blocked' };
+  if (ctx.callsLastHour >= cfg.limits.callsPerHour) return { allow: false, reason: 'hourly call limit reached' };
+  return { allow: true, number };
+}
+
 /** Every phone action is allowed or denied here, in a fixed order. */
 export function decide(action: PhoneAction, rawNumber: string, cfg: PhoneLineConfig, ctx: DecideContext): Decision {
   if (!MASTER[action](cfg.masters)) return { allow: false, reason: `${action} is switched off` };
@@ -231,6 +286,8 @@ export function decide(action: PhoneAction, rawNumber: string, cfg: PhoneLineCon
 
   const outbound = action === 'call.out' || action === 'sms.out' || action === 'conf.add';
   if (outbound) {
+    const cost = costBlock(rawNumber, number, cfg);
+    if (cost) return { allow: false, reason: cost };
     if (inQuietHours(cfg, ctx.now) && !(ctx.urgent && contact.role === 'owner')) return { allow: false, reason: 'quiet hours' };
     if (action !== 'sms.out' && ctx.callsLastHour >= cfg.limits.callsPerHour) return { allow: false, reason: 'hourly call limit reached' };
     if (action === 'sms.out' && ctx.smsLastHour >= cfg.limits.smsPerHour) return { allow: false, reason: 'hourly SMS limit reached' };
