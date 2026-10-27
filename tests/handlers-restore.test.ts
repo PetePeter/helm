@@ -262,6 +262,8 @@ vi.mock('../src/mcp/helm-control-service.js', () => ({
     this.setArtifactAttachmentDeletedHandler = vi.fn();
     this.setPhoneRinger = vi.fn();
     this.setCallTransferrer = vi.fn();
+    this.setPhoneLine = vi.fn();
+    this.setPhoneNotifier = vi.fn();
     this.setRingRetry = vi.fn();
     this.setRemoteService = vi.fn();
   }),

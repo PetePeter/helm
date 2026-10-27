@@ -327,6 +327,15 @@ export const PRELOAD_API_DOMAINS = {
     'toolsRemovePattern',
     'patternCancelSchedule',
   ],
+  phone: [
+    'phoneGetConfig',
+    'phoneSetConfig',
+    'phoneGetStatus',
+    'phoneRestart',
+    'phoneTestRing',
+    'phoneTestSms',
+    'onPhoneStatus',
+  ],
   telegram: [
     'telegramGetConfig',
     'telegramSetConfig',

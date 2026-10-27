@@ -112,6 +112,7 @@ import AutoMemoryTab from './components/settings/pages/AutoMemoryTab.vue';
 import DreamingTab from './components/settings/pages/DreamingTab.vue';
 import PeerPairingDialog from './components/modals/PeerPairingDialog.vue';
 import MobileTab from './components/settings/pages/MobileTab.vue';
+import PhoneLineTab from './components/settings/pages/PhoneLineTab.vue';
 import CliIntegrationsTab from './components/settings/pages/CliIntegrationsTab.vue';
 import MobilePairingDialog from './components/modals/MobilePairingDialog.vue';
 import { usePeers } from './composables/usePeers.js';
@@ -1241,6 +1242,9 @@ onUnmounted(() => {
               />
               <MobileTab
                 v-else-if="activeTab === 'mobile'"
+              />
+              <PhoneLineTab
+                v-else-if="activeTab === 'phone-line'"
               />
               <CliIntegrationsTab
                 v-else-if="activeTab === 'cli-integrations'"

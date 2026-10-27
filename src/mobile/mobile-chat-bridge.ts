@@ -403,6 +403,11 @@ export class MobileChatBridge implements ChatBridge {
   }
 
   /** Enabled, registered devices this hub currently holds a link to. */
+  /** Whether any paired phone is linked right now (BLE or LAN). */
+  hasLinkedPhone(): boolean {
+    return this.linkedMachines().length > 0;
+  }
+
   private linkedMachines(): string[] {
     return this.deps.deviceStore
       .list()

@@ -57,6 +57,7 @@ export const artifactsClient = domainClient('artifacts');
 export const runtimeGroupClient = domainClient('runtimeGroups');
 export const patternsClient = domainClient('patterns');
 export const telegramClient = domainClient('telegram');
+export const phoneClient = domainClient('phone');
 export const keyboardClient = domainClient('keyboard');
 export const dialogClient = domainClient('dialog');
 export const systemClient = domainClient('system');

@@ -89,6 +89,8 @@ import { AutoMemoryRecorder, splitTurns } from '../../session/auto-memory-judge.
 import { CliAutoMemory } from '../../session/cli-auto-memory.js';
 import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
+import { setupPhoneHandlers } from './phone-handlers.js';
+import { PhoneLineService } from '../../phone/phone-line-service.js';
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
@@ -1443,10 +1445,33 @@ export function registerIPCHandlers(
   helmControlService.setArtifactAttachmentDeletedHandler((sessionId, artifactId, attachmentId) => {
     mobileChatBridge.deleteAttachmentMessages(sessionId, artifactId, attachmentId);
   });
-  helmControlService.setPhoneRinger((sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason));
-  helmControlService.setCallTransferrer((from, to, line) => mobileChatBridge.sendTransfer(from, to, line));
+  // Phone line (docs/phone-line.md): telefony-app over PhAP is one more chat
+  // surface, and the fallback ringer when the Helm phone app is not linked.
+  const phoneLine = new PhoneLineService({
+    getConfig: () => configLoader.getPhoneLineConfig(),
+    saveConfig: (cfg) => { configLoader.setPhoneLineConfig(cfg); },
+    telefonyConfigPath: join(getConfigDir(dirname ?? process.cwd()), 'telefony', 'telefony.toml'),
+    defaultTranscriptDir: join(getConfigDir(dirname ?? process.cwd()), 'phone-transcripts'),
+    getAppVersion: () => app.getVersion(),
+    getOperatorId: () => operatorSessionManager.getOperatorId(),
+    sessionName: (id) => sessionManager.getSession(id)?.name,
+    deliver: async (sessionId, text) => { await deliverPromptSequenceToSession({ sessionId, text, ptyManager, sessionManager, configLoader }); },
+    log: (msg) => logger.info(`[phone] ${msg}`),
+  });
+  chatBroker.register(phoneLine);
+  helmControlService.setPhoneLine(phoneLine);
+  void phoneLine.apply().catch((err) => logger.warn(`[phone] start failed: ${err}`));
+  const cleanupPhone = setupPhoneHandlers(configLoader, phoneLine, () => windowManager.getMainWindow()?.webContents ?? null);
+  const ringPhone = (sessionId: string, reason: string) =>
+    mobileChatBridge.sendRing(sessionId, reason) || phoneLine.ringOwner(sessionId, reason);
+  helmControlService.setPhoneRinger(ringPhone);
+  helmControlService.setCallTransferrer((from, to, line) =>
+    phoneLine.transfer(from, to, line) || mobileChatBridge.sendTransfer(from, to, line));
+  helmControlService.setPhoneNotifier((title, content) => {
+    if (!mobileChatBridge.hasLinkedPhone()) phoneLine.notifyOwner(title, content);
+  });
   helmControlService.setRingRetry(new RingRetry({
-    ring: (sessionId, reason) => mobileChatBridge.sendRing(sessionId, reason),
+    ring: ringPhone,
     // Missed calls leave a note in the ringing session's chat, where the phone shows it.
     missedOnce: (sessionId, reason, retryAt) => {
       const at = new Date(retryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1605,6 +1630,9 @@ export function registerIPCHandlers(
       mobileAddressAdvertiser.dispose();
       sessionManager.off('session:updated', observeForAlerts);
       sessionManager.off('session:removed', forgetForAlerts);
+      cleanupPhone();
+      chatBroker.unregister(phoneLine.provider);
+      await phoneLine.stop();
       mobileChatBridge.stop();
       chatBroker.unregister(mobileChatBridge.provider);
       chatBroker.unregister(telegramModules.relayService.provider);

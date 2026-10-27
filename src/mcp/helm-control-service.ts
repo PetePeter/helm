@@ -94,6 +94,13 @@ import type {
   MemorySearchResult,
   MemoryTraversal,
 } from '../types/memory.js';
+
+/** The phone line operations the phone_* MCP tools need (src/phone/phone-line-service.ts). */
+export interface PhoneLineTools {
+  hangup(sessionId: string): Promise<{ hungUp: true }>;
+  conferenceAdd(sessionId: string, label: string): Promise<{ added: string }>;
+  inbox(): Promise<{ messages: Array<{ from: string; text: string; ts: string }> }>;
+}
 export { parseSubmitSuffix } from './submit-suffix.js';
 
 /**
@@ -323,6 +330,8 @@ export class HelmControlService extends EventEmitter {
   private readonly telegramService: HelmTelegramService;
   private phoneRinger: ((sessionId: string, reason: string) => boolean) | null = null;
   private callTransferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null = null;
+  private phoneLine: PhoneLineTools | null = null;
+  private phoneNotifier: ((title: string, content: string) => void) | null = null;
   private ringRetry: RingRetry | null = null;
   private notificationManager: NotificationManager | null = null;
   private artifactManager?: import('../session/artifact-manager.js').ArtifactManager;
@@ -1935,7 +1944,9 @@ export class HelmControlService extends EventEmitter {
   }
 
   notifyUser(sessionRef: string, title: string, content: string): { delivered: 'toast' | 'bubble' | 'telegram' | 'taskbar_flash' | 'none' } {
-    return this.telegramService.notifyUser(sessionRef, title, content);
+    const result = this.telegramService.notifyUser(sessionRef, title, content);
+    this.phoneNotifier?.(title, content);
+    return result;
   }
 
   /**
@@ -1949,6 +1960,25 @@ export class HelmControlService extends EventEmitter {
   }
 
   /** Wired to the mobile bridge's sendTransfer; absent = no phones in this build. */
+  /** Phone line (telefony-app) for the phone_* tools; absent = tools fail cleanly. */
+  setPhoneLine(line: PhoneLineTools | null): void {
+    this.phoneLine = line;
+  }
+
+  /** notify_user also texts the owner when the phone line's fallback is on. */
+  setPhoneNotifier(notifier: ((title: string, content: string) => void) | null): void {
+    this.phoneNotifier = notifier;
+  }
+
+  phoneHangup(callerSessionId: string) { return this.requirePhoneLine().hangup(callerSessionId); }
+  phoneConferenceAdd(callerSessionId: string, label: string) { return this.requirePhoneLine().conferenceAdd(callerSessionId, label); }
+  phoneSmsInbox() { return this.requirePhoneLine().inbox(); }
+
+  private requirePhoneLine(): PhoneLineTools {
+    if (!this.phoneLine) throw new Error('The phone line is not available.');
+    return this.phoneLine;
+  }
+
   setCallTransferrer(transferrer: ((fromSessionId: string, toSessionId: string, line: string) => boolean) | null): void {
     this.callTransferrer = transferrer;
   }

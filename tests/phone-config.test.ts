@@ -1,0 +1,116 @@
+import { describe, it, expect } from 'vitest';
+import {
+  decide, normalizeNumber, resolvePhoneLineConfig, inQuietHours, fillTemplate, maskOtp, findContact,
+  type PhoneLineConfig, type DecideContext,
+} from '../src/phone/phone-config.js';
+
+const ctx = (over: Partial<DecideContext> = {}): DecideContext => ({ now: new Date(2026, 9, 28, 12, 0), callsLastHour: 0, smsLastHour: 0, ...over });
+
+function cfg(over: Record<string, unknown> = {}): PhoneLineConfig {
+  return resolvePhoneLineConfig({
+    countryCode: '+61',
+    masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: true },
+    contacts: [
+      { label: 'Me', pattern: '+61491570156', role: 'owner', callIn: true, callOut: true, smsIn: true, smsOut: true, conf: true },
+      { label: 'Partner', pattern: '0491 570 187', role: 'trusted', callIn: true, callOut: false, smsIn: true, smsOut: false, conf: true },
+      { label: 'Office', pattern: '+61299*', role: 'trusted', callIn: true, callOut: false, smsIn: false, smsOut: false, conf: false },
+      { label: 'Spam', pattern: '+612999*', role: 'blocked', callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false },
+    ],
+    ...over,
+  });
+}
+
+describe('normalizeNumber', () => {
+  it('reads national, 00 and formatted forms as E.164', () => {
+    expect(normalizeNumber('0491 570 156', '+61')).toBe('+61491570156');
+    expect(normalizeNumber('0061491570156', '+61')).toBe('+61491570156');
+    expect(normalizeNumber('+61 (491) 570-156', '+61')).toBe('+61491570156');
+  });
+  it('rejects withheld and control characters', () => {
+    expect(normalizeNumber('', '+61')).toBeNull();
+    expect(normalizeNumber('Private', '+61')).toBeNull();
+    expect(normalizeNumber('+61491570156;ATD', '+61')).toBeNull();
+  });
+});
+
+describe('decide', () => {
+  it('allows the owner every action and returns the contact', () => {
+    for (const a of ['call.in', 'call.out', 'sms.in', 'sms.out', 'conf.add'] as const) {
+      const d = decide(a, '0491570156', cfg(), ctx());
+      expect(d).toMatchObject({ allow: true, number: '+61491570156' });
+    }
+  });
+  it('applies per-contact switches', () => {
+    expect(decide('call.in', '+61491570187', cfg(), ctx()).allow).toBe(true);
+    expect(decide('sms.out', '+61491570187', cfg(), ctx())).toEqual({ allow: false, reason: 'sms.out is off for Partner' });
+  });
+  it('a prefix can never hold owner rights', () => {
+    const c = resolvePhoneLineConfig({ contacts: [{ label: 'All', pattern: '+61*', role: 'owner', callIn: true }] });
+    expect(c.contacts[0].role).toBe('trusted');
+  });
+  it('a row with no number yet matches nothing', () => {
+    const c = resolvePhoneLineConfig({ contacts: [{ label: 'new', pattern: '', role: 'owner', callIn: true }] });
+    expect(c.contacts).toHaveLength(1);
+    expect(decide('call.in', '+61400000000', c, ctx()).allow).toBe(false);
+  });
+  it('denies unlisted and withheld numbers', () => {
+    expect(decide('call.in', '+61400000000', cfg(), ctx())).toEqual({ allow: false, reason: 'not listed' });
+    expect(decide('call.in', '', cfg(), ctx()).allow).toBe(false);
+  });
+  it('a blocked prefix wins over a broader trusted prefix', () => {
+    expect(decide('call.in', '+61299912345', cfg(), ctx())).toEqual({ allow: false, reason: 'blocked' });
+    expect(decide('call.in', '+61299812345', cfg(), ctx()).allow).toBe(true);
+  });
+  it('master switch off denies even the owner', () => {
+    const c = cfg({ masters: { callIn: false, callOut: true, smsIn: true, smsOut: true, conference: false } });
+    expect(decide('call.in', '+61491570156', c, ctx()).allow).toBe(false);
+    expect(decide('conf.add', '+61491570156', c, ctx()).allow).toBe(false);
+  });
+  it('enforces hourly limits on outbound only', () => {
+    const c = cfg({ limits: { callsPerHour: 1, smsPerHour: 1, maxCallMin: 15, quietStart: '', quietEnd: '' } });
+    expect(decide('call.out', '+61491570156', c, ctx({ callsLastHour: 1 })).allow).toBe(false);
+    expect(decide('sms.out', '+61491570156', c, ctx({ smsLastHour: 1 })).allow).toBe(false);
+    expect(decide('call.in', '+61491570156', c, ctx({ callsLastHour: 9 })).allow).toBe(true);
+  });
+  it('quiet hours block outbound unless an urgent owner ring', () => {
+    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '23:00', quietEnd: '07:30' } });
+    const night = ctx({ now: new Date(2026, 9, 28, 2, 0) });
+    expect(decide('call.out', '+61491570156', c, night)).toEqual({ allow: false, reason: 'quiet hours' });
+    expect(decide('call.out', '+61491570156', c, { ...night, urgent: true }).allow).toBe(true);
+  });
+  it('refuses to grow a full conference', () => {
+    expect(decide('conf.add', '+61491570187', cfg(), ctx({ participants: 3 }))).toEqual({ allow: false, reason: 'conference is full' });
+  });
+});
+
+describe('inQuietHours', () => {
+  it('handles windows that wrap midnight and empty windows', () => {
+    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '23:00', quietEnd: '07:30' } });
+    expect(inQuietHours(c, new Date(2026, 0, 1, 23, 30))).toBe(true);
+    expect(inQuietHours(c, new Date(2026, 0, 1, 7, 30))).toBe(false);
+    expect(inQuietHours(cfg(), new Date(2026, 0, 1, 3, 0))).toBe(false);
+  });
+});
+
+describe('resolvePhoneLineConfig', () => {
+  it('fills defaults, drops wrong-typed values and contacts with an unknown role', () => {
+    const c = resolvePhoneLineConfig({ port: 'x', persona: { name: 'Sam' }, contacts: [{ label: 'x', pattern: '+61400000000', role: 'admin' }] });
+    expect(c.port).toBe(7781);
+    expect(c.persona.name).toBe('Sam');
+    expect(c.persona.greetIn).toBe(true);
+    expect(c.contacts).toEqual([]);
+  });
+});
+
+describe('helpers', () => {
+  it('fillTemplate fills known tokens and collapses blanks', () => {
+    expect(fillTemplate('Hi {caller}, this is {name}. {reason}', { caller: 'Me', name: 'Helm', reason: '' })).toBe('Hi Me, this is Helm.');
+  });
+  it('maskOtp hides standalone codes only', () => {
+    expect(maskOtp('Your code is 482913, ref A12')).toBe('Your code is ••••••, ref A12');
+  });
+  it('findContact picks the most specific match', () => {
+    expect(findContact('+61299812345', cfg())?.label).toBe('Office');
+    expect(findContact('+61299912345', cfg())?.label).toBe('Spam');
+  });
+});

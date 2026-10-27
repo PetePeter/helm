@@ -828,6 +828,15 @@ export async function callMcpTool(
           requireCallerSession(authContext, 'call_transfer'),
           asString(args.sessionId ?? args.name, 'sessionId or name is required'),
         );
+      case 'phone_hangup':
+        return service.phoneHangup(requireCallerSession(authContext, 'phone_hangup'));
+      case 'phone_conference_add':
+        return service.phoneConferenceAdd(
+          requireCallerSession(authContext, 'phone_conference_add'),
+          asString(args.label, 'label is required'),
+        );
+      case 'phone_sms_inbox':
+        return service.phoneSmsInbox();
       case 'flash_attention':
         return service.flashAttention(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
       case 'get_app_visibility':

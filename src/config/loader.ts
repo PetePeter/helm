@@ -47,6 +47,7 @@ import {
   SettingsManager,
 } from './settings-manager.js';
 import { TelegramConfigManager } from './telegram-config-manager.js';
+import { resolvePhoneLineConfig, type PhoneLineConfig } from '../phone/phone-config.js';
 import { DEFAULT_SUGGESTION_SCORING, type SuggestionScoringWeights } from '../session/hooks/suggestion-scorer.js';
 import {
   REMINDER_IDS,
@@ -435,6 +436,8 @@ export interface SettingsConfig {
   /** Same contract, for the shared snap-out pop-out profile. */
   popoutWorkspaceLayout?: unknown;
   telegram?: TelegramConfig;
+  /** Phone line (telefony-app over PhAP); shape and defaults in src/phone/phone-config.ts. */
+  phoneLine?: Partial<PhoneLineConfig>;
   mcp?: McpConfig;
   fleet?: FleetConfig;
   /**
@@ -1136,6 +1139,21 @@ export class ConfigLoader {
   /** Update the Telegram configuration (partial merge). */
   setTelegramConfig(updates: Partial<TelegramConfig>): void {
     this.telegramConfigManager.set(updates);
+  }
+
+  /** Phone line settings, defaults filled in. */
+  getPhoneLineConfig(): PhoneLineConfig {
+    return resolvePhoneLineConfig(this.settings?.phoneLine);
+  }
+
+  /** Replace the phone line settings (validated against the defaults). */
+  setPhoneLineConfig(config: Partial<PhoneLineConfig>): PhoneLineConfig {
+    const resolved = resolvePhoneLineConfig(config);
+    if (this.settings) {
+      this.settings.phoneLine = resolved;
+      this.saveSettings();
+    }
+    return resolved;
   }
 
   /** Get the current localhost MCP configuration. */

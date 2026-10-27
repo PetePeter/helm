@@ -195,6 +195,7 @@ python sendDeploy.py            # Commit, tag, push, upload installer via gh CLI
 | [docs/mobile-pairing.md](docs/mobile-pairing.md) | Phone pairing — SAS confirmation, device registry keyed on machineId, atomic finalize, revocation |
 | [docs/mobile-gate.md](docs/mobile-gate.md) | Phone call boundary — `mobile:<deviceId>` proxy identity, allow-list + hard-deny, ownership, rate limit |
 | [docs/fleet.md](docs/fleet.md) | Cross-machine peer MCP proxy — TLS-WS transport, PSK + TOFU pinning, SAS pairing, InboundCallGate |
+| [docs/phone-line.md](docs/phone-line.md) | Phone line — telefony-app over PhAP: Helm-owned process + generated TOML, per-number permissions, calls/SMS to the operator, ring fallback, transcripts |
 | [docs/remote.md](docs/remote.md) | Remote — a fleet peer's session as a local row you drive directly; adopted `PtyProcess`, attach-as-grant, notifications, `peer_attach` |
 | [docs/cli-hooks.md](docs/cli-hooks.md) | CLI hooks — /hooks + installer, activity/context alerts, editable hook injections, per-CLI context limits, ranking, reminders, gated loop driver |
 | [docs/helm-mcp-protocol.md](docs/helm-mcp-protocol.md) | Helm MCP wire protocol |

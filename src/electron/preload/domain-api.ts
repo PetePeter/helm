@@ -883,6 +883,22 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   dialogOpenFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:openFolder'),
 
   // ========================================================================
+  // Phone line (telefony-app over PhAP)
+  // ========================================================================
+
+  phoneGetConfig: () => ipcRenderer.invoke('phone:getConfig'),
+  phoneSetConfig: (config: Record<string, unknown>) => ipcRenderer.invoke('phone:setConfig', config),
+  phoneGetStatus: () => ipcRenderer.invoke('phone:getStatus'),
+  phoneRestart: () => ipcRenderer.invoke('phone:restart'),
+  phoneTestRing: () => ipcRenderer.invoke('phone:testRing'),
+  phoneTestSms: () => ipcRenderer.invoke('phone:testSms'),
+  onPhoneStatus: (callback: (status: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: unknown) => callback(status);
+    ipcRenderer.on('phone:status', listener);
+    return () => ipcRenderer.removeListener('phone:status', listener);
+  },
+
+  // ========================================================================
   // Telegram Bot
   // ========================================================================
 
