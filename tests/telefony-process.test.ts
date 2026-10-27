@@ -50,6 +50,15 @@ describe('renderTelefonyToml', () => {
 });
 
 describe('TelefonyProcess', () => {
+  it('stops retrying when the Bluetooth dongle is missing', async () => {
+    const NO_DONGLE = script('nodongle.js', 'process.stderr.write("telefony-app: dongle not found\\n(device not found; check it is plugged in)\\n"); process.exit(3)');
+    const p = new TelefonyProcess({ configPath: path.join(dir, 'nd', 'telefony.toml'), spawnFn: nodeRunning(NO_DONGLE), baseDelayMs: 10 });
+    procs.push(p);
+    await p.start(cfg());
+    const s = await waitFor(p, (st) => st.state === 'failed');
+    expect(s).toMatchObject({ state: 'failed', lastError: expect.stringMatching(/dongle not found/) });
+  });
+
   it('writes the TOML and passes its path to the process', async () => {
     const configPath = path.join(dir, 'a', 'telefony.toml');
     const p = new TelefonyProcess({ configPath, spawnFn: nodeRunning(LIVE) });

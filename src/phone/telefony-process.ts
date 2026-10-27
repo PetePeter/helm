@@ -156,6 +156,12 @@ export class TelefonyProcess extends EventEmitter {
     this.child = null;
     if (this.stableTimer) clearTimeout(this.stableTimer);
     if (!this.wanted) return;
+    // telefony's fixed marker for any transport-open failure (missing dongle or a
+    // wrong transport string). Retrying cannot fix either, so stop and say so.
+    if (this.stderrTail.includes('telefony-app: dongle not found')) {
+      this.setStatus({ state: 'failed', lastError: 'Bluetooth dongle not found: check it is plugged in and the transport setting, then press Restart' });
+      return;
+    }
     this.scheduleRestart(why);
   }
 

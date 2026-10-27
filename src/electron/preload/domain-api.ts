@@ -892,6 +892,15 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   phoneRestart: () => ipcRenderer.invoke('phone:restart'),
   phoneTestRing: () => ipcRenderer.invoke('phone:testRing'),
   phoneTestSms: () => ipcRenderer.invoke('phone:testSms'),
+  /** Installed telefony-app version (null for a hand-picked exe) and the latest GitHub release. */
+  phoneTelefonyCheck: () => ipcRenderer.invoke('phone:telefonyCheck'),
+  /** Download + install the latest release; main re-resolves it, the renderer passes no URL. */
+  phoneTelefonyInstall: () => ipcRenderer.invoke('phone:telefonyInstall'),
+  onPhoneTelefonyProgress: (callback: (progress: { percent: number; receivedBytes: number; totalBytes?: number }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: { percent: number; receivedBytes: number; totalBytes?: number }) => callback(progress);
+    ipcRenderer.on('phone:telefonyProgress', listener);
+    return () => ipcRenderer.removeListener('phone:telefonyProgress', listener);
+  },
   onPhoneStatus: (callback: (status: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: unknown) => callback(status);
     ipcRenderer.on('phone:status', listener);

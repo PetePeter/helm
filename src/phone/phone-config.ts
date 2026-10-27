@@ -36,6 +36,11 @@ export interface PhoneLineConfig {
   ringTimeoutS: number;
   countryCode: string;
   masters: { callIn: boolean; callOut: boolean; smsIn: boolean; smsOut: boolean; conference: boolean };
+  /**
+   * Keypad PIN (4-12 digits, then #) an inbound owner call must enter before it
+   * gets owner trust; caller ID alone can be spoofed. '' = caller ID is enough.
+   */
+  ownerPin: string;
   contacts: PhoneContact[];
   smsRead: { scope: 'received' | 'window' | 'all' | 'none'; windowMin: number; maskOtp: boolean };
   limits: { callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string };
@@ -74,6 +79,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   ringTimeoutS: 15,
   countryCode: '+61',
   masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: false },
+  ownerPin: '',
   contacts: [],
   smsRead: { scope: 'window', windowMin: 30, maskOtp: true },
   limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '' },
@@ -86,7 +92,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
     discloseAi: true,
     signSms: false,
   },
-  voice: { tts: 'auto', piperModel: '', sttModel: 'small.en' },
+  voice: { tts: 'auto', piperModel: '', sttModel: '' },
   transcripts: { enabled: true, folder: '', fileName: '{yyyy}/{mm}/{yyyy}-{mm}-{dd}_{HHmm}_{label}_{direction}', format: 'md', retentionDays: 90 },
   conference: { maxParticipants: 3, announce: true },
   fallback: { ring: true, notify: false },
@@ -112,6 +118,7 @@ export function resolvePhoneLineConfig(raw: unknown): PhoneLineConfig {
     : [];
   return {
     ...base,
+    ownerPin: /^\d{4,12}$/.test(base.ownerPin) ? base.ownerPin : '',
     masters: pick(d.masters, src.masters),
     contacts,
     smsRead: pick(d.smsRead, src.smsRead),

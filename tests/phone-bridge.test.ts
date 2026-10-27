@@ -195,6 +195,49 @@ describe('PhoneBridge — SMS', () => {
   });
 });
 
+describe('PhoneBridge — owner PIN', () => {
+  const dial = (server: FakePhapServer, keys: string) => { for (const digit of keys) server.emit('call.dtmf', { callId: 'c1', digit }); };
+
+  it('treats a PIN-less owner call as unverified until the right PIN, then grants owner trust', async () => {
+    const { server, bridge, delivered } = await setup({ cfg: config({ ownerPin: '2468' }) });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    expect(delivered[0].text).toContain('(unverified)');
+    expect(delivered[0].text).toContain('NOT the owner');
+    await expect(bridge.conferenceAdd('op', 'Partner')).rejects.toThrow(/owner/);
+    dial(server, '2468#');
+    await until(() => delivered.length === 2);
+    expect(delivered[1].text).toMatch(/correct owner PIN/);
+    expect(delivered[1].text).not.toContain('2468');
+    await expect(bridge.conferenceAdd('op', 'Partner')).resolves.toEqual({ added: 'Partner' });
+  });
+
+  it('locks out after three wrong PINs, even if the fourth is right', async () => {
+    const { server, bridge, delivered } = await setup({ cfg: config({ ownerPin: '2468' }) });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    dial(server, '1111#2222#3333#2468#');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(delivered).toHaveLength(1);
+    await expect(bridge.conferenceAdd('op', 'Partner')).rejects.toThrow(/owner/);
+  });
+
+  it('ignores the PIN from a non-owner number', async () => {
+    const { server, delivered } = await setup({ cfg: config({ ownerPin: '2468' }) });
+    await inboundCall(server, PARTNER);
+    await until(() => delivered.length === 1);
+    dial(server, '2468#');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(delivered).toHaveLength(1);
+  });
+
+  it('rejects a malformed PIN setting so caller ID stays the rule', () => {
+    expect(config({ ownerPin: '12' }).ownerPin).toBe('');
+    expect(config({ ownerPin: '12ab' }).ownerPin).toBe('');
+    expect(config({ ownerPin: '123456' }).ownerPin).toBe('123456');
+  });
+});
+
 describe('PhoneBridge — conference', () => {
   it('lets the owner add a conf-enabled contact and announces the assistant', async () => {
     const { server, bridge, delivered } = await setup();

@@ -91,6 +91,7 @@ import { setupPtyHandlers, cancelAllPrompts } from './pty-handlers.js';
 import { setupTelegramHandlers } from './telegram-handlers.js';
 import { setupPhoneHandlers } from './phone-handlers.js';
 import { PhoneLineService } from '../../phone/phone-line-service.js';
+import { TelefonyInstaller } from '../../phone/telefony-installer.js';
 import { setupPlanHandlers } from './plan-handlers.js';
 import { setupScheduledTaskHandlers } from './scheduled-task-handlers.js';
 import { setupRecycleBinHandlers } from './recycle-bin-handlers.js';
@@ -164,7 +165,7 @@ import { SecretStore } from '../../mcp/peer/secret-store.js';
 import { loadPeerPins, savePeerPins, loadPeerSecrets, savePeerSecrets } from '../../mcp/peer/peer-secret-persistence.js';
 import { asRecord } from '../../mcp/tools/validation.js';
 import { MessNotifier } from '../../session/mess-notifier.js';
-import { getConfigDir, getTempDir } from '../../utils/app-paths.js';
+import { getConfigDir, getTempDir, getUserDataDir } from '../../utils/app-paths.js';
 import { HeadlessCliRunner } from '../../session/headless-cli-runner.js';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -1461,7 +1462,9 @@ export function registerIPCHandlers(
   chatBroker.register(phoneLine);
   helmControlService.setPhoneLine(phoneLine);
   void phoneLine.apply().catch((err) => logger.warn(`[phone] start failed: ${err}`));
-  const cleanupPhone = setupPhoneHandlers(configLoader, phoneLine, () => windowManager.getMainWindow()?.webContents ?? null);
+  const telefonyRoot = join(getUserDataDir(), 'telefony-app');
+  const telefonyInstaller = new TelefonyInstaller({ root: telefonyRoot, fetchFn: (url, init) => net.fetch(url, init) });
+  const cleanupPhone = setupPhoneHandlers(configLoader, phoneLine, telefonyInstaller, telefonyRoot, () => windowManager.getMainWindow()?.webContents ?? null);
   const ringPhone = (sessionId: string, reason: string) =>
     mobileChatBridge.sendRing(sessionId, reason) || phoneLine.ringOwner(sessionId, reason);
   helmControlService.setPhoneRinger(ringPhone);

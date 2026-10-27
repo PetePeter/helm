@@ -334,7 +334,10 @@ export const PRELOAD_API_DOMAINS = {
     'phoneRestart',
     'phoneTestRing',
     'phoneTestSms',
+    'phoneTelefonyCheck',
+    'phoneTelefonyInstall',
     'onPhoneStatus',
+    'onPhoneTelefonyProgress',
   ],
   telegram: [
     'telegramGetConfig',

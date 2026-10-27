@@ -61,6 +61,54 @@ Every decision is logged and shown in the status log.
 - Caller speech and SMS bodies are JSON-quoted as third-party content.
 - `phone_sms_inbox` honours the read scope: nothing, only SMS Helm received, the last N minutes, or everything. It also masks 4–8 digit codes.
 
+## Owner PIN
+
+Caller ID is spoofable, so owner trust on an **inbound** call can require a
+keypad PIN (`ownerPin`, 4-12 digits). Until it is keyed and ended with `#`, the
+owner number is treated as a guest: the briefing says "unverified", the AI
+takes a message only, and conference is refused. Dial it in one go as
+`number,PIN#` (`,` pauses about 2 s on Android).
+
+```mermaid
+stateDiagram-v2
+  [*] --> Unverified: owner number rings in
+  Unverified --> Owner: PIN# correct
+  Unverified --> Unverified: wrong (try n of 3)
+  Unverified --> Locked: 3rd wrong
+  Owner --> [*]
+  Locked --> [*]
+```
+
+- Digits come from telefony's `call.dtmf` events; they are never logged,
+  delivered to a session, or written to a transcript. Comparison is
+  constant-time.
+- Calls Helm dials itself (ring_user) reached the owner's real number, so they
+  need no PIN.
+- A malformed PIN setting resolves to blank, i.e. caller ID only.
+
+## Installing telefony-app
+
+The Phone line page has an **Install / Update** button. telefony-app is
+Python, so it is not bundled in the Helm installer: that would bloat every
+install with onnxruntime/whisper and freeze the version. Instead each
+telefony-app `vX.Y.Z` GitHub release carries a PyInstaller onedir build:
+
+```mermaid
+graph LR
+  GH[GitHub release<br/>telefony-app-win64.zip + .sha256] -->|download, verify sha256| H[Helm main]
+  H -->|System32 tar.exe| V["%APPDATA%/Helm/telefony-app/&lt;version&gt;/"]
+  V -->|executable setting| P[TelefonyProcess restart]
+```
+
+- Versions install side by side; old ones are pruned only after the new one
+  is configured, so a failed update leaves the working install alone.
+- The zip's `telefony-app/piper/` folder must stay beside the exe (Piper is a
+  separate GPL program, found there without PATH).
+- The renderer never passes a URL; main re-resolves the latest release and
+  accepts only assets under the telefony-app repo's release downloads.
+- Speech-to-text defaults off: faster-whisper downloads its model (~500 MB
+  for `small.en`) to the Hugging Face cache on first use.
+
 ## Transcripts
 
 When a call ends, Helm asks telefony for `transcript.get`. It writes Markdown and/or JSON to the configured folder, or `<config>/phone-transcripts` if none is set. File names use `{yyyy} {mm} {dd} {HHmm} {label} {direction}`, and the path is confined to that folder. Files carry a `helm-phone-transcript` marker.
@@ -79,6 +127,7 @@ The daily retention sweep deletes only marked files, so pointing the folder at a
 | File | Role |
 |---|---|
 | `src/phone/phone-config.ts` | Settings shape and defaults, `decide()`, number normalisation, templates |
+| `src/phone/telefony-installer.ts` | Install / update telefony-app from its GitHub release: checksum, side-by-side versions, prune |
 | `src/phone/telefony-process.ts` | TOML render, spawn, watchdog |
 | `src/phone/phap-client.ts` | PhAP controller client: hello, events, heartbeat, resume |
 | `src/phone/phone-bridge.ts` | Routing, the ChatBridge, ring/transfer/conference/inbox, transcripts |

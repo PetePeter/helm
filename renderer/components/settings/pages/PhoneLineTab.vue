@@ -16,13 +16,45 @@ const cfg = ref<PhoneLineConfig>(structuredClone(DEFAULT_PHONE_LINE_CONFIG));
 const status = ref<PhoneLineStatus | null>(null);
 const message = ref('');
 let offStatus: (() => void) | null = null;
+let offProgress: (() => void) | null = null;
+
+// telefony-app install / update from its GitHub releases (src/phone/telefony-installer.ts).
+const telefony = ref<{ installed: string | null; latest: { version: string; size?: number } | null } | null>(null);
+const installPercent = ref<number | null>(null);
+const installLabel = computed(() => {
+  const t = telefony.value;
+  if (installPercent.value !== null) return `Downloading… ${installPercent.value}%`;
+  if (!t?.latest) return 'No release published yet';
+  if (t.installed === t.latest.version) return `Up to date (${t.installed})`;
+  return t.installed ? `Update to ${t.latest.version}` : `Install telefony-app ${t.latest.version}`;
+});
+const canInstall = computed(() => installPercent.value === null && !!telefony.value?.latest && telefony.value.installed !== telefony.value.latest.version);
+
+async function checkTelefony(): Promise<void> {
+  const r = await phoneClient.phoneTelefonyCheck();
+  telefony.value = r.success ? r.value : null;
+}
+
+async function installTelefony(): Promise<void> {
+  installPercent.value = 0;
+  try {
+    const r = await phoneClient.phoneTelefonyInstall();
+    message.value = r.success ? `Installed telefony-app ${r.value.version}` : r.error ?? 'Install failed';
+    cfg.value = await phoneClient.phoneGetConfig();
+  } finally {
+    installPercent.value = null;
+    await checkTelefony();
+  }
+}
 
 onMounted(async () => {
   cfg.value = await phoneClient.phoneGetConfig();
   status.value = await phoneClient.phoneGetStatus();
   offStatus = phoneClient.onPhoneStatus((s: PhoneLineStatus) => { status.value = s; });
+  offProgress = phoneClient.onPhoneTelefonyProgress((p: { percent: number }) => { installPercent.value = p.percent; });
+  void checkTelefony();
 });
-onBeforeUnmount(() => offStatus?.());
+onBeforeUnmount(() => { offStatus?.(); offProgress?.(); });
 
 function save(): Promise<boolean> {
   return trackSave(async () => {
@@ -69,7 +101,8 @@ const processLine = computed(() => {
 const lineText = computed(() => {
   const l = status.value?.line;
   if (!l) return { dot: 'off', text: 'Not connected' };
-  if (!l.connected) return { dot: 'warn', text: 'Waiting for telefony-app…' };
+  // telefony opens its PhAP port only once the phone connects over Bluetooth.
+  if (!l.connected) return { dot: 'warn', text: status.value?.process.state === 'running' ? 'Waiting for the phone to connect over Bluetooth…' : 'Waiting for telefony-app…' };
   return { dot: l.link === 'down' ? 'warn' : 'ok', text: `Connected as controller · phone link ${l.link}` };
 });
 
@@ -97,6 +130,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <div class="field-group">
       <label class="field-label">telefony-app executable</label>
       <input class="field-input focusable" :value="cfg.executable" placeholder="…\telefony-app\.venv\Scripts\telefony-app.exe" @change="cfg.executable = str($event); save()" />
+      <button class="btn btn--secondary btn--sm focusable" :disabled="!canInstall" @click="installTelefony">{{ installLabel }}</button>
     </div>
     <div class="field-group">
       <label class="field-label">Bluetooth transport</label>
@@ -157,6 +191,15 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <label class="phone-setting"><input type="checkbox" class="focusable" :checked="cfg.masters.smsIn" @change="cfg.masters.smsIn = checked($event); save()" /><span>Incoming SMS</span></label>
       <label class="phone-setting"><input type="checkbox" class="focusable" :checked="cfg.masters.smsOut" @change="cfg.masters.smsOut = checked($event); save()" /><span>Outgoing SMS</span></label>
       <label class="phone-setting"><input type="checkbox" class="focusable" :checked="cfg.masters.conference" @change="cfg.masters.conference = checked($event); save()" /><span>Conference calls</span></label>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Owner PIN (4-12 digits; blank = caller ID is enough)</label>
+      <input class="field-input focusable" type="password" inputmode="numeric" autocomplete="off" :value="cfg.ownerPin" @change="cfg.ownerPin = str($event); save()" />
+    </div>
+    <div class="settings-help">
+      <p>Caller ID can be faked. With a PIN set, an incoming call from the owner number stays a guest until the PIN is keyed, then <code>#</code>.
+        Dial it in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places to you need no PIN.</p>
     </div>
 
     <!-- Numbers -->
@@ -235,6 +278,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <label class="phone-setting">
       <span>Speech to text (faster-whisper)</span>
       <select class="btn btn--secondary btn--sm focusable" :value="cfg.voice.sttModel" @change="cfg.voice.sttModel = str($event); save()">
+        <option value="">off (models download ~500 MB on first use)</option>
         <option v-for="m in ['tiny.en', 'base.en', 'small.en', 'medium.en']" :key="m" :value="m">{{ m }}</option>
       </select>
     </label>

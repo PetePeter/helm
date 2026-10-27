@@ -22,6 +22,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../../utils/logger.js';
+import { downloadToFile } from '../../utils/download.js';
 import {
   LATEST_RELEASE_API_URL,
   buildUpdateScript,
@@ -165,39 +166,6 @@ export function setupUpdateHandlers(overrides: UpdateHandlerOverrides): void {
 
   const fetchRelease = overrides.fetchFn ?? ((url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => net.fetch(url, init));
 
-  async function download(url: string, destPath: string): Promise<void> {
-    const response = await fetchRelease(url, { signal: AbortSignal.timeout(300_000) });
-    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-    if (!response.body) throw new Error('Download failed: empty response body');
-
-    const total = Number(response.headers.get('content-length')) || undefined;
-    let received = 0;
-    let lastPercent = -1;
-    // Stream straight to disk — the installer is ~150 MB and the main
-    // process hosts every PTY, so it must not buffer that in memory.
-    const out = fs.createWriteStream(destPath);
-    try {
-      for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
-        const buf = Buffer.from(chunk);
-        await new Promise<void>((resolve, reject) => {
-          out.write(buf, err => (err ? reject(err) : resolve()));
-        });
-        received += buf.length;
-        const percent = total ? Math.floor((received / total) * 100) : 0;
-        if (percent > lastPercent) {
-          lastPercent = percent;
-          sendProgress({ stage: 'downloading', percent, receivedBytes: received, totalBytes: total });
-        }
-      }
-      await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err ? reject(err) : resolve())));
-    } catch (error) {
-      out.destroy();
-      fs.rmSync(destPath, { force: true });
-      throw error;
-    }
-    if (total && received !== total) {
-      fs.rmSync(destPath, { force: true });
-      throw new Error(`Download truncated: ${received} of ${total} bytes`);
-    }
-  }
+  const download = (url: string, destPath: string) =>
+    downloadToFile(fetchRelease, url, destPath, p => sendProgress({ stage: 'downloading', ...p }));
 }
