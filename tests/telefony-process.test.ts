@@ -19,9 +19,10 @@ const cfg = (over: Record<string, unknown> = {}) => resolvePhoneLineConfig({
   contacts: [
     { label: 'Me', pattern: '0491570156', role: 'owner', callIn: true, callOut: true, smsIn: true, smsOut: true, conf: true },
     { label: 'Office', pattern: '+61299*', role: 'trusted', callIn: true },
-    { label: 'Spam', pattern: '+61400000000', role: 'blocked' },
+    { label: 'Spam', pattern: '+61400000000', role: 'trusted', callIn: true },
     { label: 'Dormant', pattern: '+61411111111', role: 'trusted' },
   ],
+  blocklist: ['^0400000000$'],
   ...over,
 });
 

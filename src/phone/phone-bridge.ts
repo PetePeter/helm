@@ -441,13 +441,13 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
   }
 
   /**
-   * Owner trust on an inbound call needs the owner's keypad PIN when one is
-   * set: caller ID can be spoofed. A call Helm dialled itself reached the
-   * owner's real number, so it needs no PIN.
+   * Owner trust on an inbound call needs the owner's keypad PIN: caller ID can
+   * be spoofed, so with no PIN set an inbound owner call stays unprivileged. A
+   * call Helm dialled itself reached the owner's real number, so it needs none.
    */
   private isOwner(call: LiveCall): boolean {
     if (call.contact.role !== 'owner') return false;
-    return !call.contact.pin || call.direction === 'outbound' || call.pin.verified;
+    return call.direction === 'outbound' || call.pin.verified;
   }
 
   /** The current call is the owner, or a trusted contact who entered their own PIN. */
@@ -461,7 +461,7 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
   private async onDtmf(callId: string, digit: string): Promise<void> {
     const call = this.call;
     const pin = call?.contact.pin;
-    if (!call || call.callId !== callId || !pin || call.contact.role === 'blocked' || call.pin.verified || call.pin.tries >= MAX_PIN_TRIES) return;
+    if (!call || call.callId !== callId || !pin || call.pin.verified || call.pin.tries >= MAX_PIN_TRIES) return;
     if (digit !== '#') {
       if (/^[0-9*]$/.test(digit) && call.pin.digits.length < 16) call.pin.digits += digit;
       return;

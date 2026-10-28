@@ -76,6 +76,18 @@ const CONTACT_SWITCHES: Array<{ key: keyof PhoneContact; label: string }> = [
   { key: 'messages', label: 'Messages' },
 ];
 
+/** Invalid block-list lines; while any remain the list is not saved, so they stay on screen to fix. */
+const badBlocks = ref<string[]>([]);
+function saveBlocklist(text: string): void {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  badBlocks.value = lines.filter((re) => {
+    try { new RegExp(re); return false; } catch { return true; }
+  });
+  if (badBlocks.value.length) return;
+  cfg.value.blocklist = lines;
+  save();
+}
+
 function addContact(): void {
   cfg.value.contacts.push({ label: '', pattern: '', role: 'trusted', callIn: true, callOut: false, smsIn: true, smsOut: false, conf: false, pin: '', messages: false });
 }
@@ -198,12 +210,12 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <div class="settings-panel__header settings-span"><span class="settings-panel__title">Numbers</span></div>
     <div class="settings-help settings-span">
       <p>A trailing <code>*</code> is a prefix match (Helm only — telefony itself takes exact numbers).
-        A blocked entry always wins. <strong>owner</strong> drives the operator; <strong>trusted</strong> can only leave a message.</p>
+        <strong>owner</strong> drives the operator; <strong>trusted</strong> can only leave a message.</p>
       <p>Anyone else who rings is answered by plain code, never the AI: they say a contact's name to be put on hold while that person is texted
         (reply <code>JOIN</code> to take the call, or text back a message), or they leave a message. A message for nobody in particular goes to every
         number ticked <strong>Messages</strong>. Contact names are never read out.</p>
       <p>Caller ID can be faked. A <strong>PIN</strong> (4-12 digits) makes an incoming call from that number key it, then <code>#</code>, before it is trusted:
-        dial in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places need no PIN. Blank = caller ID is enough for the owner.</p>
+        dial in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places need no PIN. No PIN = never privileged on an incoming call, owner included.</p>
     </div>
     <table class="phone-contacts settings-span">
       <thead>
@@ -214,22 +226,34 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
           <td><input class="field-input focusable" :value="c.label" placeholder="Me" @change="c.label = str($event); save()" /></td>
           <td><input class="field-input focusable phone-mono" :value="c.pattern" placeholder="+61…" @change="c.pattern = str($event); save()" /></td>
           <td v-for="s in CONTACT_SWITCHES" :key="s.key" class="phone-center">
-            <input type="checkbox" class="focusable" :disabled="c.role === 'blocked'" :checked="c[s.key] as boolean" @change="(c[s.key] as boolean) = checked($event); save()" />
+            <input type="checkbox" class="focusable" :checked="c[s.key] as boolean" @change="(c[s.key] as boolean) = checked($event); save()" />
           </td>
           <td>
             <select class="btn btn--secondary btn--sm focusable" :value="c.role" @change="c.role = str($event) as PhoneContact['role']; save()">
               <option value="owner">owner</option>
               <option value="trusted">trusted</option>
-              <option value="blocked">blocked</option>
             </select>
           </td>
-          <td><input class="field-input focusable phone-pin" type="password" inputmode="numeric" autocomplete="off" :disabled="c.role === 'blocked'" :value="c.pin" @change="c.pin = str($event); save()" /></td>
+          <td><input class="field-input focusable phone-pin" type="password" inputmode="numeric" autocomplete="off" :value="c.pin" @change="c.pin = str($event); save()" /></td>
           <td><button class="btn btn--secondary btn--sm focusable" title="Remove" @click="removeContact(i)">✕</button></td>
         </tr>
       </tbody>
     </table>
     <div class="phone-actions settings-span">
       <button class="btn btn--secondary btn--sm focusable" @click="addContact">+ Add number</button>
+    </div>
+
+    <!-- Block list -->
+    <div class="settings-panel__header settings-span"><span class="settings-panel__title">Blocked numbers</span></div>
+    <div class="settings-help settings-span">
+      <p>One regular expression per line. A number matching any line, written as <code>+61400…</code> or <code>0400…</code>, is refused every call and SMS,
+        in and out, owner included. Examples: <code>^0400123456$</code> one number, <code>^\+61299</code> a range.
+        International and premium (19xx) numbers are always blocked for outgoing calls and texts.</p>
+    </div>
+    <div class="field-group settings-span">
+      <textarea class="field-input focusable phone-mono" rows="4" spellcheck="false" :value="cfg.blocklist.join('\n')"
+        @change="saveBlocklist(str($event))" />
+      <p v-if="badBlocks.length" class="phone-error">Not saved, fix these first: <code>{{ badBlocks.join('  ') }}</code></p>
     </div>
 
     <!-- Persona + voice -->
@@ -303,11 +327,6 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <div class="field-group">
       <label class="field-label">Max calls out / hour</label>
       <input class="field-input focusable" type="number" :value="cfg.limits.callsPerHour" @change="cfg.limits.callsPerHour = num($event); save()" />
-    </div>
-    <div class="field-group">
-      <label class="field-label">Blocked prefixes (comma-separated; international is always blocked)</label>
-      <input class="field-input focusable phone-mono" :value="cfg.limits.blockedPrefixes.join(', ')" placeholder="e.g. +61190 (19xx is always blocked)"
-        @change="cfg.limits.blockedPrefixes = str($event).split(',').map((p) => p.trim()).filter(Boolean); save()" />
     </div>
     <div class="field-group">
       <label class="field-label">Max SMS out / hour</label>
@@ -410,4 +429,5 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
 .phone-center { text-align: center; }
 .phone-mono { font-family: var(--font-mono); }
 .phone-pin { width: 7em; }
+.phone-error { color: var(--danger); margin: 4px 0 0; }
 </style>

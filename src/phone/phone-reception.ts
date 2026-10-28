@@ -39,7 +39,7 @@ const words = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}'
  */
 export function matchContactByName(text: string, cfg: PhoneLineConfig): PhoneContact | null {
   const said = ` ${words(text).join(' ')} `;
-  const rows = cfg.contacts.filter((c) => c.role !== 'blocked' && c.callIn && words(c.label).length > 0);
+  const rows = cfg.contacts.filter((c) => c.callIn && words(c.label).length > 0);
   const full = rows.filter((c) => said.includes(` ${words(c.label).join(' ')} `));
   if (full.length === 1) return full[0];
   const first = rows.filter((c) => said.includes(` ${words(c.label)[0]} `));

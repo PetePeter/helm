@@ -39,17 +39,17 @@ The PhAP token is generated on first enable and written to both sides. The user 
 
 ## Permissions: two layers
 
-1. **telefony's policy** is generated with `outbound = "all"`: telefony dials any well-formed number and Helm alone decides. The `allowlist` (every exact, non-blocked number with a switch on) is still written for telefony's own admin view.
+1. **telefony's policy** is generated with `outbound = "all"`: telefony dials any well-formed number and Helm alone decides. The `allowlist` (every exact contact number with a switch on, minus the block list) is still written for telefony's own admin view.
 2. **`decide(action, number, cfg, ctx)`** (`src/phone/phone-config.ts`) gates every action in Helm, in this order:
    1. the master switch for the action
    2. withheld or invalid numbers: deny
-   3. any matching **blocked** entry: deny
+   3. the **block list**: deny
    4. the most specific match, with its per-action switch (`callIn` `callOut` `smsIn` `smsOut` `conf`)
    5. outbound only: the **cost guard**, then quiet hours (an urgent owner ring passes), hourly limits, conference size
 
-**Cost guard.** International numbers (outside `countryCode`, or typed with the `0011` exit prefix) and premium numbers (19xx in Australia, built in) plus any `limits.blockedPrefixes` are refused for every outbound action, **owner included**: a talked-into-it assistant must never run up a bill. Side effect: Australian service numbers typed without their area digit (`1300…`, `1800…`) read as `+1…` and are blocked. Premium ranges are only known for Australia, so any `countryCode` other than `+61` blocks every outbound action (fail closed).
+**Cost guard.** International numbers (outside `countryCode`, or typed with the `0011` exit prefix) and premium numbers (19xx in Australia, built in) are refused for every outbound action, **owner included**: a talked-into-it assistant must never run up a bill. Side effect: Australian service numbers typed without their area digit (`1300…`, `1800…`) read as `+1…` and are blocked. Premium ranges are only known for Australia, so any `countryCode` other than `+61` blocks every outbound action (fail closed).
 
-**Dial-out for a caller.** `decideDialOut` lets a PIN-verified caller (the owner, or a trusted contact who keyed their PIN) have Helm dial *any* domestic number: master `callOut`, verified, cost guard, blocked entries, then the hourly call cap (default 3).
+**Dial-out for a caller.** `decideDialOut` lets a PIN-verified caller (the owner, or a trusted contact who keyed their PIN) have Helm dial *any* domestic number: master `callOut`, verified, cost guard, block list, then the hourly call cap (default 3).
 
 Unlisted inbound callers are not denied: they go to Reception (below). Unlisted SMS go to the owner only.
 
@@ -59,7 +59,7 @@ Every decision is logged and shown in the status log.
 - `owner` drives the operator, receives fallback rings and texts, and is the only one who can grow a call into a conference.
 - `trusted` callers reach the operator in "take a message" mode. This is a prompt-level restriction, not a tool gate.
 - `messages` (a per-contact switch) receives messages strangers leave without naming anyone. Rows saved before it existed: the owner is on.
-- `blocked` overrides everything.
+- The **block list** (`blocklist`, Settings → Blocked numbers) overrides everything: one regex per line, tested against both the E.164 (`+61400…`) and national (`0400…`) form, for every call and SMS in and out, owner included. Invalid regexes are dropped. Rows saved with the old `blocked` role migrate into it as exact or prefix matches.
 
 **Privacy.**
 - Sessions see contact labels, never digits.
@@ -68,11 +68,12 @@ Every decision is logged and shown in the status log.
 
 ## Keypad PINs
 
-Caller ID is spoofable, so each contact (owner or trusted) may have a keypad
+Caller ID is spoofable, so each contact (owner or trusted) has a keypad
 PIN (`pin`, 4-12 digits). An inbound call keys it and ends with `#`; dial it in
 one go as `number,PIN#` (`,` pauses about 2 s on Android). Until then the owner
 number is a guest (briefing "unverified", message only, no conference) and a
-trusted caller is unverified (no dial-out). The old single `ownerPin` setting
+trusted caller is unverified (no dial-out). **No PIN means never privileged on
+an inbound call**, owner included: caller ID alone proves nothing. The old single `ownerPin` setting
 migrates onto the owner row.
 
 ```mermaid
@@ -90,7 +91,7 @@ stateDiagram-v2
   delivered to a session, or written to a transcript. Comparison is
   constant-time.
 - Calls Helm dials itself (ring_user) reached the real number, so they need no PIN.
-- A malformed PIN resolves to blank, i.e. caller ID only.
+- A malformed PIN resolves to blank, i.e. unprivileged.
 
 ## Reception: callers not in the list
 

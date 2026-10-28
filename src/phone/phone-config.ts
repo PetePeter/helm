@@ -9,7 +9,7 @@
  */
 
 export type PhoneAction = 'call.in' | 'call.out' | 'sms.in' | 'sms.out' | 'sms.read' | 'conf.add';
-export type PhoneRole = 'owner' | 'trusted' | 'blocked';
+export type PhoneRole = 'owner' | 'trusted';
 
 export interface PhoneContact {
   label: string;
@@ -46,11 +46,12 @@ export interface PhoneLineConfig {
   masters: { callIn: boolean; callOut: boolean; smsIn: boolean; smsOut: boolean; conference: boolean };
   contacts: PhoneContact[];
   smsRead: { scope: 'received' | 'window' | 'all' | 'none'; windowMin: number; maskOtp: boolean };
-  limits: {
-    callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string;
-    /** Extra costly prefixes no one may dial or text, on top of international and built-in premium numbers. */
-    blockedPrefixes: string[];
-  };
+  /**
+   * Regexes; a number matching any one (as E.164 `+61…` or national `0…`) is
+   * refused every call and SMS, in and out, whoever asks.
+   */
+  blocklist: string[];
+  limits: { callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string };
   persona: {
     name: string;
     greetIn: boolean;
@@ -88,7 +89,8 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: false },
   contacts: [],
   smsRead: { scope: 'window', windowMin: 30, maskOtp: true },
-  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '', blockedPrefixes: [] },
+  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '' },
+  blocklist: [],
   persona: {
     name: 'Helm',
     greetIn: true,
@@ -118,28 +120,39 @@ export function resolvePhoneLineConfig(raw: unknown): PhoneLineConfig {
   const validPin = (pin: unknown) => (typeof pin === 'string' && /^\d{4,12}$/.test(pin) ? pin : '');
   // Before per-contact PINs there was one `ownerPin`; it belongs to the owner row.
   const legacyOwnerPin = validPin(src.ownerPin);
-  const contacts = Array.isArray(src.contacts)
+  const rows = Array.isArray(src.contacts)
     ? src.contacts.map((raw) => {
       const c = pick<PhoneContact>({ label: '', pattern: '', role: 'trusted', callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false, pin: '', messages: false }, raw);
       // Rows saved before the switch existed: the owner gets general messages.
       return typeof (raw as Record<string, unknown> | null)?.messages === 'boolean' ? c : { ...c, messages: c.role === 'owner' };
     })
       // Rows with no number yet stay (the user is still typing); they never match anything.
-      .filter((c) => ['owner', 'trusted', 'blocked'].includes(c.role))
-      // Owner rights belong to one number, never a whole prefix.
-      .map((c) => (c.role === 'owner' && c.pattern.trim().endsWith('*') ? { ...c, role: 'trusted' as const } : c))
-      .map((c) => ({
-        ...c,
-        pin: c.role === 'blocked' ? '' : validPin(c.pin) || (c.role === 'owner' ? legacyOwnerPin : ''),
-        messages: c.role !== 'blocked' && c.messages,
-      }))
+      .filter((c) => ['owner', 'trusted', 'blocked'].includes(c.role as string))
     : [];
+  // Blocked used to be a contact role; those rows now live in the block list.
+  const legacyBlocks = rows.filter((c) => (c.role as string) === 'blocked').map((c) => patternToRegex(c.pattern, (base.countryCode as string)))
+    .filter((r): r is string => r !== null);
+  const contacts = rows.filter((c) => (c.role as string) !== 'blocked')
+    // Owner rights belong to one number, never a whole prefix.
+    .map((c) => (c.role === 'owner' && c.pattern.trim().endsWith('*') ? { ...c, role: 'trusted' as const } : c))
+    .map((c) => ({ ...c, pin: validPin(c.pin) || (c.role === 'owner' ? legacyOwnerPin : '') }));
+  // So did the short-lived `limits.blockedPrefixes` (cost prefixes).
+  const legacyPrefixes = ((src.limits as { blockedPrefixes?: unknown } | undefined)?.blockedPrefixes);
+  if (Array.isArray(legacyPrefixes)) {
+    for (const p of legacyPrefixes) {
+      const re = typeof p === 'string' ? patternToRegex(`${p.replace(/\*$/, '')}*`, base.countryCode as string) : null;
+      if (re) legacyBlocks.push(re);
+    }
+  }
+  const blocklist = [...(Array.isArray(src.blocklist) ? src.blocklist : []), ...legacyBlocks]
+    .filter((r): r is string => typeof r === 'string' && r.trim() !== '' && compiles(r));
   return {
     ...base,
     masters: pick(d.masters, src.masters),
     contacts,
+    blocklist: [...new Set(blocklist)],
     smsRead: pick(d.smsRead, src.smsRead),
-    limits: resolveLimits(pick(d.limits, src.limits)),
+    limits: pick(d.limits, src.limits),
     persona: pick(d.persona, src.persona),
     voice: pick(d.voice, src.voice),
     transcripts: pick(d.transcripts, src.transcripts),
@@ -235,8 +248,28 @@ export function inQuietHours(cfg: PhoneLineConfig, now: Date): boolean {
   return start < end ? t >= start && t < end : t >= start || t < end;
 }
 
-function resolveLimits(l: PhoneLineConfig['limits']): PhoneLineConfig['limits'] {
-  return { ...l, blockedPrefixes: Array.isArray(l.blockedPrefixes) ? l.blockedPrefixes.filter((p): p is string => typeof p === 'string' && p.trim() !== '') : [] };
+function compiles(re: string): boolean {
+  try { new RegExp(re); return true; } catch { return false; }
+}
+
+/** An old contact pattern (exact number, or prefix ending `*`) as a block-list regex. */
+function patternToRegex(pattern: string, countryCode: string): string | null {
+  const p = pattern.trim();
+  const prefix = p.endsWith('*');
+  const n = normalizeNumber(prefix ? p.slice(0, -1) : p, countryCode);
+  return n ? `^${n.replace('+', '\\+')}${prefix ? '' : '$'}` : null;
+}
+
+/** True when the number matches the block list, as E.164 or in national form. */
+export function isBlocked(number: string, cfg: PhoneLineConfig): boolean {
+  // E.164 is at most 15 digits. Longer input is refused outright, which also
+  // bounds how long a badly written user regex can backtrack.
+  if (number.length > 16) return true;
+  const national = number.startsWith(cfg.countryCode) ? `0${number.slice(cfg.countryCode.length)}` : null;
+  return cfg.blocklist.some((re) => {
+    const rx = new RegExp(re);
+    return rx.test(number) || (national !== null && rx.test(national));
+  });
 }
 
 /** Premium-rate ranges that settings cannot unblock. */
@@ -253,7 +286,7 @@ function costBlock(rawNumber: string, number: string, cfg: PhoneLineConfig): str
   // typo such as "+6") would make the checks meaningless, so fail closed.
   if (!BUILT_IN_PREMIUM[cfg.countryCode]) return 'outbound needs a supported country code setting (+61)';
   if (/^\s*0011/.test(rawNumber) || !number.startsWith(cfg.countryCode)) return 'international numbers are blocked';
-  const premium = [...BUILT_IN_PREMIUM[cfg.countryCode]!, ...cfg.limits.blockedPrefixes].some((p) => {
+  const premium = BUILT_IN_PREMIUM[cfg.countryCode]!.some((p) => {
     const prefix = normalizeNumber(p.replace(/\*$/, ''), cfg.countryCode);
     return prefix !== null && number.startsWith(prefix);
   });
@@ -274,7 +307,7 @@ export function decideDialOut(
   if (!number) return { allow: false, reason: 'withheld or invalid number' };
   const cost = costBlock(rawNumber, number, cfg);
   if (cost) return { allow: false, reason: cost };
-  if (matchContacts(number, cfg).some((m) => m.contact.role === 'blocked')) return { allow: false, reason: 'blocked' };
+  if (isBlocked(number, cfg)) return { allow: false, reason: 'blocked' };
   if (ctx.callsLastHour >= cfg.limits.callsPerHour) return { allow: false, reason: 'hourly call limit reached' };
   return { allow: true, number };
 }
@@ -284,8 +317,8 @@ export function decide(action: PhoneAction, rawNumber: string, cfg: PhoneLineCon
   if (!MASTER[action](cfg.masters)) return { allow: false, reason: `${action} is switched off` };
   const number = normalizeNumber(rawNumber, cfg.countryCode);
   if (!number) return { allow: false, reason: 'withheld or invalid number' };
+  if (isBlocked(number, cfg)) return { allow: false, reason: 'blocked' };
   const matches = matchContacts(number, cfg);
-  if (matches.some((m) => m.contact.role === 'blocked')) return { allow: false, reason: 'blocked' };
   const contact = matches[0]?.contact;
   if (!contact) return { allow: false, reason: 'not listed' };
   if (!PER_CONTACT[action](contact)) return { allow: false, reason: `${action} is off for ${contact.label || 'this number'}` };

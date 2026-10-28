@@ -14,8 +14,8 @@ function cfg(over: Record<string, unknown> = {}): PhoneLineConfig {
       { label: 'Me', pattern: '+61491570156', role: 'owner', callIn: true, callOut: true, smsIn: true, smsOut: true, conf: true },
       { label: 'Partner', pattern: '0491 570 187', role: 'trusted', callIn: true, callOut: false, smsIn: true, smsOut: false, conf: true },
       { label: 'Office', pattern: '+61299*', role: 'trusted', callIn: true, callOut: false, smsIn: false, smsOut: false, conf: false },
-      { label: 'Spam', pattern: '+612999*', role: 'blocked', callIn: false, callOut: false, smsIn: false, smsOut: false, conf: false },
     ],
+    blocklist: ['^\\+612999'],
     ...over,
   });
 }
@@ -57,7 +57,7 @@ describe('decide', () => {
     expect(decide('call.in', '+61400000000', cfg(), ctx())).toEqual({ allow: false, reason: 'not listed' });
     expect(decide('call.in', '', cfg(), ctx()).allow).toBe(false);
   });
-  it('a blocked prefix wins over a broader trusted prefix', () => {
+  it('the block list wins over a broader trusted prefix', () => {
     expect(decide('call.in', '+61299912345', cfg(), ctx())).toEqual({ allow: false, reason: 'blocked' });
     expect(decide('call.in', '+61299812345', cfg(), ctx()).allow).toBe(true);
   });
@@ -98,16 +98,14 @@ describe('decideDialOut', () => {
       expect(out(n)).toMatchObject({ allow: false, reason: 'international numbers are blocked' });
     }
   });
-  it('blocks premium 19xx numbers and any extra prefix from settings', () => {
-    expect(out('1900 123 456')).toMatchObject({ allow: false });
-    expect(out('0190 0123 456')).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
-    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: ['02 9374'] } });
-    expect(out('0293744000', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
-  });
-  it('keeps Australian premium blocked even with the extra-prefix list cleared', () => {
-    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: [] } });
+  it('blocks premium 19xx numbers even with an empty block list', () => {
+    const c = cfg({ blocklist: [] });
     expect(out('1900 123 456', {}, c)).toMatchObject({ allow: false });
+    expect(out('0190 0123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
     expect(out('+61 1900 123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
+  });
+  it('the block list stops dial-outs too, matched on the national form as well', () => {
+    expect(out('0293744000', {}, cfg({ blocklist: ['^0293'] }))).toMatchObject({ allow: false, reason: 'blocked' });
   });
   it('fails closed when the country code is missing or malformed', () => {
     for (const countryCode of ['', '+', '+6', '61', '+61x', '+44']) {
@@ -129,6 +127,38 @@ describe('decide — cost guard', () => {
     const c = cfg({ contacts: [{ label: 'Me', pattern: '+447946000000', role: 'owner', callOut: true, smsOut: true }] });
     expect(decide('call.out', '+447946000000', c, ctx())).toMatchObject({ allow: false, reason: 'international numbers are blocked' });
     expect(decide('sms.out', '+447946000000', c, ctx())).toMatchObject({ allow: false });
+  });
+});
+
+describe('block list', () => {
+  it('matches each regex against the E.164 and the national form', () => {
+    const c = cfg({ blocklist: ['^0400', '5555$'] });
+    expect(decide('call.in', '+61400000000', c, ctx())).toEqual({ allow: false, reason: 'blocked' });
+    expect(decide('sms.in', '0491 575 555', c, ctx())).toEqual({ allow: false, reason: 'blocked' });
+  });
+  it('blocks the owner number too', () => {
+    expect(decide('sms.out', '+61491570156', cfg({ blocklist: ['^\\+61491570156$'] }), ctx())).toMatchObject({ allow: false, reason: 'blocked' });
+  });
+  it('moves the old cost-prefix list into the block list', () => {
+    const c = cfg({ blocklist: undefined, limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: ['02 9374'] } });
+    expect(decide('call.out', '0293744000', c, ctx())).toMatchObject({ allow: false, reason: 'blocked' });
+  });
+  it('refuses a number longer than E.164 allows before any regex runs', () => {
+    expect(decide('call.in', `+61${'0'.repeat(40)}`, cfg({ blocklist: ['^(0+)+$'] }), ctx())).toEqual({ allow: false, reason: 'blocked' });
+  });
+  it('drops entries that are not valid regexes, keeping the rest', () => {
+    expect(cfg({ blocklist: ['(', '^0400', '', 7] }).blocklist).toEqual(['^0400']);
+  });
+  it('moves old blocked contact rows into the list as exact or prefix matches', () => {
+    const c = cfg({ blocklist: undefined, contacts: [
+      { label: 'Me', pattern: '+61491570156', role: 'owner', callIn: true },
+      { label: 'Spam', pattern: '0400 000 000', role: 'blocked' },
+      { label: 'Spam range', pattern: '+612999*', role: 'blocked' },
+    ] });
+    expect(c.contacts.map((x) => x.label)).toEqual(['Me']);
+    expect(decide('call.in', '+61400000000', c, ctx())).toEqual({ allow: false, reason: 'blocked' });
+    expect(decide('call.in', '+61299912345', c, ctx())).toEqual({ allow: false, reason: 'blocked' });
+    expect(decide('call.in', '+61491570156', c, ctx()).allow).toBe(true);
   });
 });
 
@@ -160,6 +190,6 @@ describe('helpers', () => {
   });
   it('findContact picks the most specific match', () => {
     expect(findContact('+61299812345', cfg())?.label).toBe('Office');
-    expect(findContact('+61299912345', cfg())?.label).toBe('Spam');
+    expect(findContact('+61291234567', cfg())).toBeNull();
   });
 });
