@@ -75,23 +75,41 @@ export class Reception {
     await this.deps.port.say('Please hold while I check.');
     await this.deps.port.hold();
     await this.deps.port.sms(contact, `Someone (${this.callerText()}) is calling for you. Reply JOIN to take the call, or text a message to pass on.`);
+    // The SMS poll runs outside the call-event queue: the answer may already be in.
+    if (this.stage !== 'holding') return;
     this.holdTimer = setTimeout(() => {
       this.holdTimer = null;
-      void this.unhold().then(() => this.takeMessage("They didn't answer. Please leave a message, then hang up."));
+      if (!this.claimHold('message')) return;
+      void this.unhold().then(() => this.deps.port.say("They didn't answer. Please leave a message, then hang up."));
     }, this.deps.holdMs ?? HOLD_MS);
   }
 
   /** An SMS from a contact while this call runs. True when it was the answer we were waiting for. */
   async onSmsFrom(contact: PhoneContact, text: string): Promise<boolean> {
     if (this.stage !== 'holding' || contact.pattern !== this.target?.pattern) return false;
-    this.clearHold();
+    const join = text.trim().toUpperCase() === 'JOIN';
+    this.claimHold(join ? 'joined' : 'message');
     await this.unhold();
-    if (text.trim().toUpperCase() === 'JOIN') {
-      this.stage = 'joined';
-      await this.deps.port.conference(contact);
+    if (!join) {
+      await this.deps.port.say(`They say: ${text.trim()}. You can leave a reply now, or hang up.`);
       return true;
     }
-    await this.takeMessage(`They say: ${text.trim()}. You can leave a reply now, or hang up.`);
+    try {
+      await this.deps.port.conference(contact);
+    } catch {
+      await this.takeMessage("Sorry, I couldn't connect you. Please leave a message, then hang up.");
+    }
+    return true;
+  }
+
+  /**
+   * Leave the hold, synchronously, so the answer and the timeout can never both
+   * act on it. False when the other one got there first.
+   */
+  private claimHold(next: Stage): boolean {
+    if (this.stage !== 'holding') return false;
+    this.stage = next;
+    this.clearHold();
     return true;
   }
 

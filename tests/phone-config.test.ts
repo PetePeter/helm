@@ -104,6 +104,16 @@ describe('decideDialOut', () => {
     const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: ['02 9374'] } });
     expect(out('0293744000', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
   });
+  it('keeps Australian premium blocked even with the extra-prefix list cleared', () => {
+    const c = cfg({ limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '', blockedPrefixes: [] } });
+    expect(out('1900 123 456', {}, c)).toMatchObject({ allow: false });
+    expect(out('+61 1900 123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
+  });
+  it('fails closed when the country code is missing or malformed', () => {
+    for (const countryCode of ['', '+', '+6', '61', '+61x', '+44']) {
+      expect(out('+61293744000', {}, cfg({ countryCode }))).toMatchObject({ allow: false, reason: expect.stringMatching(/country code/) });
+    }
+  });
   it('caps dial-outs per hour', () => {
     expect(out('0293744000', { callsLastHour: 3 })).toMatchObject({ allow: false, reason: 'hourly call limit reached' });
   });

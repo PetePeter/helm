@@ -110,6 +110,32 @@ describe('Reception', () => {
     expect(last(port.texts)).toMatchObject({ to: 'Agnes Smith', text: expect.stringContaining('call me') });
   });
 
+  it('a JOIN that cannot be connected falls back to taking a message', async () => {
+    const { port, r } = setup();
+    port.conference = async () => { throw new Error('Not allowed: conf.add is switched off.'); };
+    await r.onAnswered();
+    await r.onUtterance('Agnes');
+    expect(await r.onSmsFrom(cfg.contacts[1], 'JOIN')).toBe(true);
+    expect(last(port.said)).toMatch(/leave a message/i);
+    await r.onUtterance('ring me');
+    await r.onEnded();
+    expect(last(port.texts)).toMatchObject({ to: 'Agnes Smith', text: expect.stringContaining('ring me') });
+  });
+
+  it('a JOIN that lands before the hold text finishes sending is not undone by the hold timer', async () => {
+    const { port, r } = setup(20);
+    let release!: () => void;
+    port.sms = (c, text) => { port.texts.push({ to: c.label, text }); return new Promise<void>((res) => { release = res; }); };
+    await r.onAnswered();
+    const asking = r.onUtterance('Agnes');
+    await new Promise((res) => setTimeout(res, 5));
+    expect(await r.onSmsFrom(cfg.contacts[1], 'JOIN')).toBe(true);
+    release();
+    await asking;
+    await new Promise((res) => setTimeout(res, 60));
+    expect(port.log).toEqual(['hold', 'resume', 'conference Agnes Smith']);
+  });
+
   it('sends nothing when the caller said nothing', async () => {
     const { port, r } = setup();
     await r.onAnswered();

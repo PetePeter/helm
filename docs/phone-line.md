@@ -39,21 +39,26 @@ The PhAP token is generated on first enable and written to both sides. The user 
 
 ## Permissions: two layers
 
-1. **telefony's allowlist** is generated. It holds every *exact*, non-blocked number with at least one switch on. telefony enforces it on outbound actions (dial, SMS, conference legs). Prefixes are not supported there.
+1. **telefony's policy** is generated with `outbound = "all"`: telefony dials any well-formed number and Helm alone decides. The `allowlist` (every exact, non-blocked number with a switch on) is still written for telefony's own admin view.
 2. **`decide(action, number, cfg, ctx)`** (`src/phone/phone-config.ts`) gates every action in Helm, in this order:
    1. the master switch for the action
    2. withheld or invalid numbers: deny
    3. any matching **blocked** entry: deny
    4. the most specific match, with its per-action switch (`callIn` `callOut` `smsIn` `smsOut` `conf`)
-   5. outbound only: quiet hours (an urgent owner ring passes), hourly limits, conference size
+   5. outbound only: the **cost guard**, then quiet hours (an urgent owner ring passes), hourly limits, conference size
 
-Unlisted numbers are always denied. telefony's allowlist is deny-by-default, so a "block-list" mode would mean nothing there.
+**Cost guard.** International numbers (outside `countryCode`, or typed with the `0011` exit prefix) and premium numbers (19xx in Australia, built in) plus any `limits.blockedPrefixes` are refused for every outbound action, **owner included**: a talked-into-it assistant must never run up a bill. Side effect: Australian service numbers typed without their area digit (`1300…`, `1800…`) read as `+1…` and are blocked. Premium ranges are only known for Australia, so any `countryCode` other than `+61` blocks every outbound action (fail closed).
+
+**Dial-out for a caller.** `decideDialOut` lets a PIN-verified caller (the owner, or a trusted contact who keyed their PIN) have Helm dial *any* domestic number: master `callOut`, verified, cost guard, blocked entries, then the hourly call cap (default 3).
+
+Unlisted inbound callers are not denied: they go to Reception (below). Unlisted SMS go to the owner only.
 
 Every decision is logged and shown in the status log.
 
 **Roles.**
 - `owner` drives the operator, receives fallback rings and texts, and is the only one who can grow a call into a conference.
 - `trusted` callers reach the operator in "take a message" mode. This is a prompt-level restriction, not a tool gate.
+- `messages` (a per-contact switch) receives messages strangers leave without naming anyone. Rows saved before it existed: the owner is on.
 - `blocked` overrides everything.
 
 **Privacy.**
@@ -61,30 +66,54 @@ Every decision is logged and shown in the status log.
 - Caller speech and SMS bodies are JSON-quoted as third-party content.
 - `phone_sms_inbox` honours the read scope: nothing, only SMS Helm received, the last N minutes, or everything. It also masks 4–8 digit codes.
 
-## Owner PIN
+## Keypad PINs
 
-Caller ID is spoofable, so owner trust on an **inbound** call can require a
-keypad PIN (`ownerPin`, 4-12 digits). Until it is keyed and ended with `#`, the
-owner number is treated as a guest: the briefing says "unverified", the AI
-takes a message only, and conference is refused. Dial it in one go as
-`number,PIN#` (`,` pauses about 2 s on Android).
+Caller ID is spoofable, so each contact (owner or trusted) may have a keypad
+PIN (`pin`, 4-12 digits). An inbound call keys it and ends with `#`; dial it in
+one go as `number,PIN#` (`,` pauses about 2 s on Android). Until then the owner
+number is a guest (briefing "unverified", message only, no conference) and a
+trusted caller is unverified (no dial-out). The old single `ownerPin` setting
+migrates onto the owner row.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Unverified: owner number rings in
-  Unverified --> Owner: PIN# correct
+  [*] --> Unverified: a contact with a PIN rings in
+  Unverified --> Verified: their own PIN# correct
   Unverified --> Unverified: wrong (try n of 3)
   Unverified --> Locked: 3rd wrong
-  Owner --> [*]
+  Verified --> [*]
   Locked --> [*]
 ```
 
+- A trusted contact's PIN verifies *them*; it never grants owner rights.
 - Digits come from telefony's `call.dtmf` events; they are never logged,
   delivered to a session, or written to a transcript. Comparison is
   constant-time.
-- Calls Helm dials itself (ring_user) reached the owner's real number, so they
-  need no PIN.
-- A malformed PIN setting resolves to blank, i.e. caller ID only.
+- Calls Helm dials itself (ring_user) reached the real number, so they need no PIN.
+- A malformed PIN resolves to blank, i.e. caller ID only.
+
+## Reception: callers not in the list
+
+Anyone not listed (withheld included) is answered by **plain code**
+(`src/phone/phone-reception.ts`), never a model: under the isolation model a
+stranger's words must not reach anything holding tools. Their speech is only
+word-matched against contact labels, and messages go by SMS to people.
+
+```mermaid
+flowchart TD
+  R[Stranger rings] --> G["Greeting: who would you like? (no names spoken)"]
+  G -->|says a contact's name| H[Hold + SMS that contact:<br/>reply JOIN or text a message]
+  G -->|"says 'message'"| M[Take a message]
+  G -->|unknown name| U["'That person isn't available here'"] --> M
+  H -->|JOIN| C[Resume + conference them in]
+  H -->|texted reply| T[Resume, read it out, caller may reply] --> M
+  H -->|no reply in 2 min| M
+  M -->|hang up| S[SMS: the named contact,<br/>else every Messages contact]
+```
+
+- Matching: the full label, or its first word if only one contact has it. Ambiguous means no match, never the wrong person.
+- Each texted contact needs `smsOut` on, and `smsIn` (plus the master) for their JOIN or reply to be read; otherwise the caller falls through to a message.
+- A stranger SMS (a one-time code, say) is forwarded to the owner only, and counts toward the hourly SMS cap.
 
 ## Installing telefony-app
 
@@ -118,6 +147,7 @@ The daily retention sweep deletes only marked files, so pointing the folder at a
 ## Limits (v1)
 
 - One call at a time, which is telefony's v0.1 limit. A second inbound call is left to the phone.
+- Reception's JOIN/reply arrives through the 30 s SMS poll, so a held caller may wait up to that long.
 - telefony's Bluetooth MAP does not push `sms.received` yet, so Helm polls `sms.list` every 30s. The inbox present at connect time is treated as history.
 - If the operator is off, inbound calls are left to ring on the phone (telefony's fallback policy applies).
 - telefony's web admin API (`/api/config`, port 7782) can apply allowlist changes live. Helm does not use it yet; it restarts instead.
@@ -126,7 +156,8 @@ The daily retention sweep deletes only marked files, so pointing the folder at a
 
 | File | Role |
 |---|---|
-| `src/phone/phone-config.ts` | Settings shape and defaults, `decide()`, number normalisation, templates |
+| `src/phone/phone-config.ts` | Settings shape and defaults, `decide()`, `decideDialOut()`, cost guard, number normalisation, templates |
+| `src/phone/phone-reception.ts` | Plain-code answering for callers not in the list: name match, hold + ask, messages |
 | `src/phone/telefony-installer.ts` | Install / update telefony-app from its GitHub release: checksum, side-by-side versions, prune |
 | `src/phone/telefony-process.ts` | TOML render, spawn, watchdog |
 | `src/phone/phap-client.ts` | PhAP controller client: hello, events, heartbeat, resume |

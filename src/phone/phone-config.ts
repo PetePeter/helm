@@ -48,7 +48,7 @@ export interface PhoneLineConfig {
   smsRead: { scope: 'received' | 'window' | 'all' | 'none'; windowMin: number; maskOtp: boolean };
   limits: {
     callsPerHour: number; smsPerHour: number; maxCallMin: number; quietStart: string; quietEnd: string;
-    /** Costly prefixes no one may dial or text, on top of international numbers. */
+    /** Extra costly prefixes no one may dial or text, on top of international and built-in premium numbers. */
     blockedPrefixes: string[];
   };
   persona: {
@@ -88,7 +88,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: false },
   contacts: [],
   smsRead: { scope: 'window', windowMin: 30, maskOtp: true },
-  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '', blockedPrefixes: ['+6119'] },
+  limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 15, quietStart: '', quietEnd: '', blockedPrefixes: [] },
   persona: {
     name: 'Helm',
     greetIn: true,
@@ -239,6 +239,9 @@ function resolveLimits(l: PhoneLineConfig['limits']): PhoneLineConfig['limits'] 
   return { ...l, blockedPrefixes: Array.isArray(l.blockedPrefixes) ? l.blockedPrefixes.filter((p): p is string => typeof p === 'string' && p.trim() !== '') : [] };
 }
 
+/** Premium-rate ranges that settings cannot unblock. */
+const BUILT_IN_PREMIUM: Record<string, string[] | undefined> = { '+61': ['+6119'] };
+
 /**
  * Numbers that cost money are refused for everyone, the owner included: a
  * talked-into-it assistant must not be able to run up a bill. International is
@@ -246,8 +249,11 @@ function resolveLimits(l: PhoneLineConfig['limits']): PhoneLineConfig['limits'] 
  * which `normalizeNumber` would otherwise read as a national number.
  */
 function costBlock(rawNumber: string, number: string, cfg: PhoneLineConfig): string | null {
+  // Premium ranges are only known for these countries; anything else (or a
+  // typo such as "+6") would make the checks meaningless, so fail closed.
+  if (!BUILT_IN_PREMIUM[cfg.countryCode]) return 'outbound needs a supported country code setting (+61)';
   if (/^\s*0011/.test(rawNumber) || !number.startsWith(cfg.countryCode)) return 'international numbers are blocked';
-  const premium = cfg.limits.blockedPrefixes.some((p) => {
+  const premium = [...BUILT_IN_PREMIUM[cfg.countryCode]!, ...cfg.limits.blockedPrefixes].some((p) => {
     const prefix = normalizeNumber(p.replace(/\*$/, ''), cfg.countryCode);
     return prefix !== null && number.startsWith(prefix);
   });

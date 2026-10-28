@@ -306,7 +306,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     </div>
     <div class="field-group">
       <label class="field-label">Blocked prefixes (comma-separated; international is always blocked)</label>
-      <input class="field-input focusable phone-mono" :value="cfg.limits.blockedPrefixes.join(', ')" placeholder="+6119"
+      <input class="field-input focusable phone-mono" :value="cfg.limits.blockedPrefixes.join(', ')" placeholder="e.g. +61190 (19xx is always blocked)"
         @change="cfg.limits.blockedPrefixes = str($event).split(',').map((p) => p.trim()).filter(Boolean); save()" />
     </div>
     <div class="field-group">
