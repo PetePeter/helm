@@ -14,7 +14,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { downloadToFile, type DownloadProgress, type FetchFn } from '../utils/download.js';
 
-export const TELEFONY_REPO = 'PetePeter/telefony-app';
+import { TELEFONY_REPO } from './phone-config.js';
+export { TELEFONY_REPO };
 /** The release list, not `/releases/latest`: telefony publishes pre-releases, which `latest` hides. */
 export const TELEFONY_RELEASES_URL = `https://api.github.com/repos/${TELEFONY_REPO}/releases?per_page=10`;
 const ZIP_NAME = 'telefony-app-win64.zip';

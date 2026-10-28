@@ -77,6 +77,10 @@ export interface PhoneLineConfig {
   callAgentModel: string;
 }
 
+/** telefony-app's GitHub repo: the installer's source, and the manual-download link in Settings. */
+export const TELEFONY_REPO = 'PetePeter/telefony-app';
+export const TELEFONY_RELEASES_PAGE = `https://github.com/${TELEFONY_REPO}/releases`;
+
 export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   enabled: false,
   executable: '',

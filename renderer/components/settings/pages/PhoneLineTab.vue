@@ -5,11 +5,11 @@
  * allowed calls and SMS to the operator. Every number gets per-action switches.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { phoneClient } from '../../../ipc/clients.js';
+import { phoneClient, systemClient } from '../../../ipc/clients.js';
 import { trackSave } from '../../../composables/useAutosave.js';
 import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
 import {
-  DEFAULT_PHONE_LINE_CONFIG, type PhoneContact, type PhoneLineConfig,
+  DEFAULT_PHONE_LINE_CONFIG, TELEFONY_RELEASES_PAGE, type PhoneContact, type PhoneLineConfig,
 } from '../../../../src/phone/phone-config.js';
 import type { PhoneLineStatus } from '../../../../src/phone/phone-line-service.js';
 
@@ -149,6 +149,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <label class="field-label">telefony-app executable</label>
       <input class="field-input focusable" :value="cfg.executable" placeholder="…\telefony-app\.venv\Scripts\telefony-app.exe" @change="cfg.executable = str($event); save()" />
       <button class="btn btn--secondary btn--sm focusable" :disabled="!canInstall" @click="installTelefony">{{ installLabel }}</button>
+      <button class="btn btn--secondary btn--sm focusable" @click="systemClient.systemOpenExternalUrl(TELEFONY_RELEASES_PAGE)">Releases page</button>
     </div>
     <div class="field-group">
       <label class="field-label">Bluetooth transport</label>
