@@ -56,6 +56,8 @@ export interface PhoneLineConfig {
     name: string;
     greetIn: boolean;
     greetInText: string;
+    /** What callers not in the list hear. Never names the assistant or anyone. */
+    greetStranger: string;
     greetOut: boolean;
     greetOutText: string;
     discloseAi: boolean;
@@ -101,6 +103,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
     name: 'Helm',
     greetIn: true,
     greetInText: "Hi {caller}, it's {name}. What do you need?",
+    greetStranger: "Welcome, you've reached an answering machine, but a slightly more modern one. Who were you calling? Or say message to leave a message.",
     greetOut: true,
     greetOutText: 'Hi {caller}, this is {name}. {reason}',
     discloseAi: true,

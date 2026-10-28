@@ -48,7 +48,7 @@ describe('Reception', () => {
   it('greets without naming anyone', async () => {
     const { port, r } = setup();
     await r.onAnswered();
-    expect(port.said[0]).toMatch(/who would you like/i);
+    expect(port.said[0]).toMatch(/who were you calling/i);
     for (const name of ['Oscar', 'Agnes', 'Bob']) expect(port.said.join(' ')).not.toContain(name);
   });
 

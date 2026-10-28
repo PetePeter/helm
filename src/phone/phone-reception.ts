@@ -7,6 +7,7 @@
  * leaves a message, which goes by SMS to people — readers with no tools.
  * Nothing spoken ever names a contact the caller did not name first.
  */
+import { DEFAULT_PHONE_LINE_CONFIG } from './phone-config.js';
 import type { PhoneContact, PhoneLineConfig } from './phone-config.js';
 
 /** What Reception may do to its one call. The bridge binds it to the callId. */
@@ -58,8 +59,8 @@ export class Reception {
   constructor(private readonly deps: ReceptionDeps) {}
 
   async onAnswered(): Promise<void> {
-    const name = this.deps.getConfig().persona.name;
-    await this.deps.port.say(`Hello, you've reached ${name}. Who would you like to speak to? Or say message to leave one.`);
+    // Strangers never hear the assistant's name.
+    await this.deps.port.say(this.deps.getConfig().persona.greetStranger.trim() || DEFAULT_PHONE_LINE_CONFIG.persona.greetStranger);
   }
 
   async onUtterance(text: string): Promise<void> {

@@ -295,6 +295,10 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <label class="field-label">Calling greeting</label>
       <input class="field-input focusable" :value="cfg.persona.greetOutText" @change="cfg.persona.greetOutText = str($event); save()" />
     </div>
+    <div class="field-group">
+      <label class="field-label">Greeting for callers not in the list (no names)</label>
+      <input class="field-input focusable" :value="cfg.persona.greetStranger" @change="cfg.persona.greetStranger = str($event); save()" />
+    </div>
     <div class="settings-help settings-span"><p>Tokens: <code>{name}</code> <code>{caller}</code> <code>{owner}</code> <code>{reason}</code> <code>{time}</code></p></div>
     <label class="phone-setting">
       <input type="checkbox" class="focusable" :checked="cfg.persona.signSms" @change="cfg.persona.signSms = checked($event); save()" />
