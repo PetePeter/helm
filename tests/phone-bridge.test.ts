@@ -9,7 +9,7 @@ import { FakePhapServer } from './helpers/fake-phap-server.js';
 
 const OWNER = '+61491570156';
 const PARTNER = '+61491570187';
-const OWNER_PIN = '2468';
+const OWNER_PIN = '246813';
 
 function config(over: Record<string, unknown> = {}): PhoneLineConfig {
   return resolvePhoneLineConfig({
@@ -228,38 +228,38 @@ describe('PhoneBridge — keypad PINs', () => {
   });
 
   it('treats an owner call as unverified until the right PIN, then grants owner trust', async () => {
-    const { server, bridge, delivered } = await setup({ cfg: pins('2468') });
+    const { server, bridge, delivered } = await setup({ cfg: pins('246813') });
     await inboundCall(server, OWNER);
     await until(() => delivered.length === 1);
     expect(delivered[0].text).toContain('(unverified)');
     expect(delivered[0].text).toContain('NOT the owner');
     await expect(bridge.conferenceAdd('op', 'Partner')).rejects.toThrow(/owner/);
-    dial(server, '2468#');
+    dial(server, '246813#');
     await until(() => delivered.length === 2);
     expect(delivered[1].text).toMatch(/correct PIN/);
-    expect(delivered[1].text).not.toContain('2468');
+    expect(delivered[1].text).not.toContain('246813');
     await expect(bridge.conferenceAdd('op', 'Partner')).resolves.toEqual({ added: 'Partner' });
   });
 
   it('locks out after three wrong PINs, even if the fourth is right', async () => {
-    const { server, bridge, delivered } = await setup({ cfg: pins('2468') });
+    const { server, bridge, delivered } = await setup({ cfg: pins('246813') });
     await inboundCall(server, OWNER);
     await until(() => delivered.length === 1);
-    dial(server, '1111#2222#3333#2468#');
+    dial(server, '111111#222222#333333#246813#');
     await new Promise((r) => setTimeout(r, 100));
     expect(delivered).toHaveLength(1);
     await expect(bridge.conferenceAdd('op', 'Partner')).rejects.toThrow(/owner/);
   });
 
   it('verifies a trusted contact with their own PIN, without making them the owner', async () => {
-    const { server, bridge, delivered } = await setup({ cfg: pins('2468', '1357') });
+    const { server, bridge, delivered } = await setup({ cfg: pins('246813', '135792') });
     await inboundCall(server, PARTNER);
     await until(() => delivered.length === 1);
     expect(bridge.isVerifiedCaller()).toBe(false);
-    dial(server, '2468#');
+    dial(server, '246813#');
     await new Promise((r) => setTimeout(r, 50));
     expect(bridge.isVerifiedCaller()).toBe(false);
-    dial(server, '1357#');
+    dial(server, '135792#');
     await until(() => delivered.length === 2);
     expect(delivered[1].text).toMatch(/verified Partner/);
     expect(bridge.isVerifiedCaller()).toBe(true);
@@ -276,18 +276,18 @@ describe('PhoneBridge — keypad PINs', () => {
   });
 
   it('ignores keypad digits from a contact with no PIN', async () => {
-    const { server, bridge, delivered } = await setup({ cfg: pins('2468') });
+    const { server, bridge, delivered } = await setup({ cfg: pins('246813') });
     await inboundCall(server, PARTNER);
     await until(() => delivered.length === 1);
-    dial(server, '2468#');
+    dial(server, '246813#');
     await new Promise((r) => setTimeout(r, 100));
     expect(delivered).toHaveLength(1);
     expect(bridge.isVerifiedCaller()).toBe(false);
   });
 
   it('moves the old single owner PIN onto the owner contact', () => {
-    const cfg = config({ ownerPin: '2468' });
-    expect(cfg.contacts.find((c) => c.role === 'owner')?.pin).toBe('2468');
+    const cfg = config({ ownerPin: '246813' });
+    expect(cfg.contacts.find((c) => c.role === 'owner')?.pin).toBe('246813');
     expect(cfg.contacts.find((c) => c.role === 'trusted')?.pin).toBe('');
   });
 
@@ -295,6 +295,17 @@ describe('PhoneBridge — keypad PINs', () => {
     expect(pins('12').contacts[0].pin).toBe('');
     expect(pins('12ab').contacts[0].pin).toBe('');
     expect(pins('123456').contacts[0].pin).toBe('123456');
+  });
+
+  it('needs at least 6 digits, with no upper limit', async () => {
+    expect(pins('12345').contacts[0].pin).toBe('');
+    const long = '12345678901234567890';
+    const { server, bridge, delivered } = await setup({ cfg: pins(long) });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    dial(server, `${long}#`);
+    await until(() => delivered.length === 2);
+    expect(bridge.isVerifiedCaller()).toBe(true);
   });
 });
 

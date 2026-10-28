@@ -70,7 +70,7 @@ Every decision is logged and shown in the status log.
 ## Keypad PINs
 
 Caller ID is spoofable, so each contact (owner or trusted) has a keypad
-PIN (`pin`, 4-12 digits). An inbound call keys it and ends with `#`; dial it in
+PIN (`pin`, at least 6 digits, no maximum). An inbound call keys it and ends with `#`; dial it in
 one go as `number,PIN#` (`,` pauses about 2 s on Android). Until then the owner
 number is a guest (briefing "unverified", message only, no conference) and a
 trusted caller is unverified (no dial-out). **No PIN means never privileged on

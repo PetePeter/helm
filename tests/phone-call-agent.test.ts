@@ -16,7 +16,7 @@ function config(over: Record<string, unknown> = {}): PhoneLineConfig {
     enabled: true, countryCode: '+61',
     masters: { callIn: true, callOut: true, smsIn: true, smsOut: true, conference: true },
     contacts: [
-      { label: 'Me', pattern: OWNER, role: 'owner', pin: '2468', callIn: true, callOut: true, smsIn: true, smsOut: true, conf: true },
+      { label: 'Me', pattern: OWNER, role: 'owner', pin: '246813', callIn: true, callOut: true, smsIn: true, smsOut: true, conf: true },
     ],
     limits: { callsPerHour: 3, smsPerHour: 10, maxCallMin: 0, quietStart: '', quietEnd: '' },
     ...over,

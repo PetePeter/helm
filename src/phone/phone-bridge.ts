@@ -85,6 +85,8 @@ interface LiveCall {
 const STRANGER_REASONS = new Set(['not listed', 'withheld or invalid number']);
 
 const MAX_PIN_TRIES = 3;
+/** PINs have no maximum length; this only bounds what a caller can make Helm buffer. */
+const MAX_PIN_KEYS = 256;
 
 export interface PhoneDecisionLog { at: string; action: PhoneAction; who: string; allowed: boolean; reason?: string }
 
@@ -558,7 +560,7 @@ export class PhoneBridge extends EventEmitter implements ChatBridge {
     const pin = call?.contact.pin;
     if (!call || call.callId !== callId || !pin || call.pin.verified || call.pin.tries >= MAX_PIN_TRIES) return;
     if (digit !== '#') {
-      if (/^[0-9*]$/.test(digit) && call.pin.digits.length < 16) call.pin.digits += digit;
+      if (/^[0-9*]$/.test(digit) && call.pin.digits.length < MAX_PIN_KEYS) call.pin.digits += digit;
       return;
     }
     const entered = call.pin.digits;

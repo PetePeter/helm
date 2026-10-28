@@ -5,7 +5,7 @@
  * allowed calls and SMS to the operator. Every number gets per-action switches.
  */
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { phoneClient, systemClient } from '../../../ipc/clients.js';
+import { dialogClient, phoneClient, systemClient } from '../../../ipc/clients.js';
 import { trackSave } from '../../../composables/useAutosave.js';
 import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
 import {
@@ -14,6 +14,13 @@ import {
 import type { PhoneLineStatus } from '../../../../src/phone/phone-line-service.js';
 
 const cfg = ref<PhoneLineConfig>(structuredClone(DEFAULT_PHONE_LINE_CONFIG));
+
+async function browsePiperModel(): Promise<void> {
+  const file = await dialogClient.dialogShowOpenFile?.([{ name: 'Piper voice', extensions: ['onnx'] }]);
+  if (!file) return;
+  cfg.value.voice.piperModel = file;
+  void save();
+}
 // Call agents run on an API tool: the same model list the recording-model picker shows.
 const modelStore = useAutoMemoryStore();
 const apiModels = computed(() => modelStore.models.filter((m) => m.kind === 'api'));
@@ -90,7 +97,7 @@ function saveBlocklist(text: string): void {
   });
   if (badBlocks.value.length) return;
   cfg.value.blocklist = lines;
-  save();
+  void save();
 }
 
 function addContact(): void {
@@ -220,7 +227,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <p>Anyone else who rings is answered by plain code, never the AI: they say a contact's name to be put on hold while that person is texted
         (reply <code>JOIN</code> to take the call, or text back a message), or they leave a message. A message for nobody in particular goes to every
         number ticked <strong>Messages</strong>. Contact names are never read out.</p>
-      <p>Caller ID can be faked. A <strong>PIN</strong> (4-12 digits) makes an incoming call from that number key it, then <code>#</code>, before it is trusted:
+      <p>Caller ID can be faked. A <strong>PIN</strong> (at least 6 digits) makes an incoming call from that number key it, then <code>#</code>, before it is trusted:
         dial in one go as <code>number,PIN#</code>. Three wrong tries lock the call. Calls Helm places need no PIN. No PIN = never privileged on an incoming call, owner included.</p>
     </div>
     <table class="phone-contacts settings-span">
@@ -302,6 +309,7 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
     <div class="field-group">
       <label class="field-label">Piper voice model (.onnx; piper must be on PATH)</label>
       <input class="field-input focusable" :value="cfg.voice.piperModel" @change="cfg.voice.piperModel = str($event); save()" />
+      <button class="btn btn--secondary btn--sm focusable" @click="browsePiperModel">Browse…</button>
     </div>
     <label class="phone-setting">
       <span>Call agent model (an API tool; it places calls for you)</span>

@@ -22,7 +22,7 @@ export interface PhoneContact {
   smsOut: boolean;
   conf: boolean;
   /**
-   * Keypad PIN (4-12 digits, then #) an inbound call from this number enters to
+   * Keypad PIN (at least 6 digits, then #) an inbound call from this number enters to
    * be verified; caller ID alone can be spoofed. '' = caller ID is enough for the
    * owner, and a trusted contact stays unverified.
    */
@@ -124,7 +124,7 @@ export function resolvePhoneLineConfig(raw: unknown): PhoneLineConfig {
     return out as T;
   };
   const base = pick({ ...d, masters: undefined, contacts: undefined, fallback: undefined, smsRead: undefined, limits: undefined, persona: undefined, voice: undefined, transcripts: undefined, conference: undefined } as unknown as PhoneLineConfig, src);
-  const validPin = (pin: unknown) => (typeof pin === 'string' && /^\d{4,12}$/.test(pin) ? pin : '');
+  const validPin = (pin: unknown) => (typeof pin === 'string' && /^\d{6,}$/.test(pin) ? pin : '');
   // Before per-contact PINs there was one `ownerPin`; it belongs to the owner row.
   const legacyOwnerPin = validPin(src.ownerPin);
   const rows = Array.isArray(src.contacts)
