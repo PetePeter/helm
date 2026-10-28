@@ -10,6 +10,7 @@ A real phone line for Helm. [telefony-app](../../telefony-app) turns the PC into
 | `notify_user` while the phone app is offline | Texts the owner. **Off by default**, because notifications are frequent. |
 | `call_transfer` | Moves the phone-line call to another session, the same as for the Helm phone app. |
 | `phone_hangup` / `phone_conference_add` / `phone_sms_inbox` | MCP tools for the session holding the call, or any session for the inbox. |
+| `phone_call_agent` | A [call agent](#call-agents) places a call for the user and reports back to the requesting session. |
 
 Settings live in Settings → Connections → **Phone line** (the `phoneLine` key in `settings.yaml`).
 
@@ -139,6 +140,40 @@ graph LR
 - Speech-to-text defaults off: faster-whisper downloads its model (~500 MB
   for `small.en`) to the Hugging Face cache on first use.
 
+## Call agents
+
+"Call this 1300 number and get me a human" or "call Agnes and tell her X":
+a session calls `phone_call_agent { to, task, maxWaitMin? }` and a **call
+agent** (`src/phone/call-agent.ts`) runs the call. It is a Helm-run agent loop
+on the API tool picked in Settings → Phone line → **Call agent model**. Which
+endpoint and model that is (local llama router, OpenRouter, …) is installation
+config on the API tool, never code. With no model picked, the tool refuses and
+there are no call agents.
+
+```mermaid
+sequenceDiagram
+  participant R as Requester session
+  participant B as PhoneBridge
+  participant A as CallAgent (model)
+  participant F as Far end
+  R->>B: phone_call_agent(to, task, maxWaitMin)
+  B->>B: decideDialOut (cost guard, 3/h)
+  B->>F: call.dial
+  F-->>B: answered, call.utterance
+  B->>A: "They said: …"
+  A->>B: speech / press_keys / join_requester / hang_up
+  B->>F: call.say / call.sendDtmf / conference.create
+  F-->>B: ended
+  B->>R: report (summary + transcript path), quoted as data
+```
+
+- **Isolation.** The agent is not a session. Its only tools act on its own call: `press_keys`, `join_requester` (conferences in the requester's own number) and `hang_up { summary }`. It has no SMS, contacts, memory or other sessions. Far-end speech reaches only the agent, and the requester sees the summary quoted as data.
+- **Who may ask.** Any local session (it acts for the user). A phone caller only after keying their PIN, and since there is one line, the agent dials once they hang up.
+- **Cost.** `decideDialOut` applies to everyone: international and premium numbers are refused and the hourly call cap counts. Australian `13`/`1300`/`1800` numbers (no leading 0) dial as national numbers.
+- **Waiting.** There is no call-length limit (businesses keep callers on hold), and `limits.maxCallMin` does not apply. `maxWaitMin` hangs up and reports if no one has been joined by then. Joining the requester cancels it.
+- **Failure.** If the model errors, the agent says goodbye, hangs up and reports the error.
+- Model requests queue on the API tool's slots, like its sessions.
+
 ## Transcripts
 
 When a call ends, Helm asks telefony for `transcript.get`. It writes Markdown and/or JSON to the configured folder, or `<config>/phone-transcripts` if none is set. File names use `{yyyy} {mm} {dd} {HHmm} {label} {direction}`, and the path is confined to that folder. Files carry a `helm-phone-transcript` marker.
@@ -158,6 +193,7 @@ The daily retention sweep deletes only marked files, so pointing the folder at a
 | File | Role |
 |---|---|
 | `src/phone/phone-config.ts` | Settings shape and defaults, `decide()`, `decideDialOut()`, cost guard, number normalisation, templates |
+| `src/phone/call-agent.ts` | Call agent: per-call model loop with call-scoped tools, max wait, report |
 | `src/phone/phone-reception.ts` | Plain-code answering for callers not in the list: name match, hold + ask, messages |
 | `src/phone/telefony-installer.ts` | Install / update telefony-app from its GitHub release: checksum, side-by-side versions, prune |
 | `src/phone/telefony-process.ts` | TOML render, spawn, watchdog |

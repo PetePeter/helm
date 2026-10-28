@@ -1458,6 +1458,11 @@ export function registerIPCHandlers(
     sessionName: (id) => sessionManager.getSession(id)?.name,
     deliver: async (sessionId, text) => { await deliverPromptSequenceToSession({ sessionId, text, ptyManager, sessionManager, configLoader }); },
     log: (msg) => logger.info(`[phone] ${msg}`),
+    apiModel: (id) => {
+      const resolved = configLoader.resolveCliType(id);
+      if (!resolved?.config.api) return null;
+      return apiSessionHost.modelClient({ cliType: resolved.id, api: resolved.config.api, env: resolveConfiguredSpawnEnv(configLoader, resolved.id) });
+    },
   });
   chatBroker.register(phoneLine);
   helmControlService.setPhoneLine(phoneLine);

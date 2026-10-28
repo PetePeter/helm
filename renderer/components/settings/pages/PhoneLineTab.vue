@@ -7,12 +7,16 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { phoneClient } from '../../../ipc/clients.js';
 import { trackSave } from '../../../composables/useAutosave.js';
+import { useAutoMemoryStore } from '../../../stores/auto-memory.js';
 import {
   DEFAULT_PHONE_LINE_CONFIG, type PhoneContact, type PhoneLineConfig,
 } from '../../../../src/phone/phone-config.js';
 import type { PhoneLineStatus } from '../../../../src/phone/phone-line-service.js';
 
 const cfg = ref<PhoneLineConfig>(structuredClone(DEFAULT_PHONE_LINE_CONFIG));
+// Call agents run on an API tool: the same model list the recording-model picker shows.
+const modelStore = useAutoMemoryStore();
+const apiModels = computed(() => modelStore.models.filter((m) => m.kind === 'api'));
 const status = ref<PhoneLineStatus | null>(null);
 const message = ref('');
 let offStatus: (() => void) | null = null;
@@ -48,6 +52,7 @@ async function installTelefony(): Promise<void> {
 }
 
 onMounted(async () => {
+  void modelStore.load();
   cfg.value = await phoneClient.phoneGetConfig();
   status.value = await phoneClient.phoneGetStatus();
   offStatus = phoneClient.onPhoneStatus((s: PhoneLineStatus) => { status.value = s; });
@@ -297,6 +302,14 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <label class="field-label">Piper voice model (.onnx; piper must be on PATH)</label>
       <input class="field-input focusable" :value="cfg.voice.piperModel" @change="cfg.voice.piperModel = str($event); save()" />
     </div>
+    <label class="phone-setting">
+      <span>Call agent model (an API tool; it places calls for you)</span>
+      <select class="btn btn--secondary btn--sm focusable" :value="cfg.callAgentModel" @change="cfg.callAgentModel = str($event); save()">
+        <option value="">off</option>
+        <option v-if="cfg.callAgentModel && !apiModels.some((m) => m.id === cfg.callAgentModel)" :value="cfg.callAgentModel" disabled>Deleted API tool</option>
+        <option v-for="m in apiModels" :key="m.id" :value="m.id" :disabled="!m.available">{{ m.name }}</option>
+      </select>
+    </label>
     <label class="phone-setting">
       <span>Speech to text (faster-whisper)</span>
       <select class="btn btn--secondary btn--sm focusable" :value="cfg.voice.sttModel" @change="cfg.voice.sttModel = str($event); save()">

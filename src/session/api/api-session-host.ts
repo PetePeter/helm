@@ -300,6 +300,11 @@ export class ApiSessionHost {
     return result.message.content ?? '';
   }
 
+  /** A model client for Helm-run loops with no session (phone call agents), on the tool's slots. */
+  modelClient(target: { cliType: string; api: ApiToolConfig; env?: Record<string, string> }): ChatClient {
+    return this.slottedClient(target.api, target.env, target.cliType);
+  }
+
   /**
    * The API tool's client, with every request waiting for one of the tool's
    * slots, so a burst of subagents queues here instead of overrunning the server.

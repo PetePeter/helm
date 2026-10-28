@@ -837,6 +837,12 @@ export async function callMcpTool(
         );
       case 'phone_sms_inbox':
         return service.phoneSmsInbox();
+      case 'phone_call_agent':
+        return service.phoneCallAgent(requireCallerSession(authContext, 'phone_call_agent'), {
+          to: asString(args.to, 'to is required'),
+          task: asString(args.task, 'task is required'),
+          ...(typeof args.maxWaitMin === 'number' ? { maxWaitMin: args.maxWaitMin } : {}),
+        });
       case 'flash_attention':
         return service.flashAttention(asString(args.sessionId ?? args.name, 'sessionId or name is required'));
       case 'get_app_visibility':

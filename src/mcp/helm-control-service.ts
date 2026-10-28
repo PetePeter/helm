@@ -100,6 +100,7 @@ export interface PhoneLineTools {
   hangup(sessionId: string): Promise<{ hungUp: true }>;
   conferenceAdd(sessionId: string, label: string): Promise<{ added: string }>;
   inbox(): Promise<{ messages: Array<{ from: string; text: string; ts: string }> }>;
+  startCallAgent(sessionId: string, req: { to: string; task: string; maxWaitMin?: number }): Promise<{ dialing: string } | { queued: string }>;
 }
 export { parseSubmitSuffix } from './submit-suffix.js';
 
@@ -1973,6 +1974,9 @@ export class HelmControlService extends EventEmitter {
   phoneHangup(callerSessionId: string) { return this.requirePhoneLine().hangup(callerSessionId); }
   phoneConferenceAdd(callerSessionId: string, label: string) { return this.requirePhoneLine().conferenceAdd(callerSessionId, label); }
   phoneSmsInbox() { return this.requirePhoneLine().inbox(); }
+  phoneCallAgent(callerSessionId: string, req: { to: string; task: string; maxWaitMin?: number }) {
+    return this.requirePhoneLine().startCallAgent(callerSessionId, req);
+  }
 
   private requirePhoneLine(): PhoneLineTools {
     if (!this.phoneLine) throw new Error('The phone line is not available.');

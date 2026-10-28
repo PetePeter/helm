@@ -9,9 +9,10 @@
  */
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import type { ChatClient } from '../session/api/api-agent-loop.js';
 import type { ChatBridge, ChatOutboundMessage, ChatSendResult } from '../session/chat/chat-bridge.js';
 import { PhapClient } from './phap-client.js';
-import { PhoneBridge, PHONE_PROVIDER, type PhoneBridgeStatus, type SmsMemory } from './phone-bridge.js';
+import { PhoneBridge, PHONE_PROVIDER, type CallAgentRequest, type PhoneBridgeStatus, type SmsMemory } from './phone-bridge.js';
 import type { PhoneLineConfig } from './phone-config.js';
 import { TelefonyProcess, renderTelefonyToml, type TelefonyStatus } from './telefony-process.js';
 
@@ -26,6 +27,8 @@ export interface PhoneLineServiceDeps {
   sessionName: (sessionId: string) => string | undefined;
   deliver: (sessionId: string, text: string) => Promise<void>;
   log: (msg: string) => void;
+  /** The model client of an API tool, by CLI type id; null when it is gone or not an API tool. */
+  apiModel?: (cliTypeId: string) => ChatClient | null;
   /** Test seam: the telefony process (real by default). */
   process?: TelefonyProcess;
 }
@@ -153,6 +156,7 @@ export class PhoneLineService extends EventEmitter implements ChatBridge {
   hangup(sessionId: string) { return this.requireBridge().hangup(sessionId); }
   conferenceAdd(sessionId: string, label: string) { return this.requireBridge().conferenceAdd(sessionId, label); }
   inbox() { return this.requireBridge().inbox(); }
+  startCallAgent(sessionId: string, req: CallAgentRequest) { return this.requireBridge().startCallAgent(sessionId, req); }
 
   // ---- internals -------------------------------------------------------------
 
@@ -177,6 +181,13 @@ export class PhoneLineService extends EventEmitter implements ChatBridge {
       defaultTranscriptDir: this.deps.defaultTranscriptDir,
       log: this.deps.log,
       smsMemory: this.smsMemory,
+      callAgentModel: () => {
+        const id = this.deps.getConfig().callAgentModel;
+        if (!id) return null;
+        const model = this.deps.apiModel?.(id) ?? null;
+        if (!model) this.deps.log(`call agent model ${id} is not an API tool any more`);
+        return model;
+      },
     });
     client.on('dead', () => { void this.proc.restart('PhAP heartbeat lost'); });
     bridge.on('status', (s: PhoneBridgeStatus) => {

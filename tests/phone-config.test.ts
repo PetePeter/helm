@@ -100,9 +100,14 @@ describe('decideDialOut', () => {
   });
   it('blocks premium 19xx numbers even with an empty block list', () => {
     const c = cfg({ blocklist: [] });
-    expect(out('1900 123 456', {}, c)).toMatchObject({ allow: false });
+    expect(out('1900 123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
     expect(out('0190 0123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
     expect(out('+61 1900 123 456', {}, c)).toMatchObject({ allow: false, reason: 'premium numbers are blocked' });
+  });
+  it('allows Australian 13 / 1300 / 1800 numbers, which have no leading 0', () => {
+    for (const n of ['13 22 21', '1300 123 456', '1800 123 456']) {
+      expect(out(n)).toMatchObject({ allow: true, number: `+61${n.replace(/ /g, '')}` });
+    }
   });
   it('the block list stops dial-outs too, matched on the national form as well', () => {
     expect(out('0293744000', {}, cfg({ blocklist: ['^0293'] }))).toMatchObject({ allow: false, reason: 'blocked' });

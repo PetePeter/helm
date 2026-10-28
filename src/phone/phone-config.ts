@@ -73,6 +73,8 @@ export interface PhoneLineConfig {
   conference: { maxParticipants: number; announce: boolean };
   /** When the Helm phone app is offline: ring_user dials the owner, notify_user texts them. */
   fallback: { ring: boolean; notify: boolean };
+  /** The API tool (CLI type id) whose model runs call agents; empty = no call agents. */
+  callAgentModel: string;
 }
 
 export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
@@ -104,6 +106,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   transcripts: { enabled: true, folder: '', fileName: '{yyyy}/{mm}/{yyyy}-{mm}-{dd}_{HHmm}_{label}_{direction}', format: 'md', retentionDays: 90 },
   conference: { maxParticipants: 3, announce: true },
   fallback: { ring: true, notify: false },
+  callAgentModel: '',
 };
 
 /** Deep-merge a partial (e.g. parsed YAML) over the defaults; unknown keys are dropped. */
@@ -172,8 +175,12 @@ export function normalizeNumber(raw: string, countryCode: string): string | null
   if (s.startsWith('+')) return s;
   if (s.startsWith('00')) return `+${s.slice(2)}`;
   if (s.startsWith('0')) return `${countryCode}${s.slice(1)}`;
+  if (NO_TRUNK_PREFIX[countryCode]?.test(s)) return `${countryCode}${s}`;
   return `+${s}`;
 }
+
+/** National numbers dialled without a leading 0 (Australia's 13 / 1300 / 1800 / 19xx). */
+const NO_TRUNK_PREFIX: Record<string, RegExp | undefined> = { '+61': /^1[389]\d{4,8}$/ };
 
 interface Match { contact: PhoneContact; specificity: number }
 
