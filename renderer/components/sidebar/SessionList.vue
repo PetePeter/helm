@@ -17,6 +17,9 @@ import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
 import { useMessageFlights } from '../../composables/useMessageFlights.js';
 import { useTodosStore } from '../../stores/todos.js';
 import { sessionsState, toggleShowHiddenSessions } from '../../stores/sessions-screen.js';
+import { isKeyboardModalOpen } from '../../keyboard/install.js';
+import { handleSessionsZone } from '../../screens/sessions-spawn.js';
+import { createWheelStepAccumulator } from './wheel-step-accumulator.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 
 interface FlashEntry {
@@ -133,9 +136,12 @@ watch(localTodoSessionIds, ids => { void todosStore.loadSessions(ids); }, { imme
 
 onMounted(() => {
   if (usesScheduledTaskIndicators) scheduledTaskIndicators.start();
+  if (props.source !== 'peer') listEl.value?.addEventListener('wheel', onWheel, { passive: false });
 });
 
 onUnmounted(() => {
+  listEl.value?.removeEventListener('wheel', onWheel);
+  wheelAccumulator.reset();
   if (usesScheduledTaskIndicators) scheduledTaskIndicators.stop();
 });
 function onSessionClick(sessionId: string): void {
@@ -186,6 +192,30 @@ function previewSourceFor(sessionId: string): ((id: string) => string[]) | null 
 // --- Message flights -------------------------------------------------------
 
 const listEl = ref<HTMLElement | null>(null);
+const wheelAccumulator = createWheelStepAccumulator();
+
+function onWheel(event: WheelEvent): void {
+  if (props.source === 'peer') return;
+
+  event.preventDefault();
+  if (isKeyboardModalOpen()) {
+    wheelAccumulator.reset();
+    return;
+  }
+
+  const delta = event.deltaY * (event.deltaMode === 1 ? 100 / 3 : event.deltaMode === 2 ? 100 : 1);
+  const steps = wheelAccumulator.push(delta);
+  if (steps === 0) return;
+
+  sessionsState.activeFocus = 'sessions';
+  sessionsState.cardColumn = 0;
+  const direction = steps > 0 ? 'down' : 'up';
+  const button = steps > 0 ? 'DPadDown' : 'DPadUp';
+  for (let i = 0; i < Math.abs(steps); i++) {
+    handleSessionsZone(button, direction);
+    if (sessionsState.activeFocus !== 'sessions') break;
+  }
+}
 
 /**
  * Where a session's envelope lands: its row, else its collapsed group's

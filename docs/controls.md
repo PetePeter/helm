@@ -39,6 +39,12 @@ A locked session shows 🔒 and its ✕ is disabled; closing is refused in the m
 process too, so MCP, Telegram, group close, and force restart all bounce off it.
 The same flag the `session_set_locked` MCP tool writes.
 
+## Pointer
+
+| Input | Action |
+|-------|--------|
+| Mouse wheel over the local Session List | Move one visible row per notch using the same navigation as D-pad Up/Down; small touchpad deltas accumulate. The focused row stays in view and session rows are auto-selected |
+
 ## Keyboard
 
 | Input | Action |
