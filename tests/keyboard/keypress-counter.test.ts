@@ -4,7 +4,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { createKeypressCounter } from '../../renderer/keyboard/keypress-counter.js';
 import { installKeyRouter, resetKeyHandlers } from '../../renderer/keyboard/router.js';
 import { installDockKeyRouter } from '../../renderer/keyboard/install.js';
-import { PANE_TERMINAL } from '../../renderer/dock-types.js';
+import { PANE_ARTIFACTS, PANE_DRAFT, PANE_PLAN_SCREEN, PANE_TERMINAL } from '../../renderer/dock-types.js';
+import { planScreenState } from '../../renderer/plans/plan-screen.js';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -60,5 +61,35 @@ describe('desktop keypress counting', () => {
     uninstall();
 
     expect(sent).toEqual([['session-a', 1]]);
+  });
+
+  it('counts Draft and Artifact keys for the session and Plan keys for the viewed project', () => {
+    setActivePinia(createPinia());
+    let focusedPane = PANE_DRAFT;
+    let activeSessionId: string | null = 'session-a';
+    const sent: Array<[string | { dirPath: string }, number]> = [];
+    planScreenState.currentDir = 'C:/plans-project';
+    (window as unknown as { helm: unknown }).helm = {
+      time: { timeRecordKeys: async (target: string | { dirPath: string }, count: number) => { sent.push([target, count]); } },
+    };
+    const uninstall = installDockKeyRouter({
+      getActiveSessionId: () => activeSessionId,
+      getFocusedPane: () => focusedPane,
+      isPaneVisible: () => true,
+      isPanelOpen: () => false,
+    });
+
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+    focusedPane = PANE_ARTIFACTS;
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    focusedPane = PANE_PLAN_SCREEN;
+    activeSessionId = null;
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true }));
+    document.body.dispatchEvent(new Event('paste', { bubbles: true }));
+    window.dispatchEvent(new Event('pagehide'));
+    uninstall();
+
+    expect(sent).toEqual([['session-a', 2], [{ dirPath: 'C:/plans-project' }, 1]]);
+    planScreenState.currentDir = '';
   });
 });

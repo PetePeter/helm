@@ -699,9 +699,9 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   timeKeys: (period: TimesheetPeriod, anchor: number): Promise<KeyQueryResult> =>
     ipcRenderer.invoke('time:keys', period, anchor),
 
-  /** A batch of keyboard events for the active session's project. */
-  timeRecordKeys: (sessionId: string, count: number, at: number): Promise<void> =>
-    ipcRenderer.invoke('time:record-keys', sessionId, count, at),
+  /** A batch of keydowns for a session or a project view. */
+  timeRecordKeys: (target: string | { dirPath: string }, count: number, at: number): Promise<void> =>
+    ipcRenderer.invoke('time:record-keys', target, count, at),
 
   /** ETA accuracy for a period, optionally one folder: tiles, charts, recent rows. */
   timeEstimates: (period: TimesheetPeriod, anchor: number, dir?: string | null): Promise<EstimateView> =>

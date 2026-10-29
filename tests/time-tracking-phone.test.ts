@@ -103,6 +103,26 @@ describe('timesheetQuery (the phone Time tab)', () => {
     cleanup();
   });
 
+  it('routes project-view key batches to the viewed directory', () => {
+    vi.mocked(ipcMain.handle).mockClear();
+    const recordKeys = vi.fn();
+    const recordKeysAt = vi.fn();
+    const where = { projectKey: 'plan', projectName: 'Plan project', dir: 'C:/plan' };
+    const cleanup = setupTimeTrackingHandlers(
+      { ...tracker, recordKeys, recordKeysAt } as any,
+      dir => ({ ...where, dir }), () => [], id => id,
+    );
+    const handler = vi.mocked(ipcMain.handle).mock.calls.find(([channel]) => channel === 'time:record-keys')?.[1] as
+      (event: unknown, target: unknown, count: unknown, at: unknown) => unknown;
+    handler({}, 'session-a', 2, day);
+    handler({}, { dirPath: 'C:/plan' }, 3, day);
+    handler({}, { dirPath: '' }, 4, day);
+    expect(recordKeys).toHaveBeenCalledWith('session-a', 2, day);
+    expect(recordKeysAt).toHaveBeenCalledWith(where, 3, day);
+    expect(recordKeysAt).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
   it('rejects a malformed ask', () => {
     expect(() => timesheetQuery(tracker, { period: 'year', anchor: day })).toThrow(/period/);
     expect(() => timesheetQuery(tracker, null)).toThrow();

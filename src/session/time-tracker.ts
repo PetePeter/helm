@@ -100,7 +100,12 @@ export class TimeTracker {
   /** Keydown events are counted separately from PTY bytes and pasted text. */
   recordKeys(sessionId: string, count: number, at = this.now()): void {
     const where = this.deps.resolve(sessionId);
-    if (!where || !Number.isSafeInteger(count) || count <= 0 || !Number.isFinite(at)) return;
+    if (where) this.recordKeysAt(where, count, at);
+  }
+
+  /** Credit a project view whose keyboard input is not bound to a session. */
+  recordKeysAt(where: SessionWhere, count: number, at = this.now()): void {
+    if (!Number.isSafeInteger(count) || count <= 0 || !Number.isFinite(at)) return;
     // A renderer timestamp must never close the main process's current user slot early.
     const safeAt = Math.min(at, this.now());
     const start = slotStart(safeAt);

@@ -9,7 +9,8 @@
 import { isAnyBridgeModalVisible } from '../stores/modal-bridge.js';
 import { useModalStack } from '../composables/useModalStack.js';
 import { hasAttachedModal } from '../modals/modal-base.js';
-import type { PaneId } from '../dock-types.js';
+import { PANE_PLAN_SCREEN, type PaneId } from '../dock-types.js';
+import { planScreenState } from '../plans/plan-screen.js';
 import { installKeyRouter, type KeyEnvironment } from './router.js';
 import { createKeypressCounter } from './keypress-counter.js';
 import { timeClient } from '../ipc/clients.js';
@@ -43,12 +44,17 @@ export function installDockKeyRouter(env: {
     isModalOpen: () => isKeyboardModalOpen() || env.isPanelOpen(),
   };
 
-  const counter = createKeypressCounter((sessionId, count, at) => {
+  const counter = createKeypressCounter((target, count, at) => {
     const record = timeClient.timeRecordKeys;
     if (!record) return; // A renderer reload can precede the main process and preload restart.
-    void record(sessionId, count, at).catch(error => console.warn('[Keypresses] Failed to record batch:', error));
+    void record(target, count, at).catch(error => console.warn('[Keypresses] Failed to record batch:', error));
   });
-  const uninstall = installKeyRouter(environment, (event, sessionId) => counter.record(sessionId, event));
+  const uninstall = installKeyRouter(environment, (event, sessionId) => {
+    const target = env.getFocusedPane() === PANE_PLAN_SCREEN
+      ? (planScreenState.currentDir ? { dirPath: planScreenState.currentDir } : null)
+      : sessionId;
+    counter.record(target, event);
+  });
   window.addEventListener('pagehide', counter.flush);
   return () => { uninstall(); window.removeEventListener('pagehide', counter.flush); counter.flush(); };
 }

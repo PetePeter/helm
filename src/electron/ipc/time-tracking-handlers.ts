@@ -136,10 +136,15 @@ export function setupTimeTrackingHandlers(
   ipcMain.handle('time:query', (_event, params: unknown) => timesheetQuery(tracker, params));
   ipcMain.handle('time:tokens', (_event, period: unknown, anchor: unknown) => tokenQuery(tracker, cliTypes(), cliTypeLabel, period, anchor));
   ipcMain.handle('time:keys', (_event, period: unknown, anchor: unknown) => keyQuery(tracker, period, anchor));
-  ipcMain.handle('time:record-keys', (_event, sessionId: unknown, count: unknown, at: unknown) => {
-    if (typeof sessionId !== 'string' || !Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > 10_000
+  ipcMain.handle('time:record-keys', (_event, target: unknown, count: unknown, at: unknown) => {
+    if (!Number.isSafeInteger(count) || (count as number) < 1 || (count as number) > 10_000
       || typeof at !== 'number' || !Number.isFinite(at)) return;
-    tracker.recordKeys(sessionId, count as number, at);
+    if (typeof target === 'string' && target) tracker.recordKeys(target, count as number, at);
+    else if (target && typeof target === 'object' && !Array.isArray(target)
+      && typeof (target as { dirPath?: unknown }).dirPath === 'string'
+      && (target as { dirPath: string }).dirPath) {
+      tracker.recordKeysAt(whereIsDir((target as { dirPath: string }).dirPath), count as number, at);
+    }
   });
   ipcMain.handle('time:timesheet', (_event, projectKey: unknown, period: unknown, anchor: unknown) =>
     sheetFor(tracker, ...validate(projectKey, period, anchor)));

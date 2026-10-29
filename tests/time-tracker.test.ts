@@ -66,6 +66,15 @@ describe('TimeTracker', () => {
     expect(summarizeProjects(slots)).toEqual([]);
   });
 
+  it('credits Plan keys to the viewed project even when another session is active', () => {
+    const t = tracker();
+    t.recordKeys('a1', 2);
+    t.recordKeysAt(SESSIONS.b1, 3);
+    const sheet = buildKeySheet(t.query(DAY0, DAY0 + 24 * 60 * MIN), periodEdges('day', DAY0));
+    expect(sheet.rows.map(row => [row.projectKey, row.keys.reduce((sum, n) => sum + n, 0)]))
+      .toEqual([['pB', 3], ['pA', 2]]);
+  });
+
   it('does not let a future keypress timestamp close the current user-time slot', () => {
     const t = tracker();
     t.recordUser(10, 'a1');
