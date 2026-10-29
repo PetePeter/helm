@@ -4,8 +4,9 @@
  * A slot is "user" time for exactly one project: the one that got the most
  * user input in it (ties go to the latest). AI activity is tracked as a
  * separate "ai" kind, one per project per slot, because agents genuinely run
- * in parallel. Token use is a third kind, summed per project, CLI, and
- * directory per slot. Each context reading adds its rise; a drop (compact,
+ * in parallel. Token use is summed per project, CLI, and directory per slot;
+ * keydowns are counted per project without the user-time noise floor.
+ * Each context reading adds its rise; a drop (compact,
  * /clear, quick compact) adds the new, smaller context. Open slots live in
  * memory and are appended to JSONL once they end (or on flush at shutdown).
  * See docs/time-tracking.md.
@@ -24,7 +25,7 @@ export const SLOT_MS = 5 * 60_000;
 export const SUBMIT_WEIGHT = 20;
 const SLOT_MINUTES = SLOT_MS / 60_000;
 
-export type SlotKind = 'user' | 'ai' | 'tokens';
+export type SlotKind = 'user' | 'ai' | 'tokens' | 'keys';
 
 export interface TimeSlot {
   start: number;
@@ -36,6 +37,8 @@ export interface TimeSlot {
   tokens?: number;
   /** Kind 'tokens' only; absent on slots written before it was recorded. */
   cliType?: string;
+  /** Kind 'keys' only: physical desktop keydown events. */
+  keys?: number;
 }
 
 /** Where a session's time is credited. projectKey is the Helm project id, else the dir. */
@@ -48,7 +51,7 @@ export interface SessionWhere {
 }
 
 interface UserTally { name: string; count: number; last: number; dirs: Map<string, number> }
-interface OpenSlot { user: Map<string, UserTally>; ai: Map<string, TimeSlot>; tokens: Map<string, TimeSlot> }
+interface OpenSlot { user: Map<string, UserTally>; ai: Map<string, TimeSlot>; tokens: Map<string, TimeSlot>; keys: Map<string, TimeSlot> }
 
 export interface TimeTrackerDeps {
   persistence: Pick<TimePersistence, 'append' | 'load' | 'saveBaselines' | 'loadBaselines'>;
@@ -92,6 +95,19 @@ export class TimeTracker {
     const submitted = data.includes('\r');
     if (!this.recordUser(submitted ? SUBMIT_WEIGHT : 1, sessionId) || !submitted) return;
     this.armAi(sessionId);
+  }
+
+  /** Keydown events are counted separately from PTY bytes and pasted text. */
+  recordKeys(sessionId: string, count: number, at = this.now()): void {
+    const where = this.deps.resolve(sessionId);
+    if (!where || !Number.isSafeInteger(count) || count <= 0 || !Number.isFinite(at)) return;
+    // A renderer timestamp must never close the main process's current user slot early.
+    const safeAt = Math.min(at, this.now());
+    const start = slotStart(safeAt);
+    const keys = this.slotFor(safeAt).keys;
+    const slot = keys.get(where.projectKey) ?? { start, kind: 'keys' as const, projectKey: where.projectKey, projectName: where.projectName, dir: where.dir, keys: 0 };
+    slot.keys! += count;
+    keys.set(where.projectKey, slot);
   }
 
   /** User input that happened outside a session's terminal (planner, artifacts). */
@@ -194,17 +210,18 @@ export class TimeTracker {
     for (const s of all) {
       const key = s.kind === 'user' ? `u${s.start}` : `${s.kind}${s.start}|${s.kind === 'tokens' ? tokenKey(s.projectKey, s.cliType, s.dir) : s.projectKey}`;
       const seen = unique.get(key);
-      unique.set(key, s.kind === 'tokens' && seen ? { ...s, tokens: (seen.tokens ?? 0) + (s.tokens ?? 0) } : s);
+      unique.set(key, s.kind === 'tokens' && seen ? { ...s, tokens: (seen.tokens ?? 0) + (s.tokens ?? 0) }
+        : s.kind === 'keys' && seen ? { ...s, keys: (seen.keys ?? 0) + (s.keys ?? 0) } : s);
     }
     return [...unique.values()].sort((a, b) => a.start - b.start);
   }
 
-  private slotFor(): OpenSlot {
-    const start = slotStart(this.now());
+  private slotFor(at = this.now()): OpenSlot {
+    const start = slotStart(at);
     this.closeBefore(start);
     let slot = this.open.get(start);
     if (!slot) {
-      slot = { user: new Map(), ai: new Map(), tokens: new Map() };
+      slot = { user: new Map(), ai: new Map(), tokens: new Map(), keys: new Map() };
       this.open.set(start, slot);
     }
     return slot;
@@ -240,7 +257,7 @@ function maxKey<T>(map: Map<string, T>, score: (v: T) => [number, number]): stri
 }
 
 function resolveSlot(start: number, slot: OpenSlot): TimeSlot[] {
-  const result: TimeSlot[] = [...slot.ai.values(), ...slot.tokens.values()];
+  const result: TimeSlot[] = [...slot.ai.values(), ...slot.tokens.values(), ...slot.keys.values()];
   const projectKey = maxKey(slot.user, t => [t.count >= SUBMIT_WEIGHT ? t.count : -1, t.last]);
   if (projectKey) {
     const tally = slot.user.get(projectKey)!;
@@ -306,6 +323,7 @@ export function buildTimesheet(slots: TimeSlot[], projectKey: string | null, edg
   const rows = new Map<string, TimesheetRow>();
   const totals = { user: zeros(), ai: zeros(), tokens: zeros() };
   for (const slot of slots) {
+    if (slot.kind === 'keys') continue;
     if (projectKey !== null && slot.projectKey !== projectKey) continue;
     const col = columnOf(edges, slot.start);
     if (col < 0) continue;
@@ -359,6 +377,38 @@ export function buildTokenSheet(slots: TimeSlot[], edges: number[], cliTypes: st
   return { columns: edges.slice(0, n), rows: [...rows].map(([cliType, tokens]) => ({ cliType, label: cliType === OTHER_CLI ? OTHER_CLI : labelOf(cliType), tokens })), totals };
 }
 
+/** Keydown counts per project and calendar column, independent of CLI. */
+export interface KeySheet {
+  columns: number[];
+  rows: { projectKey: string; projectName: string; keys: number[] }[];
+  totals: number[];
+}
+
+export function buildKeySheet(slots: TimeSlot[], edges: number[]): KeySheet {
+  const n = edges.length - 1;
+  const rows = new Map<string, KeySheet['rows'][number]>();
+  const totals = new Array<number>(n).fill(0);
+  for (const slot of slots) {
+    if (slot.kind !== 'keys' || !slot.keys) continue;
+    const col = columnOf(edges, slot.start);
+    if (col < 0) continue;
+    let row = rows.get(slot.projectKey);
+    if (!row) {
+      row = { projectKey: slot.projectKey, projectName: slot.projectName, keys: new Array<number>(n).fill(0) };
+      rows.set(slot.projectKey, row);
+    }
+    row.keys[col] += slot.keys;
+    totals[col] += slot.keys;
+  }
+  return {
+    columns: edges.slice(0, n),
+    rows: [...rows.values()].sort((a, b) =>
+      b.keys.reduce((sum, count) => sum + count, 0) - a.keys.reduce((sum, count) => sum + count, 0)
+      || a.projectName.localeCompare(b.projectName)),
+    totals,
+  };
+}
+
 export interface ProjectTotal { projectKey: string; projectName: string; user: number; ai: number; tokens: number }
 
 /** A Time view (desktop pane, phone tab) with its transport-neutral chart data. */
@@ -367,11 +417,13 @@ export type TimesheetQueryResult =
   | { projects: ProjectTotal[]; sheet: Timesheet; chartModel: ChartModel };
 
 export interface TokenQueryResult { sheet: TokenSheet; chartModel: ChartModel }
+export interface KeyQueryResult { sheet: KeySheet }
 
 /** Minutes and tokens per project across the given slots, most user time first. */
 export function summarizeProjects(slots: TimeSlot[]): ProjectTotal[] {
   const totals = new Map<string, ProjectTotal>();
   for (const slot of slots) {
+    if (slot.kind === 'keys') continue;
     let total = totals.get(slot.projectKey);
     if (!total) { total = { projectKey: slot.projectKey, projectName: slot.projectName, user: 0, ai: 0, tokens: 0 }; totals.set(slot.projectKey, total); }
     if (slot.kind === 'tokens') total.tokens += slot.tokens ?? 0;

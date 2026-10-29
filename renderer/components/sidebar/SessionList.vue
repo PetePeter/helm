@@ -10,15 +10,17 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useScheduledTaskIndicatorsStore } from '../../stores/scheduled-task-indicators.js';
 import SessionGroup from './SessionGroup.vue';
 import SessionCard from './SessionCard.vue';
-import { isNavItemFocused, type SessionPreviewMode } from '../../session-groups.js';
+import { isNavItemFocused, isSessionNavItem, type SessionPreviewMode } from '../../session-groups.js';
 import { pickGroupFlashEntry } from '../../composables/useFlashAttention.js';
 import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
 import { useMessageFlights } from '../../composables/useMessageFlights.js';
 import { useTodosStore } from '../../stores/todos.js';
 import { sessionsState, toggleShowHiddenSessions } from '../../stores/sessions-screen.js';
+import { useNavigationStore } from '../../stores/navigation.js';
+import { state } from '../../state.js';
 import { isKeyboardModalOpen } from '../../keyboard/install.js';
-import { handleSessionsZone } from '../../screens/sessions-spawn.js';
+import { updateSessionsFocus } from '../../screens/sessions.js';
 import { createWheelStepAccumulator } from './wheel-step-accumulator.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 
@@ -66,6 +68,7 @@ interface SessionListGroup {
   displayName: string;
   collapsed: boolean;
   sessions: SessionListGroupSession[];
+  totalSessionCount?: number;
   kind?: 'directory' | 'runtime' | 'peer';
   groupId?: string;
   color?: string;
@@ -209,11 +212,21 @@ function onWheel(event: WheelEvent): void {
 
   sessionsState.activeFocus = 'sessions';
   sessionsState.cardColumn = 0;
-  const direction = steps > 0 ? 'down' : 'up';
-  const button = steps > 0 ? 'DPadDown' : 'DPadUp';
+  const direction = Math.sign(steps);
+  const navStore = useNavigationStore();
   for (let i = 0; i < Math.abs(steps); i++) {
-    handleSessionsZone(button, direction);
-    if (sessionsState.activeFocus !== 'sessions') break;
+    const navList = sessionsState.navList;
+    let nextIndex = sessionsState.sessionsFocusIndex + direction;
+    while (nextIndex >= 0 && nextIndex < navList.length) {
+      const item = navList[nextIndex]!;
+      if (isSessionNavItem(item) && state.sessions.some(session => session.id === item.id && !session.hidden)) break;
+      nextIndex += direction;
+    }
+    if (nextIndex < 0 || nextIndex >= navList.length) break;
+    const sessionId = navList[nextIndex]!.id;
+    navStore.activateSession(sessionId);
+    navStore.syncSidebarToSession(sessionId);
+    updateSessionsFocus();
   }
 }
 
@@ -286,7 +299,7 @@ function onNewGroupDrop(e: DragEvent): void {
     <div ref="listEl" class="sessions-list" :id="listId ?? 'sessionsList'" :class="{ 'sessions-list--stale': peerStale }">
       <template v-for="group in groups" :key="group.dirPath">
         <!-- Runtime groups always render (even empty); directory groups only when non-empty. -->
-        <template v-if="group.sessions.length > 0 || group.kind === 'runtime'">
+        <template v-if="group.sessions.length > 0 || group.kind === 'runtime' || group.totalSessionCount">
           <SessionGroup
             :group="{
               dirPath: group.dirPath,
@@ -295,6 +308,7 @@ function onNewGroupDrop(e: DragEvent): void {
                 : resolveGroupDisplayName(group.dirPath, directories, projects),
               collapsed: group.collapsed,
               sessionCount: group.sessions.length,
+              totalSessionCount: source === 'peer' ? undefined : group.totalSessionCount ?? group.sessions.length,
               sessions: group.sessions.map(session => ({
                 id: session.id,
                 name: session.name !== session.cliType ? session.name : getCliDisplayName(session.cliType),

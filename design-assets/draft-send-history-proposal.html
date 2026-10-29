@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draft send history proposal</title>
+<style>
+  :root { color-scheme: dark; font: 14px/1.45 system-ui, sans-serif; background: #10141c; color: #e7edf7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; }
+  .note { max-width: 680px; margin: 0 auto 18px; color: #aebbd0; }
+  .shell { max-width: 680px; min-height: 620px; margin: auto; border: 1px solid #344155; border-radius: 12px; background: #19212e; box-shadow: 0 20px 60px #0008; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #344155; }
+  h1 { margin: 0; font-size: 17px; font-weight: 650; }
+  select, button, textarea { font: inherit; }
+  select { margin-left: auto; border: 1px solid #465773; border-radius: 6px; padding: 5px 8px; background: #243146; color: inherit; }
+  .tabs { display: flex; padding: 8px 12px 0; border-bottom: 1px solid #344155; gap: 6px; }
+  .tabs button { border: 1px solid transparent; border-bottom: 0; border-radius: 7px 7px 0 0; background: transparent; color: #aebbd0; padding: 8px 13px; cursor: pointer; }
+  .tabs button.active { background: #253247; color: #fff; border-color: #465773; }
+  main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .editor { flex: 1; display: flex; flex-direction: column; }
+  textarea { flex: 1; min-height: 300px; resize: none; border: 0; outline: 0; padding: 16px; color: #e7edf7; background: #19212e; }
+  footer { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid #344155; color: #aebbd0; font-size: 12px; }
+  footer button, .copy { border: 1px solid #617b9c; border-radius: 6px; background: #315d90; color: #fff; padding: 6px 13px; cursor: pointer; }
+  footer button { margin-left: auto; }
+  .history { display: none; overflow: auto; padding: 12px; }
+  .history.active { display: block; }
+  .history p { color: #aebbd0; margin: 2px 4px 12px; }
+  .entry { margin: 0 0 10px; padding: 12px; border: 1px solid #344155; border-radius: 8px; background: #202b3a; }
+  .meta { display: flex; gap: 10px; align-items: center; color: #aebbd0; font-size: 12px; }
+  .meta strong { color: #d8e7ff; }
+  .entry pre { font: 13px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 80px; overflow: hidden; margin: 9px 0 10px; }
+  .entry button { background: #253247; border: 1px solid #465773; border-radius: 5px; color: #d8e7ff; padding: 4px 9px; cursor: pointer; }
+  .empty { padding: 45px 10px; text-align: center; color: #aebbd0; }
+</style>
+</head>
+<body>
+<p class="note"><strong>Proposal:</strong> Draft keeps its editor. A History tab shows up to 10 successful sends from Draft for the selected session. The list survives Helm restart and follows the session through recycle-bin restore. It never stores unsent edits.</p>
+<div class="shell">
+  <header><h1>🗒 Draft</h1><select id="session" aria-label="Session"><option value="alpha">Helm · Alpha</option><option value="beta">Helm · Beta</option></select></header>
+  <nav class="tabs" aria-label="Draft views"><button id="draft-tab" class="active" type="button">Draft</button><button id="history-tab" type="button">History <span id="count">(2)</span></button></nav>
+  <main>
+    <section class="editor" id="editor"><textarea id="draft" aria-label="Draft text" placeholder="Notes for this session. Type a message, then Send."></textarea><footer><span>Send clears the draft after delivery.</span><button id="send" type="button">Send</button></footer></section>
+    <section class="history" id="history" aria-label="Sent Draft history"><p>Last 10 sends from Draft for this session. Copy any earlier text; the current draft stays untouched.</p><div id="entries"></div></section>
+  </main>
+</div>
+<script>
+const samples = {
+  alpha: [{ at: 'Today, 9:42 am', via: 'CLI', text: 'Please review the wheel navigation change.' }, { at: 'Yesterday, 4:15 pm', via: 'Chat', text: 'Summarise the current project status.' }],
+  beta: [{ at: 'Today, 8:05 am', via: 'CLI', text: 'Check the build output for errors.' }],
+};
+const drafts = { alpha: '', beta: '' };
+const $ = id => document.getElementById(id);
+function current() { return $('session').value; }
+function render() {
+  $('draft').value = drafts[current()];
+  $('count').textContent = `(${samples[current()].length})`;
+  $('entries').replaceChildren();
+  for (const item of samples[current()]) {
+    const row = document.createElement('article'); row.className = 'entry';
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const when = document.createElement('strong'); when.textContent = item.at;
+    meta.append(when, document.createTextNode(`via ${item.via}`));
+    const body = document.createElement('pre'); body.textContent = item.text;
+    const copy = document.createElement('button'); copy.textContent = 'Copy text'; copy.onclick = () => navigator.clipboard.writeText(item.text);
+    row.append(meta, body, copy); $('entries').append(row);
+  }
+  if (!samples[current()].length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'No Draft sends yet for this session.'; $('entries').append(empty); }
+}
+function show(which) {
+  const history = which === 'history';
+  $('editor').style.display = history ? 'none' : 'flex';
+  $('history').classList.toggle('active', history);
+  $('draft-tab').classList.toggle('active', !history);
+  $('history-tab').classList.toggle('active', history);
+}
+$('draft-tab').onclick = () => show('draft');
+$('history-tab').onclick = () => { render(); show('history'); };
+$('session').onchange = render;
+$('draft').oninput = event => { drafts[current()] = event.target.value; };
+$('send').onclick = () => {
+  const text = $('draft').value.trim(); if (!text) return;
+  samples[current()].unshift({ at: 'Just now', via: 'CLI', text }); samples[current()] = samples[current()].slice(0, 10);
+  drafts[current()] = ''; render(); show('history');
+};
+render();
+</script>
+</body>
+</html>

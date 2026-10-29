@@ -82,7 +82,7 @@ function userPromptElapsedText(sessionId: string): string {
       @change="sidebar.onSortChange"
     />
     <SessionList
-      :has-sessions="sessionsState.groups.some(group => group.sessions.length > 0)"
+      :has-sessions="sessionsState.groups.some(group => (group.totalSessionCount ?? group.sessions.length) > 0)"
       :groups="sessionsState.groups"
       :directories="sessionsState.directories"
       :projects="state.projects"

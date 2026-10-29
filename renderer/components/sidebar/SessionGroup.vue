@@ -14,6 +14,7 @@ export interface SessionGroupData {
   displayName: string;
   collapsed: boolean;
   sessionCount: number;
+  totalSessionCount?: number;
   /** Member activity used to render one dot per session in the header. */
   sessions?: Array<{ id: string; name: string; activityLevel: string }>;
   /** 'peer' groups render read-only controls for a remote Sessions source. */
@@ -142,7 +143,7 @@ function onDrop(e: DragEvent): void {
     <span v-else-if="isPeer" class="group-icon" aria-hidden="true" title="Sessions on this computer">🖥️</span>
 
     <span class="group-name" :title="isPeer ? 'Sessions on this computer' : undefined">
-      {{ group.displayName }} ({{ group.sessionCount }})
+      {{ group.displayName }} ({{ group.sessionCount }}<template v-if="!isPeer">/{{ group.totalSessionCount ?? group.sessionCount }}</template>)
     </span>
 
     <div class="group-header-trailing">

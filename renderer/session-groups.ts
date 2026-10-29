@@ -19,6 +19,8 @@ export interface SessionGroup {
   displayName: string;
   /** Sessions belonging to this group. */
   sessions: Session[];
+  /** All live members before the hidden-session filter. */
+  totalSessionCount?: number;
   /** Whether this group is collapsed. */
   collapsed: boolean;
   /**
@@ -266,7 +268,7 @@ export function buildFlatNavList(
     const group = groups[gi];
     // Runtime groups persist as visible headers even when empty (so the UI can
     // show a placeholder + rename/close controls). Empty directory groups are skipped.
-    if (group.sessions.length === 0 && group.kind !== 'runtime') continue;
+    if (group.sessions.length === 0 && group.kind !== 'runtime' && !group.totalSessionCount) continue;
     items.push({ type: 'group-header', id: group.dirPath, groupIndex: gi });
     if (!group.collapsed) {
       for (const session of group.sessions) {

@@ -20,7 +20,8 @@ export function monthKey(ms: number): string {
 function isSlot(v: unknown): v is TimeSlot {
   return isRecord(v)
     && typeof v.start === 'number'
-    && (v.kind === 'user' || v.kind === 'ai' || (v.kind === 'tokens' && typeof v.tokens === 'number'))
+    && (v.kind === 'user' || v.kind === 'ai' || (v.kind === 'tokens' && typeof v.tokens === 'number')
+      || (v.kind === 'keys' && typeof v.keys === 'number' && Number.isSafeInteger(v.keys) && v.keys > 0))
     && typeof v.projectKey === 'string'
     && typeof v.projectName === 'string'
     && typeof v.dir === 'string';

@@ -63,12 +63,19 @@ export function setSessionCwdResolver(resolver: (sessionId: string) => string): 
  * snapshot, so any session change that skipped a full refresh — a lock toggle,
  * a snap-out, an MCP/peer spawn — left the cards showing stale data.
  */
-const derivedGroups = computed<SessionGroup[]>(() => buildSessionGroups(
-  sessionsState.visibleSessions,
-  sessionId => resolveSessionCwd(sessionId),
-  sessionsState.groupPrefs,
-  useRuntimeGroups().groups.value,
-));
+const derivedGroups = computed<SessionGroup[]>(() => {
+  const visibleIds = new Set(sessionsState.visibleSessions.map(session => session.id));
+  return buildSessionGroups(
+    state.sessions,
+    sessionId => resolveSessionCwd(sessionId),
+    sessionsState.groupPrefs,
+    useRuntimeGroups().groups.value,
+  ).map(group => ({
+    ...group,
+    totalSessionCount: group.sessions.length,
+    sessions: group.sessions.filter(session => visibleIds.has(session.id)),
+  }));
+});
 
 const derivedNavList = computed<NavItem[]>(() => buildFlatNavList(
   derivedGroups.value,

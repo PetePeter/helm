@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT, buildTimesheet, buildTokenSheet, summarizeProjects, periodEdges, timesheetToCsv, type SessionWhere } from '../src/session/time-tracker.js';
+import { TimeTracker, SLOT_MS, SUBMIT_WEIGHT, buildKeySheet, buildTimesheet, buildTokenSheet, summarizeProjects, periodEdges, timesheetToCsv, type SessionWhere } from '../src/session/time-tracker.js';
 import { TimePersistence } from '../src/session/time-persistence.js';
 
 vi.mock('../src/utils/logger.js', () => ({
@@ -43,6 +43,38 @@ function userSlots(t: TimeTracker, from = DAY0, to = DAY0 + 24 * 60 * MIN) {
 }
 
 describe('TimeTracker', () => {
+  it('persists keypress counts by project and day across sessions and restarts', () => {
+    const first = tracker();
+    first.recordKeys('a1', 2, at(9, 0));
+    first.recordKeys('a2', 3, at(9, 1));
+    first.recordKeys('b1', 4, at(9, 2));
+    first.flush();
+
+    const second = tracker();
+    clock = at(9, 3);
+    second.recordKeys('a1', 5, at(9, 3));
+    clock = DAY0 + 24 * 60 * MIN;
+    second.recordKeys('a1', 1, DAY0 + 24 * 60 * MIN);
+    const slots = second.query(DAY0, DAY0 + 2 * 24 * 60 * MIN);
+    const sheet = buildKeySheet(slots, periodEdges('day', DAY0));
+    expect(sheet.rows.map(row => [row.projectKey, row.keys.slice(0, 2)])).toEqual([
+      ['pA', [10, 1]],
+      ['pB', [4, 0]],
+    ]);
+    expect(sheet.totals.slice(0, 2)).toEqual([14, 1]);
+    expect(buildTimesheet(slots, null, periodEdges('day', DAY0)).rows).toEqual([]);
+    expect(summarizeProjects(slots)).toEqual([]);
+  });
+
+  it('does not let a future keypress timestamp close the current user-time slot', () => {
+    const t = tracker();
+    t.recordUser(10, 'a1');
+    t.recordKeys('a1', 1, at(9, 10));
+    t.recordUser(10, 'a1');
+    expect(userSlots(t)).toHaveLength(1);
+    expect(t.query(DAY0, DAY0 + 24 * 60 * MIN).find(slot => slot.kind === 'keys')?.start).toBe(at(9, 0));
+  });
+
   it('counts many inputs inside one slot once, and separate slots each', () => {
     const t = tracker();
     for (const m of [0, 1, 4]) { clock = at(9, m); t.recordUser(SUBMIT, 'a1'); }

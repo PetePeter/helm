@@ -127,10 +127,11 @@ function warnDroppedKey(ctx: KeyContext): void {
 }
 
 /** Install the one listener. Returns an uninstall function. */
-export function installKeyRouter(env: KeyEnvironment): () => void {
+export function installKeyRouter(env: KeyEnvironment, onKeydown?: (event: KeyboardEvent, sessionId: string | null) => void): () => void {
   let lastDropWarnAt = 0;
 
   function onKeyDown(event: KeyboardEvent): void {
+    onKeydown?.(event, env.getActiveSessionId());
     const ctx = resolveKeyContext(event, env);
 
     for (const handler of listKeyHandlers()) {

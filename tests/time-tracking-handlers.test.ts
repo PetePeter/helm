@@ -20,6 +20,8 @@ function tracker(): TimeTracker {
   result.recordTokens('helm', 1_500);
   result.recordTokens('old', 0);
   result.recordTokens('old', 400);
+  result.recordKeys('helm', 7);
+  result.recordKeys('old', 2);
   return result;
 }
 
@@ -68,6 +70,15 @@ describe('statisticsQuery', () => {
 
   it('rejects an unknown view', () => {
     expect(() => statisticsQuery(tracker(), { view: 'models', period: 'day', anchor: NOW }, [], id => id))
-      .toThrow('view must be timesheet, tokens or estimates');
+      .toThrow('view must be timesheet, tokens, keys or estimates');
+  });
+
+  it('returns project keypress counts without mixing in tokens or time', () => {
+    const result = statisticsQuery(tracker(), { view: 'keys', period: 'day', anchor: NOW }, [], id => id) as {
+      sheet: { rows: Array<{ projectKey: string; keys: number[] }>; totals: number[] };
+    };
+    expect(result.sheet.rows.map(row => [row.projectKey, row.keys.reduce((sum, count) => sum + count, 0)]))
+      .toEqual([['p1', 7], ['p2', 2]]);
+    expect(result.sheet.totals.reduce((sum, count) => sum + count, 0)).toBe(9);
   });
 });

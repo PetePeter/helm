@@ -14,6 +14,12 @@ export interface Draft {
   updatedBy?: DraftAuthor;
 }
 
+export interface DraftSend {
+  text: string;
+  at: number;
+  via: 'cli' | 'chat';
+}
+
 export type DraftRefusal = 'stale' | 'too_large';
 
 /** A refused write always carries the pad as it stands, so the caller can retry without a second read. */

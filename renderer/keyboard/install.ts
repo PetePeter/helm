@@ -11,6 +11,8 @@ import { useModalStack } from '../composables/useModalStack.js';
 import { hasAttachedModal } from '../modals/modal-base.js';
 import type { PaneId } from '../dock-types.js';
 import { installKeyRouter, type KeyEnvironment } from './router.js';
+import { createKeypressCounter } from './keypress-counter.js';
+import { timeClient } from '../ipc/clients.js';
 
 /**
  * Does something modal own the keyboard right now?
@@ -41,5 +43,12 @@ export function installDockKeyRouter(env: {
     isModalOpen: () => isKeyboardModalOpen() || env.isPanelOpen(),
   };
 
-  return installKeyRouter(environment);
+  const counter = createKeypressCounter((sessionId, count, at) => {
+    const record = timeClient.timeRecordKeys;
+    if (!record) return; // A renderer reload can precede the main process and preload restart.
+    void record(sessionId, count, at).catch(error => console.warn('[Keypresses] Failed to record batch:', error));
+  });
+  const uninstall = installKeyRouter(environment, (event, sessionId) => counter.record(sessionId, event));
+  window.addEventListener('pagehide', counter.flush);
+  return () => { uninstall(); window.removeEventListener('pagehide', counter.flush); counter.flush(); };
 }

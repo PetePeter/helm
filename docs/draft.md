@@ -31,6 +31,19 @@ A pad never written is `{ text: '', revision: 0 }` and has no file. Every change
 adds one to `revision`, including emptying the pad: the number never goes back,
 so a writer holding an old revision stays stale.
 
+## Sent history
+
+The **History** tab shows the last 10 successful sends made from Draft for the
+selected session. Each entry contains the sent text, time, and whether it went
+through Chat or the CLI. Copying an entry leaves the current draft untouched.
+Unsent edits and sends that fail are not recorded. After a successful send,
+Draft clears the pad and opens History.
+
+History is stored separately from the shared pad under
+`%APPDATA%/Helm/config/drafts/history/<sessionId>.json`. It survives an app
+restart and recycle-bin restore, follows a Switch CLI continuation, and is
+deleted with the session when it can no longer be restored.
+
 ## Architecture
 
 ```mermaid

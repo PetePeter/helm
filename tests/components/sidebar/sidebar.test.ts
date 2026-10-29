@@ -406,7 +406,14 @@ describe('SessionGroup', () => {
 
   it('renders group name with session count', () => {
     const w = mount(SessionGroup, { props: makeGroupProps() });
-    expect(w.find('.group-name').text()).toBe('project (3)');
+    expect(w.find('.group-name').text()).toBe('project (3/3)');
+  });
+
+  it('renders visible members out of all local members', () => {
+    const w = mount(SessionGroup, {
+      props: makeGroupProps({ group: { dirPath: '/repo', displayName: 'Timbre', collapsed: true, sessionCount: 5, totalSessionCount: 7 } }),
+    });
+    expect(w.find('.group-name').text()).toBe('Timbre (5/7)');
   });
 
   it('renders one right-aligned activity dot per member in order', () => {

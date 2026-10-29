@@ -8,12 +8,12 @@ import type { RuntimeGroup } from '../../types/runtime-group.js';
 import type { ContextMenuAction } from '../../types/context-menu.js';
 import type { Artifact, ArtifactIntent } from '../../types/artifact.js';
 import type { ArtifactAttachment } from '../../types/artifact-attachment.js';
-import type { Draft, DraftWriteResult } from '../../types/draft.js';
+import type { Draft, DraftSend, DraftWriteResult } from '../../types/draft.js';
 import type { SessionTodo, SessionTodosChanged } from '../../types/todo.js';
 import type { MessEntry } from '../../types/mess.js';
 import type { AutoMemorySettings, AutoMemoryState, SilentRunResult } from '../../types/auto-memory.js';
 import type { DreamingConfigResult, DreamingSettings } from '../../types/dreaming.js';
-import type { Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
+import type { KeyQueryResult, Timesheet, TimesheetPeriod, TimesheetQueryResult, TokenQueryResult } from '../../session/time-tracker.js';
 import type { EstimateView } from '../../session/eta-stats.js';
 import type { ApiToolConfig as ApiToolOptions, WorkspaceLayoutProfile } from '../../config/loader.js';
 import type { MessHistoryOptions, MessHistoryResult } from '../../session/mess-manager.js';
@@ -110,6 +110,12 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Replace the draft text as the user; refused when `baseRevision` is no longer current. */
   draftSet: (sessionId: string, text: string, baseRevision: number): Promise<DraftWriteResult> =>
     ipcRenderer.invoke('draft:set', sessionId, text, baseRevision),
+
+  draftHistory: (sessionId: string): Promise<DraftSend[]> =>
+    ipcRenderer.invoke('draft:history', sessionId),
+
+  draftRecordSend: (sessionId: string, text: string, via: DraftSend['via']): Promise<DraftSend[]> =>
+    ipcRenderer.invoke('draft:recordSend', sessionId, text, via),
 
   /** Read the LLM-managed checklist for a session. */
   todoList: (sessionId: string): Promise<SessionTodo[]> => ipcRenderer.invoke('todo:list', sessionId),
@@ -688,6 +694,14 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   /** Tokens per configured CLI per column for a period, with the chart. */
   timeTokens: (period: TimesheetPeriod, anchor: number): Promise<TokenQueryResult> =>
     ipcRenderer.invoke('time:tokens', period, anchor),
+
+  /** Physical desktop keydowns per project and column. */
+  timeKeys: (period: TimesheetPeriod, anchor: number): Promise<KeyQueryResult> =>
+    ipcRenderer.invoke('time:keys', period, anchor),
+
+  /** A batch of keyboard events for the active session's project. */
+  timeRecordKeys: (sessionId: string, count: number, at: number): Promise<void> =>
+    ipcRenderer.invoke('time:record-keys', sessionId, count, at),
 
   /** ETA accuracy for a period, optionally one folder: tiles, charts, recent rows. */
   timeEstimates: (period: TimesheetPeriod, anchor: number, dir?: string | null): Promise<EstimateView> =>

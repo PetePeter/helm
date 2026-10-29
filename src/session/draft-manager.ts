@@ -4,6 +4,7 @@ import {
   DRAFT_MAX_BYTES,
   draftBytes,
   type Draft,
+  type DraftSend,
   type DraftAuthor,
   type DraftWriteResult,
 } from '../types/draft.js';
@@ -14,6 +15,8 @@ export interface DraftStore {
   save(draft: Draft): void;
   remove(sessionId: string): void;
   list(): string[];
+  loadHistory(sessionId: string): DraftSend[];
+  saveHistory(sessionId: string, entries: DraftSend[]): void;
 }
 
 /**
@@ -30,6 +33,7 @@ export interface DraftStore {
  */
 export class DraftManager extends EventEmitter {
   private readonly pads = new Map<string, Draft>();
+  private readonly histories = new Map<string, DraftSend[]>();
 
   constructor(
     private readonly store: DraftStore,
@@ -40,6 +44,22 @@ export class DraftManager extends EventEmitter {
 
   get(sessionId: string): Draft {
     return { ...this.current(sessionId) };
+  }
+
+  history(sessionId: string): DraftSend[] {
+    let entries = this.histories.get(sessionId);
+    if (!entries) {
+      entries = this.store.loadHistory(sessionId);
+      this.histories.set(sessionId, entries);
+    }
+    return entries.map(entry => ({ ...entry }));
+  }
+
+  recordSend(sessionId: string, text: string, via: DraftSend['via']): DraftSend[] {
+    const entries = [{ text, at: this.now(), via }, ...this.history(sessionId)].slice(0, 10);
+    this.histories.set(sessionId, entries);
+    this.store.saveHistory(sessionId, entries);
+    return entries.map(entry => ({ ...entry }));
   }
 
   /** Replace the whole text. `baseRevision` is the revision the writer last saw. */
@@ -70,17 +90,23 @@ export class DraftManager extends EventEmitter {
   copySession(fromSessionId: string, toSessionId: string): void {
     const source = this.current(fromSessionId);
     if (source.text) this.write(this.current(toSessionId), source.text, source.updatedBy ?? 'user');
+    const history = this.history(fromSessionId);
+    if (history.length) {
+      this.histories.set(toSessionId, history);
+      this.store.saveHistory(toSessionId, history);
+    }
   }
 
   /** The session is gone for good: drop its pad. */
   clearSession(sessionId: string): void {
     this.pads.delete(sessionId);
+    this.histories.delete(sessionId);
     this.store.remove(sessionId);
   }
 
   /** Startup reclamation after a crash: drop pads whose session is neither live nor in the recycle bin. */
   pruneOrphans(keep: ReadonlySet<string>): string[] {
-    const pruned = this.store.list().filter(sessionId => !keep.has(sessionId));
+    const pruned = [...new Set(this.store.list())].filter(sessionId => !keep.has(sessionId));
     for (const sessionId of pruned) this.clearSession(sessionId);
     if (pruned.length) logger.info(`[Draft] Pruned ${pruned.length} orphaned draft(s)`);
     return pruned;

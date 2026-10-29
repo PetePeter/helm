@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import { createPinia } from 'pinia';
-import type { Draft } from '../../../src/types/draft.js';
+import type { Draft, DraftSend } from '../../../src/types/draft.js';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -39,11 +39,14 @@ describe('DraftPane.vue', () => {
     ({ setActiveSessionId } = await import('../../../renderer/stores/app.js'));
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const files = new Map<string, Draft>();
+    const histories = new Map<string, DraftSend[]>();
     main = new DraftManager({
       load: id => files.get(id) ?? null,
       save: pad => { files.set(pad.sessionId, pad); },
       remove: id => { files.delete(id); },
       list: () => [...files.keys()],
+      loadHistory: id => histories.get(id) ?? [],
+      saveHistory: (id, entries) => { histories.set(id, entries); },
     });
     holdSaves = null;
     wrapper = null;
@@ -54,6 +57,8 @@ describe('DraftPane.vue', () => {
           await holdSaves;
           return main.set(sessionId, text, 'user', baseRevision);
         },
+        draftHistory: async (sessionId: string) => main.history(sessionId),
+        draftRecordSend: async (sessionId: string, text: string, via: DraftSend['via']) => main.recordSend(sessionId, text, via),
       },
       events: {
         onDraftChanged: (callback: (pad: Draft) => void) => {
@@ -86,6 +91,11 @@ describe('DraftPane.vue', () => {
 
   async function type(text: string) {
     await wrapper!.find('textarea').setValue(text);
+  }
+
+  async function showDraft() {
+    await wrapper!.find('.draft-pane__tabs button').trigger('click');
+    await flushPromises();
   }
 
   async function pause() {
@@ -341,6 +351,8 @@ describe('DraftPane.vue', () => {
 
       expect(sent()).toContain('please review the diff');
       expect(sent()).toMatch(/\r$/);
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('please review the diff');
+      await showDraft();
       expect(input().value).toBe('');
       expect(main.get('s1').text).toBe('');
     });
@@ -359,6 +371,8 @@ describe('DraftPane.vue', () => {
       expect(chatSends).toHaveLength(1);
       expect(chatSends[0]).toMatchObject({ sessionId: 's1', text: 'continue from my phone' });
       expect(ptyWrites).toHaveLength(0);
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('via Chat');
+      await showDraft();
       expect(input().value).toBe('');
     });
 
@@ -376,7 +390,48 @@ describe('DraftPane.vue', () => {
       expect(chatSends).toHaveLength(1);
       expect(chatSends[0]).toMatchObject({ sessionId: 's1', text: 'continue in Chat' });
       expect(ptyWrites).toHaveLength(0);
+      await showDraft();
       expect(input().value).toBe('');
+    });
+
+    it('does not record a failed Chat send or clear its draft', async () => {
+      await open();
+      const { useAppStore } = await import('../../../renderer/stores/app.js');
+      useAppStore().state.sessions.push({
+        id: 's1', name: 'Session 1', cliType: 'claude-code', processId: 1, lastUserPromptSource: 'chat',
+      } as never);
+      (window as unknown as { helm: { chat: { chatSend: () => Promise<{ ok: boolean }> } } }).helm.chat.chatSend =
+        async () => ({ ok: false });
+      await type('keep this');
+      await wrapper!.find('[data-draft-send]').trigger('click');
+      await settle();
+      expect(main.history('s1')).toEqual([]);
+      expect(input().value).toBe('keep this');
+    });
+
+    it('loads each session history independently and copying does not change the draft', async () => {
+      const writeText = vi.fn(async () => {});
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+      main.recordSend('s1', '<b>earlier</b>', 'cli');
+      main.recordSend('s2', 'other session', 'chat');
+      main.set('s1', 'current draft', 'user', 0);
+      await open('s1');
+      await wrapper!.find('.draft-pane__tabs button:last-child').trigger('click');
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('<b>earlier</b>');
+      expect(wrapper!.find('.draft-pane__history b').exists()).toBe(false);
+      await wrapper!.find('.draft-pane__entry button').trigger('click');
+      await flushPromises();
+      expect(writeText).toHaveBeenCalledWith('<b>earlier</b>');
+      expect(main.get('s1').text).toBe('current draft');
+      setActiveSessionId('s2');
+      await flushPromises();
+      await wrapper!.find('.draft-pane__tabs button:last-child').trigger('click');
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('other session');
+      expect(wrapper!.find('.draft-pane__entry').text()).not.toContain('<b>earlier</b>');
+      setActiveSessionId('s1');
+      await flushPromises();
+      await showDraft();
+      expect(input().value).toBe('current draft');
     });
 
     it('Ctrl+Enter sends; a plain Enter is just a new line', async () => {
@@ -389,6 +444,7 @@ describe('DraftPane.vue', () => {
       await wrapper!.find('textarea').trigger('keydown', { key: 'Enter', ctrlKey: true });
       await settle();
       expect(sent()).toContain('line one');
+      await showDraft();
       expect(input().value).toBe('');
     });
 

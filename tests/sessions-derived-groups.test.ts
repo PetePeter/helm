@@ -64,6 +64,22 @@ beforeEach(() => {
 });
 
 describe('derived sidebar groups', () => {
+  it('counts visible and total local members, including hidden-only groups', () => {
+    state.sessions = [
+      makeSession('shown', DIR_A),
+      makeSession('hidden', DIR_A, { hidden: true }),
+      makeSession('only-hidden', DIR_B, { hidden: true }),
+    ];
+    expect(sessionsState.groups.map(group => [group.sessions.length, group.totalSessionCount]))
+      .toEqual([[1, 2], [0, 1]]);
+    expect(sessionsState.navList.some(item => item.type === 'group-header' && item.id === DIR_B)).toBe(true);
+    state.activeSessionId = 'hidden';
+    expect(sessionsState.groups[0].sessions).toHaveLength(2);
+    sessionsState.showHiddenSessions = true;
+    expect(sessionsState.groups.map(group => [group.sessions.length, group.totalSessionCount]))
+      .toEqual([[2, 2], [1, 1]]);
+    sessionsState.showHiddenSessions = false;
+  });
   it('reflects a locked flip without any rebuild call', () => {
     state.sessions = [makeSession('s1', DIR_A, { locked: false })];
     expect(findRendered('s1')?.locked).toBe(false);

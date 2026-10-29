@@ -5,12 +5,12 @@
  */
 import { onUnmounted, ref, watch } from 'vue';
 import type { ChartModel } from '../../src/session/chart-model.js';
-import type { ProjectTotal, Timesheet, TimesheetPeriod, TokenSheet } from '../../src/session/time-tracker.js';
+import type { KeySheet, ProjectTotal, Timesheet, TimesheetPeriod, TokenSheet } from '../../src/session/time-tracker.js';
 import { timeClient } from '../ipc/clients.js';
 
 const REFRESH_MS = 60_000;
 
-export type StatisticsTab = 'timesheet' | 'tokens' | 'estimates';
+export type StatisticsTab = 'timesheet' | 'tokens' | 'keys' | 'estimates';
 
 export function useTimesheetPane() {
   const tab = ref<StatisticsTab>('timesheet');
@@ -21,6 +21,8 @@ export function useTimesheetPane() {
   const projects = ref<ProjectTotal[] | null>(null);
   const selectedProject = ref<ProjectTotal | null>(null);
   const tokenSheet = ref<TokenSheet | null>(null);
+  const keySheet = ref<KeySheet | null>(null);
+  const keyError = ref(false);
 
   let generation = 0;
   async function refresh(): Promise<void> {
@@ -33,6 +35,20 @@ export function useTimesheetPane() {
       if (ticket !== generation) return;
       tokenSheet.value = tokens.sheet;
       chartModel.value = tokens.chartModel;
+      return;
+    }
+    if (tab.value === 'keys') {
+      keyError.value = false;
+      try {
+        const keys = await timeClient.timeKeys(period.value, anchor.value);
+        if (ticket !== generation) return;
+        keySheet.value = keys.sheet;
+      } catch (error) {
+        if (ticket !== generation) return;
+        keySheet.value = null;
+        keyError.value = true;
+        console.error('[Statistics] Failed to load keypresses:', error);
+      }
       return;
     }
     const next = await timeClient.timeQuery({
@@ -89,7 +105,7 @@ export function useTimesheetPane() {
   const timer = setInterval(() => { void refresh(); }, REFRESH_MS);
   onUnmounted(() => clearInterval(timer));
 
-  return { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv };
+  return { tab, tokenSheet, keySheet, keyError, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv, refresh };
 }
 
 /** Minutes as "3h05"; zero renders as an en dash. */

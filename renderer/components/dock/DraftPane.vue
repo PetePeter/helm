@@ -16,7 +16,7 @@ import { useAppStore } from '../../stores/app.js';
 import { useChatStore } from '../../stores/chat.js';
 import { useDraft } from '../../composables/useDraft.js';
 import { useTimeActivity } from '../../composables/useTimeActivity.js';
-import { DRAFT_MAX_BYTES } from '../../../src/types/draft.js';
+import { DRAFT_MAX_BYTES, type DraftSend } from '../../../src/types/draft.js';
 import { deliverBulkText } from '../../paste-handler.js';
 
 const appStore = useAppStore();
@@ -28,6 +28,36 @@ const { text, pad, loading, dirty, conflict, error, bytes, edit, flush, keepMine
 const timeActivity = useTimeActivity(() => (state.activeSessionId ? { sessionId: state.activeSessionId } : null));
 
 const inputRef = ref<HTMLTextAreaElement | null>(null);
+const view = ref<'draft' | 'history'>('draft');
+const history = ref<DraftSend[]>([]);
+const historyError = ref('');
+const copyStatus = ref('');
+
+async function loadHistory(sessionId: string): Promise<void> {
+  historyError.value = '';
+  try {
+    const entries = await window.helm.sessions.draftHistory(sessionId);
+    if (state.activeSessionId === sessionId) history.value = entries;
+  } catch {
+    if (state.activeSessionId === sessionId) historyError.value = 'Could not load send history.';
+  }
+}
+
+watch(() => state.activeSessionId, sessionId => {
+  history.value = [];
+  copyStatus.value = '';
+  view.value = 'draft';
+  if (sessionId) void loadHistory(sessionId);
+}, { immediate: true });
+
+async function copySend(entry: DraftSend): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(entry.text);
+    copyStatus.value = 'Copied';
+  } catch {
+    copyStatus.value = 'Copy failed';
+  }
+}
 
 const kb = (n: number) => (n / 1024).toFixed(1);
 const size = computed(() => `${kb(bytes.value)} / ${kb(DRAFT_MAX_BYTES)} KB`);
@@ -66,13 +96,23 @@ async function send(): Promise<void> {
   const sessionId = state.activeSessionId;
   const prompt = text.value;
   if (!sessionId || !prompt.trim() || appStore.activeSession?.frozen) return;
-  if (sendViaChat.value) {
+  const via = sendViaChat.value ? 'chat' : 'cli';
+  if (via === 'chat') {
     if (!await chatStore.sendText(sessionId, prompt)) return;
   } else {
     await deliverBulkText(sessionId, prompt, { withReturn: true });
   }
-  edit('');
-  await flush();
+  try {
+    const entries = await window.helm.sessions.draftRecordSend(sessionId, prompt, via);
+    if (state.activeSessionId === sessionId) history.value = entries;
+  } catch {
+    if (state.activeSessionId === sessionId) historyError.value = 'Sent, but could not save history.';
+  }
+  if (state.activeSessionId === sessionId && text.value === prompt) {
+    edit('');
+    await flush();
+    view.value = 'history';
+  }
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -89,6 +129,22 @@ function onKeydown(event: KeyboardEvent): void {
     aria-label="Session draft"
     @keydown="timeActivity.onKeydown"
   >
+    <nav class="draft-pane__tabs" aria-label="Draft views">
+      <button type="button" :class="{ 'is-active': view === 'draft' }" @click="view = 'draft'">Draft</button>
+      <button type="button" :class="{ 'is-active': view === 'history' }" @click="view = 'history'">History ({{ history.length }})</button>
+    </nav>
+    <div v-if="view === 'history'" class="draft-pane__history" aria-label="Sent Draft history">
+      <p>Last 10 sends from Draft for this session. Copy an earlier text without changing the current draft.</p>
+      <p v-if="historyError" role="alert">{{ historyError }}</p>
+      <p v-if="copyStatus" role="status">{{ copyStatus }}</p>
+      <p v-if="!history.length">No Draft sends yet for this session.</p>
+      <article v-for="(entry, index) in history" :key="`${entry.at}-${index}`" class="draft-pane__entry">
+        <div class="draft-pane__meta"><strong>{{ new Date(entry.at).toLocaleString() }}</strong> via {{ entry.via === 'chat' ? 'Chat' : 'CLI' }}</div>
+        <pre>{{ entry.text }}</pre>
+        <button type="button" class="btn btn--sm" @click="copySend(entry)">Copy text</button>
+      </article>
+    </div>
+    <template v-else>
     <div v-if="conflict" class="draft-pane__conflict" role="alert">
       <span>The draft was changed while you were typing.</span>
       <button type="button" class="btn btn--sm" data-draft-keep-mine @click="keepMine">Keep mine</button>
@@ -120,12 +176,20 @@ function onKeydown(event: KeyboardEvent): void {
         @click="send"
       >Send</button>
     </footer>
+    </template>
   </section>
   <EmptyState v-else title="No session selected" hint="Each session has its own draft." icon="🗒" />
 </template>
 
 <style scoped>
 .draft-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); }
+.draft-pane__tabs { display: flex; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm) 0; border-bottom: 1px solid var(--border); }
+.draft-pane__tabs button { border: 0; border-radius: 5px 5px 0 0; padding: var(--spacing-xs) var(--spacing-sm); background: transparent; color: var(--text-secondary); cursor: pointer; }
+.draft-pane__tabs button.is-active { background: var(--bg-secondary); color: var(--text-primary); }
+.draft-pane__history { flex: 1; min-height: 0; overflow: auto; padding: var(--spacing-sm); color: var(--text-secondary); font-size: var(--font-size-sm); }
+.draft-pane__entry { margin-bottom: var(--spacing-sm); padding: var(--spacing-sm); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+.draft-pane__meta { font-size: var(--font-size-xs); }
+.draft-pane__entry pre { max-height: 80px; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); font: inherit; }
 .draft-pane__conflict {
   display: flex;
   align-items: center;

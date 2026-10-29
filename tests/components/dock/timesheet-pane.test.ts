@@ -30,6 +30,7 @@ const statsChartStub = {
 describe('TimesheetPane', () => {
   let query: ReturnType<typeof vi.fn>;
   let csv: ReturnType<typeof vi.fn>;
+  let keys: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     appState.sessions = [
@@ -48,7 +49,12 @@ describe('TimesheetPane', () => {
         { projectKey: 'pB', projectName: 'Beta', user: 5, ai: 0 },
       ] });
     csv = vi.fn().mockResolvedValue('period_start,project,directory,you_minutes,ai_minutes\n');
-    (window as any).helm = { time: { timeQuery: query, timeCsv: csv } };
+    keys = vi.fn().mockResolvedValue({ sheet: {
+      columns: [day],
+      rows: [{ projectKey: 'pA', projectName: 'Alpha', keys: [1200] }],
+      totals: [1200],
+    } });
+    (window as any).helm = { time: { timeQuery: query, timeCsv: csv, timeKeys: keys } };
   });
 
   it('shows all projects, drills into any project, and ignores selected-session changes', async () => {
@@ -91,5 +97,35 @@ describe('TimesheetPane', () => {
     expect(wrapper.text()).toContain('Beta');
     expect(query).toHaveBeenLastCalledWith(expect.objectContaining({ projectKey: undefined }));
     wrapper.unmount();
+  });
+
+  it('shows project keypress totals in the Keys tab', async () => {
+    const wrapper = mount(TimesheetPane, { global: { plugins: [createPinia()], stubs: { StatsChart: statsChartStub } } });
+    await wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('Keys'))!.trigger('click');
+    await flushPromises();
+
+    expect(keys).toHaveBeenCalledWith('day', expect.any(Number));
+    expect(wrapper.text()).toContain('Alpha');
+    expect(wrapper.text()).toContain('1,200');
+    expect(wrapper.findAll('.timesheet-table tbody tr')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('shows a retryable error when the running app has no Keys service yet', async () => {
+    (window as any).helm.time.timeKeys = undefined;
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const wrapper = mount(TimesheetPane, { global: { plugins: [createPinia()], stubs: { StatsChart: statsChartStub } } });
+    await wrapper.findAll('[role="tab"]').find(tab => tab.text().includes('Keys'))!.trigger('click');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Keypresses unavailable');
+    expect(wrapper.text()).toContain('Restart Helm');
+    expect(wrapper.text()).not.toContain('Loading keypresses');
+    (window as any).helm.time.timeKeys = keys;
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('1,200');
+    wrapper.unmount();
+    errorLog.mockRestore();
   });
 });

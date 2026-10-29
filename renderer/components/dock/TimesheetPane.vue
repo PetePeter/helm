@@ -21,7 +21,7 @@ const PERIODS: { id: TimesheetPeriod; label: string }[] = [
   { id: 'month', label: 'Month' },
 ];
 
-const { tab, tokenSheet, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv } = useTimesheetPane();
+const { tab, tokenSheet, keySheet, keyError, projects, selectedProject, period, anchor, sheet, chartModel, openProject, backToProjects, step, exportCsv, refresh } = useTimesheetPane();
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 const range = computed(() => {
@@ -40,12 +40,13 @@ const range = computed(() => {
 
 <template>
   <section class="timesheet-pane" aria-label="Statistics">
-    <PanelHeader title="Statistics" icon="📊" :subtitle="tab === 'tokens' ? 'Tokens per CLI' : tab === 'estimates' ? 'ETA accuracy' : selectedProject?.projectName ?? 'All projects'">
+    <PanelHeader title="Statistics" icon="📊" :subtitle="tab === 'tokens' ? 'Tokens per CLI' : tab === 'keys' ? 'Keypresses per project' : tab === 'estimates' ? 'ETA accuracy' : selectedProject?.projectName ?? 'All projects'">
       <template #toolbar>
         <div class="timesheet-toolbar">
           <div class="timesheet-toggle" role="tablist" aria-label="Statistics">
             <button type="button" role="tab" :aria-selected="tab === 'timesheet'" :class="{ 'is-active': tab === 'timesheet' }" @click="tab = 'timesheet'">⏱ Timesheet</button>
             <button type="button" role="tab" :aria-selected="tab === 'tokens'" :class="{ 'is-active': tab === 'tokens' }" @click="tab = 'tokens'">🪙 Tokens</button>
+            <button type="button" role="tab" :aria-selected="tab === 'keys'" :class="{ 'is-active': tab === 'keys' }" @click="tab = 'keys'">⌨ Keys</button>
             <button type="button" role="tab" :aria-selected="tab === 'estimates'" :class="{ 'is-active': tab === 'estimates' }" @click="tab = 'estimates'">🏁 Estimates</button>
           </div>
           <div class="timesheet-toggle" role="group" aria-label="View">
@@ -66,6 +67,38 @@ const range = computed(() => {
     </PanelHeader>
 
     <EstimatesView v-if="tab === 'estimates'" :period="period" :anchor="anchor" />
+    <template v-else-if="tab === 'keys'">
+      <EmptyState v-if="keyError" title="Keypresses unavailable" hint="Restart Helm to load the new statistics service, then try again." icon="⌨">
+        <template #action><button type="button" @click="refresh">Retry</button></template>
+      </EmptyState>
+      <EmptyState v-else-if="!keySheet" title="Loading keypresses" loading />
+      <EmptyState v-else-if="!keySheet.rows.length" title="No keypresses recorded" hint="Physical keyboard presses in Helm appear here by project." icon="⌨" />
+      <div v-else class="timesheet-scroll">
+        <table class="timesheet-table">
+          <thead>
+            <tr>
+              <th>Project</th>
+              <th v-for="col in keySheet.columns" :key="col">{{ columnLabel(period, col) }}</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in keySheet.rows" :key="row.projectKey">
+              <td>{{ row.projectName }}</td>
+              <td v-for="(count, i) in row.keys" :key="i">{{ count ? count.toLocaleString() : '–' }}</td>
+              <td>{{ sum(row.keys).toLocaleString() }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>Total</td>
+              <td v-for="(count, i) in keySheet.totals" :key="i">{{ count ? count.toLocaleString() : '–' }}</td>
+              <td>{{ sum(keySheet.totals).toLocaleString() }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </template>
     <template v-else-if="tab === 'tokens'">
       <EmptyState v-if="!tokenSheet" title="Loading tokens" loading />
       <div v-else class="timesheet-scroll">

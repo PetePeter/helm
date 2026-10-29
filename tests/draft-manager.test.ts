@@ -109,6 +109,26 @@ describe('DraftManager', () => {
     expect(readdirSync(dir).sort()).toEqual(['new.json', 'old.json']);
   });
 
+  it('retains only 10 sends per session across restart, Switch CLI, and recycle restore', () => {
+    const manager = open();
+    for (let i = 0; i < 12; i++) manager.recordSend('old', `send ${i}`, i % 2 ? 'chat' : 'cli');
+    expect(open().history('old')).toHaveLength(10);
+    expect(open().history('old')[0].text).toBe('send 11');
+    manager.copySession('old', 'new');
+    expect(open().history('new')).toEqual(open().history('old'));
+    expect(manager.history('other')).toEqual([]);
+    expect(open().history('old')).toHaveLength(10);
+  });
+
+  it('prunes and clears history even when the pad was never written', () => {
+    open().recordSend('orphan', 'sent', 'cli');
+    open().recordSend('kept', 'sent', 'chat');
+    expect(open().pruneOrphans(new Set(['kept']))).toEqual(['orphan']);
+    expect(open().history('orphan')).toEqual([]);
+    open().clearSession('kept');
+    expect(open().history('kept')).toEqual([]);
+  });
+
   it('deletes the file when the session is cleared', () => {
     const manager = open();
     manager.set('s1', 'a', 'user', 0);

@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Draft } from '../src/types/draft.js';
+import type { Draft, DraftSend } from '../src/types/draft.js';
 
 const handlers = new Map<string, Function>();
 vi.mock('electron', () => ({
@@ -24,11 +24,14 @@ describe('draft IPC handlers', () => {
   beforeEach(() => {
     handlers.clear();
     const files = new Map<string, Draft>();
+    const histories = new Map<string, DraftSend[]>();
     pads = new DraftManager({
       load: id => files.get(id) ?? null,
       save: pad => { files.set(pad.sessionId, pad); },
       remove: id => { files.delete(id); },
       list: () => [...files.keys()],
+      loadHistory: id => histories.get(id) ?? [],
+      saveHistory: (id, entries) => { histories.set(id, entries); },
     });
     setupDraftHandlers(pads, id => id === 'live' || id === 'binned');
   });
@@ -58,5 +61,15 @@ describe('draft IPC handlers', () => {
     expect(() => invoke('draft:set', 'live', 42, 0)).toThrow(/text must be a string/);
     expect(() => invoke('draft:set', 'live', 'x', '0')).toThrow(/baseRevision/);
     expect(() => invoke('draft:get', '')).toThrow(/sessionId is required/);
+    expect(() => invoke('draft:history', 'gone')).toThrow(/Session not found/);
+    expect(() => invoke('draft:recordSend', 'gone', 'x', 'cli')).toThrow(/Session not found/);
+    expect(() => invoke('draft:recordSend', 'live', '', 'cli')).toThrow(/text is required/);
+    expect(() => invoke('draft:recordSend', 'live', 'x', 'other')).toThrow(/Invalid send medium/);
+  });
+
+  it('records only explicitly submitted sends for a known session', () => {
+    expect(invoke('draft:history', 'live')).toEqual([]);
+    invoke('draft:recordSend', 'live', 'sent text', 'chat');
+    expect(invoke('draft:history', 'live')).toMatchObject([{ text: 'sent text', via: 'chat' }]);
   });
 });

@@ -26,5 +26,17 @@ export function setupDraftHandlers(
     return draftManager.set(sessionId, text, 'user', baseRevision);
   });
 
+  ipcMain.handle('draft:history', (_event, sessionId: string) => {
+    if (typeof sessionId !== 'string' || !isKnownSession(sessionId)) throw new Error('Session not found');
+    return draftManager.history(sessionId);
+  });
+
+  ipcMain.handle('draft:recordSend', (_event, sessionId: string, text: string, via: string) => {
+    if (typeof sessionId !== 'string' || !isKnownSession(sessionId)) throw new Error('Session not found');
+    if (typeof text !== 'string' || !text.trim()) throw new Error('text is required');
+    if (via !== 'cli' && via !== 'chat') throw new Error('Invalid send medium');
+    return draftManager.recordSend(sessionId, text, via);
+  });
+
   logger.info('[IPC] Draft handlers registered');
 }

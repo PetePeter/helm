@@ -31,6 +31,8 @@ export const PRELOAD_API_DOMAINS = {
     'sessionSetMissionBarHeight',
     'draftGet',
     'draftSet',
+    'draftHistory',
+    'draftRecordSend',
     'todoList',
     'sessionSetState',
     'sessionRequestFocusSlot',

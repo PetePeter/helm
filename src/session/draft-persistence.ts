@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
-import type { Draft } from '../types/draft.js';
+import type { Draft, DraftSend } from '../types/draft.js';
 import type { DraftStore } from './draft-manager.js';
 import { DRAFTS_DIR } from './persistence-paths.js';
 import { atomicWriteFileSync, isAnyString, isNumber, isRecord } from './persistence-utils.js';
@@ -57,6 +57,10 @@ export function migrateLegacyDraftStore(configDir: string): void {
  * thrown: a pad that cannot be saved must not break the session it belongs to.
  */
 export function createDraftStore(dir: string = DRAFTS_DIR): DraftStore {
+  const historyDir = join(dir, 'history');
+  const listFiles = (directory: string): string[] => existsSync(directory)
+    ? readdirSync(directory).filter(name => name.endsWith(EXTENSION)).flatMap(sessionIdOf)
+    : [];
   return {
     load(sessionId) {
       try {
@@ -78,19 +82,38 @@ export function createDraftStore(dir: string = DRAFTS_DIR): DraftStore {
     remove(sessionId) {
       try {
         rmSync(fileFor(dir, sessionId), { force: true });
+        rmSync(fileFor(historyDir, sessionId), { force: true });
       } catch (err) {
         logger.error(`[Draft] Failed to delete the draft of ${sessionId}: ${err}`);
       }
     },
     list() {
       try {
-        if (!existsSync(dir)) return [];
-        return readdirSync(dir)
-          .filter(name => name.endsWith(EXTENSION))
-          .flatMap(name => sessionIdOf(name));
+        return [...new Set([...listFiles(dir), ...listFiles(historyDir)])];
       } catch (err) {
         logger.error(`[Draft] Failed to list drafts: ${err}`);
         return [];
+      }
+    },
+    loadHistory(sessionId) {
+      try {
+        const file = fileFor(historyDir, sessionId);
+        if (!existsSync(file)) return [];
+        const raw: unknown = JSON.parse(readFileSync(file, 'utf8'));
+        if (!Array.isArray(raw)) return [];
+        return raw.filter((item): item is DraftSend =>
+          isRecord(item) && isAnyString(item.text) && isNumber(item.at)
+          && (item.via === 'cli' || item.via === 'chat')).slice(0, 10);
+      } catch (err) {
+        logger.error(`[Draft] Failed to load send history of ${sessionId}: ${err}`);
+        return [];
+      }
+    },
+    saveHistory(sessionId, entries) {
+      try {
+        atomicWriteFileSync(fileFor(historyDir, sessionId), JSON.stringify(entries));
+      } catch (err) {
+        logger.error(`[Draft] Failed to save send history of ${sessionId}: ${err}`);
       }
     },
   };

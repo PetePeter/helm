@@ -190,6 +190,44 @@ describe('SessionList wheel navigation', () => {
     expect(state.activeSessionId).toBe('c');
   });
 
+  it('skips headers and hidden rows even when hidden sessions are shown', () => {
+    setSessions(['a', 'hidden', 'c'], ['hidden']);
+    state.sessions[2]!.workingDir = '/other';
+    sessionsState.groupPrefs = { order: ['/repo', '/other'], collapsed: [], bookmarked: [] };
+    sessionsState.showHiddenSessions = true;
+    useNavigationStore(pinia).init();
+    mountList();
+    const list = document.querySelector('.sessions-list')!;
+
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }));
+    expect(state.activeSessionId).toBe('c');
+    expect(sessionsState.navList[sessionsState.sessionsFocusIndex]).toMatchObject({ type: 'session-card', id: 'c' });
+
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    expect(state.activeSessionId).toBe('a');
+    expect(sessionsState.navList[sessionsState.sessionsFocusIndex]).toMatchObject({ type: 'session-card', id: 'a' });
+
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    expect(state.activeSessionId).toBe('a');
+    expect(sessionsState.navList[sessionsState.sessionsFocusIndex]).toMatchObject({ type: 'session-card', id: 'a' });
+  });
+
+  it('moves off a hidden active row and stays on the last available session', () => {
+    setSessions(['a', 'hidden', 'c'], ['hidden']);
+    state.activeSessionId = 'hidden';
+    sessionsState.sessionsFocusIndex = sessionsState.navList.findIndex(item => item.id === 'hidden');
+    useNavigationStore(pinia).init();
+    mountList();
+
+    document.querySelector('.sessions-list')!.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 200, bubbles: true, cancelable: true }),
+    );
+
+    expect(state.activeSessionId).toBe('c');
+    expect(sessionsState.navList[sessionsState.sessionsFocusIndex]).toMatchObject({ type: 'session-card', id: 'c' });
+    expect(sessionSwitches).toEqual(['c']);
+  });
+
   it('does not navigate while a modal owns input', () => {
     setSessions(['a', 'b']);
     useNavigationStore(pinia).init();
