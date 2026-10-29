@@ -64,6 +64,10 @@ class FakeSessionManager {
     if (!this.activeSessionId) this.activeSessionId = session.id;
   }
   setActiveSession(id: string) { this.activeSessionId = id; }
+  /** Mirrors SessionManager.setSessionFrozen: a thaw restarts the prompt clock. */
+  setSessionFrozen(id: string, frozen: boolean) {
+    this.updateSession(id, frozen ? { frozen } : { frozen, lastPromptAt: Date.now() });
+  }
   removeSession(id: string) {
     this.sessions.delete(id);
     if (this.activeSessionId === id) this.activeSessionId = null;
@@ -1305,6 +1309,138 @@ describe('ScheduledTaskManager', () => {
 
       expect(history.entries).toHaveLength(2);
       expect(history.entries.every(e => e.outcome === 'done')).toBe(true);
+    });
+  });
+
+  describe('a direct task whose target is frozen', () => {
+    const targetId = 'session-frozen-target';
+    let history: FakeHistoryManager;
+    let compacts: Array<{ sessionId: string; prompt: string }>;
+    let frozenManager: ScheduledTaskManager;
+
+    beforeEach(() => {
+      history = new FakeHistoryManager();
+      compacts = [];
+      frozenManager = new ScheduledTaskManager(
+        sessionManager as any, ptyManager as any, planManager as any, configLoader as any, history as any, undefined,
+        { quickCompact: async (sessionId, prompt) => { compacts.push({ sessionId, prompt }); sessionManager.setSessionFrozen(sessionId, false); } },
+      );
+      sessionManager.addSession({ id: targetId, cliType: 'claude-code', workingDir: TEST_DIR, frozen: true });
+      ptyManager.spawn({ sessionId: targetId });
+    });
+
+    afterEach(() => {
+      frozenManager.stop();
+      saveScheduledTasks([]);
+    });
+
+    const watchdog = (extra: Partial<CreateScheduledTaskParams> = {}): CreateScheduledTaskParams => ({
+      title: 'Watchdog', planIds: [], initialPrompt: 'poke', cliType: 'claude-code',
+      scheduledTime: new Date(Date.now() - 1000), scheduleKind: 'interval', intervalMs: 15 * 60_000,
+      dirPath: TEST_DIR, mode: 'direct', targetSessionId: targetId, ...extra,
+    });
+
+    async function fire(params: CreateScheduledTaskParams) {
+      const { id } = frozenManager.createTask(params);
+      frozenManager.start();
+      // Long enough for delivery, well short of the next 15-minute run.
+      await vi.advanceTimersByTimeAsync(5_000);
+      return frozenManager.getTask(id)!;
+    }
+
+    it('skips the run by default, leaves the session frozen and keeps the interval going', async () => {
+      const task = await fire(watchdog());
+
+      expect(task.status).toBe('pending');
+      expect(task.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
+      expect(history.entries[0].outcome).toBe('skipped');
+      expect(sessionManager.getSession(targetId)?.frozen).toBe(true);
+      expect(ptyManager.getWrites(targetId)).toEqual([]);
+    });
+
+    it('unfreezes the session and delivers the prompt when onFrozen is unfreeze', async () => {
+      const task = await fire(watchdog({ onFrozen: 'unfreeze' }));
+
+      expect(sessionManager.getSession(targetId)?.frozen).toBe(false);
+      expect(ptyManager.getWrites(targetId)).toEqual(expect.arrayContaining([expect.stringContaining('poke')]));
+      expect(history.entries[0].outcome).toBe('done');
+      expect(task.status).toBe('pending');
+    });
+
+    it('quick compacts with the prompt as the handover instead of typing it into the full context', async () => {
+      await fire(watchdog({ onFrozen: 'quickCompact' }));
+
+      expect(compacts).toEqual([{ sessionId: targetId, prompt: 'poke' }]);
+      expect(ptyManager.getWrites(targetId)).toEqual([]);
+      expect(history.entries[0].outcome).toBe('done');
+    });
+
+    it('records a failed quick compact but keeps a recurring task scheduled', async () => {
+      frozenManager.stop();
+      frozenManager = new ScheduledTaskManager(
+        sessionManager as any, ptyManager as any, planManager as any, configLoader as any, history as any, undefined,
+        { quickCompact: async () => { throw new Error('No CLI transcript recorded'); } },
+      );
+      const task = await fire(watchdog({ onFrozen: 'quickCompact' }));
+
+      expect(history.entries[0].outcome).toBe('failed');
+      expect(history.entries[0].error).toContain('No CLI transcript');
+      expect(task.status).toBe('pending');
+      expect(task.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
+    });
+  });
+
+  describe('failure recovery', () => {
+    const targetId = 'session-failing-target';
+
+    beforeEach(() => {
+      sessionManager.addSession({ id: targetId, cliType: 'claude-code', workingDir: TEST_DIR });
+    });
+
+    const direct = (extra: Partial<CreateScheduledTaskParams> = {}): CreateScheduledTaskParams => ({
+      title: 'Poke', planIds: [], initialPrompt: 'poke', cliType: 'claude-code',
+      scheduledTime: new Date(Date.now() - 1000), dirPath: TEST_DIR, mode: 'direct', targetSessionId: targetId, ...extra,
+    });
+
+    it('keeps an interval task alive when one run fails, showing the last error', async () => {
+      const { id } = manager.createTask(direct({ scheduleKind: 'interval', intervalMs: 60_000 }));
+      manager.start();
+      await vi.advanceTimersByTimeAsync(0);
+
+      const task = manager.getTask(id)!;
+      expect(task.status).toBe('pending');
+      expect(task.error).toContain('PTY is not running');
+      expect(task.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('still fails a one-shot task outright', async () => {
+      const { id } = manager.createTask(direct());
+      manager.start();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(manager.getTask(id)!.status).toBe('failed');
+    });
+
+    it('revives a failed task through updateTask', async () => {
+      const { id } = manager.createTask(direct());
+      manager.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const at = new Date(Date.now() + 10 * 60_000);
+
+      const revived = manager.updateTask(id, { scheduledTime: at, scheduleKind: 'interval', intervalMs: 60_000 });
+
+      expect(revived?.status).toBe('pending');
+      expect(revived?.error).toBeUndefined();
+      expect(revived?.nextRunAt?.getTime()).toBe(at.getTime());
+    });
+
+    it('refuses to revive a failed one-shot task without a future time', async () => {
+      const { id } = manager.createTask(direct());
+      manager.start();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(() => manager.updateTask(id, { title: 'again' })).toThrow(/future scheduledTime/);
+      expect(manager.getTask(id)!.status).toBe('failed');
     });
   });
 });

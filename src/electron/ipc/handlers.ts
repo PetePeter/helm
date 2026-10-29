@@ -271,7 +271,12 @@ export function registerIPCHandlers(
   const recycleBinManager = new RecycleBinManager();
   const runtimeGroupManager = new RuntimeGroupManager(saveRuntimeGroups);
   runtimeGroupManager.importAll(loadRuntimeGroups());
-  const scheduledTaskManager = new ScheduledTaskManager(sessionManager, ptyManager, planManager, configLoader, scheduledTaskHistoryManager, projectStore);
+  const scheduledTaskManager = new ScheduledTaskManager(sessionManager, ptyManager, planManager, configLoader, scheduledTaskHistoryManager, projectStore, {
+    // A timer's own choice, not a model's second thought: never skipped as redundant.
+    quickCompact: async (sessionId, prompt) => {
+      await helmControlService.quickCompactSession(sessionId, { force: true, ...(prompt ? { handover: prompt } : {}) });
+    },
+  });
   const notificationManager = new NotificationManager(windowManager, sessionManager);
 
   // Power monitor with full session/PTY diagnostics and screen lock tracking

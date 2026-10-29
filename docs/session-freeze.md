@@ -56,6 +56,36 @@ Unfreeze, the Unfreeze button on the terminal overlay, or MCP
 what works without typing into it — Unfreeze, Quick Compact, Clone, Switch CLI —
 and Quick Compact thaws it first, since it must type `/clear`.
 
+## Scheduled tasks and frozen sessions
+
+A direct-mode task picks what its run does when the target is frozen
+(`onFrozen`, scheduler form "If the session is frozen"):
+
+```mermaid
+graph LR
+    R[Run fires] --> F{target frozen?}
+    F -->|no| D[deliver prompt]
+    F -->|skip · default| S[history 'skipped'<br/>schedule continues]
+    F -->|unfreeze| U[thaw → deliver into<br/>full uncached context]
+    F -->|quickCompact| Q[Quick Compact with the<br/>prompt as its handover]
+```
+
+`skip` is the default because the freeze is a cost guard: a timer is no
+reason to break it. `quickCompact` pays the cold cache on a stripped context
+instead of the full one. Any failed run of an interval or cron task keeps its
+schedule, and the error stays on the task until the next run. Only a one-shot
+task ends as `failed`. `scheduler_update` revives a failed task (a one-shot
+needs a future `scheduledTime`) and reports "not found" only for an unknown
+id.
+
+`scheduler_create`/`scheduler_update` return `warnings` for a direct task.
+If the next run lands past the target's freeze point (`cacheExpireMinutes`),
+the warning asks the target to write a handover note and `session_quick_compact`
+before it goes idle. If `onFrozen` is `unfreeze` and the target's context is
+amber or red, the warning suggests `quickCompact`. The warnings only advise,
+and the task is saved either way. They are checked when the task is set, not
+when it runs.
+
 ## Keep warm
 
 The row's ⋮ → **Keep cache warm** sets `SessionInfo.keepWarmUntil` (persisted)

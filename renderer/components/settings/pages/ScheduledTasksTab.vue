@@ -4,7 +4,7 @@ import { appClient, attachmentsClient, configClient, contextsClient, deliveryCli
  * ScheduledTasksTab.vue -- UI for creating and managing scheduled tasks.
  */
 import { ref, computed, onMounted, onUnmounted, watch, ref as templateRef } from 'vue';
-import type { ScheduledTask, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../../src/types/scheduled-task.js';
+import type { ScheduledTask, ScheduledTaskFrozenPolicy, ScheduledTaskHistoryEntry, ScheduledTaskMode, ScheduledTaskScheduleSelection } from '../../../../src/types/scheduled-task.js';
 import { CronEngine } from '../../../../src/utils/cron-engine.js';
 import QuickSpawnModal from '../../modals/QuickSpawnModal.vue';
 import DirPickerModal from '../../modals/DirPickerModal.vue';
@@ -43,6 +43,7 @@ const selectedCliType = ref('');
 const selectedDirPath = ref('');
 const formCliParams = ref('');
 const selectedTargetSessionId = ref('');
+const formOnFrozen = ref<ScheduledTaskFrozenPolicy>('skip');
 const formTime = ref('');
 const scheduleKind = ref<ScheduledTaskScheduleSelection>('once');
 const intervalMinutes = ref(60);
@@ -185,6 +186,7 @@ function resetForm(): void {
   selectedDirPath.value = '';
   formCliParams.value = '';
   selectedTargetSessionId.value = '';
+  formOnFrozen.value = 'skip';
   formTime.value = '';
   scheduleKind.value = 'once';
   intervalMinutes.value = 60;
@@ -241,6 +243,7 @@ async function createTask(): Promise<void> {
       dirPath: selectedDirPath.value.trim(),
       mode: formMode.value,
       targetSessionId: formMode.value === 'direct' ? selectedTargetSessionId.value : undefined,
+      ...(formMode.value === 'direct' ? { onFrozen: formOnFrozen.value } : {}),
     };
     let result;
     if (scheduleKind.value === 'none') {
@@ -280,6 +283,7 @@ function editTask(task: ScheduledTask): void {
   selectedDirPath.value = task.dirPath;
   formCliParams.value = task.cliParams ?? '';
   selectedTargetSessionId.value = task.targetSessionId ?? '';
+  formOnFrozen.value = task.onFrozen ?? 'skip';
   scheduleKind.value = task.scheduleKind ?? 'once';
   formTime.value = scheduleKind.value === 'none' ? '' : toLocalDateTimeInputValue(new Date(task.scheduledTime));
   intervalMinutes.value = Math.max(1, Math.round((task.intervalMs ?? 3600000) / 60000));
@@ -375,6 +379,7 @@ onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); modalStack.po
       <div class="st-form-row"><label class="st-label">Mode</label><select v-model="formMode" class="st-input focusable" @change="onModeChange"><option value="spawn">Spawn new session</option><option value="direct">Send to existing session</option></select></div>
       <div v-if="formMode !== 'direct'" class="st-form-row st-form-row--picker"><label class="st-label">CLI Type *</label><button class="st-picker-btn focusable" @click="openCliPicker">{{ selectedCliType ? getCliDisplayName(selectedCliType) : 'Select CLI...' }}</button></div>
       <div v-if="formMode === 'direct'" class="st-form-row"><label class="st-label">Target Session *</label><select v-model="selectedTargetSessionId" class="st-input focusable" :disabled="sessionsForDir.length === 0"><option value="" disabled>{{ sessionsForDir.length === 0 ? 'No sessions in this directory' : 'Select session...' }}</option><option v-for="s in sessionsForDir" :key="s.id" :value="s.id">{{ s.name }} ({{ getCliDisplayName(s.cliType) }})</option></select></div>
+      <div v-if="formMode === 'direct'" class="st-form-row"><label class="st-label">If the session is frozen</label><select v-model="formOnFrozen" class="st-input focusable"><option value="skip">Skip the run</option><option value="unfreeze">Unfreeze and send</option><option value="quickCompact">Quick compact, then send</option></select></div>
       <div v-if="formMode !== 'direct'" class="st-form-row"><label class="st-label">CLI Params (optional)</label><input v-model="formCliParams" type="text" class="st-input focusable" placeholder="Additional CLI arguments" /></div>
       <div v-if="scheduleKind !== 'none'" class="st-form-row"><label class="st-label">Scheduled Time *</label><input v-model="formTime" type="datetime-local" class="st-input focusable" /></div>
       <div class="st-form-row st-form-row--inline"><div class="st-form-row"><label class="st-label">Schedule</label><select v-model="scheduleKind" class="st-input focusable" @change="onScheduleKindChange"><option v-if="editingTaskId" value="none">None</option><option value="once">Once</option><option value="interval">Recurring interval</option><option value="cron">Cron calendar</option></select></div><div v-if="scheduleKind === 'interval'" class="st-form-row"><label class="st-label">Repeat Every (min) *</label><input v-model.number="intervalMinutes" type="number" min="1" class="st-input focusable" /></div></div>

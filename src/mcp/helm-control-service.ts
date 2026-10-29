@@ -1,4 +1,5 @@
 import type { SessionEtaInput } from '../session/session-eta.js';
+import { expireAfterMs } from '../session/prompt-staleness.js';
 import type { ChatTurnUsage } from '../session/chat/chat-bridge.js';
 import { EventEmitter } from 'node:events';
 import { getPlanCleanupCounts, clearEmptySequences, clearUnreferencedContexts, type PlanCleanupCounts } from '../session/plan-cleanup.js';
@@ -466,7 +467,19 @@ export class HelmControlService extends EventEmitter {
     this.planAttachmentService = new HelmPlanAttachmentService(planManager, attachmentManager);
     this.capabilityDetector = new CapabilityDetector(configLoader);
     this.telegramService = new HelmTelegramService(configLoader, sessionManager, this.capabilityDetector);
-    this.schedulerService = schedulerManager ? new HelmSchedulerService(schedulerManager, configLoader, projectStore) : null;
+    this.schedulerService = schedulerManager
+      ? new HelmSchedulerService(schedulerManager, configLoader, projectStore, (sessionId) => {
+        const session = sessionManager.getSession(sessionId);
+        if (!session) return undefined;
+        const cli = configLoader.getCliTypeEntry(session.cliType);
+        const context = this.sessionService.getSessionContextSize(sessionId);
+        return {
+          // Mirrors AutoFreezer: the operator and cache-less CLIs never freeze.
+          freezeAfterMs: session.role === 'operator' || cli?.noPromptCache ? Infinity : expireAfterMs(cli),
+          ...(context?.known ? { contextLevel: context.level } : {}),
+        };
+      })
+      : null;
     if (projectStore) this.setMessManager(new MessManager(sessionManager, projectStore));
     this.projectService = projectStore
       ? new HelmProjectService(projectStore, () => this.memoryManager, () => this.messManager)
@@ -2013,7 +2026,7 @@ export class HelmControlService extends EventEmitter {
   // Scheduler CRUD
   // ---------------------------------------------------------------------------
 
-  createScheduledTask(params: Omit<CreateScheduledTaskParams, 'scheduledTime' | 'endDate'> & { scheduledTime: string; endDate?: string }): { id: string } {
+  createScheduledTask(params: Omit<CreateScheduledTaskParams, 'scheduledTime' | 'endDate'> & { scheduledTime: string; endDate?: string }): { id: string; warnings?: string[] } {
     return this.requireScheduler().createTask(params);
   }
 
@@ -2025,7 +2038,7 @@ export class HelmControlService extends EventEmitter {
     return this.requireScheduler().getTask(id);
   }
 
-  updateScheduledTask(id: string, updates: Omit<UpdateScheduledTaskParams, 'scheduledTime' | 'endDate'> & { scheduledTime?: string; endDate?: string }): { ok: true } {
+  updateScheduledTask(id: string, updates: Omit<UpdateScheduledTaskParams, 'scheduledTime' | 'endDate'> & { scheduledTime?: string; endDate?: string }): { ok: true; warnings?: string[] } {
     return this.requireScheduler().updateTask(id, updates);
   }
 

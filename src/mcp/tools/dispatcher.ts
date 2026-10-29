@@ -2,6 +2,7 @@ import { basename } from 'node:path';
 import { logger } from '../../utils/logger.js';
 import type { HelmControlService } from '../helm-control-service.js';
 import type { AuthContext } from './types.js';
+import type { ScheduledTaskFrozenPolicy } from '../../types/scheduled-task.js';
 import { isFleetSessionId, parseFleetSessionId } from '../peer/fleet-session-id.js';
 import { deviceIdFromMobileSessionId, isMobileSessionId } from '../../mobile/mobile-identity.js';
 import { parsePlanTask } from '../../session/operator-tasks.js';
@@ -902,6 +903,7 @@ export async function callMcpTool(
           planIds,
           mode: args.mode as 'spawn' | 'direct' | undefined,
           targetSessionId,
+          onFrozen: args.onFrozen as ScheduledTaskFrozenPolicy | undefined,
         });
       }
       case 'scheduler_list':

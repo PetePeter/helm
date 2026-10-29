@@ -156,6 +156,8 @@ export const PRELOAD_API_DOMAINS = {
     'timeEstimates',
     'timeCsv',
     'timeActivity',
+    'timeKeys',
+    'timeRecordKeys',
   ],
   skills: [
     'skillList',

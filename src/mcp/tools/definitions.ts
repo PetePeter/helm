@@ -1520,7 +1520,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'scheduler_create',
     title: 'Create Scheduler Entry',
-    description: 'Create a scheduled task. Use mode "spawn" to launch a CLI session, or "direct" to send a prompt to an existing session. For a self-timer, pass targetSession:"caller"; Helm resolves the authenticated creating session and stores its ID durably. Use scheduleKind "once", "interval" (min 1 minute interval), or "cron" with a cronExpression. scheduledTime is an ISO 8601 date string.',
+    description: 'Create a scheduled task. Use mode "spawn" to launch a CLI session, or "direct" to send a prompt to an existing session. For a self-timer, pass targetSession:"caller"; Helm resolves the authenticated creating session and stores its ID durably. Use scheduleKind "once", "interval" (min 1 minute interval), or "cron" with a cronExpression. scheduledTime is an ISO 8601 date string. A failed run of a repeating task keeps its schedule. The result may carry warnings: act on them (e.g. write a handover note and session_quick_compact before a long idle).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1538,6 +1538,7 @@ export const MCP_TOOLS: McpTool[] = [
         mode: { type: 'string', enum: ['spawn', 'direct'], description: 'spawn new session or send to existing (default: spawn)' },
         targetSessionId: { type: 'string', description: 'Session ID for direct mode' },
         targetSession: { type: 'string', enum: ['caller'], description: 'For direct mode, target the authenticated session that creates this schedule.' },
+        onFrozen: { type: 'string', enum: ['skip', 'unfreeze', 'quickCompact'], description: 'Direct mode: what a run does when the target is frozen. skip (default) logs a skipped run and keeps the schedule; unfreeze thaws and delivers into the full uncached context; quickCompact thaws via Quick Compact with the prompt as its handover.' },
       },
       required: ['title', 'initialPrompt', 'dirPath', 'scheduledTime'],
       additionalProperties: false,
@@ -1569,7 +1570,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: 'scheduler_update',
     title: 'Update Scheduler Entry',
-    description: 'Update a pending scheduled task. Set scheduleKind to "none" to discard its cadence and leave it unscheduled. To schedule it again, provide a new future scheduledTime and the new cadence details.',
+    description: 'Update a pending scheduled task, or revive a failed one (a failed one-shot needs a future scheduledTime). The result may carry warnings, as for scheduler_create. Set scheduleKind to "none" to discard its cadence and leave it unscheduled. To schedule it again, provide a new future scheduledTime and the new cadence details.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1588,6 +1589,7 @@ export const MCP_TOOLS: McpTool[] = [
         mode: { type: 'string', enum: ['spawn', 'direct'] },
         targetSessionId: { type: 'string' },
         targetSession: { type: 'string', enum: ['caller'], description: 'Replace the direct target with the authenticated calling session.' },
+        onFrozen: { type: 'string', enum: ['skip', 'unfreeze', 'quickCompact'] },
       },
       required: ['id'],
       additionalProperties: false,

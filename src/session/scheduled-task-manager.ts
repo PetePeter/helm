@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 import { saveScheduledTasks, loadScheduledTasks } from './persistence.js';
-import type { ScheduledTask, ScheduledTaskMode, ScheduledTaskStatus, ScheduledTaskHistoryEntry, ScheduledTaskScheduleKind, CreateScheduledTaskParams, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
+import type { ScheduledTask, ScheduledTaskFrozenPolicy, ScheduledTaskMode, ScheduledTaskStatus, ScheduledTaskHistoryEntry, ScheduledTaskScheduleKind, CreateScheduledTaskParams, UpdateScheduledTaskParams } from '../types/scheduled-task.js';
 import type { ScheduledTaskHistoryManager } from './scheduled-task-history-manager.js';
 import type { SessionManager } from './manager.js';
 import type { PtyManager } from './pty-manager.js';
@@ -24,6 +24,13 @@ import { normalizeProjectPath } from './project-identity.js';
 import { deliverPromptSequenceToSession } from './sequence-delivery.js';
 
 const PENDING_STATUSES = new Set<ScheduledTaskStatus>(['pending', 'executing']);
+const FROZEN_POLICIES: readonly string[] = ['skip', 'unfreeze', 'quickCompact'] satisfies ScheduledTaskFrozenPolicy[];
+
+function assertFrozenPolicy(value: unknown): void {
+  if (value !== undefined && !FROZEN_POLICIES.includes(value as string)) {
+    throw new Error(`onFrozen must be one of ${FROZEN_POLICIES.join(', ')}`);
+  }
+}
 const MIN_INTERVAL_MS = 60_000;
 /**
  * Node stores a timer delay in a signed 32-bit int; anything larger silently
@@ -41,6 +48,14 @@ const DREAM_DEFAULT_MINUTE = 0;
  */
 export const DREAM_UNATTENDED_CUE = 'This is an unattended maintenance run and overrides any plan-first or confirm-first rule: do not present a plan, ask questions or wait for approval. Act and finish.';
 export const DREAM_MESS_CUE = 'When you are done, call mess_check to pick up anything other sessions left for this project.';
+
+export interface ScheduledTaskManagerOptions {
+  /**
+   * Helm's Quick Compact, carrying `prompt` as the handover the cleared
+   * session reads back. Lives in the MCP layer, hence injected.
+   */
+  quickCompact?: (sessionId: string, prompt: string) => Promise<void>;
+}
 
 export class ScheduledTaskManager extends EventEmitter {
   private tasks = new Map<string, ScheduledTask>();
@@ -61,6 +76,7 @@ export class ScheduledTaskManager extends EventEmitter {
     private configLoader: ConfigLoader,
     private historyManager?: ScheduledTaskHistoryManager,
     private readonly projectStore?: ProjectStore,
+    private readonly options: ScheduledTaskManagerOptions = {},
   ) {
     super();
     // A timer watching plans exists to follow them up; once every one is done
@@ -154,6 +170,7 @@ export class ScheduledTaskManager extends EventEmitter {
     if ((params.scheduleKind as string | undefined) === 'none') {
       throw new Error('New scheduled tasks require a schedule');
     }
+    assertFrozenPolicy(params.onFrozen);
     const now = Date.now();
     const cliType = this.resolveTaskCliType(params.mode, params.cliType, params.targetSessionId);
     const scheduleKind = params.scheduleKind ?? 'once';
@@ -177,6 +194,7 @@ export class ScheduledTaskManager extends EventEmitter {
       dirPath: normalizeProjectPath(params.dirPath),
       mode: params.mode,
       targetSessionId: params.targetSessionId,
+      ...(params.onFrozen !== undefined ? { onFrozen: params.onFrozen } : {}),
       status: 'pending',
       createdAt: now,
     };
@@ -309,7 +327,9 @@ export class ScheduledTaskManager extends EventEmitter {
   updateTask(id: string, updates: UpdateScheduledTaskParams): ScheduledTask | null {
     const task = this.tasks.get(id);
     const isDream = task?.systemKind === 'dream';
-    if (!task || (task.status !== 'pending' && !(isDream && task.status === 'failed'))) return null;
+    if (!task || (task.status !== 'pending' && task.status !== 'failed')) return null;
+    const reviving = task.status === 'failed';
+    assertFrozenPolicy(updates.onFrozen);
     if (isDream && updates.initialPrompt !== undefined) {
       throw new Error('System dream tasks use userPrompt; initialPrompt is Helm-owned');
     }
@@ -356,9 +376,16 @@ export class ScheduledTaskManager extends EventEmitter {
       ? requestedCliType
       : this.resolveTaskCliType(mode, requestedCliType, targetSessionId);
 
-    if (isDream && task.status === 'failed') {
+    // A one-shot whose time has passed would fire the instant it is revived.
+    const revivedRunAt = updates.scheduledTime ?? task.scheduledTime;
+    if (reviving && !isDream && nextScheduleKind === 'once' && revivedRunAt.getTime() <= Date.now()) {
+      throw new Error('Reviving a failed one-shot task requires a future scheduledTime');
+    }
+
+    if (reviving) {
       task.status = 'pending';
       delete task.completedAt;
+      delete task.error;
     }
     if (updates.title !== undefined) task.title = updates.title;
     if (Object.prototype.hasOwnProperty.call(updates, 'description')) task.description = updates.description;
@@ -374,6 +401,7 @@ export class ScheduledTaskManager extends EventEmitter {
     if (updates.dirPath !== undefined) task.dirPath = normalizeProjectPath(updates.dirPath);
     if (updates.mode !== undefined) task.mode = updates.mode;
     if (Object.prototype.hasOwnProperty.call(updates, 'targetSessionId')) task.targetSessionId = updates.targetSessionId;
+    if (updates.onFrozen !== undefined) task.onFrozen = updates.onFrozen;
     if (updates.enabled !== undefined) task.enabled = updates.enabled;
     if (Object.prototype.hasOwnProperty.call(updates, 'userPrompt')) task.userPrompt = updates.userPrompt;
     // Only a change to the schedule may move the next run. Recomputing on every
@@ -390,6 +418,10 @@ export class ScheduledTaskManager extends EventEmitter {
       delete task.nextRunAt;
     } else if (scheduleChanged || !task.nextRunAt) {
       task.nextRunAt = this.computeInitialNextRunAt(nextScheduleKind, task.scheduledTime, task.cronExpression, task.endDate);
+    } else if (reviving && nextScheduleKind === 'interval' && task.nextRunAt.getTime() <= Date.now()) {
+      // A revived interval resumes one interval from now, not in a burst.
+      task.nextRunAt = new Date(Date.now() + (task.intervalMs ?? MIN_INTERVAL_MS));
+      task.scheduledTime = task.nextRunAt;
     }
 
     this.saveTasks();
@@ -593,6 +625,17 @@ export class ScheduledTaskManager extends EventEmitter {
       if (!this.ptyManager.has(targetId)) {
         throw new Error(`Target session ${targetId} PTY is not running`);
       }
+      const frozenPolicy = session.frozen ? task.onFrozen ?? 'skip' : undefined;
+      if (frozenPolicy === 'skip') {
+        // The freeze is a cost guard the user set (or Helm set for them):
+        // a timer is no reason to break it, nor to stop the schedule.
+        this.recordHistory(task, 'skipped', `Session "${session.name}" is frozen`);
+        this.completeOrReschedule(task);
+        this.saveTasks();
+        this.emit('task:changed', task);
+        logger.info(`[ScheduledTaskManager] Direct task "${task.title}" skipped: session ${targetId} is frozen`);
+        return;
+      }
 
       task.status = 'executing';
       task.sessionId = targetId;
@@ -602,8 +645,12 @@ export class ScheduledTaskManager extends EventEmitter {
       this.startWorkingPlan(task, targetId);
 
       const prompt = this.buildTaskPrompt(task);
-      if (prompt.length > 0) {
-        await this.deliverScheduledPrompt(targetId, prompt);
+      if (frozenPolicy === 'quickCompact') {
+        if (!this.options.quickCompact) throw new Error('Quick Compact is not available');
+        await this.options.quickCompact(targetId, prompt);
+      } else {
+        if (frozenPolicy === 'unfreeze') this.sessionManager.setSessionFrozen(targetId, false);
+        if (prompt.length > 0) await this.deliverScheduledPrompt(targetId, prompt);
       }
 
       task.lastRunAt = Date.now();
@@ -615,10 +662,18 @@ export class ScheduledTaskManager extends EventEmitter {
 
     } catch (err) {
       logger.error(`[ScheduledTaskManager] Failed to execute direct task "${task.title}": ${err}`);
-      task.status = 'failed';
-      task.error = err instanceof Error ? err.message : String(err);
-      task.completedAt = Date.now();
-      this.recordHistory(task, 'failed', task.error);
+      const error = err instanceof Error ? err.message : String(err);
+      task.error = error;
+      this.recordHistory(task, 'failed', error);
+      if (task.systemKind !== 'dream' && (task.scheduleKind === 'interval' || task.scheduleKind === 'cron')) {
+        // One bad run must not end a repeating task: the next occurrence may
+        // well succeed. The error stays visible until then.
+        this.completeOrReschedule(task);
+        if (task.status === 'pending') task.error = error;
+      } else {
+        task.status = 'failed';
+        task.completedAt = Date.now();
+      }
       this.recoverDreamAfterFailure(task);
       this.saveTasks();
       this.emit('task:changed', task);

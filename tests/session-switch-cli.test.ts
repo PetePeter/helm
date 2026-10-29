@@ -66,6 +66,8 @@ function setup(patch: Partial<SessionInfo> = {}) {
     save: pad => { padFiles.set(pad.sessionId, pad); },
     remove: id => { padFiles.delete(id); },
     list: () => [...padFiles.keys()],
+    loadHistory: () => [],
+    saveHistory: () => {},
   });
   pads.set('old-sid', 'todo: lexer', 'user', 0);
   service.setSessionDraftCopier((from, to) => pads.copySession(from, to));

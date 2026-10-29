@@ -8,6 +8,14 @@ export type ScheduledTaskStatus = 'pending' | 'executing' | 'completed' | 'faile
 export type ScheduledTaskScheduleKind = 'once' | 'interval' | 'cron';
 export type ScheduledTaskScheduleSelection = ScheduledTaskScheduleKind | 'none';
 export type ScheduledTaskMode = 'spawn' | 'direct';
+/**
+ * What a direct task does when its target session is frozen. `skip` leaves the
+ * freeze alone (the run is logged and the schedule carries on); `unfreeze`
+ * thaws and delivers into the full, now-uncached context; `quickCompact`
+ * thaws via Quick Compact and carries the prompt as its handover, so the cold
+ * cache is paid on a stripped context instead.
+ */
+export type ScheduledTaskFrozenPolicy = 'skip' | 'unfreeze' | 'quickCompact';
 
 export interface ScheduledTask {
   id: string;
@@ -26,6 +34,8 @@ export interface ScheduledTask {
   dirPath: string;
   mode?: ScheduledTaskMode;
   targetSessionId?: string;
+  /** Direct mode only; undefined means `skip`. */
+  onFrozen?: ScheduledTaskFrozenPolicy;
   /** Helm-owned recurring task kind. System rows cannot be deleted. */
   systemKind?: 'dream';
   /** Whether the task may run. Undefined preserves legacy task behaviour. */
@@ -66,7 +76,7 @@ export interface ScheduledTaskHistoryEntry {
   endDate?: Date;
   planIds: string[];
   ranAt: number;
-  outcome: 'done' | 'failed' | 'cancelled';
+  outcome: 'done' | 'failed' | 'cancelled' | 'skipped';
   error?: string;
   sessionId?: string;
 }
@@ -86,6 +96,7 @@ export interface CreateScheduledTaskParams {
   dirPath: string;
   mode?: ScheduledTaskMode;
   targetSessionId?: string;
+  onFrozen?: ScheduledTaskFrozenPolicy;
 }
 
 export interface UpdateScheduledTaskParams {
@@ -103,6 +114,7 @@ export interface UpdateScheduledTaskParams {
   dirPath?: string;
   mode?: ScheduledTaskMode;
   targetSessionId?: string;
+  onFrozen?: ScheduledTaskFrozenPolicy;
   enabled?: boolean;
   userPrompt?: string;
 }

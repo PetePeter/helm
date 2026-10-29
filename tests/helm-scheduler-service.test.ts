@@ -23,6 +23,8 @@ function makeMockScheduler() {
         endDate: params.endDate,
         mode: params.mode,
         targetSessionId: params.targetSessionId,
+        onFrozen: params.onFrozen,
+        nextRunAt: params.scheduledTime,
         status: 'pending',
         createdAt: Date.now(),
       };
@@ -271,5 +273,58 @@ describe('HelmSchedulerService', () => {
     });
 
     expect(scheduler.createTask).toHaveBeenCalled();
+  });
+
+  describe('warnings for a direct task', () => {
+    const HOUR = 60 * 60_000;
+    const targetState = (contextLevel: 'ok' | 'warn' | 'hot' = 'ok') => () => ({ freezeAfterMs: HOUR, contextLevel });
+    const direct = (inMs: number, onFrozen?: 'skip' | 'unfreeze' | 'quickCompact') => ({
+      title: 'Watchdog', initialPrompt: 'poke', cliType: '', dirPath: '/tmp',
+      scheduledTime: new Date(Date.now() + inMs).toISOString(),
+      mode: 'direct' as const, targetSessionId: 'target', onFrozen,
+    });
+
+    it('tells the caller to hand over and quick compact when the next run lands past the freeze point', () => {
+      const service = new HelmSchedulerService(makeMockScheduler() as any, undefined, undefined, targetState());
+
+      const result = service.createTask(direct(2 * HOUR));
+
+      expect(result.warnings).toEqual([expect.stringMatching(/handover.*session_quick_compact/s)]);
+    });
+
+    it('warns that unfreezing an amber session re-reads it all at full price', () => {
+      const service = new HelmSchedulerService(makeMockScheduler() as any, undefined, undefined, targetState('warn'));
+
+      const result = service.createTask(direct(10 * 60_000, 'unfreeze'));
+
+      expect(result.warnings).toEqual([expect.stringMatching(/amber.*quickCompact/s)]);
+    });
+
+    it('stays quiet for a near run on a green session', () => {
+      const service = new HelmSchedulerService(makeMockScheduler() as any, undefined, undefined, targetState());
+
+      expect(service.createTask(direct(10 * 60_000, 'unfreeze'))).toEqual({ id: 'task-1' });
+    });
+
+    it('carries the same warnings on update', () => {
+      const scheduler = makeMockScheduler();
+      const service = new HelmSchedulerService(scheduler as any, undefined, undefined, targetState('hot'));
+      service.createTask(direct(10 * 60_000));
+
+      const result = service.updateTask('task-1', { onFrozen: 'unfreeze' });
+
+      expect(result.warnings).toEqual([expect.stringMatching(/red.*quickCompact/s)]);
+    });
+  });
+
+  it('says "not found" only for an id that does not exist', () => {
+    const scheduler = makeMockScheduler();
+    scheduler.updateTask.mockReturnValue(null as any);
+    const service = new HelmSchedulerService(scheduler as any);
+    service.createTask({ title: 'T', initialPrompt: 'p', cliType: 'c', dirPath: '/tmp', scheduledTime: new Date().toISOString() });
+    scheduler.getTask('task-1')!.status = 'completed';
+
+    expect(() => service.updateTask('task-1', { title: 'x' })).toThrow('Scheduled task task-1 cannot be updated (status completed)');
+    expect(() => service.updateTask('nope', { title: 'x' })).toThrow('Scheduled task not found: nope');
   });
 });

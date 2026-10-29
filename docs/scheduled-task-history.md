@@ -75,7 +75,7 @@ Defined in `src/types/scheduled-task.ts`:
 | `scheduleKind?`, `intervalMs?`, `cronExpression?`, `endDate?` | The schedule as configured at fire time |
 | `planIds` | Copied array (`[...task.planIds]`) — not shared with the live task |
 | `ranAt` | Epoch ms, the retention key |
-| `outcome` | `'done'` \| `'failed'` \| `'cancelled'` |
+| `outcome` | `'done'` \| `'failed'` \| `'cancelled'` \| `'skipped'` (target frozen, see [session-freeze.md](session-freeze.md)) |
 | `error?` | Present on `failed` |
 | `sessionId?` | The session the run produced, when there was one |
 

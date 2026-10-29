@@ -59,6 +59,8 @@ function outcomeBadge(outcome: ScheduledTaskHistoryEntry['outcome']): { label: s
     case 'done': return { label: 'Done', cssClass: 'sth-badge--done' };
     case 'failed': return { label: 'Failed', cssClass: 'sth-badge--failed' };
     case 'cancelled': return { label: 'Cancelled', cssClass: 'sth-badge--cancelled' };
+    // Neutral like a cancel: the run deliberately did nothing.
+    case 'skipped': return { label: 'Skipped', cssClass: 'sth-badge--cancelled' };
     default: return { label: outcome, cssClass: '' };
   }
 }
