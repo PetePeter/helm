@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   createDefaultLayout,
+  activeTabs,
+  applyActiveTabs,
   listPanes,
   listFocusablePanes,
   isDockCollapsed,
@@ -43,6 +45,7 @@ import {
   type DockSide,
   type DockSplitNode,
   type DockWorkspaceLayout,
+  type PaneId,
 } from '../renderer/dock-types';
 import { edgeDockLayout } from './helpers/dock-fixtures';
 
@@ -100,6 +103,37 @@ describe('default Classic layout', () => {
     expect(() => validateLayout(JSON.parse(JSON.stringify(layout)))).not.toThrow();
   });
 
+});
+
+describe('active tab snapshots', () => {
+  it('captures each group in tree order and applies a snapshot without mutating the input', () => {
+    const layout = createDefaultLayout();
+
+    expect(activeTabs(layout)).toEqual([PANE_SESSIONS, PANE_TERMINAL, PANE_DRAFT]);
+
+    const restored = applyActiveTabs(layout, [PANE_SCHEDULER, PANE_CHAT, PANE_TODOS]);
+
+    expect(activeTabs(restored)).toEqual([PANE_SCHEDULER, PANE_CHAT, PANE_TODOS]);
+    expect(activeTabs(layout)).toEqual([PANE_SESSIONS, PANE_TERMINAL, PANE_DRAFT]);
+  });
+
+  it('restores a pane after it moves groups and skips closed or unknown panes', () => {
+    const layout = createDefaultLayout();
+    const moved = movePane(layout, PANE_CHAT, { paneId: PANE_DRAFT, zone: 'center' });
+    const restored = applyActiveTabs(moved, [PANE_CHAT]);
+
+    expect(findPaneGroup(restored.root, PANE_CHAT)?.activeTab).toBe(PANE_CHAT);
+
+    const closed = closePane(restored, PANE_MESS);
+    expect(applyActiveTabs(closed, [PANE_MESS, 'unknown-pane' as PaneId])).toBe(closed);
+  });
+
+  it('returns the original layout when the snapshot changes no active tabs', () => {
+    const layout = createDefaultLayout();
+
+    expect(applyActiveTabs(layout, activeTabs(layout))).toBe(layout);
+    expect(applyActiveTabs(layout, ['unknown-pane' as PaneId])).toBe(layout);
+  });
 });
 
 // Dock behaviour on a layout with an autohide right edge dock, independent of the shipped default.

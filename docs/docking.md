@@ -242,6 +242,32 @@ so an older build can still load settings written by a newer renderer. The
 renderer validates on load and falls back to the Classic default if the value
 does not satisfy the schema.
 
+### Per-session active tabs
+
+The main workspace stores an envelope with the validated layout and a
+`sessionTabs` map (`session id → active pane ids`). The loader still accepts the
+older bare layout value. On a session change, the shell snapshots every group's
+active pane for the previous session, then applies the next session's snapshot
+where those panes currently live. Missing or closed panes are skipped; a
+session without a snapshot leaves the layout as it is. The snapshot update and
+layout change share one persistence write. After loading app data, the active
+session's snapshot is restored so tab selection survives restart.
+
+Snapshots are pruned only for session ids present in the previous observed list
+and absent from the new list. This diff-based cleanup leaves saved snapshots
+alone while the session list is initially empty or still loading.
+
+```mermaid
+sequenceDiagram
+    participant Shell as MainWindowApp
+    participant Dock as useDockWorkspace
+    participant Store as dock-persistence
+    Shell->>Dock: switchSessionTabs(previous, next)
+    Dock->>Dock: remember activeTabs(layout) for previous
+    Dock->>Dock: apply next snapshot when present
+    Dock->>Store: save layout and sessionTabs once when changed
+```
+
 A namespaced pane id whose descriptor has not registered yet keeps its saved
 tree slot. The component mounts when the descriptor registers; after the peer
 registry has finished loading, ids that have no owner are pruned. This lets

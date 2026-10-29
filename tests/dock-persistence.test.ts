@@ -7,10 +7,11 @@ import {
   migrateLegacyDockPreferences,
   readLegacyDockPreferences,
   serializeDockLayout,
+  serializeDockWorkspace,
 } from '../renderer/dock-persistence';
 import { createDefaultLayout, listPanes } from '../renderer/dock-layout';
 import { edgeDockLayout } from './helpers/dock-fixtures';
-import { PANE_ARTIFACTS, PANE_MESS } from '../renderer/dock-types';
+import { PANE_ARTIFACTS, PANE_CHAT, PANE_MESS } from '../renderer/dock-types';
 
 function storage(values: Record<string, string>) {
   return {
@@ -49,6 +50,35 @@ describe('dock persistence', () => {
     expect(result.source).toBe('persisted');
     expect(result.layout).toEqual(saved);
     expect(result.layout).not.toBe(saved);
+  });
+
+  it('loads valid session tab snapshots and drops malformed entries from the envelope', () => {
+    const layout = createDefaultLayout();
+    const result = loadDockLayout({
+      layout,
+      sessionTabs: {
+        sessionA: [PANE_CHAT, PANE_ARTIFACTS],
+        '': [PANE_CHAT],
+        notAnArray: PANE_CHAT,
+        mixedTypes: [PANE_CHAT, 5],
+        duplicates: [PANE_CHAT, PANE_CHAT],
+      },
+    });
+
+    expect(result.source).toBe('persisted');
+    expect(result.layout).toEqual(layout);
+    expect(result.sessionTabs).toEqual({ sessionA: [PANE_CHAT, PANE_ARTIFACTS] });
+  });
+
+  it('serializes the validated layout together with a detached session map', () => {
+    const layout = createDefaultLayout();
+    const sessionTabs = { sessionA: [PANE_CHAT] };
+    const payload = serializeDockWorkspace(layout, sessionTabs);
+
+    expect(payload).toEqual({ layout, sessionTabs });
+    expect(payload.layout).not.toBe(layout);
+    expect(payload.sessionTabs).not.toBe(sessionTabs);
+    expect(payload.sessionTabs.sessionA).not.toBe(sessionTabs.sessionA);
   });
 
   it('keeps a saved layout from before a pane existed, offering the new pane as closed', () => {

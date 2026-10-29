@@ -42,9 +42,40 @@ export type DockLoadSource = 'default' | 'migrated' | 'persisted' | 'fallback';
 
 export interface DockLoadResult {
   layout: DockWorkspaceLayout;
+  sessionTabs: Record<string, PaneId[]>;
   source: DockLoadSource;
   /** True when old localStorage values were incorporated into the layout. */
   migrated: boolean;
+}
+
+export interface PersistedDockWorkspace {
+  layout: DockWorkspaceLayout;
+  sessionTabs: Record<string, PaneId[]>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Keep well-shaped per-session snapshots; one malformed entry cannot poison the workspace. */
+function validateSessionTabs(value: unknown): Record<string, PaneId[]> {
+  if (!isRecord(value)) return {};
+  const valid: Array<[string, PaneId[]]> = [];
+  for (const [sessionId, paneIds] of Object.entries(value)) {
+    if (!sessionId.trim() || !Array.isArray(paneIds)) continue;
+    if (paneIds.some(id => typeof id !== 'string' || id.trim().length === 0)) continue;
+    if (new Set(paneIds).size !== paneIds.length) continue;
+    valid.push([sessionId, [...paneIds as PaneId[]]]);
+  }
+  return Object.fromEntries(valid);
+}
+
+function persistedWorkspaceParts(raw: unknown): { layout: unknown; sessionTabs: unknown } {
+  if (isRecord(raw) && Object.prototype.hasOwnProperty.call(raw, 'layout')
+    && !Object.prototype.hasOwnProperty.call(raw, 'root')) {
+    return { layout: raw.layout, sessionTabs: raw.sessionTabs };
+  }
+  return { layout: raw, sessionTabs: {} };
 }
 
 function isFinitePositive(value: number): boolean {
@@ -201,10 +232,16 @@ export function loadDockLayout(
 ): DockLoadResult {
   const profile = options.profile ?? 'main';
   if (raw !== undefined && raw !== null) {
+    const workspace = persistedWorkspaceParts(raw);
     try {
-      return { layout: validateLayout(adoptNewPanes(raw, profile), profile), source: 'persisted', migrated: false };
+      return {
+        layout: validateLayout(adoptNewPanes(workspace.layout, profile), profile),
+        sessionTabs: validateSessionTabs(workspace.sessionTabs),
+        source: 'persisted',
+        migrated: false,
+      };
     } catch {
-      return { layout: createDefaultLayout(profile), source: 'fallback', migrated: false };
+      return { layout: createDefaultLayout(profile), sessionTabs: {}, source: 'fallback', migrated: false };
     }
   }
 
@@ -214,11 +251,12 @@ export function loadDockLayout(
   if (hasLegacyPreferences(legacy)) {
     return {
       layout: migrateLegacyDockPreferences(createDefaultLayout(), legacy, options.viewportWidth),
+      sessionTabs: {},
       source: 'migrated',
       migrated: true,
     };
   }
-  return { layout: createDefaultLayout(profile), source: 'default', migrated: false };
+  return { layout: createDefaultLayout(profile), sessionTabs: {}, source: 'default', migrated: false };
 }
 
 /** Return a detached, schema-checked copy ready to cross the IPC boundary. */
@@ -227,4 +265,16 @@ export function serializeDockLayout(
   profile: DockProfileId = 'main',
 ): DockWorkspaceLayout {
   return validateLayout(layout, profile);
+}
+
+/** Return the complete workspace document as a detached, schema-checked copy. */
+export function serializeDockWorkspace(
+  layout: DockWorkspaceLayout,
+  sessionTabs: unknown,
+  profile: DockProfileId = 'main',
+): PersistedDockWorkspace {
+  return {
+    layout: serializeDockLayout(layout, profile),
+    sessionTabs: validateSessionTabs(sessionTabs),
+  };
 }

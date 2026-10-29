@@ -541,6 +541,7 @@ const contextMenuIsSnappedOut = computed(() =>
 );
 
 watch(() => state.activeSessionId, (next, prev) => {
+  if (prev !== next) dockWorkspace.switchSessionTabs(prev ?? null, next ?? null);
   if (!next) return;
   // Focusing a session clears any flash-attention pulse on it.
   flashAttention.clear(next);
@@ -548,6 +549,11 @@ watch(() => state.activeSessionId, (next, prev) => {
     state.lastSelectedSessionId = prev;
   }
   state.recentSessionId = next;
+});
+
+// Only prune IDs seen before and now absent; the initial list can be empty or partial.
+watch(() => state.sessions.map(session => session.id), (next, previous) => {
+  dockWorkspace.pruneSessionTabs(previous, next);
 });
 
 const { handleButton, handleRelease, handleModalKeyboardBridge } = useInputRouter({
@@ -893,6 +899,7 @@ let stopNewItemPulses: (() => void) | null = null;
 onMounted(async () => {
   stopNewItemPulses = startNewItemPulses();
   const dockLoad = await dockWorkspace.loadPersisted();
+  dockWorkspace.switchSessionTabs(null, state.activeSessionId ?? null);
   if (dockLoad.source === 'persisted') syncViewFromDockLayout();
   else fallbackToOpenView();
 

@@ -10,6 +10,8 @@
 import { computed, readonly, ref, type ComputedRef, type Ref } from 'vue';
 import {
   closePane,
+  activeTabs,
+  applyActiveTabs,
   canReorderTab,
   createDefaultLayout,
   ensurePane as ensurePaneInLayout,
@@ -31,9 +33,10 @@ import {
 import {
   loadDockLayout,
   readLegacyDockPreferences,
-  serializeDockLayout,
+  serializeDockWorkspace,
   type DockLoadResult,
   type DockStorage,
+  type PersistedDockWorkspace,
 } from '../dock-persistence';
 import {
   dockPaneRegistry,
@@ -77,6 +80,10 @@ export interface DockWorkspace {
   dockToEdge: (paneId: PaneId, side: DockSide) => void;
   reorder: (paneId: PaneId, index: number) => void;
   activate: (paneId: PaneId) => void;
+  /** Save the previous session's selected tabs, then apply the next snapshot if present. */
+  switchSessionTabs: (previousSessionId: string | null, nextSessionId: string | null) => void;
+  /** Remove snapshots only for IDs observed before and now absent from the session list. */
+  pruneSessionTabs: (previousSessionIds: readonly string[], currentSessionIds: readonly string[]) => void;
   setMode: (paneId: PaneId, mode: DockMode) => void;
   close: (paneId: PaneId) => void;
   ensurePane: (paneId: PaneId) => void;
@@ -95,7 +102,7 @@ export interface DockWorkspace {
 
 export interface DockWorkspacePersistence {
   load: () => Promise<unknown> | unknown;
-  save: (layout: DockWorkspaceLayout) => Promise<unknown> | unknown;
+  save: (workspace: PersistedDockWorkspace) => Promise<unknown> | unknown;
   /** Optional injected storage makes migration deterministic in tests. */
   legacyStorage?: DockStorage;
   /** Optional viewport width used to convert legacy pixel widths to ratios. */
@@ -111,6 +118,7 @@ export interface DockWorkspaceOptions {
 export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWorkspaceOptions = {}): DockWorkspace {
   const profile = options.profile ?? 'main';
   const layoutState = ref<DockWorkspaceLayout>(createDefaultLayout(profile));
+  const sessionTabsState = ref<Record<string, PaneId[]>>({});
   if (initial) {
     try {
       layoutState.value = validateLayout(initial, profile);
@@ -123,6 +131,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
   const focusedPaneId = ref<PaneId | null>(PANE_TERMINAL);
   const focusRequestId = ref(0);
   const focusedItemIds = ref<Partial<Record<PaneId, string>>>({});
+  let persistedLoaded = false;
   // Reveal is session state, not layout: an opened autohide dock re-collapses on
   // the next launch, so it is deliberately outside the persisted tree.
   const revealedPanes = ref<PaneId[]>([]);
@@ -150,7 +159,7 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
   function persist(next: DockWorkspaceLayout): void {
     const save = options.persistence?.save;
     if (!save) return;
-    const detached = serializeDockLayout(next, profile);
+    const detached = serializeDockWorkspace(next, sessionTabsState.value, profile);
     persistQueue = persistQueue
       .catch(() => undefined)
       .then(() => save(detached))
@@ -167,6 +176,51 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
       focusedPaneId.value = focusable[0] ?? null;
     }
     if (shouldPersist) persist(next);
+  }
+
+  function switchSessionTabs(previousSessionId: string | null, nextSessionId: string | null): void {
+    if (!persistedLoaded) return;
+    if (previousSessionId === nextSessionId) return;
+
+    const currentLayout = layoutState.value;
+    let sessionTabs = sessionTabsState.value;
+    let snapshotsChanged = false;
+    if (previousSessionId) {
+      const previousSnapshot = activeTabs(currentLayout);
+      const existing = sessionTabs[previousSessionId];
+      if (!existing || existing.length !== previousSnapshot.length
+        || existing.some((paneId, index) => paneId !== previousSnapshot[index])) {
+        sessionTabs = { ...sessionTabs, [previousSessionId]: previousSnapshot };
+        snapshotsChanged = true;
+      }
+    }
+
+    const nextSnapshot = nextSessionId ? sessionTabs[nextSessionId] : undefined;
+    const nextLayout = nextSnapshot ? applyActiveTabs(currentLayout, nextSnapshot) : currentLayout;
+    if (!snapshotsChanged && nextLayout === currentLayout) return;
+
+    sessionTabsState.value = sessionTabs;
+    if (nextLayout !== currentLayout) apply(nextLayout, false);
+    persist(nextLayout);
+  }
+
+  function pruneSessionTabs(previousSessionIds: readonly string[], currentSessionIds: readonly string[]): void {
+    if (!persistedLoaded) return;
+    const current = new Set(currentSessionIds);
+    const removed = new Set(previousSessionIds.filter(id => !current.has(id)));
+    if (!removed.size) return;
+
+    const sessionTabs = { ...sessionTabsState.value };
+    let changed = false;
+    for (const sessionId of removed) {
+      if (!Object.prototype.hasOwnProperty.call(sessionTabs, sessionId)) continue;
+      delete sessionTabs[sessionId];
+      changed = true;
+    }
+    if (!changed) return;
+
+    sessionTabsState.value = sessionTabs;
+    persist(layoutState.value);
   }
 
   function reveal(paneId: PaneId): void {
@@ -230,7 +284,9 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
       viewportWidth: persistence?.viewportWidth?.(),
       profile,
     });
+    sessionTabsState.value = result.sessionTabs;
     apply(result.layout, false);
+    persistedLoaded = true;
     if (result.source !== 'persisted') persist(result.layout);
     return result;
   }
@@ -258,6 +314,8 @@ export function useDockWorkspace(initial?: DockWorkspaceLayout, options: DockWor
       }
     },
     activate: (paneId) => apply(setActiveTab(layoutState.value, paneId)),
+    switchSessionTabs,
+    pruneSessionTabs,
     setMode: (paneId, mode) => apply(setDockMode(layoutState.value, paneId, mode)),
     close: (paneId) => apply(closePane(layoutState.value, paneId)),
     ensurePane: (paneId) => {

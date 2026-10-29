@@ -163,6 +163,22 @@ export function listPanes(node: DockNode | null): PaneId[] {
   return node.children.flatMap(listPanes);
 }
 
+/** Active pane ids in deterministic left-to-right, top-to-bottom group order. */
+export function activeTabs(layout: DockWorkspaceLayout): PaneId[] {
+  const active: PaneId[] = [];
+  const visit = (node: DockNode): void => {
+    if (node.type === 'group') {
+      active.push(node.activeTab);
+    } else if (node.type === 'dock') {
+      visit(node.child);
+    } else if (node.type === 'split') {
+      node.children.forEach(visit);
+    }
+  };
+  visit(layout.root);
+  return active;
+}
+
 /**
  * Whether an edge dock currently occupies no space and renders only its rail.
  *
@@ -478,6 +494,16 @@ export function setActiveTab(layout: DockWorkspaceLayout, paneId: PaneId): DockW
   const root = mapNode(layout.root, node =>
     node.type === 'group' && node.tabs.includes(paneId) ? { ...node, activeTab: paneId } : node);
   return withRoot(layout, root, layout.closed);
+}
+
+/** Activate saved pane ids wherever they currently live, ignoring absent panes. */
+export function applyActiveTabs(layout: DockWorkspaceLayout, paneIds: readonly PaneId[]): DockWorkspaceLayout {
+  let next = layout;
+  for (const paneId of paneIds) {
+    const group = findPaneGroup(next.root, paneId);
+    if (group && group.activeTab !== paneId) next = setActiveTab(next, paneId);
+  }
+  return next;
 }
 
 /** Set pinned/autohide/hidden on the dock node containing a pane. */
