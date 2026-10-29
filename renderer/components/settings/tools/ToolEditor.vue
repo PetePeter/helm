@@ -474,7 +474,6 @@ watch(() => props.toolKey, (key, previousKey) => {
     if (generation !== formSwitchGeneration) return;
     formKey = key;
     initForm();
-    section.value = 'general';
     savedSignature = editSignature.value;
   };
   if (previousKey === undefined) { resetForm(); return; }

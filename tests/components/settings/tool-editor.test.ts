@@ -220,6 +220,38 @@ describe('ToolEditor', () => {
     expect(w.find('.pill-tabs__tab--active').text()).toBe('General');
   });
 
+  it('keeps a shared section selected when switching tools', async () => {
+    const w = factory();
+    await w.findAll('.pill-tabs__tab').find((p) => p.text() === 'Behaviour')!.trigger('click');
+
+    await w.setProps({
+      toolKey: 'tool-2',
+      initialData: {
+        ...DEFAULT_DATA,
+        api: { baseUrl: 'http://127.0.0.1:8080/v1', model: 'model', allowedTools: [] },
+      },
+    });
+    await settle();
+
+    expect(w.find('.pill-tabs__tab--active').text()).toBe('Behaviour');
+  });
+
+  it('falls back to General when the switched tool lacks the selected section', async () => {
+    const w = factory();
+    await w.findAll('.pill-tabs__tab').find((p) => p.text() === 'Launch')!.trigger('click');
+
+    await w.setProps({
+      toolKey: 'tool-2',
+      initialData: {
+        ...DEFAULT_DATA,
+        api: { baseUrl: 'http://127.0.0.1:8080/v1', model: 'model', allowedTools: [] },
+      },
+    });
+    await settle();
+
+    expect(w.find('.pill-tabs__tab--active').text()).toBe('General');
+  });
+
   it('a new ComfyUI type defaults to no prompt cache; a CLI type does not inherit that', async () => {
     const w = factory();
     const kind = w.find('#te-kind');
