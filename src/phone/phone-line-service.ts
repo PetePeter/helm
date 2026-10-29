@@ -160,6 +160,14 @@ export class PhoneLineService extends EventEmitter implements ChatBridge {
 
   // ---- internals -------------------------------------------------------------
 
+  /** The model of an API tool picked in Settings > Phone line; null when unset or deleted. */
+  private apiModel(id: string, what: string): ChatClient | null {
+    if (!id) return null;
+    const model = this.deps.apiModel?.(id) ?? null;
+    if (!model) this.deps.log(`${what} model ${id} is not an API tool any more`);
+    return model;
+  }
+
   private requireBridge(): PhoneBridge {
     if (!this.bridge?.isAvailable()) throw new Error('The phone line is not connected (Settings > Phone line).');
     return this.bridge;
@@ -181,13 +189,8 @@ export class PhoneLineService extends EventEmitter implements ChatBridge {
       defaultTranscriptDir: this.deps.defaultTranscriptDir,
       log: this.deps.log,
       smsMemory: this.smsMemory,
-      callAgentModel: () => {
-        const id = this.deps.getConfig().callAgentModel;
-        if (!id) return null;
-        const model = this.deps.apiModel?.(id) ?? null;
-        if (!model) this.deps.log(`call agent model ${id} is not an API tool any more`);
-        return model;
-      },
+      callAgentModel: () => this.apiModel(this.deps.getConfig().callAgentModel, 'call agent'),
+      callReplyModel: () => this.apiModel(this.deps.getConfig().callReplyModel, 'call reply'),
     });
     client.on('dead', () => { void this.proc.restart('PhAP heartbeat lost'); });
     bridge.on('status', (s: PhoneBridgeStatus) => {

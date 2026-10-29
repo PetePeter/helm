@@ -6,6 +6,7 @@ import { PhapClient } from '../src/phone/phap-client.js';
 import { PhoneBridge, speakable, transcriptName } from '../src/phone/phone-bridge.js';
 import { resolvePhoneLineConfig, type PhoneLineConfig } from '../src/phone/phone-config.js';
 import { FakePhapServer } from './helpers/fake-phap-server.js';
+import type { ChatClient, CompletionResult } from '../src/session/api/api-agent-loop.js';
 
 const OWNER = '+61491570156';
 const PARTNER = '+61491570187';
@@ -35,7 +36,7 @@ const until = async (pred: () => boolean, ms = 3000) => {
 const cleanup: Array<() => Promise<void> | void> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });
 
-async function setup(opts: { cfg?: PhoneLineConfig; operator?: string | null } = {}) {
+async function setup(opts: { cfg?: PhoneLineConfig; operator?: string | null; deliverGate?: Promise<void>; replyModel?: ChatClient } = {}) {
   const server = new FakePhapServer();
   await server.listen();
   const client = new PhapClient({ uri: server.uri, token: 'tok', clientVersion: 't', heartbeatS: 1, baseDelayMs: 10 });
@@ -47,9 +48,10 @@ async function setup(opts: { cfg?: PhoneLineConfig; operator?: string | null } =
     getConfig: () => cfg,
     getOperatorId: () => (opts.operator === undefined ? 'op' : opts.operator),
     sessionName: (id) => ({ op: 'Operator', worker: 'Worker' } as Record<string, string>)[id],
-    deliver: async (sessionId, text) => { delivered.push({ sessionId, text }); },
+    deliver: async (sessionId, text) => { delivered.push({ sessionId, text }); await opts.deliverGate; },
     defaultTranscriptDir: dir,
     smsPollMs: 0,
+    callReplyModel: () => opts.replyModel ?? null,
   });
   bridge.start();
   client.start();
@@ -71,6 +73,36 @@ async function inboundCall(server: FakePhapServer, number: string, callId = 'c1'
   await server.waitFor('call.answer');
   server.emit('call.state', { callId, state: 'active' });
 }
+
+/** A reply model that says `line` once `gate` opens. */
+function holdModel(line: string, gate: Promise<void> = Promise.resolve()): ChatClient {
+  return { complete: async (): Promise<CompletionResult> => { await gate; return { message: { content: line } }; } };
+}
+
+describe('PhoneBridge — call reply model', () => {
+  it('speaks a quick holding line while the operator works on the real reply', async () => {
+    const { server, delivered } = await setup({ replyModel: holdModel('One sec, checking.') });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.utterance', { callId: 'c1', text: 'build status?', startMs: 0, endMs: 1 });
+    expect(await server.waitFor('call.say', 2)).toEqual({ callId: 'c1', text: 'One sec, checking.' });
+    await until(() => delivered.length === 2);
+  });
+
+  it('stays quiet when the operator answered first', async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((r) => { open = r; });
+    const { server, bridge, delivered } = await setup({ replyModel: holdModel('One sec.', gate) });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.utterance', { callId: 'c1', text: 'build status?', startMs: 0, endMs: 1 });
+    await until(() => delivered.length === 2);
+    await bridge.sendToSession({ sessionId: 'op', text: 'All green.' });
+    open();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(server.requests.filter((r) => r.method === 'call.say').map((r) => r.params.text)).not.toContain('One sec.');
+  });
+});
 
 describe('PhoneBridge — inbound calls', () => {
   it('answers the owner, greets, briefs the operator, quotes speech and speaks chat_send', async () => {
@@ -94,6 +126,31 @@ describe('PhoneBridge — inbound calls', () => {
     await expect(bridge.sendToSession({ sessionId: 'op', text: '**All** green.' })).resolves.toEqual({ sent: true });
     expect(await server.waitFor('call.say', 2)).toEqual({ callId: 'c1', text: 'All green.' });
     await expect(bridge.sendToSession({ sessionId: 'worker', text: 'hi' })).resolves.toMatchObject({ sent: false });
+  });
+
+  it('greets the caller before the operator briefing lands', async () => {
+    // Regression: a slow operator paste delayed the greeting ~7s, until after the caller spoke.
+    const { server, delivered } = await setup({ deliverGate: new Promise(() => undefined) });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    expect(await server.waitFor('call.say')).toMatchObject({ callId: 'c1' });
+  });
+
+  it('writes the transcript from what Helm heard when telefony has already dropped the call', async () => {
+    // Regression: transcript.get after ended answered no_such_call and no file was written.
+    const { server, bridge, delivered, dir } = await setup();
+    server.handlers.set('transcript.get', () => { throw Object.assign(new Error('no_such_call'), { code: -32004 }); });
+    await inboundCall(server, OWNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.utterance', { callId: 'c1', text: 'build status?', startMs: 0, endMs: 1 });
+    await until(() => delivered.length === 2);
+    await bridge.sendToSession({ sessionId: 'op', text: 'All green.' });
+    server.emit('call.state', { callId: 'c1', state: 'ended', reason: 'remote' });
+    await until(() => existsSync(dir) && readdirSync(dir, { recursive: true }).some((f) => String(f).endsWith('.md')));
+    const file = readdirSync(dir, { recursive: true }).map(String).find((f) => f.endsWith('.md'))!;
+    const md = readFileSync(path.join(dir, file), 'utf8');
+    expect(md).toContain('**Me:** build status?');
+    expect(md).toContain('**Helm:** All green.');
   });
 
   it('writes a labelled transcript when the call ends, with no digits', async () => {

@@ -324,6 +324,14 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       </select>
     </label>
     <label class="phone-setting">
+      <span>Call reply model (a fast API tool; says "one sec" while the operator thinks)</span>
+      <select class="btn btn--secondary btn--sm focusable" :value="cfg.callReplyModel" @change="cfg.callReplyModel = str($event); save()">
+        <option value="">off</option>
+        <option v-if="cfg.callReplyModel && !apiModels.some((m) => m.id === cfg.callReplyModel)" :value="cfg.callReplyModel" disabled>Deleted API tool</option>
+        <option v-for="m in apiModels" :key="m.id" :value="m.id" :disabled="!m.available">{{ m.name }}</option>
+      </select>
+    </label>
+    <label class="phone-setting">
       <span>Speech to text (faster-whisper)</span>
       <select class="btn btn--secondary btn--sm focusable" :value="cfg.voice.sttModel" @change="cfg.voice.sttModel = str($event); save()">
         <option value="">off (models download ~500 MB on first use)</option>

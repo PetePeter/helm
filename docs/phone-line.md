@@ -174,9 +174,16 @@ sequenceDiagram
 - **Failure.** If the model errors, the agent says goodbye, hangs up and reports the error.
 - Model requests queue on the API tool's slots, like its sessions.
 
+## Answering fast
+
+A CLI operator needs seconds to paste a briefing and write a reply, and the caller hears silence the whole time. Two things cover it:
+
+- **Greet first.** The greeting is spoken the moment the call is answered, before the operator gets the briefing.
+- **Call reply model** (Settings → Phone line, an API tool, off by default). On each caller utterance, the fast model says one short holding line ("Sure, one sec"). It never answers the question, and it stays quiet if the operator has already spoken since the caller did.
+
 ## Transcripts
 
-When a call ends, Helm asks telefony for `transcript.get`. It writes Markdown and/or JSON to the configured folder, or `<config>/phone-transcripts` if none is set. File names use `{yyyy} {mm} {dd} {HHmm} {label} {direction}`, and the path is confined to that folder. Files carry a `helm-phone-transcript` marker.
+When a call ends, Helm asks telefony for `transcript.get`. If telefony has already forgotten the call (`no_such_call`), Helm writes the transcript from its own record of every line spoken and heard. It writes Markdown and/or JSON to the configured folder, or `<config>/phone-transcripts` if none is set. File names use `{yyyy} {mm} {dd} {HHmm} {label} {direction}`, and the path is confined to that folder. Files carry a `helm-phone-transcript` marker.
 
 The daily retention sweep deletes only marked files, so pointing the folder at a notes vault is safe. Audio is not recorded.
 

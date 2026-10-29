@@ -77,6 +77,8 @@ export interface PhoneLineConfig {
   fallback: { ring: boolean; notify: boolean };
   /** The API tool (CLI type id) whose model runs call agents; empty = no call agents. */
   callAgentModel: string;
+  /** The API tool whose fast model says a holding line while the operator thinks; empty = off. */
+  callReplyModel: string;
 }
 
 /** telefony-app's GitHub repo: the installer's source, and the manual-download link in Settings. */
@@ -114,6 +116,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
   conference: { maxParticipants: 3, announce: true },
   fallback: { ring: true, notify: false },
   callAgentModel: '',
+  callReplyModel: '',
 };
 
 /** Deep-merge a partial (e.g. parsed YAML) over the defaults; unknown keys are dropped. */
