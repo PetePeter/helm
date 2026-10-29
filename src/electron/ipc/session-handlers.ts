@@ -186,6 +186,16 @@ export function setupSessionHandlers(
     }
   });
 
+  ipcMain.handle('session:setHidden', (_event, id: string, hidden: boolean) => {
+    try {
+      const session = sessionManager.setSessionHidden(id, hidden);
+      return { success: true, hidden: Boolean(session.hidden) };
+    } catch (error) {
+      logger.error(`[Session] Set hidden failed: ${error}`);
+      return { success: false, error: String(error) };
+    }
+  });
+
   /**
    * The user's side of the mission TL;DR. Same SessionManager validator as the
    * MCP session_mission_set path; an over-limit text returns an error and the

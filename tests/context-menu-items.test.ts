@@ -10,7 +10,7 @@ const base: ContextMenuContext = {
   hasSelection: false,
   isSnappedOut: false,
   currentGroupName: null,
-  session: { locked: false, frozen: false, keepWarm: false },
+  session: { locked: false, frozen: false, keepWarm: false, hidden: false },
 };
 
 const groups = (overrides: Partial<ContextMenuContext>) =>
@@ -20,12 +20,31 @@ const findItem = (items: ReturnType<typeof buildContextMenuGroups>, id: string) 
   items.flatMap(group => group.items).find(item => item.id === id)!;
 
 describe('buildContextMenuGroups', () => {
-  it('shares every non-cursor group between the kebab and terminal menus', () => {
+  it('shares common non-cursor groups while keeping Hide in the row menu', () => {
     const session = groups({ mode: 'session' });
     const terminal = groups({ mode: 'terminal' });
 
-    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
+    expect(findItem(session, 'toggle-hidden').label).toContain('Hide');
+    expect(terminal.flatMap(group => group.items).some(item => item.id === 'toggle-hidden')).toBe(false);
+    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(
+      session.map(group => ({
+        ...group,
+        items: group.items.filter(item => item.id !== 'toggle-hidden'),
+      })).filter(group => group.items.length > 0),
+    );
     expect(findItem(session, 'new-session').enabled).toBe(true);
+  });
+
+  it('labels the row action Show when the session is hidden', () => {
+    const hidden = groups({ mode: 'session', session: { ...base.session, hidden: true } });
+
+    expect(findItem(hidden, 'toggle-hidden').label).toContain('Show');
+  });
+
+  it('omits Hide and Show for a remote attached session row', () => {
+    const remote = groups({ mode: 'session', session: { ...base.session, remote: true } });
+
+    expect(remote.flatMap(group => group.items).some(item => item.id === 'toggle-hidden')).toBe(false);
   });
 
   it('adds cursor actions only to the terminal menu and gates selection actions', () => {
@@ -46,7 +65,12 @@ describe('buildContextMenuGroups', () => {
     const chat = groups({ mode: 'chat', hasSelection: true });
     const textGroup = chat.find(group => group.title === 'Text');
 
-    expect(chat.filter(group => group.title !== 'Text')).toEqual(groups({ mode: 'session' }));
+    expect(chat.filter(group => group.title !== 'Text')).toEqual(
+      groups({ mode: 'session' }).map(group => ({
+        ...group,
+        items: group.items.filter(item => item.id !== 'toggle-hidden'),
+      })).filter(group => group.items.length > 0),
+    );
     expect(textGroup?.items.map(item => item.id)).toEqual(['copy', 'paste']);
     expect(textGroup?.items.find(item => item.id === 'copy')?.enabled).toBe(true);
     expect(textGroup?.items.find(item => item.id === 'paste')?.enabled).toBe(true);
@@ -61,7 +85,12 @@ describe('buildContextMenuGroups', () => {
     const session = groups({ mode: 'session', session: frozen, currentGroupName: 'Work' });
     const terminal = groups({ mode: 'terminal', session: frozen, currentGroupName: 'Work', hasSelection: true });
 
-    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(session);
+    expect(terminal.filter(group => group.title !== 'Cursor')).toEqual(
+      session.map(group => ({
+        ...group,
+        items: group.items.filter(item => item.id !== 'toggle-hidden'),
+      })).filter(group => group.items.length > 0),
+    );
     expect(findItem(session, 'toggle-freeze').label).toMatch(/unfreeze/i);
     for (const id of ['rename-session', 'toggle-lock', 'toggle-keep-warm', 'move-to-group', 'remove-from-group']) {
       expect(findItem(session, id).enabled).toBe(true);

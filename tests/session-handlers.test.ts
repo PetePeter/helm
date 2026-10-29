@@ -55,6 +55,12 @@ function createMockSessionManager(sessions: Record<string, any> = {}): SessionMa
     renameSession: vi.fn(),
     hasSession: vi.fn((id: string) => id in sessions),
     updateSession: vi.fn(),
+    setSessionHidden: vi.fn((id: string, hidden: boolean) => {
+      const session = sessions[id];
+      if (!session) throw new Error(`Session with id "${id}" does not exist`);
+      session.hidden = hidden;
+      return session;
+    }),
   } as unknown as SessionManager;
 }
 
@@ -137,6 +143,17 @@ describe('session IPC handlers', () => {
 
     expect(ptyManager.kill).toHaveBeenCalledWith('sess-1');
     expect(result).toEqual({ success: true });
+  });
+
+  it('sets hidden state through session:setHidden', async () => {
+    const session = { id: 'sess-1', name: 'Test', cliType: 'claude-code', processId: 9999 };
+    setup({ 'sess-1': session });
+
+    const handler = electronMockState.handlers.get('session:setHidden')!;
+    const result = await handler({}, 'sess-1', true);
+
+    expect(sessionManager.setSessionHidden).toHaveBeenCalledWith('sess-1', true);
+    expect(result).toEqual({ success: true, hidden: true });
   });
 
   it('still removes session via sessionManager even if ptyManager.kill throws', async () => {

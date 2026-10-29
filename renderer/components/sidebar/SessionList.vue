@@ -16,6 +16,7 @@ import { useSessionDrag } from '../../composables/useSessionDrag.js';
 import { useSessionPreviews } from '../../composables/useSessionPreviews.js';
 import { useMessageFlights } from '../../composables/useMessageFlights.js';
 import { useTodosStore } from '../../stores/todos.js';
+import { sessionsState, toggleShowHiddenSessions } from '../../stores/sessions-screen.js';
 import type { ContextUsageSample, SessionContextUsageSnapshot, UserPromptSource } from '../../../src/types/session.js';
 
 interface FlashEntry {
@@ -50,6 +51,7 @@ interface SessionListGroupSession {
   lastUserPromptSource?: UserPromptSource;
   peerSessionId?: string;
   peerAttached?: boolean;
+  remote?: { peerId: string; sessionId: string };
   activityLevel?: string;
   state?: string;
 }
@@ -230,8 +232,16 @@ function onNewGroupDrop(e: DragEvent): void {
 
 <template>
   <div class="sessions-list-shell">
-    <!-- This toolbar only owns runtime-group creation. -->
+    <!-- Shared list actions. -->
     <div v-if="source !== 'peer'" class="runtime-list-actions">
+      <button
+        v-if="sessionsState.hiddenSessionCount > 0"
+        class="runtime-action"
+        :aria-pressed="sessionsState.showHiddenSessions"
+        @click="toggleShowHiddenSessions"
+      >
+        {{ sessionsState.showHiddenSessions ? 'Hide hidden' : `Show hidden (${sessionsState.hiddenSessionCount})` }}
+      </button>
       <button
         class="runtime-action"
         :class="{ 'drop-ok': newGroupDropActive }"

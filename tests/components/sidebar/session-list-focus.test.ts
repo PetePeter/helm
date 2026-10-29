@@ -12,11 +12,13 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import SessionList from '../../../renderer/components/sidebar/SessionList.vue';
 import { isNavItemFocused } from '../../../renderer/session-groups.js';
+import { state } from '../../../renderer/state.js';
+import { sessionsState } from '../../../renderer/stores/sessions-screen.js';
 
 describe('isNavItemFocused (pure highlight decision)', () => {
   it('matches by identity {type,id}, independent of any list ordering', () => {
@@ -91,6 +93,31 @@ function mountList(overrides: Record<string, unknown> = {}) {
 }
 
 describe('SessionList highlight rendering', () => {
+  afterEach(() => {
+    state.sessions = [];
+    state.activeSessionId = null;
+    sessionsState.showHiddenSessions = false;
+  });
+
+  it('shows the hidden toggle only when there are hidden rows to reveal', async () => {
+    state.sessions = [{ id: 'hidden', name: 'Hidden', cliType: 'claude', processId: 1, hidden: true }];
+    state.activeSessionId = null;
+    const w = mountList();
+
+    expect(w.findAll('.runtime-list-actions .runtime-action').map(button => button.text()))
+      .toContain('Show hidden (1)');
+    const showHidden = w.findAll('.runtime-list-actions .runtime-action')
+      .find(button => button.text() === 'Show hidden (1)')!;
+    await showHidden.trigger('click');
+    expect(sessionsState.showHiddenSessions).toBe(true);
+
+    state.activeSessionId = 'hidden';
+    await nextTick();
+    expect(sessionsState.showHiddenSessions).toBe(false);
+    expect(w.findAll('.runtime-list-actions .runtime-action').map(button => button.text()))
+      .not.toContain('Show hidden (1)');
+  });
+
   it('highlights the card matching focusedNavItem', () => {
     const w = mountList();
     expect(w.get('[data-id="sB"]').classes()).toContain('focused');

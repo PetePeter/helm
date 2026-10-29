@@ -47,6 +47,17 @@ export interface NavItem {
 export type SessionPreviewMode = 'on' | 'off' | 'selected-only';
 export const SESSION_PREVIEW_MODES: readonly SessionPreviewMode[] = ['on', 'selected-only', 'off'];
 
+/** Keep the active row reachable even when its stored session is hidden. */
+export function filterVisibleSessions(
+  sessions: Session[],
+  activeSessionId: string | null,
+  showHidden: boolean,
+): Session[] {
+  return sessions.filter(session =>
+    showHidden || !session.hidden || !!session.remote || session.id === activeSessionId,
+  );
+}
+
 export interface SessionGroupPrefs {
   /** Working directory paths in display order. */
   order: string[];

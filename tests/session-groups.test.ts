@@ -10,6 +10,7 @@ import {
   resolveGroupDisplayName,
   groupSessionsByDirectory,
   buildFlatNavList,
+  filterVisibleSessions,
   findNavIndexBySessionId,
   moveGroupUp,
   moveGroupDown,
@@ -24,6 +25,25 @@ import type { SessionGroup, SessionGroupPrefs } from '../renderer/session-groups
 function makeSession(id: string, workingDir: string, name = id): Session {
   return { id, name, cliType: 'claude-code', processId: 1000 + parseInt(id.replace(/\D/g, '') || '0'), workingDir };
 }
+
+describe('filterVisibleSessions', () => {
+  const sessions: Session[] = [
+    { ...makeSession('active', '/repo'), hidden: true },
+    { ...makeSession('hidden', '/repo'), hidden: true },
+    makeSession('visible', '/repo'),
+    { ...makeSession('remote-hidden', '/repo'), hidden: true, remote: { peerId: 'peer-a', sessionId: 'remote-1' } },
+  ];
+
+  it('keeps ordinary hidden sessions out while retaining the active hidden session', () => {
+    expect(filterVisibleSessions(sessions, 'active', false).map(session => session.id))
+      .toEqual(['active', 'visible', 'remote-hidden']);
+  });
+
+  it('includes all hidden sessions when Show hidden is enabled', () => {
+    expect(filterVisibleSessions(sessions, 'active', true).map(session => session.id))
+      .toEqual(['active', 'hidden', 'visible', 'remote-hidden']);
+  });
+});
 
 // ============================================================================
 // dirDisplayName

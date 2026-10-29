@@ -68,6 +68,7 @@ function serializeSession(s: SessionInfo): Record<string, unknown> {
     locked: Boolean(s.locked),
     // Always written for the same spread-merge reason as locked.
     frozen: Boolean(s.frozen),
+    ...(s.hidden === true ? { hidden: true } : {}),
   };
 }
 
@@ -114,6 +115,7 @@ export function loadSessions(sessionsFile = SESSIONS_FILE): SessionInfo[] {
       .filter(isSessionInfo)
       .filter(session => session.cliType !== BUILTIN_SHELL_CLI_TYPE)
       .map(session => {
+        if (session.hidden !== true) delete session.hidden;
         // Normalize workingDir and projectPath on load to ensure consistent casing across platforms
         if (session.workingDir) {
           session.workingDir = normalizeProjectPath(session.workingDir);

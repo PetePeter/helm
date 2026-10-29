@@ -140,6 +140,7 @@ export class HelmSessionService {
     // A first instruction (the phone's plan-scoped spawn) rides contextText so it
     // lands after the CLI's own init sequence, never into a half-started CLI.
     const initialPrompt = opts.initialPrompt?.trim() ? opts.initialPrompt : undefined;
+    const creator = opts.creatorSessionId ? this.sessionManager.getSession(opts.creatorSessionId) : null;
     const { sessionId } = spawnConfiguredSession({
       ptyManager: this.ptyManager,
       sessionManager: this.sessionManager,
@@ -154,8 +155,12 @@ export class HelmSessionService {
     });
     // Work the operator hands out is the operator's to follow up: the new
     // session reports back to it until the user talks to it directly.
-    const creator = opts.creatorSessionId ? this.sessionManager.getSession(opts.creatorSessionId) : null;
-    if (creator?.role === 'operator') this.sessionManager.updateSession(sessionId, { reportsTo: creator.id });
+    if (creator) {
+      this.sessionManager.updateSession(sessionId, {
+        hidden: true,
+        ...(creator.role === 'operator' ? { reportsTo: creator.id } : {}),
+      });
+    }
 
     // A session is always made for its project; the runtime group is an optional
     // overlay. Placement is skipped entirely when no group manager is wired.

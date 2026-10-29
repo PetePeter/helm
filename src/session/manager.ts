@@ -255,6 +255,12 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(sessionId)!;
   }
 
+  /** Persist whether a session is hidden from the Session List. */
+  setSessionHidden(sessionId: string, hidden: boolean): SessionInfo {
+    this.updateSession(sessionId, { hidden });
+    return this.sessions.get(sessionId)!;
+  }
+
   /**
    * Set or clear the session's mission TL;DR. Validation is shared with every
    * write path (src/session/mission.ts): over-limit text throws BEFORE any

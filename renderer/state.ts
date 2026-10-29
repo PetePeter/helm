@@ -43,6 +43,8 @@ export interface Session {
   remote?: { peerId: string; sessionId: string };
   /** True when deliberate closure is blocked until unlocked. */
   locked?: boolean;
+  /** Hide from the local Session List while keeping the session alive. */
+  hidden?: boolean;
   frozen?: boolean;
   /** G8: consecutive Stop-hook auto-continues in flight. >0 means an active
    *  loop — an in-progress loop must never be invisible on the session row. */

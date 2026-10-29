@@ -88,6 +88,10 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   sessionSetLocked: (id: string, locked: boolean): Promise<{ success: boolean; locked?: boolean; error?: string }> =>
     ipcRenderer.invoke('session:setLocked', id, locked),
 
+  /** Hide or show the session in the Session List. */
+  sessionSetHidden: (id: string, hidden: boolean): Promise<{ success: boolean; hidden?: boolean; error?: string }> =>
+    ipcRenderer.invoke('session:setHidden', id, hidden),
+
   /** Set (or clear, with '') the session's mission TL;DR as the user. Max 500 chars. */
   sessionSetMission: (
     id: string,
@@ -527,7 +531,7 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
   },
 
   /** Subscribe to session metadata updates such as renames. */
-  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; questionPending?: boolean; lastOutputAt?: number; frozen?: boolean }) => void) => {
+  onSessionUpdated: (callback: (session: { id: string; name: string; cliType: string; workingDir?: string; title?: string; windowId?: number; state?: string; aiagentState?: 'planning' | 'implementing' | 'completed' | 'idle'; questionPending?: boolean; lastOutputAt?: number; frozen?: boolean; hidden?: boolean }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: any) => callback(data);
     ipcRenderer.on('session:updated', listener);
     return () => ipcRenderer.removeListener('session:updated', listener);

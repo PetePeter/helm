@@ -54,6 +54,8 @@ vi.mock('../renderer/stores/navigation.js', () => ({
 // ---------------------------------------------------------------------------
 
 const mockState = {
+  sessions: [],
+  activeSessionId: null,
   planDirStartableCounts: new Map<string, number>(),
   planDirCodingCounts: new Map<string, number>(),
   planDirBlockedCounts: new Map<string, number>(),

@@ -4,6 +4,12 @@ Each Session List row shows a live tail of its session's terminal, and the list
 animates messages sent from one session to another. The preview tail is passive:
 it does not change the active terminal or receive input.
 
+Sessions marked hidden stay alive and keep their state across restarts, but are
+left out of the Session List and its navigation. The active session remains in
+the list while selected. Use **Show hidden (N)** in the list toolbar to reveal
+other hidden sessions; the control appears only when there are rows to reveal.
+Each row's actions menu can hide or restore that session.
+
 ```mermaid
 graph LR
   MP[Main: HelmSessionDeliveryService<br/>holds the PTY write] -->|onSessionMessageFlight| SL[SessionList.vue<br/>useMessageFlights]

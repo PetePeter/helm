@@ -205,6 +205,15 @@ export async function setSessionLocked(sessionId: string, locked: boolean): Prom
   }
 }
 
+/** Hide or restore a session in the Session List; state returns through session:updated. */
+export async function setSessionHidden(sessionId: string, hidden: boolean): Promise<void> {
+  try {
+    await sessionsClient.sessionSetHidden?.(sessionId, hidden);
+  } catch (e) {
+    console.error('[Sessions] Failed to set session visibility:', e);
+  }
+}
+
 /** Freeze or thaw a session; state returns through session:updated like the lock. */
 export async function setSessionFrozen(sessionId: string, frozen: boolean): Promise<void> {
   try {

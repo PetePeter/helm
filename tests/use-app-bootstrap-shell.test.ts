@@ -46,7 +46,10 @@ vi.mock('../renderer/paste-handler.js', () => ({ setupKeyboardRelay() {} }));
 vi.mock('../renderer/tab-cycling.js', () => ({ resolveNextTerminalId: () => null }));
 vi.mock('../renderer/sort-logic.js', () => ({ sortSessions: (sessions: unknown[]) => sessions }));
 vi.mock('../renderer/session-groups.js', () => ({
-  buildSessionGroups: () => [], buildFlatNavList: () => [], findNavIndexBySessionId: () => 0,
+  buildSessionGroups: () => [], buildFlatNavList: () => [],
+  filterVisibleSessions: (sessions: Array<{ id: string; hidden?: boolean }>, activeSessionId: string | null, showHidden: boolean) =>
+    sessions.filter(session => showHidden || !session.hidden || session.id === activeSessionId),
+  findNavIndexBySessionId: () => 0,
 }));
 vi.mock('../renderer/plans/plan-screen.js', () => ({
   setPlanScreenFitCallback() {}, setPlanScreenCloseCallback() {}, setPlanScreenOpenCallback() {}, refreshCanvasIfVisible() {},

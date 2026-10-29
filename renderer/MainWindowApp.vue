@@ -84,7 +84,7 @@ import {
   PANE_SESSIONS,
   PANE_TERMINAL,
 } from './dock-types.js';
-import { confirmCloseSessionById, setSessionLocked, setSessionFrozen, setSessionKeepWarm } from './screens/sessions.js';
+import { confirmCloseSessionById, setSessionLocked, setSessionHidden, setSessionFrozen, setSessionKeepWarm } from './screens/sessions.js';
 import { startRename } from './sidebar/session-services.js';
 
 // Sidebar components
@@ -533,6 +533,8 @@ const contextMenuSessionFlags = computed(() => {
     locked: !!s?.locked,
     frozen: !!s?.frozen,
     keepWarm: s?.keepWarmUntil !== undefined && s.keepWarmUntil > Date.now(),
+    hidden: !!s?.hidden,
+    remote: !!s?.remote,
   };
 });
 
@@ -666,6 +668,9 @@ function onContextMenuAction(action: ContextMenuAction): void {
       break;
     case 'toggle-lock':
       if (target) void setSessionLocked(target.id, !target.locked);
+      break;
+    case 'toggle-hidden':
+      if (target) void setSessionHidden(target.id, !target.hidden);
       break;
     case 'toggle-keep-warm':
       if (target) void setSessionKeepWarm(target.id, !contextMenuSessionFlags.value.keepWarm);

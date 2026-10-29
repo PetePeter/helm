@@ -3,6 +3,7 @@ export const CONTEXT_MENU_ACTION_IDS = [
   'rename-session',
   'toggle-freeze',
   'toggle-lock',
+  'toggle-hidden',
   'toggle-keep-warm',
   'copy',
   'paste',

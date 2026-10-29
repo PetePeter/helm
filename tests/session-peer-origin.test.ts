@@ -14,12 +14,16 @@ import { proxyAuthContext } from '../src/mcp/peer/proxy-identity.js';
 import { mobileAuthContext } from '../src/mobile/mobile-identity.js';
 
 function makeService(added: Array<Record<string, unknown>>) {
+  const localCreator = { id: 'local-session', role: 'worker' };
   const sessionManager = {
     getAllSessions: vi.fn(() => []),
-    getSession: vi.fn(() => null),
+    getSession: vi.fn((id: string) => id === localCreator.id ? localCreator : null),
     hasSession: vi.fn(() => false),
     addSession: vi.fn((info: Record<string, unknown>) => { added.push(info); }),
-    updateSession: vi.fn(),
+    updateSession: vi.fn((_id: string, updates: Record<string, unknown>) => {
+      const session = added.find(item => item.id === _id);
+      if (session) Object.assign(session, updates);
+    }),
   };
   const configLoader = {
     getWorkingDirectories: vi.fn(() => [{ path: '/repo/main', name: 'main' }]),
@@ -39,7 +43,7 @@ function makeService(added: Array<Record<string, unknown>>) {
     configLoader as any,
     planManager as any,
   );
-  return { service, sessionManager };
+  return { service, sessionManager, localCreator };
 }
 
 describe('HelmSessionService.spawnCli — peer origin', () => {
@@ -72,6 +76,29 @@ describe('HelmSessionService.spawnCli — peer origin', () => {
     service.spawnCli('claude-code', '/repo/main', 'user spawn');
 
     expect(added[0].createdByPeerId).toBeUndefined();
+  });
+
+  it('hides a child created by a local session', () => {
+    const added: Array<Record<string, unknown>> = [];
+    const { service, localCreator } = makeService(added);
+
+    service.spawnCli('claude-code', '/repo/main', 'local child', {
+      creatorSessionId: localCreator.id,
+    });
+
+    expect(added[0].hidden).toBe(true);
+  });
+
+  it.each([
+    ['peer', proxyAuthContext('desktop-b').sessionId],
+    ['mobile', mobileAuthContext('device-7').sessionId],
+  ])('keeps a %s-created session visible', (_origin, creatorSessionId) => {
+    const added: Array<Record<string, unknown>> = [];
+    const { service } = makeService(added);
+
+    service.spawnCli('claude-code', '/repo/main', 'remote child', { creatorSessionId });
+
+    expect(added[0].hidden).not.toBe(true);
   });
 });
 

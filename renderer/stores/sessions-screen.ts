@@ -7,11 +7,11 @@
  */
 
 import { defineStore } from 'pinia';
-import { reactive, computed } from 'vue';
+import { reactive, computed, watch } from 'vue';
 import type { NavItem, SessionGroup, SessionGroupPrefs } from '../session-groups.js';
-import { buildSessionGroups, buildFlatNavList } from '../session-groups.js';
+import { buildSessionGroups, buildFlatNavList, filterVisibleSessions } from '../session-groups.js';
 import { buildSessionShortcutMap } from '../utils/session-shortcut-map.js';
-import { state } from '../state.js';
+import { state, type Session } from '../state.js';
 import { useRuntimeGroups } from '../composables/useRuntimeGroups.js';
 import type { ProjectDirectoryItem } from '../screens/planner-directories.js';
 
@@ -25,6 +25,12 @@ export interface SessionsScreenState {
   cliTypes: string[];
   directories: ProjectDirectoryItem[];
   editingSessionId: string | null;
+  /** In-memory Session List filter toggle. */
+  showHiddenSessions: boolean;
+  /** Hidden local sessions not already visible as the active row. */
+  readonly hiddenSessionCount: number;
+  /** Shared session source for grouped rendering and sidebar navigation. */
+  readonly visibleSessions: Session[];
   /** Flat navigation list (group headers + session cards) — derived, read-only. */
   readonly navList: NavItem[];
   /** Grouped session data for rendering — derived, read-only. */
@@ -58,7 +64,7 @@ export function setSessionCwdResolver(resolver: (sessionId: string) => string): 
  * a snap-out, an MCP/peer spawn — left the cards showing stale data.
  */
 const derivedGroups = computed<SessionGroup[]>(() => buildSessionGroups(
-  state.sessions,
+  sessionsState.visibleSessions,
   sessionId => resolveSessionCwd(sessionId),
   sessionsState.groupPrefs,
   useRuntimeGroups().groups.value,
@@ -66,9 +72,19 @@ const derivedGroups = computed<SessionGroup[]>(() => buildSessionGroups(
 
 const derivedNavList = computed<NavItem[]>(() => buildFlatNavList(
   derivedGroups.value,
-  state.sessions.find(session => session.role === 'operator')?.id ?? null,
-  state.sessions.filter(session => !!session.remote),
+  sessionsState.visibleSessions.find(session => session.role === 'operator')?.id ?? null,
+  sessionsState.visibleSessions.filter(session => !!session.remote),
 ));
+
+const visibleSessions = computed(() => filterVisibleSessions(
+  state.sessions,
+  state.activeSessionId,
+  sessionsState.showHiddenSessions,
+));
+
+const hiddenSessionCount = computed(() => state.sessions.filter(session =>
+  !session.remote && session.hidden && session.id !== state.activeSessionId,
+).length);
 
 export const sessionsState: SessionsScreenState = reactive({
   activeFocus: 'sessions',
@@ -78,11 +94,22 @@ export const sessionsState: SessionsScreenState = reactive({
   cliTypes: [],
   directories: [],
   editingSessionId: null,
+  showHiddenSessions: false,
+  get hiddenSessionCount() { return hiddenSessionCount.value; },
+  get visibleSessions() { return visibleSessions.value; },
   get navList() { return derivedNavList.value; },
   get groups() { return derivedGroups.value; },
   groupPrefs: { order: [], collapsed: [], bookmarked: [] },
   plansFocusIndex: 0,
 });
+
+watch(hiddenSessionCount, count => {
+  if (count === 0) sessionsState.showHiddenSessions = false;
+});
+
+export function toggleShowHiddenSessions(): void {
+  sessionsState.showHiddenSessions = !sessionsState.showHiddenSessions;
+}
 
 export const useSessionsScreenStore = defineStore('sessionsScreen', () => {
   const activeNavItem = computed(() =>

@@ -144,6 +144,7 @@ function resetSingletons(): void {
   state.recentSessionId = null;
   state.lastSelectedSessionId = null;
   state.sessions = [];
+  sessionsState.showHiddenSessions = false;
   state.snappedOutSessions.clear();
   sessionsState.sessionsFocusIndex = 0;
   sessionsState.cardColumn = 0;
@@ -566,6 +567,26 @@ describe('useNavigationStore', () => {
   // ──────────────────────────────────────────────────────────────────────
 
   describe('onNavListRebuilt', () => {
+    it('keeps an active hidden row reachable while filtering other hidden rows', () => {
+      state.activeSessionId = 'active-hidden';
+      state.sessions = [
+        { id: 'active-hidden', name: 'Active', cliType: 'claude', processId: 1, workingDir: '/a', hidden: true },
+        { id: 'other-hidden', name: 'Hidden', cliType: 'claude', processId: 2, workingDir: '/a', hidden: true },
+        { id: 'visible', name: 'Visible', cliType: 'claude', processId: 3, workingDir: '/a' },
+        { id: 'remote-hidden', name: 'Remote', cliType: 'claude', processId: 4, workingDir: '/a', hidden: true, remote: { peerId: 'peer-a', sessionId: 'remote-1' } },
+      ];
+      sessionsState.groupPrefs = { order: ['/a'], collapsed: [], bookmarked: [] };
+
+      expect(sessionsState.visibleSessions.map(session => session.id)).toEqual(['active-hidden', 'visible', 'remote-hidden']);
+      expect(navIndex('session-card', 'active-hidden')).toBeGreaterThanOrEqual(0);
+      expect(navIndex('session-card', 'other-hidden')).toBe(-1);
+      expect(navIndex('session-card', 'remote-hidden')).toBeGreaterThanOrEqual(0);
+      expect(sessionsState.hiddenSessionCount).toBe(1);
+
+      sessionsState.showHiddenSessions = true;
+      expect(navIndex('session-card', 'other-hidden')).toBeGreaterThanOrEqual(0);
+    });
+
     it('re-derives index when focused item moves position', () => {
       store.focusedNavItem = { id: 'sess-2', type: 'session-card' };
       sessionsState.sessionsFocusIndex = 1;

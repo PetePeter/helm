@@ -70,6 +70,8 @@ vi.mock('../renderer/session-groups.js', () => ({
   groupSessionsByDirectory: vi.fn(() => []),
   buildSessionGroups: vi.fn(() => []),
   buildFlatNavList: vi.fn(() => []),
+  filterVisibleSessions: (sessions: Array<{ id: string; hidden?: boolean }>, activeSessionId: string | null, showHidden: boolean) =>
+    sessions.filter(session => showHidden || !session.hidden || session.id === activeSessionId),
   findNavIndexBySessionId: vi.fn(() => 0),
 }));
 

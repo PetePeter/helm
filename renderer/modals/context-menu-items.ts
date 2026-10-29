@@ -15,7 +15,7 @@ export interface ContextMenuContext {
   isSnappedOut: boolean;
   /** Name of the runtime group the target session is in, or null when ungrouped. */
   currentGroupName: string | null;
-  session: { locked: boolean; frozen: boolean; keepWarm: boolean };
+  session: { locked: boolean; frozen: boolean; keepWarm: boolean; hidden?: boolean; remote?: boolean };
 }
 
 export interface ContextMenuGroup {
@@ -35,6 +35,9 @@ function buildSessionControls(ctx: ContextMenuContext): ContextMenuItem[] {
     { id: 'toggle-keep-warm', label: s.keepWarm ? '⏰ Stop keeping warm' : '⏰ Keep cache warm', enabled: hasTarget },
     { id: 'toggle-freeze', label: s.frozen ? '🔥 Unfreeze' : '❄️ Freeze', enabled: hasTarget },
     { id: 'toggle-lock', label: s.locked ? '🔓 Unlock' : '🔒 Lock', enabled: hasTarget },
+    ...(ctx.mode === 'session' && !s.remote ? [{
+      id: 'toggle-hidden', label: s.hidden ? '👁 Show in Session List' : '🙈 Hide from Session List', enabled: hasTarget,
+    }] : []),
     { id: 'move-to-group', label: '🗂️ Move to group…', enabled: hasTarget },
     {
       id: 'remove-from-group',

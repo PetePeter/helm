@@ -6,7 +6,7 @@ Gamepad button and keyboard shortcut mappings.
 
 | Input | Action |
 |-------|--------|
-| D-Pad Up/Down | Switch sessions (auto-selects terminal) / move through group headers. The pinned **Helm** section is the first stop (it selects the operator's terminal) |
+| D-Pad Up/Down | Switch visible sessions (auto-selects terminal) / move through group headers. Hidden sessions are skipped unless shown; the active session stays listed. The pinned **Helm** section is the first stop (it selects the operator's terminal) |
 | D-Pad Right | Session card: cycle sub-elements / Group header: no-op — 🗺️ Plans button (col 1) is click-only |
 | D-Pad Left | Back one sub-element column |
 | Left Stick | Same as D-pad |
@@ -64,7 +64,7 @@ The same flag the `session_set_locked` MCP tool writes.
 | Ctrl+V | Focused terminal: managed paste to PTY stdin (bracketed-paste framing, chunking). Focused Artifacts pane: creates a new artifact from the clipboard |
 | Ctrl+G | Jump to the active session's Draft pane, caret in the pad. Works from anywhere, including while typing in a field |
 | Ctrl+Shift+&lt;letter&gt; | Focus a dock pane from anywhere, text fields included: T terminal, J Chat, P plans, M memories, E mess, L timesheet, S sessions, H scheduler, Q quick spawn, F projects, A artifacts, D draft, K todos. Tabs show a shortcut chip and tooltip. Shared keys cycle matching panes in registry order; focus outside the set starts at the first |
-| Ctrl+1-9, Ctrl+0 | Jump directly to the Nth session in sidebar order (badge: `^n`) |
+| Ctrl+1-9, Ctrl+0 | Jump directly to the Nth visible session in sidebar order (badge: `^n`) |
 | Alt+1-9, Alt+0 | Fire the Nth chip bar quick-action for the active session (badge: `⌥n`; 0 is slot 10) |
 | Ctrl+Shift+Space | Talk to Helm: press to start, press again to send (a toggle — the router is keydown-only and key repeat makes a keyboard hold unreliable). Works while typing; a modal blocks it like the other workspace keys |
 | Tab / Shift+Tab (selection-mode modal) | Cycle buttons in close-confirm, context-menu, or quick-spawn |

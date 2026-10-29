@@ -134,6 +134,8 @@ export interface SessionInfo {
   frozen?: boolean;
   /** Prevent deliberate user, MCP, or Telegram closure until explicitly cleared. */
   locked?: boolean;
+  /** Hide from the local Session List while keeping the session alive. */
+  hidden?: boolean;
   /** Hook-reported turn failure (G3, Claude StopFailure — e.g. a usage limit or
    *  API error that killed the turn). Set when the CLI reports the stall,
    *  cleared when work resumes. Persists across restarts so a stall that

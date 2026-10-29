@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { asBoolean } from '../src/mcp/tools/validation.js';
@@ -88,5 +88,48 @@ describe('session persistence — lock state', () => {
     saveSessions([base], file);
 
     expect(loadSessions(file)[0].locked).toBe(false);
+  });
+});
+
+describe('session persistence — hidden state', () => {
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function sessionsFile(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'helm-hidden-'));
+    dirs.push(dir);
+    return join(dir, 'sessions.yaml');
+  }
+
+  const base: SessionInfo = {
+    id: 'session-1',
+    name: 'copilot',
+    cliType: 'copilot-cli',
+    processId: 1001,
+  };
+
+  it('persists hidden: true', () => {
+    const file = sessionsFile();
+    saveSessions([{ ...base, hidden: true }], file);
+
+    expect(loadSessions(file)[0].hidden).toBe(true);
+  });
+
+  it('omits hidden when false', () => {
+    const file = sessionsFile();
+    saveSessions([{ ...base, hidden: false }], file);
+
+    expect(readFileSync(file, 'utf8')).not.toContain('hidden:');
+    expect(loadSessions(file)[0].hidden).toBeUndefined();
+  });
+
+  it('ignores malformed hidden values when loading', () => {
+    const file = sessionsFile();
+    writeFileSync(file, `sessions:\n  - id: session-1\n    name: copilot\n    cliType: copilot-cli\n    processId: 1001\n    hidden: "true"\n`);
+
+    expect(loadSessions(file)[0].hidden).toBeUndefined();
   });
 });
