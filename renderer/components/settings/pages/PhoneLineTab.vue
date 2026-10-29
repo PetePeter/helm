@@ -400,6 +400,10 @@ const checked = (e: Event) => (e.target as HTMLInputElement).checked;
       <input type="checkbox" class="focusable" :checked="cfg.transcripts.enabled" @change="cfg.transcripts.enabled = checked($event); save()" />
       <span>Save every call transcript</span>
     </label>
+    <label class="phone-setting settings-span">
+      <input type="checkbox" class="focusable" :checked="cfg.transcripts.smsSummary" @change="cfg.transcripts.smsSummary = checked($event); save()" />
+      <span>Text me a short summary after each call</span>
+    </label>
     <div class="field-group">
       <label class="field-label">Folder (empty = Helm's config folder)</label>
       <input class="field-input focusable" :value="cfg.transcripts.folder" placeholder="D:\Notes\Calls" @change="cfg.transcripts.folder = str($event); save()" />

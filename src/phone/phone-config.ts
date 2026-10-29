@@ -66,6 +66,8 @@ export interface PhoneLineConfig {
   voice: { tts: 'auto' | 'piper' | 'sapi' | 'none'; piperModel: string; sttModel: string };
   transcripts: {
     enabled: boolean;
+    /** Text the owner a short summary when a call ends. */
+    smsSummary: boolean;
     /** Empty = the Helm user-data dir. */
     folder: string;
     fileName: string;
@@ -112,7 +114,7 @@ export const DEFAULT_PHONE_LINE_CONFIG: PhoneLineConfig = {
     signSms: false,
   },
   voice: { tts: 'auto', piperModel: '', sttModel: '' },
-  transcripts: { enabled: true, folder: '', fileName: '{yyyy}/{mm}/{yyyy}-{mm}-{dd}_{HHmm}_{label}_{direction}', format: 'md', retentionDays: 90 },
+  transcripts: { enabled: true, smsSummary: true, folder: '', fileName: '{yyyy}/{mm}/{yyyy}-{mm}-{dd}_{HHmm}_{label}_{direction}', format: 'md', retentionDays: 90 },
   conference: { maxParticipants: 3, announce: true },
   fallback: { ring: true, notify: false },
   callAgentModel: '',

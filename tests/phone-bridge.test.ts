@@ -104,6 +104,38 @@ describe('PhoneBridge — call reply model', () => {
   });
 });
 
+describe('PhoneBridge — call summary SMS', () => {
+  it('texts the owner a model-written summary when a call ends', async () => {
+    const { server, delivered } = await setup({ replyModel: holdModel('Partner asked about dinner; told them 7pm.') });
+    await inboundCall(server, PARTNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.state', { callId: 'c1', state: 'ended', reason: 'remote' });
+    expect(await server.waitFor('sms.send')).toEqual({ number: OWNER, text: 'Call with Partner (in): Partner asked about dinner; told them 7pm.' });
+  });
+
+  it('without a model, the summary is the last lines Helm heard', async () => {
+    const { server, delivered } = await setup();
+    await inboundCall(server, PARTNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.utterance', { callId: 'c1', text: 'running late', startMs: 0, endMs: 1 });
+    await until(() => delivered.length === 2);
+    server.emit('call.state', { callId: 'c1', state: 'ended', reason: 'remote' });
+    expect(String((await server.waitFor('sms.send') as { text: string }).text)).toMatch(/^Call with Partner \(in\): .*Partner: running late$/);
+  });
+
+  it('is off when switched off', async () => {
+    const cfg = config();
+    cfg.transcripts.smsSummary = false;
+    const { server, delivered } = await setup({ cfg });
+    await inboundCall(server, PARTNER);
+    await until(() => delivered.length === 1);
+    server.emit('call.state', { callId: 'c1', state: 'ended', reason: 'remote' });
+    await until(() => delivered.some((d) => d.text.includes('ended')));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(server.requests.some((r) => r.method === 'sms.send')).toBe(false);
+  });
+});
+
 describe('PhoneBridge — inbound calls', () => {
   it('answers the owner, greets, briefs the operator, quotes speech and speaks chat_send', async () => {
     const { server, bridge, delivered } = await setup();

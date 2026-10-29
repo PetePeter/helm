@@ -185,6 +185,8 @@ A CLI operator needs seconds to paste a briefing and write a reply, and the call
 
 When a call ends, Helm asks telefony for `transcript.get`. If telefony has already forgotten the call (`no_such_call`), Helm writes the transcript from its own record of every line spoken and heard. It writes Markdown and/or JSON to the configured folder, or `<config>/phone-transcripts` if none is set. File names use `{yyyy} {mm} {dd} {HHmm} {label} {direction}`, and the path is confined to that folder. Files carry a `helm-phone-transcript` marker.
 
+**Summary SMS** (on by default): when an answered call ends, Helm texts the owner one short line — `Call with <label> (in|out): <gist>`, capped at 300 chars. The gist is the call agent's report, or one written by the call reply model (falling back to the call agent model). With no model set, it is the last three lines heard. It goes only to the owner's phone and obeys the `sms.out` rules.
+
 The daily retention sweep deletes only marked files, so pointing the folder at a notes vault is safe. Audio is not recorded.
 
 ## Limits (v1)
