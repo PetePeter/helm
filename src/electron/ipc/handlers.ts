@@ -599,7 +599,7 @@ export function registerIPCHandlers(
     // The user asked for it outright: never second-guessed as redundant.
     quickCompact: (sessionId) => helmControlService.quickCompactSession(sessionId, { force: true }),
     switchCli: (sessionId, cliType) => helmControlService.switchSessionCli(sessionId, cliType),
-    clone: (sessionId) => helmControlService.cloneSession(sessionId),
+    clone: (sessionId, cliType) => helmControlService.cloneSession(sessionId, cliType === undefined ? {} : { cliType }),
   });
   // Forward-declared so config:setFleetConfig can hot-apply the live fleet
   // stack (constructed below, ~line 460). The closure is only invoked at runtime on

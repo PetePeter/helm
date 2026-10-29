@@ -694,6 +694,7 @@ export async function callMcpTool(
       case 'session_clone':
         return service.cloneSession(asString(args.sessionId, 'sessionId is required'), {
           ...(authContext.sessionId ? { creatorSessionId: authContext.sessionId } : {}),
+          ...(typeof args.cliType === 'string' ? { cliType: args.cliType } : {}),
           ...(typeof args.handover === 'string' ? { handover: args.handover } : {}),
         });
       case 'session_switch_cli':

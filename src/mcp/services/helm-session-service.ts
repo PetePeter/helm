@@ -256,13 +256,14 @@ export class HelmSessionService {
   }
 
   /**
-   * Fork a session: the same CLI reads back a stripped copy of the transcript
-   * in a new session alongside it, so the two can diverge from the same history.
+   * Fork a session: the chosen CLI reads back a stripped transcript copy in a
+   * new session alongside the source; by default, it uses the source CLI.
    */
-  cloneSession(sessionRef: string, opts: { handover?: string; creatorSessionId?: string } = {}) {
+  cloneSession(sessionRef: string, opts: { cliType?: string; handover?: string; creatorSessionId?: string } = {}) {
     const source = this.findSession(sessionRef);
     if (!source) throw new Error(`Session not found: ${sessionRef}`);
-    return this.switchCli(source.id, source.cliType, { ...opts, closeSource: false, name: `${source.name} (clone)` });
+    const { cliType = source.cliType, ...switchOptions } = opts;
+    return this.switchCli(source.id, cliType, { ...switchOptions, closeSource: false, name: `${source.name} (clone)` });
   }
 
   closeSession(sessionRef: string): { ok: true } {

@@ -10,6 +10,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { callMcpTool, type McpToolDispatcherDeps } from '../src/mcp/tools/dispatcher.js';
+import type { HelmControlService } from '../src/mcp/helm-control-service.js';
 
 const spawnCalls: Array<Record<string, unknown>> = [];
 vi.mock('../src/session/configured-session-spawn.js', () => ({
@@ -158,6 +160,38 @@ describe('HelmSessionService.cloneSession', () => {
     expect(killed).toEqual([]);
     expect(sessions.has('old-sid')).toBe(true);
     rmSync(result.transcriptFile, { force: true });
+  });
+
+  it('clones with the requested CLI and rejects an unknown CLI before spawning', () => {
+    const { service, sessions, killed } = setup({ cliType: 'claude-code' });
+
+    const result = service.cloneSession('old-sid', { cliType: 'codex' });
+
+    expect(spawnCalls[0]).toMatchObject({ cliType: 'codex', sessionName: 'parser (clone)' });
+    expect(result.sourceClosed).toBe(false);
+    expect(sessions.has('old-sid')).toBe(true);
+    expect(killed).toEqual([]);
+    rmSync(result.transcriptFile, { force: true });
+
+    spawnCalls.length = 0;
+    const unknown = setup({ cliType: 'claude-code' });
+    expect(() => unknown.service.cloneSession('old-sid', { cliType: 'no-such-cli' })).toThrow(/Unknown CLI type/);
+    expect(spawnCalls).toHaveLength(0);
+  });
+
+  it('forwards cliType from MCP session_clone into the real service', async () => {
+    const { service } = setup({ cliType: 'claude-code' });
+    const deps: McpToolDispatcherDeps = {
+      service: service as unknown as HelmControlService,
+      setPlanStateWithValidation: () => ({}),
+      completePlanWithValidation: () => ({}),
+    };
+
+    const result = await callMcpTool(deps, 'session_clone', { sessionId: 'old-sid', cliType: 'codex' }, {});
+
+    expect(spawnCalls[0]).toMatchObject({ cliType: 'codex', sessionName: 'parser (clone)' });
+    expect((result as { sourceClosed: boolean }).sourceClosed).toBe(false);
+    rmSync((result as { transcriptFile: string }).transcriptFile, { force: true });
   });
 
   it('copies artifacts to the clone and leaves the source its own', () => {

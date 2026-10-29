@@ -690,7 +690,11 @@ function onContextMenuAction(action: ContextMenuAction): void {
       break;
     }
     case 'clone-session': {
-      if (sessionId) void runTranscriptAction(sessionsClient.sessionClone(sessionId), 'Clone');
+      if (sessionId) {
+        openQuickSpawn((cliType) => {
+          void runTranscriptAction(sessionsClient.sessionClone(sessionId, cliType), 'Clone');
+        });
+      }
       break;
     }
     case 'switch-cli': {

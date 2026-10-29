@@ -69,8 +69,8 @@ export const PRELOAD_METHOD_IMPLEMENTATIONS = {
     ipcRenderer.invoke('session:quickCompact', id),
 
   /** Fork the session from its stripped transcript; the source keeps running. */
-  sessionClone: (id: string): Promise<{ success: boolean; error?: string }> =>
-    ipcRenderer.invoke('session:clone', id),
+  sessionClone: (id: string, cliType?: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('session:clone', id, cliType),
 
   /** Continue the session under another CLI type; the source closes to the recycle bin. */
   sessionSwitchCli: (id: string, cliType: string): Promise<{ success: boolean; error?: string }> =>

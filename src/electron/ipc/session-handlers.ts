@@ -20,7 +20,7 @@ import { KEEP_WARM_DEFAULT_MS } from '../../session/keep-warmer.js';
 export interface TranscriptActions {
   quickCompact(sessionId: string): Promise<unknown>;
   switchCli(sessionId: string, cliType: string): unknown;
-  clone(sessionId: string): unknown;
+  clone(sessionId: string, cliType?: string): unknown;
 }
 
 // ============================================================================
@@ -393,10 +393,10 @@ export function setupSessionHandlers(
   });
 
   /** Context menu "Clone": fork the session from its stripped transcript; the source keeps running. */
-  ipcMain.handle('session:clone', (_event, id: string) => {
+  ipcMain.handle('session:clone', (_event, id: string, cliType?: string) => {
     try {
       if (!transcriptActions) throw new Error('Clone is not available');
-      transcriptActions.clone(id);
+      transcriptActions.clone(id, cliType);
       return { success: true };
     } catch (error) {
       logger.error(`[Session] Clone failed: ${error}`);

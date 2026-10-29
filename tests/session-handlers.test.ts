@@ -39,7 +39,7 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-import { setupSessionHandlers } from '../src/electron/ipc/session-handlers.js';
+import { setupSessionHandlers, type TranscriptActions } from '../src/electron/ipc/session-handlers.js';
 import type { SessionManager } from '../src/session/manager.js';
 import type { PtyManager } from '../src/session/pty-manager.js';
 import type { WindowManager } from '../src/electron/window-manager.js';
@@ -94,7 +94,7 @@ function createMockConfigLoader(): ConfigLoader {
   } as unknown as ConfigLoader;
 }
 
-describe('session:close IPC handler', () => {
+describe('session IPC handlers', () => {
   let sessionManager: ReturnType<typeof createMockSessionManager>;
   let ptyManager: ReturnType<typeof createMockPtyManager>;
   let windowManager: ReturnType<typeof createMockWindowManager>;
@@ -107,14 +107,25 @@ describe('session:close IPC handler', () => {
     electronMockState.BrowserWindowMock.mockClear();
   });
 
-  function setup(sessions: Record<string, any> = {}) {
+  function setup(sessions: Record<string, any> = {}, transcriptActions?: TranscriptActions) {
     sessionManager = createMockSessionManager(sessions);
     ptyManager = createMockPtyManager();
     windowManager = createMockWindowManager();
     mainWindowSend = (windowManager.getMainWindow as any)().webContents.send;
     configLoader = createMockConfigLoader();
-    setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader);
+    setupSessionHandlers(sessionManager, ptyManager, windowManager, configLoader, transcriptActions);
   }
+
+  it('forwards the selected CLI type through session:clone', async () => {
+    const clone = vi.fn();
+    setup({}, { quickCompact: async () => undefined, switchCli: vi.fn(), clone });
+
+    const handler = electronMockState.handlers.get('session:clone')!;
+    const result = await handler({}, 'sess-1', 'codex');
+
+    expect(clone).toHaveBeenCalledWith('sess-1', 'codex');
+    expect(result).toEqual({ success: true });
+  });
 
   it('calls ptyManager.kill() with session id', async () => {
     setup({

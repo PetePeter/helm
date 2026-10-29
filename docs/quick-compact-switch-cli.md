@@ -7,7 +7,7 @@ Three actions share one engine: Helm strips a session's own transcript to markdo
 - On the phone, all three sit on the session sheet: "Quick compact" (confirms first), "Switch CLI" (opens a picker of the desktop's CLIs) and "Clone". Rows grey out unless the device's mobile allow-list permits the tool.
 - **Switch CLI** (`session_switch_cli`, context menu "🔀 Switch CLI…" → CLI picker): strip → spawn the picked CLI in the same directory, name and runtime group, with the prompt as its initial paste → close the source (recycle bin, restorable; `closeSource: false` keeps it; locked sessions are never closed).
 - **Artifacts follow** (Switch CLI and Clone): before the source can close, every artifact is copied to the new session under a fresh id, with its versions and attachments. The source keeps its own. A copy's content has the old artifact id swapped for the new one, so embedded attachment paths point at the copy's files.
-- **Clone** (`session_clone`, context menu "🧬 Clone"): Switch CLI to the source's own CLI type, named "<name> (clone)", never closing the source — a fork that diverges from the same history. Plans, mission and ownership are not copied.
+- **Clone** (`session_clone`, context menu "🧬 Clone" → CLI picker): spawn with the picked CLI; MCP callers may pass optional `cliType`, which defaults to the source CLI. The clone is named "<name> (clone)" and the source stays open. Plans, mission and ownership are not copied.
 
 ```mermaid
 graph LR
