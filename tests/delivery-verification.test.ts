@@ -217,3 +217,92 @@ describe('verifyDeliveryAfterDelay — recovery', () => {
     );
   });
 });
+
+describe('verifyDeliveryAfterDelay — prompt-submit hook confirmation', () => {
+  // A TUI composer repaint after paste ticks the tail twice without submitting.
+  function repaintTwice(buffer: TerminalOutputBuffer): void {
+    setTimeout(() => buffer.append(SESSION_ID, 'pasted into composer\n'), 20);
+    setTimeout(() => buffer.append(SESSION_ID, 'composer redraw\n'), 300);
+  }
+
+  function hookRequest(
+    buffer: TerminalOutputBuffer,
+    lastAt: () => number | undefined,
+    deliverText = vi.fn(async () => {}),
+  ) {
+    return {
+      deliverText,
+      request: makeRequest(buffer, {
+        promptSubmit: { since: Date.now() - 1, lastAt },
+        ptyManager: {
+          getTerminalTail: (sid, lines, mode, strip) => buffer.tail(sid, lines, mode, strip),
+          deliverText,
+        },
+      }),
+    };
+  }
+
+  it('re-sends Enter when the tail moves but the submit hook never fires', async () => {
+    const buffer = new TerminalOutputBuffer();
+    buffer.append(SESSION_ID, 'baseline\n');
+    let submittedAt = Date.now() - 10_000; // an earlier turn proved hooks fire
+    const { request, deliverText } = hookRequest(buffer, () => submittedAt, vi.fn(async () => {
+      submittedAt = Date.now();
+    }));
+    repaintTwice(buffer);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('retry_confirmed');
+    expect(result.retryCount).toBe(1);
+    expect(deliverText).toHaveBeenCalledWith(SESSION_ID, '', expect.objectContaining({ submitSuffix: '\r' }));
+  });
+
+  it('confirms without recovery when the submit hook fires', async () => {
+    const buffer = new TerminalOutputBuffer();
+    let submittedAt = Date.now() - 10_000; // an earlier turn proved hooks fire
+    const { request, deliverText } = hookRequest(buffer, () => submittedAt);
+    setTimeout(() => { submittedAt = Date.now(); }, 30);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('confirmed');
+    expect(deliverText).not.toHaveBeenCalled();
+  });
+
+  it('counts a submit hook that fired before verification started', async () => {
+    const buffer = new TerminalOutputBuffer();
+    const { request, deliverText } = hookRequest(buffer, () => Date.now());
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('confirmed');
+    expect(deliverText).not.toHaveBeenCalled();
+  });
+
+  it('ignores a submit hook from before the delivery', async () => {
+    const buffer = new TerminalOutputBuffer();
+    const stale = Date.now() - 10_000;
+    const { request, deliverText } = hookRequest(buffer, () => stale);
+    repaintTwice(buffer);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('retry_failed');
+    expect(result.retryCount).toBe(2);
+    // Enter only — the composer already holds the text.
+    expect(deliverText.mock.calls.every(call => call[1] === '')).toBe(true);
+  });
+
+  it('falls back to tail timing when the session has never reported a submit hook', async () => {
+    const buffer = new TerminalOutputBuffer();
+    buffer.append(SESSION_ID, 'baseline\n');
+    const { request, deliverText } = hookRequest(buffer, () => undefined);
+    repaintTwice(buffer);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('confirmed');
+    expect(deliverText).not.toHaveBeenCalled();
+  });
+});

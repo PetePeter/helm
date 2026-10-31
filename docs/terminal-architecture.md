@@ -229,6 +229,13 @@ One advance means the CLI emitted something (usually the echo); a second advance
 the echo and is generating. TUIs draw input inside ANSI boxes, so substring matching is unreliable —
 timestamps are not.
 
+**Hook confirmation.** Timestamps cannot tell a submit from a composer repaint: a message pasted into
+Codex ticks the tail twice and still sits unsent. So once a session has reported a `UserPromptSubmit`
+hook (recorded by `HookTracker` in `PromptSubmitSignal`), a pass confirms only on a submit hook at or
+after the delivery started; otherwise it is `suspected_stuck` and recovery re-sends Enter only. A
+target that was busy at delivery queues the message, so it keeps the timing check. Sessions without
+hooks never record a submit and keep the timing check too.
+
 **Recovery.** A failed pass is remedied, not just logged. Recovery mode is fixed by the first pass so
 a stuck CLI is never sent the same message twice. Callers delivering raw terminal control input pass
 `retrySubmit: false` to disable it — re-sending arrows or Esc would move a TUI somewhere unintended.
@@ -237,7 +244,7 @@ a stuck CLI is never sent the same message twice. Callers delivering raw termina
 flowchart TD
     D[Write text] --> S[Settle: SUBMIT_SETTLE_DELAY_MS]
     S --> E[Write submit suffix]
-    E --> V{Verification pass<br/>tail advanced twice?}
+    E --> V{Verification pass<br/>submit hook fired? else<br/>tail advanced twice?}
     V -->|yes| C[confirmed]
     V -->|once, then stalled| ST[suspected_stuck<br/>text is on the prompt]
     V -->|never| NS[no_signal<br/>text likely never arrived]

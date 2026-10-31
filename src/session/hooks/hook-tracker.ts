@@ -44,6 +44,7 @@ import type { HandoverDelivery } from '../handover-delivery.js';
 import type { ArtifactManager } from '../artifact-manager.js';
 import type { ArtifactAttachmentManager } from '../artifact-attachment-manager.js';
 import { MAX_ATTACHMENT_BYTES } from '../artifact-attachment-manager.js';
+import { promptSubmitSignal, type PromptSubmitSignal } from '../prompt-submit-signal.js';
 import { logger } from '../../utils/logger.js';
 
 /** Tools whose use means files are actually being changed (not just read).
@@ -91,6 +92,8 @@ export interface HookTrackerDeps {
   /** A real tool invocation proves agent work, even when the prompt was system-originated. */
   onTurnWorking?: (sessionId: string) => void;
   now?: () => number;
+  /** Overridable for tests; production uses the process-wide signal. */
+  promptSubmitSignal?: PromptSubmitSignal;
 }
 
 export interface PreCompactSnapshotInput {
@@ -113,9 +116,11 @@ export class HookTracker {
   private readonly facts = new Map<string, SessionFacts>();
   private receiver: EventEmitter | null = null;
   private readonly now: () => number;
+  private readonly submitSignal: PromptSubmitSignal;
 
   constructor(private readonly deps: HookTrackerDeps) {
     this.now = deps.now ?? Date.now;
+    this.submitSignal = deps.promptSubmitSignal ?? promptSubmitSignal;
   }
 
   /** Subscribe to the receiver's hook stream and session teardown. */
@@ -163,6 +168,7 @@ export class HookTracker {
 
       case 'UserPromptSubmit':
         this.getOrCreateFacts(sessionId).turns++;
+        this.submitSignal.record(sessionId, this.now());
         this.restartCacheTimer(sessionId);
         this.clearStall(sessionId);
         break;
@@ -257,6 +263,7 @@ export class HookTracker {
 
   private onSessionRemoved = (event: { sessionId: string }): void => {
     this.facts.delete(event.sessionId);
+    this.submitSignal.forget(event.sessionId);
   };
 
   // ---------- stall lifecycle --------------------------------------------

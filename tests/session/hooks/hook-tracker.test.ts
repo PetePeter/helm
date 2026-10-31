@@ -23,6 +23,7 @@ vi.mock('../../../src/utils/logger.js', () => ({
 }));
 
 import { HookTracker, composePreCompactSnapshot } from '../../../src/session/hooks/hook-tracker.js';
+import { PromptSubmitSignal } from '../../../src/session/prompt-submit-signal.js';
 import { normaliseHookEvent, type HookEvent } from '../../../src/session/hooks/hook-normaliser.js';
 import { StateDetector, type ActivityChange } from '../../../src/session/state-detector.js';
 import { SessionManager } from '../../../src/session/manager.js';
@@ -61,6 +62,7 @@ function hookEvent(
 
 interface Setup {
   tracker: HookTracker;
+  submitSignal: PromptSubmitSignal;
   hookReceiver: EventEmitter;
   stateDetector: StateDetector;
   activity: ActivityChange[];
@@ -122,7 +124,9 @@ function setup(): Setup {
     { floorMs: FLOOR_MS, ceilingMs: CEILING_MS },
   );
 
+  const submitSignal = new PromptSubmitSignal();
   const tracker = new HookTracker({
+    promptSubmitSignal: submitSignal,
     stateDetector,
     sessionManager,
     planManager,
@@ -165,6 +169,7 @@ function setup(): Setup {
   };
 
   return {
+    submitSignal,
     tracker, hookReceiver, stateDetector, activity, sessionManager, planManager,
     artifactManager, attachments, handover, flashes, turnsEnded, delivered, updates,
     addSession, claimPlan, dispose, timeTracker,
@@ -245,6 +250,18 @@ describe('HookTracker — hook events become session truth', () => {
       expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBeUndefined();
       s.hookReceiver.emit('hook', hookEvent('claude', 'UserPromptSubmit', { prompt: 'go' }));
       expect(s.sessionManager.getSession('s1')?.lastPromptAt).toBe(NOW);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('records the submit so delivery verification can tell it from a composer repaint', () => {
+    const s = setup();
+    try {
+      s.addSession();
+      expect(s.submitSignal.lastAt('s1')).toBeUndefined();
+      s.hookReceiver.emit('hook', hookEvent('codex', 'UserPromptSubmit', { prompt: 'go' }));
+      expect(s.submitSignal.lastAt('s1')).toBe(NOW);
     } finally {
       s.dispose();
     }

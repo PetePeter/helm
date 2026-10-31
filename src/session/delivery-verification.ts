@@ -42,6 +42,13 @@ export interface DeliveryVerificationRequest {
    * `text` directly, which is only correct for plain payloads.
    */
   resendPayload?: () => Promise<void>;
+  /**
+   * The CLI's own "prompt submitted" hook, when the session has one. Tail activity
+   * cannot tell a submit from a composer repaint (a pasted message in Codex ticks
+   * twice and still sits unsent), so a hook-reporting session is confirmed only by
+   * a submit at or after `since`. `lastAt` undefined = no hook ever seen → timing.
+   */
+  promptSubmit?: { since: number; lastAt: () => number | undefined };
   ptyManager: {
     getTerminalTail?: (sessionId: string, lines: number, mode: 'raw' | 'stripped' | 'both', stripBlankLines?: boolean) => { lastOutputAt?: number } | undefined;
     deliverText?: (sessionId: string, text: string, options?: { submitSuffix?: string; deliveryContext?: 'background' | 'interactive' }) => Promise<void>;
@@ -215,6 +222,8 @@ async function runVerificationPass(
   request: DeliveryVerificationRequest,
   budgets: Budgets,
 ): Promise<PhaseOutcome> {
+  if (hookSubmitApplies(request)) return runHookPass(request, budgets);
+
   // Baseline: default to "just before now" so any tick from here counts as advanced.
   const baselineOutputAt = currentLastOutputAt(request) ?? (Date.now() - 1);
 
@@ -250,6 +259,26 @@ async function runVerificationPass(
   }
 
   return { status: 'confirmed', detail: 'tail activity advanced twice — CLI is producing output' };
+}
+
+function hookSubmitApplies(request: DeliveryVerificationRequest): boolean {
+  return request.promptSubmit?.lastAt() !== undefined;
+}
+
+/** Hook pass: the CLI reported a prompt submit for this delivery, or it did not. */
+async function runHookPass(
+  request: DeliveryVerificationRequest,
+  budgets: Budgets,
+): Promise<PhaseOutcome> {
+  const { since, lastAt } = request.promptSubmit!;
+  const submitted = await pollUntil(
+    () => (lastAt() ?? 0) >= since,
+    budgets.seen + budgets.notSeen,
+    budgets.poll,
+  );
+  return submitted
+    ? { status: 'confirmed', detail: 'CLI reported the prompt submitted (hook)' }
+    : { status: 'suspected_stuck', detail: 'no prompt-submit hook — text likely unsent in the composer' };
 }
 
 /** True when the request carries a write path recovery can use. */

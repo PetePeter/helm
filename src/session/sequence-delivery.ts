@@ -11,6 +11,7 @@ import {
   verifyDeliveryAfterDelay,
   type DeliveryVerificationResult,
 } from './delivery-verification.js';
+import { promptSubmitSignal } from './prompt-submit-signal.js';
 
 /** Token patterns the sequence parser recognizes as actions, not literal text. */
 const RECOGNIZED_TOKEN_PATTERNS = [
@@ -199,6 +200,7 @@ export async function deliverPromptSequenceToSession(input: {
     await runSequence();
   });
 
+  const deliveryStartedAt = Date.now();
   await runTransaction();
   deliveryObserver?.(sessionId, input.origin ?? 'system');
 
@@ -230,6 +232,11 @@ export async function deliverPromptSequenceToSession(input: {
     // this resend would be waiting on a gate its own caller still held. Pulling
     // verification inside the lock deadlocks recovery outright.
     resendPayload: () => lock.run(sessionId, runSequence),
+    // A busy target queues the message; its submit hook fires only after the
+    // current turn, so the hook cannot confirm it within the window.
+    ...(targetWasBusy ? {} : {
+      promptSubmit: { since: deliveryStartedAt, lastAt: () => promptSubmitSignal.lastAt(sessionId) },
+    }),
   };
 
   if (verifyDelivery.background) {

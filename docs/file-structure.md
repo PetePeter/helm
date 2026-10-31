@@ -37,6 +37,7 @@ src/
 │   ├── persistence.ts          # Save/load/clear sessions to config/sessions.yaml + plan file I/O for config/plans/*.json + config/plan-dependencies.json
 │   ├── pty-manager.ts          # PTY process management (node-pty: cmd.exe on Windows, bash on Unix)
 │   ├── delivery-lock.ts         # Per-session gate serializing the nudge/payload/settle/submit delivery transaction
+│   ├── prompt-submit-signal.ts  # Last hook-reported prompt submit per session — confirms a delivery was actually submitted
 │   ├── bracketed-paste-tracker.ts # Per-session DEC 2004 state scanned from PTY output (incremental, chunk-boundary safe)
 │   ├── state-detector.ts       # PTY activity tracking + question markers; AIAGENT phase state is MCP-owned + markRestored() grace period for restored sessions
 │   ├── context-limits.ts       # Per-CLI amber/red context warning thresholds and level resolution
