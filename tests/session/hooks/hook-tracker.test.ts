@@ -260,6 +260,9 @@ describe('HookTracker — hook events become session truth', () => {
     try {
       s.addSession();
       expect(s.submitSignal.lastAt('s1')).toBeUndefined();
+      // Any hook proves the session reports submits, before its first prompt.
+      s.hookReceiver.emit('hook', hookEvent('codex', 'SessionStart', {}));
+      expect(s.submitSignal.lastAt('s1')).toBe(0);
       s.hookReceiver.emit('hook', hookEvent('codex', 'UserPromptSubmit', { prompt: 'go' }));
       expect(s.submitSignal.lastAt('s1')).toBe(NOW);
     } finally {

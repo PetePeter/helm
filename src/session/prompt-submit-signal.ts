@@ -13,6 +13,11 @@ export class PromptSubmitSignal {
     this.lastSubmitAt.set(sessionId, at);
   }
 
+  /** Any hook event: the session's hooks fire, so a missing submit is meaningful. */
+  observe(sessionId: string): void {
+    if (!this.lastSubmitAt.has(sessionId)) this.lastSubmitAt.set(sessionId, 0);
+  }
+
   lastAt(sessionId: string): number | undefined {
     return this.lastSubmitAt.get(sessionId);
   }

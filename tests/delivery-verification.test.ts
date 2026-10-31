@@ -228,7 +228,7 @@ describe('verifyDeliveryAfterDelay — prompt-submit hook confirmation', () => {
   function hookRequest(
     buffer: TerminalOutputBuffer,
     lastAt: () => number | undefined,
-    deliverText = vi.fn(async () => {}),
+    deliverText = vi.fn(async (_sid: string, _text: string, _opts?: object) => {}),
   ) {
     return {
       deliverText,
@@ -291,6 +291,18 @@ describe('verifyDeliveryAfterDelay — prompt-submit hook confirmation', () => {
     expect(result.status).toBe('retry_failed');
     expect(result.retryCount).toBe(2);
     // Enter only — the composer already holds the text.
+    expect(deliverText.mock.calls.every(call => call[1] === '')).toBe(true);
+  });
+
+  it('uses the hook on the first delivery to a hooked session with no submit yet', async () => {
+    const buffer = new TerminalOutputBuffer();
+    buffer.append(SESSION_ID, 'baseline\n');
+    const { request, deliverText } = hookRequest(buffer, () => 0);
+    repaintTwice(buffer);
+
+    const result = await verifyDeliveryAfterDelay(request);
+
+    expect(result.status).toBe('retry_failed');
     expect(deliverText.mock.calls.every(call => call[1] === '')).toBe(true);
   });
 

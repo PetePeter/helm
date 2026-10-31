@@ -194,13 +194,16 @@ export async function deliverPromptSequenceToSession(input: {
    * a fit keeps a stale size and renders the delivered text into a mis-sized
    * buffer. Harmless for line-based CLIs, which ignore the size change.
    */
+  // Stamped inside the gate: a delivery queued ahead of this one must not
+  // have its submit hook mistaken for ours.
+  let deliveryStartedAt = 0;
   const runTransaction = () => lock.run(sessionId, async () => {
+    deliveryStartedAt = Date.now();
     targetWasBusy = session.activityLevel === 'active';
     await ptyManager.nudgeResize(sessionId);
     await runSequence();
   });
 
-  const deliveryStartedAt = Date.now();
   await runTransaction();
   deliveryObserver?.(sessionId, input.origin ?? 'system');
 

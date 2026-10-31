@@ -154,6 +154,7 @@ export class HookTracker {
     if (!sessionId || !this.deps.sessionManager.hasSession(sessionId)) return;
 
     this.deps.stateDetector.markHooksObserved(sessionId);
+    this.submitSignal.observe(sessionId);
 
     this.recordThreadId(sessionId, event.cliSessionId);
     this.recordTranscriptPath(sessionId, event.transcriptPath);
