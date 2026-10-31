@@ -80,6 +80,33 @@ describe('derived sidebar groups', () => {
       .toEqual([[2, 2], [1, 1]]);
     sessionsState.showHiddenSessions = false;
   });
+  // Regression: the count excluded the active session, so entering the only
+  // hidden session read as "nothing hidden" and switched the toggle off.
+  it('keeps Show hidden on while the only hidden session is active', async () => {
+    state.sessions = [
+      makeSession('shown', DIR_A),
+      makeSession('hidden', DIR_B, { hidden: true }),
+    ];
+    sessionsState.showHiddenSessions = true;
+    await nextTick();
+    state.activeSessionId = 'hidden';
+    await nextTick();
+    state.activeSessionId = 'shown';
+    await nextTick();
+    expect(sessionsState.showHiddenSessions).toBe(true);
+    expect(renderedSessions().map(session => session.id)).toContain('hidden');
+    sessionsState.showHiddenSessions = false;
+  });
+
+  it('turns Show hidden off once no session is hidden', async () => {
+    state.sessions = [makeSession('hidden', DIR_A, { hidden: true })];
+    sessionsState.showHiddenSessions = true;
+    await nextTick();
+    state.sessions[0] = { ...state.sessions[0], hidden: false };
+    await nextTick();
+    expect(sessionsState.showHiddenSessions).toBe(false);
+  });
+
   it('reflects a locked flip without any rebuild call', () => {
     state.sessions = [makeSession('s1', DIR_A, { locked: false })];
     expect(findRendered('s1')?.locked).toBe(false);

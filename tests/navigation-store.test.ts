@@ -581,7 +581,7 @@ describe('useNavigationStore', () => {
       expect(navIndex('session-card', 'active-hidden')).toBeGreaterThanOrEqual(0);
       expect(navIndex('session-card', 'other-hidden')).toBe(-1);
       expect(navIndex('session-card', 'remote-hidden')).toBeGreaterThanOrEqual(0);
-      expect(sessionsState.hiddenSessionCount).toBe(1);
+      expect(sessionsState.hiddenSessionCount).toBe(2);
 
       sessionsState.showHiddenSessions = true;
       expect(navIndex('session-card', 'other-hidden')).toBeGreaterThanOrEqual(0);

@@ -89,8 +89,11 @@ const visibleSessions = computed(() => filterVisibleSessions(
   sessionsState.showHiddenSessions,
 ));
 
+// Counts the active session too: it stays visible regardless, but excluding it
+// made "only hidden session is active" read as nothing hidden — the toggle
+// auto-reset and its button vanished.
 const hiddenSessionCount = computed(() => state.sessions.filter(session =>
-  !session.remote && session.hidden && session.id !== state.activeSessionId,
+  !session.remote && session.hidden,
 ).length);
 
 export const sessionsState: SessionsScreenState = reactive({

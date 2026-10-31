@@ -99,7 +99,7 @@ describe('SessionList highlight rendering', () => {
     sessionsState.showHiddenSessions = false;
   });
 
-  it('shows the hidden toggle only when there are hidden rows to reveal', async () => {
+  it('shows the hidden toggle while any session is hidden, even the active one', async () => {
     state.sessions = [{ id: 'hidden', name: 'Hidden', cliType: 'claude', processId: 1, hidden: true }];
     state.activeSessionId = null;
     const w = mountList();
@@ -113,9 +113,9 @@ describe('SessionList highlight rendering', () => {
 
     state.activeSessionId = 'hidden';
     await nextTick();
-    expect(sessionsState.showHiddenSessions).toBe(false);
+    expect(sessionsState.showHiddenSessions).toBe(true);
     expect(w.findAll('.runtime-list-actions .runtime-action').map(button => button.text()))
-      .not.toContain('Show hidden (1)');
+      .toContain('Hide hidden');
   });
 
   it('highlights the card matching focusedNavItem', () => {
