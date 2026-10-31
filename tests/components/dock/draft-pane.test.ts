@@ -98,6 +98,11 @@ describe('DraftPane.vue', () => {
     await flushPromises();
   }
 
+  async function showHistory() {
+    await wrapper!.findAll('.draft-pane__tabs button')[1].trigger('click');
+    await flushPromises();
+  }
+
   async function pause() {
     vi.advanceTimersByTime(DRAFT_SAVE_DELAY_MS);
     await flushPromises();
@@ -351,9 +356,9 @@ describe('DraftPane.vue', () => {
 
       expect(sent()).toContain('please review the diff');
       expect(sent()).toMatch(/\r$/);
-      expect(wrapper!.find('.draft-pane__history').text()).toContain('please review the diff');
-      await showDraft();
       expect(input().value).toBe('');
+      await showHistory();
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('please review the diff');
       expect(main.get('s1').text).toBe('');
     });
 
@@ -371,9 +376,9 @@ describe('DraftPane.vue', () => {
       expect(chatSends).toHaveLength(1);
       expect(chatSends[0]).toMatchObject({ sessionId: 's1', text: 'continue from my phone' });
       expect(ptyWrites).toHaveLength(0);
-      expect(wrapper!.find('.draft-pane__history').text()).toContain('via Chat');
-      await showDraft();
       expect(input().value).toBe('');
+      await showHistory();
+      expect(wrapper!.find('.draft-pane__history').text()).toContain('via Chat');
     });
 
     it('sends through Chat when the last prompt came from desktop Chat', async () => {

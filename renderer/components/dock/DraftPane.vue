@@ -111,7 +111,6 @@ async function send(): Promise<void> {
   if (state.activeSessionId === sessionId && text.value === prompt) {
     edit('');
     await flush();
-    view.value = 'history';
   }
 }
 

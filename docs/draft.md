@@ -37,7 +37,7 @@ The **History** tab shows the last 10 successful sends made from Draft for the
 selected session. Each entry contains the sent text, time, and whether it went
 through Chat or the CLI. Copying an entry leaves the current draft untouched.
 Unsent edits and sends that fail are not recorded. After a successful send,
-Draft clears the pad and opens History.
+Draft clears the pad and stays on the Draft tab.
 
 History is stored separately from the shared pad under
 `%APPDATA%/Helm/config/drafts/history/<sessionId>.json`. It survives an app
