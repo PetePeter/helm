@@ -463,6 +463,36 @@ stateDiagram-v2
   `open()` releases the stream and audio context. Empty transcripts send
   nothing. No new main-process code — the same `voice:*` IPC.
 
+## The "Call operator" shortcut — a hardware key
+
+The app publishes one static launcher shortcut, `call_operator` (`res/xml/shortcuts.xml`), so a hardware key can call the operator without opening the app first. Long-pressing the Helm icon shows it too.
+
+```mermaid
+flowchart LR
+    K[Key / shortcut] -->|action CALL_OPERATOR| MA[MainActivity]
+    MA -->|OperatorKey.request| HH[HelmHome]
+    HH --> D{OperatorKeyAction.decide}
+    D -->|no call| Dial[dial operator]
+    D -->|operator call live| Hang[hang up]
+    D -->|other session's call| Show[open that call]
+    D -->|no operator| Toast[operator off]
+```
+
+- **No target in the intent.** `MainActivity` is exported, so the shortcut only says "operator"; the id is resolved from the live session list. It can never dial an arbitrary session.
+- **Toggle.** A second press during the operator call hangs up. A press during *another* session's call only brings it forward — a stray press never drops it.
+- **Once per press.** The press is parked in `OperatorKey` and consumed once; a rotation re-delivering the launch intent is ignored.
+- **Cold start waits, bounded.** The operator is not listed until the link is up, so a press waits up to 10 s, then reports the operator off instead of dialling late.
+- The microphone grant goes through the same `rememberDialer()` as every call button.
+
+**Motorola AI / Red key** (edge 70, MyKey 2.x). The stock UI cannot pick a shortcut; set it over ADB (record the old value first):
+
+```
+adb shell settings get system tap_app_quick_single
+adb shell "settings put system tap_app_quick_single 'intent:#Intent;action=com.motorola.mykey.action.SHORTCUT;launchFlags=0x10000000;S.shortcut_package_name=com.potatomotato.helm;S.shortcut_id=call_operator;end'"
+```
+
+The id `call_operator` is a contract with that mapping — do not rename it.
+
 ## Ring me — a session calls the user
 
 "Hey operator, call me when P-0850 finishes or has blocking questions." Calls

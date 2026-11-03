@@ -100,6 +100,11 @@ import com.potatomotato.helm.ui.artifacts.ArtifactsScreen
 import com.potatomotato.helm.ui.call.rememberDialer
 import com.potatomotato.helm.ui.chat.ChatScreen
 import com.potatomotato.helm.voice.VoiceCallService
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import com.potatomotato.helm.ui.components.ContextMenuItem
 import com.potatomotato.helm.ui.components.DialogAction
 import com.potatomotato.helm.ui.components.HelmAppBar
@@ -124,6 +129,8 @@ import com.potatomotato.helm.ui.control.SpawnScreen
 import com.potatomotato.helm.ui.pairing.AwaitingDesktopScreen
 import com.potatomotato.helm.ui.pairing.DesktopsScreen
 import com.potatomotato.helm.ui.operator.OperatorSection
+import com.potatomotato.helm.ui.operator.OperatorKey
+import com.potatomotato.helm.ui.operator.OperatorKeyAction
 import com.potatomotato.helm.ui.operator.OperatorSummary
 import com.potatomotato.helm.ui.operator.operatorSummary
 import com.potatomotato.helm.ui.operator.withoutOperator
@@ -364,6 +371,36 @@ fun HelmHome(client: HelmClient = HelmPairing.client, modifier: Modifier = Modif
         val call = liveCall ?: return@LaunchedEffect
         val target = callScreenTarget ?: return@LaunchedEffect
         if (call.targetId != target) VoiceCallService.retarget(context, target)
+    }
+    // The "Call operator" shortcut (a hardware key can launch it). On a cold start
+    // the operator is not listed until the link is up, so a press waits for it —
+    // bounded, so a stale press can never dial minutes later.
+    val currentOperator by rememberUpdatedState(operator)
+    val keyPress by OperatorKey.pending.collectAsState()
+    LaunchedEffect(keyPress) {
+        if (!OperatorKey.consume()) return@LaunchedEffect
+        val liveTarget = VoiceCallService.call.value?.targetId
+        val operatorId = (currentOperator as? OperatorSummary.On)?.id
+            ?: if (liveTarget != null) null else withTimeoutOrNull(OPERATOR_KEY_WAIT_MS) {
+                snapshotFlow { (currentOperator as? OperatorSummary.On)?.id }.filterNotNull().first()
+            }
+        when (val action = OperatorKeyAction.decide(operatorId, liveTarget)) {
+            is OperatorKeyAction.Dial -> {
+                // The operator's chat is the Helm tab, so the call never retargets away from it.
+                openSessionId = null
+                where = Destination.Thread
+                if (homeTab != HomeTab.Helm) pickHomeTab(HomeTab.Helm)
+                dial(action.operatorId)
+            }
+            OperatorKeyAction.HangUp -> VoiceCallService.hangUp(context)
+            is OperatorKeyAction.Show -> {
+                openSessionId = action.targetId
+                tab = SessionTab.Chat
+                where = Destination.Thread
+            }
+            OperatorKeyAction.Unavailable ->
+                Toast.makeText(context, R.string.operator_section_off, Toast.LENGTH_LONG).show()
+        }
     }
     val onScreenThread = openSessionId
         ?: (operator as? OperatorSummary.On)?.id?.takeIf { homeTab == HomeTab.Helm }
@@ -1929,6 +1966,8 @@ private fun ReportViewedChat(client: HelmClient, viewedChat: String?) {
 private const val SESSION_SWITCH_MS = 220
 private const val EDGE_BOUNCE_DISTANCE_DP = 10
 private const val EDGE_BOUNCE_PULL_MS = 90
+/** How long a "Call operator" press waits for a cold-starting link to list the operator. */
+private const val OPERATOR_KEY_WAIT_MS = 10_000L
 private const val EDGE_BOUNCE_DAMPING = 0.62f
 private const val EDGE_BOUNCE_STIFFNESS = 720f
 

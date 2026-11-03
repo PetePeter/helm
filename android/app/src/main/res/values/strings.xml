@@ -603,6 +603,7 @@
     <string name="voice_mode_mic">🎙 Microphone</string>
     <string name="voice_mode_phone">📞 Phone call</string>
     <string name="call_helm">Call Helm</string>
+    <string name="shortcut_call_operator">Call operator</string>
     <string name="call_helm_row_hint">Voice call your operator</string>
     <string name="operator_section_title">Helm</string>
     <string name="operator_section_off">Helm operator is off — enable it in desktop Settings > Operator</string>

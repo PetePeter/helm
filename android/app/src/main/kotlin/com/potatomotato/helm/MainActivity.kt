@@ -47,6 +47,7 @@ import com.potatomotato.helm.ui.components.GhostButton
 import com.potatomotato.helm.ui.components.PermissionRationale
 import com.potatomotato.helm.ui.components.PrimaryButton
 import com.potatomotato.helm.ui.HelmHome
+import com.potatomotato.helm.ui.operator.OperatorKey
 import com.potatomotato.helm.ui.pairing.PairingScreen
 import com.potatomotato.helm.ui.theme.HelmColors
 import com.potatomotato.helm.ui.theme.HelmSpacing
@@ -68,6 +69,8 @@ class MainActivity : ComponentActivity() {
         // A cold start from a notification tap: the extra is on the launch intent
         // and there is no composition yet to hand it to, so it is parked.
         takeNotificationTap(intent)
+        // A rotation re-delivers the launch intent: only a fresh launch is a press.
+        if (savedInstanceState == null) takeOperatorKey(intent)
         setContent { HelmTheme { HelmRoot() } }
     }
 
@@ -76,6 +79,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         takeNotificationTap(intent)
+        takeOperatorKey(intent)
+    }
+
+    private fun takeOperatorKey(intent: Intent?) {
+        if (intent?.action == OperatorKey.ACTION) OperatorKey.request()
     }
 
     /**
