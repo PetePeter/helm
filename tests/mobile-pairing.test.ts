@@ -101,6 +101,20 @@ describe('MobilePairing', () => {
     phone.close('test');
   });
 
+  it('clears the SAS and refuses confirmation after the pairing link closes', async () => {
+    const h = makeHarness();
+    h.pairing.start();
+    const phone = await h.connect();
+
+    phone.close('test disconnect');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(h.pairing.getState()).toEqual({ status: 'failed', reason: 'link-closed' });
+    h.pairing.confirm(true);
+    expect(h.devices.list()).toHaveLength(0);
+    expect(h.secrets.exportAll()).toEqual({});
+  });
+
   it('persists the device and its PSK once confirmed', async () => {
     const h = makeHarness();
     h.pairing.start();
@@ -235,7 +249,10 @@ describe('MobilePairing', () => {
     const phone = await h.connect();
     expect(h.pairing.getState().status).toBe('awaiting-sas');
 
-    h.tick(PAIRING_TTL_MS + 1);
+    h.tick(3 * 60_000);
+    expect(h.pairing.start()).toEqual({ ok: false, reason: 'A pairing is already in progress' });
+
+    h.tick(PAIRING_TTL_MS - 3 * 60_000 + 1);
     expect(h.pairing.start().ok).toBe(true); // the stale one was reaped, not stuck
 
     expect(h.devices.list()).toHaveLength(0);

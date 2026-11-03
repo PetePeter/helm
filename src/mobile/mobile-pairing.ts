@@ -28,7 +28,7 @@ import type { SecretStore } from '../mcp/peer/secret-store.js';
 import type { MobileLink } from './mobile-link.js';
 
 /** How long an unconfirmed pairing may sit on screen before it is reaped. */
-export const PAIRING_TTL_MS = 180_000;
+export const PAIRING_TTL_MS = 300_000;
 /** Failed attempts tolerated inside one window before a cooldown applies. */
 export const MAX_ATTEMPTS_PER_WINDOW = 5;
 /** The window failed attempts are counted over. */
@@ -171,6 +171,10 @@ export class MobilePairing extends EventEmitter {
       }
       this.active.channel = channel;
       this.active.link = link;
+      const active = this.active;
+      channel.once('close', () => {
+        if (this.active === active && !active.decided) this.fail('link-closed');
+      });
       this.setState({
         status: 'awaiting-sas',
         sas: channel.sas,
@@ -191,6 +195,10 @@ export class MobilePairing extends EventEmitter {
     this.reapExpired();
     const active = this.active;
     if (!active || active.decided || !active.channel) return;
+    if (active.channel.closed) {
+      this.fail('link-closed');
+      return;
+    }
     active.decided = true;
 
     if (!accepted) {
